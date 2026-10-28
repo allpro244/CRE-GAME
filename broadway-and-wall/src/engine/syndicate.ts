@@ -291,7 +291,7 @@ export function reviewSyndications(s: GameState, parcels: ParcelTable): void {
       const f = (w.flags ??= []);
       if (f.includes(key)) return;
       f.push(key);
-      s.news.unshift({ q: s.month, kind: "warn", text: `Your investors in ${resolveRec(parcels, s, w.bbl)?.address ?? w.bbl} flagged the quarter's report: ${why}. Everyone you ask for money next will see it on your tear sheet.` });
+      s.news.unshift({ q: s.month, kind: "warn", text: `Investor flag · ${resolveRec(parcels, s, w.bbl)?.address ?? w.bbl} quarterly report: ${why}. Recorded on your track record.` });
     };
     const building = !!s.developments?.[w.bbl];
     if (w.pitchDeliverM !== undefined && ((building && s.month > w.pitchDeliverM + 6) || (h.deliveredM !== undefined && h.deliveredM > w.pitchDeliverM + 6))) add("late", "delivery is more than six months behind what you pitched");
@@ -329,7 +329,7 @@ export function closeSyndication(s: GameState, parcels: ParcelTable, w: Syndicat
     q: s.month, kind: lpOut >= lpIn ? "deal" : "warn",
     text: `The syndicate on ${resolveRec(parcels, s, w.bbl)?.address ?? w.bbl} is ${recap ? "bought out — the building is yours alone" : "wound up"}. `
       + `Your ${w.investor.toLowerCase()} put in $${Math.round(lpIn).toLocaleString()} and took back $${Math.round(lpOut).toLocaleString()} (${multiple.toFixed(2)}x)`
-      + (lpOut >= lpIn ? " — and they will tell people." : ". Most of them will not invest with you again."),
+      + (lpOut >= lpIn ? "." : ". Loss recorded on your track record."),
   });
   delete s.syndications![w.bbl];
 }

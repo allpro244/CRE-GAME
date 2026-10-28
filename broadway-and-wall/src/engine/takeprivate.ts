@@ -206,7 +206,7 @@ function blockers(s: GameState, parcels: ParcelTable, r: Rival): string | null {
     const addr = resolveRec(parcels, s, bbl)?.address ?? bbl;
     if (s.holdings[bbl]) return `The record shows you already own ${addr}. The title company will not close this until that is straightened out.`;
     if (s.cityGroundLeases?.[bbl] || isCivicLand(s, bbl)) return `${addr} is not freehold — it cannot convey with the company.`;
-    if ((s.notes ?? []).some((n) => n.bbl === bbl)) return `You hold the paper on ${addr}. Settle the note before buying the borrower.`;
+    if ((s.notes ?? []).some((n) => n.bbl === bbl)) return `You hold the loan on ${addr}. Settle the note before buying the borrower.`;
     if (s.talks?.[bbl]) return `You are already negotiating for ${addr}. Finish or walk from that deal first.`;
   }
   return null;
@@ -475,9 +475,9 @@ function runClose(
   cur.news.unshift({
     q: cur.month, kind: "deal",
     text: `${q.name} is yours. ${q.deeds.length} building${q.deeds.length === 1 ? "" : "s"} marked at ${money(q.gross)} came across in one closing: `
-      + `${money(px)} to the owners — ${Math.abs(vsNav).toFixed(0)}% ${vsNav >= 0 ? "over" : "under"} the equity in the buildings, cash at par — `
-      + `${money(q.debt)} of their paper repaid at the table${loans > 0 ? `, ${money(loans)} of new mortgages written deed by deed` : ""}, `
-      + `and ${money(closing + tt)} to the advisers, the title company and the stamps. The name comes off the street.`,
+      + `${money(px)} to the owners (${Math.abs(vsNav).toFixed(0)}% ${vsNav >= 0 ? "over" : "under"} NAV, cash at par); `
+      + `${money(q.debt)} of their debt repaid${loans > 0 ? `, ${money(loans)} of new mortgages` : ""}; `
+      + `${money(closing + tt)} closing costs and transfer tax.`,
   });
   return { s: cur, terms };
 }
@@ -542,8 +542,8 @@ export function offerTakePrivate(
     next.news.unshift({
       q: next.month, kind: "info",
       text: insult
-        ? `${poss(q.name)} board has thrown out your ${money(struck)} for the company. They asked ${money(q.ask)}, and they will remember the number.`
-        : `${poss(q.name)} board has turned down ${money(struck)} for the company. The ask was ${money(q.ask)}; they will not take the call again for a year.`,
+        ? `${poss(q.name)} board rejected your ${money(struck)} bid as a lowball (ask ${money(q.ask)}).`
+        : `${poss(q.name)} board rejected ${money(struck)} (ask ${money(q.ask)}). No new talks for a year.`,
     });
     return { s: next, refused: true, msg: insult ? "Thrown out — and they will remember it." : "Refused. The board will not talk again for a year." };
   }
@@ -599,8 +599,8 @@ export function tickTakePrivateApproach(s: GameState, parcels: ParcelTable) {
   s.takePrivate.offer = { firmId: r.id, name: r.name, m: s.month, expiresM: s.month + 4, ask: q.ask, why: q.situationWhy };
   s.news.unshift({
     q: s.month, kind: "deal",
-    text: `${poss(r.name)} board has retained a banker, and the banker has called you. ${q.situationWhy} `
-      + `They will talk about ${money(q.ask)} for the company — ${q.deeds.length} buildings marked at ${money(q.gross)}, ${money(q.debt)} of debt, ${money(q.cash)} in the account. The Competitors page has the book.`,
+    text: `Company for sale · ${r.name}: banker approached you. ${q.situationWhy} `
+      + `Ask ${money(q.ask)} — ${q.deeds.length} buildings marked at ${money(q.gross)}, ${money(q.debt)} debt, ${money(q.cash)} cash. Details on the Competitors page.`,
   });
 }
 
@@ -672,8 +672,7 @@ export function tickRivalTakeovers(s: GameState, parcels: ParcelTable) {
     s.news.unshift({
       q: s.month, kind: "event",
       text: `${raider.name} has bought ${t.name} outright — ${q.deeds.length} building${q.deeds.length === 1 ? "" : "s"} marked at ${money(q.gross)}, `
-        + `${money(q.ask)} to the owners${q.situation === "distressed" ? " of a firm that was behind on its debt" : ""}, and ${money(q.debt)} of paper assumed. `
-        + `${t.name} comes off the street.`,
+        + `${money(q.ask)} to the owners${q.situation === "distressed" ? " (distressed)" : ""}, ${money(q.debt)} of debt assumed.`,
     });
   }
 }

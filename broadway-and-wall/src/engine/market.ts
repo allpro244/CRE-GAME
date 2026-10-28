@@ -1775,7 +1775,7 @@ const RUMORS: Record<MarketPhase, string[]> = {
     "Two regional banks pulled term sheets this week, sources say.",
   ],
   recovery: [
-    "Distressed buyers are circling — the smart money smells a bottom.",
+    "Distressed buyers are active; some see a bottom.",
     "First green shoots: concessions burning off in the best buildings.",
   ],
   depression: [
@@ -2563,17 +2563,17 @@ export function tickNation(s: GameState) {
       n.shockSev = rrange(s, 0.010, 0.038, "nation");
       n.pressureM = Math.round(rrange(s, 30, 96, "nation"));
       pushNews(s, "warn",
-        "The government has opened the spending taps and is financing it in the bond market. "
-        + "The central bank has been asked — in the way these things are asked — to keep money "
-        + "cheap while it does.");
+        "Fiscal expansion financed with bonds; the central bank is under pressure "
+        + "to keep rates low "
+        + "meanwhile.");
     } else {
       const adverse = roll < 0.30 + 0.42;
       n.shockSev = (adverse ? 1 : -0.7) * rrange(s, 0.012, 0.055, "nation");
       pushNews(s, adverse ? "warn" : "event", adverse
-        ? "A supply shock has hit the national economy — prices are rising for reasons that have "
-          + "nothing to do with demand, and the central bank cannot cut its way out of this one."
-        : "A favourable supply shock: input costs are falling nationally, and the central bank has "
-          + "room it did not have last year.");
+        ? "National supply shock: prices rising without demand; "
+          + "rate cuts will not help."
+        : "Favourable supply shock: input costs falling nationally; "
+          + "room for rate cuts.");
     }
   }
   const shock = n.shockM > 0 ? n.shockSev : 0;
@@ -2691,8 +2691,8 @@ export function tickNation(s: GameState) {
     // Half a per cent off the peak is a contraction, not a soft quarter.
     if (n.lnY < (n.yPeak ?? n.lnY) - REC_DROP) {
       n.recM = 1; n.uStart = n.unemp; n.uPeak = n.unemp; n.yTrough = n.lnY; n.deep = false;
-      pushNews(s, "warn", "The national economy has turned. Output is falling, payrolls are next, "
-        + "and everyone is revising their numbers down.");
+      pushNews(s, "warn", "National recession: output falling, "
+        + "payrolls next.");
     }
   } else {
     n.recM = (n.recM ?? 0) + 1;
@@ -2700,7 +2700,7 @@ export function tickNation(s: GameState) {
     // Over once output has climbed back half a per cent off the trough.
     if (n.lnY > (n.yTrough ?? n.lnY) + 0.005) {
       n.recM = 0; n.expM = 0; n.deep = false; n.yPeak = n.lnY;
-      pushNews(s, "event", "The national recession is over on paper. Nobody in the room feels it yet.");
+      pushNews(s, "event", "National recession officially over; recovery not yet felt.");
     }
   }
 
@@ -2719,8 +2719,8 @@ export function tickNation(s: GameState) {
     n.uPeak = Math.max(n.uPeak ?? n.unemp, n.unemp);
     if (!n.deep && n.unemp - (n.uStart ?? n.unemp) >= 0.05) {
       n.deep = true;
-      pushNews(s, "warn", "This is not a soft patch. Payrolls are collapsing nationally and nobody "
-        + "can say where the bottom is.");
+      pushNews(s, "warn", "Deep national recession: payrolls collapsing, "
+        + "no bottom in sight.");
     }
   }
 
@@ -2955,8 +2955,8 @@ export function tickNation(s: GameState) {
     n.pressureM--;
     if (n.pressureM === 0) {
       pushNews(s, "event",
-        "The central bank has its independence back. Whatever it does next, it is doing on its "
-        + "own account — and it has a great deal of ground to make up.");
+        "Central bank independence restored; "
+        + "expect tightening to catch up on inflation.");
     }
   }
   if (meeting) {
@@ -3492,8 +3492,8 @@ export function tickIndustryCycle(s: GameState) {
       e.indShock[k] += up ? size : -size;
       const exposed = exposureToTrade(s, k) > 0.10;
       pushNews(s, exposed ? (up ? "event" : "warn") : "info", up
-        ? `${INDUSTRY_LABEL[k]} is hiring hard. Anyone with space let to that trade is about to have a good few years.`
-        : `${INDUSTRY_LABEL[k]} is in trouble. Look at how much of your rent roll depends on it before somebody hands you the keys.`);
+        ? `${INDUSTRY_LABEL[k]} hiring strongly; good for landlords leasing to that sector.`
+        : `${INDUSTRY_LABEL[k]} in decline; check your rent roll exposure to it.`);
     }
     // DEMAND for what the trade sells: its national cycle, its trend and
     // the town's edge, its own shocks, and — for the trades whose customers
@@ -3581,10 +3581,10 @@ function tickBoomBust(s: GameState) {
         const months = Math.round(24 + 12 * rng(s, "shock"));
         e.boomBust = { ...bb, phase: "bust", leftM: months, rate: Math.pow(1 - fall, 1 / months) - 1 };
         pushNews(s, exposureToTrade(s, bb.sec) > 0.10 ? "warn" : "event",
-          `The ${label.toLowerCase()} boom has broken. The firms that were hiring are laying off, and the space they took on the way up is about to come back to market.`);
+          `${label} boom over: layoffs under way; expect space back on the market.`);
       } else {
         e.boomBust = undefined;
-        pushNews(s, "info", `${label} has stopped growing at boom pace — and kept what it gained. This is a ${label.toLowerCase()} town now.`);
+        pushNews(s, "info", `${label} growth slowed to normal, gains retained. ${label} is now a core local industry.`);
       }
       return;
     }
@@ -3600,7 +3600,7 @@ function tickBoomBust(s: GameState) {
   const yr = 0.06 + 0.06 * rng(s, "shock");
   e.boomBust = { sec, phase: "boom", leftM: months, rate: yr / 12, startM: s.month };
   pushNews(s, exposureToTrade(s, sec) > 0.10 ? "event" : "info",
-    `${INDUSTRY_LABEL[sec]} is booming here — hiring far ahead of the nation and of every other trade in town. Everyone is underwriting that it lasts.`);
+    `${INDUSTRY_LABEL[sec]} boom: hiring far ahead of the nation and other local sectors.`);
 }
 
 /**
@@ -3661,11 +3661,11 @@ function derivePhase(s: GameState) {
     e.rumoredPhase = null;
     if (next === "expansion") e.cycPeak = T;
     const label: Record<MarketPhase, string> = {
-      expansion: "The expansion is on — rents push, capital chases.",
-      peak: "The market has topped out. Everything is priced to perfection.",
-      recession: "The turn is here: tenants retrench, lenders retreat.",
-      recovery: "The bleeding has stopped. Recovery begins at the bottom of the stack.",
-      depression: "This is not a recovery — the city has lost more than one job in ten and is still losing them.",
+      expansion: "Market expansion: rents rising, capital flowing in.",
+      peak: "Market peak: pricing at cycle highs.",
+      recession: "Market downturn: tenants retrenching, lenders pulling back.",
+      recovery: "Market recovery: declines have stopped.",
+      depression: "Depression: the city has lost over 10% of jobs and losses continue.",
     };
     pushNews(s, "event", label[e.phase]);
   }
@@ -5602,8 +5602,8 @@ export function tickEcon(s: GameState) {
         if (ph !== "steady") {
           const exposed = ownsClass(s, k);
           pushNews(s, exposed ? (ph === "boom" ? "event" : "warn") : "info", ph === "boom"
-            ? `${SECTOR_LABEL[k]} is turning. Tenants in that sector are expanding hard and every landlord in it knows.`
-            : `${SECTOR_LABEL[k]} demand is rolling over. Brokers are quietly cutting asking rents.`);
+            ? `${SECTOR_LABEL[k]} upturn: tenants expanding.`
+            : `${SECTOR_LABEL[k]} demand softening; asking rents being cut.`);
         }
       }
     }
@@ -7186,9 +7186,9 @@ export function tickEcon(s: GameState) {
       if (dpp >= 2 && cool) {
         e.vacTellM = s.month;
         pushNews(s, "rumor",
-          `A broker on the street: office vacancy is ${dpp.toFixed(1)} points higher than a year ago. `
-          + `When that happens, real rents are usually lower three years out — not a prophecy, a confirmation. `
-          + `You are already past the top; about a third of the fall is typically still ahead.`);
+          `Office vacancy is ${dpp.toFixed(1)} points higher than a year ago. `
+          + `Historically, real rents are lower three years out; `
+          + `about a third of the decline is typically still ahead.`);
       }
     }
   }

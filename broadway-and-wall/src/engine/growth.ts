@@ -445,7 +445,7 @@ function failDev(s: GameState, parcels: ParcelTable, d: LandDev) {
   const loss = Math.max(0, Math.round(debt - worth - Math.max(0, d.cash ?? 0)));
   if (d.lender && loss > 0) chargeLenderLoss(s, d.lender, loss);
   d.debt = 0; d.cash = 0; d.loans = {}; d.stressMs = 0;
-  s.news.unshift({ q: s.month, kind: "warn", text: `${d.name}, land developer, has failed: ${money(debt)} owed${d.lender ? ` to ${d.lender}` : ""} against ${tracts} tracts and ${lots} unsold lots${loss > 0 ? `; the desk takes a ${money(loss)} loss` : ""}. Its land goes back on the market.` });
+  s.news.unshift({ q: s.month, kind: "warn", text: `${d.name}, land developer, has failed: ${money(debt)} owed${d.lender ? ` to ${d.lender}` : ""} against ${tracts} tracts and ${lots} unsold lots${loss > 0 ? `; lender loss ${money(loss)}` : ""}. Its land returns to the market.` });
 }
 
 function tickLandMarket(s: GameState, parcels: ParcelTable, bbls: string[]) {
@@ -502,7 +502,7 @@ function tickLandMarket(s: GameState, parcels: ParcelTable, bbls: string[]) {
     if (!mine || !base || !(mine.bid > Math.max(base.farm, c.rd.bid, playerOffer(s, c.rd.bbl)) * (1 + LAND_CLOSING))) continue;
     const talks = s.talks?.[c.rd.bbl];
     if (!buyTract(s, parcels, g, c.rd.bbl, Math.round(ask(c.rd)), mine)) continue;
-    if (talks) voidContract(s, parcels, c.rd.bbl, `${g.held[c.rd.bbl]} bought ${parcels[c.rd.bbl]?.address ?? c.rd.bbl} out from under you while you were negotiating, at ${money(ask(c.rd))}`);
+    if (talks) voidContract(s, parcels, c.rd.bbl, `${g.held[c.rd.bbl]} bought ${parcels[c.rd.bbl]?.address ?? c.rd.bbl} at ${money(ask(c.rd))} during your negotiation`);
     bought++;
     cands = cands.filter((x) => x.rd.bbl !== c.rd.bbl);
   }

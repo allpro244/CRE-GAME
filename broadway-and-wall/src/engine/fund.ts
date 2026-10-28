@@ -223,7 +223,7 @@ export function raiseFund(s: GameState): { s: GameState; err?: string } {
   // likewise fenced to `fund.cash` in `executePurchase`, for the same reason
   // from the other side.
   if (next.cash < gpCommit) {
-    return { s, err: `GP co-invest is ${money(gpCommit)} and you do not have it.` };
+    return { s, err: `GP co-invest is ${money(gpCommit)}; not enough cash.` };
   }
   // First close: call GP co-invest + ~40% of LP immediately into the vehicle;
   // rest sits uncalled. Shape: 30–50% reserve practice (rivals.ts).
@@ -583,7 +583,7 @@ export function tickFund(s: GameState): void {
     s.news.unshift({
       q: s.month, kind: "warn",
       text: `Your fund's life ends ${monthLabel(f.lifeEndM)} with ${deeds} building${deeds === 1 ? "" : "s"} still in the vehicle. `
-        + `The LPs are paid from sales; what is unsold at the end of any extension you buy in at NAV.`,
+        + `LPs are paid from sales; anything unsold after any extension you buy at NAV.`,
     });
   }
   if (s.month === f.lifeEndM) {
@@ -592,7 +592,7 @@ export function tickFund(s: GameState): void {
       text: `Your fund has reached the end of its life. Remaining vehicle cash is ${money(f.cash)}; `
         + (deeds > 0
           ? `${deeds} building${deeds === 1 ? "" : "s"} still to sell — the LPs grant a ${FUND_EXTENSION_M}-month extension, and anything unsold by ${monthLabel(f.lifeEndM + FUND_EXTENSION_M)} is bought in by you at NAV.`
-          : `LPs expect distributions. A sponsor who cannot finish does not raise the next one.`),
+          : `LPs expect distributions.`),
     });
   }
 
@@ -627,7 +627,7 @@ export function settleFund(s: GameState): void {
     s.news.unshift({
       q: s.month, kind: "warn",
       text: `The fund returned ${money(f.distributed)} against ${money(f.called)} called `
-        + `(${(dpi * 100).toFixed(0)}¢ on the dollar). It goes on your record with every investor, and they will read it for a decade.`,
+        + `(${(dpi * 100).toFixed(0)}¢ on the dollar). Recorded on your investor track record.`,
     });
   } else {
     s.news.unshift({

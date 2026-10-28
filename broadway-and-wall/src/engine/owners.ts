@@ -824,10 +824,10 @@ export function tickHolders(
     s.news.unshift({
       q: s.month, kind: "event",
       text: h.kind === "estate"
-        ? `${h.name} is settled and nothing is coming to market: the heirs are keeping the book as ${firm.name} — `
-          + `${book.length} building${book.length === 1 ? "" : "s"} — and taking an office. The market has a new landlord with an old name.`
+        ? `${h.name} estate settled; no sales. Heirs keep ${book.length} building${book.length === 1 ? "" : "s"} `
+          + `as ${firm.name}, a new competitor.`
         : `${h.name} split, and one side bought the other out: ${firm.name} keeps all ${book.length} building${book.length === 1 ? "" : "s"} `
-          + `and is said to be looking for more. A holder has become a competitor.`,
+          + `and is looking to buy more. New competitor.`,
     });
     return { bbls: [], distress: false, kind: h.kind };
   }

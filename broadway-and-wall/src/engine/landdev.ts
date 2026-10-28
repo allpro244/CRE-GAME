@@ -176,11 +176,11 @@ export function entitleQuote(s: GameState, parcels: ParcelTable, bbl: string, lo
 }
 
 export function fileEntitlement(s: GameState, parcels: ParcelTable, bbl: string, lotSf = 7_500, planned?: number): { s: GameState; err?: string; msg?: string } {
-  if (!s.holdings[bbl]) return { s, err: "You have to own the tract to ask the board for anything." };
+  if (!s.holdings[bbl]) return { s, err: "You must own the tract to apply." };
   const p = plattable(s, parcels, bbl);
   if ("err" in p) return { s, err: p.err };
   if (s.rezoned?.[bbl]) return { s, err: "The board has already rezoned it." };
-  if (s.entitlementApps?.[bbl]) return { s, err: "The application is already in front of the board." };
+  if (s.entitlementApps?.[bbl]) return { s, err: "Application already pending." };
   const refused = s.rezoneRefusedM?.[bbl];
   if (refused !== undefined && s.month - refused < REFILE_BAR_M) {
     return { s, err: `The board refused this rezoning ${monthLabel(refused)}; a similar application cannot come back before ${monthLabel(refused + REFILE_BAR_M)}.` };
@@ -188,7 +188,7 @@ export function fileEntitlement(s: GameState, parcels: ParcelTable, bbl: string,
   const q = entitleQuote(s, parcels, bbl, lotSf, planned);
   if (!q) return { s, err: "The tract is too small to plat." };
   const room = spendable(s, parcels);
-  if (room.total < q.cost) return { s, err: `The application runs ${money(q.cost)} and you can raise ${money(room.total)}.` };
+  if (room.total < q.cost) return { s, err: `Application costs ${money(q.cost)}; available ${money(room.total)}.` };
   const next = cloneState(s);
   fundAndBook(next, parcels, q.cost, "dev", { bbl });
   next.holdings[bbl].costBasis += q.cost;
@@ -217,7 +217,7 @@ function decideEntitlements(s: GameState, parcels: ParcelTable) {
       s.news.unshift({ q: s.month, kind: "deal", text: `The board rezoned ${rec?.address ?? app.bbl} ${rz.zone}, ${app.lots} lots approved. Plat it when you are ready to build the streets.` });
     } else {
       s.rezoneRefusedM = { ...(s.rezoneRefusedM ?? {}), [app.bbl]: s.month };
-      s.news.unshift({ q: s.month, kind: "warn", text: `The board refused the rezoning at ${rec?.address ?? app.bbl}. The fees are spent; it is still a farm, and a similar application cannot be heard again for ${REFILE_BAR_M} months.` });
+      s.news.unshift({ q: s.month, kind: "warn", text: `The board refused the rezoning at ${rec?.address ?? app.bbl}. Fees lost; still zoned agricultural. No similar application for ${REFILE_BAR_M} months.` });
     }
   }
   if (!Object.keys(apps).length) delete s.entitlementApps;
@@ -248,15 +248,15 @@ export function startPlat(s: GameState, parcels: ParcelTable, bbl: string, lots:
   const p = plattable(s, parcels, bbl);
   if ("err" in p) return { s, err: p.err };
   const rz = s.rezoned?.[bbl];
-  if (!rz) return { s, err: "It is still zoned for farming. The board has to rezone it before you can cut it into lots." };
+  if (!rz) return { s, err: "Still zoned agricultural. Rezone before platting." };
   if (s.plats?.[bbl]) return { s, err: "The streets are already going in." };
-  if (h.loan) return { s, err: "Pay off the loan on the tract first: a lender's lien on a farm does not follow it into three hundred lots." };
-  if (h.sale) return { s, err: "It is listed for sale. Take it off the market before you build streets on it." };
+  if (h.loan) return { s, err: "Pay off the loan on the tract first." };
+  if (h.sale) return { s, err: "It is listed for sale. Withdraw the listing first." };
   const area = lots.reduce((t, l) => t + l.a, 0);
   if (lots.length < 2 || !(area > 0) || area > p.rec.lotArea * 1.001) return { s, err: "That plat does not fit the tract." };
   const q = platQuote(s, lots, rz.lotSf, parcels, bbl);
   const room = spendable(s, parcels);
-  if (room.total < q.cost) return { s, err: `The streets, pipes and impact fees run ${money(q.cost)} and you can raise ${money(room.total)}.` };
+  if (room.total < q.cost) return { s, err: `Site work and impact fees cost ${money(q.cost)}; available ${money(room.total)}.` };
   const next = cloneState(s);
   fundAndBook(next, parcels, q.cost, "dev", { bbl });
   next.holdings[bbl].costBasis += q.cost;
@@ -404,7 +404,7 @@ function completePlats(s: GameState, parcels: ParcelTable, bbls: string[]) {
     }
     recordPropertyEvent(s, plat.parent, { kind: "planning", amount: plat.cost, outcome: `Platted into ${plat.lots.length} lots` });
     // a land developer's plat (growth.ts) is the street's news, filed there
-    if (parentH) s.news.unshift({ q: s.month, kind: "deal", text: `The streets are in at ${parent?.address ?? plat.parent}: ${plat.lots.length} finished lots, each its own deed. Build on them, or sell them to the street.` });
+    if (parentH) s.news.unshift({ q: s.month, kind: "deal", text: `The streets are in at ${parent?.address ?? plat.parent}: ${plat.lots.length} finished lots, each its own deed. Build on them or sell them.` });
   }
 }
 

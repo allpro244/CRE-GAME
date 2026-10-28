@@ -378,15 +378,15 @@ export function openFacility(
   if (pool.length < FACILITY_MIN_ASSETS) return { s, err: `Pledge at least ${FACILITY_MIN_ASSETS} buildings.` };
   const quotes = facilityQuotes(s, parcels, pool);
   const qt = quotes.find((x) => x.productId === productId);
-  if (!qt) return { s, err: "That desk does not write facilities." };
+  if (!qt) return { s, err: "That lender does not offer facilities." };
   if (!qt.available) return { s, err: qt.why ?? "That desk will not quote this pool." };
   const draw = Math.floor(qt.base * Math.max(0.1, Math.min(1, lev)));
-  if (draw < FACILITY_MIN_LOAN) return { s, err: "Draw at least $5M or there is nothing to document." };
+  if (draw < FACILITY_MIN_LOAN) return { s, err: "Minimum draw is $5M." };
   const points = Math.round(draw * qt.points);
   const fees = Math.round(draw * 0.01) + points;
   const cost = qt.payoff + qt.penalties + fees;
   if (draw + s.cash < cost) {
-    return { s, err: `The proceeds do not clear the existing paper — ${money((cost - draw))} short after ${money(qt.penalties)} of prepayment penalties.` };
+    return { s, err: `Proceeds do not repay existing loans: ${money((cost - draw))} short after ${money(qt.penalties)} prepayment penalties.` };
   }
   const next: GameState = cloneState(s);
   const replacing = !!next.facility;
@@ -444,10 +444,10 @@ export function openFacility(
   else if (cashOut < 0) logBooks(next, "debtSvc", -cashOut);
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `${qt.lender} has ${replacing ? "refinanced the book with" : "papered"} a $${(draw / 1e6).toFixed(1)}M facility across ${pool.length} buildings at `
+    text: `Facility ${replacing ? "refinanced" : "closed"} · ${qt.lender} · $${(draw / 1e6).toFixed(1)}M across ${pool.length} buildings at `
       + `${qt.ratePct.toFixed(2)}% — ${qt.quality.why}. `
-      + (qt.payoff > 0 ? `$${(qt.payoff / 1e6).toFixed(1)}M of existing paper repaid` + (qt.penalties > 0 ? ` and ${money(qt.penalties)} of penalties to break it. ` : ". ") : "")
-      + `The pool is crossed: every deed in it stands behind the whole balance, and you have signed personally.`,
+      + (qt.payoff > 0 ? `$${(qt.payoff / 1e6).toFixed(1)}M of existing loans repaid` + (qt.penalties > 0 ? `, ${money(qt.penalties)} prepayment penalties. ` : ". ") : "")
+      + `Cross-collateralized, with your personal guarantee.`,
   });
   return { s: next };
 }
@@ -498,9 +498,9 @@ export function releaseFromFacility(s: GameState, parcels: ParcelTable, bbl: str
   if (room.total < price) {
     return {
       s,
-      err: `The release price is ${money(price)} and you can raise `
-        + `${money(room.total)} — ${money(room.cash)} of cash and `
-        + `${money(room.line)} on the line.`,
+      err: `Facility release price is ${money(price)}; available `
+        + `${money(room.total)} (${money(room.cash)} cash, `
+        + `${money(room.line)} on the line).`,
     };
   }
   const next: GameState = cloneState(s);
@@ -511,8 +511,8 @@ export function releaseFromFacility(s: GameState, parcels: ParcelTable, bbl: str
   const rec = resolveRec(parcels, next, bbl);
   next.news.unshift({
     q: next.month, kind: "info",
-    text: `Released ${rec?.address ?? bbl} from the facility for ${money(paid)} — `
-      + `${Math.round((RELEASE_PREMIUM - 1) * 100)}% over its allocated share. Balance $${(nf.balance / 1e6).toFixed(1)}M.`,
+    text: `Facility release · ${rec?.address ?? bbl} · ${money(paid)} `
+      + `(allocated share + ${Math.round((RELEASE_PREMIUM - 1) * 100)}%). Balance $${(nf.balance / 1e6).toFixed(1)}M.`,
   });
   if (nf.balance <= 0) {
     delete next.facility;
@@ -615,10 +615,10 @@ export function refinanceFacility(
   const pool = f.bbls.filter((b) => s.holdings[b]);
   const quotes = facilityQuotes(s, parcels, pool);
   const qt = quotes.find((x) => x.productId === productId);
-  if (!qt) return { s, err: "That desk does not write facilities." };
+  if (!qt) return { s, err: "That lender does not offer facilities." };
   if (!qt.available) return { s, err: qt.why ?? "That desk will not quote this pool today." };
   const draw = Math.floor(qt.base * Math.max(0.1, Math.min(1, lev)));
-  if (draw < FACILITY_MIN_LOAN) return { s, err: "Draw at least $5M or there is nothing to document." };
+  if (draw < FACILITY_MIN_LOAN) return { s, err: "Minimum draw is $5M." };
   const fees = facilityFees(draw, qt.points);
   const need = fees + Math.max(0, f.balance - draw);
   const room = spendable(s, parcels);
@@ -626,8 +626,8 @@ export function refinanceFacility(
     return {
       s,
       err: `Closing costs ${money(need)} — ${money(fees)} of fees and points`
-        + (f.balance > draw ? ` plus a ${money((f.balance - draw))} paydown, because ${qt.lender} will only write $${(draw / 1e6).toFixed(1)}M against a $${(f.balance / 1e6).toFixed(1)}M balance` : "")
-        + `. You can raise ${money(room.total)}.`,
+        + (f.balance > draw ? ` plus a ${money((f.balance - draw))} paydown (${qt.lender} sizes $${(draw / 1e6).toFixed(1)}M vs $${(f.balance / 1e6).toFixed(1)}M balance)` : "")
+        + `. Available ${money(room.total)}.`,
     };
   }
   const terms = facilityDrawTerms(draw, qt.ratePct, qt.ioM, qt.amortYears, qt.quality.noi, qt.quality.value);
@@ -636,11 +636,11 @@ export function refinanceFacility(
   logBooks(next, "debtSvc", r.spent);
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `${qt.lender} has refinanced the facility — $${(draw / 1e6).toFixed(1)}M across ${pool.length} buildings at `
-      + `${qt.ratePct.toFixed(2)}% for ${Math.round(qt.termM / 12)} years, against ${r.oldRate.toFixed(2)}% on the old paper. `
-      + `$${Math.round(terms.monthlyPmt / 1000)}K a month, ${terms.dscr.toFixed(2)}x covered against a ${qt.minDSCR.toFixed(2)}x covenant`
-      + (r.cashOut > 0 ? `, and ${money(r.cashOut)} of it came out as cash.` : ".")
-      + ` The pool stays crossed and the guarantee stays signed.`,
+    text: `Facility refinanced · ${qt.lender} · $${(draw / 1e6).toFixed(1)}M across ${pool.length} buildings at `
+      + `${qt.ratePct.toFixed(2)}% for ${Math.round(qt.termM / 12)} years (was ${r.oldRate.toFixed(2)}%). `
+      + `$${Math.round(terms.monthlyPmt / 1000)}K/month, ${terms.dscr.toFixed(2)}x DSCR vs ${qt.minDSCR.toFixed(2)}x covenant`
+      + (r.cashOut > 0 ? `, ${money(r.cashOut)} cash out.` : ".")
+      + ` Still cross-collateralized and guaranteed.`,
   });
   return {
     s: next,
@@ -719,9 +719,9 @@ export function repayFacility(
   const room = parcels ? spendable(s, parcels, { allowLoc: useLine }).total : Math.floor(Math.max(0, s.cash));
   if (want <= 0 || room <= 0) return { s, err: "Nothing to pay with." };
   if (f.accelM !== undefined && want < f.balance) {
-    return { s, err: "An accelerated facility is only settled whole — repay the full balance or refinance it with another desk." };
+    return { s, err: "Accelerated facility: repay the full balance or refinance with another lender." };
   }
-  if (room < want) return { s, err: `That needs ${money(want)} and you can raise ${money(room)}.` };
+  if (room < want) return { s, err: `Needs ${money(want)}; available ${money(room)}.` };
   const next: GameState = cloneState(s);
   let pay: number;
   if (parcels) {
@@ -738,8 +738,8 @@ export function repayFacility(
     next.news.unshift({
       q: next.month, kind: "deal",
       text: wasAccel
-        ? "The accelerated facility is paid off before the receiver could sell. Every deed in the pool is yours and unencumbered."
-        : "The facility is repaid in full. Every deed in the pool is unencumbered again.",
+        ? "Accelerated facility repaid before the receiver sale. All pledged buildings unencumbered."
+        : "Facility repaid in full. All pledged buildings unencumbered.",
     });
   } else {
     // Re-test now: a paydown that clears the covenant should say so this
@@ -750,7 +750,7 @@ export function repayFacility(
       && (m.dscr === null || m.dscr >= f2.minDSCR) && (m.ltv === null || m.ltv <= f2.maxLTV)) {
       delete f2.breachedSince;
       if (f2.noticedM === undefined) delete f2.sweep;
-      next.news.unshift({ q: next.month, kind: "deal", text: `Paid ${money(pay)} into the facility and it is back inside its covenants. The sweep is lifted.` });
+      next.news.unshift({ q: next.month, kind: "deal", text: `Facility paydown ${money(pay)}; covenants restored, cash sweep lifted.` });
     }
   }
   return { s: next };
@@ -809,8 +809,8 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
     f.breachedSince ??= q;
     s.news.unshift({
       q, kind: "info",
-      text: `${f.lender} has withdrawn the acceleration — the pool is current, and a coverage miss on a current loan `
-        + `traps the cash flow; it does not hand the buildings to a receiver. The sweep stays on until the covenant is cured.`,
+      text: `${f.lender} withdrew the acceleration; payments are current. `
+        + `Cash sweep stays on until the covenant is cured.`,
     });
   }
   if (f.accelM !== undefined) return accelerate(s, parcels);
@@ -864,8 +864,8 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
       if (f.arrearsMs === 3) {
         s.news.unshift({
           q, kind: "warn",
-          text: `Three months of short facility payments — ${f.lender} has put the pool into default. `
-            + `Cash flow is swept and you have ${FACILITY_CURE_M} months to bring it current or they accelerate.`,
+          text: `Facility default · ${f.lender}: three months of short payments. `
+            + `Cash flow swept; ${FACILITY_CURE_M} months to cure before acceleration.`,
         });
       }
     } else {
@@ -877,8 +877,8 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
       s.news.unshift({
         q, kind: "warn",
         text: `The facility payment came up ${dollars(unpaid)} short — month ${f.arrearsMs} of `
-          + `${f.lender}'s cheque unpaid, and the shortfall is on the balance at ${f.ratePct.toFixed(2)}%. `
-          + `A third month puts all ${f.bbls.length} buildings into default with the cash flow swept.`,
+          + `arrears to ${f.lender}; shortfall added to the balance at ${f.ratePct.toFixed(2)}%. `
+          + `A third month defaults all ${f.bbls.length} buildings with a cash sweep.`,
       });
     }
   } else {
@@ -924,7 +924,7 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
       // unencumbered, same as `repayFacility` says it is.
       if (f.balance <= 0) {
         delete s.facility;
-        s.news.unshift({ q, kind: "deal", text: "The facility is repaid in full. Every deed in the pool is unencumbered again." });
+        s.news.unshift({ q, kind: "deal", text: "Facility repaid in full. All pledged buildings unencumbered." });
         return out;
       }
     }
@@ -936,12 +936,12 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
       f.sweep = true;
       s.news.unshift({
         q, kind: "warn",
-        text: `${f.lender} has called a default on the facility — `
+        text: `Facility covenant default · ${f.lender}: `
           + (m.dscr !== null && m.dscr < f.minDSCR
-            ? `coverage is ${m.dscr.toFixed(2)}x against a ${f.minDSCR.toFixed(2)}x covenant. `
-            : `leverage is ${((m.ltv ?? 0) * 100).toFixed(0)}% against a ${(f.maxLTV * 100).toFixed(0)}% covenant. `)
-          + `Every building in the pool is swept — surplus cash flow goes to principal until the test passes. Pay it down to cure it now. `
-          + `This is what crossed means.`,
+            ? `DSCR ${m.dscr.toFixed(2)}x vs ${f.minDSCR.toFixed(2)}x covenant. `
+            : `LTV ${((m.ltv ?? 0) * 100).toFixed(0)}% vs ${(f.maxLTV * 100).toFixed(0)}% covenant. `)
+          + `All pledged buildings' surplus cash swept to principal until it passes. `
+          + `Pay down to cure.`,
       });
     } else if (q - f.breachedSince === FACILITY_CURE_M) {
       // A COVENANT MISS ON A CURRENT POOL DOES NOT ACCELERATE IT. This used to
@@ -957,8 +957,8 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
       // accelerate; those are defaults, not tests.
       s.news.unshift({
         q, kind: "warn",
-        text: `A year in breach on the facility and ${f.lender} is still sweeping every building's cash flow into principal. `
-          + `They will not accelerate while the payments are current — cure it with a paydown, refinance, or let the sweep do it slowly.`,
+        text: `Facility in breach for a year; ${f.lender} still sweeping cash flow to principal. `
+          + `No acceleration while payments are current. Cure with a paydown or refinance.`,
       });
     }
   } else if (f.breachedSince !== undefined && (f.arrearsMs ?? 0) === 0) {
@@ -969,8 +969,8 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
     s.news.unshift({
       q, kind: "deal",
       text: f.noticedM === undefined
-        ? "The facility is back inside its covenants and the sweep has been lifted."
-        : "The facility is back inside its covenants, but the maturity is still called and the pool is still swept.",
+        ? "Facility back within covenants; cash sweep lifted."
+        : "Facility back within covenants; maturity still called and cash still swept.",
     });
   }
 
@@ -1055,14 +1055,14 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
       const terms = facilityDrawTerms(rolled, renewal.ratePct, renewal.ioM, renewal.amortYears, renewal.quality.noi, renewal.quality.value);
       s.news.unshift({
         q, kind: "deal",
-        text: `${renewal.lender} has renewed the facility at maturity — the same ${dollars(rolled)} across `
+        text: `Facility renewed · ${renewal.lender} · ${dollars(rolled)} across `
           + `${f.bbls.length} buildings at ${renewal.ratePct.toFixed(2)}% for ${Math.round(renewal.termM / 12)} years `
           + `(was ${r.oldRate.toFixed(2)}%), ${dollars(r.spent)} of fees and points. `
-          + `${dollars(terms.monthlyPmt)} a month, ${terms.dscr.toFixed(2)}x covered against a `
+          + `${dollars(terms.monthlyPmt)}/month, ${terms.dscr.toFixed(2)}x DSCR vs `
           + `${renewal.minDSCR.toFixed(2)}x covenant, due ${monthLabel(f.maturityM)}. `
           + (wasCalled
-            ? "The called maturity is withdrawn and the sweep lifted."
-            : "A pool that covers its debt service gets renewed; that is what the payment history is for."),
+            ? "Maturity call withdrawn; sweep lifted."
+            : ""),
       });
       return out;
     }
@@ -1079,8 +1079,8 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
       delete s.facility;
       s.news.unshift({
         q, kind: "deal",
-        text: `The facility matured, no desk would refinance the pool, and you retired the `
-          + `${dollars(cleared)} out of firm liquidity. The deeds are clear.`,
+        text: `Facility matured with no refinance; repaid `
+          + `${dollars(cleared)} from firm liquidity. Buildings unencumbered.`,
       });
       return out;
     }
@@ -1096,25 +1096,25 @@ export function tickFacility(s: GameState, parcels: ParcelTable): number {
       f.sweep = true;
       s.news.unshift({
         q, kind: "warn",
-        text: `The facility matured with ${dollars(f.balance)} outstanding and no desk will refinance the whole of it — `
+        text: `Facility matured · ${dollars(f.balance)} outstanding, no full refinance — `
           + (base > 0
-            ? `today's market writes ${dollars(base)} against this pool, ${dollars(gap)} short. `
-            : `nobody will quote this pool at all today. `)
-          + `${f.lender} has called the maturity and swept the pool's cash flow. You have ${FACILITY_CURE_M} months `
-          + `to refinance it, `
-          + (base > 0 ? `pay the balance down under ${dollars(base)}` : "pay it off")
-          + `, or sell buildings out of it — after that a receiver sells all ${f.bbls.length} at once, `
-          + `and the facility is recourse.`,
+            ? `market sizes ${dollars(base)}, ${dollars(gap)} short. `
+            : `no lender quoting. `)
+          + `${f.lender} called the maturity and is sweeping cash flow. ${FACILITY_CURE_M} months `
+          + `to refinance, `
+          + (base > 0 ? `pay down below ${dollars(base)}` : "repay")
+          + `, or sell buildings; then a receiver sells all ${f.bbls.length}. `
+          + `Recourse.`,
       });
     } else if (q - f.noticedM >= FACILITY_CURE_M) {
       f.accelM = q;
       f.accelWhy = "maturity";
       s.news.unshift({
         q, kind: "warn",
-        text: `${FACILITY_CURE_M} months since ${f.lender} called the facility's maturity and ${dollars(f.balance)} is `
-          + `still outstanding`
-          + (base > 0 ? ` against a market that will write ${dollars(base)}` : ", with no desk quoting the pool")
-          + `. They have accelerated: a receiver is being appointed over all ${f.bbls.length} buildings.`,
+        text: `Facility accelerated · ${f.lender} · ${dollars(f.balance)} `
+          + `outstanding ${FACILITY_CURE_M} months after the maturity call`
+          + (base > 0 ? ` (market sizes ${dollars(base)})` : ", no lender quoting")
+          + `. Receiver appointed over all ${f.bbls.length} buildings.`,
       });
       return out;
     }
@@ -1177,10 +1177,10 @@ function accelerate(s: GameState, parcels: ParcelTable): number {
   }
   s.news.unshift({
     q, kind: "warn",
-    text: `The receiver has sold the pool. ${taken.length} buildings gone for $${(gross / 1e6).toFixed(1)}M against a `
+    text: `Receiver sale · facility pool · ${taken.length} buildings for $${(gross / 1e6).toFixed(1)}M vs `
       + `$${(f.balance / 1e6).toFixed(1)}M balance`
-      + (surplus > 0 ? `, and ${money(surplus)} came back to you.` : ` — nothing came back.`)
-      + (f.recourse ? " The facility was recourse, so what it did not cover follows you." : ""),
+      + (surplus > 0 ? `; surplus to you ${money(surplus)}.` : `; no surplus.`)
+      + (f.recourse ? " Recourse: any deficiency is yours." : ""),
   });
   // Recourse means the shortfall is yours, not the lender's problem.
   const short = Math.max(0, f.balance - Math.max(0, gross - costs));

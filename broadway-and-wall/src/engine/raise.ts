@@ -124,7 +124,7 @@ export function cancelRaise(s: GameState, bbl: string): { s: GameState; err?: st
   if (!s.raises?.[bbl]) return { s, err: "No raise open on that lot." };
   const next = cloneState(s);
   delete next.raises![bbl];
-  next.news.unshift({ q: next.month, kind: "info", text: "You pulled the raise. The counsel's bill stands; the soft circles go back to their owners." });
+  next.news.unshift({ q: next.month, kind: "info", text: "Raise withdrawn. Legal costs are sunk; soft commitments released." });
   return { s: next };
 }
 

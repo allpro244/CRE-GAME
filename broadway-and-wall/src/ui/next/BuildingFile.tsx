@@ -400,7 +400,7 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
       const bids = (h.sale.bids ?? []).filter((b) => !b.dropped);
       verbs.push({ label: "Delist", run: () => st.delistSale(bbl) });
       verbs.push({ label: "Reprice", primary: !bids.length, run: () => { st.reprice(bbl, n(h.sale!.ask)); setAmt(null); } });
-      if (bids.length) verbs.push({ label: `Take ${usd(bids[0].price)}`, primary: true, run: () => st.takeBid(bbl, 0) });
+      if (bids.length) verbs.push({ label: `Take ${usd(bids[0].price)}`, primary: true, run: () => st.takeBid(bbl, 0, bids[0].name) });
       return <ActionFooter input={amount(h.sale.ask)} inputAt={verbs.length - (bids.length ? 2 : 1)} verbs={verbs} />;
     }
     verbs.push({ label: "Renovate", run: () => st.renovate(bbl) });

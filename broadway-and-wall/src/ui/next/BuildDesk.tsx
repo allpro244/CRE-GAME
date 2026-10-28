@@ -193,6 +193,9 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
             <Row k="Size">
               <Slider label="Floors" value={floors} min={1} max={Math.max(1, d.top)} step={1} onChange={setSize}
                 format={() => `${floors} fl${plan ? ` · ${sf(plan.sf)} · ${Math.round(cov * 100)}% lot` : ""}`} />
+              {/* THE ENVELOPE IS FULL (owner: "the sqft stops growing"): past the
+                  district's FAR, more floors only slim the floorplate */}
+              {plan && plan.far >= plan.farMax - 0.05 && <div className="bd-terms" style={{ paddingLeft: 0 }}>FAR max {plan.farMax.toFixed(1)} — taller only slims the floorplate</div>}
             </Row>
           )}
           <Row k="Tier">

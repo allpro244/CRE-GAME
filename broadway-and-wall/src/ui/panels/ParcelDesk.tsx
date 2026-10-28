@@ -662,7 +662,12 @@ function ParcelPanelInner({
           <div className="hint">
             <div style={{ cursor: "pointer" }}
               title="Open this owner's balance sheet and income statement on the register."
-              onClick={() => { openViewOn("players", o.operator ? "street" : "owners"); useStore.getState().setPage("players"); }}>
+              onClick={() => {
+                openViewOn("players", o.operator ? "street" : "owners");
+                // a firm's name opens that firm (owner, Oct 2026), not the list
+                if (o.operator) useStore.getState().openFirm(o.id);
+                else useStore.getState().setPage("players");
+              }}>
               Owned by <strong>{o.name}</strong>
               <span className="dim"> · {o.operator && o.style ? STYLE_WORD[o.style] ?? o.style : o.kind}</span>
               {o.book.length > 1 && <span> — {o.book.length} deeds in town</span>}.

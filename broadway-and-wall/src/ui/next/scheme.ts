@@ -15,7 +15,7 @@
  * groundbreakPurse, siteDebtAtGroundbreak, takeoutHedge*. Nothing is
  * re-derived.
  */
-import type { BuildingDesign, DevDraft, DevUse, GameState, UseMix } from "@/engine/types";
+import type { BuildingDesign, Contract, DevDraft, DevUse, GameState, UseMix } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import {
   planDevelopment, maxFloorsFor, maxCoverageFor, MIN_COVERAGE, maxRetailShare, zoneUseBar, devMix,
@@ -34,12 +34,12 @@ export const LEVERAGE = [0, 0.5, 1] as const;
 
 type Draft = Partial<DevDraft>;
 
-function mixFor(use: DevUse, floors: number): UseMix | undefined {
+function mixFor(use: DevUse, floors: number, split: { retail: number; office: number; multifamily: number } = MIXED): UseMix | undefined {
   if (use !== "mixed") return undefined;
   const cap = Math.max(0, Math.floor(maxRetailShare(floors) * 100));
-  const retail = Math.min(MIXED.retail, cap);
-  const rest = MIXED.office + MIXED.multifamily;
-  const office = Math.round((MIXED.office * (100 - retail)) / rest);
+  const retail = Math.min(split.retail, cap);
+  const rest = Math.max(1, split.office + split.multifamily);
+  const office = Math.round((split.office * (100 - retail)) / rest);
   return { retail: retail / 100, office: office / 100, multifamily: (100 - retail - office) / 100 };
 }
 
@@ -92,10 +92,12 @@ export function deskScheme(game: GameState, parcels: ParcelTable, bbl: string, o
   const prospect = game.btsProspects?.[bbl];
   const bts = prospect?.use === use && !product ? prospect : undefined;
   const form = design.form ? { retained: design.formRetained ?? 1, skin: design.formSkin ?? 1 } : undefined;
-  const custom = { mix: mixFor(use, floors), bts, groundRetail, form, ...(product ? { product: product.key as ProductKey } : {}) };
-  const planMax = planDevelopment(game, parcels, bbl, use, floors, cov, "gmp", undefined, custom, bank, spec);
+  // the contract and the mixed stack are the player's (More, on the desk)
+  const contract: Contract = draft.contract ?? "gmp";
+  const custom = { mix: mixFor(use, floors, draft.split), bts, groundRetail, form, ...(product ? { product: product.key as ProductKey } : {}) };
+  const planMax = planDevelopment(game, parcels, bbl, use, floors, cov, contract, undefined, custom, bank, spec);
   const ltc = planMax ? planMax.ltcMax * ltcWant : undefined;
-  const plan = planMax ? planDevelopment(game, parcels, bbl, use, floors, cov, "gmp", ltc, custom, bank, spec) : null;
+  const plan = planMax ? planDevelopment(game, parcels, bbl, use, floors, cov, contract, ltc, custom, bank, spec) : null;
   const bar = zoneUseBar(rec, use, game.econ, use === "mixed" ? devMix("mixed", custom.mix) : undefined, floors);
 
   // THE CHEQUE, AS THE ENGINE ASKS IT: equity, points, the hedge the lender
@@ -120,10 +122,10 @@ export function deskScheme(game: GameState, parcels: ParcelTable, bbl: string, o
     : game.raises?.[bbl] ? "A raise is open on this lot"
     : short > 0 ? `Short ${Math.round(short / 1000).toLocaleString()}K`
     : null;
-  const commitArgs = [use, floors, cov, "gmp", ltc, { ...custom, design, takeout }, plan?.lender ?? bank, spec] as const;
+  const commitArgs = [use, floors, cov, contract, ltc, { ...custom, design, takeout }, plan?.lender ?? bank, spec] as const;
   return {
     rec, draft, use, legal, prods, product, floors, top, cov, spec, ltcWant, design, plan, planMax, bar, prospect: bts,
-    siteDebt, takeout, hedge, need, have, short, worth, profit, quote, quotes, bank, why, purse, commitArgs,
+    siteDebt, takeout, hedge, need, have, short, worth, profit, quote, quotes, bank, why, purse, commitArgs, contract, groundRetail,
   };
 }
 export type DeskScheme = ReturnType<typeof deskScheme>;

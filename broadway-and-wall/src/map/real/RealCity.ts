@@ -8548,6 +8548,14 @@ export class RealCityLayer {
   // ALWAYS AFTERNOON. The game has no night (the owner: "absolutely no
   // nighttime in this game"): one calibrated hour, the month owning only the
   // sun's angle and the season.
+  /** The diorama look (setLook): a brighter, softer, bluer fill and a lighter pastel haze. */
+  private toy = true;
+  setLook(diorama: boolean) {
+    if (this.defer("setLook", () => this.setLook(diorama))) return;
+    this.toy = diorama;
+    this.post.toy = diorama ? 1 : 0;
+    this.applyLight();
+  }
   private applyLight() {
     const sunK = 1 - this.overcast * 0.6;
     // SKYLINE_LOOK_PLAN step 2. A warm sun and a shadow side filled by the
@@ -8555,8 +8563,9 @@ export class RealCityLayer {
     // read as sunny. The ground bounce is warm (pavement and brick).
     this.sun.intensity = 3.25 * sunK;
     this.sun.color.setRGB(1, 0.88, 0.72);
-    this.hemi.intensity = 0.74 + this.overcast * 0.25;
-    this.hemi.color.setRGB(0.66, 0.78, 0.98);
+    // the toy city: shadows filled bright and blue, as a model under a soft lamp
+    this.hemi.intensity = (this.toy ? 0.98 : 0.74) + this.overcast * 0.25;
+    this.hemi.color.setRGB(this.toy ? 0.62 : 0.66, this.toy ? 0.77 : 0.78, this.toy ? 1.0 : 0.98);
     this.hemi.groundColor.setRGB(0.6, 0.5, 0.38);
     this.scene.environmentIntensity = 0.5;
     // snow lies on the roofs
@@ -8566,10 +8575,11 @@ export class RealCityLayer {
     // settled snow ~0.75, a touch blue; a thin cover lets the roof show through
     this.roofMat.color.setRGB(0.21 + this.snow * 0.5, 0.205 + this.snow * 0.53, 0.20 + this.snow * 0.58);
     for (const b of [...this.owned, ...this.selected]) this.refreshDeed(b);
-    if (this.renderer) this.renderer.toneMappingExposure = 0.82;
-    // the haze: sky blue, greyer under overcast
+    if (this.renderer) this.renderer.toneMappingExposure = this.toy ? 0.9 : 0.82;
+    // the haze: sky blue, greyer under overcast (the diorama's is a paler pastel)
     const oc = this.overcast;
     HAZE.hazeCol.value.setRGB(0.742 + (0.643 - 0.742) * oc, 0.818 + (0.694 - 0.818) * oc, 0.9 + (0.722 - 0.9) * oc);
+    if (this.toy) HAZE.hazeCol.value.lerp(new THREE.Color(0.86, 0.9, 0.97), 0.45);
     HAZE.hazeCap.value = 0.48 + oc * 0.25;
     // fair weather: a scatter of cumulus; as the sky fills in, more of it;
     // under a full overcast there is no direct sun left for a cloud to take

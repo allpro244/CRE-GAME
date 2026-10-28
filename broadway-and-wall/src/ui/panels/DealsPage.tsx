@@ -38,27 +38,27 @@ export function TrayClear() {
   for (const r of rows) if (r.loi.kind === "renewal") byBldg.set(r.loi.bbl, [...(byBldg.get(r.loi.bbl) ?? []), r.loi.id]);
   const batches = [...byBldg.entries()].filter(([, ids]) => ids.length >= 2);
   const pile = (p: string) => rows.filter((r) => r.pile === p);
-  const label: Record<string, string> = { sign: "Signs as written", counter: "Countered to your number", pass: "Passed — cannot reach it", yours: "Stays with you" };
+  const label: Record<string, string> = { sign: "Sign", counter: "Counter", pass: "Pass", yours: "Your call" };
   const counts = (["sign", "counter", "pass", "yours"] as const).map((p) => `${pile(p).length} ${label[p].toLowerCase()}`).join(" · ");
   return (
     <div className="agent-bar" style={{ display: "block", marginBottom: 8 }}>
       <div className="btn-row" style={{ justifyContent: "space-between" }}>
         <div>
-          <div className="agent-title">{rows.length} letters on your desk</div>
+          <div className="agent-title">{rows.length} LOIs</div>
           <div className="agent-sub">{counts}</div>
         </div>
         <div className="btn-row">
           <button className="btn" onClick={() => setOpen((o) => !o)}>{open ? "Hide" : "Preview"}</button>
           <button className="btn btn-buy" onClick={() => { useStore.getState().clearTray(skip); setSkip([]); setOpen(false); }}>
-            Clear the tray against my terms
+            Apply leasing plan to all
           </button>
         </div>
       </div>
       {batches.map(([bbl, ids]) => (
         <div key={bbl} className="btn-row" style={{ marginTop: 6, justifyContent: "space-between" }}>
-          <span className="agent-sub">{parcels[bbl]?.address ?? bbl}: {ids.length} renewals waiting</span>
+          <span className="agent-sub">{parcels[bbl]?.address ?? bbl} · {ids.length} renewals</span>
           <button className="btn" onClick={() => useStore.getState().clearTray(rows.map((r) => r.loi.id).filter((id) => !ids.includes(id)))}>
-            Answer all {ids.length} to my terms
+            Apply plan to all {ids.length}
           </button>
         </div>
       ))}
@@ -73,8 +73,8 @@ export function TrayClear() {
               )}
               <span><b>{r.loi.name}</b> · {parcels[r.loi.bbl]?.address ?? r.loi.bbl} · {Math.round(r.loi.sf).toLocaleString()} sf
                 {r.neScore !== undefined ? ` · nets ${(r.neScore * 100).toFixed(0)}%` : ""}
-                {r.counter ? ` → ask $${r.counter.rentPsf.toFixed(2)}/sf, their package kept` : ""}
-                {r.why ? <span className="dim"> — {r.why}</span> : null}</span>
+                {r.counter ? ` → $${r.counter.rentPsf.toFixed(2)}/sf, same package` : ""}
+                {r.why ? <span className="dim"> · {r.why}</span> : null}</span>
             </label>
           ))}
         </div>
@@ -130,14 +130,13 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
         <b>{loi.name}</b> <span className="mono">{CREDIT_LABEL[loi.credit]}</span> · {loi.sector}
         {loi.kind === "renewal" && <span className="chip chip-renewal">RENEWAL</span>}
         {loi.kind === "expansion" && <span className="chip chip-expansion">EXPANSION</span>}
-        {loi.referred && <span className="chip" title="Your agent or renewal desk sent this back — it missed the auto-sign mandate.">REFERRED</span>}
-        {rivalsOnTour > 0 && <span className="chip" title="Competing for the same square feet — you can take only one, and countering one makes the others impatient.">{rivalsOnTour + 1} FOR THE SAME SPACE</span>}
+        {loi.referred && <span className="chip" title="Referred by your desk · outside plan limits">REFERRED</span>}
+        {rivalsOnTour > 0 && <span className="chip" title="Competing for the same space · only one can sign">{rivalsOnTour + 1} FOR SAME SPACE</span>}
         {final && <span className="chip">FINAL</span>}
       </div>
       {loi.kind === "expansion" && (
         <div className="hint">
-          Sitting tenant, <Gloss term="coterminous">coterminous</Gloss> with the lease they hold. Take the certain covenant, or hold the
-          space for a full-term tenant and risk them leaving at the roll.
+          Existing tenant · <Gloss term="coterminous">coterminous</Gloss> with current lease
         </div>
       )}
       <div className="loi-line mono">
@@ -147,7 +146,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
       </div>
       {prevRent !== undefined && (
         <div className="loi-line mono" style={{ color: (loi.openRentPsf ?? loi.rentPsf) >= prevRent ? "#3a7d46" : "#a8402e" }}>
-          paying ${prevRent.toFixed(2)} today → offering ${(loi.openRentPsf ?? loi.rentPsf).toFixed(2)}
+          current ${prevRent.toFixed(2)} → offer ${(loi.openRentPsf ?? loi.rentPsf).toFixed(2)}
           {" "}({(loi.openRentPsf ?? loi.rentPsf) >= prevRent ? "+" : ""}{((((loi.openRentPsf ?? loi.rentPsf) / prevRent) - 1) * 100).toFixed(1)}%)
         </div>
       )}
@@ -156,12 +155,12 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
           no way to see what your counter had actually achieved. */}
       {final && loi.askedRentPsf !== undefined && (
         <div className="loi-line mono" style={{ color: "#7a5c1e" }}>
-          you asked ${loi.askedRentPsf.toFixed(2)}
+          your counter ${loi.askedRentPsf.toFixed(2)}
           {loi.askedTiPsf !== undefined ? ` · TI $${loi.askedTiPsf}` : ""}
           {loi.askedFreeM ? ` · ${loi.askedFreeM}\u00a0mo\u00a0free` : ""}
           {loi.askedBumpPct !== undefined ? ` · ${loi.askedBumpPct.toFixed(2)}%/yr` : ""}
           {loi.openRentPsf !== undefined ? ` (opened $${loi.openRentPsf.toFixed(2)})` : ""}
-          {" "}→ their final ${(loi.counterRentPsf ?? loi.rentPsf).toFixed(2)}/sf
+          {" "}→ final ${(loi.counterRentPsf ?? loi.rentPsf).toFixed(2)}/sf
           {loi.counterTiPsf !== undefined ? ` · TI $${loi.counterTiPsf}` : ""}
           {(loi.counterFreeM ?? 0) > 0 ? ` · ${loi.counterFreeM}\u00a0mo\u00a0free` : ""}
           {loi.counterBumpPct !== undefined ? ` · ${loi.counterBumpPct.toFixed(2)}%/yr` : ""}
@@ -175,7 +174,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
         {!final && Math.abs(theirNe - nowNe) > 0.05 ? ` · opened NE $${theirNe.toFixed(2)}` : ""}
       </div>
       <div className="loi-line mono dim">
-        cash to sign {usd(cost)} net of the deposit · the broker{h?.broker ? "'s 6% exclusive" : "'s commission"} is paid when you have it · answer by {monthLabel(loi.expiresM - 1)}
+        cash to sign {usd(cost)} net of deposit · {h?.broker ? "6% exclusive broker fee" : "broker commission"} deferred · expires {monthLabel(loi.expiresM - 1)}
       </div>
       {(() => {
         // The desk's one line on the letter — same helpers as the lines
@@ -183,7 +182,7 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
         const read = loiRead(game, parcels, loi);
         return read ? (
           <div className="advisor-line">
-            {read} <span className="advisor-desk">— {leasingDeskName(game, loi.bbl)}</span>
+            {read} <span className="advisor-desk">· {leasingDeskName(game, loi.bbl)}</span>
           </div>
         ) : null;
       })()}
@@ -201,13 +200,13 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
       {!countering && (
         <div className="btn-row">
           <button className="btn btn-buy" onClick={() => respondLoi(loi.id, "accept", short)}>
-            {final ? "Take their final" : "Accept"}
+            {final ? "Accept final" : "Accept"}
           </button>
           {!loi.countered && !final && (
             <button className="btn" onClick={() => { setInitial(undefined); setCountering(true); }}>Counter…</button>
           )}
           {!loi.countered && !final && (
-            <button className="btn" title="Open the counter at your own terms — the tenant's package, at the rent that reaches your number. Signs as written if it already does." onClick={myTerms}>
+            <button className="btn" title="Counter at your leasing plan's rent · signs if already met" onClick={myTerms}>
               My terms
             </button>
           )}
@@ -275,8 +274,8 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
       <button className="loi-addr" onClick={() => go(bbl)}>{useStore.getState().parcels?.[bbl]?.address ?? bbl}</button>
       <div className="loi-line mono">
         ask {usd(ask)}
-        {offer ? ` · they are at ${usd(offer.price)} · net ${usd(closeNet(offer.price))} if you take it` : ""}
-        {h?.sale?.mode === "marketed" ? " · marketed campaign" : ""}
+        {offer ? ` · offer ${usd(offer.price)} · net ${usd(closeNet(offer.price))}` : ""}
+        {h?.sale?.mode === "marketed" ? " · marketed" : ""}
         {/* THE NUMBER EVERY BUYER CONVERTS YOUR ASK INTO before they answer the
             phone. It was on the property card and not here, which is the one
             screen you actually work your sales from. */}
@@ -292,7 +291,7 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
           const cap = (noi / ask) * 100;
           const mkt = game.econ.capRate[(rec.class as BuiltClass)] ?? cap;
           return (
-            <> · asking a <b>{cap.toFixed(2)}%</b> cap
+            <> · <b>{cap.toFixed(2)}%</b> cap at ask
               <span className={cap < mkt - 0.4 ? " neg" : ""}> (market {mkt.toFixed(2)}%)</span>
             </>
           );
@@ -304,23 +303,23 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
             <b>{liveBids.length} bid{liveBids.length === 1 ? "" : "s"}</b>
             {" "}· best <b>{usd(liveBids[0].b.price)}</b> from {liveBids[0].b.name}
             {liveBids.length > 1 ? ` · second ${usd(liveBids[1].b.price)}` : ""}
-            {" "}· {((liveBids[0].b.price / Math.max(1, ask) - 1) * 100).toFixed(1)}% against your whisper
+            {" "}· {((liveBids[0].b.price / Math.max(1, ask) - 1) * 100).toFixed(1)}% vs whisper
           </div>
           <div className="btn-row">
             <button className="btn btn-buy" onClick={() => setAcceptConfirm({ bidIndex: liveBids[0].i })}>
               Take {liveBids[0].b.name} · {usd(liveBids[0].b.price)}
             </button>
-            <button className="btn" onClick={() => go(bbl)} title="Best-and-final, counters and the full list live on the property">
-              Open the list…
+            <button className="btn" onClick={() => go(bbl)} title="Best-and-final, counters, all bids">
+              All bids…
             </button>
           </div>
         </>
       ) : offer ? (
         <>
           <div className="loi-line mono">
-            {offer.retrade ? <b className="neg">retraded — </b> : null}
-            <b>{usd(offer.price)}</b> offered{offer.from ? ` by ${offer.from}` : ""} · good until {monthLabel(offer.expiresM)}
-            {" "}· {((offer.price / Math.max(1, ask) - 1) * 100).toFixed(1)}% against your ask
+            {offer.retrade ? <b className="neg">retraded · </b> : null}
+            <b>{usd(offer.price)}</b> offered{offer.from ? ` by ${offer.from}` : ""} · expires {monthLabel(offer.expiresM)}
+            {" "}· {((offer.price / Math.max(1, ask) - 1) * 100).toFixed(1)}% vs ask
           </div>
           {h && parcels && (() => {
             // The broker's one line: price against the mark and the basis,
@@ -328,7 +327,7 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
             const read = saleOfferRead(game, parcels, h, offer);
             return read ? (
               <div className="advisor-line">
-                {read} <span className="advisor-desk">— Your broker</span>
+                {read} <span className="advisor-desk">· Broker</span>
               </div>
             ) : null;
           })()}
@@ -338,7 +337,7 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
               no longer exists. Closing early is the one real choice. */}
           {offer.contract && !offer.held && (
             <div className="btn-row">
-              <span className="loi-line dim" style={{ margin: 0 }}>Under contract — it closes {monthLabel(offer.expiresM)} on its own.</span>
+              <span className="loi-line dim" style={{ margin: 0 }}>Under contract · closes {monthLabel(offer.expiresM)}</span>
               <button className="btn" onClick={() => setAcceptConfirm({})}>Close now · net {usd(closeNet(offer.price))}</button>
             </div>
           )}
@@ -363,13 +362,13 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
                 typedMax={counterBounds.typedMax}
                 editable="price"
                 onChange={setCounter}
-                format={(v) => `${usd(v)} · +${(((v / offer.price) - 1) * 100).toFixed(1)}% on their bid`}
+                format={(v) => `${usd(v)} · +${(((v / offer.price) - 1) * 100).toFixed(1)}% vs bid`}
                 marks={[
                   { at: Math.round(offer.price * 1.03), label: "+3%" },
                   { at: Math.round(offer.price * 1.08), label: "+8%" },
                   { at: ask, label: "ask" },
                 ]}
-                hint="Name any price above their bid. Well over appraisal and they may walk."
+                hint="Above their bid · far over appraisal and they may walk"
               />
               <div className="btn-row">
                 <button className="btn btn-buy" onClick={() => { counterSale(bbl, counter || suggested); setCountering(false); }}>
@@ -379,13 +378,13 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
               </div>
             </>
           )}
-          {offer.countered && <div className="loi-line dim">You have been back to them once. This number is the number.</div>}
+          {offer.countered && <div className="loi-line dim">Already countered · final.</div>}
         </>
       ) : (
         <div className="loi-line dim">
           {h?.sale?.callM !== undefined
-            ? `Book is out — offers due ${monthLabel(h.sale.callM)}.`
-            : "no offers yet"}
+            ? `OM out · offers due ${monthLabel(h.sale.callM)}`
+            : "no offers"}
         </div>
       )}
     </div>
@@ -432,7 +431,7 @@ export function DealsPage() {
     <div>
       {game.exchange && (
         <div className="hint exchange-clock">
-          ⏱ 1031 clock: buy for ≥ {usd(game.exchange.minPrice * 0.8)} by {monthLabel(game.exchange.deadlineM)} or {usd(game.exchange.deferredTax)} of deferred tax comes due.
+          ⏱ 1031: buy ≥ {usd(game.exchange.minPrice * 0.8)} by {monthLabel(game.exchange.deadlineM)} · else {usd(game.exchange.deferredTax)} tax due
         </div>
       )}
       <div className="btn-row" style={{ marginBottom: 10 }} role="tablist" aria-label="Deals desk">
@@ -460,18 +459,18 @@ export function DealsPage() {
           deals come from and offers the two doors that start one. */}
       {desk === "live" && quietDesk && (
         <section className="empty-desk">
-          <div className="empty-desk-title">Nothing on the desk</div>
+          <div className="empty-desk-title">No open deals</div>
           <div className="empty-desk-lines">
-            <div><b>You start a deal</b> by offering on a listing, or by asking the owner of any building you do not own — up to {MAX_TALKS} at once.</div>
-            <div><b>Tenants start one</b> by writing for vacant space in buildings you own. Their letters land here.</div>
-            <div><b>Brokers start one</b> by ringing with off-market files, once you have closed with them. Those sit on Marketplace.</div>
+            <div><b>Acquisitions:</b> offer on a listing or approach any owner · max {MAX_TALKS} at once</div>
+            <div><b>Leasing:</b> tenant LOIs for your vacant space</div>
+            <div><b>Off-market:</b> broker calls on Marketplace</div>
             {deskHoldsPen(game) && (() => {
               const t = deskMonthNow(game);
-              return <div className="dim">Your leasing desk holds the pen{t ? ` — this month ${t.signed} signed, ${t.passed} passed, ${t.referred} referred, ${t.walked} walked` : ""}. Nothing is waiting on you.</div>;
+              return <div className="dim">Leasing desk signing{t ? ` · this month ${t.signed} signed, ${t.passed} passed, ${t.referred} referred, ${t.walked} walked` : ""}</div>;
             })()}
           </div>
           <div className="btn-row">
-            <button className="btn btn-buy" onClick={() => setPage("market")}>Browse Marketplace →</button>
+            <button className="btn btn-buy" onClick={() => setPage("market")}>Marketplace →</button>
             {Object.keys(game.holdings).length > 0 && <button className="btn" onClick={() => setPage("leasing")}>Leasing plan →</button>}
           </div>
         </section>
@@ -486,33 +485,33 @@ export function DealsPage() {
           const committed = live.reduce((a, t) => a + (t.agreed ? (t.agreedPrice ?? t.theirPrice) : 0), 0);
           return (
             <>
-              <div className="page-section">On the table · {live.length} of {MAX_TALKS}</div>
+              <div className="page-section">Negotiations · {live.length} of {MAX_TALKS}</div>
               {live.length === 0 && (
-                <div className="hint">Nothing on the table. Open a negotiation from any listing — you can run {MAX_TALKS} at once.</div>
+                <div className="hint">None · max {MAX_TALKS}</div>
               )}
               {live.map((t) => (
                 <div key={t.bbl} className="hint" style={{ cursor: "pointer", marginBottom: 6 }} onClick={() => go(t.bbl)}>
                   <div>
                     <strong>{parcels[t.bbl]?.address ?? t.bbl}</strong>
                     {t.agreed ? (
-                      <> — agreed at <b className="mono">{usd(t.agreedPrice ?? t.theirPrice)}</b> with {t.sellerName},{" "}
-                        {usd(t.deposit ?? 0)} down. Fund it by <b>{monthLabel((t.closeByM ?? game.month + 1) - 1)}</b> or the deposit is theirs.</>
+                      <> · agreed <b className="mono">{usd(t.agreedPrice ?? t.theirPrice)}</b> · {t.sellerName} · {usd(t.deposit ?? 0)} deposit ·
+                        fund by <b>{monthLabel((t.closeByM ?? game.month + 1) - 1)}</b> or forfeit</>
                     ) : (
-                      <> — {t.sellerName} is at <b className="mono">{usd(t.theirPrice)}</b>, you are at {usd(t.yourPrice)}.{" "}
-                        {t.final ? "Their final word." : `Round ${t.round} of ${t.maxRounds}.`}</>
+                      <> · {t.sellerName} <b className="mono">{usd(t.theirPrice)}</b> · you {usd(t.yourPrice)} ·{" "}
+                        {t.final ? "final" : `round ${t.round} of ${t.maxRounds}`}</>
                     )}
                   </div>
                   <button className={"btn btn-sm" + (t.agreed ? " btn-buy" : "")}
                     style={{ marginTop: 5 }}
                     onClick={(e) => { e.stopPropagation(); go(t.bbl); }}>
-                    {t.agreed ? "Fund this acquisition →" : "Open negotiation →"}
+                    {t.agreed ? "Fund →" : "Open →"}
                   </button>
                 </div>
               ))}
               {committed > 0 && (
                 <div className={"hint" + (committed > game.cash * 4 ? " alarm" : "")}>
-                  {usd(committed)} of price agreed and not yet funded, against {usd(game.cash)} of cash.
-                  {committed > game.cash * 4 && " You have signed more than you can plausibly fund. One of these is going to cost you its deposit."}
+                  Agreed, unfunded: {usd(committed)} · cash {usd(game.cash)}
+                  {committed > game.cash * 4 && " · exceeds 4× cash"}
                 </div>
               )}
             </>
@@ -527,7 +526,7 @@ export function DealsPage() {
           if (!asks.length) return null;
           return (
           <>
-            <div className="page-section">Tenants asking · {asks.length}</div>
+            <div className="page-section">Tenant requests · {asks.length}</div>
             <div className="mini-list">
               {asks.map((a) => {
                 const rec = resolveRec(parcels, game, a.bbl);
@@ -536,31 +535,31 @@ export function DealsPage() {
                 return (
                   <div key={a.id} className="deal" style={{ marginBottom: 8 }}>
                     <div className="deal-head">
-                      {a.name}{yrsIn >= 8 ? ` · ${yrsIn} years in the building` : ""} · {rec?.address ?? a.bbl}
+                      {a.name}{yrsIn >= 8 ? ` · ${yrsIn} yrs tenancy` : ""} · {rec?.address ?? a.bbl}
                     </div>
                     {a.kind === "giveback" ? (
                       <div className="grid">
-                        <Row k="Their ask" v={`hand back ${sf(a.giveSf ?? 0)} of the ${sf(a.sf)} they hold — the headcount is gone`} strong />
-                        <Row k="Rent given up" v={`~${usd(Math.round(a.currentPsf * (a.giveSf ?? 0)))} / yr, and the space turns to make-ready`} />
-                        <Row k="If you decline" v="the lease stands — a business paying for empty floors fails at three times the rate" />
-                        <Row k="On the desk" v={`${monthsLeft} month${monthsLeft === 1 ? "" : "s"} — a lapse is a no`} bad={monthsLeft <= 1} />
+                        <Row k="Request" v={`give back ${sf(a.giveSf ?? 0)} of ${sf(a.sf)}`} strong />
+                        <Row k="Rent lost" v={`~${usd(Math.round(a.currentPsf * (a.giveSf ?? 0)))} / yr · space to make-ready`} />
+                        <Row k="If declined" v="lease stands · tenant default risk 3×" />
+                        <Row k="Expires" v={`${monthsLeft} month${monthsLeft === 1 ? "" : "s"} · lapse = decline`} bad={monthsLeft <= 1} />
                       </div>
                     ) : (
                       <div className="grid">
-                        <Row k="Their ask" v={`$${a.askPsf.toFixed(0)}/sf, down from $${a.currentPsf.toFixed(0)} · adds ${Math.round(a.addM / 12)} yrs of term`} strong />
+                        <Row k="Request" v={`$${a.currentPsf.toFixed(0)} → $${a.askPsf.toFixed(0)}/sf · +${Math.round(a.addM / 12)} yrs term`} strong />
                         <Row k="Rent forgone" v={`~${usd(Math.round((a.currentPsf - a.askPsf) * a.sf))} / yr on ${sf(a.sf)}`} />
-                        <Row k="If you decline" v="the paper stands — and a tenant running lean fails at three times the rate" />
-                        <Row k="On the desk" v={`${monthsLeft} month${monthsLeft === 1 ? "" : "s"} — a lapse is a no`} bad={monthsLeft <= 1} />
+                        <Row k="If declined" v="lease stands · tenant default risk 3×" />
+                        <Row k="Expires" v={`${monthsLeft} month${monthsLeft === 1 ? "" : "s"} · lapse = decline`} bad={monthsLeft <= 1} />
                       </div>
                     )}
                     <div className="modal-actions">
                       <button className="btn btn-buy" onClick={() => useStore.getState().answerAsk(a.id, "grant")}>
-                        {a.kind === "giveback" ? "Take the space back" : "Grant relief"}
+                        {a.kind === "giveback" ? "Accept give-back" : "Grant relief"}
                       </button>
                       <button className="btn" onClick={() => useStore.getState().answerAsk(a.id, "decline")}>
-                        {a.kind === "giveback" ? "Hold them to the lease" : "Hold the paper"}
+                        Decline
                       </button>
-                      <button className="btn" onClick={() => go(a.bbl)}>The building</button>
+                      <button className="btn" onClick={() => go(a.bbl)}>Open building</button>
                     </div>
                   </div>
                 );
@@ -577,25 +576,25 @@ export function DealsPage() {
           return (
             <>
         <div className="page-section">
-          Letters of intent · {desk.length}
-          {quiet ? " · referred by your desk" : ""}
+          LOIs · {desk.length}
+          {quiet ? " · referred" : ""}
         </div>
         {desk.length === 0 && (
           <div className="deal">
             <div className="hint">
               {quiet
                 ? (tally
-                  ? `Your desk has the book — this month ${tally.signed} signed, ${tally.passed} passed, ${tally.referred} referred, ${tally.walked} walked. Nothing waiting on you right now.`
-                  : "Your desk has the book — nothing referred back right now. They work the posted plan on Leasing; the quarterly digest lives there too.")
-                : "No tenant has written this month. Vacant space in high-demand buildings draws them."}
+                  ? `Desk this month: ${tally.signed} signed, ${tally.passed} passed, ${tally.referred} referred, ${tally.walked} walked`
+                  : "Desk signing · none referred")
+                : "No LOIs this month."}
             </div>
             {Object.keys(game.talks ?? {}).length > 0 ? null : Object.keys(game.holdings).length === 0 ? (
               <button className="btn btn-buy" onClick={() => useStore.getState().setPage("market")}>
-                Browse buildings in Marketplace →
+                Marketplace →
               </button>
             ) : (
               <button className="btn" onClick={() => useStore.getState().setPage("leasing")}>
-                Open Leasing plan →
+                Leasing plan →
               </button>
             )}
           </div>
@@ -616,7 +615,7 @@ export function DealsPage() {
             itself. What you asked, what they did, and what it was worth. */}
         {!!game.leaseReplies?.length && (
           <>
-            <div className="page-section" style={{ marginTop: 18 }}>Their answer · last {game.leaseReplies.length}</div>
+            <div className="page-section" style={{ marginTop: 18 }}>Counter results · last {game.leaseReplies.length}</div>
             <div className="mini-list">
               {game.leaseReplies.map((r, i) => {
                 const delta = (r.theirRentPsf - r.askedRentPsf) * r.sf;
@@ -633,10 +632,10 @@ export function DealsPage() {
                     </span>
                     <span className="neighbor-meta mono">
                       {r.outcome === "took"
-                        ? `took your $${r.askedRentPsf.toFixed(2)}/sf${r.askedFreeM ? ` / ${r.askedFreeM}\u00a0mo\u00a0free` : ""} — ${usd(r.askedRentPsf * r.sf)} a year on ${sf(r.sf)}`
+                        ? `accepted $${r.askedRentPsf.toFixed(2)}/sf${r.askedFreeM ? ` / ${r.askedFreeM}\u00a0mo\u00a0free` : ""} · ${usd(r.askedRentPsf * r.sf)}/yr on ${sf(r.sf)}`
                         : r.outcome === "walked"
-                          ? `walked. You asked $${r.askedRentPsf.toFixed(2)} into a $${r.marketPsf.toFixed(2)} market — ${sf(r.sf)} still empty`
-                          : `came back at $${r.theirRentPsf.toFixed(2)} against your $${r.askedRentPsf.toFixed(2)}${freeBit(r.askedFreeM, r.theirFreeM)} · ${delta >= 0 ? "+" : "−"}${usd(Math.abs(delta))} a year`}
+                          ? `walked · asked $${r.askedRentPsf.toFixed(2)} vs $${r.marketPsf.toFixed(2)} market · ${sf(r.sf)} vacant`
+                          : `countered $${r.theirRentPsf.toFixed(2)} vs your $${r.askedRentPsf.toFixed(2)}${freeBit(r.askedFreeM, r.theirFreeM)} · ${delta >= 0 ? "+" : "−"}${usd(Math.abs(delta))}/yr`}
                       {" · "}{monthLabel(r.m)}
                     </span>
                   </button>
@@ -648,14 +647,14 @@ export function DealsPage() {
         {/* An off-market approach that you set aside has to be findable, or
             "Not now" is the same as "never" — and a number an owner gave you is
             a live deal whether or not you looked at it today. */}
-        <div className="page-section" style={{ marginTop: 18 }}>Doors you knocked on · {calls.length}</div>
-        {calls.length === 0 && <div className="hint">Nothing open. Walk up to any building you do not own and ask.</div>}
+        <div className="page-section" style={{ marginTop: 18 }}>Your approaches · {calls.length}</div>
+        {calls.length === 0 && <div className="hint">None open.</div>}
         <div className="mini-list">
           {calls.map((c) => (
             <button key={c.bbl} className="neighbor" onClick={() => go(c.bbl)}>
               <span className="neighbor-addr">{parcels[c.bbl]?.address ?? c.bbl}</span>
               <span className="neighbor-meta">
-                {c.blind ? "make me an offer" : usd(c.ask!)} · lapses {monthLabel(c.lapseM)}
+                {c.blind ? "no ask" : usd(c.ask!)} · lapses {monthLabel(c.lapseM)}
               </span>
             </button>
           ))}
@@ -665,10 +664,7 @@ export function DealsPage() {
             second copy of it. */}
         {inbound.length > 0 && (
           <div className="hint" style={{ cursor: "pointer" }} onClick={() => useStore.getState().setPage("market")}>
-            <strong>{inbound.length}</strong> broker{inbound.length === 1 ? " is" : "s are"} shopping you something
-            off-market — the soonest lapses <b>{monthLabel(inbound[0].lapseM)}</b>, in{" "}
-            {Math.max(0, inbound[0].lapseM - game.month)} month
-            {Math.max(0, inbound[0].lapseM - game.month) === 1 ? "" : "s"}. The files are on Marketplace.
+            <strong>{inbound.length}</strong> off-market broker call{inbound.length === 1 ? "" : "s"} · next lapses <b>{monthLabel(inbound[0].lapseM)}</b> ({Math.max(0, inbound[0].lapseM - game.month)} mo) · Marketplace →
           </div>
         )}
       </section>}
@@ -685,7 +681,7 @@ export function DealsPage() {
           Sales in progress · {sales.length + (game.portfolioSale ? 1 : 0)}
         </div>
         {sales.length === 0 && !game.portfolioSale
-          && <div className="hint">Nothing listed. Sell from any building's Sell tab; buyers' offers land here to accept, counter or decline.</div>}
+          && <div className="hint">Nothing listed · list from a building's Sell tab</div>}
         {game.portfolioSale && <PortfolioSaleDesk bundle={[]} clear={() => { /* nothing to clear: not bundling here */ }} />}
         {sales.map((sl) => <SaleOfferCard key={sl.bbl} bbl={sl.bbl} ask={sl.ask} go={go} />)}
       </section>}

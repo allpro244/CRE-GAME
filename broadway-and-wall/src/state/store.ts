@@ -263,6 +263,9 @@ interface AppState {
   /** The hover card on the map (a building's numbers under the pointer). A browser preference, on by default. */
   hoverCard: boolean;
   setHoverCard: (v: boolean) => void;
+  /** The city's look (Settings -> Display): a toy diorama or the classic grade. Looks only. */
+  diorama: boolean;
+  setDiorama: (v: boolean) => void;
   /**
    * SILENCE EVERYTHING, INCLUDING THE FAILURES.
    *
@@ -331,6 +334,9 @@ interface AppState {
   mapFirm?: string;
   /** Close the desk and show one competitor's buildings on the map, everything else dimmed. */
   showFirmOnMap: (id: string) => void;
+  /** The rival whose own page the Players view is showing (null: the list). */
+  firmFocus: string | null;
+  openFirm: (id: string | null) => void;
   /**
    * MARK THE OLDEST INTERRUPTION READ.
    *
@@ -904,6 +910,7 @@ export const useStore = create<AppState>((set, get) => ({
   // popups2: a fresh key, so a pop-up switch turned off in an older build starts on again (owner: on by default)
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups2") === "off",
   hoverCard: (() => { try { return localStorage.getItem("bw:hovercard") !== "off"; } catch { return true; } })(),
+  diorama: (() => { try { return localStorage.getItem("bw:look") !== "classic"; } catch { return true; } })(),
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   mutedAlerts: (() => { try { const v = JSON.parse(localStorage.getItem("bw:alerts-muted") ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string" && x !== "swan" && x !== "fed") : []; } catch { return []; } })(),
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
@@ -1027,6 +1034,7 @@ export const useStore = create<AppState>((set, get) => ({
     const st = get();
     const nav = pushNav(st, page, st.selectedBBL);
     const pageJump = page !== "none" && jump ? jump : null;
+    if (st.firmFocus) set({ firmFocus: null });
     if (page !== "none" && st.mapOnly) {
       try { localStorage.setItem("bw:map-only", "off"); } catch { /* */ }
       startTransition(() => set({ page, pageJump, mapOnly: false, ...(nav ?? {}) }));
@@ -1277,6 +1285,10 @@ export const useStore = create<AppState>((set, get) => ({
     try { localStorage.setItem("bw:hovercard", v ? "on" : "off"); } catch { /* private mode */ }
     set({ hoverCard: v });
   },
+  setDiorama: (v) => {
+    try { localStorage.setItem("bw:look", v ? "diorama" : "classic"); } catch { /* private mode */ }
+    set({ diorama: v });
+  },
   setPopupsOff: (v) => {
     try { localStorage.setItem("bw:popups2", v ? "off" : "on"); } catch { /* private mode */ }
     set({ popupsOff: v });
@@ -1326,6 +1338,12 @@ export const useStore = create<AppState>((set, get) => ({
 
   setMapFilter: (f) => set({ mapFilter: f }),
 
+  firmFocus: null,
+  openFirm: (id) => {
+    // any other road to Players opens the list (setPage clears the focus)
+    if (id) get().setPage("players");
+    set({ firmFocus: id });
+  },
   showFirmOnMap: (id) => {
     const st = get();
     set({

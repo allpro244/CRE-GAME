@@ -66,15 +66,14 @@ export function PortfolioPage() {
     return (
       <div>
         <div className="deal">
-          <div className="deal-head">Your book is empty</div>
-          <div className="hint">Start with the public tape: compare real rent rolls, agree a price, then choose the debt only after the seller says yes.</div>
-          <button className="btn btn-buy" onClick={() => setPage("market")}>Browse properties in Marketplace →</button>
+          <div className="deal-head">No holdings</div>
+          <button className="btn btn-buy" onClick={() => setPage("market")}>Marketplace →</button>
         </div>
         {/* An empty book is not an empty history — a firm that has sold out
             of everything still has its record, and this page is where the
             record lives. */}
         <ExitsRecord />
-        <button type="button" className="linkish" onClick={() => setPage("firm")}>The whole record, year by year →</button>
+        <button type="button" className="linkish" onClick={() => setPage("firm")}>Annual record →</button>
       </div>
     );
   }
@@ -253,8 +252,8 @@ export function PortfolioPage() {
     <div>
       <div className="btn-row" style={{ marginBottom: 10 }}>
         <button type="button" className="btn" onClick={showAllOnMap}
-          title="Close the book and show your footprints on the map">
-          Show book on map →
+          title="Show holdings on the map">
+          Show on map →
         </button>
       </div>
       <div className="stat-strip">
@@ -269,7 +268,7 @@ export function PortfolioPage() {
             and ride in its tooltip (debt has a desk of its own); the building
             count and the basis ride with the square feet. */}
         <Big label="Equity" value={usd(totV - totD)} bad={totV - totD < 0}
-          title={`${usd(totV)} of property less ${usd(totD)} of debt against it. The debt itself is on Capital → Debt.`} />
+          title={`${usd(totV)} value − ${usd(totD)} debt`} />
         {/* NOT THE TOP BAR'S NUMBER, SO NOT THE TOP BAR'S NAME. The header's
             CF / yr is the FIRM — after overhead, construction interest, the
             facility and the revolver. This is the buildings alone. Two
@@ -279,7 +278,7 @@ export function PortfolioPage() {
           label="Property CF / mo"
           value={usd(totCF)}
           bad={totCF < 0}
-          title="The buildings' cash flow only — NOI (including ground rent) less their mortgages. The top bar's CF / yr is the firm's: it also subtracts overhead, construction interest, the facility and the revolver, then annualises."
+          title="NOI incl. ground rent, less mortgages. Excludes overhead, construction interest, facility, revolver."
         />
         {/* HOW BIG YOU ACTUALLY ARE, AND WHAT IT COST YOU A FOOT.
             Dollars of assets is a number about the market as much as about the
@@ -299,7 +298,7 @@ export function PortfolioPage() {
           return (
             <>
               <Big label={`${holdings.length} building${holdings.length === 1 ? "" : "s"}`} value={area > 0 ? sf(area) : "—"}
-                title={`${built.length} building${built.length === 1 ? "" : "s"}${rows.length > built.length ? ` and ${rows.length - built.length} lot${rows.length - built.length === 1 ? "" : "s"} of land` : ""}. Square footage is the one measure of a book that does not move with the cap rate.${area > 0 ? ` Basis $${(basis / area).toFixed(0)}/sf — what you paid per foot, closing costs included — against $${(val / area).toFixed(0)}/sf today.` : ""}`} />
+                title={`${built.length} building${built.length === 1 ? "" : "s"}${rows.length > built.length ? ` and ${rows.length - built.length} lot${rows.length - built.length === 1 ? "" : "s"}` : ""}${area > 0 ? ` · basis $${(basis / area).toFixed(0)}/sf incl. closing · value $${(val / area).toFixed(0)}/sf` : ""}`} />
             </>
           );
         })()}
@@ -317,8 +316,8 @@ export function PortfolioPage() {
             <Big label="Occupancy" value={po ? (100 * po.occ).toFixed(1) + "%" : "—"}
               bad={!!po && po.occ < 0.8}
               title={po
-                ? `${sf(po.leasedSf)} let of ${sf(po.lettableSf)} lettable across operated buildings — the same total as the top bar and Leasing. Each row below is the same read for one building.`
-                : "Appears once you own an operated building."} />
+                ? `${sf(po.leasedSf)} let of ${sf(po.lettableSf)} lettable`
+                : "No operated buildings"} />
           );
         })()}
 
@@ -339,18 +338,18 @@ export function PortfolioPage() {
                       <button className="btn-mini" disabled={fundableNow(game, parcels) < q.px}
                         title={q.why}
                         onClick={(e) => { e.stopPropagation(); useStore.getState().payOffAtDiscount(w.bbl); }}>
-                        pay it off at {usd(q.px)} of {usd(q.bal)}
+                        Pay off {usd(q.px)} of {usd(q.bal)}
                       </button>
                     </div>
                   );
                 })()}
-                ⚠ {r?.address ?? w.bbl} — {w.lender} {w.stage === "foreclosure"
-                  ? `has filed. Auction ${monthLabel(w.decideM)}.`
+                ⚠ {r?.address ?? w.bbl} · {w.lender} · {w.stage === "foreclosure"
+                  ? `filed · auction ${monthLabel(w.decideM)}`
                   : w.stage === "forbearance"
-                    ? `extended it to ${monthLabel(w.decideM)}.`
+                    ? `forbearance to ${monthLabel(w.decideM)}`
                     : couponOk
-                      ? `opened a file. The coupon is current — they will not file while it stays that way.`
-                      : `opened a file. They can file from ${monthLabel(w.decideM)}.`} Curing it takes {usd(w.cure)}.
+                      ? `default · coupon current, no filing`
+                      : `default · can file ${monthLabel(w.decideM)}`} · cure {usd(w.cure)}
               </div>
             );
           })}
@@ -363,31 +362,31 @@ export function PortfolioPage() {
             {exposure.topTenant && (
               <Row
                 k="Largest tenant"
-                v={`${exposure.topTenant.name} · ${(exposure.topTenant.share * 100).toFixed(0)}% of the roll`}
+                v={`${exposure.topTenant.name} · ${(exposure.topTenant.share * 100).toFixed(0)}% of rent`}
                 bad={exposure.topTenant.share > 0.2}
               />
             )}
             {exposure.topSector && (
               <Row
                 k="Largest sector"
-                v={`${exposure.topSector.name} · ${(exposure.topSector.share * 100).toFixed(0)}% of the roll`}
+                v={`${exposure.topSector.name} · ${(exposure.topSector.share * 100).toFixed(0)}% of rent`}
                 bad={exposure.topSector.share > 0.4}
               />
             )}
             <Row
               k="Rolling within 2 yrs"
-              v={`${(exposure.rollShare * 100).toFixed(0)}% of the roll`}
+              v={`${(exposure.rollShare * 100).toFixed(0)}% of rent`}
               bad={exposure.rollShare > 0.3}
             />
             <Row
               k="Floating-rate debt"
-              v={`${(exposure.floatShare * 100).toFixed(0)}% of the balance`}
+              v={`${(exposure.floatShare * 100).toFixed(0)}% of debt`}
               bad={exposure.floatShare > 0.5}
             />
             <Row k="Weighted avg maturity" v={`${exposure.wam.toFixed(1)} yrs`} bad={exposure.wam < 3} />
             <Row
               k="Maturing within 3 yrs"
-              v={`${usd(exposure.matWall)} · ${(exposure.wallShare * 100).toFixed(0)}% of the debt`}
+              v={`${usd(exposure.matWall)} · ${(exposure.wallShare * 100).toFixed(0)}% of debt`}
               bad={exposure.wallShare > 0.4}
             />
           </div>
@@ -402,10 +401,10 @@ export function PortfolioPage() {
           Leasing. Returns and concentration sit under the book they describe. */}
       {exposure.roll > 0 && (
         <div className="hint">
-          Year by year:{" "}
+          By year:{" "}
           <button type="button" className="linkish" onClick={() => setPage("leasing")}>lease rollover →</button>
           {" · "}
-          <button type="button" className="linkish" onClick={() => setPage("debt", "The maturity wall")}>maturity wall →</button>
+          <button type="button" className="linkish" onClick={() => setPage("debt", "The maturity wall")}>maturities →</button>
         </div>
       )}
       <div className="btn-row" style={{ marginTop: 10 }}>
@@ -415,7 +414,7 @@ export function PortfolioPage() {
           onClick={() => setSort({ key: "v", dir: -1 })}>By value</button>
         <button className={"btn" + (ranked ? " btn-on" : "")}
           onClick={() => setSort({ key: "noi", dir: -1 })}
-          title="Ranked by NOI, biggest earner first.">Top earners</button>
+          title="Sort by NOI, high to low">Top earners</button>
         {/* A DISABLED BUTTON WITH A REASON, NOT A BUTTON THAT VANISHED.
             One process at a time is the right constraint — a seller cannot run
             two — but this used to disappear outright the month an institution
@@ -430,9 +429,9 @@ export function PortfolioPage() {
               onClick={() => { setBundling(!bundling); if (bundling) setBundle([]); }}
               title={busy
                 ? (busy.unsolicited
-                  ? `${who ?? "A buyer"} has approached you about ${busy.bbls.length} of your buildings. Answer it or tell them no on the desk above, and this comes back.`
-                  : `${busy.bbls.length} buildings are already in the market as one trade. Close or pull that process on the desk above, and this comes back.`)
-                : "Tick two or more buildings and take them to market as one trade"}>
+                  ? `${who ?? "A buyer"} bid on ${busy.bbls.length} buildings · answer it above first`
+                  : `${busy.bbls.length} buildings already listed as one trade · close or pull it above first`)
+                : "Tick 2+ buildings to sell as one trade"}>
               {bundling ? `Bundling · ${bundle.length} picked` : "Sell several at once"}
             </button>
           );
@@ -452,14 +451,14 @@ export function PortfolioPage() {
              has its own button. */
           <button className="btn"
             onClick={() => setBundle(rows.filter((r) => !game.developments[r.h.bbl] && !onFundBook(game, r.h.bbl)).map((r) => r.h.bbl))}>
-            Pick everything of yours
+            Pick all (own book)
           </button>
         )}
         {bundling && rows.some((r) => onFundBook(game, r.h.bbl)) && (
           <button className="btn"
             onClick={() => setBundle(rows.filter((r) => !game.developments[r.h.bbl] && onFundBook(game, r.h.bbl)).map((r) => r.h.bbl))}
-            title="The fund's buildings, as their own book — the proceeds go to the vehicle">
-            Pick the fund's book
+            title="Fund buildings · proceeds to the fund">
+            Pick all (fund book)
           </button>
         )}
       </div>
@@ -478,7 +477,7 @@ export function PortfolioPage() {
                 <button key={h.bbl} className="neighbor" onClick={() => go(h.bbl)}>
                   <span className="neighbor-addr">{rec?.address ?? h.bbl}</span>
                   <span className="neighbor-meta mono">
-                    {d.floors} fl {d.use} · {d.tab} — resume →
+                    {d.floors} fl {d.use} · {d.tab} · resume →
                   </span>
                 </button>
               );
@@ -493,12 +492,12 @@ export function PortfolioPage() {
             {ranked && <th className="num">#</th>}
             <H k="addr" label="Property" desc={false} />
             <H k="area" label="sf" num />
-            <H k="demand" label="Demand" num title="Neighbourhood demand, 0-100 — what the market reads for this location today. The small figure is the change since the city was laid out." />
+            <H k="demand" label="Demand" num title="Location demand, 0-100 · small figure: change since start" />
             <H k="occ" label="Occ" num />
-            <H k="rentPsf" label="Rent" num title="Average contract rent across the rent roll, per square foot per year" />
+            <H k="rentPsf" label="Rent" num title="Avg contract rent, $/sf/yr" />
             <H k="noi" label="NOI / yr" num />
-            <H k="v" label="Value" num title="Appraisal. Cost, basis and unrealised gain sit under the number." />
-            <H k="debt" label="Debt" num title="Liens on this deed, including mezz and a facility share. Equity and monthly service sit under the number." />
+            <H k="v" label="Value" num title="Appraisal · gain vs cost below" />
+            <H k="debt" label="Debt" num title="Liens incl. mezz and facility share · equity and debt service below" />
             <H k="cf" label="CF / mo" num />
             <th></th>
           </tr>
@@ -564,14 +563,14 @@ export function PortfolioPage() {
                       setBundle(bundle.includes(h.bbl) ? bundle.filter((x) => x !== h.bbl) : [...bundle, h.bbl]);
                     }} style={{ cursor: blocked ? "default" : "pointer", userSelect: "none" }}
                       title={dv
-                        ? "Under construction — deliver the building before it can be sold"
+                        ? "Under construction · cannot be sold"
                         : otherBook
                           ? (fundDeed
-                            ? "The fund's building — the LPs' book cannot share a price with yours. Clear the picks to bundle the fund's deeds."
-                            : "Your own building — it cannot share a price with the fund's book. Clear the picks to bundle your own deeds.")
+                            ? "Fund building · cannot bundle with your own"
+                            : "Own building · cannot bundle with the fund's")
                           : h.sale
-                            ? "Listed on its own. Ticking it pulls that listing and puts the deed in the bundle."
-                            : fundDeed ? "Add to the bundle (the fund's book — proceeds go to the vehicle)" : "Add to the bundle"}>
+                            ? "Listed alone · ticking delists it"
+                            : fundDeed ? "Add to bundle (fund · proceeds to the fund)" : "Add to bundle"}>
                       {dv || otherBook ? "·" : bundle.includes(h.bbl) ? "☑" : "☐"}{fundDeed ? " F" : ""}
                     </td>
                   );
@@ -618,14 +617,14 @@ export function PortfolioPage() {
                 })()}
               </td>
               <td className="num" title={h.groundLeased
-                ? "Lessee improvement — not your building sf"
+                ? "Lessee improvement · not your sf"
                 : rec && rec.bldgArea ? `${usd(v / rec.bldgArea)}/sf of value · ${usd(noi / rec.bldgArea)}/sf of NOI` : "vacant land"}>
                 {h.groundLeased || !rec || !rec.bldgArea ? "—" : sf(rec.bldgArea)}
                 {!h.groundLeased && rec && avgUnitSf(rec) > 0 && (
                   <div className="dim" style={{ fontSize: 11 }}>{sf(avgUnitSf(rec))}/flat</div>
                 )}
               </td>
-              <td className="num" title={demand >= 0 ? `Demand ${demand.toFixed(0)} of 100 · ${demand0 >= 0 ? `${demand >= demand0 ? "+" : ""}${(demand - demand0).toFixed(0)} since the city was laid out` : ""}` : undefined}>
+              <td className="num" title={demand >= 0 ? `Demand ${demand.toFixed(0)} of 100 · ${demand0 >= 0 ? `${demand >= demand0 ? "+" : ""}${(demand - demand0).toFixed(0)} since start` : ""}` : undefined}>
                 {demand >= 0 ? demand.toFixed(0) : "—"}
                 {demand >= 0 && demand0 >= 0 && Math.round(demand - demand0) !== 0 && (
                   <div className={"dim" + (demand < demand0 ? " neg" : "")} style={{ fontSize: 11 }}>
@@ -637,9 +636,9 @@ export function PortfolioPage() {
                 className="num book-occ"
                 title={dv
                   ? ((dv.signed?.length ?? 0)
-                    ? `${dv.signed!.length} construction pre-let${dv.signed!.length === 1 ? "" : "s"} · ${dv.signed!.reduce((a, x) => a + x.sf, 0).toLocaleString()} sf spoken for — land on the rent roll at delivery`
-                    : "Under construction — no rent roll until it delivers")
-                  : h.groundLeased ? "Ground coupon — the lessee lets the building"
+                    ? `${dv.signed!.length} construction pre-let${dv.signed!.length === 1 ? "" : "s"} · ${dv.signed!.reduce((a, x) => a + x.sf, 0).toLocaleString()} sf · on the roll at delivery`
+                    : "Under construction · no rent roll")
+                  : h.groundLeased ? "Ground lease · lessee lets the building"
                     : or ? occTitle(or) : undefined}
               >
                 {dv
@@ -670,7 +669,7 @@ export function PortfolioPage() {
                   const mkt = h.tenants.reduce(
                     (a, t) => a + t.sf * managedRentPsfYr(rec, game.econ, h, t.use ?? (rec.class as BuiltClass)), 0) / leased;
                   return (
-                    <td className="num" title={`Market for the space these tenants occupy is about $${mkt.toFixed(2)}/sf today`}>
+                    <td className="num" title={`Market ~$${mkt.toFixed(2)}/sf for this space`}>
                       ${(roll / leased).toFixed(2)}
                       <span className={"dim" + ((roll / leased) < mkt * 0.92 ? " neg" : "")}>
                         {" "}({(roll / leased) >= mkt ? "+" : ""}{(((roll / leased) / Math.max(1, mkt) - 1) * 100).toFixed(0)}%)
@@ -690,7 +689,7 @@ export function PortfolioPage() {
                 const g = v - h.costBasis;
                 const pctG = h.costBasis > 0 ? (g / h.costBasis) * 100 : 0;
                 return (
-                  <td className="num" title={`Cost ${usd(h.costBasis)}${!h.groundLeased && rec && rec.bldgArea > 0 ? ` · $${(h.costBasis / rec.bldgArea).toFixed(0)}/sf` : ""} · ${(g / Math.max(1, (game.month - h.boughtM) / 12) / Math.max(1, h.costBasis) * 100).toFixed(1)}% a year over ${((game.month - h.boughtM) / 12).toFixed(1)} years`}>
+                  <td className="num" title={`Cost ${usd(h.costBasis)}${!h.groundLeased && rec && rec.bldgArea > 0 ? ` · $${(h.costBasis / rec.bldgArea).toFixed(0)}/sf` : ""} · ${(g / Math.max(1, (game.month - h.boughtM) / 12) / Math.max(1, h.costBasis) * 100).toFixed(1)}%/yr over ${((game.month - h.boughtM) / 12).toFixed(1)} yrs`}>
                     {usd(v)}
                     <div className={"dim" + (g < 0 ? " neg" : "")} style={{ fontSize: 11 }}>
                       {g > 0 ? "+" : ""}{usd(g)} · {pctG >= 0.5 ? "+" : pctG <= -0.5 ? "\u2212" : ""}{Math.abs(pctG).toFixed(0)}%
@@ -712,13 +711,13 @@ export function PortfolioPage() {
                 <div className="btn-row" style={{ gap: 4, margin: 0 }}>
                   {h.sale ? (
                     <button className="btn btn-sm" onClick={(ev) => { ev.stopPropagation(); delistSale(h.bbl); }}
-                      title={`Listed at ${usd(h.sale.ask)} — pull it off the market`}>
+                      title={`Listed at ${usd(h.sale.ask)} · delist`}>
                       Delist
                     </button>
                   ) : (
                     <button className={"btn btn-sm" + (listRow === h.bbl ? " btn-on" : "")}
                       onClick={(ev) => { ev.stopPropagation(); setListRow(listRow === h.bbl ? null : h.bbl); }}
-                      title="Name your ask, then take it to market">
+                      title="Set an ask and list">
                       List
                     </button>
                   )}
@@ -727,7 +726,7 @@ export function PortfolioPage() {
                     <button
                       className={"btn btn-sm" + (opsRow === h.bbl ? " btn-on" : "")}
                       onClick={(ev) => { ev.stopPropagation(); setOpsRow(opsRow === h.bbl ? null : h.bbl); }}
-                      title={`Service ${serviceSpec(h.service).label} (tenants read it as ${Math.round(100 * (h.svcIdx ?? SVC_START))} of 100) · capital plan ${planSpec(h.plan).label} (condition ${Math.round(100 * (h.condIdx ?? 0.6))} of 100)`}
+                      title={`Service ${serviceSpec(h.service).label} (${Math.round(100 * (h.svcIdx ?? SVC_START))}/100) · capital plan ${planSpec(h.plan).label} (condition ${Math.round(100 * (h.condIdx ?? 0.6))}/100)`}
                     >
                       {/* It read "Market · Fund" — two settings, no verb. */}
                       Run {opsRow === h.bbl ? "▴" : "▾"}
@@ -737,8 +736,8 @@ export function PortfolioPage() {
                     className={"btn btn-sm" + (refiRow === h.bbl ? " btn-on" : "")}
                     onClick={(ev) => { ev.stopPropagation(); setRefiRow(refiRow === h.bbl ? null : h.bbl); }}
                     title={h.loan
-                      ? `${usd(h.loan.balance)} at ${h.loan.ratePct.toFixed(2)}%, balloons ${monthLabel(h.loan.maturityM)} — see what the desks will do today`
-                      : "Unlevered. See what a lender will advance against it."}
+                      ? `${usd(h.loan.balance)} at ${h.loan.ratePct.toFixed(2)}%, matures ${monthLabel(h.loan.maturityM)} · refi quotes`
+                      : "Unlevered · loan quotes"}
                   >
                     Refi
                   </button>
@@ -751,7 +750,7 @@ export function PortfolioPage() {
                         disabled={!canPay}
                         onClick={(ev) => { ev.stopPropagation(); useStore.getState().payOffLoan(h.bbl); }}
                         title={canPay
-                          ? `Retire the note for ${usd(due.due)}${due.penalty > 0 ? ` (incl. ${usd(due.penalty)} break)` : ""} — clears the lien for a ground lease`
+                          ? `Retire the note for ${usd(due.due)}${due.penalty > 0 ? ` (incl. ${usd(due.penalty)} break)` : ""} · clears the lien`
                           : `Need ${usd(due.due)} to pay this off`}
                       >
                         Pay off
@@ -763,10 +762,10 @@ export function PortfolioPage() {
                       className={"btn btn-sm" + (glRow === h.bbl || h.groundOffer ? " btn-on" : "")}
                       onClick={(ev) => { ev.stopPropagation(); setGlRow(glRow === h.bbl ? null : h.bbl); }}
                       title={h.groundOffer
-                        ? `Ground lease offered (${h.groundOffer.years} yr) — open to pull or review terms`
+                        ? `Ground lease offered (${h.groundOffer.years} yr) · review or pull`
                         : h.loan || game.facility?.bbls?.includes(h.bbl) || h.sale
-                          ? "Clear the lien first (Pay off), then offer a ground lease"
-                          : "Offer vacant dirt as an absolutely-net ground lease"}
+                          ? "Pay off the lien first"
+                          : "Offer the land on an absolute-net ground lease"}
                     >
                       {h.groundOffer ? "GL" : "Ground"}
                     </button>
@@ -778,7 +777,7 @@ export function PortfolioPage() {
                         ev.stopPropagation();
                         setAssembleRow(assembleRow === h.bbl ? null : h.bbl);
                       }}
-                      title="You own contiguous vacant dirt next to this site — fold the deeds into one plate"
+                      title="Merge with adjacent vacant lots you own"
                     >
                       Assemble
                     </button>
@@ -841,8 +840,8 @@ export function PortfolioPage() {
                 : "—"}</td>
               <td className="num dim">—</td>
               <td className="num dim">—</td>
-              <td className="num" title="The budget as it stands, escalation included">{usd(dv.costTotal)}</td>
-              <td className="num" title="Construction loan drawn, interest accruing into the balance">
+              <td className="num" title="Budget incl. escalation">{usd(dv.costTotal)}</td>
+              <td className="num" title="Construction loan drawn · interest accrues">
                 {usd(dv.loanBalance)}
                 <div className="dim" style={{ fontSize: 11 }}>
                   eq {usd(dv.equitySpent)} · {(dv.loanBalance * dv.ratePct) / 100 / 12 > 0
@@ -861,8 +860,8 @@ export function PortfolioPage() {
           appeals already filed. This is the pointer, not a second list. */}
       {assessmentWatch.length > 0 && (
         <div className="hint" style={{ marginTop: 12 }}>
-          {assessmentWatch.length} assessment{assessmentWatch.length === 1 ? " looks" : "s look"} appealable
-          {" "}— up to {usd(assessmentWatch.reduce((a, w) => a + w.annualSavings, 0))} / yr ·{" "}
+          {assessmentWatch.length} assessment{assessmentWatch.length === 1 ? "" : "s"} appealable
+          {" "}· up to {usd(assessmentWatch.reduce((a, w) => a + w.annualSavings, 0))} / yr ·{" "}
           <button type="button" className="linkish" onClick={() => setPage("books", "Property-tax desk")}>property-tax desk →</button>
         </div>
       )}
@@ -924,7 +923,7 @@ export function PortfolioCap({ q, ask, bbls }: { q: PortfolioQuote; ask: number;
   }
   const mkt = w > 0 ? wsum / w : cap;
   return (
-    <Row k="Asking a cap rate of" strong
+    <Row k="Cap rate at ask" strong
       v={`${cap.toFixed(2)}%  ·  market ${mkt.toFixed(2)}%`}
       bad={cap < mkt - 0.4} />
   );
@@ -953,8 +952,8 @@ export function PortfolioLegList({ book, caption }: { book: PortfolioSettlement;
           <div key={l.bbl} className="mini-row" style={{ cursor: "pointer" }}
             title={`${usd(l.price)} allocated · ${usd(l.loanPayoff)} of debt off`
               + (l.release > 0 ? ` · ${usd(l.release)} facility release` : "")
-              + (l.kick + l.breakFee > 0 ? ` · ${usd(l.kick + l.breakFee)} of participation and break fees` : "")
-              + (l.tax > 0 ? ` · ${usd(l.tax)} of tax` : "")}
+              + (l.kick + l.breakFee > 0 ? ` · ${usd(l.kick + l.breakFee)} participation + break fees` : "")
+              + (l.tax > 0 ? ` · ${usd(l.tax)} tax` : "")}
             onClick={() => useStore.getState().focus(l.bbl, true)}>
             <span>{l.address}<span className="dim"> · {rec ? useLabel(rec) : l.cls}</span></span>
             <span className="mono dim">
@@ -971,16 +970,16 @@ export function PortfolioLegList({ book, caption }: { book: PortfolioSettlement;
 export function PortfolioProceeds({ book }: { book: PortfolioSettlement }) {
   return (
     <>
-      <Row k="Loan and mezzanine payoffs" v={usd(book.loanPayoff)} />
+      <Row k="Loan + mezz payoff" v={usd(book.loanPayoff)} />
       {book.kick + book.breakFee > 0 && (
-        <Row k="Participation and break fees" v={usd(book.kick + book.breakFee)} bad />
+        <Row k="Participation + break fees" v={usd(book.kick + book.breakFee)} bad />
       )}
-      {book.release > 0 && <Row k="Facility releases at the premium" v={usd(book.release)} bad />}
+      {book.release > 0 && <Row k="Facility release premium" v={usd(book.release)} bad />}
       {book.facilityDue > 0 && (
-        <Row k="Facility repaid in full at the table" v={usd(book.facilityDue)} bad />
+        <Row k="Facility repaid in full" v={usd(book.facilityDue)} bad />
       )}
       {book.tax > 0 && <Row k="Capital-gains tax" v={usd(book.tax)} bad />}
-      <Row k={book.toFund ? "Net to the fund — the LPs' proceeds, not yours" : "Net to you"} v={usd(book.netToYou)} strong bad={book.netToYou < 0} />
+      <Row k={book.toFund ? "Net to the fund" : "Net to you"} v={usd(book.netToYou)} strong bad={book.netToYou < 0} />
     </>
   );
 }
@@ -1024,9 +1023,9 @@ export function PortfolioBidActions({
         <button className="btn" onClick={() => { acceptPortfolio(true); onDone?.(); }}
           disabled={book.toFund || exchangeLive}
           title={book.toFund
-            ? "The fund's gain belongs to the vehicle — it cannot roll into your own 1031"
-            : exchangeLive ? "One exchange at a time — the live 1031 has to close first"
-            : "Roll the whole gain into a 1031 and redeploy inside six months, or the tax comes due"}>
+            ? "Fund gain · not eligible for your 1031"
+            : exchangeLive ? "A 1031 is already open"
+            : "Defer the gain · redeploy within 6 months or tax is due"}>
           Close into a 1031{book.tax > 0 ? ` · defer ${usd(book.tax)}` : ""}
         </button>
         {!bid.countered && (
@@ -1042,7 +1041,7 @@ export function PortfolioBidActions({
             typedMin={cb.typedMin} typedMax={cb.typedMax} editable="price"
             value={px} onChange={setCounter}
             label="Counter at" format={(v: number) => usd(v)}
-            hint="Name any price above their indication. Push too hard and the whole portfolio trade walks." />
+            hint="Above their bid · too high and they walk" />
           <div className="btn-row">
             <button className="btn" onClick={() => { counterPortfolioBid(px); setCountering(false); }}>
               Put {usd(px)} to {bid.name}
@@ -1050,11 +1049,6 @@ export function PortfolioBidActions({
           </div>
         </>
       )}
-      <div className="hint">
-        An institution has a committee number. You can push them a few points and no further, and pushing
-        hard on a bundle is how the whole thing goes away — there is another portfolio next quarter and
-        they know it.
-      </div>
     </>
   );
 }
@@ -1082,38 +1076,31 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
       <div className="page-section">
         <div className="page-section-head">
           {inbound
-            ? `${bid?.name ?? "A buyer"} has approached you about ${live.bbls.length} buildings`
+            ? `Unsolicited bid · ${bid?.name ?? "buyer"} · ${live.bbls.length} buildings`
             : `Portfolio in the market · ${live.bbls.length} buildings`}
         </div>
-        {inbound && (
-          <div className="hint" style={{ marginTop: 6 }}>
-            You have not listed anything. They chose these {live.bbls.length} deeds themselves and named the
-            number, which is what an unsolicited approach is — nobody rings about a book they have not already
-            underwritten. Answer it, counter it, or tell them no and the desk is yours again.
-          </div>
-        )}
         <div className="grid">
           {inbound
-            ? <Row k="Their number" v={usd(onTable)} strong />
+            ? <Row k="Bid" v={usd(onTable)} strong />
             : <Row k="Asking" v={usd(live.ask)} strong />}
           {/* THE NUMBER THE COMMITTEE ON THE OTHER SIDE IS ACTUALLY LOOKING AT.
               A portfolio is quoted as a yield; the price is what the yield
               implies. This desk showed dollars and a spread against the parts
               and never once said what cap the ask was struck at. */}
           <PortfolioCap q={q} ask={onTable} bbls={live.bbls} />
-          <Row k="Sum of the individual marks" v={usd(q.sumOfParts)} />
-          <Row k="What a bundle is indicated at" v={`${usd(q.indicative)} · ${(q.spreadPct * 100).toFixed(1)}%`}
+          <Row k="Sum of marks" v={usd(q.sumOfParts)} />
+          <Row k="Bundle indication" v={`${usd(q.indicative)} · ${(q.spreadPct * 100).toFixed(1)}%`}
             bad={q.spreadPct < -0.06} />
           {inbound
-            ? bid && <Row k="They want an answer by" v={monthLabel(bid.expiresM)} bad={bid.expiresM - game.month <= 1} />
+            ? bid && <Row k="Expires" v={monthLabel(bid.expiresM)} bad={bid.expiresM - game.month <= 1} />
             : <Row k="On the market" v={`${age} month${age === 1 ? "" : "s"} · stale at 9`} bad={age > 6} />}
-          <Row k="Buyers who can fund it" v={String(q.depth)} bad={q.depth <= 1} />
+          <Row k="Funded buyers" v={String(q.depth)} bad={q.depth <= 1} />
           {!inbound && (
             <Row k="Ask vs indication"
               v={live.ask > q.indicative
-                ? `${((live.ask / Math.max(1, q.indicative) - 1) * 100).toFixed(0)}% above · interest thins fast`
+                ? `${((live.ask / Math.max(1, q.indicative) - 1) * 100).toFixed(0)}% above`
                 : live.ask < q.indicative * 0.98
-                  ? `${((1 - live.ask / Math.max(1, q.indicative)) * 100).toFixed(0)}% under · priced to move`
+                  ? `${((1 - live.ask / Math.max(1, q.indicative)) * 100).toFixed(0)}% under`
                   : "at the indication"}
               bad={live.ask > q.indicative * 1.05} />
           )}
@@ -1123,13 +1110,13 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
         <PortfolioLegList book={book}
           caption={bid
             ? undefined
-            : `Split at your ask of ${usd(live.ask)} — the allocation moves with whatever number clears.`} />
+            : `Allocation at ask of ${usd(live.ask)}`} />
         {bid ? (
           <>
             <div className="hint" style={{ marginTop: 10 }}>
-              <strong>{bid.name}</strong> is at {usd(bid.price)} — {((1 - bid.price / Math.max(1, q.sumOfParts)) * 100).toFixed(1)}%
-              inside the sum of the parts, good until {monthLabel(bid.expiresM)}.
-              {bid.countered && " You have already been back to them once."}
+              <strong>{bid.name}</strong> · {usd(bid.price)} · {((1 - bid.price / Math.max(1, q.sumOfParts)) * 100).toFixed(1)}%
+              under sum of marks · expires {monthLabel(bid.expiresM)}
+              {bid.countered && " · already countered"}
             </div>
             <PortfolioBidActions
               key={`${bid.name}:${bid.price}`}
@@ -1137,7 +1124,7 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
               onDone={clear}
               trailing={
                 <button className="btn" onClick={() => { pullPortfolio(); clear(); }}>
-                  {inbound ? "Tell them no" : "Pull it"}
+                  {inbound ? "Decline" : "Pull"}
                 </button>
               }
             />
@@ -1146,16 +1133,15 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
           <>
             <div className="hint" style={{ marginTop: 10 }}>
               {inbound
-                ? "They have not come back. Nothing of yours is on the market and nothing is holding this open — "
-                  + "clear it and the bundling desk is free."
-                : "No indications yet."}
+                ? "Bid lapsed. Nothing listed."
+                : "No bids yet."}
               {!inbound && (q.depth <= 0
-                ? " Nobody in this city can fund a book this small as a portfolio — pull it and sell the deeds one at a time."
+                ? " No funded buyers for a book this size."
                 : live.ask > q.indicative * 1.05
-                  ? " Your ask sits above what a bundle is indicated at. Cut the number or wait out a thin room — nine months and the process goes stale."
+                  ? " Ask above indication · stale at 9 months."
                   : age > 5
-                    ? " Half a year of silence on a portfolio is the market pricing the weakest building in it. Cut the number or take them out and sell them one at a time."
-                    : " Institutional buyers underwrite a bundle for a quarter before they call. A live indication also lands on News and as a stop-everything card (unless you turned those off in Settings).")}
+                    ? " 6+ months, no bids."
+                    : " Bids typically take a quarter.")}
             </div>
             <div className="btn-row">
               {!inbound && (
@@ -1163,7 +1149,7 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
                   value={live.ask} onChange={(v: number) => repricePortfolioSale(v)} label="Ask" format={(v: number) => usd(v)} />
               )}
               <button className="btn" onClick={() => { pullPortfolio(); clear(); }}>
-                {inbound ? "Clear the approach" : "Pull it"}
+                {inbound ? "Clear" : "Pull"}
               </button>
             </div>
           </>
@@ -1179,56 +1165,51 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
   const preview = portfolioSettlement(game, parcels, bundle, ask);
   return (
     <div className="page-section">
-      <div className="page-section-head">Sell {bundle.length} buildings as one trade</div>
+      <div className="page-section-head">Bundle sale · {bundle.length} buildings</div>
       {bundle.length < 2 ? (
-        <div className="hint">Tick one more. A portfolio is two buildings or more — one building is a listing.</div>
+        <div className="hint">Pick at least 2 buildings.</div>
       ) : (
         <>
           <div className="grid">
-            <Row k="Sum of the individual marks" v={usd(q.sumOfParts)} strong />
+            <Row k="Sum of marks" v={usd(q.sumOfParts)} strong />
             {q.why.map((w, i) => (
               <Row key={i} k={w.label} v={`${w.pct >= 0 ? "+" : ""}${(w.pct * 100).toFixed(1)}%`} bad={w.pct < 0} />
             ))}
-            <Row k="What a bundle is worth" v={`${usd(q.indicative)} · ${(q.spreadPct * 100).toFixed(1)}% against the parts`}
+            <Row k="Bundle indication" v={`${usd(q.indicative)} · ${(q.spreadPct * 100).toFixed(1)}% vs marks`}
               strong bad={q.spreadPct < 0} />
             <PortfolioCap q={q} ask={ask} bbls={bundle} />
-            <Row k="Buyers who can fund it" v={String(q.depth)} bad={q.depth <= 1} />
+            <Row k="Funded buyers" v={String(q.depth)} bad={q.depth <= 1} />
             {/* WHAT THE CLOSING TAKES, BEFORE YOU COMMIT TO IT. A pledged deed
                 used to be refused outright with an instruction the facility
                 itself would not let you follow; it settles at the release
                 premium instead, and a premium you cannot see coming is a
                 punishment rather than a decision. Struck at the indication,
                 through the same schedule the close runs. */}
-            <Row k="If it clears at the ask below" v={usd(ask)} strong />
+            <Row k="At ask" v={usd(ask)} strong />
             <PortfolioProceeds book={preview} />
           </div>
           <div className="hint">
             {preview.facilityDue > 0
-              ? `Selling these takes the facility pool below the ${FACILITY_MIN_ASSETS}-deed floor it was written against, so `
-                + `what is left of the balance is repaid out of the proceeds at the closing table. `
+              ? `Pool drops below ${FACILITY_MIN_ASSETS} deeds · facility repaid from proceeds. `
               : preview.release > 0
-                ? "The pledged deeds come out of the pool at their allocated share plus the release premium, paid out of the proceeds. "
+                ? "Pledged deeds released at allocated share + premium, from proceeds. "
                 : ""}
             {q.depth <= 0
-              ? "No desk in this city will underwrite a portfolio this small. Sell them one at a time — a bundle sale with an empty room is nine months of silence, not a process."
+              ? "No funded buyers for a bundle this size."
               : q.spreadPct < -0.10
-              ? "That is a serious discount, and it is being driven by the buildings at the bottom of this list. Take them out and the blend improves — but those are the ones with no bid of their own, which is the entire reason to bundle."
+              ? "Deep discount · driven by the weakest buildings."
               : q.spreadPct < -0.03
-                ? "A few points inside the parts, which is what a clean portfolio costs. You are buying a single closing and a clean exit with it."
-                : "A tight, coherent bundle. Institutions pay up for exactly this and there is very little discount in it."}
+                ? "Typical bundle discount."
+                : "Minimal discount."}
           </div>
           <Slider min={80} max={112} step={1} value={askPct} onChange={setAskPct}
-            label="Ask, against the indicative" format={(v: number) => `${v}% · ${usd(Math.round(q.indicative * (v / 100)))}`} />
-          <div className="hint">
-            Ask over the indicative and you may get nothing for nine months; ask under it and you will have
-            indications inside a quarter. Nine months is the whole run — after that every buyer in town has seen
-            it and passed, and that is a fact about your portfolio that does not go away.
-          </div>
+            label="Ask vs indication" format={(v: number) => `${v}% · ${usd(Math.round(q.indicative * (v / 100)))}`} />
+          <div className="hint">Listing goes stale at 9 months.</div>
           <div className="btn-row">
             <button
               className="btn btn-buy"
               disabled={q.depth <= 0}
-              title={q.depth <= 0 ? "No buyer can fund this book as a portfolio" : undefined}
+              title={q.depth <= 0 ? "No funded buyers" : undefined}
               onClick={() => {
                 sellPortfolio(bundle, ask);
                 // The picks survive a refusal. The engine can still say no — a
@@ -1238,7 +1219,7 @@ export function PortfolioSaleDesk({ bundle, clear }: { bundle: string[]; clear: 
                 if (useStore.getState().game?.portfolioSale) clear();
               }}
             >
-              Take it to market at {usd(ask)}
+              List at {usd(ask)}
             </button>
           </div>
         </>
@@ -1262,7 +1243,7 @@ function ReturnsToDate() {
   const pct = (x: number | null) => (x === null ? "—" : `${x >= 0 ? "" : "−"}${Math.abs(x * 100).toFixed(1)}%`);
   return (
     <div className="page-section">
-      <div className="page-section-head">Returns to date — on your equity, before tax</div>
+      <div className="page-section-head">Returns to date · equity, pre-tax</div>
       <table className="tbl">
         <thead>
           <tr><th>Building</th><th className="num">Held</th><th className="num">Equity in</th><th className="num">Cash back</th><th className="num">Equity at mark</th><th className="num">Multiple</th><th className="num">IRR</th></tr>
@@ -1282,9 +1263,8 @@ function ReturnsToDate() {
         </tbody>
       </table>
       <div className="hint">
-        Every property dollar booked against the building — the equity that bought it, rent after debt service,
-        leasing and capital work, refinancing proceeds — with today&rsquo;s equity at the mark as if sold at no cost.
-        A building bought before the ledger existed, pooled in a facility, or held in the fund is left out.
+        Equity in, cash after debt service, leasing, capex and refi proceeds · terminal equity at mark, no selling costs.
+        Excludes pre-ledger, facility-pooled and fund deeds.
       </div>
     </div>
   );

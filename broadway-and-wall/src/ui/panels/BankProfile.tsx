@@ -42,7 +42,7 @@ export function BankLink({ name, children }: { name: string; children?: React.Re
   const isDesk = useStore((s) => !!s.game?.lenders?.some((l) => l.name === name));
   if (!isDesk) return <>{children ?? name}</>;
   return (
-    <a className="lnk" onClick={(e) => { e.stopPropagation(); openBank(name); }} title={`Open ${name}'s books`}>
+    <a className="lnk" onClick={(e) => { e.stopPropagation(); openBank(name); }} title={`Open ${name}`}>
       {children ?? name}
     </a>
   );
@@ -75,16 +75,11 @@ export function BanksPage() {
   const lenders = game.lenders ?? [];
   const names = lenders.map((l) => l.name);
   const [sel, setSel] = useDeskView<string>("banks", names[0] ?? "", names);
-  if (!lenders.length) return <div className="hint">There are no lenders in this town yet.</div>;
+  if (!lenders.length) return <div className="hint">No lenders.</div>;
   const l = lenders.find((x) => x.name === sel) ?? lenders[0];
   const yourLine = lineLender(game);
   return (
     <>
-      <div className="hint">
-        Every lender in town, with nothing hidden. Pick one: its file below is the same set of numbers the
-        engine reads when that desk quotes you, renews you, extends you or fails. Click a lender's name anywhere
-        in the game to come straight here.
-      </div>
       <div className="mkt-cards">
         {lenders.map((x) => {
           const h = lenderHealth(x, game.econ);
@@ -98,8 +93,8 @@ export function BanksPage() {
               </div>
               <div className={"mkt-card-state" + (h.bad ? " neg" : "")}>{sp.word}</div>
               <div className="mkt-card-sub mono">
-                {usd(x.book)} book · {pc(x.delinquent)} late
-                {x.yours > 0 ? ` · you owe ${usd(x.yours)}` : ""}
+                {usd(x.book)} book · {pc(x.delinquent)} delinquent
+                {x.yours > 0 ? ` · owed ${usd(x.yours)}` : ""}
                 {yourLine?.id === x.id && (game.loc?.balance ?? 0) > 0 ? " · your line" : ""}
               </div>
             </button>
@@ -173,35 +168,32 @@ function BankFile({ l }: { l: Lender }) {
         <div className="deal-head">{l.name}</div>
         <div className="hint" style={{ marginTop: 0 }}>{KIND_WORD[l.kind] ?? l.kind}. {lenderBlurb(l.name)}</div>
         <div className="grid">
-          <Row k="Standing" v={`${h.word} — ${sp.why}`} bad={h.bad} />
+          <Row k="Standing" v={`${h.word} · ${sp.why}`} bad={h.bad} />
           <Row k="Status" bad={failed}
             v={failed
-              ? `Closed ${monthLabel(l.failedM!)}${l.reopenM !== undefined ? ` · lending again around ${monthLabel(l.failedM! + l.reopenM)}` : ""}`
-              : l.appetite < 0.12 ? "Open, but not quoting anything — its capital will not carry a new loan"
-                : "Open and quoting"} />
+              ? `Closed ${monthLabel(l.failedM!)}${l.reopenM !== undefined ? ` · reopens ~${monthLabel(l.failedM! + l.reopenM)}` : ""}`
+              : l.appetite < 0.12 ? "Open · not quoting (capital)"
+                : "Open · quoting"} />
           {(l.receiverUntilM ?? -1) > game.month && (
-            <Row k="Receiver" v={`Still selling the failed desk's bad paper until ${monthLabel(l.receiverUntilM!)}`} bad />
+            <Row k="Receiver" v={`Selling failed lender's loans until ${monthLabel(l.receiverUntilM!)}`} bad />
           )}
-          <Row k="Your accounts" v={[
-            isBank ? "your operating bank" : null,
-            yourLine ? ((game.loc?.balance ?? 0) > 0 ? `writes your line — ${usd(game.loc!.balance)} drawn` : "writes your line (undrawn)") : null,
-            l.yours > 0 ? `holds ${usd(l.yours)} of your debt` : null,
-          ].filter(Boolean).join(" · ") || "no relationship on the books yet"} />
+          <Row k="Your relationship" v={[
+            isBank ? "operating bank" : null,
+            yourLine ? ((game.loc?.balance ?? 0) > 0 ? `line of credit · ${usd(game.loc!.balance)} drawn` : "line of credit (undrawn)") : null,
+            l.yours > 0 ? `${usd(l.yours)} of your debt` : null,
+          ].filter(Boolean).join(" · ") || "none"} />
         </div>
       </div>
 
       {/* ---------------------------------------------------- balance sheet */}
-      <Section title="Balance sheet" note={<>
-        What it has lent and what stands behind it. The book is every named loan in town that this desk holds — yours,
-        the street's, the cranes — plus its lending to the town's other owners, which nobody can see loan by loan.
-      </>}>
+      <Section title="Balance sheet">
         <div className="grid">
           <Row k="Total book" v={usd(l.book)} />
-          <Row k="Named loans" v={`${usd(named)} — yours ${usd(yours)} · street mortgages ${usd(streetTerm)}${streetLines ? ` · street lines ${usd(streetLines)}` : ""}${cranes ? ` · construction ${usd(cranes)}` : ""}`} />
-          <Row k="Lent to the town's other owners" v={`${usd(anon)} (${pc(l.book > 0 ? anon / l.book : 0, 0)} of the book)`} />
+          <Row k="Named loans" v={`${usd(named)} · yours ${usd(yours)} · other mortgages ${usd(streetTerm)}${streetLines ? ` · other lines ${usd(streetLines)}` : ""}${cranes ? ` · construction ${usd(cranes)}` : ""}`} />
+          <Row k="Other loans (unnamed)" v={`${usd(anon)} (${pc(l.book > 0 ? anon / l.book : 0, 0)} of book)`} />
           <Row k="Capital" v={usd(l.capital)} bad={l.capital <= 0} />
-          <Row k="Capital ratio" v={`${pc(cr, 2)} against a ${pc(c.target, 1)} target — ${(cr / Math.max(0.01, c.target)).toFixed(2)}× · `
-            + `${l.kind === "conduit" ? "a conduit is never seized" : `the examiners close a desk near ${pc(c.target * 0.22, 1)}`}`}
+          <Row k="Capital ratio" v={`${pc(cr, 2)} vs ${pc(c.target, 1)} target · ${(cr / Math.max(0.01, c.target)).toFixed(2)}× · `
+            + `${l.kind === "conduit" ? "conduits not seized" : `seized near ${pc(c.target * 0.22, 1)}`}`}
             bad={cr < c.target * 0.7} good={cr > c.target * 1.15} />
           {l.dep?.rate !== undefined ? (() => {
             const d = l.dep!;
@@ -209,82 +201,75 @@ function BankFile({ l }: { l: Lender }) {
             const gap = mkt !== undefined ? d.rate! - mkt : 0;
             return (
               <>
-                <Row k="Deposits" v={`${usd(d.total)} · ${pc(d.uninsuredShare, 0)} over the insurance limit`
-                  + (d.flowYr !== undefined ? ` · ${d.flowYr >= 0 ? "+" : ""}${pc(d.flowYr, 0)} over the year` : "")}
+                <Row k="Deposits" v={`${usd(d.total)} · ${pc(d.uninsuredShare, 0)} uninsured`
+                  + (d.flowYr !== undefined ? ` · ${d.flowYr >= 0 ? "+" : ""}${pc(d.flowYr, 0)} / yr` : "")}
                   bad={(d.flowYr ?? 0) < -0.1} good={(d.flowYr ?? 0) > 0.1} />
-                <Row k="Pays depositors" v={`${d.rate!.toFixed(2)}%`
-                  + (mkt !== undefined ? ` — ${Math.abs(gap) < 0.05 ? "the going rate" : `${Math.abs(gap).toFixed(2)}pt ${gap > 0 ? "over" : "under"} the town's ${mkt.toFixed(2)}%`}` : "")
-                  + (gap > 0.25 ? " · paying up for money" : gap < -0.25 ? " · flush, and letting it go" : "")}
+                <Row k="Deposit rate" v={`${d.rate!.toFixed(2)}%`
+                  + (mkt !== undefined ? ` · ${Math.abs(gap) < 0.05 ? "at market" : `${gap > 0 ? "+" : "−"}${Math.abs(gap).toFixed(2)}pt vs market ${mkt.toFixed(2)}%`}` : "")}
                   bad={gap > 0.4} />
-                <Row k="Borrowed money" v={`${usd(d.wholesale ?? 0)} of advances, brokered CDs and repo — ${pc(l.book > 0 ? (d.wholesale ?? 0) / l.book : 0, 0)} of the book, and the part a panic reprices`}
+                <Row k="Wholesale funding" v={`${usd(d.wholesale ?? 0)} · advances, brokered CDs, repo · ${pc(l.book > 0 ? (d.wholesale ?? 0) / l.book : 0, 0)} of book`}
                   bad={l.book > 0 && (d.wholesale ?? 0) / l.book > c.wholesale + 0.1} />
                 <Row k="Cash & securities" v={usd(d.liquid ?? 0)} />
-                <Row k="Cost of funds" v={`${(l.fundCost ?? 0).toFixed(2)}% of the book`} />
+                <Row k="Cost of funds" v={`${(l.fundCost ?? 0).toFixed(2)}%`} />
               </>
             );
-          })() : <Row k="Funding mix" v={`${pc(c.wholesale, 0)} wholesale (repriced the week rates move) · ${pc(1 - c.wholesale, 0)} core`} />}
-          {c.adc > 0 && <Row k="Construction & land" v={`${pc(c.adc, 0)} of the book by policy — the first loans to sour when land prices fall`} />}
-          <Row k="Pressure to sell" v={`${(lenderPressure(l) * 100).toFixed(0)} / 100 — ${lenderPressure(l) > 0.4 ? "it will sell loans and buildings at whatever clears its balance sheet" : lenderPressure(l) > 0 ? "some — the note desk may hear from it" : "none; it can wait for the right price"}`} bad={lenderPressure(l) > 0.4} />
+          })() : <Row k="Funding mix" v={`${pc(c.wholesale, 0)} wholesale · ${pc(1 - c.wholesale, 0)} core`} />}
+          {c.adc > 0 && <Row k="Construction & land" v={`${pc(c.adc, 0)} of book (policy)`} />}
+          <Row k="Pressure to sell" v={`${(lenderPressure(l) * 100).toFixed(0)} / 100 · ${lenderPressure(l) > 0.4 ? "high · discounted note/REO sales" : lenderPressure(l) > 0 ? "moderate" : "none"}`} bad={lenderPressure(l) > 0.4} />
         </div>
       </Section>
 
       {/* -------------------------------------------------- income statement */}
       <Section title="Income statement" note={<>
-        {monthsIn === 0 ? "The year has just closed; " : `This calendar year to date (${monthsIn} month${monthsIn === 1 ? "" : "s"}), and `}the last full year. A desk earning
-        nothing is a desk about to stop quoting; one losing money is eating the capital that decides whether it survives.
+        {monthsIn === 0 ? "Year just closed" : `YTD (${monthsIn} month${monthsIn === 1 ? "" : "s"}) and last year`}
       </>}>
         {inc ? (
           <table className="tbl">
             <thead><tr><th></th><th className="num">This year</th><th className="num">Last year</th></tr></thead>
             <tbody>
-              <tr><td>Interest on the performing book</td><td className="num">{cur(inc.interest)}</td><td className="num">{prv(prev?.interest)}</td></tr>
+              <tr><td>Interest income</td><td className="num">{cur(inc.interest)}</td><td className="num">{prv(prev?.interest)}</td></tr>
               <tr><td>Cost of funds{(l.panicBps ?? 0) > 0 ? " (incl. panic surcharge)" : ""}</td><td className="num">{cur(inc.funding, true)}</td><td className="num">{prv(prev?.funding, true)}</td></tr>
-              <tr><td>Credit losses on the town's other owners</td><td className="num">{cur(inc.losses, true)}</td><td className="num">{prv(prev?.losses, true)}</td></tr>
-              <tr><td>Operating costs ({c.opexPct.toFixed(2)}% of book a year)</td><td className="num">{cur(inc.opex, true)}</td><td className="num">{prv(prev?.opex, true)}</td></tr>
+              <tr><td>Credit losses (unnamed loans)</td><td className="num">{cur(inc.losses, true)}</td><td className="num">{prv(prev?.losses, true)}</td></tr>
+              <tr><td>Operating costs ({c.opexPct.toFixed(2)}% of book/yr)</td><td className="num">{cur(inc.opex, true)}</td><td className="num">{prv(prev?.opex, true)}</td></tr>
               <tr><td>Tax ({pc(c.taxRate, 0)})</td><td className="num">{cur(inc.tax, true)}</td><td className="num">{prv(prev?.tax, true)}</td></tr>
               <tr><td><b>Net income</b></td><td className={"num" + (l.netIncomeYr < 0 ? " neg" : "")}><b>{cur(l.netIncomeYr)}</b></td><td className={"num" + ((prev?.netIncome ?? 0) < 0 ? " neg" : "")}><b>{prv(prev?.netIncome)}</b></td></tr>
-              <tr><td>Named loans written off (straight to capital)</td><td className="num">{(inc.writeOffs ?? 0) > 0 ? cur(inc.writeOffs!, true) : "—"}</td><td className="num">{prev?.writeOffs ? prv(prev.writeOffs, true) : "—"}</td></tr>
-              <tr><td>Dividends paid to its owners</td><td className="num">{(l.divYr ?? 0) > 0 ? cur(l.divYr!) : "—"}</td><td className="num">{prev?.dividends ? prv(prev.dividends) : "—"}</td></tr>
+              <tr><td>Named write-offs (to capital)</td><td className="num">{(inc.writeOffs ?? 0) > 0 ? cur(inc.writeOffs!, true) : "—"}</td><td className="num">{prev?.writeOffs ? prv(prev.writeOffs, true) : "—"}</td></tr>
+              <tr><td>Dividends</td><td className="num">{(l.divYr ?? 0) > 0 ? cur(l.divYr!) : "—"}</td><td className="num">{prev?.dividends ? prv(prev.dividends) : "—"}</td></tr>
             </tbody>
           </table>
-        ) : <div className="hint">The first month of books is still being written.</div>}
+        ) : <div className="hint">No data yet.</div>}
         <div className="grid" style={{ marginTop: 8 }}>
-          <Row k="Book yield" v={l.bookYield !== undefined ? `${l.bookYield.toFixed(2)}% — written over years, reprices as loans roll` : "—"} />
-          <Row k="Cost of funds" v={l.fundCost !== undefined ? `${Math.max(0, l.fundCost).toFixed(2)}%${(l.panicBps ?? 0) > 0 ? ` + ${(l.panicBps! * 100).toFixed(0)}bp panic surcharge while a desk is in receivership` : ""}` : "—"} />
-          <Row k="Net interest margin" v={`${pts(nim)} against a normal ${pts(c.normalNim)} for its kind`} bad={nim < c.normalNim * 0.5} />
+          <Row k="Book yield" v={l.bookYield !== undefined ? `${l.bookYield.toFixed(2)}% · reprices as loans roll` : "—"} />
+          <Row k="Cost of funds" v={l.fundCost !== undefined ? `${Math.max(0, l.fundCost).toFixed(2)}%${(l.panicBps ?? 0) > 0 ? ` + ${(l.panicBps! * 100).toFixed(0)}bp panic surcharge` : ""}` : "—"} />
+          <Row k="Net interest margin" v={`${pts(nim)} · normal ${pts(c.normalNim)}`} bad={nim < c.normalNim * 0.5} />
           <Row k="Return on assets" v={l.book <= 0 ? "—"
-            : monthsIn > 0 ? `${pc((l.netIncomeYr * 12 / monthsIn) / l.book, 2)} this year, annualised`
+            : monthsIn > 0 ? `${pc((l.netIncomeYr * 12 / monthsIn) / l.book, 2)} YTD annualized`
             : prev ? `${pc(prev.netIncome / l.book, 2)} last year` : "—"} />
         </div>
       </Section>
 
       {/* ------------------------------------------------------ credit quality */}
-      <Section title="Credit quality" note={<>
-        Named loans are counted: they are paying or they are not. The rest of the book is the town's other owners,
-        whose losses follow vacancy, unemployment and the credit cycle.
-      </>}>
+      <Section title="Credit quality">
         <div className="grid">
-          <Row k="Delinquent, whole book" v={pc(l.delinquent, 2)} bad={l.delinquent > 0.045} />
-          <Row k="Named loans not paying" v={`${usd(defaulted)}${named > 0 ? ` — ${pc(defaulted / named, 1)} of named` : ""}`} bad={defaulted > 0} />
-          <Row k="Named loans on watch" v={usd(watch)} />
-          <Row k="Other owners, delinquent" v={l.anonDelinq !== undefined ? pc(l.anonDelinq, 2) : "—"} />
+          <Row k="Delinquent (total)" v={pc(l.delinquent, 2)} bad={l.delinquent > 0.045} />
+          <Row k="Named in default" v={`${usd(defaulted)}${named > 0 ? ` · ${pc(defaulted / named, 1)} of named` : ""}`} bad={defaulted > 0} />
+          <Row k="Named on watch" v={usd(watch)} />
+          <Row k="Unnamed delinquent" v={l.anonDelinq !== undefined ? pc(l.anonDelinq, 2) : "—"} />
           <Row k="Charge-offs this year" v={usd(l.chargeOffsYr)} />
-          <Row k="Losses since founding" v={usd(l.chargeOffsTotal)} />
+          <Row k="Lifetime losses" v={usd(l.chargeOffsTotal)} />
         </div>
       </Section>
 
       {/* -------------------------------------------------------- terms today */}
-      <Section title="What it will write today" note={<>
-        Underwriting standards in town are <b>{standardsWord(st)}</b> ({st >= 0 ? "+" : ""}{st.toFixed(2)}). This desk's
-        appetite is <b>{l.appetite.toFixed(2)}</b>, so it advances {pc(adv, 0)} of whatever its sheet reads. Coupons are
-        for a clean office building, with your file at this desk.
+      <Section title="Loan terms today" note={<>
+        Standards <b>{standardsWord(st)}</b> ({st >= 0 ? "+" : ""}{st.toFixed(2)}) · appetite <b>{l.appetite.toFixed(2)}</b> · advance {pc(adv, 0)} of sheet · coupons for clean office, your file
       </>}>
         {products.length ? (
           <table className="tbl">
             <thead>
               <tr>
-                <th>Paper</th><th className="num">Sheet today</th><th className="num">After appetite</th><th className="num">Coupon</th>
-                <th className="num">Coverage / debt yield</th><th className="num">Term · IO · amort</th><th className="num">Cheque</th><th>Covenants</th><th>Open?</th>
+                <th>Product</th><th className="num">Sheet today</th><th className="num">After appetite</th><th className="num">Coupon</th>
+                <th className="num">DSCR / debt yield</th><th className="num">Term · IO · amort</th><th className="num">Loan size</th><th>Covenants</th><th>Open?</th>
               </tr>
             </thead>
             <tbody>
@@ -301,7 +286,7 @@ function BankFile({ l }: { l: Lender }) {
                     <td className="num">{pc(sheet, 0)}</td>
                     <td className="num">{pc(sheet * adv, 0)}</td>
                     <td className="num">{rate.toFixed(2)}%<span className="dim"> ({p.floating ? "short" : "loan"} index + {(rate - bench).toFixed(2)})</span></td>
-                    <td className="num">{p.uwDscr > 0 ? `${p.uwDscr.toFixed(2)}× · ${pc(p.debtYield, 1)}` : "on the dirt"}</td>
+                    <td className="num">{p.uwDscr > 0 ? `${p.uwDscr.toFixed(2)}× · ${pc(p.debtYield, 1)}` : "land"}</td>
                     <td className="num">{Math.round(p.termM / 12)}y · {Math.round(p.ioM / 12)}y · {p.amortYears}y</td>
                     <td className="num">{min && max ? `${usd(min)} – ${usd(max)}` : min ? `from ${usd(min)}` : max ? `up to ${usd(max)}` : "any size"}</td>
                     <td className="dim">{p.minDSCR > 0 ? `DSCR ${p.minDSCR.toFixed(2)} · ` : ""}LTV {pc(p.maxLTV, 0)}</td>
@@ -311,26 +296,23 @@ function BankFile({ l }: { l: Lender }) {
               })}
             </tbody>
           </table>
-        ) : <div className="hint">This desk writes construction paper only.</div>}
+        ) : <div className="hint">Construction loans only.</div>}
       </Section>
 
       {/* ------------------------------------------------------ limits */}
-      <Section title="Limits and concentration" note={<>
-        Two tests no coverage ratio can argue with: how much of the book one borrower may be, and how much of it one
-        kind of building may be. A desk that is full sends the next loan down the street, whoever brings it.
-      </>}>
+      <Section title="Limits and concentration">
         <div className="grid">
-          <Row k="Single-name limit" v={`${pc(singleNameCap(l.kind), 0)} of the book — ${usd(nameLimit)}`} />
-          <Row k="Your room under it" v={`${usd(Math.max(0, nameLimit - l.yours))} left (you use ${usd(l.yours)})`} bad={l.yours > nameLimit * 0.85} />
+          <Row k="Single-borrower limit" v={`${pc(singleNameCap(l.kind), 0)} of book · ${usd(nameLimit)}`} />
+          <Row k="Your headroom" v={`${usd(Math.max(0, nameLimit - l.yours))} (used ${usd(l.yours)})`} bad={l.yours > nameLimit * 0.85} />
         </div>
         {classTot > 0 && (
           <div className="hint" style={{ marginTop: 6 }}>
-            By class in this town: {Object.entries(l.classBook ?? {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${pc(v / classTot, 0)}`).join(" · ")}
+            By class: {Object.entries(l.classBook ?? {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${pc(v / classTot, 0)}`).join(" · ")}
           </div>
         )}
         {topBorrowers.length > 0 && (
           <table className="tbl" style={{ marginTop: 6 }}>
-            <thead><tr><th>Biggest named borrowers</th><th className="num">Owed</th><th className="num">Of the book</th><th className="num">Of its limit</th></tr></thead>
+            <thead><tr><th>Top borrowers</th><th className="num">Owed</th><th className="num">% of book</th><th className="num">% of limit</th></tr></thead>
             <tbody>
               {topBorrowers.map(([id, amt]) => (
                 <tr key={id} style={id === "player" ? { background: "rgba(120,100,70,0.10)" } : undefined}>
@@ -346,20 +328,18 @@ function BankFile({ l }: { l: Lender }) {
       </Section>
 
       {/* ---------------------------------------------------- you and them */}
-      <Section title="You and this desk" note={<>
-        Your file is earned by paying as agreed; a tripped covenant, a workout or a deed in lieu takes it back.
-      </>}>
+      <Section title="Relationship" note={<>Builds with on-time payment · lost on covenant breach, workout or deed in lieu</>}>
         <div className="grid">
-          <Row k="Your file" v={`${rel.toFixed(0)} / 100`} good={rel >= 55} bad={rel < 15} />
-          <Row k="Your file is worth" v={relCurve(game, l.name) > 0 ? `${(relCurve(game, l.name) * 100).toFixed(0)}bp off every quote` : (l.kind === "conduit" ? "nothing — a bond has never met you" : "nothing yet")} />
-          {products[0] && <Row k="…and on the advance" v={relAdvance(game, products[0]) > 0 ? `${(relAdvance(game, products[0]) * 100).toFixed(1)} points more` : "nothing yet"} />}
-          <Row k="If you defaulted today" v={`${mood.willExtend ? "they would extend" : "they would not extend"} — ${mood.why}`} bad={!mood.willExtend} />
-          {mood.willExtend && <Row k="Extension terms" v={`${pc(mood.feePct, 0)} fee · +${mood.bumpPct.toFixed(1)} on the coupon · ${pc(mood.paydownPct, 0)} paid down · cash flow swept`} />}
-          <Row k="Their condition" v={cond.healthy ? "healthy" : cond.stretched ? "stretched" : "impaired"} bad={!cond.stretched} />
+          <Row k="Relationship score" v={`${rel.toFixed(0)} / 100`} good={rel >= 55} bad={rel < 15} />
+          <Row k="Rate benefit" v={relCurve(game, l.name) > 0 ? `−${(relCurve(game, l.name) * 100).toFixed(0)}bp` : (l.kind === "conduit" ? "none (conduit)" : "none")} />
+          {products[0] && <Row k="LTV benefit" v={relAdvance(game, products[0]) > 0 ? `+${(relAdvance(game, products[0]) * 100).toFixed(1)} pts` : "none"} />}
+          <Row k="On default today" v={`${mood.willExtend ? "would extend" : "would not extend"} · ${mood.why}`} bad={!mood.willExtend} />
+          {mood.willExtend && <Row k="Extension terms" v={`${pc(mood.feePct, 0)} fee · +${mood.bumpPct.toFixed(1)} coupon · ${pc(mood.paydownPct, 0)} paydown · cash sweep`} />}
+          <Row k="Lender condition" v={cond.healthy ? "healthy" : cond.stretched ? "stretched" : "impaired"} bad={!cond.stretched} />
         </div>
         {mine.length > 0 && (
           <table className="tbl" style={{ marginTop: 6 }}>
-            <thead><tr><th>Your paper with them</th><th>Kind</th><th className="num">Balance</th><th>Status</th></tr></thead>
+            <thead><tr><th>Your loans</th><th>Kind</th><th className="num">Balance</th><th>Status</th></tr></thead>
             <tbody>
               {mine.map((x, i) => (
                 <tr key={i} onClick={() => x.bbl && focus(x.bbl, true)} style={{ cursor: x.bbl ? "pointer" : undefined }}>
@@ -375,9 +355,7 @@ function BankFile({ l }: { l: Lender }) {
       </Section>
 
       {/* ---------------------------------------------------- the loan book */}
-      <Section title={`The loan book — ${statement.length} loan${statement.length === 1 ? "" : "s"} against deeds in this town`} note={<>
-        Every mortgage and construction loan this desk holds against a named building. Click a row to open the building.
-      </>}>
+      <Section title={`Loan book · ${statement.length} loan${statement.length === 1 ? "" : "s"}`}>
         {statement.length ? (
           <table className="tbl">
             <thead>
@@ -404,7 +382,7 @@ function BankFile({ l }: { l: Lender }) {
       </Section>
 
       {/* ---------------------------------------------------- the record */}
-      <Section title="The record">
+      <Section title="History">
         {hist.length > 1 ? (
           <>
             <LineChart height={150}
@@ -413,9 +391,9 @@ function BankFile({ l }: { l: Lender }) {
               yFmt={(v) => `${v.toFixed(1)}%`}
               xLabels={[`${Math.round(hist.length / 4)} yrs ago`, "now"]}
               xAt={(i) => { const q = hist.length - 1 - i; return q === 0 ? "now" : `${q} qtr${q === 1 ? "" : "s"} ago`; }} />
-            <div className="hint">Capital ratio, quarterly. A line walking down toward the seizure band is a desk to refinance away from while it still quotes.</div>
+            <div className="hint">Capital ratio, quarterly</div>
           </>
-        ) : <div className="hint">No history yet — the statement is sampled quarterly.</div>}
+        ) : <div className="hint">No history yet (quarterly).</div>}
         {news.length > 0 && (
           <ul className="news-list" style={{ marginTop: 6 }}>
             {news.map((n, i) => <li key={i} className={n.kind === "warn" ? "neg" : undefined}><span className="dim mono">{monthLabel(n.q)}</span> {n.text}</li>)}

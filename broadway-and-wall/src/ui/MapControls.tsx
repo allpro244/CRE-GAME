@@ -35,7 +35,6 @@ export default function MapControls() {
   const mapOnly = useStore((s) => s.mapOnly);
   const mapFirm = useStore((s) => s.mapFirm);
   const firmName = useStore((s) => (s.mapFirm ? s.game?.rivals.find((r) => r.id === s.mapFirm)?.name : undefined));
-  const setPage = useStore((s) => s.setPage);
   // With a building selected its card takes the right-hand column; the strip
   // centres on the map that is left rather than running under the card.
   const carded = useStore((s) => !!s.selectedBBL);
@@ -61,7 +60,7 @@ export default function MapControls() {
         {mapFilter === "firm" && mapFirm && (
           <>
             <button type="button" className="map-controls-btn on" title="Back to their page"
-              onClick={() => setPage("players")}>{firmName ?? "Firm"}</button>
+              onClick={() => useStore.getState().openFirm(mapFirm)}>{firmName ?? "Firm"}</button>
             <button type="button" className="map-controls-btn" title="Show the whole city again"
               onClick={() => setMapFilter("all")}>✕</button>
           </>

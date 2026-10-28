@@ -21,6 +21,11 @@ import { useHeldGame } from "@/ui/heldGame";
 import Slider from "@/ui/Slider";
 import SchemeViewer from "@/ui/panels/SchemeViewer";
 import { dominantOf } from "@/engine/proforma";
+import { planDevelopment, takeoutHedgeCost, takeoutHedgeRequired, takeoutRead, maxRetailShare, BTS_TERM_MIN_Y, BTS_TERM_MAX_Y, btsTermY } from "@/engine/dev";
+import { maxOutside, syndicateBar } from "@/engine/syndicate";
+import { raisePreview, type RaiseJob } from "@/engine/raise";
+import { committedTotal, type PitchStyle } from "@/engine/investors";
+import { ownedHoldingValue } from "@/engine/value";
 import { BUILD_TIERS, buildTier } from "@/engine/value";
 import { START_YEAR, type DevDraft, type DevUse } from "@/engine/types";
 import { KITS, KIT_GROUPS } from "@/engine/renderView";
@@ -87,6 +92,21 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
     const { form: _f, formRetained: _r, formSkin: _s, ...look } = design;
     set({ use: u, product: undefined, floors: fl, cov: coverFor(rec, u, fl), design: look });
   };
+
+  // EACH LENDER'S MOST ON THIS JOB (owner, Oct 2026: "add a max LTV ... for each
+  // lender"): its own plan's loan-to-cost, which the job's value can hold below
+  // the desk's sheet maximum. Priced only here, not in the scheme sweep.
+  const [, , , , , customArgs, , specArg] = d.commitArgs;
+  const lenderKey = JSON.stringify([bbl, game.month, use, floors, d.cov, specArg, customArgs, d.quotes.map((q) => q.lender)]);
+  const lenderMax = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const q of d.quotes) {
+      if (!q.open || !(q.ltcMax > 0)) continue;
+      out[q.lender] = planDevelopment(game, parcels, bbl, use, floors, d.cov, "gmp", undefined, customArgs, q.lender, specArg)?.ltcMax ?? 0;
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lenderKey]);
 
   // the starting points: the best three schemes on the lot
   const starts = useMemo(() => {
@@ -175,6 +195,15 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
                 format={() => `${floors} fl${plan ? ` · ${sf(plan.sf)} · ${Math.round(cov * 100)}% lot` : ""}`} />
             </Row>
           )}
+          {/* THE ENVELOPE IS FULL (owner: "the sqft stops growing"): past the
+              district's FAR more floors only slim the floorplate; the way out is a FAR filing */}
+          {!d.product && plan && plan.far >= plan.farMax - 0.05 && <div className="bd-terms">
+            FAR max {plan.farMax.toFixed(1)} · more floors only slim the floorplate ·{" "}
+            <button type="button" className="bd-link" onClick={() => {
+              useStore.getState().openProperty(bbl, "summary");
+              window.setTimeout(() => useStore.setState({ pageJump: "Zoning variance" }), 120);
+            }}>File for more FAR</button>
+          </div>}
           <Row k="Tier">
             {BUILD_TIERS.map((t) => (
               <Chip key={t.key} on={tier.key === t.key} title={t.blurb} onClick={() => set({ spec: t.spec })}>{t.label}</Chip>
@@ -212,9 +241,9 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
           {d.quotes.length > 0 && <Row k="Lender">
             {d.quotes.map((q) => (
               <Chip key={q.lender} on={(plan?.lender ?? d.bank) === q.lender} disabled={!q.open || !(q.ltcMax > 0)}
-                title={q.why ?? `${q.lender}: at most ${Math.round(q.ltcMax * 100)}% of cost, less if the building is worth less, at ${pct2(q.ratePct)}, ${(q.points * 100).toFixed(1)} pts`}
+                title={q.why ?? `${q.lender}: lends up to ${Math.round((lenderMax[q.lender] ?? 0) * 100)}% of this job's cost (loan-to-cost) at ${pct2(q.ratePct)}, ${(q.points * 100).toFixed(1)} pts`}
                 onClick={() => set({ bank: q.lender })}>
-                {q.lender} <span className="bd-sub">{q.open && q.ltcMax > 0 ? pct2(q.ratePct) : "closed"}</span>
+                {q.lender} <span className="bd-sub">{q.open && q.ltcMax > 0 ? `${pct2(q.ratePct)} · ${Math.round((lenderMax[q.lender] ?? 0) * 100)}% max` : "closed"}</span>
               </Chip>))}
           </Row>}
           {/* THE LOAN, ANY AMOUNT (owner): 0 to all the lender offers, in 5% steps of its maximum */}
@@ -226,7 +255,28 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
           {plan && <div className="bd-terms mono">{plan.commitment > 0
             ? `${plan.lender} · ${pct2(plan.ratePct)} · ${Math.round(plan.ltc * 100)}% LTC · ${usd(plan.commitment)} · ${(plan.points * 100).toFixed(1)} pts`
             : plan.ltcMax > 0 ? `All equity · ${plan.lender} offers ${Math.round(plan.ltcMax * 100)}% at ${pct2(plan.ratePct)}` : (plan.lenderNote ?? "No lender quotes")}</div>}
+          {/* THE REST OF THE DEBT (owner, Oct 2026: "you should be able to add a rate cap"):
+              the takeout hedge, the fees and the loan the building inherits at delivery */}
+          {plan && plan.commitment > 0 && <>
+            <Row k="Rate">
+              {(["float", "cap", "fixed"] as const).map((k) => (
+                <Chip key={k} on={d.takeout === k} disabled={k === "float" && takeoutHedgeRequired(plan)}
+                  title={k === "float" ? (takeoutHedgeRequired(plan) ? "The lender requires a cap or a lock at this loan size" : "Float at index + spread")
+                    : k === "cap" ? "Rate cap: the index is capped 1.5 pts over today's until the mini-perm matures" : "Lock the takeout rate today"}
+                  onClick={() => set({ takeout: k })}>
+                  {k === "float" ? "Float" : k === "cap" ? "Rate cap" : "Fixed lock"}<span className="bd-sub"> {k === "float" ? "$0" : usd(takeoutHedgeCost(plan, k))}</span>
+                </Chip>))}
+            </Row>
+            {(() => {
+              const t = takeoutRead(game.econ, plan, d.takeout);
+              const x = (v: number) => (Number.isFinite(v) ? `${v.toFixed(2)}×` : "—");
+              return <div className="bd-terms mono">
+                {`Fee ${usd(plan.pointsCost)} · interest reserve ${usd(plan.interestReserve)} · at delivery ${pct2(t.ratePct)}, DSCR ${x(t.dscr)} (${x(t.dscrStress)} if rates +3)`}
+              </div>;
+            })()}
+          </>}
           {d.prospect && <div className="bd-terms">Anchor: {d.prospect.name}</div>}
+          <More d={d} bbl={bbl} set={set} />
           <Details d={d} />
           {commit && <CommitButton d={d} bbl={bbl} />}
         </div>
@@ -249,6 +299,97 @@ function Verdict({ d }: { d: DeskScheme }) {
       <div className="bd-cell"><div className="bd-lab">Build</div><div className="bd-mid mono">{p.months} mo</div></div>
       {d.short > 0 && <div className="bd-note">Short {usd(d.short)}</div>}
     </div>
+  );
+}
+
+/**
+ * MORE (owner, Oct 2026: "the build desk seems to be missing some options
+ * hidden within the code"). What the engine takes and the simple desk had
+ * dropped: the contract, the rate hedge, shops at grade, the mixed stack, a
+ * build-to-suit listing and outside investors. Closed until opened.
+ */
+function More({ d, bbl, set }: { d: DeskScheme; bbl: string; set: (p: Partial<DevDraft>) => void }) {
+  const game = useHeldGame(bbl);
+  const parcels = useStore((s) => s.parcels)!;
+  const [pitch, setPitch] = useState<PitchStyle>("base");
+  const [share, setShare] = useState(1);
+  const plan = d.plan;
+  const held = game.holdings[bbl];
+  const offer = held?.btsOffer;
+  const [termY, setTermY] = useState(() => btsTermY(offer?.termY));
+  const raise = game.raises?.[bbl];
+  const [use, floors, cov, contract, ltc, custom, lender, spec] = d.commitArgs;
+  const job: RaiseJob = { use, floors, coverage: cov, contract, ltc, custom, lender, spec, pitch };
+  // outside equity: the engine's own limits (syndicate.ts), the site counted at its equity
+  const synBar = !held ? "Buy the lot first." : d.purse.fund ? "A fund lot is built with the fund's money." : syndicateBar(game, bbl);
+  const landEquity = held ? Math.max(0, ownedHoldingValue(game, parcels, held) - d.siteDebt) : 0;
+  const outMax = plan && !synBar ? maxOutside(game, d.need.whole, landEquity) : 0;
+  const outside = Math.round(outMax * share / 10_000) * 10_000;
+  const pv = plan && outside > 0 ? raisePreview(game, plan, landEquity, d.need.whole, outside, pitch) : null;
+  const split = d.draft.split ?? { retail: 15, office: 45, multifamily: 40 };
+  const retailCap = Math.max(0, Math.floor(maxRetailShare(floors) * 100));
+  const nonRetail = Math.max(1, split.office + split.multifamily);
+  const officeShare = Math.round((split.office / nonRetail) * 100);
+  const pct = (x: number) => `${Math.round(x * 100)}%`;
+  return (
+    <details className="bd-details">
+      <summary>More</summary>
+      <div className="bd-choices" style={{ marginTop: 6 }}>
+        <Row k="Contract">
+          <Chip on={contract === "gmp"} title="Guaranteed maximum price: the builder carries most overruns" onClick={() => set({ contract: "gmp" })}>GMP</Chip>
+          <Chip on={contract === "costplus"} title="Cost-plus: a cheaper bid, but overruns are yours" onClick={() => set({ contract: "costplus" })}>Cost-plus</Chip>
+        </Row>
+        {(use === "office" || use === "multifamily") && !d.product && <Row k="Shops">
+          {(["auto", "on", "off"] as const).map((k) => (
+            <Chip key={k} on={d.groundRetail === k} onClick={() => set({ groundRetail: k })}>{k === "auto" ? "Auto" : k === "on" ? "Ground floor" : "None"}</Chip>))}
+        </Row>}
+        {use === "mixed" && <>
+          <Row k="Shops">
+            <Slider label="Retail" value={Math.min(split.retail, retailCap)} min={0} max={Math.max(1, retailCap)} step={1}
+              onChange={(v) => set({ split: { retail: v, office: split.office, multifamily: split.multifamily } })} format={(v) => `${v}%`} />
+          </Row>
+          <Row k="Upper">
+            <Slider label="Office share" value={officeShare} min={0} max={100} step={5}
+              onChange={(v) => set({ split: { retail: split.retail, office: v, multifamily: 100 - v } })} format={(v) => `${v}% office · ${100 - v}% homes`} />
+          </Row>
+        </>}
+        {use !== "mixed" && !d.product && <Row k="Anchor">
+          {d.prospect
+            ? <><span className="bd-terms" style={{ paddingLeft: 0 }}>{d.prospect.name}</span><Chip on={false} onClick={() => useStore.getState().clearBts(bbl)}>Back to spec</Chip></>
+            : <>
+              <Slider label="Lease term" value={termY} min={BTS_TERM_MIN_Y} max={BTS_TERM_MAX_Y} step={1} onChange={setTermY} format={(v) => `${v} yrs`} />
+              <Chip on={!!offer} title="List the building for a build-to-suit tenant before groundbreak"
+                onClick={() => useStore.getState().proposeBts(bbl, use, floors, cov, termY)}>{offer ? "Update listing" : "List"}</Chip>
+              {offer && <Chip on={false} onClick={() => useStore.getState().clearBts(bbl)}>Pull</Chip>}
+            </>}
+        </Row>}
+        <Row k="Investors">
+          {raise
+            ? <>
+              <span className="bd-terms mono" style={{ paddingLeft: 0 }}>Raising {usd(committedTotal(raise))} of {usd(raise.target)}</span>
+              <Chip on={false} disabled={committedTotal(raise) < raise.target / 2} title="Needs half the target" onClick={() => useStore.getState().closeRaiseNow(bbl)}>Close now</Chip>
+              <Chip on={false} onClick={() => useStore.getState().cancelRaise(bbl)}>Cancel</Chip>
+            </>
+            : synBar || !plan || !(outMax > 0)
+              ? <span className="bd-terms" style={{ paddingLeft: 0 }}>{synBar ?? "No outside equity available"}</span>
+              : <>
+                <Slider label="Raise" value={share} min={0} max={1} step={0.1} onChange={setShare} format={() => `${usd(outside)} of ${usd(outMax)}`} />
+                {(["conservative", "base", "aggressive"] as const).map((k) => (
+                  <Chip key={k} on={pitch === k} title="How the return is pitched to investors" onClick={() => setPitch(k)}>{k === "conservative" ? "Low pitch" : k === "base" ? "Base" : "High pitch"}</Chip>))}
+              </>}
+        </Row>
+        {!raise && pv && <div className="bd-terms mono">
+          {`Promise ${pct(pv.pitchIrr)} · fills ${pct(pv.odds.full)} · small ${pct(pv.odds.small)} · fails ${pct(pv.odds.fail)} · ~${Math.round(pv.odds.months)} mo`}
+        </div>}
+        {!raise && outside > 0 && (pv && pv.pitchIrr <= 0
+          // investors do not fund a projected loss (raise.ts raiseQuote): say so before the click
+          ? <div className="bd-warn">Projects a loss ({pct(pv.pitchIrr)} a year) — investors will not fund it</div>
+          : <div className="bd-v" style={{ paddingLeft: 60 }}>
+            <button type="button" className="btn" onClick={() => useStore.getState().launchRaise(bbl, job, outside)}>Open raise · {usd(outside)}</button>
+            <button type="button" className="btn btn-buy" onClick={() => useStore.getState().raiseAndBuild(bbl, job, outside)}>Raise and build</button>
+          </div>)}
+      </div>
+    </details>
   );
 }
 

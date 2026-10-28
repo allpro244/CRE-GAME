@@ -114,7 +114,7 @@ export default function GamePanels() {
         e.preventDefault();
         if (st.autoplay) { st.setAutoplay(0); return; }
         if (onScreen(".modal-backdrop")) {
-          useStore.setState({ toast: { text: "Answer or dismiss the card on your desk before playing.", kind: "err", at: Date.now() } });
+          useStore.setState({ toast: { text: "Resolve the open card first.", kind: "err", at: Date.now() } });
           return;
         }
         if (!st.game?.gameOver) st.setAutoplay(1);
@@ -125,7 +125,7 @@ export default function GamePanels() {
       if (wantsTime && onScreen(".modal-backdrop")) {
         e.preventDefault();
         useStore.setState({
-          toast: { text: "Answer or dismiss the card on your desk before advancing time.", kind: "err", at: Date.now() },
+          toast: { text: "Resolve the open card first.", kind: "err", at: Date.now() },
         });
         return;
       }
@@ -141,25 +141,25 @@ export default function GamePanels() {
   const views = open && !kept.includes(page) ? [...kept, page] : kept;
   if (!hasGame) return null;
   const title = page === "portfolio" ? "Portfolio"
-    : page === "deals" ? "The Deals Desk"
-    : page === "books" ? "The Books"
+    : page === "deals" ? "Deals"
+    : page === "books" ? "Books"
     : page === "news" ? "News"
     : page === "leasing" ? "Leasing & Occupancy"
     : page === "debt" ? "Debt"
     : page === "investors" ? "Investors"
-    : page === "banks" ? "The Banks"
+    : page === "banks" ? "Banks"
     : page === "property" ? (propAddr ?? "Property")
     : page === "saves" ? "Saved Games"
     : page === "economy" ? "Markets"
-    : page === "pulse" ? "The City"
+    : page === "pulse" ? "City"
     : page === "players" ? "Players"
-    : page === "buildings" ? "Every Building"
+    : page === "buildings" ? "Buildings"
     : page === "rankings" ? "Rankings"
-    : page === "notes" ? "The Note Desk"
+    : page === "notes" ? "Notes"
     : page === "firm" ? "The Record"
     : page === "settings" ? "Settings"
-    : page === "primer" ? "How this business works"
-    : "The Marketplace";
+    : page === "primer" ? "Primer"
+    : "Marketplace";
   const desk = deskOf(page);
   const kicker = page === "property" ? (propOwned ? "Portfolio · your building" : "Property file")
     : desk ? desk.label
@@ -167,26 +167,26 @@ export default function GamePanels() {
     : page === "settings" ? "Preferences"
     : page === "primer" ? "Primer"
     : "";
-  const subtitle = page === "portfolio" ? "Value, income, concentration and the shape of what you own."
-    : page === "deals" ? "Every live negotiation, bid, contract and clock on your desk."
-    : page === "books" ? "Cash movement, operating results and the record of the firm."
-    : page === "news" ? "The stories buried in the city's records, the wire's headlines and the closed sales."
-    : page === "leasing" ? "Occupancy, expirations and the mandate you have delegated."
-    : page === "debt" ? "Coverage, maturities, pricing and refinancing risk across the book."
-    : page === "investors" ? "What investors think of you, what they will put in and on what terms — deal by deal, and the fund."
-    : page === "banks" ? "Every lender in town, with its books open — capital, income, losses, terms, limits and every loan."
-    : page === "property" ? "The complete operating, financing and development record."
-    : page === "saves" ? "Named snapshots you can return to. The live campaign autosaves on its own."
-    : page === "economy" ? "Each market in depth — space, land, credit, employers and the zoning board."
-    : page === "pulse" ? "How the city is doing and what changed, on one screen."
-    : page === "players" ? "Who else owns this town, how big they are, and how much rope they have left."
-    : page === "buildings" ? "Every standing building in town — size, income, value and owner."
-    : page === "rankings" ? "Size, growth, jobs, pay and rent against thirty-two real US cities."
-    : page === "notes" ? "Buy bank paper, write private bridges, service what you hold."
-    : page === "firm" ? "Every deed, delivery, exit and refinancing since founding — the campaign on one strip."
-    : page === "settings" ? "Display, interruption and simulation controls."
-    : page === "primer" ? "The quantities this game expects you to reason with."
-    : "On-market listings, off-market calls and motivated sellers.";
+  const subtitle = page === "portfolio" ? "Value, income, concentration"
+    : page === "deals" ? "Negotiations and contracts"
+    : page === "books" ? "Cash flow and ledger"
+    : page === "news" ? "Headlines and closed sales"
+    : page === "leasing" ? "Occupancy and expirations"
+    : page === "debt" ? "Coverage, maturities, refinancing"
+    : page === "investors" ? "Investor capital and fund"
+    : page === "banks" ? "Lender financials and loans"
+    : page === "property" ? "Operations, financing, development"
+    : page === "saves" ? "Named snapshots"
+    : page === "economy" ? "Markets by sector"
+    : page === "pulse" ? "City overview"
+    : page === "players" ? "Rival firms"
+    : page === "buildings" ? "All buildings"
+    : page === "rankings" ? "Vs. 32 US cities"
+    : page === "notes" ? "Loan trading and bridges"
+    : page === "firm" ? "Firm history"
+    : page === "settings" ? "Display and simulation"
+    : page === "primer" ? "Core CRE metrics"
+    : "Listings and off-market";
   // The map card is a glance. Firm desks open as rooms (~1100px parchment)
   // so a rent roll, deal stage or debt book is readable — the narrow right
   // dock from the map-first pass was too small for that work.
@@ -562,7 +562,7 @@ function useHintFolds(ref: React.RefObject<HTMLDivElement | null>, page: Page) {
         if (el.querySelector("button, a, input, select, textarea")) continue;
         if ((el.textContent ?? "").length < FOLD_CHARS) continue;
         el.classList.add("hint-fold");
-        el.title = "Click to read the rest";
+        el.title = "Expand";
       }
     };
     scan();

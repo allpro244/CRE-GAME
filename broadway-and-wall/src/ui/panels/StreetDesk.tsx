@@ -11,7 +11,6 @@ import { firmName } from "@/engine/firm";
 import { usd, sf } from "@/ui/format";
 import { Row, STYLE_MAX, CONDITION_WORD, STYLE_WORD } from "@/ui/panels/shared";
 import { TakePrivateDesk, TakenPrivateRecord } from "@/ui/panels/TakePrivateDesk";
-import { poss } from "@/engine/takeprivate";
 import { HeadlinerStrip, RaceChart, FirmPage, SignatureTraits, StreetTicker } from "@/ui/panels/CompetitorCards";
 import { labelOf } from "@/engine/storyline";
 import Fold from "@/ui/Fold";
@@ -40,7 +39,15 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
   const parcels = useStore((s) => s.parcels)!;
   const focus = useStore((s) => s.focus);
   // Coming back from "show on the map", their row is open again.
-  const [open, setOpen] = useState<string | null>(() => useStore.getState().mapFilter === "firm" ? useStore.getState().mapFirm ?? null : null);
+  const [open, setOpen] = useState<string | null>(() => useStore.getState().firmFocus ?? (useStore.getState().mapFilter === "firm" ? useStore.getState().mapFirm ?? null : null));
+  // A FIRM'S NAME CLICKED ELSEWHERE (a deed's owner, the map's firm chip) opens its row here, in view
+  const firmFocus = useStore((s) => s.firmFocus);
+  useEffect(() => {
+    if (!firmFocus) return;
+    setOpen(firmFocus);
+    const t = window.setTimeout(() => document.querySelector(`[data-firm="${firmFocus}"]`)?.scrollIntoView({ block: "start" }), 80);
+    return () => window.clearTimeout(t);
+  }, [firmFocus]);
   // YOU ARE THE ROW YOU CAME FOR. The top bar's Street readout opens this
   // table, and in most of a career your row is twenty-odd firms down — below
   // the fold, under the leaders. Bring it into view when a link brought you
@@ -81,13 +88,7 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
   return (
     <>
       <div className="page-section">
-        Competitors · competing money {appetite < 0.6 ? "has left the room" : appetite < 0.9 ? "is thin" : appetite > 1.15 ? "is everywhere" : "is normal"}
-      </div>
-      <div className="hint">
-        These firms bid on the same tape you do, with their own money — a firm without the equity does not
-        close, and one already at its covenant cannot borrow to. When their dry powder is high your lowballs
-        get refused; when their leverage runs past their covenants they sell into whatever bid exists, and
-        that bid is you. Click any firm for its balance sheet and what it owns.
+        Competitors · buyer demand {appetite < 0.6 ? "none" : appetite < 0.9 ? "thin" : appetite > 1.15 ? "strong" : "normal"}
       </div>
       {/* THE DOOR TO THE STREET. How many firms this town carries is an output
           of two terms — whether buildings yield over the debt against them,
@@ -100,10 +101,10 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
         const streetOpen = ep.leverage > 0 && ep.product > 0 && ep.pitch > 0;
         const line = !streetOpen
           ? ep.leverage <= 0
-            ? "Nobody is raising a new fund into this street today: buildings yield less than the debt against them, and no allocator pays fees for negative leverage."
-            : "Nobody is raising a new fund into this street today: nothing has traded in a year, so there is no product to pitch a first close on."
-          : `The market is open to a new raise — cap rates clear the cost of debt, and ${ep.traded} trade${ep.traded === 1 ? "" : "s"} went round ${ep.firms} firm${ep.firms === 1 ? "" : "s"} this past year`
-            + `${ep.thin > 1.15 ? ", with few bidders contesting them" : ""}. On these terms somebody will eventually clear a first close.`;
+            ? "New firm entry: closed · negative leverage (cap rates below debt cost)"
+            : "New firm entry: closed · no trades in 12 months"
+          : `New firm entry: open · positive leverage · ${ep.traded} trade${ep.traded === 1 ? "" : "s"} across ${ep.firms} firm${ep.firms === 1 ? "" : "s"} in 12 months`
+            + `${ep.thin > 1.15 ? " · few bidders" : ""}`;
         const bids = game.founderBids ?? [];
         return (
           <>
@@ -114,10 +115,10 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
                   <Row
                     key={`${b.fromFirmId}:${b.readyM}`}
                     k="Raising now"
-                    v={`A team raising out of ${b.fromFirmName}`
+                    v={`Spin-out from ${b.fromFirmName}`
                       + (b.readyM > game.month
-                        ? ` · raising from ${monthLabel(b.readyM)}`
-                        : ` · ${Math.max(0, FOUNDER_WINDOW_M - (b.openMs ?? 0))} open month${FOUNDER_WINDOW_M - (b.openMs ?? 0) === 1 ? "" : "s"} left to clear a first close`)}
+                        ? ` · from ${monthLabel(b.readyM)}`
+                        : ` · ${Math.max(0, FOUNDER_WINDOW_M - (b.openMs ?? 0))} month${FOUNDER_WINDOW_M - (b.openMs ?? 0) === 1 ? "" : "s"} left to first close`)}
                   />
                 ))}
               </div>
@@ -129,8 +130,8 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
       {approach && (
         <div className="hint" style={{ borderLeft: "3px solid var(--accent, #8a6d1f)", paddingLeft: 8, cursor: "pointer" }}
           onClick={() => setOpen(approach.firmId)}>
-          {poss(approach.name)} banker has called: the board will talk about {usd(approach.ask)} for the company, until {monthLabel(approach.expiresM)}.
-          {" "}{approach.why} Open their row for the book and the closing numbers.
+          {approach.name} · take-private ask {usd(approach.ask)} · expires {monthLabel(approach.expiresM)}
+          {" "}· {approach.why}
         </div>
       )}
       <TakenPrivateRecord />
@@ -152,8 +153,8 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
           const rank = board.findIndex((b) => b.me) + 1;
           return (
             <>
-              <Row k="Your place among competitors" v={`${rank} of ${board.length} by equity`} strong bad={rank > board.length / 2} />
-              <Row k="The biggest book in town" v={`${board[0].name} · ${usd(board[0].eq)}`} />
+              <Row k="Your rank" v={`${rank} of ${board.length} by equity`} strong bad={rank > board.length / 2} />
+              <Row k="Largest firm" v={`${board[0].name} · ${usd(board[0].eq)}`} />
             </>
           );
         })()}
@@ -171,29 +172,29 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
         const yr = distressTally(game, 12);
         const n = stressed.length + weakDesks.length + receiverSales.length + yr.defaults + yr.firms + yr.banks;
         return (
-          <Fold id="competitors:distress" title="Distress board" summary={n ? `${stressed.length} firm${stressed.length === 1 ? "" : "s"} behind on their debt · ${weakDesks.length} lender${weakDesks.length === 1 ? "" : "s"} under target · ${receiverSales.length} receiver sale${receiverSales.length === 1 ? "" : "s"} on the market` : "Nobody in trouble today"} defaultOpen={n > 0}>
-            <Row k="The last twelve months"
-              v={`${yr.defaults} building${yr.defaults === 1 ? "" : "s"} back to the lenders · ${yr.firms} firm${yr.firms === 1 ? "" : "s"} gone under · ${yr.banks} bank${yr.banks === 1 ? "" : "s"} closed`}
+          <Fold id="competitors:distress" title="Distress board" summary={n ? `${stressed.length} firm${stressed.length === 1 ? "" : "s"} delinquent · ${weakDesks.length} lender${weakDesks.length === 1 ? "" : "s"} under target · ${receiverSales.length} receiver sale${receiverSales.length === 1 ? "" : "s"}` : "None"} defaultOpen={n > 0}>
+            <Row k="Last 12 months"
+              v={`${yr.defaults} foreclosure${yr.defaults === 1 ? "" : "s"} · ${yr.firms} firm${yr.firms === 1 ? "" : "s"} failed · ${yr.banks} bank${yr.banks === 1 ? "" : "s"} closed`}
               bad={yr.defaults + yr.firms + yr.banks > 0} />
             {stressed.map((r) => (
               <Row key={r.id} k={r.name}
-                v={`${r.stressMs} month${r.stressMs === 1 ? "" : "s"} behind · ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"}`
-                  + ((r.stressMs ?? 0) < NOTICE_M ? ` · the desks file in ${NOTICE_M - (r.stressMs ?? 0)} month${NOTICE_M - (r.stressMs ?? 0) === 1 ? "" : "s"}`
-                    : ` · filed — a note is foreclosed every quarter; the whole book goes in ${Math.max(0, NOTICE_M + FORECLOSE_M - (r.stressMs ?? 0) + 1)} months`)}
+                v={`${r.stressMs} month${r.stressMs === 1 ? "" : "s"} delinquent · ${r.bbls.length} building${r.bbls.length === 1 ? "" : "s"}`
+                  + ((r.stressMs ?? 0) < NOTICE_M ? ` · filing in ${NOTICE_M - (r.stressMs ?? 0)} month${NOTICE_M - (r.stressMs ?? 0) === 1 ? "" : "s"}`
+                    : ` · filed · 1 foreclosure/qtr · all in ${Math.max(0, NOTICE_M + FORECLOSE_M - (r.stressMs ?? 0) + 1)} months`)}
                 bad />
             ))}
             {weakDesks.map((l) => (
-              <Row key={l.id} k={l.name} v={`capital ${(100 * l.capital / l.book).toFixed(1)}% against a ${(100 * targetCapital(l.name)).toFixed(1)}% target — it will sell loans and buildings to get back`} bad />
+              <Row key={l.id} k={l.name} v={`capital ${(100 * l.capital / l.book).toFixed(1)}% vs ${(100 * targetCapital(l.name)).toFixed(1)}% target · selling assets`} bad />
             ))}
             {receiverSales.slice(0, 8).map((l) => (
               <Row key={l.bbl} k={resolveRec(parcels, game, l.bbl)?.address ?? l.bbl}
-                v={`${l.receiverFor ?? "a receiver"} is selling · ask ${usd(l.ask)} · on the market until ${monthLabel(l.expiresM)}`} />
+                v={`${l.receiverFor ?? "receiver"} · ask ${usd(l.ask)} · until ${monthLabel(l.expiresM)}`} />
             ))}
-            {!n && <div className="hint">No competitor is behind on its debt, every lender is above its target, and no receiver is selling.</div>}
+            {!n && <div className="hint">No distress.</div>}
           </Fold>
         );
       })()}
-      <Fold id="competitors:table" title="Every competitor" summary={`${marked.filter((x) => x.r.failedM === undefined).length} firms in business, ranked by net equity`} defaultOpen>
+      <Fold id="competitors:table" title="All competitors" summary={`${marked.filter((x) => x.r.failedM === undefined).length} active · by net equity`} defaultOpen>
       <table className="tbl">
         <thead>
           <tr>
@@ -206,13 +207,13 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
                 three expressions for one quantity is how a table comes to
                 disagree with the row it expands into, so all three now read
                 the same `eq` off `markRival` and the firm's own balance. */}
-            <th>Firm</th><th>Who they are</th><th className="num">Buildings</th><th className="num">Gross assets</th>
+            <th>Firm</th><th>Type</th><th className="num">Buildings</th><th className="num">Gross assets</th>
             <th className="num">Debt</th><th className="num">Net equity</th>
-            <th className="num">Leverage</th><th className="num">Dry powder</th><th>Read</th>
+            <th className="num">Leverage</th><th className="num">Cash</th><th>Status</th>
           </tr>
         </thead>
         <tbody>
-          {noHit && <tr><td colSpan={10} className="dim">No firm or principal by that name.</td></tr>}
+          {noHit && <tr><td colSpan={10} className="dim">No match.</td></tr>}
           {(() => {
             // where your row stands: by net equity, as the firms are sorted
             const at = marked.findIndex(({ r, m }) => r.failedM !== undefined || rivalEquity(m, r) < playerEquity);
@@ -224,7 +225,7 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
           })().map((row) => {
             if ("you" in row) return (
               <tr key="__you" ref={youRef} style={{ cursor: "pointer", background: "var(--accent-soft, rgba(138,109,31,0.12))", fontWeight: 600 }}
-                title="Your firm, marked the same way as theirs. Click for your Books."
+                title="Your firm · open Books"
                 onClick={() => useStore.getState().setPage("books")}>
                 <td>★ {firmName(game)} <span className="dim" style={{ fontWeight: 400 }}>· you</span></td>
                 <td className="dim" style={{ fontWeight: 400 }}>Yours</td>
@@ -247,7 +248,7 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
             const isOpen = open === r.id;
             return (
               <Fragment key={r.id}>
-              <tr className={dead ? "dim" : ""} style={{ cursor: "pointer" }}
+              <tr className={dead ? "dim" : ""} style={{ cursor: "pointer" }} data-firm={r.id}
                 onClick={() => setOpen(isOpen ? null : r.id)}>
                 <td title={r.spawnedFrom ? `Raised out of ${r.spawnedFrom.firmName}` : undefined}>
                   {isOpen ? "▾ " : "▸ "}{r.name}
@@ -279,12 +280,12 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
                   {dead ? (r.takenPrivateM !== undefined
                     ? `Taken private by you, ${monthLabel(r.takenPrivateM)}`
                     : r.bbls.length
-                    ? `Failed ${monthLabel(r.failedM!)} — the receiver is still selling`
-                    : `Gone, ${monthLabel(r.failedM!)}`)
-                    : m.aum <= 0 && r.debt > 0 ? "Sold everything and still owes money — they are finished"
-                    : stress ? "Selling under pressure — their tape is your opportunity"
-                    : m.ltv > 0.75 ? "Levered up. One bad cycle from being a seller"
-                    : r.cash > m.aum * 0.06 ? "Sitting on cash. They will outbid you"
+                    ? `Failed ${monthLabel(r.failedM!)} · receiver selling`
+                    : `Failed ${monthLabel(r.failedM!)}`)
+                    : m.aum <= 0 && r.debt > 0 ? "No assets, debt outstanding"
+                    : stress ? "Distressed seller"
+                    : m.ltv > 0.75 ? "High leverage"
+                    : r.cash > m.aum * 0.06 ? "Cash-rich buyer"
                     : "Fully invested"}
                 </td>
               </tr>
@@ -321,7 +322,7 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
                               empties, a capital plan it can be short of the
                               cash for, and partners it has already paid. */}
                           <div className="grid" style={{ margin: "6px 0" }}>
-                            <Row k="They stop borrowing at" v={`${(STYLE_MAX[r.style] * 100).toFixed(0)}% LTV`} bad={m.ltv > STYLE_MAX[r.style]} />
+                            <Row k="Max LTV" v={`${(STYLE_MAX[r.style] * 100).toFixed(0)}% LTV`} bad={m.ltv > STYLE_MAX[r.style]} />
                             {r.occ !== undefined && (
                               <Row k="Portfolio occupancy" v={`${(r.occ * 100).toFixed(0)}%`} bad={r.occ < 0.8} />
                             )}
@@ -329,14 +330,14 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
                                 COSTS; this says what they actually spent. A
                                 firm far under its own plan is a firm whose
                                 buildings are sliding, and the gap is the tell. */}
-                            <Row k="Condition of the book"
-                              v={`${CONDITION_WORD[rivalCondition(r)]} · ${usd(r.capexYr ?? 0)} actually spent this year`}
+                            <Row k="Portfolio condition"
+                              v={`${CONDITION_WORD[rivalCondition(r)]} · ${usd(r.capexYr ?? 0)} capex YTD`}
                               bad={(r.condIdx ?? 1) < 0.55} />
-                            <Row k="Taken out to date" v={usd(r.distributed ?? 0)}
-                              title="Realised and no longer on this balance sheet — modest equity is not the same as a bad century." />
-                            <Row k="Founded" v={r.bornM > 0 ? monthLabel(r.bornM) : "before you arrived"} />
+                            <Row k="Distributed to date" v={usd(r.distributed ?? 0)}
+                              title="Paid out · not on balance sheet" />
+                            <Row k="Founded" v={r.bornM > 0 ? monthLabel(r.bornM) : "pre-start"} />
                             {r.spawnedFrom && (
-                              <Row k="Raised out of" v={r.spawnedFrom.firmName} />
+                              <Row k="Spun out of" v={r.spawnedFrom.firmName} />
                             )}
                           </div>
                           {/* WHAT THEY HAVE IN THE GROUND. A firm's live jobs are
@@ -362,7 +363,7 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
                                         <span className="neighbor-addr">{rec?.address ?? j.bbl}</span>
                                         <span className="neighbor-meta">
                                           {sf(j.sf)} {j.use} · {j.floors} fl · {pct.toFixed(0)}% ·{" "}
-                                          {j.orphaned ? "stalled — the sponsor is gone" : `due ${monthLabel(j.deliverM)}`}
+                                          {j.orphaned ? "stalled · sponsor failed" : `due ${monthLabel(j.deliverM)}`}
                                           {j.debt ? ` · ${usd(j.debt)} drawn` : ""}
                                         </span>
                                       </button>

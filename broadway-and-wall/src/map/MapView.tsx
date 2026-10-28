@@ -670,6 +670,14 @@ export default function MapView() {
           if (bbl) st.focus(bbl, true);
           else st.select(null);
         });
+        // A DOUBLE CLICK OPENS THE BUILDING'S FULL PAGE (owner, Oct 2026). On a
+        // lot it is ours, not the map's zoom; on open ground it still zooms.
+        map.on("dblclick", (e) => {
+          const bbl = pickAt(e.point);
+          if (!bbl) return;
+          e.preventDefault();
+          useStore.getState().openProperty(bbl, "summary");
+        });
       });
 
       // fps meter — only write the store when the readout is on. An unconditional
@@ -1846,6 +1854,10 @@ export default function MapView() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [designPeek, schemeBbl, designOrbit]);
+  const diorama = useStore((s) => s.diorama);
+  useEffect(() => {
+    if (mapReady) threeRef.current?.setLook(diorama);
+  }, [diorama, mapReady, layerGen]);
   const graphics = useStore((s) => s.graphics);
   useEffect(() => {
     if (!mapReady) return;

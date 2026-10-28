@@ -30,23 +30,20 @@ export function SyndicateDesk() {
   return (
     <>
     <div className="page-section">
-      <div className="page-section-head">Your standing with investors</div>
+      <div className="page-section-head">Investor reputation</div>
       <div className="hint">
-        Investors read every deal you raised against what you pitched them, and rank you against every firm on the street.
-        The band they act on is the lower of your rank's and your score's. A promise kept builds the record slowly; a promise
-        broken counts in full, however small the deal, the day it is realised. Deals with your own money promised nobody
-        anything: they are judged on the multiple, a loss by its size. Buildings you have held two years or more count too, at the appraisal and at 60% of the weight a sale would earn — you do not have to sell to build a record. Your band reads the better of your record rank and your size rank, and size alone never lifts you past what your record allows.
+        Score: syndicated deals vs pitch (misses count in full) · own-money deals on multiple · holds 2+ yrs at appraisal, 60% weight · band = better of record and size rank, capped by record
       </div>
       <div className="grid">
         <Row k="Band" v={`${terms.band}${pending ? ` · ${pending} next quarter if it holds` : ""}`} strong />
-        <Row k="Investor rank" v={`#${rep.rank} of ${rep.of}${rep.rank === 1 ? " · the top of the street" : rep.rank === rep.of ? " · the bottom of the street" : ` · ahead of ${rep.percentile}% of the street`}`} />
-        <Row k="Track-record score" v={`${rep.score.toFixed(1)} · experience ${rep.n.toFixed(1)} from ${rep.deals} good deal${rep.deals === 1 ? "" : "s"}`} bad={rep.score < 0} />
-        <Row k="Their terms today" v={termsLine(terms)} />
-        <Row k="Outside equity per $1 of yours" v={terms.perOwn > 0 ? `up to $${terms.perOwn}` : "none — nobody will invest"} bad={!(terms.perOwn > 0)} />
+        <Row k="Investor rank" v={`#${rep.rank} of ${rep.of}${rep.rank === 1 || rep.rank === rep.of ? "" : ` · ${rep.percentile}th percentile`}`} />
+        <Row k="Track-record score" v={`${rep.score.toFixed(1)} · experience ${rep.n.toFixed(1)} · ${rep.deals} good deal${rep.deals === 1 ? "" : "s"}`} bad={rep.score < 0} />
+        <Row k="LP terms" v={termsLine(terms)} />
+        <Row k="LP equity per $1 GP" v={terms.perOwn > 0 ? `up to $${terms.perOwn}` : "none"} bad={!(terms.perOwn > 0)} />
         {(() => {
           const me = street.length ? rankStreet(game).find((f) => f.id === "you") : undefined;
           const m = scaleMult(game);
-          return me ? <Row k="Size on the street" v={`#${me.sizeRank} of ${rep.of} by equity${m > 1.01 ? ` · scale opens doors: ${m.toFixed(2)}× the outside money, the pace and the reach` : " · the biggest firms raise more, faster, from further afield"}`} /> : null;
+          return me ? <Row k="Size rank" v={`#${me.sizeRank} of ${rep.of} by equity${m > 1.01 ? ` · scale ${m.toFixed(2)}× on LP capital, pace, reach` : ""}`} /> : null;
         })()}
       </div>
       {bandIdx(terms.band) < BANDS.length - 1 && (() => {
@@ -54,7 +51,7 @@ export function SyndicateDesk() {
         if (!nb) return null;
         return (
           <table className="tbl" style={{ marginTop: 8 }}>
-            <thead><tr><th>To reach {nb.next}</th><th>You</th><th>Needed</th></tr></thead>
+            <thead><tr><th>Next: {nb.next}</th><th>Current</th><th>Needed</th></tr></thead>
             <tbody>
               {nb.rows.map((r) => (
                 <tr key={r.label}>
@@ -68,13 +65,13 @@ export function SyndicateDesk() {
       })()}
       {rep.evidence.length > 0 && (
         <table className="tbl" style={{ marginTop: 8 }}>
-          <thead><tr><th>The record</th><th>When</th><th>What it was</th><th>Evidence</th></tr></thead>
+          <thead><tr><th>Deal</th><th>Date</th><th>Type</th><th>Score</th></tr></thead>
           <tbody>
             {[...rep.evidence].reverse().slice(0, 10).map((e, i) => (
               <tr key={i}>
                 <td>{e.label}</td>
                 <td>{monthLabel(e.m)}</td>
-                <td>{e.kind === "investor" ? "with investors" : e.kind === "own" ? "your own money" : "credit event"}</td>
+                <td>{e.kind === "investor" ? "syndicated" : e.kind === "own" ? "own capital" : "credit event"}</td>
                 <td style={{ color: e.ev < 0 ? "var(--neg, #a33)" : undefined }}>{e.ev > 0 ? "+" : ""}{e.ev.toFixed(1)}</td>
               </tr>
             ))}
@@ -82,7 +79,7 @@ export function SyndicateDesk() {
         </table>
       )}
       <table className="tbl" style={{ marginTop: 8 }}>
-        <thead><tr><th>Top of the street</th><th>Score</th><th>Band</th></tr></thead>
+        <thead><tr><th>Top firms</th><th>Score</th><th>Band</th></tr></thead>
         <tbody>
           {street.map((f) => (
             <tr key={f.id} style={{ fontWeight: f.id === "you" ? 600 : undefined }}>
@@ -93,11 +90,9 @@ export function SyndicateDesk() {
       </table>
     </div>
     <div className="page-section">
-      <div className="page-section-head">This city's investor money, {monthLabel(game.month)}</div>
+      <div className="page-section-head">Local LP capital · {monthLabel(game.month)}</div>
       <div className="hint">
-        Each year the city draws private real-estate equity in proportion to its people — about ${EQUITY_PER_HEAD} a head at today's
-        prices — and how it compares as a place to put money ({Math.round(cityAttractiveness(game.econ) * 100)}% of an ordinary market now).
-        Rivals raising in the city draw it down; you raise from what they leave, from the types your band opens.
+        ~${EQUITY_PER_HEAD}/resident/yr × attractiveness {Math.round(cityAttractiveness(game.econ) * 100)}% · shared with rivals · access by band
       </div>
       {(() => {
         const p = game.investorPool;
@@ -106,7 +101,7 @@ export function SyndicateDesk() {
         const scale = Math.max(0, (game.econ.population ?? 0) * EQUITY_PER_HEAD * (game.econ.priceLevel ?? 1) * (game.econ.cpi ?? 1) * cityAttractiveness(game.econ));
         return (
           <table className="tbl" style={{ marginTop: 8 }}>
-            <thead><tr><th>Investors</th><th>This year</th><th>Raised already</th><th>Open to you</th></tr></thead>
+            <thead><tr><th>Investor type</th><th>This year</th><th>Raised</th><th>Available</th></tr></thead>
             <tbody>
               {INVESTOR_TYPES.map((t) => {
                 const cap = live ? live.cap[t.id] ?? 0 : Math.round(scale * t.share);
@@ -125,24 +120,23 @@ export function SyndicateDesk() {
       })()}
       {Object.values(game.raises ?? {}).map((r) => (
         <div key={r.bbl} className="hint" style={{ marginTop: 6 }}>
-          Raising for {resolveRec(parcels, game, r.bbl)?.address ?? r.bbl}: {usd(committedTotal(r))} of {usd(r.target)} circled, closes in {Math.max(0, r.deadlineM - game.month)} month{r.deadlineM - game.month === 1 ? "" : "s"}.
+          Raising · {resolveRec(parcels, game, r.bbl)?.address ?? r.bbl} · {usd(committedTotal(r))} of {usd(r.target)} committed · closes in {Math.max(0, r.deadlineM - game.month)} month{r.deadlineM - game.month === 1 ? "" : "s"}
         </div>
       ))}
     </div>
     <div className="page-section">
-      <div className="page-section-head">Outside equity · deal by deal</div>
+      <div className="page-section-head">Syndications</div>
       <div className="hint">
-        Raised one job at a time on the Build desk, on your band's terms ({termsLine(terms)}).
-        You guarantee completion. Pay them back with a profit and they bring it back to you; lose their money and most of them are gone.
+        Raised per project on the Build desk · {termsLine(terms)} · completion guaranteed by you · losses shrink the network
       </div>
       <div className="grid">
-        <Row k="Your network" v={usd(cap)} />
-        <Row k="In your live deals" v={usd(Math.max(0, cap - avail))} />
-        <Row k="Free to raise" v={usd(avail)} bad={avail <= 0} />
+        <Row k="Network capacity" v={usd(cap)} />
+        <Row k="Committed" v={usd(Math.max(0, cap - avail))} />
+        <Row k="Available" v={usd(avail)} bad={avail <= 0} />
       </div>
       {live.length > 0 && (
         <table className="tbl" style={{ marginTop: 8 }}>
-          <thead><tr><th>Live</th><th>Committed</th><th>Called</th><th>Paid back</th><th>Yours · theirs</th></tr></thead>
+          <thead><tr><th>Live</th><th>Committed</th><th>Called</th><th>Distributed</th><th>GP · LP</th></tr></thead>
           <tbody>
             {live.map((b) => {
               const v = syndicateView(game, parcels, b);
@@ -162,7 +156,7 @@ export function SyndicateDesk() {
       )}
       {closed.length > 0 && (
         <table className="tbl" style={{ marginTop: 8 }}>
-          <thead><tr><th>Wound up</th><th>When</th><th>They put in</th><th>They took back</th><th>Their IRR</th></tr></thead>
+          <thead><tr><th>Closed</th><th>Period</th><th>LP in</th><th>LP out</th><th>LP IRR</th></tr></thead>
           <tbody>
             {closed.slice(0, 12).map((r) => (
               <tr key={`${r.bbl}-${r.closedM}`}>

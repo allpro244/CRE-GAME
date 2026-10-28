@@ -8,7 +8,7 @@ export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, NATURAL_VAC, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH, LEASE_TERM_M, forwardVacancy } from "./market";
+import { industryStress, NATURAL_VAC, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH, LEASE_TERM_M, forwardVacancy, inflationOverBumpPct } from "./market";
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
 import { splitRule, coverageMax, MINOR_FIXED, MINOR_PER_LOT, CORNER_K } from "./lotcode";
@@ -3366,8 +3366,21 @@ export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition, 
   // A PRODUCT'S BUYER POOL (products.ts capSpread): a fifteen-year credit pad
   // trades inside a centre, a single-purpose plant well outside a box [CBRE-C] [BG].
   const productSpread = rec.product ? (productOf(rec.product)?.capSpread ?? 0) : 0;
-  return clamp(base + locSpread + qualSpread + specSpread + reserveSpread + productSpread, 3.2, 13);
+  // NO BUILDING TRADES FAR UNDER THE COST OF MONEY (owner, Oct 2026: a full
+  // building at market rents borrowed 43% at a 1.3 DSCR). The location
+  // discount stacked on a market cap that already tracks rates, so a prime
+  // apartment house appraised at a 3.7% cap on a 5.1% ten-year with loans at
+  // 6.5-7% — a price its own income could not carry, and so a loan no
+  // coverage test could size. Real prime yields sit at or over the ten-year
+  // (2005 apartments ~5% on a 4.3% ten-year; 2023 ~5.3% on 4%), the exception
+  // being an inflation era, when the buyer capitalises against the index less
+  // expected inflation above the bump (market.ts capIndex) — so the floor
+  // reads that same real-adjusted index, and stays out of the Great Inflation.
+  const floor = (econ.indexRate ?? 5) - inflationOverBumpPct(econ) + CAP_FLOOR_OVER_INDEX;
+  return clamp(Math.max(base + locSpread + qualSpread + specSpread + reserveSpread + productSpread, floor), 3.2, 13);
 }
+/** The least a stabilised building yields over the (inflation-adjusted) ten-year (capRateFor). */
+export const CAP_FLOOR_OVER_INDEX = 1.25;
 
 // Appraisals are opinions. Each parcel's appraisal carries a stable bias off
 // true value, and the honest range around it is about ±6%. Offers and lender

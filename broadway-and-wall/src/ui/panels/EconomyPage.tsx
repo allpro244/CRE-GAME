@@ -19,11 +19,11 @@ import { Employers, Districts, boardClimate, pendingHearings } from "@/ui/panels
 
 /** The cycle in a sentence. Read by City → Pulse, which leads with it. */
 export const PHASE_BLURB: Record<string, string> = {
-  expansion: "Tenants expand, capital chases, rents push. Enjoy it — peaks are born here.",
-  peak: "Priced to perfection. Every deal works on paper and none has margin for the turn.",
-  recession: "Tenants retrench and lenders retreat. Cheap buildings and expensive money.",
-  recovery: "The bleeding has stopped. Concessions burn off before face rents move.",
-  depression: "Empty space is still winning. This is not healing — it is a glut that has not cleared.",
+  expansion: "Demand growing, rents rising, capital available.",
+  peak: "Tight pricing, low cap rates, thin margins.",
+  recession: "Demand falling, lending tight, prices down.",
+  recovery: "Vacancy falling, concessions shrinking.",
+  depression: "Oversupply persists, vacancy high.",
 };
 
 /** REAL EFFECTIVE RENT, TWELVE MONTHS ON — what a tenant actually pays after
@@ -82,45 +82,31 @@ export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; sp
   // density premium x price level, 0.26 on one measured town), not at 1, so
   // "1.00 = year 2000" needs them divided by where they started (2026-10-13).
   const w0 = useStore((s) => s.game?.econ.wage0) ?? 1;
-  if (tail.length < 2) return <div className="hint">Not enough history yet — advance a few quarters.</div>;
+  if (tail.length < 2) return <div className="hint">Not enough history.</div>;
   const x: [string, string] = [monthLabel(tail[0].q), monthLabel(tail[tail.length - 1].q)];
   const kFmt = (v: number) => `${v.toFixed(0)}k`;
   const idxFmt = (v: number) => v.toFixed(2);
   return (
     <>
-      <div className="page-section">The city — the last {spanYrs} year{spanYrs === 1 ? "" : "s"}</div>
-      <div className="hint">
-        The demand behind every lease in the four markets above. Rents are downstream of jobs, and jobs are
-        downstream of whether anybody wants to be here — none of these series reads as a level without the
-        path it took.
-      </div>
+      <div className="page-section">City economy · {spanYrs} yr{spanYrs === 1 ? "" : "s"}</div>
       <div className="chart-grid">
         <div className="chart-cell">
           <div className="chart-title">Region population</div>
           <LineChart height={108} series={[{ label: "population", color: "#7a5c1e", pts: tail.map((h) => (h.population ?? 0) / 1000) }]} yFmt={kFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
-          <div className="chart-note">
-            Souls in the region the island anchors — most of them on the mainland (see "Living on the island" below). It follows jobs slowly, because people move for work and move back reluctantly —
-            a downturn shows here a year after it shows in the chart to the right.
-          </div>
+          <div className="chart-note">Region incl. mainland · lags jobs ~1 yr</div>
         </div>
         <div className="chart-cell">
           <div className="chart-title">Jobs</div>
           <LineChart height={108} series={[{ label: "jobs", color: "#2f6f7a", pts: tail.map((h) => (h.jobs ?? 0) / 1000) }]} yFmt={kFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
-          <div className="chart-note">
-            Filled positions — the line every lease is downstream of. Occupancy chases the space these jobs
-            want, with a lag, which is why rents turn before employment does.
-          </div>
+          <div className="chart-note">Filled positions</div>
         </div>
         <div className="chart-cell">
           <div className="chart-title">Unemployment</div>
           <LineChart height={108} series={[{ label: "unemployment", color: "#a8402e", pts: tail.map((h) => (h.unemployment ?? 0) * 100) }]} yFmt={(v) => `${v.toFixed(1)}%`} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
-          <div className="chart-note">
-            Of the labour force. The LAST thing to turn in a downturn — by the time this reads badly the rents
-            already have, and by the time it recovers the cheap buildings are gone.
-          </div>
+          <div className="chart-note">Share of labor force · lagging indicator</div>
         </div>
         <div className="chart-cell">
-          <div className="chart-title">Real wage — index, 1.00 = year 2000</div>
+          <div className="chart-title">Real wage · index, 2000 = 1.00</div>
           {/* THE REAL WAGE GETS THIS AXIS TO ITSELF. Drawing the nominal index
               beside it was the obvious way to show the contrast and it does not
               work: nominal reaches 4.5x over a campaign against real's 1.35x, so
@@ -133,28 +119,26 @@ export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; sp
               good reason and the number that was meant to replace it was never
               written — and it is true now. */}
           <LineChart height={108} series={[{ label: "real wage", color: "#3a7d46", pts: tail.map((h) => real((h.wageIdx ?? w0) / w0, h.cpi)) }]} yFmt={idxFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
-          <div className="chart-note">
-            What a paycheque buys, with inflation actually taken out. It gives ground about one year in six —
-            firms freeze pay rather than cut it, so the cutting is done by the price-level chart below instead.
-            Dear money raises this line and cheap money erodes it, both with a lag of a year or two. Retail and
-            apartment rents lean on it hardest.
-          </div>
+          <div className="chart-note">Inflation-adjusted · drives retail and multifamily rents</div>
         </div>
         <div className="chart-cell">
-          <div className="chart-title">Real output — index, 1.00 = year 2000</div>
+          <div className="chart-title">Real output · index, 2000 = 1.00</div>
           <LineChart height={108} series={[{ label: "real output", color: "#3d6f9e", pts: tail.map((h) => real((h.outputIdx ?? w0) / w0, h.cpi)) }]} yFmt={idxFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
-          <div className="chart-note">
-            Jobs times productivity, in real terms — the city's whole product on one line. When it grows faster
-            than the standing stock of space, somebody has to build; when it does not, somebody already did.
-          </div>
+          <div className="chart-note">Jobs × productivity, real</div>
         </div>
         <div className="chart-cell">
-          <div className="chart-title">Price level — nominal, 1.00 = year 2000</div>
+          <div className="chart-title">Price level · index, 2000 = 1.00</div>
           <LineChart height={108} series={[{ label: "price level", color: "#8a5620", pts: tail.map((h) => h.cpi ?? 1) }]} yFmt={idxFmt} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
-          <div className="chart-note">
-            Cumulative inflation — the one NOMINAL series here, and the deflator behind the two real ones.
-            Every dollar elsewhere on this page is quoted in the money this chart is quietly shrinking.
-          </div>
+          <div className="chart-note">Cumulative inflation · deflator for real series</div>
+        </div>
+        {/* THE CONSTRUCTION COST INDEX (owner, Oct 2026: "needs to be in the markets page") */}
+        <div className="chart-cell">
+          <div className="chart-title">Construction costs · index {((tail[tail.length - 1]?.costIdx ?? 1) * 100).toFixed(0)}</div>
+          <LineChart height={108} series={[
+            { label: "build costs", color: "#b07f1e", pts: rebase100(tail.map((h) => h.costIdx ?? NaN)) },
+            { label: "price level", color: "#8a5620", pts: rebase100(tail.map((h) => h.cpi ?? NaN)), dashed: true },
+          ]} yFmt={(v) => v.toFixed(0)} xLabels={x} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
+          <div className="chart-note">100 = first month shown. Dashed: price level.</div>
         </div>
       </div>
       <CityFigures />
@@ -222,49 +206,49 @@ export function CityFigures() {
   const realVsNation = col !== undefined ? ((1 + payVsNation / 100) / col - 1) * 100 : undefined;
   return (
     <>
-      <div className="page-section" style={{ marginTop: 14 }}>Where the city stands today</div>
+      <div className="page-section" style={{ marginTop: 14 }}>City today</div>
       <div className="grid">
         <Row k="Region population" v={(e.population ?? 0).toLocaleString()} strong
-          title="Everyone the island's economy supports — on the island and on the mainland it anchors." />
+          title="Island and mainland" />
         {(() => { const isl = islandResidents(e); return (<>
-          <Row k="Living on the island" v={`${isl.residents.toLocaleString()} (${((isl.residents / Math.max(1, e.population ?? 1)) * 100).toFixed(0)}%)`}
-            title={`About ${isl.homes.toLocaleString()} occupied homes at ${PEOPLE_PER_HOME} people each.`} />
-          <Row k="Commuting in" v={isl.commuters.toLocaleString()} title="Island jobs held by people who live on the mainland." />
+          <Row k="Island residents" v={`${isl.residents.toLocaleString()} (${((isl.residents / Math.max(1, e.population ?? 1)) * 100).toFixed(0)}%)`}
+            title={`~${isl.homes.toLocaleString()} occupied homes × ${PEOPLE_PER_HOME}`} />
+          <Row k="Commuters" v={isl.commuters.toLocaleString()} title="Island jobs held by mainland residents" />
         </>); })()}
         <Row k="Jobs" v={(e.jobs ?? 0).toLocaleString()} />
-        <Row k="Jobs added this year" v={`${jobsYr >= 0 ? "+" : ""}${jobsYr.toFixed(1)}%`} bad={jobsYr < 0} strong />
+        <Row k="Job growth, 12 mo" v={`${jobsYr >= 0 ? "+" : ""}${jobsYr.toFixed(1)}%`} bad={jobsYr < 0} strong />
         {/* The 8.5% flag is the one these rows carried before they were
             deleted, kept rather than re-picked: `initEcon` opens the city at
             5.2% and `tickEcon` falls back to 5.5% wherever the field is
             missing, so eight and a half is about three points of slack above
             where this town sits when nothing is wrong. */}
         <Row k="Unemployment" v={`${((e.unemployment ?? 0) * 100).toFixed(1)}%`} bad={(e.unemployment ?? 0) > 0.085} />
-        <Row k="Real wage" v={`${((real((e.wageIdx ?? w0) / w0, e.cpi) - 1) * 100).toFixed(0)}% against the year 2000`} />
+        <Row k="Real wage" v={`${((real((e.wageIdx ?? w0) / w0, e.cpi) - 1) * 100).toFixed(0)}% vs 2000`} />
         {/* THE ROW THE CHART ABOVE PROMISED. Its own note records why the line
             was dropped — nominal measured at 4.5x over a campaign against
             real's 1.35x, so a shared axis flattens the series that matters —
             and that is exactly why the figure has to be said SOMEWHERE, or the
             player has no way to see the gap between what they are paid and
             what it buys. */}
-        <Row k="Nominal wage" v={`${(((e.wageIdx ?? w0) / w0 - 1) * 100).toFixed(0)}% against the year 2000`} />
-        <Row k="Real wage, last 12 months" v={pctSigned(realYr / 100, 1)} bad={realYr < 0}
-          title="What a paycheque buys now against a year ago — pay is rarely cut, so a fall here is prices outrunning pay." />
-        <Row k="Pay vs the nation" v={`${payVsNation >= 0 ? "+" : ""}${payVsNation.toFixed(0)}% ${payVsNation >= 0 ? "above" : "below"} national pay`}
-          title="What employers here pay against the national average. Dear labour trims hiring and pushes work to other cities; cheap labour draws it in." />
+        <Row k="Nominal wage" v={`${(((e.wageIdx ?? w0) / w0 - 1) * 100).toFixed(0)}% vs 2000`} />
+        <Row k="Real wage, 12 mo" v={pctSigned(realYr / 100, 1)} bad={realYr < 0}
+          title="Year-on-year, inflation-adjusted" />
+        <Row k="Pay vs national" v={`${payVsNation >= 0 ? "+" : ""}${payVsNation.toFixed(0)}%`}
+          title="Local pay vs national average · higher pay reduces hiring" />
         {col !== undefined && (
-          <Row k="Cost of living vs the nation" v={`${col >= 1 ? "+" : ""}${((col - 1) * 100).toFixed(0)}% ${col >= 1 ? "dearer" : "cheaper"}`}
-            title="Housing, local services and goods together, weighted as the local price index weights them, against the national average." />
+          <Row k="Cost of living vs national" v={`${col >= 1 ? "+" : ""}${((col - 1) * 100).toFixed(0)}%`}
+            title="Local CPI basket vs national" />
         )}
         {realVsNation !== undefined ? (
-          <Row k="Real pay vs the nation" v={`${realVsNation >= 0 ? "+" : ""}${realVsNation.toFixed(0)}% (${realVsNationChg >= 0 ? "+" : ""}${realVsNationChg.toFixed(0)} pts since 2000)`}
+          <Row k="Real pay vs national" v={`${realVsNation >= 0 ? "+" : ""}${realVsNation.toFixed(0)}% (${realVsNationChg >= 0 ? "+" : ""}${realVsNationChg.toFixed(0)} pts since 2000)`}
             bad={realVsNation < 0}
-            title="Pay here after the cost of living here, against the national average — what people deciding whether to move in or out compare." />
+            title="Pay after cost of living vs national · drives migration" />
         ) : (
-          <Row k="Real pay vs the nation" v={`${realVsNationChg >= 0 ? "+" : ""}${realVsNationChg.toFixed(0)}% since the year 2000`}
-            title="Local pay after local prices, against national pay after national prices. This save predates the opening cost-of-living record, so only the change since the opening is shown." />
+          <Row k="Real pay vs national" v={`${realVsNationChg >= 0 ? "+" : ""}${realVsNationChg.toFixed(0)}% since 2000`}
+            title="Change since 2000 only (older save)" />
         )}
-        <Row k="Real output" v={`${((real((e.outputIdx ?? w0) / w0, e.cpi) - 1) * 100).toFixed(0)}% against the year 2000`} />
-        <Row k="Price level" v={`${(((e.cpi ?? 1) - 1) * 100).toFixed(0)}% of cumulative inflation`} />
+        <Row k="Real output" v={`${((real((e.outputIdx ?? w0) / w0, e.cpi) - 1) * 100).toFixed(0)}% vs 2000`} />
+        <Row k="Price level" v={`+${(((e.cpi ?? 1) - 1) * 100).toFixed(0)}% since 2000`} />
       </div>
     </>
   );
@@ -288,21 +272,21 @@ export function CentralBankBox() {
   return (
     <details className="page-section" style={{ marginTop: 14 }}>
       <summary style={{ cursor: "pointer" }}>
-        Central bank — {chair?.name ?? "the chair"} ({stance}) · policy {(n.policy ?? 0).toFixed(2)}% · inflation {pct(n.infl)}
+        Central bank · {chair?.name ?? "chair"} ({stance}) · policy {(n.policy ?? 0).toFixed(2)}% · inflation {pct(n.infl)}
       </summary>
       <div className="grid">
         <Row k="Chair" v={`${chair?.name ?? "—"}${chair?.sinceM !== undefined ? `, since ${yr(chair.sinceM)}` : ""}`} strong
-          title="Chairs serve terms of four to twelve years. Each brings a stance: a hawk fights inflation hard, a dove puts growth first." />
-        <Row k="Stance" v={stance === "hawk" ? "Hawk — inflation is fought first" : stance === "dove" ? "Dove — growth first, inflation can wait" : "Centrist"} />
+          title="Terms 4-12 years" />
+        <Row k="Stance" v={stance === "hawk" ? "Hawk · inflation first" : stance === "dove" ? "Dove · growth first" : "Centrist"} />
         {chair && <Row k="Term ends" v={`${yr(chair.untilM)}`} />}
         <Row k="Policy rate" v={`${(n.policy ?? 0).toFixed(2)}%`} strong />
-        <Row k="Where the rule puts it" v={`${(n.ruleRate ?? n.policy ?? 0).toFixed(2)}%`}
-          title="The rate the bank's reaction function asks for this month; it moves toward it in steps at its meetings." />
+        <Row k="Rule rate" v={`${(n.ruleRate ?? n.policy ?? 0).toFixed(2)}%`}
+          title="Target from reaction function · reached in steps" />
         <Row k="Inflation target" v={pct(n.inflTarget ?? 0.02)} />
         <Row k="Inflation, national" v={pct(n.infl)} bad={(n.infl ?? 0) > 0.04} />
-        <Row k="What the public expects" v={pct(n.inflExp)} />
-        <Row k="Credibility" v={`${Math.round(cred * 100)} — ${credLabel}`} bad={cred <= 0.5}
-          title="How far the public believes the target. A believed bank keeps expectations at 2% through a shock; a doubted one lets last year's inflation become next year's." />
+        <Row k="Inflation expectations" v={pct(n.inflExp)} />
+        <Row k="Credibility" v={`${Math.round(cred * 100)} · ${credLabel}`} bad={cred <= 0.5}
+          title="Low credibility: expectations follow past inflation" />
       </div>
     </details>
   );
@@ -374,19 +358,15 @@ function StockVsLeased({ tail, live, xFrom, xTo, spanYrs }: {
   const xl: [string, string] = [xFrom, xTo];
   return (
     <>
-      <div className="page-section">Stock standing vs space leased — the last {spanYrs} year{spanYrs === 1 ? "" : "s"}</div>
-      <div className="hint">
-        The stocks, not the month&apos;s flow. Solid is every square foot that exists. Dashed is every square
-        foot with a tenant in it. The gap is vacancy. Completions climb the solid line; absorption moves the
-        dashed one. The annual bars further down are the same two quantities as flows.
-      </div>
+      <div className="page-section">Stock vs leased · {spanYrs} yr{spanYrs === 1 ? "" : "s"}</div>
+      <div className="hint">Solid: total stock · dashed: leased · gap: vacancy</div>
       <div className="chart-grid">
         {STOCK_CLASSES.map((k) => {
           const liveStk = live.stock?.[k] ?? tail[tail.length - 1]?.stock?.[k] ?? 0;
           const { stock, leased } = standingVsLeased(tail, k, liveStk);
           return (
             <div className="chart-cell" key={k}>
-              <div className="chart-title">{SECTOR_LABEL[k]} — standing vs leased</div>
+              <div className="chart-title">{SECTOR_LABEL[k]} · stock vs leased</div>
               <LineChart
                 height={108}
                 series={[
@@ -437,7 +417,7 @@ function MacroCharts({ hist }: { hist: EconHistoryPoint[] }) {
       <div className="chart-cell">
         <div className="chart-title">{title}</div>
         {pts.length < 2 ? (
-          <div className="hint">Not enough history yet — advance a few quarters.</div>
+          <div className="hint">Not enough history.</div>
         ) : (
           <LineChart
             height={108}
@@ -455,14 +435,14 @@ function MacroCharts({ hist }: { hist: EconHistoryPoint[] }) {
   return (
     <div className="chart-grid">
       {cell("Credit window", "#5a4f8a", (p) => p.creditIdx,
-        "How far the banks are open. Below 70% is a shut window: fewer quotes, lower proceeds and wider spreads on whatever does get written.",
+        "Lender appetite · below 70%: fewer quotes, lower proceeds, wider spreads",
         (v) => `${v.toFixed(0)}%`, [{ at: 70, label: "tight" }])}
       {cell("Employment", "#2f6f7a", (p) => p.employIdx,
-        "How many workers the city's firms want, 100 at the start — the driver behind leasing velocity. Occupied space chases it with a lag.")}
+        "Labor demand, start = 100 · drives leasing with a lag")}
       {cell("Build costs", "#8a5620", (p) => p.costIdx,
-        "Construction and operating cost index. A development budget is struck at this level, and salaries are billed at it.")}
+        "Construction and operating cost index")}
       {cell("Land index", "#7a5c1e", (p) => p.landIdx,
-        "Land values. The level is the town's own; the moves are what matter, because every site you price and every appraisal leans on them.")}
+        "Land value index")}
     </div>
   );
 }
@@ -629,12 +609,12 @@ export function EconomyPage() {
     <div className="btn-row" style={{ marginTop: 10, alignItems: "baseline" }}>
       <span className="hint" style={{ marginRight: 4 }}>{lead}</span>
       <button className={"btn" + (span === "20y" ? " btn-on" : "")} onClick={() => setSpan("20y")}
-        title="The last twenty years — about one and a half cycles.">
-        the last 20 years
+        title="Last 20 years">
+        20 yrs
       </button>
       <button className={"btn" + (span === "all" ? " btn-on" : "")} onClick={() => setSpan("all")}
-        title="Every month since the game began.">
-        all {Math.round((hist.length - 1) / 12)} years
+        title="Full history">
+        all {Math.round((hist.length - 1) / 12)} yrs
       </button>
     </div>
   );
@@ -660,8 +640,8 @@ export function EconomyPage() {
           decides whether it is orbiting 3% or 13%. */}
       {hist.length > 8 && (
         <div className="page-section" style={{ marginTop: 12 }}>
-          <div className="page-section-head">What money has cost</div>
-          {spanSwitch("These charts show")}
+          <div className="page-section-head">Rates</div>
+          {spanSwitch("Range")}
           <LineChart
             height={132}
             series={[
@@ -675,11 +655,7 @@ export function EconomyPage() {
             xLabels={[monthLabel(tail[0].q), monthLabel(tail[tail.length - 1].q)]}
             xAt={(i) => monthLabel(tail[i]?.q ?? 0)}
           />
-          <div className="hint">
-            Every loan in town prices off the solid line. Where it sits against the dashed one is
-            whether today is a cheap-money year inside a dear-money era, or the other way round —
-            and that is the difference between fixing and floating.
-          </div>
+          <div className="hint">Solid: base rate (loans price off it) · dashed: long-run rate</div>
           <MacroCharts hist={tail} />
         </div>
       )}
@@ -693,7 +669,7 @@ export function EconomyPage() {
           City → Pulse, which is the one-screen read. This page is the depth
           behind it: pick a market, read it. */}
       {/* ---- the four markets, at a glance ---- */}
-      <div className="page-section">The space market</div>
+      <div className="page-section">Space market</div>
       <div className="mkt-cards">
         {/* The pseudo-card. No gauge, because the city has no natural rate to
             sit against — its numbers are the level everything else is read
@@ -703,12 +679,12 @@ export function EconomyPage() {
           onClick={() => setSel("general")}
         >
           <div className="mkt-card-head">
-            <span className="mkt-card-name">The city</span>
+            <span className="mkt-card-name">City</span>
             <span className="mono">{((e.population ?? 0) / 1000).toFixed(0)}k</span>
           </div>
-          <div className="mkt-card-state">the demand under all four</div>
+          <div className="mkt-card-state">population</div>
           <div className="mkt-card-sub mono">
-            {((e.jobs ?? 0) / 1000).toFixed(0)}k jobs · {((e.unemployment ?? 0) * 100).toFixed(1)}% out of work
+            {((e.jobs ?? 0) / 1000).toFixed(0)}k jobs · {((e.unemployment ?? 0) * 100).toFixed(1)}% unemployment
           </div>
         </button>
         {CLASSES.map((k) => {
@@ -746,7 +722,7 @@ export function EconomyPage() {
                   the way down. */}
               {e.sectorPhase?.[k] && e.sectorPhase[k] !== "steady" && (
                 <div className={"mkt-card-sub" + (e.sectorPhase[k] === "bust" ? " neg" : "")}>
-                  tenants {e.sectorPhase[k] === "boom" ? "hiring and expanding" : "shedding space"}
+                  tenants {e.sectorPhase[k] === "boom" ? "expanding" : "contracting"}
                 </div>
               )}
               <div className="mkt-card-sub mono">
@@ -788,11 +764,11 @@ export function EconomyPage() {
                   <span className="mono">{(e.landIdx * 100).toFixed(0)}</span>
                 </div>
                 <div className={"mkt-card-state" + (yoy < -0.02 ? " neg" : "")}>
-                  {yoy > 0.06 ? "running hard" : yoy > 0.015 ? "rising" : yoy < -0.06 ? "falling hard"
+                  {yoy > 0.06 ? "rising fast" : yoy > 0.015 ? "rising" : yoy < -0.06 ? "falling fast"
                     : yoy < -0.015 ? "easing" : "flat"}
                 </div>
                 <div className="mkt-card-sub mono">
-                  {pctSigned(yoy)} over 12m · the slowest cycle here
+                  {pctSigned(yoy)} / 12m
                 </div>
               </button>
               {/* The card exists while there is a lending market to read at
@@ -802,16 +778,16 @@ export function EconomyPage() {
               {(game.lenders ?? []).length > 0 && (
                 <button className={"mkt-card" + (sel === "banks" ? " mkt-card-on" : "")} onClick={() => setSel("banks")}>
                   <div className="mkt-card-head">
-                    <span className="mkt-card-name">The banks</span>
+                    <span className="mkt-card-name">Banks</span>
                     <span className="mono">{Math.round(e.creditIdx * 100)}%</span>
                   </div>
                   <div className={"mkt-card-state" + (e.creditIdx < 0.72 ? " neg" : "")}>
-                    credit is {creditWord(e.creditIdx ?? 1)}
+                    credit {creditWord(e.creditIdx ?? 1)}
                   </div>
                   <div className="mkt-card-sub mono">
-                    {banks.length} desk{banks.length === 1 ? "" : "s"} still quoting
-                    {failed ? ` · ${failed} gone` : ""}
-                    {banks.length ? ` · weakest at ${worst.toFixed(2)}× its capital target` : " · nobody is lending"}
+                    {banks.length} lender{banks.length === 1 ? "" : "s"} active
+                    {failed ? ` · ${failed} failed` : ""}
+                    {banks.length ? ` · weakest ${worst.toFixed(2)}× capital target` : " · none lending"}
                   </div>
                 </button>
               )}
@@ -828,9 +804,9 @@ export function EconomyPage() {
                       <span className="mono">{booms}↑ {busts}↓</span>
                     </div>
                     <div className={"mkt-card-state" + (busts > booms ? " neg" : "")}>
-                      {busts > booms ? "trades contracting" : booms > busts ? "trades hiring" : "trades steady"}
+                      {busts > booms ? "contracting" : booms > busts ? "hiring" : "steady"}
                     </div>
-                    <div className="mkt-card-sub mono">{booms} hiring hard · {busts} contracting</div>
+                    <div className="mkt-card-sub mono">{booms} hiring · {busts} contracting</div>
                   </button>
                 );
               })()}
@@ -844,7 +820,7 @@ export function EconomyPage() {
                       <span className="mono">{up}↑ {down}↓</span>
                     </div>
                     <div className={"mkt-card-state" + (down > up ? " neg" : "")}>
-                      {up + down === 0 ? "the board is quiet" : up > down ? "envelopes letting out" : up < down ? "envelopes pulling in" : "no direction"}
+                      {up + down === 0 ? "no rezonings" : up > down ? "net upzoning" : up < down ? "net downzoning" : "mixed"}
                     </div>
                     <div className="mkt-card-sub mono">rezonings · 5 yrs{filed ? ` · ${filed} of yours pending` : ""}</div>
                   </button>
@@ -855,7 +831,7 @@ export function EconomyPage() {
         })()}
       </div>
 
-      {(sel === "general" || isClass) && spanSwitch("Every chart below shows")}
+      {(sel === "general" || isClass) && spanSwitch("Range")}
 
       {/* ---- the general view: the city's six series, or one class in depth ---- */}
       {/* The four stock-vs-leased charts are the city's view: all four
@@ -870,15 +846,15 @@ export function EconomyPage() {
       {sel === "employers" && <Employers />}
       {sel === "districts" && <Districts />}
       {isClass && <>
-      <div className="page-section">{SECTOR_LABEL[focus]} — {bal.state}</div>
+      <div className="page-section">{SECTOR_LABEL[focus]} · {bal.state}</div>
       <div className="hint">{bal.note}</div>
       <div className="grid" style={{ marginTop: 6 }}>
-        <Row k="Inventory" v={`${(stock / 1e6).toFixed(1)}M sf standing`} />
-        <Row k="Vacant space" v={`${((stock * vacNow) / 1e6).toFixed(2)}M sf · ${(vacNow * 100).toFixed(1)}% available against a ${(NATURAL_VAC[focus] * 100).toFixed(1)}% natural rate`} bad={bal.gap > 0.025} strong />
+        <Row k="Inventory" v={`${(stock / 1e6).toFixed(1)}M sf`} />
+        <Row k="Vacant space" v={`${((stock * vacNow) / 1e6).toFixed(2)}M sf · ${(vacNow * 100).toFixed(1)}% available · natural ${(NATURAL_VAC[focus] * 100).toFixed(1)}%`} bad={bal.gap > 0.025} strong />
         {Math.abs(vacNow - directNow) > 0.003 && (
           <Row
             k="Direct vacancy"
-            v={`${(directNow * 100).toFixed(1)}% empty landlord floors · ${(frictionFloor(focus) * 100).toFixed(1)}% frictional floor`}
+            v={`${(directNow * 100).toFixed(1)}% · frictional floor ${(frictionFloor(focus) * 100).toFixed(1)}%`}
             strong={directNow <= frictionFloor(focus) + 1e-6}
           />
         )}
@@ -892,7 +868,7 @@ export function EconomyPage() {
           return (
             <Row
               k="Vacancy Δ / yr"
-              v={`${dpp >= 0 ? "+" : ""}${dpp.toFixed(1)} pp vs twelve months ago`}
+              v={`${dpp >= 0 ? "+" : ""}${dpp.toFixed(1)} pp`}
               bad={dpp >= 2}
               strong={Math.abs(dpp) >= 1}
             />
@@ -908,10 +884,10 @@ export function EconomyPage() {
           return (
             <Row
               k="Unhoused demand"
-              v={`${(unmet / 1e6).toFixed(2)}M sf · ${((unmet / Math.max(1, stock)) * 100).toFixed(1)}% of stock looking for space the city has not built`}
+              v={`${(unmet / 1e6).toFixed(2)}M sf · ${((unmet / Math.max(1, stock)) * 100).toFixed(1)}% of stock`}
               bad
               strong
-              title="Tenants in the market for this class that no standing suite can house. Rents carry the queue until somebody builds."
+              title="Tenant demand with no suitable space"
             />
           );
         })()}
@@ -928,11 +904,11 @@ export function EconomyPage() {
           const struct = e.structTight?.[focus] ?? 0;
           return (
             <>
-              <Row k="Occupied" v={`${(occ / 1e6).toFixed(2)}M sf let`} />
+              <Row k="Occupied" v={`${(occ / 1e6).toFixed(2)}M sf`} />
               {struct > 0.02 && (
                 <Row
                   k="Unmet structural demand"
-                  v={`${(struct * 100).toFixed(1)}% of stock — jobs want more floors than the city can house`}
+                  v={`${(struct * 100).toFixed(1)}% of stock`}
                   bad
                 />
               )}
@@ -945,15 +921,15 @@ export function EconomyPage() {
         <Row
           k="Months of supply"
           v={mos === null
-            ? "— tenants are handing space back; the vacancy is still growing"
-            : `${mos.toFixed(0)} months to clear the vacancy and the pipeline`}
+            ? "n/a · negative absorption"
+            : `${mos.toFixed(0)} months (vacancy + pipeline)`}
           bad={mos === null || mos > 60}
         />
         {/* "93% off its long-run base" reads as a discount when the rent is
             nearly double it. Say which way it has gone. */}
         <Row k="Rent" v={(() => {
           const d = ((e.rentIdx[focus] / RENT_BASE[focus]) - 1) * 100;
-          return `$${e.rentIdx[focus].toFixed(2)}/sf · ${Math.abs(d).toFixed(0)}% ${d >= 0 ? "above" : "below"} its long-run base`;
+          return `$${e.rentIdx[focus].toFixed(2)}/sf · ${d >= 0 ? "+" : "−"}${Math.abs(d).toFixed(0)}% vs long-run base`;
         })()} />
         {(() => {
           const history = e.history ?? [];
@@ -965,7 +941,7 @@ export function EconomyPage() {
           const move = now / Math.max(0.01, then) - 1;
           return <Row
             k="Effective rent trend"
-            v={`${move >= 0 ? "+" : ""}${(move * 100).toFixed(1)}% real over 12 months · `
+            v={`${move >= 0 ? "+" : ""}${(move * 100).toFixed(1)}% real / 12 mo · `
               + (move > 0.025 ? "rising" : move < -0.025 ? "falling" : "flat")}
             bad={move < -0.025}
             strong
@@ -978,15 +954,15 @@ export function EconomyPage() {
           const c = e.concIdx?.[focus] ?? 0;
           const off = c * 14;
           return <Row k="Concessions"
-            v={c < 0.05 ? "none to speak of — space lets at the quoted rate"
-              : `deals striking ~${off.toFixed(0)}% under asking in free rent and work${c > 0.7 ? " — landlords are capitulating" : ""}`}
+            v={c < 0.05 ? "none"
+              : `~${off.toFixed(0)}% under asking (free rent + TI)${c > 0.7 ? " · deep" : ""}`}
             bad={c > 0.7} />;
         })()}
       </div>
 
       <div className="chart-grid chart-masonry" ref={masonry}>
         <div className="chart-cell">
-          <div className="chart-title">Vacancy — {spanYrs} year{spanYrs === 1 ? "" : "s"} back, three forward</div>
+          <div className="chart-title">Vacancy · {spanYrs} yr{spanYrs === 1 ? "" : "s"} history, 3 yr projection</div>
           {/* The projection is appended to whatever history is selected, and
               `split` is where the record stops — so it stays the length of
               vacSeries and the dotted join lands on the right month in both
@@ -1011,10 +987,7 @@ export function EconomyPage() {
             xLabels={[xFrom, `${START_YEAR + Math.floor((game.month + 36) / 12)}`]}
           />
           <div className="chart-note">
-            Left of the dotted line is what happened. Right of it is where availability goes if NOBODY starts another
-            building — pipeline delivering into today's pace of absorption. Availability is empty floors plus
-            space already on the sublet market; that is what a tenant can take and what rents price off. Direct
-            vacancy is the landlord empty-floor rate and will sit on its frictional floor through a shortage.
+            Projection: current pipeline at current absorption, no new starts. Availability = vacant + sublet. Dashed: direct vacancy.
           </div>
           {/* THE MARKET BY QUALITY (TENANT_TIERS_PLAN.md): which floors the vacancy is in. */}
           {(() => {
@@ -1022,7 +995,7 @@ export function EconomyPage() {
             if (!rows.length) return null;
             return (
               <>
-                <div className="hint" style={{ marginTop: 8 }}>By building score — the street's buildings (yours are your own)</div>
+                <div className="hint" style={{ marginTop: 8 }}>By building score · market stock</div>
                 {focus !== "multifamily" && (() => {
                   // How many firms that floor is: occupied over the average lease (plates.ts sizeMean).
                   const avg = sizeMean(focus);
@@ -1030,8 +1003,8 @@ export function EconomyPage() {
                   const pop = Math.max(1, game.econ.population ?? 1);
                   return (
                     <div className="hint">
-                      About {n.toLocaleString()} {focus === "retail" ? "shops" : "firms"} occupy it, averaging {Math.round(avg).toLocaleString()} sf
-                      {" "}— {(1000 * n / pop).toFixed(1)} per 1,000 residents.
+                      ~{n.toLocaleString()} {focus === "retail" ? "shops" : "firms"} · avg {Math.round(avg).toLocaleString()} sf
+                      {" "}· {(1000 * n / pop).toFixed(1)} per 1,000 residents
                     </div>
                   );
                 })()}
@@ -1049,24 +1022,17 @@ export function EconomyPage() {
                     ))}
                   </tbody>
                 </table>
-                <div className="chart-note">
-                  Every building has one score, 1-100 — its address and the building itself — and every tenant shops
-                  for the best score it can afford. When good space gets cheap, tenants in ordinary space trade up and
-                  the vacancy lands at the bottom of the scale; when the best space is dear, they stay or trade down.
-                </div>
+                <div className="chart-note">Score 1-100: location + building quality</div>
               </>
             );
           })()}
         </div>
         <div className="chart-cell">
-          <div className="chart-title">What is coming, and when</div>
+          <div className="chart-title">Pipeline by delivery year</div>
           {sched.some((v) => v > 0)
             ? <BarChart groups={pipeGroups} yFmt={sfFmt} />
-            : <div className="hint" style={{ padding: "26px 0" }}>Nothing is under construction. At these rents against these build costs, no {SECTOR_LABEL[focus].toLowerCase()} scheme pencils — which is how the next shortage begins.</div>}
-          <div className="chart-note">
-            Square feet already under construction, by the year they deliver. Nothing here can be cancelled — the
-            decision to start was taken in a market that no longer exists.
-          </div>
+            : <div className="hint" style={{ padding: "26px 0" }}>Nothing under construction.</div>}
+          <div className="chart-note">SF under construction by delivery year</div>
           {/* THE CRANES BEHIND THE BARS. "400k sf is coming" is a different
               fact when one tower is most of it than when twenty infills are —
               one delivery date to watch against twenty you can ignore. These
@@ -1084,7 +1050,7 @@ export function EconomyPage() {
                     <span className="neighbor-addr">{j.stalled ? "⚠ " : ""}{parcels[j.bbl]?.address ?? j.bbl}</span>
                     <span className="neighbor-meta mono">
                       {j.who} · {sfFmt(j.sf)} sf{j.mixed ? " of a mixed job" : ""} · {j.floors} fl ·{" "}
-                      {j.stalled ? "stalled — the sponsor is gone" : `due ${monthLabel(j.deliverM)}`}
+                      {j.stalled ? "stalled · sponsor failed" : `due ${monthLabel(j.deliverM)}`}
                     </span>
                   </button>
                 ))}
@@ -1103,7 +1069,7 @@ export function EconomyPage() {
             return (
               <>
                 <div className="hint" style={{ marginTop: 8 }}>
-                  Permits filed, not yet started: {plans.length} scheme{plans.length === 1 ? "" : "s"}
+                  Permitted, not started: {plans.length}
                 </div>
                 <div className="mini-list">
                   {plans.slice(0, 5).map((p) => {
@@ -1112,7 +1078,7 @@ export function EconomyPage() {
                       <button key={p.bbl} className="neighbor" onClick={() => flyTo(p.bbl, true)}>
                         <span className="neighbor-addr">{parcels[p.bbl]?.address ?? p.bbl}</span>
                         <span className="neighbor-meta mono">
-                          {b?.name ?? "A local developer"} · {p.floors} fl {p.use} · breaks ground ~{monthLabel(p.breakM)}
+                          {b?.name ?? "A local developer"} · {p.floors} fl {p.use} · start ~{monthLabel(p.breakM)}
                         </span>
                       </button>
                     );
@@ -1133,7 +1099,7 @@ export function EconomyPage() {
             return (
               <>
                 <div className="hint" style={{ marginTop: 8 }}>
-                  The town's builders: {live.length} firms{failed.length ? ` · ${firms.filter((r) => r.failedM !== undefined).length} gone under` : ""}
+                  Developers: {live.length}{failed.length ? ` · ${firms.filter((r) => r.failedM !== undefined).length} failed` : ""}
                 </div>
                 <div className="mini-list">
                   {top.map((r) => {
@@ -1142,7 +1108,7 @@ export function EconomyPage() {
                       <div key={r.id} className="neighbor">
                         <span className="neighbor-addr">{r.name}</span>
                         <span className="neighbor-meta mono">
-                          {r.style === "developer" ? "builds to hold" : "merchant builder"} · owns {r.bbls.length}{building ? ` · ${building} under way` : ""}
+                          {r.style === "developer" ? "build-to-hold" : "merchant builder"} · owns {r.bbls.length}{building ? ` · ${building} under way` : ""}
                         </span>
                       </div>
                     );
@@ -1150,7 +1116,7 @@ export function EconomyPage() {
                   {failed.map((r) => (
                     <div key={r.id} className="neighbor">
                       <span className="neighbor-addr neg">✕ {r.name}</span>
-                      <span className="neighbor-meta mono">went under {monthLabel(r.failedM ?? 0)}</span>
+                      <span className="neighbor-meta mono">failed {monthLabel(r.failedM ?? 0)}</span>
                     </div>
                   ))}
                 </div>
@@ -1166,8 +1132,8 @@ export function EconomyPage() {
             return (
               <>
                 <div className="hint" style={{ marginTop: 8 }}>
-                  The town's developers: {all.filter((b) => b.failedM === undefined).length} active
-                  {all.some((b) => b.endReason === "folded") ? ` · ${all.filter((b) => b.endReason === "folded").length} folded in the last twenty years` : ""}
+                  Developers: {all.filter((b) => b.failedM === undefined).length} active
+                  {all.some((b) => b.endReason === "folded") ? ` · ${all.filter((b) => b.endReason === "folded").length} folded (20 yrs)` : ""}
                 </div>
                 <div className="mini-list">
                   {live.map((b) => {
@@ -1196,13 +1162,10 @@ export function EconomyPage() {
         <div className="chart-cell">
           <div className="chart-title">Absorption vs completions, per year</div>
           <BarChart groups={flowYears} yFmt={sfFmt} />
-          <div className="chart-note">
-            Green up is space tenants took. Orange down is space the market delivered. When orange outruns green,
-            vacancy rises no matter what anybody says about demand.
-          </div>
+          <div className="chart-note">Green: net absorption · orange: completions</div>
         </div>
         <div className="chart-cell">
-          <div className="chart-title">Asking rent, effective rent, and cap rate</div>
+          <div className="chart-title">Asking rent, effective rent, cap rate</div>
           <LineChart series={[
             { label: "asking", color: COLOR[focus], pts: rentSeries },
             { label: "effective", color: "#7d8a96", pts: effSeries, dashed: true },
@@ -1210,12 +1173,7 @@ export function EconomyPage() {
             xLabels={[xFrom, xTo]} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
           <LineChart series={[{ label: "cap", color: "#8a5620", pts: capSeries, dashed: true }]} yFmt={pctFmt} height={92}
             xLabels={[xFrom, xTo]} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
-          <div className="chart-note">
-            Asking is the face rate landlords quote; effective is what deals actually strike after free rent and
-            work — the gap between the two lines is the concessions market saying what asking will not admit.
-            Cap rate below: what the market pays for the earning. None of the three move together, and the gaps
-            are most of what makes or loses money here.
-          </div>
+          <div className="chart-note">Effective = asking less free rent and TI · cap rate below</div>
         </div>
         <>
           {/* TWO CHARTS, TWO CAPTIONS — and now two cells, so the masonry can
@@ -1249,24 +1207,15 @@ export function EconomyPage() {
             const xl: [string, string] = [xFrom, xTo];
             return (<>
               <div className="chart-cell">
-              <div className="chart-title">Demand met vs supply built</div>
+              <div className="chart-title">Cumulative absorption vs completions</div>
               <LineChart height={92} series={[
                 { label: "absorbed", color: "#4a7d5a", pts: absCum },
                 { label: "delivered", color: "#a8562e", pts: compCum, dashed: true },
               ]} yFmt={sfFmt} zeroBase xLabels={xl} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
-              <div className="chart-note">
-                Both lines start at zero at the left edge: every square foot tenants have taken since then
-                (solid) against every square foot finished and handed over (dashed). The dashed one only
-                climbs — a building, once delivered, stays delivered. The solid one can fall, and does,
-                because net absorption goes negative in a downturn when tenants hand back more space than
-                they take. What matters is the distance BETWEEN them. Dashed above solid means the city
-                built more than it let, and that gap is standing empty space somebody has to absorb before
-                rents can move. Solid above dashed is the opposite — demand arrived and nobody built for it,
-                which is how a shortage, and the rent spike that follows one, is made.
-              </div>
+              <div className="chart-note">Solid: absorbed · dashed: delivered · dashed above solid = oversupply</div>
               </div>
               <div className="chart-cell">
-              <div className="chart-title">The concession gap</div>
+              <div className="chart-title">Concessions</div>
               <LineChart height={92} series={[{ label: "concession gap", color: "#7d8a96", pts: gap }]}
                 yFmt={pctFmt} zeroBase xLabels={xl} xAt={(i) => monthLabel(tail[i]?.q ?? 0)} />
               {/* WHAT THE OWNER WAS LOOKING AT. This is the line that opens to
@@ -1275,28 +1224,7 @@ export function EconomyPage() {
                   is. It used to top out at 14% because the index said so and
                   the index had not been measured against the leasing desk; see
                   CONC_DEPTH in engine/market.ts. */}
-              <div className="chart-note">
-                A landlord advertises a face rent — the number in the brochure. What a lease actually strikes
-                at is that number minus everything thrown in to get it signed: months of free rent at the
-                start, and the landlord's cash for fitting the space out. This line is the difference, as a
-                percentage off the advertised rent.
-              </div>
-              <div className="chart-note">
-                At <strong>0%</strong> nobody is discounting. Space lets at the quoted rate, the tenant pays
-                every month of the term, and asking rent means what it says. That is a landlord's market.
-                At <strong>30%</strong> — as wide as this market goes — the brochure is fiction: eighteen
-                months free on a ten-year deal with the landlord buying the carpet, and a building whose
-                asking rent has not moved is earning barely two thirds of what it claims. That is a tenant's
-                market.
-              </div>
-              <div className="chart-note">
-                It turns before asking rent does, in both directions, and that is not a quirk of the chart.
-                Free rent is reversible and a cut to the face rate is not — the quoted number is what the
-                building is valued and financed off, so a landlord will give away a year before touching it,
-                and will claw the giveaway back long before daring to raise the quote. So this line moves
-                within months of the market turning while asking sits still for half a year or more. Watch
-                this one; the rent chart is the confirmation, not the signal.
-              </div>
+              <div className="chart-note">% off asking from free rent and TI · 0% landlord market, 30% max · leads asking rent</div>
               </div>
             </>);
           })()}
@@ -1304,11 +1232,7 @@ export function EconomyPage() {
       </div>
 
       {/* ---- submarkets ---- */}
-      <div className="page-section">Submarkets — {SECTOR_LABEL[focus]} by neighbourhood</div>
-      <div className="hint">
-        Computed from the actual standing stock, lot by lot, with the same occupancy and rent model the engine
-        prices off — so this table and your rent roll can never disagree.
-      </div>
+      <div className="page-section">Submarkets · {SECTOR_LABEL[focus]}</div>
       <table className="tbl">
         <thead>
           <tr>
@@ -1333,8 +1257,8 @@ export function EconomyPage() {
                 <td className="num">{legDemand(leg).toFixed(0)}</td>
                 <td className="num">{m.vacantLots}</td>
                 <td className="dim">
-                  {v < NATURAL_VAC[focus] - 0.02 ? "tight — push rents here"
-                    : v > NATURAL_VAC[focus] + 0.04 ? "soft — buy cheap, do not build"
+                  {v < NATURAL_VAC[focus] - 0.02 ? "tight"
+                    : v > NATURAL_VAC[focus] + 0.04 ? "soft"
                     : "balanced"}
                 </td>
               </tr>
@@ -1356,9 +1280,9 @@ export function EconomyPage() {
           <>
             <div className="page-section">Neighbourhood demand</div>
             <div className="grid">
-              <Row k="Blocks drifting" v={`${emergent.length} blocks with live drift`} />
+              <Row k="Blocks shifting" v={`${emergent.length}`} />
               <Row k="Largest move" v={`±${max.toFixed(0)} pts since 2000`} strong={max >= 8} />
-              <Row k="Winners vs losers" v={`${spread.toFixed(0)} pt spread across the city`} />
+              <Row k="Spread" v={`${spread.toFixed(0)} pts`} />
               <Row k="Civic works" v={(() => {
                 const n = { open: 0, digging: 0, funded: 0, rumoured: 0 };
                 for (const l of game.lines ?? []) n[workStage(game.month, l).word]++;
@@ -1385,7 +1309,7 @@ export function EconomyPage() {
                         key={`${l.id}:${l.annM}`}
                         className="neighbor"
                         disabled={!l.bbl}
-                        title={l.bbl ? "Put the camera on the ground around this work" : undefined}
+                        title={l.bbl ? "Show on map" : undefined}
                         onClick={() => { if (l.bbl) useStore.getState().focus(l.bbl, true); }}
                       >
                         <span className="neighbor-addr">{l.name} {kind}{l.bbl ? " ✈" : ""}</span>
@@ -1398,33 +1322,21 @@ export function EconomyPage() {
                   })}
                 </div>
                 <div className="hint">
-                  The ground prices a work in steps — a leak on the rumour, some at the funding vote, most over
-                  the last two years of digging, all of it on opening day — so the trade is owning the dirt
-                  before the next step, and the pts figure is what the work is worth to the blocks under it at
-                  full price. A rumour is not a promise: about one in four dies at its hearing, and the rumour
-                  money goes home.
+                  Land prices in a work at rumour, funding, construction and opening · pts = full demand lift · ~1 in 4 rumours fail at hearing
                   {/* "one in four" mirrors SHELVE_ODDS in engine/demand.ts, which
                       is not exported — if the hearing gets kinder, so must this. */}
                 </div>
               </>
             )}
-            <div className="hint">
-              Demand is redistributive — a block gaining desirability takes it from somewhere else. Construction cranes and
-              deliveries nudge blocks before lease-up; occupied stock is what holds the shift.
-            </div>
+            <div className="hint">Demand is zero-sum across blocks.</div>
           </>
         );
       })()}
 
       {(sel === "general" || isClass) && <>
-      <div className="page-section">How this works</div>
+      <div className="page-section">Model</div>
       <div className="hint">
-        Employment decides how much space the city's tenants want; occupancy chases that target slowly, because
-        firms sign leases slowly on the way up and shed space slowly on the way down. Deliveries add stock.
-        Rents move on the GAP between vacancy and its natural rate, not on the calendar — so a boom ends when
-        supply catches demand and not a month before. Starts respond to the spread between rents and construction
-        cost, and to vacancy, because nobody breaks ground into a glut. Your own deliveries count as supply: build
-        enough of one class and you will move its vacancy against yourself.
+        Employment → space demand (lagged) · rents move on vacancy vs natural rate · starts follow rent vs build cost · your deliveries count as supply
       </div>
       </>}
     </div>
@@ -1461,3 +1373,9 @@ export function EconomyPage() {
  * Occupancy and value here are the same models the engine prices with, so
  * this table cannot disagree with a deal card.
  */
+
+/** A series at 100 on its first finite point, so two indices read against each other. */
+function rebase100(v: number[]): number[] {
+  const b0 = v.find((x) => Number.isFinite(x) && x > 0) ?? 1;
+  return v.map((x) => (x / b0) * 100);
+}

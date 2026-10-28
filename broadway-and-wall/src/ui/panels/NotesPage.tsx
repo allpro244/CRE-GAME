@@ -120,9 +120,9 @@ export function NoteSellers() {
       <table className="tbl">
         <thead>
           <tr>
-            <th>Desk</th>
-            <th className="num" title="Capital over book — the one number that decides whether a desk is open">Capital</th>
-            <th className="num" title="How badly they need to sell something. This is the number the offer generator reads.">Pressure</th>
+            <th>Lender</th>
+            <th className="num" title="Capital ÷ book">Capital</th>
+            <th className="num" title="Pressure to sell loans">Pressure</th>
           </tr>
         </thead>
         <tbody>
@@ -132,11 +132,11 @@ export function NoteSellers() {
                 <div>{l.name}{l.failedM !== undefined ? <span className="neg"> · in receivership</span> : ""}</div>
                 <div className="dim" style={{ fontSize: 11 }}>
                   {l.failedM !== undefined
-                    ? "A receiver is a forced seller. Everything they hold is for sale and none of it is priced by them."
-                    : p > 0.7 ? "Badly impaired. They will sell good paper cheap to raise capital, and that is when you want to be looking."
-                      : p > 0.35 ? "Under real pressure. Expect them to shop the weakest files first."
-                        : p > 0.1 ? "Comfortable. Anything they offer will be priced above fair and the right move is usually to pass."
-                          : "No reason to sell anything to anybody."}
+                    ? "Forced seller (receiver)"
+                    : p > 0.7 ? "Impaired · likely discounted sales"
+                      : p > 0.35 ? "Pressured · weakest loans first"
+                        : p > 0.1 ? "Comfortable · sales priced high"
+                          : "Not selling"}
                 </div>
               </td>
               <td className="num mono">{(100 * cap).toFixed(1)}%</td>
@@ -163,23 +163,19 @@ export function NotesPage() {
 
   const sleeveBlock = (
     <>
-        <div className="page-section">Private asks · your sleeve</div>
+        <div className="page-section">Private lending requests</div>
         <div className="hint" style={{ marginBottom: 8 }}>
-          Sleeve capacity {usd(sleeve)} more face · book outstanding {usd(bookFace)}.
-          Funded from cash only; leave a reserve. Expensive, short, enforceable — Cordage with your name on it.
+          Capacity {usd(sleeve)} · outstanding {usd(bookFace)} · cash only, reserve {usd(PRIVATE_CASH_RESERVE)}
         </div>
         {asks.length === 0 && (
-          <div className="hint" style={{ marginBottom: 10 }}>
-            No rival is asking you for money this month. Asks appear when somebody is stressed, dry, or staring
-            at a balloon the cheap desks will not re-paper — and they lapse in two months.
-          </div>
+          <div className="hint" style={{ marginBottom: 10 }}>No requests this month · requests lapse in 2 months</div>
         )}
         {asks.map((a) => (
           <div key={a.id} className="hint" style={{ marginBottom: 10 }}>
             <div style={{ cursor: "pointer" }} onClick={() => focus(a.bbl, true)}>
-              <strong>{a.address}</strong> · {a.rivalName} wants{" "}
+              <strong>{a.address}</strong> · {a.rivalName} ·{" "}
               <b className="mono">{usd(a.face)}</b> at <b className="mono">{a.ratePct.toFixed(2)}%</b>,{" "}
-              {(a.points * 100).toFixed(1)} points, {a.termM} months · {(100 * a.ltv).toFixed(0)}% of as-is {usd(a.asIs)}
+              {(a.points * 100).toFixed(1)} pts, {a.termM} mo · {(100 * a.ltv).toFixed(0)}% LTV on as-is {usd(a.asIs)}
             </div>
             <div className="dim" style={{ marginTop: 4 }}>{a.why}</div>
             <div className="btn-row" style={{ marginTop: 6 }}>
@@ -191,13 +187,13 @@ export function NotesPage() {
                 Fund · {usd(a.face)}
               </button>
               <button className="btn-mini" onClick={() => declinePrivateAsk(a.id)}>Pass</button>
-              <span className="dim">Lapses {monthLabel(a.expiresM)}.</span>
+              <span className="dim">Lapses {monthLabel(a.expiresM)}</span>
             </div>
           </div>
         ))}
         {privateNotes.length > 0 && (
           <div className="hint" style={{ marginBottom: 10 }}>
-            Your originated book: {privateNotes.map((n) => `${n.address} (${usd(n.face)})`).join(" · ")}.
+            Originated: {privateNotes.map((n) => `${n.address} (${usd(n.face)})`).join(" · ")}.
           </div>
         )}
 
@@ -206,20 +202,11 @@ export function NotesPage() {
 
   return (
     <div>
-      <div className="hint">
-        A note is a claim on somebody else's rent, secured by a building you do not own and cannot manage. What
-        you are underwriting is not the collateral — it is whether the borrower can make you go away. A performing
-        loan on a solvent firm is a bond. A defaulted loan on a half-empty block is a building you have bid on
-        privately, in an auction with one bidder, at a price the owner never agreed to. Nothing here is serviced
-        by hand: the coupon arrives on its own, every month, and a note asks you for something exactly twice.
-      </div>
       <div className="hint" style={{ marginBottom: 8 }}>
-        You can also <b>write</b> paper — hard-money bridges to competitors the banks will not clear. That is the
-        private sleeve below. Want the <b>deed</b>, not the paper? Receiver books are on{" "}
+        Buy loans or originate bridge loans · REO packages on{" "}
         <button className="news-link" onClick={() => useStore.getState().setPage("market")}>
           Marketplace · Books for sale
         </button>
-        .
       </div>
 
       {/* WHAT THE BADGE COUNTED, FIRST. An offer on the block was the last
@@ -227,13 +214,9 @@ export function NotesPage() {
           table of which banks are under pressure. Asks lead when there are
           any; empty, they follow the paper for sale. */}
       {asks.length > 0 && sleeveBlock}
-      <div className="page-section">On the block · bank paper</div>
+      <div className="page-section">Loans for sale</div>
       {offers.length === 0 && (
-        <div className="hint">
-          Nobody is selling paper this month. A desk sells a loan for two reasons and neither of them is you: the
-          loan has stopped paying, or the desk needs the capital more than it needs the asset. Both are visible
-          before the offer is, which is what the table below is for.
-        </div>
+        <div className="hint">None this month · sellers: defaulted loans or capital-short lenders</div>
       )}
       {/* WHO IS LIKELY TO SELL, ON THE DESK WHERE YOU WOULD BUY IT.
           The page used to say "watch the capital ratios on Research" and leave
@@ -252,38 +235,36 @@ export function NotesPage() {
           <div key={o.id} className="hint" style={{ marginBottom: 10 }}>
             <div style={{ cursor: "pointer" }} onClick={() => focus(o.bbl, true)}>
               <strong>{o.address}</strong> · {o.perf === "nonperforming"
-                ? <span className="neg">not paying</span> : "current"} · {usd(o.face)} of face at{" "}
+                ? <span className="neg">non-performing</span> : "performing"} · {usd(o.face)} face at{" "}
               <b className="mono">{(100 * o.askPct).toFixed(0)} cents</b> = <b className="mono">{usd(px)}</b>
             </div>
             <div className="dim" style={{ marginTop: 4 }}>{o.why}</div>
             <div style={{ marginTop: 4 }}>
-              The borrower is <strong>{o.obligor}</strong>
-              {r && <> — {(100 * ltv).toFixed(0)}% levered, {usd(Math.max(0, r.cash))} of cash against {usd(o.face)} owed here
-                {(r.stressMs ?? 0) > 0 && <span className="neg">, and {r.stressMs} months into a squeeze</span>}
-                {r.occ !== undefined && <>, running their book at {(r.occ * 100).toFixed(0)}% let</>}.</>}
+              Borrower <strong>{o.obligor}</strong>
+              {r && <> · {(100 * ltv).toFixed(0)}% LTV · cash {usd(Math.max(0, r.cash))} vs {usd(o.face)} owed
+                {(r.stressMs ?? 0) > 0 && <span className="neg"> · {r.stressMs} mo delinquent</span>}
+                {r.occ !== undefined && <> · {(r.occ * 100).toFixed(0)}% occupancy</>}</>}
             </div>
             <div style={{ marginTop: 4 }} className={o.cure > 0.4 ? "" : "dim"}>
-              The desk puts about <b className="mono">{(100 * o.cure).toFixed(0)}%</b> odds on being repaid.{" "}
+              Repayment odds <b className="mono">{(100 * o.cure).toFixed(0)}%</b>{" "}
               {o.cure > 0.45
-                ? "That is a bond with a discount on it — you are underwriting the borrower, not the bricks."
+                ? "· borrower credit"
                 : o.cure < 0.15
-                  ? "They do not expect to see this money. You are buying the building, and the only question is what it is worth when you get it."
-                  : "Neither one thing nor the other, which is why it is cheap."}
+                  ? "· collateral value"
+                  : ""}
             </div>
             {rec && (
               <div className="dim" style={{ marginTop: 4 }}>
-                Clean, the building appraises at {usd(assetValue(rec, game.econ, "standard"))}. Off a receiver, worn
-                and at their occupancy, it marks nearer {usd(collateralAsIs(rec, game.econ, r?.occ ?? 0.5))} — and
-                a foreclosure takes nine to seventeen months during which you collect nothing.
+                Appraisal {usd(assetValue(rec, game.econ, "standard"))} · as-is (worn, current occupancy) {usd(collateralAsIs(rec, game.econ, r?.occ ?? 0.5))} · foreclosure 9-17 months, no income
               </div>
             )}
             <div className="btn-row" style={{ marginTop: 6 }}>
               <button className="btn" disabled={fundableNow(game, parcels) < px || creditBookRoom(game, parcels) < px}
-                title={creditBookRoom(game, parcels) < px ? `Your credit book will only carry another ${usd(creditBookRoom(game, parcels))}` : undefined}
+                title={creditBookRoom(game, parcels) < px ? `Credit book room: ${usd(creditBookRoom(game, parcels))}` : undefined}
                 onClick={() => takeNote(o.id)}>
-                Buy the paper · {usd(px)}
+                Buy note · {usd(px)}
               </button>
-              <span className="dim">Offer lapses {monthLabel(o.expiresM)}. Somebody else is looking at it.</span>
+              <span className="dim">Lapses {monthLabel(o.expiresM)}</span>
             </div>
           </div>
         );
@@ -292,8 +273,8 @@ export function NotesPage() {
       <NoteSellers />
       {asks.length === 0 && sleeveBlock}
 
-      <div className="page-section">Your book</div>
-      {notes.length === 0 && <div className="hint">You hold no paper.</div>}
+      <div className="page-section">Your notes</div>
+      {notes.length === 0 && <div className="hint">None.</div>}
       {notes.length > 0 && (
         <table className="tbl">
           <thead>
@@ -315,20 +296,20 @@ export function NotesPage() {
                   <td className="num">{n.collected > 0 ? usd(n.collected) : "—"}</td>
                   <td className={n.perf === "nonperforming" ? "neg" : "dim"}>
                     {n.filedM !== undefined
-                      ? `filed — the sale is around ${monthLabel(n.saleM ?? game.month)}`
+                      ? `filed · sale ~${monthLabel(n.saleM ?? game.month)}`
                       : n.perf === "nonperforming"
-                        ? "not paying"
-                        : `paying, matures ${monthLabel(n.maturityM)}`}
+                        ? "non-performing"
+                        : `performing · matures ${monthLabel(n.maturityM)}`}
                   </td>
                   <td>
                     {n.filedM === undefined && (
                       <span className="btn-row">
                         {n.perf === "nonperforming" && n.mods < 1 && (
-                          <button className="btn-mini" title="Extend them, cut the coupon, take a five per cent paydown today. Once only."
+                          <button className="btn-mini" title="Extend, cut coupon, 5% paydown · once only"
                             onClick={() => restructureNote(n.id)}>restructure</button>
                         )}
                         {n.perf === "nonperforming" && (
-                          <button className="btn-mini" title="Two per cent of face in legal, then nine to seventeen months to the July sale on the courthouse steps. Your debt bids for you: if nobody bids above it you take the building; if the room does, you are paid off in cash. The borrower can still reinstate until the hammer."
+                          <button className="btn-mini" title="2% of face legal · 9-17 mo to July auction · you credit-bid · borrower can reinstate until sale"
                             onClick={() => fileNote(n.id)}>foreclose</button>
                         )}
                         <button className="btn-mini" disabled={!bid.buyer}
@@ -347,11 +328,10 @@ export function NotesPage() {
       )}
       {(game.rivalNotes?.length ?? 0) > 0 && (
         <>
-          <div className="page-section">Paper you passed on</div>
+          <div className="page-section">Notes you passed on</div>
           {game.rivalNotes!.map((rn) => (
             <div key={rn.bbl} className="hint" style={{ cursor: "pointer" }} onClick={() => focus(rn.bbl, true)}>
-              {resolveRec(parcels, game, rn.bbl)?.address ?? rn.bbl} — {rn.firm} holds the mortgage. They take the
-              deed around {monthLabel(rn.takeM)} unless the owner finds {usd(rn.face)}.
+              {resolveRec(parcels, game, rn.bbl)?.address ?? rn.bbl} · held by {rn.firm} · foreclosure ~{monthLabel(rn.takeM)} unless {usd(rn.face)} repaid
             </div>
           ))}
         </>

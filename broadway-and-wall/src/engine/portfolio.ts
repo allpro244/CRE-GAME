@@ -24,12 +24,12 @@
 // falling market the second one is right, and it stops being right about six
 // months after everybody has worked that out.
 import type { ParcelTable } from "@/data/types";
-import type { Exit, GameState, Holding } from "./types";
+import type { Exit, GameState, Holding, Rival } from "./types";
 import { logBooks, moveDeposit, moveFundCash, monthLabel, raiseAlert, cloneState, closeDeedLedger } from "./types";
 import { firmShort } from "./firm";
 import { rng, rrange } from "./market";
 import { sweepLocIdleCash } from "./credit";
-import { ownedHoldingValue, ownedHoldingNoiYr, resolveRec, holdingNOIYr, asIfOwned, rentableSf, useRentableSf } from "./value";
+import { ownedHoldingValue, ownedHoldingNoiYr, resolveRec, holdingNOIYr, asIfOwned, rentableSf, useRentableSf, inPlace } from "./value";
 import { depositsOn } from "./leasing";
 import { recordComp } from "./comps";
 import { EXCHANGE_WINDOW_M, transferGroundLeaseOffBook, saleProceedsToSeller } from "./actions";
@@ -37,6 +37,10 @@ import { FACILITY_MIN_ASSETS } from "./facility";
 import { sponsorStanding } from "./sponsor";
 import { money } from "./money";
 import { purseOf, partnerShare } from "./vehicles";
+import { livingRivals } from "./rivals";
+import { packageCanClose, packageFinance } from "./portfoliosale";
+import { financePackage } from "./rivalDebt";
+import { logFirm } from "./firmLog";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
@@ -52,33 +56,26 @@ function occOf(rec: { bldgArea: number; floors: number }, h: Holding): number {
 const RUN_M = 9;
 
 /**
- * The desks that write portfolio cheques in this town.
+ * WHO WRITES PORTFOLIO CHEQUES IN THIS TOWN: the firms on the Players list
+ * that could close this exact book at this price, out of their own cash with
+ * their leverage inside their own limit (`packageCanClose`).
  *
- * Ordered loosely by patience (how close to indicative they will bid). The
- * floor used to be $6M — Bellwether — so a two-building book under that mark
- * could sit the full nine months with a rolled die and an empty pool, while
- * the quote lied that "1 buyer" could fund it. Riverside is the private desk
- * that still writes smaller tickets; below its min there is simply no market
- * for a bundle, and the desk has to say so.
+ * This was a list of six desks that existed nowhere else in the game —
+ * "Kestrel Core Fund", "Marchpane Institutional" — with a minimum ticket each
+ * and no balance sheet. They bid on the player's book, won it, paid with money
+ * that did not exist, and the buildings went into no one's portfolio. The
+ * owner built the largest book in the city, offered it, and was bid on by a
+ * name that was not on the players list. A buyer is now somebody you can
+ * click on, and the cheque comes out of its account; when nobody on the street
+ * is big enough, there is no bid.
  */
-const BUYERS = [
-  { name: "Kestrel Core Fund", min: 45_000_000, patience: 1.04 },
-  { name: "Marchpane Institutional", min: 30_000_000, patience: 1.02 },
-  { name: "Hollis Sterling Partners", min: 12_000_000, patience: 0.98 },
-  { name: "The Ashgrove Trust", min: 8_000_000, patience: 0.95 },
-  { name: "Bellwether Opportunity", min: 6_000_000, patience: 0.88 },
-  { name: "Riverside Private Capital", min: 2_000_000, patience: 0.84 },
-];
+export function portfolioBuyers(s: GameState, parcels: ParcelTable, bbls: string[], price: number): Rival[] {
+  return livingRivals(s).filter((r) => packageCanClose(s, parcels, r, bbls, price));
+}
 
-/** How many named buyers can underwrite a book of this size. */
-export function portfolioBuyerDepth(sumOfParts: number, infl = 1): number {
-  // The buyers' minimums are opening-year cheques, carried at inflation.
-  const real = sumOfParts / Math.max(0.01, infl);
-  const raw = BUYERS.filter((b) => real >= b.min).length;
-  // Past a certain cheque the room thins — the same three institutions who
-  // could write $40M cannot all write $200M in the same city the same year.
-  const crowdedOut = real > 200_000_000 ? 2 : real > 90_000_000 ? 1 : 0;
-  return Math.max(0, raw - crowdedOut);
+/** How many firms on the street can underwrite this book at this price. */
+export function portfolioBuyerDepth(s: GameState, parcels: ParcelTable, bbls: string[], price: number): number {
+  return portfolioBuyers(s, parcels, bbls, price).length;
 }
 
 export interface PortfolioQuote {
@@ -192,17 +189,19 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
   }
 
   // --- who can actually write this cheque ----------------------------------
-  const depth = portfolioBuyerDepth(sumOfParts, s.econ.cpi ?? 1);
+  // Asked at the price the book is indicated at before this term.
+  const before = Math.round(sumOfParts * (1 + why.reduce((a, x) => a + x.pct, 0)));
+  const depth = portfolioBuyerDepth(s, parcels, rows.map((r) => r.bbl), before);
   if (depth <= 0) {
     why.push({
-      label: "No buyer in this city can fund a book this small as a portfolio — sell them one at a time",
+      label: "No firm in town can fund this book in one cheque — sell them one at a time",
       pct: -0.08,
     });
   } else {
     const thin = depth === 1 ? -0.06 : depth === 2 ? -0.025 : 0;
     if (thin < 0) {
       why.push({
-        label: `Thin bidder pool — ${depth} buyer${depth === 1 ? "" : "s"} in this city can fund it`,
+        label: `Thin bidder pool — ${depth} firm${depth === 1 ? "" : "s"} in town can fund it`,
         pct: thin,
       });
     }
@@ -341,8 +340,8 @@ export function listPortfolio(
   if (q.depth <= 0) {
     return {
       s,
-      err: `No buyer can underwrite a ${money(q.sumOfParts)} portfolio. `
-        + `Sell individually, or bundle at least ~$2M of marks.`,
+      err: `No firm in town can fund a ${money(q.sumOfParts)} portfolio. `
+        + `Sell individually, or wait for a bigger buyer.`,
     };
   }
   const next = clone(s);
@@ -360,7 +359,7 @@ export function listPortfolio(
     text: `Portfolio listed · ${clean.length} buildings · ask ${money(ask)} vs `
       + `${money(q.sumOfParts)} sum of marks: `
       + `${ask >= q.sumOfParts ? "a premium" : `${((1 - ask / q.sumOfParts) * 100).toFixed(0)}% under the sum of the parts`}. `
-      + `${q.depth} capable buyer${q.depth === 1 ? "" : "s"}. `
+      + `${q.depth} firm${q.depth === 1 ? "" : "s"} in town can fund it. `
       + (richAsk
         ? `Above the indicated value (${money(q.indicative)}); expect thin interest. `
         : eager >= 0.95
@@ -620,9 +619,27 @@ export function acceptPortfolioBid(
   if (!ps || !bid) return { s, err: "No live indication." };
   if (s.month > bid.expiresM) return { s, err: "That indication lapsed." };
   if (exchange && s.exchange) return { s, err: "One exchange at a time — close the live 1031 first." };
+  // THE BIDDER PAYS, AND IT HAS TO STILL BE ABLE TO. A firm that has failed,
+  // fallen into trouble or spent the money since it bid cannot close.
+  const firm0 = bid.firmId
+    ? (s.rivals ?? []).find((r) => r.id === bid.firmId)
+    : livingRivals(s).find((r) => r.name === bid.name);
+  if (!firm0 || firm0.failedM !== undefined) return { s, err: `${bid.name} is not on the street any more — there is nobody to close with.` };
+  if (!packageCanClose(s, parcels, firm0, ps.bbls.filter((b) => s.holdings[b]), bid.price)) {
+    return { s, err: `${bid.name} cannot fund ${money(bid.price)} for the book any more.` };
+  }
   const next = clone(s);
+  const winner = next.rivals.find((r) => r.id === firm0.id)!;
   const live = ps.bbls.filter((b) => next.holdings[b]);
   const book = portfolioSettlement(next, parcels, live, bid.price);
+  // What the winner underwrites, read before the deeds leave your book.
+  const fin = packageFinance(next, parcels, winner, live, bid.price);
+  const marks = live.map((b) => {
+    const rec = resolveRec(parcels, next, b);
+    const h = next.holdings[b];
+    const v = h ? Math.max(1, ownedHoldingValue(next, parcels, h)) : 1;
+    return { bbl: b, v, noi: rec ? Math.max(0, inPlace(rec, next, b, v).noi) : 0, klass: rec?.class, condition: h?.condition };
+  });
   if (book.totalMark <= 0) return { s, err: "There is nothing left in that portfolio." };
   // Refused at the door (listPortfolio, the unsolicited approach); refused
   // here too, because a vehicle can wind down under a live process.
@@ -724,6 +741,22 @@ export function acceptPortfolioBid(
     next.taxesPaid = (next.taxesPaid ?? 0) + taxTotal;
     logBooks(next, "taxes", taxTotal);
   }
+  // THE DEEDS LAND IN THE BUYER'S BOOK, ON THE BUYER'S MONEY. Equity and the
+  // 2% closing out of its account, the rest on acquisition mortgages written
+  // deed by deed (rivalDebt.financePackage) — the same close a street book
+  // gets in tickPortfolios.
+  {
+    const closing = Math.round(bid.price * 0.02);
+    winner.cash -= fin.equity + closing;
+    financePackage(next, winner, fin.debt, marks);
+    winner.basis = Math.round((winner.basis ?? 0) + fin.equity + closing);
+    winner.aum = Math.round((winner.aum ?? 0) + bid.price);
+    for (const b of live) {
+      if (!winner.bbls.includes(b)) winner.bbls.push(b);
+      (winner.heldSince ??= {})[b] = next.month;
+    }
+    logFirm(next, winner, "buy", `Bought ${live.length} buildings from ${firmShort(next)} as one portfolio`, live[0], bid.price);
+  }
   delete next.portfolioSale;
   next.news.unshift({
     q: next.month, kind: "deal",
@@ -774,13 +807,14 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
       });
     } else {
       const q = portfolioQuote(s, parcels, live.bbls);
-      const pool = BUYERS.filter((b) => q.sumOfParts >= b.min && !live.bids.some((x) => x.name === b.name));
+      const pool = portfolioBuyers(s, parcels, live.bbls, Math.min(live.ask, q.indicative))
+        .filter((r) => !live.bids.some((x) => x.firmId === r.id || x.name === r.name));
       // No desk left to call — do not burn months on a die that can never land.
       if (!pool.length && !live.bids.length) {
         if (age > 0 && age % 3 === 0) {
           s.news.unshift({
             q: s.month, kind: "warn",
-            text: `No buyer can fund the portfolio at ${money(q.sumOfParts)} of marks. `
+            text: `No firm in town can fund the portfolio at ${money(q.sumOfParts)} of marks. `
               + `Withdraw it and sell individually, or it will expire.`,
           });
         }
@@ -791,8 +825,8 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
         const arrive = 0.30 * Math.pow(eager, 3.2) * Math.max(0.25, 1 - age / (RUN_M + 3));
         if (pool.length && rng(s) < arrive && live.bids.length < 3) {
           const who = pool[Math.floor(rng(s) * pool.length)];
-          const price = Math.round(Math.min(live.ask, q.indicative * who.patience * rrange(s, 0.88, 1.02)));
-          live.bids.push({ name: who.name, price, expiresM: s.month + 3, limit: bidderLimit(s) });
+          const price = Math.round(Math.min(live.ask, q.indicative * rrange(s, 0.88, 1.02)));
+          live.bids.push({ name: who.name, firmId: who.id, price, expiresM: s.month + 3, limit: bidderLimit(s) });
           live.bids.sort((a, b) => b.price - a.price);
           // EVERY indication is a decision with a fuse. The first one answers
           // whether anybody wanted the book; the second and third used to land
@@ -845,19 +879,20 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
     if (best && best[1].length >= 3) {
       const bbls = best[1].slice(0, 6);
       const q = portfolioQuote(s, parcels, bbls);
-      const who = BUYERS.filter((b) => q.sumOfParts >= b.min);
+      // An unsolicited approach is a real bid, not a lowball — they are
+      // paying for the right to not compete for it. That premium is the
+      // entire reason to answer the phone. Only a firm that could write it
+      // rings.
+      const price = Math.round(q.indicative * rrange(s, 1.0, 1.09));
+      const who = q.indicative > 0 ? portfolioBuyers(s, parcels, bbls, price) : [];
       if (who.length) {
         const buyer = who[Math.floor(rng(s) * who.length)];
-        // An unsolicited approach is a real bid, not a lowball — they are
-        // paying for the right to not compete for it. That premium is the
-        // entire reason to answer the phone.
-        const price = Math.round(q.indicative * rrange(s, 1.0, 1.09));
         // Declined at the switchboard (Deals page): drawn, not sent, so the
         // stream does not shift with the setting.
         if (s.noUnsolicited) return;
         s.portfolioSale = {
           bbls, ask: price, listedM: s.month, sumOfParts: q.sumOfParts, unsolicited: true,
-          bids: [{ name: buyer.name, price, expiresM: s.month + 4, limit: bidderLimit(s) }],
+          bids: [{ name: buyer.name, firmId: buyer.id, price, expiresM: s.month + 4, limit: bidderLimit(s) }],
         };
         // AN OFFER FOR A BOOK OF BUILDINGS IS NOT A NEWS LINE.
         //

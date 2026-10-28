@@ -903,7 +903,7 @@ export function payOffLoan(
     return {
       s,
       err: penalty > 0
-        ? `Need $${due.toLocaleString()} to retire this ($${balance.toLocaleString()} balance + $${penalty.toLocaleString()} to break the paper) — short $${short.toLocaleString()}.`
+        ? `Need $${due.toLocaleString()} to retire this ($${balance.toLocaleString()} balance + $${penalty.toLocaleString()} prepayment) — short $${short.toLocaleString()}.`
         : `Need $${due.toLocaleString()} cash to retire this loan — short $${short.toLocaleString()}.`,
     };
   }
@@ -2393,8 +2393,8 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
         ? `Proceeds cut ${((1 - hair.mult) * 100).toFixed(0)}% — ${hair.why}.`
         : p.uwDscr <= 0 && !vacantDirt
         ? (h.groundLeased
-          ? "Land money is for vacant dirt. This fee has a ground rent to underwrite — use an income desk."
-          : "Land money is for dirt. This one has a building on it.")
+          ? "Land loans are for vacant land. This site has ground rent; use an income lender."
+          : "Land loans are for vacant land. This site has a building.")
         : p.uwDscr > 0 && vacantDirt ? "No income to underwrite — a vacant site only gets a land loan."
         : release
         ? (release.unwind
@@ -2424,8 +2424,8 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   const { value, noi, vacantDirt, quoteClass, hair, stab } = debtCollateral(next, parcels, h, rec);
   if (product.uwDscr <= 0 && !vacantDirt) {
     return { s, err: h.groundLeased
-      ? "Land money is for vacant dirt. This fee has a ground rent — take it to an income desk."
-      : "Land money is for dirt. This one has a building on it." };
+      ? "Land loans are for vacant land. This site has ground rent; use an income lender."
+      : "Land loans are for vacant land. This site has a building." };
   }
   if (product.uwDscr > 0 && vacantDirt) {
     return { s, err: "No income to underwrite. Vacant land qualifies only for a land loan." };

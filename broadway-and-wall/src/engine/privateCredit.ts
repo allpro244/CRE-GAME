@@ -252,7 +252,7 @@ export function tickPrivateCredit(s: GameState, parcels: ParcelTable) {
   s.privateAsks.push(ask);
   s.news.unshift({
     q: s.month, kind: "rumor",
-    text: `${ask.rivalName} is asking ${firmShort(s)} for ${money(ask.face)} against ${ask.address} `
+    text: `Loan request · ${ask.rivalName} asks ${firmShort(s)} for ${money(ask.face)} against ${ask.address} `
       + `— ${ask.ratePct.toFixed(2)}%, ${(ask.points * 100).toFixed(1)} points, ${ask.termM} months. `
       + ask.why,
   });
@@ -528,7 +528,7 @@ export function tickPrivateBorrow(s: GameState, parcels: ParcelTable) {
   s.privateBorrowQuotes.push(quote);
   s.news.unshift({
     q: s.month, kind: "rumor",
-    text: `${quote.lenderName} will write ${money(quote.principal)} of private paper on ${quote.address} — `
+    text: `Private loan quote · ${quote.lenderName} · ${quote.address} · ${money(quote.principal)} — `
       + `${quote.ratePct.toFixed(2)}%, ${(quote.points * 100).toFixed(1)} points, ${quote.termM} months. `
       + quote.why,
   });

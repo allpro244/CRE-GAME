@@ -206,7 +206,7 @@ function blockers(s: GameState, parcels: ParcelTable, r: Rival): string | null {
     const addr = resolveRec(parcels, s, bbl)?.address ?? bbl;
     if (s.holdings[bbl]) return `The record shows you already own ${addr}. The title company will not close this until that is straightened out.`;
     if (s.cityGroundLeases?.[bbl] || isCivicLand(s, bbl)) return `${addr} is not freehold — it cannot convey with the company.`;
-    if ((s.notes ?? []).some((n) => n.bbl === bbl)) return `You hold the paper on ${addr}. Settle the note before buying the borrower.`;
+    if ((s.notes ?? []).some((n) => n.bbl === bbl)) return `You hold the loan on ${addr}. Settle the note before buying the borrower.`;
     if (s.talks?.[bbl]) return `You are already negotiating for ${addr}. Finish or walk from that deal first.`;
   }
   return null;

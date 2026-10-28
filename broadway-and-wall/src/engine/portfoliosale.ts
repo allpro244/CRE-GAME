@@ -699,10 +699,9 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
       kind: "portfolio", tone: "bad",
       title: `${desk} has taken back the whole of ${r.name}`,
       body: `${take.length} buildings went to the lenders this month — everything ${r.name} still owned. `
-        + `${desk} is not a landlord and does not want to be one, so the book is out whole rather than one at a time, `
-        + `and the number it opens at is the loan and not the value. `
-        + `The package is on Marketplace under Books for sale — one cheque, cash, no financing at the table. `
-        + `If nobody bids it comes down every quarter until somebody does.`,
+        + `${desk} is selling them as one package, priced to the loan rather than value. `
+        + `On Marketplace under Books for sale; all cash, no financing. `
+        + `Price cut each quarter until it sells.`,
       detail: p
         ? `${money(p.ask)} for the package against ${money(p.gross)} of buildings — ${((1 - p.ask / Math.max(1, p.gross)) * 100).toFixed(0)}% back from the sum of the parts.`
         : `${money(owed)} of debt against ${take.length} buildings.`,

@@ -56,7 +56,7 @@ export interface LeaseholdQuote {
 
 function blocker(s: GameState, h: Holding | undefined, rec: ReturnType<typeof resolveRec>): string | null {
   if (!h || !rec) return "You don't own that.";
-  if (rec.class === "land" || !rec.bldgArea) return "There is no building to keep — this is dirt. Sell it, or ground-lease it out.";
+  if (rec.class === "land" || !rec.bldgArea) return "No building here; vacant land. Sell it or ground-lease it.";
   if (h.groundLeased || s.groundLeases?.[h.bbl]) return "You are the ground lessor here already.";
   if (h.groundRentOut) return "The land under it is already sold.";
   if (h.jv || h.fundOwned) return consentFor(s, h, "groundLease");

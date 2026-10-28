@@ -103,7 +103,7 @@ export function stakeQuote(s: GameState, parcels: ParcelTable, bbl: string, shar
   const no = (why: string): StakeQuote => ({ ok: false, why, ...none });
   if (!h || !rec) return no("You don't own that.");
   if (!JV_SHARES.includes(share)) return no("A minority stake: a quarter, or just under half.");
-  if (rec.class === "land" || !rec.bldgArea || h.groundLeased) return no("A partner buys into a building with income, not dirt or a ground coupon.");
+  if (rec.class === "land" || !rec.bldgArea || h.groundLeased) return no("JV partners buy into income-producing buildings only, not land or ground leases.");
   if (h.jv) return no("There is a partner in it already.");
   if (h.fundOwned) return no(consentFor(s, h, "stake") ?? "It is a fund deed — the fund's LPs are its partners.");
   if (s.facility?.bbls.includes(bbl)) return no("Pledged to your facility — release it there first.");

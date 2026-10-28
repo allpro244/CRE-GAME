@@ -1812,8 +1812,8 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     out.push({
       key: `watch:${li.bbl}:${li.listedM}`,
       label: li.reason === "receiver"
-        ? `★ ${addr(li.bbl)} is on the tape — bank-owned at ${money(li.ask)}${li.receiverFor ? ` (${li.receiverFor})` : ""}`
-        : `★ ${addr(li.bbl)} is on the tape`,
+        ? `★ ${addr(li.bbl)} listed — bank-owned at ${money(li.ask)}${li.receiverFor ? ` (${li.receiverFor})` : ""}`
+        : `★ ${addr(li.bbl)} listed`,
     });
   }
   // THE FUND'S WINDOW IS CLOSING WITH MONEY UNSPENT. After the investment

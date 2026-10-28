@@ -9,6 +9,9 @@
 //     its own channel only;
 //   - it writes nothing in the world it reads: a world whose books are torn
 //     up every month plays on identically to one that keeps them;
+//   - the payroll is one number (1b): the firms' wages are the household
+//     register's earners' pay every month, and the register's earners in each
+//     industry are its heads to within half a regional household's weight;
 //   - the ledger sums to zero every month, the market clears, the loan book
 //     is the borrowers' debts, and every firm's equity is its cash less debt;
 //   - a save (structured clone, as IndexedDB stores it, and a JSON round trip,
@@ -37,8 +40,9 @@ const ecoHash = (g) => sha(JSON.stringify(cols(g.economy)));
 const worldHash = (g) => {
   const { economy, households, streams, ...rest } = g;
   void economy; void households;
-  const { economy: _e, ...st } = streams ?? {};
-  void _e;
+  // (the register's own stream too: since 1b it hires against the books' heads, and it is a shadow as well)
+  const { economy: _e, households: _h, ...st } = streams ?? {};
+  void _e; void _h;
   return sha(JSON.stringify({ ...rest, streams: st }));
 };
 
@@ -64,7 +68,7 @@ console.log("\nTHE CITY'S FIRM BOOKS\n");
 // two runs with the books, one whose books are torn up every month
 let a = start(), b = start(), z = start();
 const hA = [], hB = [];
-let sumOk = true, mktOk = true, eqOk = true, bookOk = true, worldOk = true, worst = "", months = 0, flowsOk = true;
+let sumOk = true, mktOk = true, eqOk = true, bookOk = true, worldOk = true, worst = "", months = 0, flowsOk = true, payOk = true, fillOk = true, firstHeads = NaN, firstJobs = NaN;
 for (let m = 1; m <= MONTHS; m++) {
   a = tick(a); b = tick(b);
   z = tick(z);
@@ -89,6 +93,14 @@ for (let m = 1; m <= MONTHS; m++) {
   const outMkt = Object.entries(fl).filter(([k]) => k.startsWith("mkt>")).reduce((s, [, v]) => s + v, 0);
   if (!(Math.abs(inMkt - outMkt) <= 1e-6 * outMkt)) { flowsOk = false; worst ||= `month ${m}: market in ${inMkt} out ${outMkt}`; }
   if (!(E.loanBook(L) >= 0) || !Number.isFinite(E.loanBook(L))) { bookOk = false; worst ||= `month ${m}: loan book ${E.loanBook(L)}`; }
+  // one payroll (1b): the firms' cash wages are the register's wages
+  if (!(Math.abs(l.hhWagesFirms - l.hhWagesRegister) <= 1e-9 * l.hhWagesRegister)) { payOk = false; worst ||= `month ${m}: firms pay ${l.hhWagesFirms}, the register is paid ${l.hhWagesRegister}`; }
+  // ...and the register's earners are each industry's heads, to within half a regional household
+  const wR = a.households.wRegion;
+  for (let i = 0; i < l.heads.length; i++) {
+    if (!(Math.abs(l.regEarners[i] - l.heads[i]) <= wR / 2 + 1e-6)) { fillOk = false; worst ||= `month ${m}: ${E.INDUSTRY_IDS[i]} has ${l.regEarners[i].toFixed(1)} earners for ${l.heads[i].toFixed(1)} heads (weight ${wR.toFixed(1)})`; break; }
+  }
+  if (!Number.isFinite(firstHeads)) { firstHeads = l.heads.reduce((s, x) => s + x, 0); firstJobs = a.econ.jobs; }
 }
 check(months >= MONTHS - 2, `the books open with the register's first flows and run ${months} of ${MONTHS} months`);
 check(hA.every((h, i) => h === hB[i]), `deterministic: the same books from the same seed every month (${hA.at(-1)})`);
@@ -98,11 +110,15 @@ check(sumOk, "the ledger sums to zero every month (to 1e-9 of its gross)");
 check(mktOk && flowsOk, "the market clears every month: what buyers paid in, sellers were paid");
 check(eqOk, "every firm's equity is its cash less its debt, and no firm holds negative cash");
 check(bookOk, "the loan book is finite and non-negative");
+check(payOk, "one payroll: what the firms pay in wages is what the register's earners are paid, every month (to 1e-9)");
+check(fillOk, "the register's earners in each industry are its heads, to within half a regional household's weight, every month");
 {
   const ec = a.economy;
-  const byInd = E.economyByIndustry(a);
-  const heads = byInd.reduce((s, r) => s + r.heads, 0);
-  check(Math.abs(heads / a.econ.jobs - 1) < 0.02, `the books' heads are the town's jobs: ${Math.round(heads)} against ${a.econ.jobs}`);
+  // The opening is sized the engine's way, construction apart (it opens at
+  // what the town buys of it); from then every off-map industry follows its
+  // own demand, so the books' jobs part from the engine's — a measurement
+  // (tools/economy.mjs), not an identity. Checked here: the opening.
+  check(Math.abs(firstHeads / firstJobs - 1) < 0.03, `the books open on the town's jobs: ${Math.round(firstHeads)} against ${firstJobs} (construction at what the town buys of it)`);
   const named = new Set();
   for (const roll of Object.values(a.econ.streetRolls)) for (const t of roll.t) if (t.fid !== undefined && t.use !== "multifamily") named.add(t.fid);
   let have = 0;
@@ -120,6 +136,7 @@ check(bookOk, "the loan book is finite and non-negative");
   const copy = structuredClone(a);
   const before = worldHash(copy), hh = sha(JSON.stringify(E.packHouseholds(copy.households)));
   const s0 = copy.streams.economy;
+  E.tickFirms(copy);
   E.tickEconomy(copy);
   check(worldHash(copy) === before && sha(JSON.stringify(E.packHouseholds(copy.households))) === hh, "a month of the books writes nothing in the world it reads (nor in the household register)");
   check(typeof copy.streams.economy === "number" && copy.streams.economy !== s0, "it draws on its own channel, s.streams.economy");

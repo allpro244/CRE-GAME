@@ -145,7 +145,7 @@ export function cityLoanBook(s: GameState, parcels?: ParcelTable): BookLoan[] {
   for (const x of Object.values(s.cityLoans ?? {})) {
     if (!(x.balance > 0) || x.heldBy) continue;
     out.push({
-      holder: x.lender, borrower: x.obligorId, kind: "senior", balance: x.balance,
+      holder: x.lender, borrower: x.obligorId, kind: "senior", balance: x.balance * (x.share ?? 1),
       status: x.status === "workout" ? "default" : x.status === "watch" ? "watch" : "current",
       bbl: x.bbl, klass: x.klass,
       cls: x.klass === "land" ? "land" : x.product === "cordage" ? "junior" : "income",
@@ -158,7 +158,7 @@ export function cityLoanBook(s: GameState, parcels?: ParcelTable): BookLoan[] {
   for (const x of Object.values(s.streetLoans ?? {})) {
     if (!(x.balance > 0)) continue;
     out.push({
-      holder: x.lender, borrower: "h:" + x.holderId, kind: "senior", balance: x.balance, status: x.status,
+      holder: x.lender, borrower: "h:" + x.holderId, kind: "senior", balance: x.balance * (x.share ?? 1), status: x.status,
       bbl: x.bbl, klass: x.klass, cls: x.klass === "land" ? "land" : x.product === "cordage" ? "junior" : "income",
       ratePct: x.ratePct, originM: x.originM, name: x.holder,
     });

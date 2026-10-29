@@ -177,8 +177,8 @@ export function deskWithRoom(s: GameState, obligorId: string, amount: number): b
     if (x.heldBy) continue;
     const a = acc.get(x.lender);
     if (!a) continue;
-    a.onDesk += x.balance;
-    if (x.obligorId === obligorId) a.exposure += x.balance;
+    a.onDesk += x.balance * (x.share ?? 1);
+    if (x.obligorId === obligorId) a.exposure += x.balance * (x.share ?? 1);
   }
   for (const r of s.rivals ?? []) {
     if ((r.lineBal ?? 0) > 0) {
@@ -205,8 +205,8 @@ export function deskRoom(s: GameState, l: Lender, obligorId: string, opening = f
   if (L) for (const k in L) {
     const x = L[k];
     if (x.lender !== l.name || x.heldBy) continue;
-    onDesk += x.balance;
-    if (x.obligorId === obligorId) exposure += x.balance;
+    onDesk += x.balance * (x.share ?? 1);
+    if (x.obligorId === obligorId) exposure += x.balance * (x.share ?? 1);
   }
   for (const r of s.rivals ?? []) {
     if (r.lineBank === l.name && (r.lineBal ?? 0) > 0) {
@@ -231,8 +231,8 @@ function deskRooms(s: GameState, obligorId: string, opening: boolean): Map<Lende
     if (x.heldBy) continue;
     const a = acc.get(x.lender);
     if (!a) continue;
-    a.onDesk += x.balance;
-    if (x.obligorId === obligorId) a.exposure += x.balance;
+    a.onDesk += x.balance * (x.share ?? 1);
+    if (x.obligorId === obligorId) a.exposure += x.balance * (x.share ?? 1);
   }
   for (const r of s.rivals ?? []) {
     if ((r.lineBal ?? 0) > 0) {
@@ -355,6 +355,20 @@ export function originateRow(
   // A floater is written at the short index plus the desk's margin, with a
   // cap bought at the table (debt.ts originate: struck a point over today's
   // index, for the loan's term or three years, whichever is shorter).
+  // A LOAN NO DESK CAN CARRY IS SYNDICATED. pickDesk's last resorts hand a
+  // loan that fits nobody to the desk with the most room; that desk leads it,
+  // keeps what its capital and its single-name limit allow, and sells the
+  // rest to banks out of town. Measured before this: a $110M tower loan landed
+  // whole on a debt fund carrying $2M, and a $230M one on a money-centre desk
+  // carrying nothing, and each was closed by its regulator a few years later
+  // with no loss at all — its capital simply could not carry the book.
+  {
+    const l = (s.lenders ?? []).find((x) => x.name === d.lender);
+    if (l && !o.opening) {
+      const room = deskRoom(s, l, r.id, false) + (old && old.lender === l.name ? old.balance * (old.share ?? 1) : 0);
+      if (room < total) row.share = +Math.max(0.05, Math.min(1, room / total)).toFixed(4);
+    }
+  }
   if (productById(d.product ?? "harbor")?.floating) {
     const idx = shortIndexOf(s.econ);
     row.spread = +(row.ratePct - idx).toFixed(2);

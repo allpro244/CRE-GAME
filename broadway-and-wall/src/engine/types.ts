@@ -5432,6 +5432,13 @@ export interface CityLoan {
   cap?: { strike: number; expiresM: number };
   /** The cause-ledger event of its most recent default (why.ts). */
   whyId?: number;
+  /**
+   * THE SHARE THE NAMED DESK HOLDS. A loan bigger than any desk in town can
+   * carry is syndicated: the lead keeps what its capital and single-name room
+   * allow and sells the rest to banks out of town, which take their share of
+   * any loss. Absent = all of it.
+   */
+  share?: number;
 }
 
 /** A private owner's mortgage (streetLoans.ts). */
@@ -5462,6 +5469,8 @@ export interface StreetLoan {
   balloonM?: number;
   /** The cause-ledger event of its default (why.ts). */
   whyId?: number;
+  /** The share the named desk holds; the rest is participated out of town (see CityLoan.share). */
+  share?: number;
 }
 
 export interface Workout {

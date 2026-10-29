@@ -105,12 +105,23 @@ export function streetDebtService(s: GameState, x: StreetLoan): { interest: numb
  * closed it (seed 73303, year 21). `extra` is what the desk has already
  * written this month, which its book does not show yet.
  */
+/** The room a desk has for one more loan to this holder: the lesser of its single-name and capital limits. */
+function roomOf(s: GameState, lender: string, holderId: string, replacing = 0): number {
+  const l = (s.lenders ?? []).find((x) => x.name === lender);
+  if (!l || l.failedM !== undefined) return 0;
+  const book = Math.max(0, l.book) - replacing;
+  let exposure = -replacing;
+  for (const x of Object.values(s.streetLoans ?? {})) if (x.lender === lender && x.holderId === holderId) exposure += x.balance * (x.share ?? 1);
+  const nameRoom = Math.max(book, 20_000_000 * (s.econ.priceLevel ?? 1) * 0.25) * singleNameCap(l.kind) - exposure;
+  return Math.min(nameRoom, l.capital / Math.max(0.01, targetCapital(l.name)) - book);
+}
+
 export function deskHasRoom(s: GameState, lender: string, holderId: string, amount: number, extra: Map<string, number>, replacing = 0): boolean {
   const l = (s.lenders ?? []).find((x) => x.name === lender);
   if (!l || l.failedM !== undefined) return false;
   const book = Math.max(0, l.book) + (extra.get(lender) ?? 0) - replacing;
   let exposure = 0;
-  for (const x of Object.values(s.streetLoans ?? {})) if (x.lender === lender && x.holderId === holderId) exposure += x.balance;
+  for (const x of Object.values(s.streetLoans ?? {})) if (x.lender === lender && x.holderId === holderId) exposure += x.balance * (x.share ?? 1);
   exposure -= replacing;
   const nameRoom = Math.max(book, 20_000_000 * (s.econ.priceLevel ?? 1) * 0.25) * singleNameCap(l.kind) - exposure;
   const capRoom = l.capital / Math.max(0.01, targetCapital(l.name)) - book;
@@ -148,7 +159,7 @@ function writeLoan(
 function retire(s: GameState, x: StreetLoan, price: number) {
   const net = price * 0.97;   // the seller's closing costs come out first
   if (net < x.balance) {
-    chargeLenderLoss(s, x.lender, Math.round(x.balance - Math.max(0, net)), {
+    chargeLenderLoss(s, x.lender, Math.round((x.balance - Math.max(0, net)) * (x.share ?? 1)), {
       borrower: x.holder, id: "h:" + x.holderId, bbl: x.bbl, cls: x.klass === "land" ? "land" : "income", how: "short sale",
     });
   }
@@ -159,7 +170,7 @@ function retire(s: GameState, x: StreetLoan, price: number) {
 function foreclose(s: GameState, x: StreetLoan, addr: string) {
   const ask = reoAsk(s, x.value, x.balance, x.lender);
   const loss = Math.max(0, Math.round(x.balance - ask));
-  chargeLenderLoss(s, x.lender, loss, {
+  chargeLenderLoss(s, x.lender, Math.round(loss * (x.share ?? 1)), {
     borrower: x.holder, id: "h:" + x.holderId, bbl: x.bbl, cls: x.klass === "land" ? "land" : "income", how: "foreclosure", why: x.whyId,
   });
   const lossWhy = s.lenders?.find((l) => l.name === x.lender)?.lossWhy;
@@ -363,9 +374,20 @@ function rollBalloon(s: GameState, x: StreetLoan) {
     // the borrower shops every desk with room for it (its own desk's room
     // counts the loan it would be replacing)
     const none = new Map<string, number>();
-    const qs = deskQuotes(s, x.value, x.noiYr, { klass: x.klass })
-      .filter((q) => deskHasRoom(s, q.lender, x.holderId, Math.min(q.principal, x.balance), none, q.lender === x.lender ? x.balance : 0));
-    const full = qs.find((q) => q.principal >= x.balance * 0.98);
+    const all = deskQuotes(s, x.value, x.noiYr, { klass: x.klass });
+    const qs = all.filter((q) => deskHasRoom(s, q.lender, x.holderId, Math.min(q.principal, x.balance), none, q.lender === x.lender ? x.balance : 0));
+    // ...and if no desk in town can carry the whole balance, the cheapest
+    // that will write it leads a syndicate and keeps what its room allows
+    // (CityLoan.share): the rest is sold to banks out of town.
+    let full = qs.find((q) => q.principal >= x.balance * 0.98);
+    let share = 1;
+    if (!full) {
+      const lead = all.find((q) => q.principal >= x.balance * 0.98);
+      if (lead) {
+        const room = roomOf(s, lead.lender, x.holderId, lead.lender === x.lender ? x.balance * (x.share ?? 1) : 0);
+        if (room > 0) { full = lead; share = Math.max(0.05, Math.min(1, room / x.balance)); }
+      }
+    }
     const most = [...qs].sort((a, b) => b.principal - a.principal)[0];
     const gap = most ? x.balance - most.principal : Infinity;
     const take = full ?? (most && (cash[x.holderId] ?? 0) >= gap ? most : undefined);
@@ -375,6 +397,7 @@ function rollBalloon(s: GameState, x: StreetLoan) {
       x.lender = take.lender; x.product = take.product; x.ratePct = take.ratePct;
       x.originM = s.month; x.maturityM = s.month + take.termM; x.extensions = 0;
       x.arrearsMs = 0; delete x.balloonM;
+      if (share < 1) x.share = +share.toFixed(4); else delete x.share;
       if (p?.floating) x.spread = +(take.ratePct - shortIndexOf(s.econ)).toFixed(2); else delete x.spread;
       x.status = "current";
       return;

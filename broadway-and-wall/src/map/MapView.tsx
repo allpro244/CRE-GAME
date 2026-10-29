@@ -360,6 +360,15 @@ export default function MapView() {
   // the whole 3D city and flew the camera back to the opening shot (owner,
   // Oct 2026: "once a year ... resets your view and reloads the entire game").
   const cityKey = city?.manifest ?? null;
+  // THE REGION MAP'S EDGE (Settings): the country round the window is laid with the city, so turning it on
+  // or off rebuilds the map once. Islands have none, and are left alone.
+  const regionCountry = useStore((s) => s.regionCountry);
+  const regionCountrySeen = useRef(regionCountry);
+  useEffect(() => {
+    if (regionCountrySeen.current === regionCountry) return;
+    regionCountrySeen.current = regionCountry;
+    if (city?.facilities?.length) setGlReset((n) => n + 1);
+  }, [regionCountry, city]);
   const builtCityRef = useRef<typeof city>(null);
   const plantRef = useRef<((c: NonNullable<typeof city>) => void) | null>(null);
   const [layerGen, setLayerGen] = useState(0);
@@ -560,9 +569,9 @@ export default function MapView() {
                 }
                 return out;
               })(),
-              // the region's background facilities and the country round the window (real/facilities.ts)
-              facilities: cityNow.facilities,
-              hinterland: cityNow.hinterland,
+              // the region's background facilities and the country round the window (real/facilities.ts),
+              // only when the player has asked for them: off, the region map is the window it always was
+              ...(useStore.getState().regionCountry ? { facilities: cityNow.facilities, hinterland: cityNow.hinterland } : {}),
             }, (useStore.getState().game?.citySeed ?? 1) >>> 0);
             layer.setMonth(useStore.getState().game?.month ?? 0);
             // the foot-traffic gradient reads demand at plant time, so it has

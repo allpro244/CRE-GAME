@@ -268,6 +268,12 @@ interface AppState {
   /** The hover card on the map (a building's numbers under the pointer). A browser preference, on by default. */
   hoverCard: boolean;
   setHoverCard: (v: boolean) => void;
+  /**
+   * The region map's edge (Settings -> Display). Off (the default) the map is the window it always was, the
+   * sea at its edge. On, the country round it is drawn: farms, quarries, the airport, the yards. Looks only.
+   */
+  regionCountry: boolean;
+  setRegionCountry: (v: boolean) => void;
   /** The city's look (Settings -> Display): a toy diorama or the classic grade. Looks only. */
   diorama: boolean;
   setDiorama: (v: boolean) => void;
@@ -1007,6 +1013,7 @@ export const useStore = create<AppState>(holdWhileTicking((set, get) => ({
   // popups2: a fresh key, so a pop-up switch turned off in an older build starts on again (owner: on by default)
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups2") === "off",
   hoverCard: (() => { try { return localStorage.getItem("bw:hovercard") !== "off"; } catch { return true; } })(),
+  regionCountry: (() => { try { return localStorage.getItem("bw:region-country") === "on"; } catch { return false; } })(),
   diorama: (() => { try { return localStorage.getItem("bw:look") !== "classic"; } catch { return true; } })(),
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   mutedAlerts: (() => { try { const v = JSON.parse(localStorage.getItem("bw:alerts-muted") ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string" && x !== "swan" && x !== "fed") : []; } catch { return []; } })(),
@@ -1397,6 +1404,10 @@ export const useStore = create<AppState>(holdWhileTicking((set, get) => ({
   setHoverCard: (v) => {
     try { localStorage.setItem("bw:hovercard", v ? "on" : "off"); } catch { /* private mode */ }
     set({ hoverCard: v });
+  },
+  setRegionCountry: (v) => {
+    try { localStorage.setItem("bw:region-country", v ? "on" : "off"); } catch { /* private mode */ }
+    set({ regionCountry: v });
   },
   setDiorama: (v) => {
     try { localStorage.setItem("bw:look", v ? "diorama" : "classic"); } catch { /* private mode */ }

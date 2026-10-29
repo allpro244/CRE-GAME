@@ -3188,22 +3188,69 @@ export const MGMT_FEE = 0.04;   // of effective gross income, industry standard
  */
 export const APT_RESERVE = 0.03;
 
+/**
+ * OPERATING COST IS ITS INPUTS (ONE_ECONOMY_PLAN.md step 8; FORMULA_LEDGER
+ * item 17). The stack above was one number per class times the construction
+ * cost index, so the janitor's pay, the electricity and the insurance all
+ * moved with the price of concrete. Each line now follows what it is made of:
+ *
+ *   labour   cleaning, security, engineers, the office — the town's wage
+ *   energy   the utilities the owner carries — the nation's prices and its oil
+ *   repairs  repairs and maintenance — what the trades charge (the cost index)
+ *   fixed    insurance and the like — the replacement cost it insures (the
+ *            cost index) times the property-insurance market's rate, which
+ *            hardens after a heavy loss year and when yields fall, then
+ *            softens as capital comes back (inputs.ts)
+ *
+ * Shares of the controllable stack by class [S]: office from BOMA's
+ * Experience Exchange Report (2019: cleaning $1.70, security and grounds
+ * $0.90, administration $1.80 — labour 0.49; utilities $2.20 — 0.25; repairs
+ * and maintenance $2.30 — 0.26); apartments from the NAA Survey of Operating
+ * Income & Expenses (payroll, administration and marketing ~0.60 of the
+ * controllable stack, utilities ~0.22, repairs ~0.18); retail common area
+ * maintenance (ICSC: cleaning, security and landscaping ~0.45, utilities
+ * ~0.25, repairs ~0.30); industrial is a roof, a slab and a lot (repairs
+ * ~0.65, utilities 0.15, labour 0.20).
+ *
+ * Every component index equals the cost index on the day it began, so the
+ * opening's opex is to the cent what it was.
+ */
+export const OPEX_MIX: Record<BuiltClass, { labour: number; energy: number; repairs: number }> = {
+  office: { labour: 0.49, energy: 0.25, repairs: 0.26 },
+  retail: { labour: 0.45, energy: 0.25, repairs: 0.30 },
+  multifamily: { labour: 0.60, energy: 0.22, repairs: 0.18 },
+  industrial: { labour: 0.20, energy: 0.15, repairs: 0.65 },
+};
+/** The controllable stack's index for a class: its inputs, weighted. */
+export function opexCtrlIdx(cls: BuiltClass, econ: Econ): number {
+  const o = econ.opexIdx;
+  if (!o) return econ.costIdx;
+  const w = OPEX_MIX[cls];
+  return w.labour * o.labour + w.energy * o.energy + w.repairs * econ.costIdx;
+}
+/** The fixed stack's index: the cost index (replacement cost insured) times the insurance market's rate. */
+export function opexFixedIdx(econ: Econ): number {
+  const o = econ.opexIdx;
+  return o ? econ.costIdx * Math.exp(o.ins) : econ.costIdx;
+}
+
 /** Total operating cost per sf/yr before management fee and property tax. */
 export function opexPsf(cls: BuiltClass, econ: Econ, systemsDone: boolean, service?: -1 | 0 | 1): number {
-  return (OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) * serviceSpec(service).opex + OPEX_FIXED[cls]) * econ.costIdx;
+  return OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) * serviceSpec(service).opex * opexCtrlIdx(cls, econ)
+    + OPEX_FIXED[cls] * opexFixedIdx(econ);
 }
 
 /** Controllable opex only — the half the service level moves; fixed costs are separate. */
 function controllableOpexPsf(
   cls: BuiltClass, econ: Econ, systemsDone: boolean, service?: -1 | 0 | 1,
 ): number {
-  return OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) * serviceSpec(service).opex * econ.costIdx;
+  return OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) * serviceSpec(service).opex * opexCtrlIdx(cls, econ);
 }
 
 function managedOpexPsf(
   cls: BuiltClass, econ: Econ, systemsDone: boolean, service?: -1 | 0 | 1,
 ): number {
-  return controllableOpexPsf(cls, econ, systemsDone, service) + OPEX_FIXED[cls] * econ.costIdx;
+  return controllableOpexPsf(cls, econ, systemsDone, service) + OPEX_FIXED[cls] * opexFixedIdx(econ);
 }
 
 /**

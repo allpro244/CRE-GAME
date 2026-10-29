@@ -72,7 +72,7 @@ import {
   INDUSTRIES, INDUSTRY_IDS, N_IND, INDUSTRY_INDEX, IO_A, IO_ROW_SUM, NAT_EMP_SHARE, TRADE_TO_INDUSTRY, FLOOR_DEFAULT,
   FINANCE_LIKE, SPEND_SHARE, SPEND_BRIDGE, PAY_SPLIT, PROD_TAX_LOCAL, CORP_TAX, LOCAL_OWNER_SHARE,
   COMP_PER_WORKER_2023, BUYER_TYPES, REPAIR_PER_COMMERCIAL_RENT, REPAIR_PER_FLAT_RENT, REPAIR_OWNER_PER_VALUE_YR,
-  OIL_PRICE_2000, OIL_PER_SHOCK, OIL_RISE_M, OIL_HALF_LIFE_M,
+  OIL_PRICE_2000,
   OFF_FLOOR, REMOTE, floorOf, NAT_TREND, CYCLE_BETA, FED_HEALTH_PER_PERSON_2023, MLR,
   IND_ID_GOV, IND_ID_CON, IND_ID_INS, IND_ID_ONLINE, RETAIL_IDS, HEALTH_SPLIT, OLD24_TO_68,
   type IndustryId, type Floor, type BuyerType, type SpendCategory,
@@ -188,6 +188,8 @@ export interface EconomyState {
   gov0?: number; persons0?: number;
   /** The oil price (tickOil): its real log level, the nation's prices at the opening, and $ a barrel. */
   lnOil?: number; natCpi0?: number; oil?: number;
+  /** A national swan's level on each industry's exports, log (blackswans.ts swanSec, shared over the trade's industries). */
+  swanInd?: number[];
   // ---- step 2
   /** Each industry's employment: what its firms staff to, moving toward the heads its output needs (`staff`); last month's; the opening's. */
   emp?: number[]; empPrev?: number[]; emp0?: number[];
@@ -577,6 +579,19 @@ function tickExports(s: GameState, E: EconomyState, R: Rand): void {
     E.lnShare[i] += (E.fort[i] - LOCATION_PULL * cost) / 12;
   }
   E.swanLn = (E.swanLn ?? 0) + Math.log(Math.max(0.5, 1 + (e.bsJobPull ?? 0)));
+  // ...and a national swan's orders for a trade (blackswans.ts swanSec: a
+  // pandemic's restaurants, a war's defense electronics, a trade war's
+  // factories), shared over the industries the trade's firms are in.
+  const sw = e.swanSec;
+  if (sw) {
+    const lvl = (E.swanInd ??= new Array(N_IND).fill(0));
+    for (const [k, g] of Object.entries(sw) as [Sector, number][]) {
+      const rows: [IndustryId, number][] = [];
+      for (const fl of Object.values(TRADE_TO_INDUSTRY)) for (const r of fl[k] ?? []) rows.push([r[0], r[1]]);
+      const tot = rows.reduce((a, r) => a + r[1], 0);
+      for (const [id, w] of rows) lvl[INDUSTRY_INDEX[id]] += g * w / Math.max(1e-9, tot);
+    }
+  }
 }
 
 /**
@@ -592,7 +607,7 @@ function exportHeads(s: GameState, E: EconomyState, j: number): number {
   const e = s.econ, id = INDUSTRY_IDS[j];
   const cyc = CYCLE_BETA[id] * NAT_SALES_PER_GAP * ((e.nat?.gap ?? 0) - (E.gap0 ?? 0));
   const fx = INDUSTRIES[id].group === "making" ? (e.manufIdx ?? 1) / Math.max(1e-6, E.manuf0) : 1;
-  return (E.XJ0?.[j] ?? 0) * Math.exp((E.lnNat?.[j] ?? 0) + (E.lnShare?.[j] ?? 0) + (E.swanLn ?? 0) + cyc) * fx;
+  return (E.XJ0?.[j] ?? 0) * Math.exp((E.lnNat?.[j] ?? 0) + (E.lnShare?.[j] ?? 0) + (E.swanLn ?? 0) + (E.swanInd?.[j] ?? 0) + cyc) * fx;
 }
 
 // ---------------------------------------------------------------- construction's buyers
@@ -641,23 +656,14 @@ function constructionBought(s: GameState, hm: { rent: number; ownerValue: number
 
 // ---------------------------------------------------------------- the price of oil
 /**
- * THE NATION'S OIL PRICE, a month on (industries.ts OIL_*): its real level
- * runs toward OIL_PER_SHOCK x the supply shock in force (market.ts — a shock
- * under fiscal pressure is demand and moves no oil, as the engine's own
- * output block reads it), fast on the way up and back with a three-year
- * half-life; the dollar price is that times the nation's prices since the
- * opening. Deterministic; reads the nation, writes only the books.
+ * THE NATION'S OIL PRICE, as the live world prices it (inputs.ts
+ * tickOilPrice — the supply shocks and a war's premium): one oil price, which
+ * these books read and do not set.
  */
 function tickOil(s: GameState, E: EconomyState): void {
-  const n = s.econ.nat;
-  const sup = n && (n.shockM ?? 0) > 0 && !((n.pressureM ?? 0) > 0) ? (n.shockSev ?? 0) : 0;
-  const target = OIL_PER_SHOCK * sup;
-  const cur = E.lnOil ?? 0;
-  const k = target > cur ? 1 / OIL_RISE_M : 1 - Math.pow(0.5, 1 / OIL_HALF_LIFE_M);
-  E.lnOil = cur + (target - cur) * k;
-  const natCpi = s.econ.natCpi ?? s.econ.cpi ?? 1;
-  E.natCpi0 ??= natCpi;
-  E.oil = OIL_PRICE_2000 * (natCpi / Math.max(1e-6, E.natCpi0)) * Math.exp(E.lnOil);
+  E.lnOil = s.econ.oilLn ?? 0;
+  E.natCpi0 ??= s.econ.oilCpi0 ?? s.econ.natCpi ?? s.econ.cpi ?? 1;
+  E.oil = s.econ.oil ?? OIL_PRICE_2000;
 }
 
 // ---------------------------------------------------------------- the month, first half: who employs whom

@@ -1193,11 +1193,18 @@ export function tickLenders(s: GameState) {
     const fundTarget = conduitOpen ? (l.bookYield ?? e.indexRate + spread) - (NORMAL_NIM.conduit ?? 1.6) : baseFund + hot * k.wholesale;
     if (l.fundCost === undefined) l.fundCost = baseFund;
     // AN INSURER'S MONEY IS AS LONG AS ITS LOANS: the general account
-    // reprices at the speed its book does (2.5% a month), both ways.
+    // reprices at the speed its book does, both ways. The book used to be
+    // modelled as repricing 2.5% a month; it now earns the coupons actually
+    // written, and a life company's mortgages are 10-15 year fixed paper, so
+    // its liabilities run at the duration it matches them to — ~10 years
+    // (ACLI: general-account liability durations 8-12 years), 0.8% a month.
+    // At 2.5% a month a twenty-point rate spike made Pelican's annuities
+    // cost more than its fixed mortgages earned and the examiners closed a
+    // life company with no credit losses at all (seed 73303, year 8).
     const bf = bankFunding(s, l);
     l.fundCost = bf ? +bf.cost.toFixed(4)
       : conduitOpen ? +fundTarget.toFixed(4)
-      : l.kind === "life" ? +(l.fundCost + 0.025 * (fundTarget - l.fundCost)).toFixed(4)
+      : l.kind === "life" ? +(l.fundCost + 0.008 * (fundTarget - l.fundCost)).toFixed(4)
       : +(l.fundCost + (fundTarget > l.fundCost ? 0.22 : 0.07) * (fundTarget - l.fundCost)).toFixed(4);
     // The panic surcharge, priced off how much this desk resembles the one in
     // receivership. A desk at its capital target pays the base share; one at

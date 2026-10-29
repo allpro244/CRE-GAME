@@ -28,6 +28,7 @@ import { CONSTRUCTION_LENDER } from "./types";
 import { PRODUCTS } from "./debt";
 import { resolveRec } from "./value";
 import { lineLender } from "./credit";
+import { shortIndexOf } from "./market";
 import type { LossClass } from "./pricing";
 
 export type BookLoanKind = "senior" | "mezz" | "construction" | "facility" | "line";
@@ -149,7 +150,10 @@ export function cityLoanBook(s: GameState, parcels?: ParcelTable): BookLoan[] {
       status: x.status === "workout" ? "default" : x.status === "watch" ? "watch" : "current",
       bbl: x.bbl, klass: x.klass,
       cls: x.klass === "land" ? "land" : x.product === "cordage" ? "junior" : "income",
-      ratePct: x.ratePct, originM: x.originM, name: firmName.get(x.obligorId),
+      // A capped floater: the borrower's cap is paid by whoever sold it, not by
+      // the desk — the desk earns its margin over the full index.
+      ratePct: x.spread !== undefined && x.cap ? shortIndexOf(s.econ) + x.spread : x.ratePct,
+      originM: x.originM, name: firmName.get(x.obligorId),
     });
   }
   // The private owners' mortgages (streetLoans.ts): the families, partnerships

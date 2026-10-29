@@ -66,7 +66,8 @@ let found = null;
 for (let m = 0; m < 96 && !found; m++) {
   g = E.advanceMonth(g, parcels, bbls, adjacency);
   if (g.gameOver) break;
-  found = (g.news ?? []).find((n) => n.why && E.whyChain(g, n.why).length >= 3);
+  // a tenant's departure (the banks write chains of their own — banks-compete.mjs checks those)
+  found = (g.news ?? []).find((n) => n.why && E.whyChain(g, n.why).length >= 3 && E.whyChain(g, n.why).some((e) => e.k.startsWith("tenant.")));
 }
 check(!!found, found ? `a departure carries a chain: "${found.text.slice(0, 70)}..."` : "no departure with a chain in 8 years");
 if (found) {

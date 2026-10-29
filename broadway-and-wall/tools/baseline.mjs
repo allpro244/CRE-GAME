@@ -341,7 +341,7 @@ function banks(g) {
 }
 
 // ---------------------------------------------------------------- run it
-const MONTHS = 300;          // twenty-five years
+const MONTHS = Number(process.env.MONTHS ?? 300);   // twenty-five years (MONTHS= for a paired run)
 const WINDOW = 120;          // the last ten of them, which is more than a cycle
 
 function measure() {

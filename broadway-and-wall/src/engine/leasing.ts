@@ -2,6 +2,7 @@
 // counters, TI/LC signing costs, renewals where the incumbent weighs the
 // market against moving costs, and rollover risk that clusters.
 // Multifamily skips all of this and runs aggregate occupancy.
+import { flatRollStep } from "./citygov";
 import { why, whyTenantBooks } from "./why";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, AutoConcessions, AutoLeaseEntry, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
@@ -21,7 +22,7 @@ function vacancyTight(s: GameState, use?: BuiltClass): number {
 }
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locOpexMult, taxRate, recoveryOf, demandLinear,
   condGrade, initialCondIdx, condCeiling, buildingScore, qualityCycle, condWear, capPlanBillMo, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
-  physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr, registerRolloverReader, flatsMarkPsf, flatsRollPsf, faceGrossUp } from "./value";
+  physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr, registerRolloverReader, flatsMarkPsf, flatsRollPsf, faceGrossUp, abatedShare } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
 import { overallScore } from "./value";
@@ -73,7 +74,7 @@ function rollRecovery(s: GameState, cls: string): Recovery {
 
 /** The expense level frozen into a base-year lease on the day it is signed. */
 function stopPsfNow(rec: ParcelRecord, econ: GameState["econ"], h: Holding, use?: BuiltClass): number {
-  const tax = (h.assessed ?? h.costBasis) * taxRate(econ) / Math.max(1, rec.bldgArea);
+  const tax = (h.assessed ?? h.costBasis) * taxRate(econ) * (1 - abatedShare(h, econ)) / Math.max(1, rec.bldgArea);
   const sys = h.programsDone?.systems !== undefined;
   // A shop and an office in the same building do not have the same expense
   // stop — their expense loads are not the same and never were.
@@ -1417,7 +1418,9 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // index on the way down.
       const mkt = flatsMarkPsf(rec, s.econ, h);
       const inPlace = h.resRentPsf ?? mkt;
-      h.resRentPsf = +(inPlace + (mkt - inPlace) / 12).toFixed(4);
+      // ...unless the council has stabilised the block: then the renewals are
+      // held to the guideline and only the vacancies reprice (citygov.ts).
+      h.resRentPsf = +flatRollStep(s.econ, rec.yearBuilt, inPlace, mkt).toFixed(4);
     }
     const renovating = h.renovatingUntilM !== undefined && q < h.renovatingUntilM;
 

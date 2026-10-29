@@ -25,12 +25,11 @@
 //   and 2008 did, 1970 and 1998 did not) it drags the economy into the
 //   recession it was not otherwise due.
 //
-//   THE FISCAL CRISIS — New York 1975 ("Ford to City: Drop Dead"), Cleveland
-//   1978, Philadelphia 1990, Detroit 2013. The city cannot roll its debt. It
-//   lays off its own workforce, cuts services, and raises the property tax
-//   to pay the bondholders — New York cut a fifth of its municipal payroll
-//   and lost about one job in six between 1969 and 1977. The tax stays up
-//   for a generation; the jobs take a decade to come back.
+//   THE FISCAL CRISIS is no longer drawn here. A city does not go broke at
+//   random: it goes broke when its own budget has run a deficit long enough
+//   that the note it has to roll finds no buyer. That is citygov.ts — the
+//   budget, the bond market and the control board — and the crisis's effects
+//   (the layoffs, the surcharge, the jobs that leave) come from there now.
 //
 //   THE CAMPUS — the white swan nobody can plan for: an anchor employer picks
 //   one of the town's centres for its headquarters or research campus, and
@@ -61,7 +60,6 @@
 // against the same town without it:
 //   panic   credit index -0.4 for two years; a recession inside a year in
 //           three of four; a lender closed in two; jobs -3.5% at two years
-//   fiscal  jobs -4.8% at four years, real land -8% at five, caps +0.4
 //   campus  jobs +3.6% by year six, real land +4%, the chosen centre +8-14
 //
 // Its own RNG stream ("shock"), so the economy's other draws do not move.
@@ -91,7 +89,6 @@ function panicHazard(credGap: number): number {
   return PANIC_HAZ * Math.exp(PANIC_PER_GAP * Math.max(-0.15, Math.min(0.25, credGap)));
 }
 const PANIC_PER_GAP = 15;
-const FISCAL_HAZ = 1 / 350;
 const CAMPUS_HAZ = 1 / 200;
 const EMBARGO_HAZ = 1 / 250;
 const ARRIVALS_HAZ = 1 / 250;
@@ -102,23 +99,15 @@ export function tickBlackSwans(s: GameState, parcels: ParcelTable, bbls: string[
   tickCapitalWave(s);
   tickPanic(s);
   e.bsJobPull = 0;
-  tickFiscal(s);
   tickCampus(s);
   tickEmbargo(s);
   tickArrivals(s);
   // No swan in the opening year: the player has not had time to own anything.
   if (s.month < YEAR) return;
-  // A FISCAL CRISIS IS NOT INDEPENDENT OF THE CYCLE. A city's revenue falls
-  // with its payrolls and its bills do not, which is why 1975, 1978, 1990 and
-  // 2013 all landed in or just after a downturn. Three times the odds in a
-  // recession, half outside one: about the same rate over a century.
-  const inRec = (e.nat?.recM ?? 0) > 0;
-  const fiscalHaz = FISCAL_HAZ * (inRec ? 3 : 0.5);
   if (!e.embargo && rng(s, "shock") < EMBARGO_HAZ / 12) startEmbargo(s);
   else if (!e.arrivals && rng(s, "shock") < ARRIVALS_HAZ / 12) startArrivals(s);
   else if (!e.capWave && rng(s, "shock") < WAVE_HAZ / 12) startCapitalWave(s);
   else if (!e.panic && rng(s, "shock") < panicHazard(e.nat?.credGap ?? 0) / 12) startPanic(s);
-  else if (!e.fiscal && rng(s, "shock") < fiscalHaz / 12) startFiscal(s);
   else if (!e.campus && rng(s, "shock") < CAMPUS_HAZ / 12) startCampus(s, parcels, bbls);
 }
 
@@ -284,47 +273,6 @@ function startPanic(s: GameState) {
   });
 }
 
-// ---------------------------------------------------------------- the fiscal crisis
-
-function tickFiscal(s: GameState) {
-  const e = s.econ;
-  // The tax comes down slowly — New York's 1970s rates were a generation
-  // unwinding — about a twentieth of the surcharge a year.
-  if (e.taxMult !== undefined && e.taxMult !== 1) {
-    e.taxMult = 1 + (e.taxMult - 1) * Math.pow(0.95, 1 / 12);
-    if (Math.abs(e.taxMult - 1) < 0.005) delete e.taxMult;
-  }
-  const f = e.fiscal;
-  if (!f) return;
-  if (f.leftM > 0) { e.bsJobPull = (e.bsJobPull ?? 0) + f.pullM; f.leftM -= 1; }
-  else {
-    e.fiscal = undefined;
-    pushNewsPublic(s, "event", "The control board has handed the city its books back. The budget balances, the bonds are selling again, and the city that came out the other side is smaller than the one that went in.");
-  }
-}
-
-function startFiscal(s: GameState) {
-  const e = s.econ;
-  // THE BILL: a surcharge on the property tax of a fifth to two fifths — the
-  // city's one revenue it can raise by vote, and the one its bondholders are
-  // secured by.
-  const surcharge = 0.2 + 0.2 * rng(s, "shock");
-  e.taxMult = (e.taxMult ?? 1) * (1 + surcharge);
-  // THE JOBS: the city's own layoffs, the services that go with them, and the
-  // households and firms that leave because the streets got worse — 3-7% of
-  // the city's payroll over three to five years, net of the cycle.
-  const loss = 0.03 + 0.04 * rng(s, "shock");
-  const months = Math.round(36 + 24 * rng(s, "shock"));
-  e.fiscal = { leftM: months, pullM: Math.pow(1 - loss, 1 / months) - 1 };
-  (e.blackSwans ??= []).push({ m: s.month, kind: "fiscal", size: Math.round(loss * 100), sf: 0, title: "the city could not pay its bills" });
-  raiseAlert(s, {
-    kind: "swan", tone: "bad",
-    title: `The city cannot pay its bills`,
-    body: `The banks have refused to roll the city's notes, and Washington has said no. A control board has taken the budget: ${Math.round(surcharge * 100)}% on every property-tax bill from this year, a fifth of the municipal payroll laid off, and the services that go with it.`,
-    detail: `Every building's tax bill just went up and stays up — the board pays the bondholders first. And the cuts do what cuts do: over the next ${Math.round(months / 12)} years expect about ${Math.round(loss * 100)}% of the city's jobs to go somewhere else.`,
-  });
-}
-
 // ---------------------------------------------------------------- the campus
 
 const CAMPUS_KIND = [
@@ -404,12 +352,11 @@ function startCampus(s: GameState, parcels: ParcelTable, bbls: string[]) {
 }
 
 /** Fire one on demand — tests and probes only; the game never calls this. */
-export function forceBlackSwan(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null, kind: "embargo" | "arrivals" | "wave" | "panic" | "fiscal" | "campus") {
+export function forceBlackSwan(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null, kind: "embargo" | "arrivals" | "wave" | "panic" | "campus") {
   void adjacency;
   if (kind === "embargo") startEmbargo(s);
   else if (kind === "arrivals") startArrivals(s);
   else if (kind === "wave") startCapitalWave(s);
   else if (kind === "panic") startPanic(s);
-  else if (kind === "fiscal") startFiscal(s);
   else startCampus(s, parcels, bbls);
 }

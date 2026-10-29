@@ -18,6 +18,7 @@ import { creditWord, real, workStage, Row, useDeskView } from "@/ui/panels/share
 import { Employers, Districts, boardClimate, pendingHearings } from "@/ui/panels/CityStances";
 import { Industries } from "@/ui/panels/IndustriesView";
 import { economyByIndustry } from "@/engine/economy";
+import { CityHallBox } from "@/ui/panels/CityHall";
 
 /** The cycle in a sentence. Read by City → Pulse, which leads with it. */
 export const PHASE_BLURB: Record<string, string> = {
@@ -145,6 +146,7 @@ export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; sp
       </div>
       <CityFigures />
       <CentralBankBox />
+      <CityHallBox />
     </>
   );
 }

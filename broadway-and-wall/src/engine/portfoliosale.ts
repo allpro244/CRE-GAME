@@ -595,7 +595,7 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
             prev.bbls = prev.bbls.filter((x) => x !== b); forgetDeed(prev, b);
             if (prev.failedM === undefined) {
               const share = shareOf(b);
-              prev.cash += share - settleSale(s, prev, b, share) - streetSaleCost(share);
+              prev.cash += share - settleSale(s, prev, b, share) - streetSaleCost(share, s);
             }
           }
           if (!winner.bbls.includes(b)) winner.bbls.push(b);

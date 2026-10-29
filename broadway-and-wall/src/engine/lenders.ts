@@ -19,7 +19,7 @@
 import type { GameState } from "./types";
 import { logBooks, BUILT_CLASSES } from "./types";
 import { PRODUCTS, underwritingStandards, windowOpen } from "./debt";
-import { rng, rrange, RENT_BASE, NATURAL_VAC, CAP_BASE, shortIndexOf } from "./market";
+import { rng, rrange, RENT_BASE, OPENING_VAC, CAP_BASE, shortIndexOf } from "./market";
 import type { DeskPx, LossClass } from "./pricing";
 import { why } from "./why";
 import { lossClassOf as lossClassOfSheet } from "./pricing";
@@ -401,7 +401,7 @@ function cityPropertyValue(stock: Record<string, number>, priceLevel = 1): numbe
     const sf = stock[k] ?? 0;
     if (sf <= 0) continue;
     // ~35% of gross goes out as opex and non-recovered costs across classes.
-    const noiPsf = RENT_BASE[k] * priceLevel * (1 - NATURAL_VAC[k]) * 0.65;
+    const noiPsf = RENT_BASE[k] * priceLevel * (1 - OPENING_VAC[k]) * 0.65;
     v += (sf * noiPsf) / (CAP_BASE[k] / 100);
   }
   return v;

@@ -53,7 +53,7 @@
 // No other stream moves when City Hall does.
 import type { Econ, GameState } from "./types";
 import { BUILT_CLASSES, START_YEAR, raiseAlert } from "./types";
-import { rng, pushNewsPublic, islandResidents, SF_PER_HOME, PEOPLE_PER_HOME, NATURAL_VAC } from "./market";
+import { rng, pushNewsPublic, islandResidents, SF_PER_HOME, PEOPLE_PER_HOME, normalVac } from "./market";
 import { TAX_RATE, classValuePsf } from "./value";
 import { HH_SIZE, fundamentalHomePsf, medianIncome } from "./homeprice";
 
@@ -340,7 +340,7 @@ export function marketRoll(e: Econ): { commercial: number; homes: number } {
   for (const k of BUILT_CLASSES) {
     const stk = e.stock?.[k] ?? 0;
     if (!(stk > 0)) continue;
-    const occ = clamp((e.occupied?.[k] ?? stk * (1 - NATURAL_VAC[k])) / stk, 0, 1);
+    const occ = clamp((e.occupied?.[k] ?? stk * (1 - normalVac(e, k))) / stk, 0, 1);
     commercial += stk * Math.max(0, classValuePsf(e, k, occ));
   }
   const households = cityPeople(e).households;

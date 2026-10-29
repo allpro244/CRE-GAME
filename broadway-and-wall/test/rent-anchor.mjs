@@ -20,7 +20,7 @@ const { loadCity } = await import(join(HERE, "city.mjs"));
 const SEEDS = (process.env.SEEDS ?? "550991,12007,73303,11,22,7").split(",").map(Number);
 const HZ = Number(process.env.HZ ?? 1200);
 const fr = E.frictionFloor("office");
-const nat = E.NATURAL_VAC.office;
+const nat = E.OPENING_VAC.office;
 
 let bad = 0;
 const check = (ok, msg) => {

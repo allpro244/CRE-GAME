@@ -942,7 +942,8 @@ export function playerTenantLeft(s: GameState, t: Tenant, bbl: string) {
  * flats signed the same month at the same rent ($/sf/yr), each on a one-year
  * lease. `occ` is always the sum of the leases.
  */
-export interface FlatRoll { occ: number; vac?: number; l?: { sf: number; rent: number; endM: number }[] }
+/** A block's let flats: their feet, the month it fell vacant, its leases, and its asking rent this month ($/sf a year, for the households choosing where to live). */
+export interface FlatRoll { occ: number; vac?: number; l?: { sf: number; rent: number; endM: number }[]; mkt?: number }
 
 const MF_LEASEUP = 0.08;
 
@@ -998,6 +999,7 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       if (!(cap > 0)) continue;
       roll.occ = Math.min(cap, roll.occ);
       const mkt = useRentPsfYr(rec, e, gradeOf(s, rec), "multifamily");
+      roll.mkt = +mkt.toFixed(2);
       // The roll's leases (an old save, or a block that has just joined the
       // street, carries only a count: its flats were let over the last year
       // at about today's rent).
@@ -1014,29 +1016,23 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       // Each renewal and each new letting below is a deal the market reads.
       const slack = dealSlack(e, "multifamily");
       const keep: NonNullable<FlatRoll["l"]> = [];
-      // WHY RENTERS MOVE OUT, FROM WHAT IS HAPPENING (2026-10-16). This was a
-      // flat 45% a year. A renter household leaves its flat for a reason, and
-      // most of the reasons are flows this town already keeps: it leaves town
-      // (renters are about half again as mobile as everyone, so they carry
-      // more of any net out-migration), it buys (the US renter-to-owner rate,
-      // about 8% a year, falls as owning gets dear against renting — the
-      // same tenure margin as `tenureIdx`), or it moves for a job (about 10% a
-      // year of renters, more when the town is hiring). What is left is
-      // family life — a baby, a partner, a split, an old age — at the rate
-      // the CPS records it (about 22% of renters a year). At the opening that
-      // adds up to about the old 45%; after it, it moves with the town.
-      const out = Math.max(0, -(e.migRate ?? 0)) * 12 * 1.5;
-      // (since ONE ECONOMY step 2, the household register's own buyers: the
-      // share of its renter households that bought last month, a year —
-      // households.ts `tickTenure` — not a second tenure margin)
-      const buy = e.eco?.buyRate ?? 0.08 * Math.exp(-10 * ((e.tenureIdx ?? 1) - 1));
-      const jobs = 0.10 * Math.max(0.5, Math.min(2, ((e.jobs ?? 1) / Math.max(1, e.jobsPrevYr ?? e.jobs ?? 1)) ** 10));
-      const moveOut = Math.min(0.85, 0.22 + out + buy + jobs);
+      // WHY RENTERS MOVE OUT: THE HOUSEHOLDS DECIDE (households stage 2,
+      // 2026-10-29). This was 0.22 + out-migration + a buying rate + a job
+      // term, and before that a flat 45%. The street's renewals now follow the
+      // renter households themselves: the share of the island's ending leases
+      // that ended in a move last month (households.ts — each household buys,
+      // chooses a flat across the water at the renewal rent and its commute,
+      // leaves town out of work, or moves for family reasons), rolled over six
+      // months. Before the register's first month, the street's own measured
+      // turnover (market.ts turnoverYr).
+      const moveOut = Math.min(0.85, e.eco?.flatLeaseMove ?? turnoverYr(e, "multifamily"));
       for (const x of roll.l) {
         if (x.endM > m) { keep.push(x); continue; }
         // A stabilised block (citygov.ts) asks its sitting tenants no more than the guideline.
         const ask = renewalAsk(e, rec.yearBuilt, mkt * slack * 0.97, x.rent);
-        const pRenew = Math.max(0.1, Math.min(0.9, (1 - moveOut) - 0.8 * Math.log(ask / Math.max(0.01, x.rent))));
+        // (the renewal rent is in the households' own choice now — a rent the
+        // household will not pay is a household that chose the mainland)
+        const pRenew = Math.max(0.1, Math.min(0.9, 1 - moveOut));
         const stay = x.sf * pRenew * rrange(s, 0.85, 1.15, "leasing");
         flatOut += Math.max(0, x.sf - Math.max(0, stay));
         if (stay > 1) {

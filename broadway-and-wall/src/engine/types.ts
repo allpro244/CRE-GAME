@@ -82,6 +82,15 @@ export interface EcoDrive {
   renters: number;
   /** Households arrived for work and left out of work this month (weighted); renter households that bought, as a share a year. */
   arrived: number; left: number; buyRate?: number;
+  /**
+   * HOUSEHOLDS STAGE 2: the renter households that want an island flat at the
+   * going rents (the flats' demand, market.ts); the island renters' move-out
+   * rate a year and the share of ending island leases that end in a move (the
+   * player's flats and the street's renewals); the last twelve months' home
+   * buyers, their pay a year and weight (the builders' sales, homeprice.ts).
+   */
+  islandWant?: number; flatMoveOut?: number; flatLeaseMove?: number;
+  buyers?: { m: number; inc: number; w: number }[];
   /** The firms' heads (labour demand); 0 before the books open. */
   heads: number;
   /** Floor the firms' heads take, by class (sf): on the floor, not at home, not in a building of their own. */
@@ -2331,7 +2340,7 @@ export interface Econ {
   /** Each industry's heads in the island's named firms over the heads they are formed toward (streetRolls.ts): over 1, its firms shed the excess. */
   islandFill?: number[];
   /** The first month's drivers, which the space market's indices are read against. */
-  eco0?: { floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>; renters?: number; jobs?: number };
+  eco0?: { floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>; renters?: number; jobs?: number; islandWant?: number };
   /** Each trade's payroll last month, for the firms' month-on-month change. */
   tradeEmpPrev?: Partial<Record<string, number>>;
   /** each trade's mean firm-specific sales change last month (streetRolls) */
@@ -2715,10 +2724,6 @@ export interface Econ {
   siteHurdle?: Partial<Record<BuiltClass, number>>;
   /** Loan index at the opening, the reference for tenure choice (market.ts). */
   tenureRef?: number;
-  /** Log owning-over-renting cost at the opening, the reference for tenure choice (market.ts). */
-  tenureOwnRef?: number;
-  /** Renter share of households against the opening, rolled (market.ts). */
-  tenureIdx?: number;
   // THE PIPELINE AS A QUEUE, not a number. Every start is a cohort with a
   // month it will deliver in, so the game can answer the question every
   // developer actually asks — "what is coming, and when" — instead of only

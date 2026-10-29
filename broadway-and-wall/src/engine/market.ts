@@ -253,10 +253,6 @@ const SUBLET_BG: Record<BuiltClass, number> = {
  *  that arrives in town is looking the same month and has signed inside two.
  *  Shape parameters, from the length of the process; stated, not fitted. */
 /** Shortage-side rent sensitivity relative to office (see `vacTerm`). */
-/** Island-vs-mainland location elasticity of space demand (see `locEff`). Shape parameter. */
-const LOC_ELAST = 0.5;
-/** Location re-sorting happens only as households move: about a 5-year half-life. Shape parameter. */
-const LOC_ROLL = Math.LN2 / 60;
 // OFFICE REPRICES AT THE DEAL MARKET'S SPEED, NOT THE LEASE ROLL'S (2026-10-13).
 // Office sat at 1.0 on the argument that eight-year leases move asking rent
 // slowly — but lease length sets how fast IN-PLACE rent rolls, and this index
@@ -292,9 +288,6 @@ const AFFORD_ROLL: Record<BuiltClass, number> = {
   industrial: 1 / LEASE_TERM_M.industrial,
   multifamily: 1 / LEASE_TERM_M.multifamily,
 };
-/** Households form and split over years, not at each lease: a two-year
- *  half-life on flats' price response (see `affordRaw`). Shape parameter. */
-const HH_FORM_ROLL = Math.LN2 / 24;
 
 /** HOW MUCH SPACE A SECTOR'S CYCLE ACTUALLY MOVES. Demand for space is
  *  headcount times feet per head, so this multiplier is sized to the
@@ -372,8 +365,7 @@ function affordSoft(v: number): number {
  */
 const SIGMA_KL = 0.5;
 const SPACE_SHARE0: Record<BuiltClass, number> = { office: 0.14, retail: 0.2, industrial: 0.23, multifamily: 0 };
-/** A household's minimum home against the opening's average, and the share of income renters spend on rent (ACS). */
-const HH_MIN = 0.5;
+/** The share of income renters spend on rent (ACS): the level the household register's opening incomes are solved to. */
 export const HH_RENT_SHARE0 = 0.30;
 /** Online selling (see ONLINE in the secular block). */
 const ONLINE_0 = 0.02;      // share of store-type sales online at the opening (US 2000)
@@ -454,14 +446,6 @@ const NATVAC_RATE = 1 - Math.exp(-Math.LN2 / 240);
  * turned until a harness passes: `pnpm income` reports the consequence, and a
  * consequence outside its band is a finding about the rest of the model.
  */
-/**
- * Renter households per log point of owning cost over renting cost: ~1.1%
- * per mortgage point on the 1978-85 episode (homeownership 65.6% -> 63.9% as
- * mortgage rates went ~9.6% -> 13-16%, Census HVS), ~0.8% reading 2022-24
- * too; a point moves owning cost ~9%, so ~0.09. The household register's
- * buyers answer it (households.ts BUY_ELAST, step 2).
- */
-export const TENURE_PER_LOG = 0.09;
 // OFFICE 0.45 -> 0 (2026-10-14). The 0.45 rested on one unverified London
 // estimate of total occupancy demand, which the note above already says is
 // mostly a QUALITY effect. The quantity record runs the other way: US office
@@ -2249,14 +2233,6 @@ const HPI_UC_ELAST = 0.5;
 /** Months for prices to close their gap to the fundamental. */
 export const HPI_CHASE_M = 30;
 
-/** The cost of owning a home against the opening, real (house price x user cost). */
-export function ownCostIdx(e: Econ): number {
-  const n = e.nat;
-  if (!n) return 1;
-  const mort = (e.indexRate ?? 5.4) / 100 + 0.017;
-  const uc = hhUserCost(mort, n.hpiG3 ?? 0, n.inflExp ?? 0.02);
-  return (n.hpi ?? 1) * uc / Math.max(1e-6, n.hpiUc0 ?? uc);
-}
 
 /**
  * THE NATION'S SPENDING (2026-10-16). Output is what the country buys, built
@@ -4527,28 +4503,17 @@ export function tickEcon(s: GameState) {
     const burden = relRent;
     let affordRaw: number;
     if (k === "multifamily") {
-      // FROM HOUSEHOLDS' BUDGETS (2026-10-16). This was three income tiers
-      // with headship elasticities of -0.35/-0.25/-0.15 taken from the
-      // literature, a jobless rate read at 1.2% of renter households a point,
-      // and an income elasticity of 0.25 on top — four numbers from studies.
-      // Each is now what a household's budget does. A household needs at
-      // least HH_MIN of the opening's average home (the smallest flat people
-      // take before they double up instead: a studio is about half of the
-      // 900 sf the generator builds) and spends a fixed share of what it has
-      // left over on more (Stone 1954; Geary 1950). Its income is pay times
-      // the share of the town in work: a jobless household has less, and
-      // doubles up because of it. The one level that fixes the budget is a
-      // measured fact — US renters spend about 30% of income on rent
-      // (HH_RENT_SHARE0, ACS) — and from that and the minimum, every
-      // elasticity follows and moves with the town: at the opening, income
-      // 0.6 and price -0.4, falling as a town gets richer.
-      const realWage = (e.wageIdx ?? 1) / cpiNow;
-      const rw = realWage / Math.max(1e-6, e.wage0 ?? realWage);
-      const u = e.unemployment ?? OPENING_UNEMP;
-      const Y = rw * (1 - u) / (1 - OPENING_UNEMP) / HH_RENT_SHARE0;
-      const beta = (1 - HH_MIN) / (1 / HH_RENT_SHARE0 - HH_MIN);
-      const p = Math.max(0.05, burden);
-      affordRaw = Math.max(0.3, HH_MIN + beta * (Y - p * HH_MIN) / p);
+      // THE FLATS' DEMAND IS THE HOUSEHOLDS THAT CHOOSE THEM (households
+      // stage 2, 2026-10-29). This was a household budget — a minimum flat
+      // (HH_MIN) and a fixed share of income over it — applied to the region's
+      // renter households, and an island-against-mainland elasticity on top
+      // (LOC_ELAST, rolled over five years): statements about households that
+      // none of the register's households made. Each renter household now
+      // weighs an island flat against one across the water at the going rents
+      // and its own commute and pay (households.ts `wantsIsland`), so the
+      // price, income and location responses are all in the driver below, and
+      // here the flats take none of their own (FORMULA_LEDGER #10, flats).
+      affordRaw = 1;
     } else {
       // FROM THE FIRMS' OWN COSTS (2026-10-16). The exponent was -0.40 for
       // every commercial class. A firm trades floor against people at the
@@ -4564,39 +4529,20 @@ export function tickEcon(s: GameState) {
     }
     if (!e.affordEff) e.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
     // At the lease-rollover rate of THIS class, not of an office. See AFFORD_ROLL.
-    e.affordEff[k] += (k === "multifamily" ? HH_FORM_ROLL : AFFORD_ROLL[k]) * (affordRaw - e.affordEff[k]);
+    e.affordEff[k] += AFFORD_ROLL[k] * (affordRaw - e.affordEff[k]);
 
-    // ...AND THE MAINLAND IS NEXT DOOR (2026-10-12). `affordEff` is how much
-    // space a tenant takes at a price; it is not WHERE they take it. The island
-    // keeps its share of the region's households only "at given
-    // relative prices" (above), and nothing let that share move when the
-    // island got dear: the mainland builds at cost on cheap ground, so its
-    // real rent tracks real construction cost, and every point the island
-    // rents over that is a point of premium a household or firm can avoid by
-    // living or leasing across the water and commuting — the location margin
-    // of the Alonso-Muth-Mills city, far more elastic than taking less space.
-    // Without it a built-out island admitted the region's whole growth and
-    // compounded real rent 1.4%/yr for a century at normal vacancy.
-    // HALF-ELASTIC AND SLOW (2026-10-12). The first cut was unit-elastic at
-    // lease-rollover speed, and it ran the wrong way just as hard: doubling
-    // the island's flats was absorbed in three years with rent down only 20%,
-    // the island's share of the region's households up 58% — the mainland
-    // emptying onto the island inside a lease cycle. Households re-sort between
-    // core and suburbs only as they move, over years, and only partly on
-    // price. Elasticity 0.5 and a five-year half-life are shape parameters,
-    // stated as such.
-    if (e.costAnchorReal === undefined) e.costAnchorReal = (e.costIdx ?? 1) / cpiNow;
-    const mainlandReal = ((e.costIdx ?? 1) / cpiNow) / Math.max(1e-6, e.costAnchorReal);
-    // Households only: a firm's jobs are the island's jobs in this model (the
-    // region's population is derived from them, and their location is the
-    // job-level `regionalPull`), so letting a firm's floor leave while its
-    // jobs stay would be the same tenant in two places.
-    const locRaw = k === "multifamily"
-      ? Math.pow(Math.max(1e-6, relRent / Math.max(1e-6, mainlandReal)), -LOC_ELAST)
-      : 1;
-    if (!e.locEff) e.locEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
-    e.locEff[k] += LOC_ROLL * (locRaw - e.locEff[k]);
-
+    // THE MAINLAND IS NEXT DOOR — AND THE HOUSEHOLDS KNOW IT (households
+    // stage 2, 2026-10-29). This was `locEff`, the island's share of the
+    // region's households moved by island rent over the mainland's real
+    // construction cost at elasticity 0.5 with a five-year half-life — the
+    // Alonso-Muth-Mills location margin asserted for the whole region at once.
+    // Measured, it let the flats' capacity rail bind 29% of months (BASELINE
+    // rail.occ.multifamily.cap), because the region's renters grew faster than
+    // a half-elastic, five-year margin sent any of them across the water. The
+    // margin is now each household's own choice (households.ts `wantsIsland`:
+    // its rent, commute, pay and taste) and the driver is the households that
+    // made it; firms' floor stays where its jobs are (a firm's location is the
+    // job-level `regionalPull`).
     // THE INCOME ARGUMENT. A city that gets richer occupies more and better
     // space; a city that gets poorer gives it back. Real income per worker
     // against the town's opening real income — the INTENSIVE margin only,
@@ -4785,8 +4731,10 @@ export function tickEcon(s: GameState) {
     // Before the books open (the opening months) the opening's level stands.
     if (e.jobsFilled0 === undefined && (e.history?.length ?? 0) > 1 && (e.jobs ?? 0) > 0) e.jobsFilled0 = e.jobs;
     const eco = e.eco, eco0 = e.eco0;
+    // Flats: the renter households that want an island flat at the going
+    // rents (households stage 2), against the first month they chose.
     const driver = k === "multifamily"
-      ? (eco && eco0?.renters ? Math.max(0.05, eco.renters / eco0.renters) : 1)
+      ? (eco?.islandWant !== undefined && eco0?.islandWant ? Math.max(0.05, eco.islandWant / eco0.islandWant) : 1)
       : (eco?.floorSf && eco0?.floorSf?.[k] ? Math.max(0.05, (eco.floorSf[k] ?? 0) / eco0.floorSf[k]!) : 1);
     // A CLASS'S MOMENTUM IS ITS TENANTS' GROWTH AGAINST NORMAL. Monthly growth
     // of the driver less its own five-year average, smoothed over six months,
@@ -4831,7 +4779,6 @@ export function tickEcon(s: GameState) {
       * Math.pow(driver, elastic)
       * cycleTerm
       * e.affordEff[k]
-      * (e.locEff?.[k] ?? 1)      // island against mainland — see LOC_ELAST
       * (e.incomeEff?.[k] ?? 1)   // the income argument — see INCOME_ELAST
       * swanLvl;
     // THE POOL. Demand takes about a year to form or dissolve, and demand
@@ -4867,7 +4814,7 @@ export function tickEcon(s: GameState) {
       // (Not the online shift since step 2: a shop's sales that ship from a
       // shed are the fulfilment industry's, so the shops' heads already fall
       // with it — economy.ts `spendVector`. Counting it here too took it twice.)
-      const lvl = (e.locEff?.[k] ?? 1) * (e.incomeEff?.[k] ?? 1) * swanClassLevel(e, k);
+      const lvl = (e.incomeEff?.[k] ?? 1) * swanClassLevel(e, k);
       (e.demandAt ??= {})[k] = { ref: targetRaw / Math.max(1e-6, e.affordEff[k]), eff: e.affordEff[k], raw: affordRaw, lvl };
     }
     if (!e.darkSf) e.darkSf = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
@@ -5064,7 +5011,6 @@ export function tickEcon(s: GameState) {
       * Math.pow(driver, elastic)
       * cycleTerm
       * affordRaw
-      * locRaw      // ...and the same island-vs-mainland choice (`locEff`)
       * incomeRaw   // the give-back reads the SAME arguments targetRaw does
       * swanLvl;
     const cyclical = Math.max(0, (e.occupied[k] - wantedNow) * DEMISABLE[k]);

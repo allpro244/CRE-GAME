@@ -1053,6 +1053,12 @@ export function economyToEngine(s: GameState): void {
     arrived: fl?.arrived ?? 0, left: fl?.left ?? 0, heads: 0,
   };
   if (s.economy?.last && fl?.bought !== undefined && d.renters > 0) d.buyRate = 12 * fl.bought / d.renters;
+  // households stage 2: what the households chose (households.ts)
+  const hr = s.households;
+  if (hr.islandWant !== undefined) d.islandWant = hr.islandWant;
+  if (hr.moveOutYr !== undefined) d.flatMoveOut = hr.moveOutYr;
+  if (hr.leaseMoveRate !== undefined) d.flatLeaseMove = hr.leaseMoveRate;
+  if (hr.buyers) d.buyers = hr.buyers.map((x) => ({ ...x }));
   const E = s.economy;
   if (E?.last && E.cur?.m === s.month && E.emp && E.emp0 && E.x0) {
     reviveEconomy(E);
@@ -1088,6 +1094,7 @@ export function economyToEngine(s: GameState): void {
   e.eco = d;
   if (d.floorSf && !e.eco0?.floorSf) { (e.eco0 ??= {}).floorSf = { ...d.floorSf }; e.eco0.jobs = d.jobs; }
   (e.eco0 ??= {}).renters ??= d.renters;
+  if (d.islandWant !== undefined) e.eco0.islandWant ??= d.islandWant;
 }
 
 // ---------------------------------------------------------------- why (why.ts)

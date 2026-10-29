@@ -142,8 +142,9 @@ check(Math.round(E.registerLabour(a).persons) > 0 && a.econ.population > 0, `the
   const text = JSON.stringify(packed);
   check(typeof packed.households.packed?.sav === "string" && !packed.households.a && a.households.a, "a save carries base64 columns and leaves the running game's arrays alone");
   const kb = JSON.stringify(packed.households).length / 1024;
-  // (850 KB since households stage 4: four one-byte columns more — the children's ages, the partner, the other adults' age)
-  check(kb < 850, `the register saves in ${kb.toFixed(0)} KB (${a.households.n} households)`);
+  // (850 KB since households stage 4: four one-byte columns more — the children's ages, the partner, the other adults' age;
+  // 950 KB since stage 6: a household that moves joins only an agent alike in age and make-up (`alike`), so fewer merge)
+  check(kb < 950, `the register saves in ${kb.toFixed(0)} KB (${a.households.n} households)`);
   // A save is written to IndexedDB, which stores it by structured clone (v8
   // serialize here, as test/region-reload.mjs does), and the store resumes it
   // through migrateSaveState — which unpacks the columns. (The whole state

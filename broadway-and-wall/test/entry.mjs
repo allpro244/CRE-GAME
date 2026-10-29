@@ -18,6 +18,8 @@ export const MODULES = [
   "economy", "industries", "sfc",
   // why: the cause ledger behind every "Why?" chain (ONE_ECONOMY_PLAN.md §6e).
   "why",
+  // whyReads: the market-wide numbers' moves, written into the ledger once a month.
+  "whyReads",
   // tenantMarket: landlords price their own space, tenants shop (ONE_ECONOMY_PLAN.md step 4).
   "tenantMarket",
   "sim", "leasing", "actions", "credit", "value", "dev", "debt", "demand",

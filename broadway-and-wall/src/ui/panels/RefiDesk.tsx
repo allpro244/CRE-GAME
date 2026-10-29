@@ -10,6 +10,8 @@ import { resolveRec, isVacantLandLoanCollateral, physicalOcc } from "@/engine/va
 import { refiQuotes, prepayPenalty, mezzQuote, rateCapCost, deskAdvice, capPremiumOn } from "@/engine/debt";
 import { usd, pct } from "@/ui/format";
 import { annualPayment, Row, Verdict } from "@/ui/panels/shared";
+import { WhyButton } from "@/ui/WhyChain";
+import { loanWhy, loanLead } from "@/ui/whyLinks";
 
 /** Both liens' prepayment penalties at today's rates — what `refinance` adds to the fee. */
 function breakCost(game: GameState, h: Holding | undefined): number {
@@ -282,7 +284,8 @@ export function RefiSection({ bbl }: { bbl: string }) {
           return adv ? <div className="hint" style={{ marginTop: 6 }}>{adv}</div> : null;
         })()}
       <div className="grid" style={{ marginTop: 12 }}>
-        <Row k="Lender" v={`${q.label} · ${pct(q.ratePct)}`} strong />
+        <Row k="Lender" v={`${q.label} · ${pct(q.ratePct)}`} strong
+          why={<WhyButton id={loanWhy(game, q.lender)} lead={loanLead(game, q.lender, q.ratePct)} />} />
         <Row k="Max loan" v={`${usd(q.maxProceeds)} · ${(q.ltvAtMax * 100).toFixed(0)}% LTV · ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance · ${(q.maxLTV * 100).toFixed(0)}% covenant`} />
         {/* THE THREE NUMBERS THE COVERAGE RATIO IS MADE OF, at the amount the
             dial is actually set to.

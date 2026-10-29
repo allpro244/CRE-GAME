@@ -9,6 +9,10 @@
  * If a worker cannot be started (an old browser, a locked-down page) or one
  * fails mid-month, the same engine call runs here instead, as it always did:
  * a month is never lost to the worker, only made slower.
+ *
+ * `?simworker=off` on the page's address runs every month here on purpose,
+ * for measuring the page with and without the worker. `simWhere()` says
+ * where the last month ran (window.__sim, for headless checks).
  */
 import SimWorker from "./simWorker?worker&inline";
 import { advanceMonth, advanceUntilAttention } from "@/engine/sim";
@@ -20,6 +24,14 @@ type Adj = Record<string, string[]> | null;
 type Span = ReturnType<typeof advanceUntilAttention>;
 
 let worker: Worker | null | undefined;
+let where: "worker" | "page" | "none" = "none";
+/** Where the last month was closed: in the sim worker, on the page, or none yet. */
+export const simWhere = () => where;
+if (typeof window !== "undefined") (window as unknown as { __sim?: { where: () => string } }).__sim = { where: simWhere };
+
+function workerOff(): boolean {
+  try { return new URLSearchParams(location.search).get("simworker") === "off"; } catch { return false; }
+}
 const waiting = new Map<number, { ok: (r: SimReply) => void; fail: (e: unknown) => void }>();
 let seq = 0;
 // which parcel table the worker holds, by identity; a new town re-sends it
@@ -33,6 +45,7 @@ function failAll(why: unknown) {
 
 function getWorker(): Worker | null {
   if (worker !== undefined) return worker;
+  if (typeof Worker === "undefined" || workerOff()) { worker = null; return null; }
   try {
     const w = new SimWorker();
     w.onmessage = (e: MessageEvent<SimReply>) => {
@@ -72,9 +85,10 @@ export async function monthOffThread(s: GameState, parcels: ParcelTable, bbls: s
   if (w) {
     try {
       const r = await send(w, parcels, bbls, adjacency, (town, id) => ({ type: "month", id, town, s }));
-      if (r.s) return r.s;
+      if (r.s) { where = "worker"; return r.s; }
     } catch { /* fall through: the same tick, here */ }
   }
+  where = "page";
   return advanceMonth(s, parcels, bbls, adjacency);
 }
 
@@ -84,8 +98,9 @@ export async function spanOffThread(s: GameState, parcels: ParcelTable, bbls: st
   if (w) {
     try {
       const r = await send(w, parcels, bbls, adjacency, (town, id) => ({ type: "span", id, town, s, cap, seen }));
-      if (r.span) return r.span;
+      if (r.span) { where = "worker"; return r.span; }
     } catch { /* fall through */ }
   }
+  where = "page";
   return advanceUntilAttention(s, parcels, bbls, adjacency, cap, seen);
 }

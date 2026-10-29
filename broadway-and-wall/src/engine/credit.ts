@@ -9,7 +9,7 @@ import { logBooks, cloneState} from "./types";
 import { netWorth, ownedHoldingNoiYr, ownedHoldingValue, resolveRec } from "./value";
 import { sponsorStanding } from "./sponsor";
 import { money } from "./money";
-import { deskRatePct, appetiteAdvance } from "./pricing";
+import { appetiteAdvance, bankRatePct, liveSpread } from "./pricing";
 import { shortIndexOf } from "./market";
 import type { Lender } from "./lenders";
 import { purseOf } from "./vehicles";
@@ -132,11 +132,10 @@ export function lineLender(s: GameState): Lender | undefined {
  */
 export function locRate(s: GameState): number {
   const bank = lineLender(s);
-  const terms = {
-    ci: s.econ.creditIdx ?? 1,
-    app: bank ? (bank.failedM !== undefined ? 0 : bank.appetite) : 1,
-    standingAdd: sponsorStanding(s).spreadAdd,
-  };
+  // The bank's own price for money (pricing.ts liveSpread): its funding, its
+  // losses, its rationing and its pitch — on both legs of the floor.
+  const px = bank ? s.econ.deskPx?.[bank.name] : undefined;
+  const terms = { standingAdd: sponsorStanding(s).spreadAdd };
   // NEVER UNDER THE BANK'S OWN MORTGAGE. A revolver is the riskier paper —
   // undrawn until you are short, recourse to the firm rather than one
   // building — so no bank lends it cheaper than it lends against a building.
@@ -147,8 +146,8 @@ export function locRate(s: GameState): number {
   // is the bank's five-year fixed sheet (LOC_FLOOR_SPREAD), priced through the
   // same law so it widens in a crunch the way the line does.
   return Math.max(
-    deskRatePct(shortIndexOf(s.econ), LOC_SPREAD, terms),
-    deskRatePct(s.econ.indexRate, LOC_FLOOR_SPREAD, terms),
+    bankRatePct(shortIndexOf(s.econ), liveSpread(px, LOC_SPREAD, "income", 1, "short"), terms),
+    bankRatePct(s.econ.indexRate, liveSpread(px, LOC_FLOOR_SPREAD, "income"), terms),
   );
 }
 

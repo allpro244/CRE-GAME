@@ -231,6 +231,8 @@ function city(g, base) {
     "city.demolished": g.demolished ?? 0,
     "city.employed": g.econ.jobs ?? 0,
     "city.population": g.econ.population ?? 0,
+    // desks closed by their regulator over the run (a stock: failures to date)
+    "bank.failures": (g.bankFails ?? []).length,
   };
 }
 
@@ -291,11 +293,55 @@ function rails(g, acc) {
     const rv = E.residenceVac(g.econ, k);
     if (Number.isFinite(v) && Number.isFinite(rv) && v <= rv + 0.0005) acc[`rail.occ.${k}.cap`] = (acc[`rail.occ.${k}.cap`] ?? 0) + 1;
   }
+  // THE CREDIT WINDOW AND THE DESKS' PRICES (ONE_ECONOMY_PLAN.md step 5).
+  // The window is the desks' capital-weighted appetite now, mapped onto its
+  // old 0.4-1.25 scale and clamped to it as a guard: if it rests on either
+  // end the clamp is doing the work. A desk's quote is floored at its own
+  // cash cost (pricing.ts costFloor) — an economic floor, counted so it can be
+  // seen. (The competitive pitch has no band: it is limited by the desk's
+  // capital headroom and its economic cost, lenders.ts priceDesks.)
+  const ci = g.econ.creditIdx;
+  if (Number.isFinite(ci) && ci <= 0.4001) acc["rail.credit.lo"] = (acc["rail.credit.lo"] ?? 0) + 1;
+  if (Number.isFinite(ci) && ci >= 1.2499) acc["rail.credit.hi"] = (acc["rail.credit.hi"] ?? 0) + 1;
+  // (an engine from before the desks priced themselves has none of this: an
+  // ENGINE= paired run against it reads these as absent, not as a crash)
+  if (E.liveSpread) for (const l of g.lenders ?? []) {
+    if (l.failedM !== undefined) continue;
+    const px = g.econ.deskPx?.[l.name];
+    if (!px) continue;
+    acc.__desk = (acc.__desk ?? 0) + 1;
+    const sheet = E.PRODUCTS.find((p) => p.lender === l.name && E.lossClassOf(p) === "income")?.spread;
+    if (sheet !== undefined && E.liveSpread(px, sheet, "income") <= E.costFloor(px, "income") + 1e-9) acc["rail.bank.floor"] = (acc["rail.bank.floor"] ?? 0) + 1;
+  }
   acc.__n = (acc.__n ?? 0) + 1;
 }
 
+/**
+ * THE BANKS (ONE_ECONOMY_PLAN.md step 5), ten-year means: the credit window,
+ * the town's senior spread over the ten-year (each open desk's flagship
+ * income-property sheet at its live price, book-weighted), and the desks'
+ * charge-offs as a share of their book, a year.
+ */
+function banks(g) {
+  if (!E.liveSpread) return { "credit.idx": +(g.econ.creditIdx ?? NaN).toFixed(4) };
+  const live = (g.lenders ?? []).filter((l) => l.failedM === undefined && g.econ.deskPx?.[l.name]);
+  let w = 0, sp = 0;
+  for (const l of live) {
+    const p = E.PRODUCTS.find((x) => x.lender === l.name && E.lossClassOf(x) === "income" && !x.floating);
+    if (!p) continue;
+    w += Math.max(1, l.book); sp += Math.max(1, l.book) * E.liveSpread(g.econ.deskPx[l.name], p.spread, "income");
+  }
+  const book = (g.lenders ?? []).reduce((a, l) => a + Math.max(0, l.book), 0);
+  const co = (g.lenders ?? []).reduce((a, l) => a + (l.incPrevYr?.chargeOffs ?? 0), 0);
+  return {
+    "credit.idx": +(g.econ.creditIdx ?? NaN).toFixed(4),
+    "bank.seniorSpread": +(w > 0 ? sp / w : NaN).toFixed(3),
+    "bank.chargeOffPct": +(book > 0 ? 100 * co / book : NaN).toFixed(3),
+  };
+}
+
 // ---------------------------------------------------------------- run it
-const MONTHS = 300;          // twenty-five years
+const MONTHS = Number(process.env.MONTHS ?? 300);   // twenty-five years (MONTHS= for a paired run)
 const WINDOW = 120;          // the last ten of them, which is more than a cycle
 
 function measure() {
@@ -319,7 +365,7 @@ function measure() {
       // out, few enough that regenerating every rent roll in the city stays
       // cheap.
       if (m >= MONTHS - WINDOW && (MONTHS - 1 - m) % 12 === 0) {
-        const row = { ...rolls(g, base), ...land(g, base), ...pencils(g, base), ...space(g), ...occIdentity(g, base) };
+        const row = { ...rolls(g, base), ...land(g, base), ...pencils(g, base), ...space(g), ...occIdentity(g, base), ...banks(g) };
         for (const [k, v] of Object.entries(row)) (samples[k] ??= []).push(v);
       }
     }
@@ -340,6 +386,10 @@ function measure() {
       row[`rail.vac.${k}.lo`] = +((railAcc[`rail.vac.${k}.lo`] ?? 0) / n).toFixed(4);
       row[`rail.occ.${k}.cap`] = +((railAcc[`rail.occ.${k}.cap`] ?? 0) / n).toFixed(4);
     }
+    row["rail.credit.lo"] = +((railAcc["rail.credit.lo"] ?? 0) / n).toFixed(4);
+    row["rail.credit.hi"] = +((railAcc["rail.credit.hi"] ?? 0) / n).toFixed(4);
+    const nd = railAcc.__desk || 1;
+    row["rail.bank.floor"] = +((railAcc["rail.bank.floor"] ?? 0) / nd).toFixed(4);
     // DOES THE CITY GROW INTO ITS DEMAND (MDGA F1): floor area against jobs
     // over the whole run, as end/start ratios. A city whose jobs grow 60%
     // while its floor area grows 20% is queueing tenants, not housing them.

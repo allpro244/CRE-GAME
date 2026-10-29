@@ -443,7 +443,7 @@ function failDev(s: GameState, parcels: ParcelTable, d: LandDev) {
   }
   const debt = d.debt ?? 0;
   const loss = Math.max(0, Math.round(debt - worth - Math.max(0, d.cash ?? 0)));
-  if (d.lender && loss > 0) chargeLenderLoss(s, d.lender, loss);
+  if (d.lender && loss > 0) chargeLenderLoss(s, d.lender, loss, { borrower: d.name, id: "ld:" + d.name, cls: "land", how: "land developer failed" });
   d.debt = 0; d.cash = 0; d.loans = {}; d.stressMs = 0;
   s.news.unshift({ q: s.month, kind: "warn", text: `${d.name}, land developer, has failed: ${money(debt)} owed${d.lender ? ` to ${d.lender}` : ""} against ${tracts} tracts and ${lots} unsold lots${loss > 0 ? `; lender loss ${money(loss)}` : ""}. Its land returns to the market.` });
 }

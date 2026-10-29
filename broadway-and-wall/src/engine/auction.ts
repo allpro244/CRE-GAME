@@ -483,9 +483,9 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         else {
           const seniorHole = Math.min(shortfall, seniorBal + (w?.accrued ?? 0));
           const mezzHole = shortfall - seniorHole;
-          if (seniorHole > 0) chargeLenderLoss(s, lot.holder, seniorHole);
+          if (seniorHole > 0) chargeLenderLoss(s, lot.holder, seniorHole, { borrower: "You", id: "player", bbl: lot.bbl, cls: "income", how: "auction" });
           if (mezzHole > 0) {
-            chargeLenderLoss(s, h.mezz?.holder ?? "Cordage Debt Partners", mezzHole);
+            chargeLenderLoss(s, h.mezz?.holder ?? "Cordage Debt Partners", mezzHole, { borrower: "You", id: "player", bbl: lot.bbl, cls: "junior", how: "auction" });
           }
         }
       }

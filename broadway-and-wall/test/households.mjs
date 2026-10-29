@@ -10,10 +10,12 @@
 //     own channel only (every other stream is where it would have been);
 //   - a save (base64 columns, through JSON) loads back to the same register,
 //     and the loaded game and the running one stay identical for a year;
-//   - its sums sit on the engine's aggregates: the region's households, the
-//     island's renter households, the jobless rate, the opening rent burden —
-//     until the firm books open (stage 1b): from then its households are who
-//     came for the work, and its jobless rate is its own flows', held to 3-10%.
+//   - since ONE ECONOMY step 2 it IS the town's people: the engine's
+//     population, unemployment and participation are the register's of the
+//     month before, exactly; it opens with the labour force the opening's
+//     jobs need; its island renters are the flats the street has let; its
+//     jobless rate is its own flows' (guarded to 2.5-15%: a town opens in its
+//     nation's cycle, and 2009-10 put many metros over 10%, BLS LAUS).
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
@@ -53,7 +55,7 @@ console.log("\nHOUSEHOLD REGISTER\n");
 // two runs, same seed
 let a = start(), b = start();
 const hashesA = [], hashesB = [];
-let stats0 = null, sumsOk = true, worst = "", booksFrom = 1, hGap = NaN, uGap = NaN;
+let stats0 = null, sumsOk = true, worst = "", booksFrom = 1, prevLab = null, lf0 = NaN, jobs0 = NaN, uNow = NaN;
 for (let m = 1; m <= MONTHS; m++) {
   const streamsBefore = { ...a.streams };
   a = tick(a); b = tick(b);
@@ -62,29 +64,28 @@ for (let m = 1; m <= MONTHS; m++) {
   if (m === 1) stats0 = st;
   // the register's sums against the engine's aggregates, every month
   const rent = E.islandRenterHouseholds(a, city.parcels);
-  const dH = Math.abs(st.households / st.engineHouseholds - 1);
   const dR = Math.abs(st.islandRenters / Math.max(1, rent) - 1);
-  const dU = Math.abs(st.unemployment - (a.econ.unemployment ?? 0));
-  // Before the firm books open the region's households are weighted to the
-  // engine's; from then (stage 1b) they are who came for the work and stayed
-  // — the gap is a measurement (tools/economy.mjs), and the register's
-  // earners in work are held to the books' heads instead (test/economy.mjs).
+  const lab = E.registerLabour(a);
+  if (m === 1) { lf0 = lab.lf; jobs0 = a.econ.jobs; }
   const books = a.economy?.cur?.m === a.month;
   if (!books) booksFrom = m + 1;
-  // unemployment: the engine's, before the books; after, what the register's own flows leave (separations, the CPS finding rate,
-  // the vacancies) — held to the band ONE_ECONOMY_PLAN.md sets for step 3, 3-10%
-  const uBad = books ? !(st.unemployment >= 0.03 && st.unemployment <= 0.10) : dU > 0.025;
-  if (books) uGap = st.unemployment - (a.econ.unemployment ?? 0);
-  if ((!books && dH > 0.005) || dR > 0.03 || uBad) { sumsOk = false; worst ||= `month ${m}: households ${(100 * dH).toFixed(2)}%, renters ${(100 * dR).toFixed(2)}%, unemployment ${(100 * st.unemployment).toFixed(2)}% (engine ${(100 * (a.econ.unemployment ?? 0)).toFixed(2)}%)`; }
-  if (books) hGap = st.households / st.engineHouseholds - 1;
+  // the engine read LAST month's register: its people, its jobless rate, its participation
+  const readOk = !prevLab || (a.econ.population === Math.round(prevLab.persons)
+    && Math.abs(a.econ.unemployment - (prevLab.lf > 0 ? prevLab.unemployed / prevLab.lf : 0)) < 1e-9
+    && Math.abs(a.econ.participation - prevLab.lf / prevLab.persons) < 1e-9);
+  uNow = st.unemployment;
+  const uBad = !(st.unemployment >= 0.025 && st.unemployment <= 0.15);
+  if (!readOk || dR > 0.03 || uBad) { sumsOk = false; worst ||= `month ${m}: population ${a.econ.population} (register a month ago ${prevLab ? Math.round(prevLab.persons) : "-"}), renters ${(100 * dR).toFixed(2)}% off the flats, unemployment ${(100 * st.unemployment).toFixed(2)}%`; }
+  prevLab = lab;
   void streamsBefore;
 }
 check(hashesA.every((h, i) => h === hashesB[i]), `deterministic: ${MONTHS} months, the same register from the same seed (${hashesA.at(-1)})`);
 check(new Set(hashesA).size === hashesA.length, "and it moves: no two months' registers alike");
-check(sumsOk, `every month the sums sit on the engine's: households within 0.5% until the firm books open (month ${booksFrom}; then they are who came for the work: ${(100 * hGap).toFixed(1)}% on the engine's now), island renter households within 3%, unemployment within 2.5pp of the engine's until then and 3-10% after (now ${(100 * uGap).toFixed(1)}pp off the engine's)${worst ? " — " + worst : ""}`);
+check(sumsOk, `every month the engine's population, unemployment and participation are the register's of the month before, its island renter households are the street's let flats (within 3%), and its jobless rate is in 2.5-15% (now ${(100 * uNow).toFixed(1)}%; the books open month ${booksFrom})${worst ? " — " + worst : ""}`);
+check(Math.abs(lf0 * (1 - stats0.unemployment) / jobs0 - 1) < 0.03, `it opens with the labour force the opening's jobs need: ${Math.round(lf0)} in it at ${(100 * stats0.unemployment).toFixed(1)}% jobless for ${jobs0} jobs`);
 check(stats0.agents > 3000 && stats0.wIsland === 1, `island renters one for one at the opening: ${stats0.agents} agents (${Math.round(stats0.islandRenters)} island renters + the region's ${stats0.agents - Math.round(stats0.islandRenters)})`);
 check(stats0.medianBurden > 0.25 && stats0.medianBurden < 0.36, `the opening's median rent burden ${(100 * stats0.medianBurden).toFixed(1)}% (the engine's flats are built on 30%)`);
-check(Math.abs(stats0.persons / a.econ.population - 1) < 0.08, `persons ${Math.round(stats0.persons)} against a population of ${Math.round(a.econ.population)} (within 8%)`);
+check(Math.round(E.registerLabour(a).persons) > 0 && a.econ.population > 0, `the town's population is the register's people: ${Math.round(a.econ.population)}`);
 
 // it reads the world and never writes it: a month of the register on a copy of
 // the state changes nothing but the register and its own stream

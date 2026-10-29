@@ -69,7 +69,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, Sector } from "./types";
 import { raiseAlert, START_YEAR } from "./types";
-import { rng, pushNewsPublic, islandResidents, cityLogCost, WAGE_SHARE, INDUSTRY_LABEL } from "./market";
+import { rng, pushNewsPublic, islandResidents, locationCost, WAGE_SHARE, INDUSTRY_LABEL } from "./market";
 import { resolveRec } from "./value";
 import { chargeLenderLoss } from "./lenders";
 import { why, whyNation, whyOnce } from "./why";
@@ -614,7 +614,7 @@ function startPanic(s: GameState) {
     // Between half its capital and more than all of it: some of the time it
     // survives on its knees, some of the time the examiners come on Friday.
     loss = hit.capital * (0.5 + 0.8 * rng(s, "shock"));
-    chargeLenderLoss(s, hit.name, loss);
+    chargeLenderLoss(s, hit.name, loss, { borrower: "a book outside this city", cls: "income", how: "panic" });
     name = hit.name;
   }
   // How long the run lasts at full force: the acute phase of 1907 was about
@@ -707,7 +707,9 @@ const PROP_TAX_OF_RENT = 0.16;
  * the payroll tax on the wage bill, the property tax on the rent.
  */
 export function anchorCost(e: Econ): { total: number; wage: number; rent: number; tax: number; agglom: number } {
-  const c = cityLogCost(e);
+  const loc = locationCost(e);
+  const wage = WAGE_SHARE * Math.log((e.wageIdx ?? 1) / Math.max(1e-6, e.natWageIdx ?? e.wageIdx ?? 1));
+  const c = { total: loc, wage, rent: loc - wage, agglom: 0 };
   const g = e.gov;
   let tax = 0;
   if (g) {

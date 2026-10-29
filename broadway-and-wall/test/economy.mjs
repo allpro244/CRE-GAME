@@ -7,8 +7,10 @@
 //   - the same seed gives the same books, month for month;
 //   - its stream is mulberry32, step for step market.ts's, and it draws on
 //     its own channel only;
-//   - it writes nothing in the world it reads: a world whose books are torn
-//     up every month plays on identically to one that keeps them;
+//   - the world READS it (step 2): a world whose books are torn up every
+//     month parts from one that keeps them — but a month of the books on a
+//     copy writes nothing in the world (the engine reads `economyToEngine`'s
+//     record, written after the books close, the month after);
 //   - the payroll is one number (1b): the firms' wages are the household
 //     register's earners' pay every month, and the register's earners in each
 //     industry are its heads to within half a regional household's weight;
@@ -72,7 +74,7 @@ let sumOk = true, mktOk = true, eqOk = true, bookOk = true, worldOk = true, wors
 for (let m = 1; m <= MONTHS; m++) {
   a = tick(a); b = tick(b);
   z = tick(z);
-  if (worldHash(a) !== worldHash(z)) { worldOk = false; worst ||= `world parted at month ${m}`; }
+  if (worldHash(a) !== worldHash(z)) worldOk = false;
   delete z.economy; if (z.streams) delete z.streams.economy;
   if (!a.economy?.last) continue;
   months++;
@@ -96,22 +98,28 @@ for (let m = 1; m <= MONTHS; m++) {
   // one payroll (1b): the firms' cash wages are the register's wages
   if (!(Math.abs(l.hhWagesFirms - l.hhWagesRegister) <= 1e-9 * l.hhWagesRegister)) { payOk = false; worst ||= `month ${m}: firms pay ${l.hhWagesFirms}, the register is paid ${l.hhWagesRegister}`; }
   // ...and the register's earners are each industry's heads, to within half a regional household
-  const wR = a.households.wRegion;
+  // (each household weighs what it stands for; since step 2 the region's
+  // households move between renting and owning as shares of their weight, so
+  // weights differ — an industry is filled to within half its heaviest earner's)
+  const R = a.households, A = R.a, wMax = new Array(l.heads.length).fill(0);
+  for (let k = 0; k < R.n; k++) for (const [emp, ind] of [[A.emp1[k], A.ind1[k]], [A.emp2[k], A.ind2[k]]]) {
+    if ((emp >= 0 || emp < -16) && ind < l.heads.length) wMax[ind] = Math.max(wMax[ind], A.wt[k]);
+  }
   for (let i = 0; i < l.heads.length; i++) {
-    if (!(Math.abs(l.regEarners[i] - l.heads[i]) <= wR / 2 + 1e-6)) { fillOk = false; worst ||= `month ${m}: ${E.INDUSTRY_IDS[i]} has ${l.regEarners[i].toFixed(1)} earners for ${l.heads[i].toFixed(1)} heads (weight ${wR.toFixed(1)})`; break; }
+    if (!(Math.abs(l.regEarners[i] - l.heads[i]) <= Math.max(wMax[i], R.wRegion) / 2 + 1e-6)) { fillOk = false; worst ||= `month ${m}: ${E.INDUSTRY_IDS[i]} has ${l.regEarners[i].toFixed(1)} earners for ${l.heads[i].toFixed(1)} heads (heaviest earner ${wMax[i].toFixed(1)})`; break; }
   }
   if (!Number.isFinite(firstHeads)) { firstHeads = l.heads.reduce((s, x) => s + x, 0); firstJobs = a.econ.jobs; }
 }
 check(months >= MONTHS - 2, `the books open with the register's first flows and run ${months} of ${MONTHS} months`);
 check(hA.every((h, i) => h === hB[i]), `deterministic: the same books from the same seed every month (${hA.at(-1)})`);
 check(new Set(hA).size === hA.length, "and they move: no two months' books alike");
-check(worldOk, "it writes nothing in the world: torn up every month, the world plays on identically");
+check(!worldOk, "the world reads the books (step 2): torn up every month, the world parts from the one that keeps them");
 check(sumOk, "the ledger sums to zero every month (to 1e-9 of its gross)");
 check(mktOk && flowsOk, "the market clears every month: what buyers paid in, sellers were paid");
 check(eqOk, "every firm's equity is its cash less its debt, and no firm holds negative cash");
 check(bookOk, "the loan book is finite and non-negative");
 check(payOk, "one payroll: what the firms pay in wages is what the register's earners are paid, every month (to 1e-9)");
-check(fillOk, "the register's earners in each industry are its heads, to within half a regional household's weight, every month");
+check(fillOk, "the register's earners in each industry are its heads, to within half its heaviest household's weight, every month");
 {
   const ec = a.economy;
   // The opening is sized the engine's way, construction apart (it opens at
@@ -124,6 +132,22 @@ check(fillOk, "the register's earners in each industry are its heads, to within 
   let have = 0;
   for (let n = 0; n < ec.L.slot.n; n++) if (named.has(ec.f.id[n])) have++;
   check(have === named.size, `every named street firm has books: ${have} of ${named.size}`);
+  // ONE NAME, ONE FIRM; A FIRM IS WHAT ITS NAME SAYS (the firm screens, #521:
+  // two "Whitlow Drafting"s; "Ashe & Porter LLP" a company's head office).
+  {
+    const byName = new Map(), hqTrades = new Set(), iHq = E.INDUSTRY_IDS.indexOf("hq");
+    const indOf = new Map();
+    for (let n = 0; n < ec.L.slot.n; n++) if (ec.f.id[n] >= 0) indOf.set(ec.f.id[n], ec.f.ind[n]);
+    for (const roll of Object.values(a.econ.streetRolls)) for (const t of roll.t) {
+      if (t.fid === undefined) continue;
+      (byName.get(t.name) ?? byName.set(t.name, new Set()).get(t.name)).add(t.fid);
+      if (indOf.get(t.fid) === iHq) hqTrades.add(t.sector);
+    }
+    const shared = [...byName].filter(([, f]) => f.size > 1);
+    check(shared.length === 0, `no two firms in town share a name: ${byName.size} names${shared.length ? `, shared: ${shared.slice(0, 3).map(([k, f]) => `${k} x${f.size}`).join(", ")}` : ""}`);
+    const wrong = [...hqTrades].filter((k) => !["food", "apparel"].includes(k));
+    check(wrong.length === 0, `a head office is a goods firm's desk, never a law, design or finance firm's${wrong.length ? `: ${wrong.join(", ")}` : ""}`);
+  }
   const fb = E.firmBooks(a, [...named][0]);
   const byBuyer = Object.values(fb.revenueBy).reduce((s, v) => s + v, 0);
   check(fb && Math.abs(byBuyer - fb.revenue) < 1e-6 * fb.revenue && Math.abs(fb.equity - (fb.cash - fb.debt)) < 1e-6 * (1 + fb.cash + fb.debt),
@@ -162,6 +186,149 @@ check(fillOk, "the register's earners in each industry are its heads, to within 
   check(okJ, "and books that went through JSON play on identically too");
   const kb = v8.serialize(a.economy).length / 1024;
   check(kb < 1200, `the books save in ${kb.toFixed(0)} KB (${a.economy.L.slot.n} firms)`);
+}
+
+// ---------------------------------------------------------------- the wires (step 2)
+// Since step 2 the town's jobs and its demand for space are the books', so a
+// shock to what the town sells must travel the way a real one does. Each wire
+// is a paired fork: one world, cloned, the shock in one clone only, both run
+// on — every difference between them is the shock's. Vacancy is read as a
+// twelve-month mean of the gap to the twin: two worlds that differ in one
+// thing part ways in every random draw after it, and a single month's gap in
+// one class carries a point or two of that.
+const CLS = ["industrial", "office", "retail", "multifamily"];
+const twin = (ctl, trt, months) => {
+  const gap = [];
+  for (let m = 0; m < months; m++) {
+    ctl = tick(ctl); trt = tick(trt);
+    gap.push(CLS.map((k) => trt.econ.cityVac[k] - ctl.econ.cityVac[k]));
+  }
+  // the twelve-month mean gap, month by month
+  const ma = gap.map((_, m) => CLS.map((_k, c) => { const w = gap.slice(Math.max(0, m - 11), m + 1); return w.reduce((s, x) => s + x[c], 0) / w.length; }));
+  return { ctl, trt, ma: Object.fromEntries(CLS.map((k, c) => [k, ma.map((r) => r[c])])) };
+};
+const firstOver = (series, level) => { const i = series.findIndex((v) => v >= level); return i < 0 ? Infinity : i + 1; };
+const pp = (x) => `${x >= 0 ? "+" : ""}${(100 * x).toFixed(1)}pp`;
+let base24 = start();
+for (let m = 0; m < 24; m++) base24 = tick(base24);
+
+// WIRE 1: AN EXPORT SLUMP. (a) A plant the nation buys from — machinery, its
+// floor a quarter of the town's industrial stock at the industry's 900 sf a
+// head — comes to town and the town settles round it; then its market
+// collapses to a tenth. Its floor empties most: the town's industrial
+// vacancy stands a point over its twin's, and three years on its gap is the
+// largest of the classes. (Which class FIRST crosses a point is not checked:
+// the plant's ~240 jobs take ~600 with them, its workers' shops lose trade
+// and fail in lumps, and a 12-month mean of the shops' gap crossed a point
+// at month 16 against the sheds' 21 — measured 2026-10-29, seed 550991, with
+// the sheds' gap 3.3pp at three years against the shops' 1.5 and the
+// offices' 1.1. Before that day's fix to the firms' fortunes the shops
+// crossed later; the order of two noisy crossings is not the wire.) (b) The town's
+// whole export base loses 30% of its sales out of town (a Pittsburgh): every
+// class ends emptier than its twin, the exporters' own floor first — on this
+// map the base is offices (technology, insurance, finance, headquarters), so
+// offices lead — then the shops the payrolls spent in and the flats the
+// households rented (the export base's suppliers and its households).
+{
+  const iM = E.INDUSTRY_IDS.indexOf("machinery");
+  let base = structuredClone(base24);
+  base.economy.XJ0[iM] += 0.25 * base.econ.stock.industrial / E.INDUSTRIES.machinery.sfPerWorker;
+  for (let m = 0; m < 36; m++) base = tick(base);
+  const trt = structuredClone(base);
+  trt.economy.lnShare[iM] -= Math.log(10);
+  const { ma } = twin(structuredClone(base), trt, 36);
+  const f = Object.fromEntries(CLS.map((k) => [k, firstOver(ma[k], 0.01)]));
+  console.log(`    a plant's market collapses: the twelve-month vacancy gap first stands a point over the twin at month ${CLS.map((k) => `${k} ${f[k]}`).join(", ")}; industrial ${pp(Math.max(...ma.industrial))} at most`);
+  const end = Object.fromEntries(CLS.map((k) => [k, ma[k].at(-1)]));
+  console.log(`    ...and three years on: ${CLS.map((k) => `${k} ${pp(end[k])}`).join(", ")}`);
+  check(Number.isFinite(f.industrial) && CLS.every((k) => k === "industrial" || end[k] < end.industrial), "a plant's slump empties its own floor most: industrial vacancy rises a point over its twin, and ends furthest over it");
+}
+{
+  const trt = structuredClone(base24);
+  for (let i = 0; i < trt.economy.lnShare.length; i++) trt.economy.lnShare[i] += Math.log(0.7);
+  const r = twin(structuredClone(base24), trt, 60);
+  const ma = r.ma, last = Object.fromEntries(CLS.map((k) => [k, ma[k].at(-1)]));
+  const third = Object.fromEntries(CLS.map((k) => { const pk = Math.max(...ma[k]); return [k, pk > 0 ? firstOver(ma[k], pk / 3) : Infinity]; }));
+  const jobs = r.trt.econ.jobs / r.ctl.econ.jobs - 1;
+  console.log(`    the export base loses 30%: jobs ${(100 * jobs).toFixed(1)}% on the twin after five years; vacancy gap then ${CLS.map((k) => `${k} ${pp(last[k])}`).join(", ")}; a third of each one's peak reached at month ${CLS.map((k) => `${k} ${third[k]}`).join(", ")}`);
+  check(jobs < -0.05 && CLS.every((k) => last[k] > 0), "an export slump costs the town jobs and leaves every class emptier than its twin");
+  check(third.office <= Math.min(third.retail, third.multifamily), "...the exporters' floor first (offices, on this map), then the shops and the flats");
+}
+
+// WIRE 2: A FACTORY CLOSES. On a map with a real plant (city seed 3, its
+// biggest works at month 36), its tenants shut and the floor goes dark; its
+// workers no longer pass the shops within a walk of it (demand.ts
+// `blockFoot`, streetRolls.ts CATCHMENT). What is checked is the wire itself
+// on a FIXED COHORT: the shops trading round the plant at the closure, each
+// against itself in the twin, lose staff (their trade) against the same
+// comparison for the town's other shops. The neighbourhood's retail vacancy
+// against its twin is printed but not checked, because one map cannot see
+// it: the neighbourhood is 20-40 shops on ~100-150k sf, so one 15-20k sf shop
+// failing or letting moves it 10pp, and the two twins part ways in every
+// draw after the closure. Measured (2026-10-29) on game seeds 550991, 12007:
+// cohort staff -2.3%, -2.0% against the far shops' +0.6%, +0.1% (the works
+// is ~16% of its own block's walkers, less of its neighbours'); vacancy
+// near-minus-twin on seeds 550991, 12007, 73303 -0.7, -1.7, -2.2pp, far +0.9,
+// -0.5, -0.3pp — noise of a few points round an effect of a fraction of one.
+// (A first cut checked the vacancy and passed at +2.0pp on one seed: luck.)
+{
+  const city3 = makeCity("somewhere", 3);
+  E.normalizeParcels(city3.parcels);
+  const b3 = Object.keys(city3.parcels);
+  const tick3 = (g) => { g = E.advanceQuarter(g, city3.parcels, b3, city3.adjacency); return g.gameOver ? { ...g, gameOver: null, cash: 6e6 } : g; };
+  let base = E.firstListings(E.newGame(SEED, city3.parcels), city3.parcels, b3);
+  for (let m = 0; m < 36; m++) base = tick3(base);
+  const held = {};
+  for (const [bbl, roll] of Object.entries(base.econ.streetRolls)) for (const t of roll.t) if (t.use === "industrial") held[bbl] = (held[bbl] ?? 0) + t.sf;
+  const [fac, facSf] = Object.entries(held).sort((x, y) => y[1] - x[1])[0];
+  const model = E.demandModel(city3.parcels);
+  const blk = model.ofBbl.get(fac);
+  const near = new Set(model.blocks.get(blk).neighbours.filter((n) => n.w >= 0.15).map((n) => n.id));
+  const shopVac = (g, inside) => {
+    let cap = 0, let_ = 0;
+    for (const [bbl, roll] of Object.entries(g.econ.streetRolls)) {
+      if (near.has(model.ofBbl.get(bbl)) !== inside) continue;
+      const rec = E.resolveRec(city3.parcels, g, bbl);
+      const c = rec ? E.useRentableSf(rec, "retail") : 0;
+      if (!(c > 0)) continue;
+      cap += c; let_ += roll.t.reduce((s, t) => s + ((t.use ?? "office") === "retail" ? t.sf : 0), 0);
+    }
+    return cap > 0 ? 1 - Math.min(1, let_ / cap) : NaN;
+  };
+  let ctl = structuredClone(base), trt = structuredClone(base);
+  const roll = trt.econ.streetRolls[fac];
+  const shut = roll.t.filter((t) => t.use === "industrial");
+  roll.t = roll.t.filter((t) => t.use !== "industrial");
+  (roll.ready ??= []).push(...shut.map((t) => ({ use: "industrial", sf: t.sf, readyM: trt.month + 1 })));
+  const cohort = (g, inside) => {
+    const o = new Map();
+    for (const [bbl, roll] of Object.entries(g.econ.streetRolls)) {
+      if (near.has(model.ofBbl.get(bbl)) !== inside) continue;
+      for (const t of roll.t) if ((t.use ?? "office") === "retail" && t.staff > 0) o.set(t.fid, t.staff);
+    }
+    return o;
+  };
+  const cN = cohort(ctl, true), cF = cohort(ctl, false);
+  const logGap = (inside, C) => {
+    const A = cohort(trt, inside), B = cohort(ctl, inside);
+    let sum = 0, n = 0;
+    for (const f of C.keys()) { const a = A.get(f), b = B.get(f); if (a > 0 && b > 0) { sum += Math.log(a / b); n++; } }
+    return n ? sum / n : NaN;
+  };
+  const nearGap = [], farGap = [], nearStaff = [], farStaff = [];
+  let foot = 1;
+  for (let m = 0; m < 18; m++) {
+    ctl = tick3(ctl); trt = tick3(trt);
+    nearGap.push(shopVac(trt, true) - shopVac(ctl, true));
+    farGap.push(shopVac(trt, false) - shopVac(ctl, false));
+    nearStaff.push(logGap(true, cN)); farStaff.push(logGap(false, cF));
+    foot = Math.min(foot, trt.blockFoot[blk] / ctl.blockFoot[blk]);
+  }
+  const mn = (a) => a.reduce((s, x) => s + x, 0) / a.length;
+  const sN = Math.expm1(mn(nearStaff)), sF = Math.expm1(mn(farStaff));
+  console.log(`    a ${Math.round(facSf / 1000)}k sf works closes: its block's catchment falls to ${(100 * foot).toFixed(0)}% of the twin's; the ${cN.size} shops trading within a walk ${(100 * sN).toFixed(1)}% staff on their twins over eighteen months, the town's other ${cF.size} ${(100 * sF).toFixed(1)}%`);
+  console.log(`    (retail vacancy within a walk ${pp(mn(nearGap))} on the twin, the rest of the town ${pp(mn(farGap))}: not checked, see above)`);
+  check(foot < 0.95 && sN < -0.005 && sN < sF - 0.01, "a factory closing takes trade from the shops around it, beyond the rest of the town's");
 }
 
 if (bad) console.log(`\n  ${worst}`);

@@ -3,7 +3,7 @@ import { startTransition } from "react";
 import { loadGfx, saveGfx, type GfxOptions } from "./graphics";
 import { recapBuyout } from "@/engine/recap";
 import { launchRaise, raiseAndBuild, cancelRaise, closeRaiseNow, type RaiseJob } from "@/engine/raise";
-import { create } from "zustand";
+import { create, type StateCreator } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment, DevDraft, SaleInstructions, BuildingDesign } from "@/engine/types";
 import { attentionItems, portfolioMonthlyCF, hangUpOnCall, monthCashBit, MILESTONES, restoreCuts } from "@/engine/sim";
@@ -240,6 +240,11 @@ interface AppState {
   advanceUntil: () => void;
   /** True while Year / Skip is ticking months — advance buttons disable. */
   advancing: boolean;
+  /**
+   * True while any month (one, a year, a skip) is out in the sim worker.
+   * Until it lands, nothing may change the campaign: see holdWhileTicking.
+   */
+  ticking: boolean;
   counterOff: (bbl: string, px?: number) => void;
   buy: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
   buyOff: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
@@ -263,6 +268,12 @@ interface AppState {
   /** The hover card on the map (a building's numbers under the pointer). A browser preference, on by default. */
   hoverCard: boolean;
   setHoverCard: (v: boolean) => void;
+  /**
+   * The region map's edge (Settings -> Display). Off (the default) the map is the window it always was, the
+   * sea at its edge. On, the country round it is drawn: farms, quarries, the airport, the yards. Looks only.
+   */
+  regionCountry: boolean;
+  setRegionCountry: (v: boolean) => void;
   /** The city's look (Settings -> Display): a toy diorama or the classic grade. Looks only. */
   diorama: boolean;
   setDiorama: (v: boolean) => void;
@@ -337,6 +348,12 @@ interface AppState {
   /** The rival whose own page the Players view is showing (null: the list). */
   firmFocus: string | null;
   openFirm: (id: string | null) => void;
+  /** The business (a tenant's firm id, economy.ts) whose books sheet is open over the page; null: closed. */
+  bizFocus: number | null;
+  openBiz: (fid: number | null) => void;
+  /** The industry the Markets → Industries view is showing its supply chain for. */
+  industryFocus: string | null;
+  openIndustry: (id: string | null) => void;
   /**
    * MARK THE OLDEST INTERRUPTION READ.
    *
@@ -679,9 +696,10 @@ let monthAgain: { quiet?: boolean } | null = null;
 
 /**
  * ONE MONTH: the tick in the sim worker, then the cards and the toast here.
- * If the player acted while the month was out (a click lands in the 50-200ms
- * the tick takes), the month is closed again from what they did, never from
- * the state they had already moved past.
+ * While the month is out the store holds every change to the campaign
+ * (holdWhileTicking), so the state it lands on is the state it was sent. The
+ * loop below is the net under that: if the desk did move anyway, the month is
+ * closed again from what is there, never from a state already moved past.
  */
 async function advanceOne(opts?: { quiet?: boolean }): Promise<void> {
   const st = useStore.getState();
@@ -690,7 +708,12 @@ async function advanceOne(opts?: { quiet?: boolean }): Promise<void> {
   if (!game || !parcels || game.gameOver) return;
   let ticked: GameState;
   for (;;) {
-    ticked = await monthOffThread(game, parcels, bbls, adjacency);
+    tickStart();
+    try {
+      ticked = await monthOffThread(game, parcels, bbls, adjacency);
+    } finally {
+      tickEnd();
+    }
     const now = useStore.getState().game;
     if (now === game) break;
     // the desk moved underneath the tick: a new campaign, a load, or a decision
@@ -883,7 +906,85 @@ if (typeof window !== "undefined") {
   });
 }
 
-export const useStore = create<AppState>((set, get) => ({
+// ---- THE DESK WAITS FOR THE MONTH ------------------------------------------
+//
+// A month closes in the sim worker (state/simClient.ts) and takes about half a
+// second on a grown City, a year five or six. The map keeps drawing and the
+// player can look at anything meanwhile. What they cannot do is CHANGE the
+// campaign: the worker is closing the month from the state it was sent, and a
+// decision taken on the page during that time is a decision on a state that
+// is about to be replaced. (The old answer re-ran the month from the decision,
+// or for a year threw the whole year away.)
+//
+// So the store refuses any write of `game` while a month is out, except the
+// month's own landing, which happens after the count drops. The rule is
+// applied at the store, not button by button, so a new action is covered
+// without anyone remembering to. An action that tries is stopped where it
+// writes — before its toast and its save — and the player is told why; if
+// Play is running, the clock pauses so the next click lands.
+let ticks = 0;
+let actionDepth = 0;
+const HELD = { held: true };
+const HOLD_MSG = "The month is still closing. Try again when it lands.";
+/** What a held action returns, for the few actions that return something. */
+const HELD_RETURN: Partial<Record<keyof AppState, unknown>> = { respondLoi: { ok: false, msg: HOLD_MSG } };
+
+/** True while a month, a year or a skip is out in the sim worker. */
+export const simBusy = () => ticks > 0;
+function tickStart() {
+  if (++ticks === 1) useStore.setState({ ticking: true });
+}
+function tickEnd() {
+  ticks = Math.max(0, ticks - 1);
+  if (ticks === 0) useStore.setState({ ticking: false });
+}
+
+function holdWhileTicking(config: StateCreator<AppState>): StateCreator<AppState> {
+  return (set, get, api) => {
+    const raw = set as (p: unknown, replace?: boolean) => void;
+    const notice = () => {
+      const playing = !!get().autoplay;
+      raw({
+        ...(playing ? { autoplay: 0 } : {}),
+        toast: { text: playing ? `Clock paused. ${HOLD_MSG}` : HOLD_MSG, kind: "err", at: Date.now() },
+      });
+    };
+    const guarded = ((partial: unknown, replace?: boolean) => {
+      const next = typeof partial === "function" ? (partial as (s: AppState) => Partial<AppState>)(get()) : partial as Partial<AppState>;
+      if (ticks > 0 && next && typeof next === "object" && "game" in next && next.game !== get().game) {
+        // inside an action: stop it here, before whatever it does next
+        if (actionDepth > 0) throw HELD;
+        notice();
+        return;
+      }
+      raw(next, replace);
+    }) as typeof set;
+    api.setState = guarded;
+    const state = config(guarded, get, api);
+    const held = (k: keyof AppState) => { notice(); return HELD_RETURN[k]; };
+    for (const k of Object.keys(state) as (keyof AppState)[]) {
+      const fn = state[k];
+      if (typeof fn !== "function") continue;
+      (state as unknown as Record<string, unknown>)[k] = (...args: unknown[]) => {
+        let r: unknown;
+        actionDepth++;
+        try {
+          r = (fn as (...a: unknown[]) => unknown)(...args);
+        } catch (e) {
+          // only the outermost action answers; one called from another stops it too
+          if (e !== HELD || actionDepth > 1) throw e;
+          r = held(k);
+        } finally {
+          actionDepth--;
+        }
+        return r instanceof Promise ? r.catch((e: unknown) => { if (e !== HELD) throw e; return held(k); }) : r;
+      };
+    }
+    return state;
+  };
+}
+
+export const useStore = create<AppState>(holdWhileTicking((set, get) => ({
   parcels: null,
   bbls: [],
   adjacency: null,
@@ -904,6 +1005,7 @@ export const useStore = create<AppState>((set, get) => ({
   docketSnooze: {},
   cardSeen: [],
   advancing: false,
+  ticking: false,
   prevForDigest: null,
   deliveryCeremony: null,
   auctionOpen: false,
@@ -911,6 +1013,7 @@ export const useStore = create<AppState>((set, get) => ({
   // popups2: a fresh key, so a pop-up switch turned off in an older build starts on again (owner: on by default)
   popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups2") === "off",
   hoverCard: (() => { try { return localStorage.getItem("bw:hovercard") !== "off"; } catch { return true; } })(),
+  regionCountry: (() => { try { return localStorage.getItem("bw:region-country") === "on"; } catch { return false; } })(),
   diorama: (() => { try { return localStorage.getItem("bw:look") !== "classic"; } catch { return true; } })(),
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   mutedAlerts: (() => { try { const v = JSON.parse(localStorage.getItem("bw:alerts-muted") ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string" && x !== "swan" && x !== "fed") : []; } catch { return []; } })(),
@@ -1134,11 +1237,19 @@ export const useStore = create<AppState>((set, get) => ({
   // to freeze the UI for the whole run once the street's book got large).
   advanceYear: () => {
     void (async () => {
+      // a single month already out lands first; the span starts from it
+      if (monthInFlight && !get().advancing) await monthInFlight;
       const { game, parcels, bbls, adjacency, advancing } = get();
       if (!game || !parcels || game.gameOver || advancing) return;
       set({ advancing: true });
+      tickStart();
       try {
-        const r = await spanOffThread(game, parcels, bbls, adjacency, 12, get().cardSeen);
+        let r: Awaited<ReturnType<typeof spanOffThread>>;
+        try {
+          r = await spanOffThread(game, parcels, bbls, adjacency, 12, get().cardSeen);
+        } finally {
+          tickEnd();
+        }
         // The async tick yields between months. If the player acted while it
         // was yielding, the store now holds a different state descended from
         // the same starting snapshot. Never overwrite that real action with
@@ -1162,11 +1273,19 @@ export const useStore = create<AppState>((set, get) => ({
   // Skip ahead until the game needs a decision (up to 3 years).
   advanceUntil: () => {
     void (async () => {
+      // a single month already out lands first; the span starts from it
+      if (monthInFlight && !get().advancing) await monthInFlight;
       const { game, parcels, bbls, adjacency, advancing } = get();
       if (!game || !parcels || game.gameOver || advancing) return;
       set({ advancing: true });
+      tickStart();
       try {
-        const r = await spanOffThread(game, parcels, bbls, adjacency, 36, get().cardSeen);
+        let r: Awaited<ReturnType<typeof spanOffThread>>;
+        try {
+          r = await spanOffThread(game, parcels, bbls, adjacency, 36, get().cardSeen);
+        } finally {
+          tickEnd();
+        }
         if (get().game !== game) {
           toast("Skip stopped because you made another decision.");
           return;
@@ -1286,6 +1405,10 @@ export const useStore = create<AppState>((set, get) => ({
     try { localStorage.setItem("bw:hovercard", v ? "on" : "off"); } catch { /* private mode */ }
     set({ hoverCard: v });
   },
+  setRegionCountry: (v) => {
+    try { localStorage.setItem("bw:region-country", v ? "on" : "off"); } catch { /* private mode */ }
+    set({ regionCountry: v });
+  },
   setDiorama: (v) => {
     try { localStorage.setItem("bw:look", v ? "diorama" : "classic"); } catch { /* private mode */ }
     set({ diorama: v });
@@ -1338,6 +1461,14 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setMapFilter: (f) => set({ mapFilter: f }),
+
+  bizFocus: null,
+  openBiz: (fid) => set({ bizFocus: fid }),
+  industryFocus: null,
+  openIndustry: (id) => {
+    set({ industryFocus: id, bizFocus: null });
+    if (id) { openViewOn("economy", "industries"); get().setPage("economy"); }
+  },
 
   firmFocus: null,
   openFirm: (id) => {
@@ -2554,6 +2685,9 @@ export const useStore = create<AppState>((set, get) => ({
   saveTo: async (slot) => {
     const { game } = get();
     if (!game) return;
+    // a save taken while the month is out would be the month before; and its
+    // stamp is a write the hold would refuse after the file was already written
+    if (simBusy()) { toast(HOLD_MSG, "err"); return; }
     // Stamp the island so Continue / a later load can rebuild the right coast.
     const stamped: GameState = {
       ...game,
@@ -2573,6 +2707,7 @@ export const useStore = create<AppState>((set, get) => ({
       || Object.values(g.plats ?? {}).some((p) => p.done) || (g.splits ?? []).some((sp) => sp.done)
       || Object.keys(g.growth?.unpacked ?? {}).length > 0);
     const { parcels } = get();
+    if (simBusy()) { toast(HOLD_MSG, "err"); return; }
     const raw = await loadGame(slot);
     if (!raw || !parcels) { toast("That save wouldn't open.", "err"); return; }
     const prepared = prepareSaveForResume(raw);
@@ -2823,7 +2958,7 @@ export const useStore = create<AppState>((set, get) => ({
       get().setLoadError(`The city would not build (${(e as Error).message}). This is a bug — please report it.`);
     }
   },
-}));
+})));
 
 // handle for automated playtests and screenshots, same as window.__map
 (window as unknown as { __store?: typeof useStore }).__store = useStore;

@@ -20,6 +20,7 @@ import { usd } from "@/ui/format";
 import { DataTable, Stat, StatStrip, type Col } from "./DataTable";
 import { Figure, fmtFig } from "./Figure";
 import { LeasingPlan } from "./FileTabs";
+import { BizLink } from "@/ui/BizSheet";
 
 const sel = (bbl: string) => useStore.getState().select(bbl);
 
@@ -104,7 +105,7 @@ export function LeasingOffers() {
   );
 }
 
-interface RollRow { key: string; bbl: string; addr: string; name: string; sf: number; rent: number; mkt: number; endM: number; idx: number }
+interface RollRow { key: string; bbl: string; addr: string; name: string; fid?: number; sf: number; rent: number; mkt: number; endM: number; idx: number }
 
 export function LeasingExpiring() {
   const game = useStore((s) => s.game)!;
@@ -117,13 +118,13 @@ export function LeasingExpiring() {
       const mkt = marketRentPsfYr(rec, game.econ, h.condition ?? initialCondition(rec));
       h.tenants.forEach((t, i) => {
         if (t.endM - game.month > 36) return;
-        out.push({ key: `${h.bbl}:${i}`, bbl: h.bbl, addr: rec.address || h.bbl, name: t.name, sf: t.sf, rent: t.rentPsf, mkt, endM: t.endM, idx: i });
+        out.push({ key: `${h.bbl}:${i}`, bbl: h.bbl, addr: rec.address || h.bbl, name: t.name, fid: t.fid, sf: t.sf, rent: t.rentPsf, mkt, endM: t.endM, idx: i });
       });
     }
     return out;
   }, [game, parcels]);
   const cols: Col<RollRow>[] = [
-    { id: "name", label: "Tenant", get: (r) => r.name, cell: (r) => <span className="nx-strong-cell">{r.name}</span> },
+    { id: "name", label: "Tenant", get: (r) => r.name, cell: (r) => <span className="nx-strong-cell"><BizLink t={r} /></span> },
     { id: "addr", label: "Building", get: (r) => r.addr },
     { id: "sf", label: "sf", get: (r) => r.sf, fmt: "n" },
     { id: "rent", label: "$/sf", get: (r) => r.rent, fmt: "psf" },

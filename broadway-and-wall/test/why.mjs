@@ -66,15 +66,18 @@ let found = null;
 for (let m = 0; m < 96 && !found; m++) {
   g = E.advanceMonth(g, parcels, bbls, adjacency);
   if (g.gameOver) break;
-  found = (g.news ?? []).find((n) => n.why && E.whyChain(g, n.why).length >= 3);
+  // a departure: its chain starts at the tenant (the town's own month and a trade's turn carry chains too)
+  found = (g.news ?? []).find((n) => n.why && E.whyChain(g, n.why).length >= 3 && E.whyGet(g, n.why)?.k.startsWith("building."));
 }
 check(!!found, found ? `a departure carries a chain: "${found.text.slice(0, 70)}..."` : "no departure with a chain in 8 years");
 if (found) {
-  const ch = E.whyChain(g, found.why);
+  const ch = E.whyChain(g, found.why, 8);
   for (const e of ch) console.log(`        ${e.k.padEnd(18)} ${e.t}`);
   const kinds = ch.map((e) => e.k);
-  check(kinds.includes("tenant.books") && kinds.includes("trade.month") && kinds.at(-1) === "nation.month",
-    "the chain reaches the tenant's books, its trade and the nation");
+  // since ONE ECONOMY step 2 a tenant's books cite its own industry (economy.ts whyIndustry), which
+  // cites what the nation bought of it or the town's month; the chain still ends at the nation
+  check(kinds.includes("tenant.books") && (kinds.includes("industry.month") || kinds.includes("trade.month")) && kinds.at(-1) === "nation.month",
+    "the chain reaches the tenant's books, its industry and the nation");
   check(ch.every((e) => typeof e.t === "string" && e.t.length > 0 && e.t.length < 140), "every step is one short line");
 }
 

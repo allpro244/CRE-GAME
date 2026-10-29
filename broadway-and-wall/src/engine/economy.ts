@@ -74,6 +74,7 @@ import {
   COMP_PER_WORKER_2023, BUYER_TYPES, REPAIR_PER_COMMERCIAL_RENT, REPAIR_PER_FLAT_RENT, REPAIR_OWNER_PER_VALUE_YR,
   OIL_PRICE_2000, OIL_PER_SHOCK, OIL_RISE_M, OIL_HALF_LIFE_M,
   OFF_FLOOR, REMOTE, floorOf, NAT_TREND, CYCLE_BETA, FED_HEALTH_PER_PERSON_2023, MLR,
+  IND_ID_GOV, IND_ID_CON, IND_ID_INS, IND_ID_ONLINE, RETAIL_IDS, HEALTH_SPLIT, OLD24_TO_68,
   type IndustryId, type Floor, type BuyerType, type SpendCategory,
 } from "./industries";
 import {
@@ -85,7 +86,7 @@ import {
   LABOUR_FORCE_SLOWDOWN, FORTUNE_SD, FORTUNE_TAU_M, NAT_TREND_SD, NAT_TREND_TAU_M, NAT_SALES_PER_GAP, LOCATION_PULL, locationCost,
 } from "./market";
 import { HARD_COST_PSF, SOFT_COST, CONTINGENCY, constructionTypeMult } from "./value";
-import { householdMoney, registerPayroll, registerLabour } from "./households";
+import { householdMoney, registerPayroll, registerLabour, unpackHouseholds } from "./households";
 import { why, whyOnce, whyNation, whyTenantBooks } from "./why";
 
 // ---------------------------------------------------------------- the facts
@@ -106,8 +107,13 @@ const CASH_KEEP_M = 1.5, PAYOUT_M = 0.15;
 /** Debt moves toward what a lender would write over three years (market.ts tickFirmBook, tenantBooks.ts). [K] */
 const DEBT_ADJ_M = 36;
 
-const IND_GOV = INDUSTRY_INDEX.government, IND_CON = INDUSTRY_INDEX.construction, IND_SHOPS = INDUSTRY_INDEX.shops, IND_FUL = INDUSTRY_INDEX.fulfil;
-const IND_HE = INDUSTRY_INDEX.healthedu, IND_INS = INDUSTRY_INDEX.insurance;
+const IND_GOV = INDUSTRY_INDEX[IND_ID_GOV], IND_CON = INDUSTRY_INDEX[IND_ID_CON], IND_INS = INDUSTRY_INDEX[IND_ID_INS];
+const IND_ONLINE = INDUSTRY_INDEX[IND_ID_ONLINE];
+const IND_RETAIL = RETAIL_IDS.map((k) => INDUSTRY_INDEX[k]);
+/** The care industries and each one's share of a health dollar (industries.ts HEALTH_SPLIT). */
+const IND_HEALTH = (Object.entries(HEALTH_SPLIT) as [IndustryId, number][]).map(([k, w]) => [INDUSTRY_INDEX[k], w] as const);
+/** Industries with no firm in the metro (industries.ts `where`): always bought from out of town. */
+const OUTSIDE = INDUSTRY_IDS.map((k) => INDUSTRIES[k].where === "outside");
 const FLOORS: readonly Floor[] = ["office", "retail", "industrial"];
 const NO_SEC = 255;
 
@@ -209,6 +215,19 @@ export interface EconomyState {
   ema?: { emp: number[]; X: number[]; hh: number[]; firms: number[]; share: number[]; heads: number; C: number };
   /** The last 13 months by industry, oldest first, for the screens: output, heads, exports, EBITDA margin. Read by nothing in the world. */
   ih?: { m: number; x: number[]; heads: number[]; ex: number[]; mg: number[] }[];
+  /**
+   * NAMED LINKS BETWEEN FIRMS (step 2d, `tickLinks`): supplier and customer
+   * firm ids, the supplier's industry, the month it was signed and the month
+   * it is next up for renewal, and last month's flow ($ a month). Typed
+   * columns, about 17 bytes a link in a save (`reviveLinks` mends a JSON
+   * copy). Read by nothing in the world but the fortunes they move (`linkDz`,
+   * delivered a month on through economyToEngine).
+   */
+  lk?: Links;
+  /** Each firm's latest loss of a customer that mattered: the cause ledger's event, the month, its share of sales. */
+  lkLoss?: Record<string, { id: number; m: number; share: number }>;
+  /** This month's moves in a firm's fortune from links won and lost (log), for its tenant books next month. */
+  linkDz?: Record<string, number>;
 }
 
 function allocCols(cap: number): FirmColumns {
@@ -346,8 +365,8 @@ function spendVector(online: number): { v: Float64Array; primary: number } {
     }
   }
   // the online share of a shop's margin is earned by a seller shipping from a shed
-  const moved = v[IND_SHOPS] * Math.max(0, Math.min(1, online));
-  v[IND_SHOPS] -= moved; v[IND_FUL] += moved;
+  const o = Math.max(0, Math.min(1, online));
+  for (const r of IND_RETAIL) { const moved = v[r] * o; v[r] -= moved; v[IND_ONLINE] += moved; }
   return { v, primary };
 }
 
@@ -469,14 +488,16 @@ function closeBooks(L: Ledger, n: number) {
 }
 
 /**
- * THE OFF-MAP FIRMS AT THE OPENING (step 2). The town's employment (e.jobs)
- * less the named firms' heads holds, first, the work that serves the region's
- * people from buildings of its own — government at its national share of the
- * town's jobs, health and education's off-floor part at its own (industries.ts
- * OFF_FLOOR; the town's size counts them, market.ts `citySize`) — and
- * construction at what the town buys of it; then the rest toward the nation's
- * industry mix, to the industries the street leaves short. If the residual
- * cannot hold the first three they share what there is.
+ * THE OFF-MAP FIRMS AT THE OPENING (step 2; by industry since 2b). The town's
+ * employment (e.jobs) less the named firms' heads holds, first, the work done
+ * from buildings of its own — each industry's off-floor part (industries.ts
+ * OFF_FLOOR: hospitals, schools, City Hall, depots, the region's airport and
+ * yards) at its national share of the town's jobs, which is what the town's
+ * size counts (market.ts `citySize`) — and construction at what the town buys
+ * of it; then the rest toward the nation's industry mix, to the industries the
+ * street leaves short. If the residual cannot hold the first part, they share
+ * what there is. Industries with no firm in the metro (`where`: outside) hold
+ * none.
  */
 function openingOffMap(s: GameState, named: Float64Array, conOpen: number): Float64Array {
   const jobs = s.econ.jobs ?? 0;
@@ -484,25 +505,40 @@ function openingOffMap(s: GameState, named: Float64Array, conOpen: number): Floa
   for (let i = 0; i < N_IND; i++) namedTot += named[i];
   let O = Math.max(0, jobs - namedTot);
   const out = new Float64Array(N_IND);
-  const gov = Math.max(0, NAT_EMP_SHARE.government * jobs - named[IND_GOV]);
-  const he = NAT_EMP_SHARE.healthedu * OFF_FLOOR.healthedu * jobs;
-  const fixed = gov + he + conOpen;
+  const own = new Float64Array(N_IND);
+  let fixed = conOpen;
+  for (let i = 0; i < N_IND; i++) {
+    if (i === IND_CON || OUTSIDE[i]) continue;
+    const id = INDUSTRY_IDS[i];
+    own[i] = Math.max(0, NAT_EMP_SHARE[id] * OFF_FLOOR[id] * jobs - (OFF_FLOOR[id] >= 1 ? named[i] : 0));
+    fixed += own[i];
+  }
   const k = fixed > O ? O / fixed : 1;
-  out[IND_GOV] = k * gov; out[IND_HE] = k * he; out[IND_CON] = k * conOpen;
+  for (let i = 0; i < N_IND; i++) out[i] = k * own[i];
+  out[IND_CON] = k * conOpen;
   O -= k * fixed;
   const d = new Float64Array(N_IND);
   let dt = 0;
   for (let i = 0; i < N_IND; i++) {
-    if (i === IND_CON || i === IND_GOV) continue;
-    const share = NAT_EMP_SHARE[INDUSTRY_IDS[i]] * (i === IND_HE ? 1 - OFF_FLOOR.healthedu : 1);
-    d[i] = Math.max(0, share * jobs - named[i]);
+    if (i === IND_CON || OUTSIDE[i]) continue;
+    const id = INDUSTRY_IDS[i];
+    if (OFF_FLOOR[id] >= 1) continue;
+    d[i] = Math.max(0, NAT_EMP_SHARE[id] * (1 - OFF_FLOOR[id]) * jobs - named[i]);
     dt += d[i];
   }
-  for (let i = 0; i < N_IND; i++) {
-    if (i === IND_CON || i === IND_GOV) continue;
-    out[i] += O * (dt > 0 ? d[i] / dt : NAT_EMP_SHARE[INDUSTRY_IDS[i]]);
-  }
+  for (let i = 0; i < N_IND; i++) if (d[i] > 0) out[i] += O * d[i] / dt;
   return out;
+}
+
+/**
+ * WHAT A HEAD COSTS IN RENT, a month: on the floor its industry rents, the
+ * market's rent for its feet; in a building of its own (OFF_FLOOR — a
+ * hospital, a depot, the airport), what its industry pays for structures per
+ * dollar of output (industries.ts `rent`, BEA) [D].
+ */
+function rentPerHead(s: GameState, i: number, opw: Float64Array): number {
+  const id = INDUSTRY_IDS[i], I = INDUSTRIES[id], off = OFF_FLOOR[id];
+  return (1 - off) * I.sfPerWorker * marketRent(s, i) / 12 + off * opw[i] * I.rent;
 }
 
 // ---------------------------------------------------------------- what the nation buys
@@ -674,7 +710,7 @@ function openingConstruction(s: GameState, E: EconomyState, hm: { rent: number; 
   let D = 0;
   for (let i = 0; i < N_IND; i++) {
     if (i === IND_CON) continue;
-    firmRent += eng[i] * INDUSTRIES[INDUSTRY_IDS[i]].sfPerWorker * marketRent(s, i) / 12;
+    firmRent += eng[i] * rentPerHead(s, i, opw);
     D += A_FLAT[i * N_IND + IND_CON] * (named[i] + eng[i]) * opw[i];
   }
   D += conTotal(constructionBought(s, hm, firmRent));
@@ -773,7 +809,203 @@ export function tickFirms(s: GameState): void {
   const heads: number[] = [];
   for (let i = 0; i < N_IND; i++) heads.push(named[i] + off[i]);
   E.cur = { m: s.month, heads, named: Array.from(named), eng: emp.slice() };
+  tickLinks(s, E, R, opening);
   R.done();
+}
+
+// ---------------------------------------------------------------- named links (step 2d)
+export interface Links { s: Int32Array; c: Int32Array; j: Uint8Array; m0: Int16Array; ren: Int16Array; f: Float32Array }
+type LinkRows = { s: number[]; c: number[]; j: number[]; m0: number[]; ren: number[]; f: number[] };
+const LINK_COLS = ["s", "c", "j", "m0", "ren", "f"] as const;
+function linksOf(r: LinkRows): Links {
+  return { s: Int32Array.from(r.s), c: Int32Array.from(r.c), j: Uint8Array.from(r.j), m0: Int16Array.from(r.m0), ren: Int16Array.from(r.ren), f: Float32Array.from(r.f) };
+}
+/** A save's links back to typed columns (a JSON copy turns them into plain objects). */
+function reviveLinks(E: EconomyState): void {
+  const lk = E.lk as unknown as Record<string, unknown> | undefined;
+  if (!lk || LINK_COLS.every((k) => ArrayBuffer.isView(lk[k]))) return;
+  const rows = Object.fromEntries(LINK_COLS.map((k) => {
+    const v = lk[k];
+    return [k, Array.isArray(v) ? v as number[] : ArrayBuffer.isView(v) ? Array.from(v as unknown as ArrayLike<number>) : Object.values((v ?? {}) as Record<string, number>)];
+  })) as LinkRows;
+  E.lk = linksOf(rows);
+}
+/** Each named firm's name now, by firm id: the street's rolls, the player's buildings, the firms looking. */
+function firmNames(s: GameState): Map<number, string> {
+  const out = new Map<number, string>();
+  for (const roll of Object.values(s.econ.streetRolls ?? {})) for (const t of roll.t) if (t.fid !== undefined) out.set(t.fid, t.name);
+  for (const h of Object.values(s.holdings)) for (const t of h.tenants ?? []) if (t.fid !== undefined) out.set(t.fid, t.name);
+  for (const k of s.econ.seekers ?? []) if (k.t?.fid !== undefined) out.set(k.t.fid, k.t.name);
+  return out;
+}
+/**
+ * WHO SELLS TO WHOM, BY NAME (ONE_ECONOMY_PLAN step 2d). Each named firm keeps
+ * a few real suppliers — "Ashe & Porter audits Ridgeway Machinery" — and buys
+ * the rest of each input through its industry's pool, split by the IO table.
+ *
+ *   LINKS_PER_FIRM   suppliers a firm keeps by name: 3, so with the links it
+ *                    holds as a supplier a firm has about six named
+ *                    relationships [K: the plan's "about 5"; US firms in
+ *                    Compustat report 2-4 major customers each — Atalay et
+ *                    al. 2011, "Network structure of production", PNAS].
+ *   LINK_SHARE       of what a firm buys of an industry from town, the share
+ *                    its named suppliers in it take: half [K]. A single
+ *                    customer is capped at CUSTOMER_CAP of a supplier's sales:
+ *                    a supplier's largest customer averages about a fifth of
+ *                    its sales among firms that report one (Patatoukas 2012,
+ *                    "Customer-base concentration", Accounting Review) [S~].
+ *   TERM             contracts run 24-48 months [K: B2B service agreements of
+ *                    two to four years]; at renewal the customer re-tenders
+ *                    and moves with SWITCH_P [K], more when its supplier is
+ *                    short of cash (less than a month of costs) — a supplier
+ *                    in trouble is a supplier that may not deliver.
+ * A supplier is chosen among the island's named firms in the industry the
+ * customer buys from, in proportion to what the customer buys of each
+ * industry from town (IO_A x the local purchase coefficient), then to the
+ * supplier's size and its cash (reliability). Not yet read: distance (the
+ * books do not hold where a firm is) and price (one price an industry).
+ *
+ * WHAT A LINK DOES. Winning or losing a named customer moves the supplier's
+ * own fortune (its tenant books' z, tenantBooks.ts) by the share of its sales
+ * the customer was: the dollars come from or go to its industry's other firms
+ * — the customer's business does not vanish when it moves, it goes to a rival.
+ * When a customer closes, its industry's other firms take its work and buy
+ * through the pool; its suppliers lose what it bought of them. That is the
+ * shock travelling along the link, and the cause ledger says so: "Harlan
+ * Works lost Ridgeway Machinery (14% of sales)".
+ */
+const LINKS_PER_FIRM = 3, LINK_SHARE = 0.5, CUSTOMER_CAP = 0.25, SWITCH_P = 0.15, SWITCH_DISTRESS = 0.35;
+const TERM_LO = 24, TERM_SPAN = 25;
+function tickLinks(s: GameState, E: EconomyState, R: Rand, opening: boolean): void {
+  const F = E.f, nF = E.L.slot.n, m = s.month;
+  reviveLinks(E);
+  const lk: LinkRows = E.lk
+    ? { s: Array.from(E.lk.s), c: Array.from(E.lk.c), j: Array.from(E.lk.j), m0: Array.from(E.lk.m0), ren: Array.from(E.lk.ren), f: Array.from(E.lk.f) }
+    : { s: [], c: [], j: [], m0: [], ren: [], f: [] };
+  const dz = (E.linkDz ??= {});
+  // books just opened (or reopened): the links found are relationships the firms already had
+  const quiet = opening || !E.last || m - (E.openM ?? m) < LINKS_PER_FIRM + 1;
+  const slot = new Map<number, number>();
+  for (let n = 0; n < nF; n++) if (F.id[n] >= 0) slot.set(F.id[n], n);
+  const costM = (n: number) => Math.max(1, F.wages[n] + F.inputs[n] + F.rent[n]);
+  const distressed = (n: number) => cashOf(E.L, n) < costM(n);
+  // the firms' names this month, and who closed or left (by firm id) with its cause
+  const nameOf = firmNames(s);
+  const gone = new Map<number, { name: string; why: string; id?: number }>();
+  for (const x of s.econ.streetFailed ?? []) if (x.m >= m - 1 && x.fid !== undefined && !x.to) gone.set(x.fid, { name: x.name, why: x.why === "dark" ? "closed" : "left town", id: x.whyId });
+  const loss = (l: number, how: string, cause?: number) => {
+    const sf = lk.s[l], ns = slot.get(sf);
+    if (ns === undefined) return;
+    const share = Math.min(0.6, lk.f[l] / Math.max(1, F.rev[ns]));
+    if (!(share > 0) || quiet) return;
+    dz[sf] = (dz[sf] ?? 0) + Math.log(1 - share);
+    if (share < 0.02) return;
+    const sup = nameOf.get(sf) ?? "a firm", cus = nameOf.get(lk.c[l]) ?? gone.get(lk.c[l])?.name ?? "a customer";
+    const id = why(s, {
+      k: "firm.lostCustomer", a: "firm", aid: String(sf), name: sup,
+      n: { share, flowYr: Math.round(lk.f[l] * 12) },
+      t: `${sup} lost ${cus} (${(share * 100).toFixed(0)}% of sales) · ${how}`,
+    }, [cause]);
+    const prev = (E.lkLoss ??= {})[sf];
+    if (!prev || prev.m < m - 24 || share >= prev.share) E.lkLoss[sf] = { id, m, share };
+  };
+  // ---- 1. links whose firm is gone, and contracts up for renewal
+  const keep: boolean[] = new Array(lk.s.length).fill(true);
+  for (let l = 0; l < lk.s.length; l++) {
+    const ns = slot.get(lk.s[l]), nc = slot.get(lk.c[l]);
+    if (nc === undefined) {
+      const g = gone.get(lk.c[l]);
+      loss(l, g?.why ?? "gone", g?.id);
+      keep[l] = false; continue;
+    }
+    if (ns === undefined) { keep[l] = false; continue; }   // the customer buys through the pool until it signs another
+    if (lk.ren[l] <= m) {
+      const p = SWITCH_P + (distressed(ns) ? SWITCH_DISTRESS : 0);
+      if (R.u() < p) { loss(l, distressed(ns) ? "at renewal, short of cash" : "at renewal, to a better offer"); keep[l] = false; continue; }
+      lk.ren[l] = m + TERM_LO + Math.floor(R.u() * TERM_SPAN);
+    }
+  }
+  if (keep.some((k) => !k)) for (const key of ["s", "c", "j", "m0", "ren", "f"] as const) lk[key] = lk[key].filter((_, l) => keep[l]);
+  // ---- 2. firms short of named suppliers sign one a month
+  const have = new Map<number, number>();
+  const pair = new Set<string>();
+  for (let l = 0; l < lk.s.length; l++) { have.set(lk.c[l], (have.get(lk.c[l]) ?? 0) + 1); pair.add(`${lk.s[l]}:${lk.c[l]}`); }
+  const byInd: number[][] = Array.from({ length: N_IND }, () => []);
+  for (const [, n] of slot) byInd[F.ind[n]].push(n);
+  const rpc = E.rpc;
+  const wJ = new Float64Array(N_IND);
+  for (const [fid, nc] of slot) {
+    if ((have.get(fid) ?? 0) >= LINKS_PER_FIRM) continue;
+    const u1 = R.u(), u2 = R.u();
+    const row = IO_A[INDUSTRY_IDS[F.ind[nc]]];
+    let tot = 0;
+    for (let j = 0; j < N_IND; j++) { wJ[j] = byInd[j].length && rpc.length ? row[j] * (rpc[j] ?? 0) : 0; tot += wJ[j]; }
+    if (!(tot > 0)) continue;
+    let x = u1 * tot, j = 0;
+    for (; j < N_IND - 1; j++) { x -= wJ[j]; if (x < 0) break; }
+    const cand = byInd[j];
+    let ct = 0;
+    const wt = cand.map((n) => {
+      if (n === nc || pair.has(`${F.id[n]}:${fid}`)) return 0;
+      const cashM = cashOf(E.L, n) / costM(n);
+      const w = F.hc[n] * (0.25 + Math.min(1, cashM / 3));
+      ct += w; return w;
+    });
+    if (!(ct > 0)) continue;
+    let y = u2 * ct, k = 0;
+    for (; k < cand.length - 1; k++) { y -= wt[k]; if (y < 0) break; }
+    const ns = cand[k], sf = F.id[ns];
+    lk.s.push(sf); lk.c.push(fid); lk.j.push(j); lk.m0.push(m); lk.ren.push(m + TERM_LO + Math.floor(R.u() * TERM_SPAN));
+    // last month's purchase, to size what the supplier won
+    const flow = Math.min(CUSTOMER_CAP * F.rev[ns], LINK_SHARE / ((have.get(fid) ?? 0) + 1) * F.rev[nc] * row[j] * (rpc[j] ?? 0));
+    lk.f.push(flow);
+    have.set(fid, (have.get(fid) ?? 0) + 1); pair.add(`${sf}:${fid}`);
+    if (!quiet && F.rev[ns] > 0) dz[sf] = (dz[sf] ?? 0) + Math.log(1 + Math.min(0.5, flow / F.rev[ns]));
+  }
+  E.lk = linksOf(lk);
+  if (E.lkLoss) for (const [k, v] of Object.entries(E.lkLoss)) if (v.m < m - 24) delete E.lkLoss[k];
+}
+
+/** What each named link carried this month: its share of what the customer buys of the supplier's industry from town, capped (see tickLinks). */
+function linkFlows(E: EconomyState): void {
+  reviveLinks(E);
+  const lk = E.lk;
+  if (!lk || !lk.s.length) return;
+  const F = E.f, slot = new Map<number, number>();
+  for (let n = 0; n < E.L.slot.n; n++) if (F.id[n] >= 0) slot.set(F.id[n], n);
+  const per = new Map<string, number>();
+  for (let l = 0; l < lk.s.length; l++) { const key = `${lk.c[l]}:${lk.j[l]}`; per.set(key, (per.get(key) ?? 0) + 1); }
+  for (let l = 0; l < lk.s.length; l++) {
+    const ns = slot.get(lk.s[l]), nc = slot.get(lk.c[l]);
+    if (ns === undefined || nc === undefined) { lk.f[l] = 0; continue; }
+    const j = lk.j[l], buy = F.rev[nc] * IO_A[INDUSTRY_IDS[F.ind[nc]]][j] * (E.rpc[j] ?? 0);
+    lk.f[l] = Math.min(CUSTOMER_CAP * F.rev[ns], LINK_SHARE / (per.get(`${lk.c[l]}:${j}`) ?? 1) * buy);
+  }
+}
+
+/** A firm's named customers and suppliers, biggest first: who, the dollars a month, and the share of the supplier's sales. Pure. */
+export function firmLinks(s: GameState, fid: number): { customers: { fid: number; name: string; flow: number; share: number; since: number }[]; suppliers: { fid: number; name: string; flow: number; share: number; since: number; industry: string }[] } {
+  const E = s.economy, lk = E?.lk;
+  const out = { customers: [] as { fid: number; name: string; flow: number; share: number; since: number }[], suppliers: [] as { fid: number; name: string; flow: number; share: number; since: number; industry: string }[] };
+  if (!E || !lk) return out;
+  reviveEconomy(E);
+  reviveLinks(E);
+  const L2 = E.lk!;
+  const F = E.f, names = firmNames(s);
+  const revOf = (id: number) => { for (let n = 0; n < E.L.slot.n; n++) if (F.id[n] === id) return F.rev[n]; return 0; };
+  const nm = (id: number) => names.get(id) ?? "a firm";
+  for (let l = 0; l < L2.s.length; l++) {
+    if (L2.s[l] === fid) out.customers.push({ fid: L2.c[l], name: nm(L2.c[l]), flow: L2.f[l], share: L2.f[l] / Math.max(1, revOf(fid)), since: L2.m0[l] });
+    if (L2.c[l] === fid) out.suppliers.push({ fid: L2.s[l], name: nm(L2.s[l]), flow: L2.f[l], share: L2.f[l] / Math.max(1, revOf(L2.s[l])), since: L2.m0[l], industry: INDUSTRIES[INDUSTRY_IDS[L2.j[l]]].label });
+  }
+  out.customers.sort((a, b) => b.flow - a.flow); out.suppliers.sort((a, b) => b.flow - a.flow);
+  return out;
+}
+
+/** The cause ledger's event for a firm's latest loss of a customer worth 5% of its sales or more, in the last two years. */
+export function whyFirmLoss(s: GameState, fid: number): number | undefined {
+  const v = s.economy?.lkLoss?.[fid];
+  return v && v.m >= s.month - 24 && v.share >= 0.05 ? v.id : undefined;
 }
 
 // ---------------------------------------------------------------- the month, second half: the money
@@ -797,7 +1029,7 @@ export function tickEconomy(s: GameState): void {
   const F = E.f, nF = L.slot.n;
   const heads = Float64Array.from(E.cur.heads);
   const rentMkt = new Float64Array(N_IND);
-  for (let i = 0; i < N_IND; i++) rentMkt[i] = INDUSTRIES[INDUSTRY_IDS[i]].sfPerWorker * marketRent(s, i) / 12;
+  for (let i = 0; i < N_IND; i++) rentMkt[i] = rentPerHead(s, i, opw);
   const rentOf = (n: number) => F.id[n] >= 0 ? F.rent[n] : F.hc[n] * rentMkt[F.ind[n]];
 
   // ---- each firm's payroll this month: its industry's earners' pay in the
@@ -829,11 +1061,11 @@ export function tickEconomy(s: GameState): void {
   const fedHealth = FED_HEALTH_PER_PERSON_2023 / 12 * w * hm.persons;
   const fH = new Float64Array(N_IND), fG = new Float64Array(N_IND), fC = new Float64Array(N_IND), fd = new Float64Array(N_IND);
   for (let j = 0; j < N_IND; j++) fH[j] = C * sv.v[j];
-  const fIns = new Float64Array(N_IND);
-  fIns[IND_HE] = MLR * insEmp; fIns[IND_INS] = (1 - MLR) * insEmp;
+  const fIns = new Float64Array(N_IND), fFed = new Float64Array(N_IND);
+  for (const [h, wt] of IND_HEALTH) { fIns[h] = MLR * insEmp * wt; fFed[h] = fedHealth * wt; }
+  fIns[IND_INS] += (1 - MLR) * insEmp;
   fG[IND_GOV] = G; fC[IND_CON] = P;
-  for (let j = 0; j < N_IND; j++) fd[j] = fH[j] + fIns[j] + fG[j] + fC[j];
-  fd[IND_HE] += fedHealth;
+  for (let j = 0; j < N_IND; j++) fd[j] = fH[j] + fIns[j] + fFed[j] + fG[j] + fC[j];
 
   if (opening) {
     // the register's people once the opening's jobs are filled: government follows them from here
@@ -875,7 +1107,7 @@ export function tickEconomy(s: GameState): void {
     let firms = 0, conB = 0;
     for (let i = 0; i < N_IND; i++) { const a = A_FLAT[i * N_IND + j] * x[i]; if (i === IND_CON) conB += a; else firms += a; }
     const r = E.rpc[j];
-    buy.push([r * (fH[j] + fIns[j] + (j === IND_HE ? fedHealth : 0)), r * firms, r * fG[j], r * (fC[j] + conB), X[j]]);
+    buy.push([r * (fH[j] + fIns[j] + fFed[j]), r * firms, r * fG[j], r * (fC[j] + conB), X[j]]);
   }
 
   // ---- 5. the buyers pay the market
@@ -896,9 +1128,12 @@ export function tickEconomy(s: GameState): void {
   transfer(L, ACCOUNTS.landlords, ACCOUNTS.rest, (1 - rCon) * landBuild, "imports", "land>row:imports");
   transfer(L, ACCOUNTS.rest, M, xTot, "exports", "row>mkt:exports");
   // Washington pays for the care its programmes cover; what is treated out of town never touches it
-  transfer(L, ACCOUNTS.rest, M, E.rpc[IND_HE] * fedHealth, "health", "row>mkt:medicare and medicaid");
+  let fedLocal = 0;
+  for (const [h] of IND_HEALTH) fedLocal += E.rpc[h] * fFed[h];
+  transfer(L, ACCOUNTS.rest, M, fedLocal, "health", "row>mkt:medicare and medicaid");
   // an employer's insurance dollar buys care and the insurer's service, here as far as the town supplies them
-  const insLocal = MLR * E.rpc[IND_HE] + (1 - MLR) * E.rpc[IND_INS];
+  let insLocal = (1 - MLR) * E.rpc[IND_INS];
+  for (const [h, wt] of IND_HEALTH) insLocal += MLR * wt * E.rpc[h];
 
   // ---- 6. every firm's month (its payroll: `wagesOf`, above)
   const { loc, imp } = inputSplit(E.rpc);
@@ -975,6 +1210,8 @@ export function tickEconomy(s: GameState): void {
     // a department's budget transfer is the city putting in or taking out capital, not income
     if (!P0) F.eq[n] = cashOf(L, n) - debtOf(L, n);
   }
+
+  linkFlows(E);
 
   // ---- 7. households, the city, the landlords
   const H = ACCOUNTS.households, GOV = ACCOUNTS.government, LAND = ACCOUNTS.landlords, ROW = ACCOUNTS.rest, BANK = ACCOUNTS.bank;
@@ -1053,6 +1290,8 @@ export function economyToEngine(s: GameState): void {
     arrived: fl?.arrived ?? 0, left: fl?.left ?? 0, heads: 0,
   };
   if (s.economy?.last && fl?.bought !== undefined && d.renters > 0) d.buyRate = 12 * fl.bought / d.renters;
+  d.island = { persons: lab.islandPersons, kids: lab.islandKids, households: lab.islandRenters,
+    jobs: s.economy?.cur?.m === s.month ? s.economy.cur.named.reduce((a, v) => a + v, 0) : 0 };
   const E = s.economy;
   if (E?.last && E.cur?.m === s.month && E.emp && E.emp0 && E.x0) {
     reviveEconomy(E);
@@ -1085,9 +1324,56 @@ export function economyToEngine(s: GameState): void {
     }
     d.trade = trade;
   }
+  if (E?.linkDz && Object.keys(E.linkDz).length) { d.linkDz = E.linkDz; E.linkDz = {}; }
   e.eco = d;
-  if (d.floorSf && !e.eco0?.floorSf) { (e.eco0 ??= {}).floorSf = { ...d.floorSf }; e.eco0.jobs = d.jobs; }
+  if (d.floorSf && !e.eco0?.floorSf) {
+    // (a save reopened on the 68 industries keeps each class's driver where it stood: `migrateEconomy`)
+    const mig = e.eco0?.mig;
+    (e.eco0 ??= {}).floorSf = mig
+      ? Object.fromEntries(Object.entries(d.floorSf).map(([k, v]) => [k, (v ?? 0) / Math.max(1e-6, mig[k as Floor] ?? 1)]))
+      : { ...d.floorSf };
+    e.eco0.jobs ??= d.jobs;
+    delete e.eco0.mig;
+  }
   (e.eco0 ??= {}).renters ??= d.renters;
+}
+
+/**
+ * A SAVE FROM BEFORE STEP 2b (24 industries). Its books are closed and reopen
+ * on the 68 this month, as at an opening (the firms already exist: their cash
+ * is the bank's deposits), sized on the town as it now stands; every earner's,
+ * tenant's and street firm's industry is renumbered to its old industry's
+ * largest successor (industries.ts OLD24_TO_68); and each class's demand
+ * driver carries on from where it stood rather than restarting at one.
+ * Called first thing in the month (sim.ts), before the street reads it.
+ */
+export function migrateEconomy(s: GameState): void {
+  const E = s.economy;
+  if (!E || !(E.rpc?.length) || E.rpc.length === N_IND) return;
+  const map = OLD24_TO_68.map((k) => INDUSTRY_INDEX[k]);
+  const re = (i: number | undefined) => (i !== undefined && i < map.length ? map[i] : undefined);
+  const r = s.households;
+  if (r) {
+    if (!r.a) unpackHouseholds(r);
+    const a = r.a!;
+    for (let i = 0; i < r.n; i++) {
+      if (a.ind1[i] < map.length) a.ind1[i] = map[a.ind1[i]];
+      if (a.ind2[i] < map.length) a.ind2[i] = map[a.ind2[i]];
+    }
+  }
+  const fix = (t: Tenant) => { if (t.ind !== undefined) { const v = re(t.ind); if (v === undefined) delete t.ind; else t.ind = v; } delete t.empInd; };
+  for (const roll of Object.values(s.econ.streetRolls ?? {})) for (const t of roll.t) fix(t);
+  for (const h of Object.values(s.holdings)) for (const t of h.tenants ?? []) fix(t);
+  for (const k of s.econ.seekers ?? []) if (k.t) fix(k.t);
+  const e = s.econ;
+  if (e.eco?.floorSf && e.eco0?.floorSf) {
+    const mig: Partial<Record<Floor, number>> = {};
+    for (const k of FLOORS) { const a = e.eco.floorSf[k], b = e.eco0.floorSf[k]; if (a && b) mig[k] = a / b; }
+    e.eco0 = { ...e.eco0, floorSf: undefined, mig };
+  }
+  if (e.eco) { delete e.eco.emp; delete e.eco.empPrev; delete e.eco.target; }
+  delete e.islandFill;
+  delete s.economy;
 }
 
 // ---------------------------------------------------------------- why (why.ts)

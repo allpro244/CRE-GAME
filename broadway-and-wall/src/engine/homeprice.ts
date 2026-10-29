@@ -71,17 +71,13 @@ export const BUILD_M = 7;
 export const SELL_M = 3;
 /** Average household size, 2024 (Census CPS): 2.51. Households = population / this. */
 export const HH_SIZE = 2.51;
-/** New single-family houses sold a year per household: 683,000 sold in 2024 (Census New Residential Sales) over 131.4M households (ACS). */
-export const NEW_HOME_RATE = 683_000 / 131_400_000;
-/** National household growth, a year: about 1.0M a year on 131M households, 2023-24 (Census HVS) = 0.77%. */
-export const HH_GROWTH_NAT = 0.0077;
 /**
- * The share of new-house demand that comes from household GROWTH rather than
- * replacement, move-up and second homes. Net household formation (~1.0M a
- * year) against all housing completions (~1.6M, 2024) puts it near 0.6 — a
- * shape parameter [K] read off those two numbers, not fitted to anything here.
+ * NEW HOUSES' SHARE OF THE HOMES BOUGHT: 683,000 new single-family houses sold
+ * in 2024 (Census New Residential Sales) against 4.06M existing homes (NAR) —
+ * 14.4% of purchases. Applied to the region's own buyers (households.ts:
+ * first-time buyers and owners moving to another home they buy). [S]
  */
-const GROWTH_SHARE = 0.6;
+export const NEW_SHARE = 683_000 / (4_060_000 + 683_000);
 /**
  * HOW SHARPLY A COMMUNITY'S SALES ANSWER ITS PRICE AGAINST THE NEIGHBOURS'.
  * New communities in one town are close substitutes; builder incentives of
@@ -304,22 +300,37 @@ export function selloutDiscount(left: number, pace: number): number {
 }
 
 /**
- * HOMES A MONTH, for one builder selling in this town: the households who buy
- * a new house here this month (households x the national new-house rate,
- * scaled by how fast the town is adding households), the share of them who
- * can carry this house at today's rate against the share who could carry the
- * median new house nationally, split among the builders with houses to sell,
- * and answering this builder's price against the going one.
+ * HOMES A MONTH, for one builder selling in this town: THE REGION'S OWN
+ * BUYERS (households stage 2, 2026-10-29). The households that bought a home
+ * over the last year (households.ts `buyers`: renters who could make the down
+ * payment and the payment and chose to own, owners moving to another home),
+ * a month, times new houses' share of purchases (NEW_SHARE), times the share
+ * of those buyers whose pay carries THIS house at today's rate against the
+ * share whose pay carries the standard new house at the going price — split
+ * among the builders with houses to sell, and answering this builder's price
+ * against the going one. It was the households times the national new-house
+ * rate, scaled by the town's growth and by affordability over the nation's
+ * (FORMULA_LEDGER #13): a rate applied to everyone, not buyers who bought.
  *
  * `qualityAdjPrice` is the price with location taken out (price / loc): a
  * buyer pays more for a better street or a shorter drive and is no poorer for
  * it, so affordability is read on the standard house, not the location.
  */
 export function salesPace(e: Econ, qualityAdjPrice: number, adj: number, sellers: number): number {
-  const pop = e.population ?? 0;
-  const g = e.homesG12 ?? HH_GROWTH_NAT;
-  const growth = Math.max(0, Math.min(4, g / HH_GROWTH_NAT));
-  const base = (pop / HH_SIZE) * (NEW_HOME_RATE / 12) * ((1 - GROWTH_SHARE) + GROWTH_SHARE * growth);
-  const afford = affordShare(qualityAdjPrice, mortgageRate(e), medianIncome(e)) / AFFORD_REF;
-  return (base * afford / Math.max(1, sellers)) * Math.pow(1 + adj, -PRICE_ELAST);
+  const b = e.eco?.buyers;
+  if (!b?.length) return 0;
+  const rate = mortgageRate(e);
+  const going = (e.homes?.psf ?? fundamentalHomePsf(e)) * REF_HOME.sf;
+  const need = (price: number) => incomeToBuy(price, rate);
+  const nHere = need(qualityAdjPrice), nGoing = need(going);
+  let all = 0, here = 0, std = 0, first = Infinity;
+  for (const x of b) {
+    all += x.w; first = Math.min(first, x.m);
+    if (x.inc >= nHere) here += x.w;
+    if (x.inc >= nGoing) std += x.w;
+  }
+  // the buyers' window: twelve months, or the months the register has kept them
+  const months = Math.max(1, Math.min(12, (e.eco?.m ?? first) - first + 1));
+  const share = std > 0 ? here / std : here > 0 ? 1 : 0;
+  return ((all / months) * NEW_SHARE * share / Math.max(1, sellers)) * Math.pow(1 + adj, -PRICE_ELAST);
 }

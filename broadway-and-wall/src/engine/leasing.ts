@@ -7,8 +7,8 @@ import { why, whyTenantBooks } from "./why";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, AutoConcessions, AutoLeaseEntry, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, cloneState, CREDIT_LABEL } from "./types";
-import type { Tenant } from "./types";
-import { rng, rrange, dealSlack, recordDeal, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, useGap, RENT_BASE } from "./market";
+import type { Econ, Tenant } from "./types";
+import { rng, rrange, dealSlack, recordDeal, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, useGap, RENT_BASE, turnoverYr } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 /** Bare clamp so tools/rails.mjs can see the block-premium guards. */
@@ -191,8 +191,17 @@ function rollCredit(s: GameState, demand: number, score = 55): Credit {
   return r > 0.95 ? 2 : r > 0.55 ? 1 : 0;
 }
 
-/** Share of renters who move in a year — US renter turnover runs ~45-50% (NMHC, Census AHS). */
-const MF_TURNOVER = 0.45;
+/**
+ * THE SHARE OF RENTERS WHO MOVE OUT IN A YEAR IS WHAT THE HOUSEHOLDS DID
+ * (households stage 2, 2026-10-29): the island's renter households that left
+ * their flats last month, a year, rolled over six months — each having bought,
+ * chosen a flat across the water at its renewal rent and commute, left town
+ * out of work, been evicted, ended, or moved for family reasons
+ * (households.ts). It was a flat 45% (NMHC, Census AHS), which is now what
+ * the register is checked against, not what it is told. Before the
+ * register's first month, the street's own measured turnover.
+ */
+const flatTurnover = (e: Econ) => e.eco?.flatMoveOut ?? turnoverYr(e, "multifamily");
 /** A fast real lease-up signs ~8% of a building's units a month (20-30 a month on a 300-unit block). */
 const MF_LEASEUP_MAX = 0.08;
 
@@ -1458,7 +1467,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const vacCity = e.cityVac?.multifamily ?? NATURAL_VAC.multifamily;
       const match = (vacCity > NATURAL_VAC.multifamily && poolMF > occCity)
         ? Math.max(0.55, Math.min(1, 1 - (vacCity - NATURAL_VAC.multifamily) * 2.2)) : 1;
-      const movers = occCity * MF_TURNOVER / 12 + Math.max(0, (poolMF - occCity) * 0.055 * match);
+      const movers = occCity * flatTurnover(e) / 12 + Math.max(0, (poolMF - occCity) * 0.055 * match);
       const vacantCity = Math.max(1, (e.stock?.multifamily ?? 0) - occCity);
       const mine = Math.max(0, resSf * (1 - now));
       const quality = Math.max(0.3, stab / (1 - NATURAL_VAC.multifamily));
@@ -1470,7 +1479,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // building empties at the turnover rate. (It held only the commercial
       // legs, so a block of flats could never be emptied for a redevelopment.)
       const won = h.leasingHold ? 0 : Math.min(movers * share, resSf * MF_LEASEUP_MAX, mine);
-      const left = resSf * now * MF_TURNOVER / 12;
+      const left = resSf * now * flatTurnover(e) / 12;
       h.occ = Math.min(0.99, Math.max(0, now + (won - left) / Math.max(1, resSf) + rrange(s, -0.002, 0.002, "leasing")));
       // AND THE RENT ROLL TURNS OVER. A twelfth of the leases reach the market
       // each month; the rest pay what they signed. So in-place rent closes a

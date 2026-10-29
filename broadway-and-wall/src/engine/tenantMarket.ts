@@ -229,11 +229,15 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
       else if (!opts.holdFace) d -= CUT_DEEP * push / 3;
     }
   } else {
-    // NOTHING TO LET: the face follows the comps and its costs (the town's
-    // CPI over the year); the package — given to win a tenant for empty
-    // space — is not offered, and fades over the year a broker's opinion
-    // takes to refresh.
-    d += toComps + (opts.infl12 / 12) * months;
+    // NOTHING TO LET: the face passes its costs through (the town's CPI over
+    // the year) and otherwise waits for its own leasing to say more — a
+    // renewal with nowhere else for the tenant to go (`noteLetting`). It does
+    // not chase the comps: the comps are the buildings that let, and a full
+    // building chasing them up ratchets every good corner's raise onto the
+    // whole town (measured: shop rents rising 3.5% a year over 18% vacancy).
+    // The package — given to win a tenant for empty space — is not offered,
+    // and fades over the year a broker's opinion takes to refresh.
+    d += (opts.infl12 / 12) * months;
     L.c *= 1 - pull;
   }
   L.c = Math.max(0, Math.min(PKG_MAX, L.c));

@@ -43,7 +43,7 @@ import { renewalAsk } from "./citygov";
 import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { BuiltClass, Condition, Credit, GameState, Holding, Tenant } from "./types";
 import { START_YEAR } from "./types";
-import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, assetValue, useOccupancy, N_BANDS, scoreRentMult } from "./value";
+import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, assetValue, useOccupancy, N_BANDS, scoreRentMult, locationRentMult } from "./value";
 import { genRentRoll, isCommercial, bumpOf, minLettableSf, streetLease, pickSector, pickName, termBandM, depositFor } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
 import { tickTenantFin, tenantFailOdds, entrantMargin } from "./tenantBooks";
@@ -355,16 +355,28 @@ function marketView(s: GameState, parcels: ParcelTable) {
   // ---- THE TENANT MARKET (tenantMarket.ts): a firm's shortlist, valued from its own books
   const recOf = (bbl: string) => resolveRec(parcels, s, bbl);
   const ctx = locCtx(s, recOf);
-  // the people within a walk of each retail building against the street's average shop (the trips a shop sells to)
-  let catchW = 0, catchV = 0;
+  // THE TRIPS A SHOP SELLS TO (ONE ECONOMY §6c-B, as far as location needs it):
+  // the people working and living within a walk of each retail building this
+  // month (demand.ts `blockFoot`) against the street's average shop — net of
+  // what the address's rent already prices (value.ts locationRentMult, which
+  // reads the slow neighbourhood score), so a shop weighs only the walk-ins
+  // its address's rent does not already charge it for.
+  let catchW = 0, catchV = 0, locV = 0;
+  const locOf = new Map<string, number>();
   if (foot) for (const bbl of Object.keys(R)) {
     const c = catchOf(bbl);
     const b = bld(bbl);
     const cap = b?.cap.retail ?? 0;
-    if (c !== undefined && cap > 0) { catchW += cap; catchV += cap * c; }
+    if (c === undefined || !(cap > 0) || !b) continue;
+    const l = locationRentMult(b.rec, e, "retail");
+    locOf.set(bbl, l);
+    catchW += cap; catchV += cap * c; locV += cap * l;
   }
-  const catchMean = catchW > 0 ? catchV / catchW : 0;
-  const footRel = (bbl: string) => { const c = catchOf(bbl); return c !== undefined && catchMean > 0 ? c / catchMean : undefined; };
+  const catchMean = catchW > 0 ? catchV / catchW : 0, locMean = catchW > 0 ? locV / catchW : 0;
+  const footRel = (bbl: string) => {
+    const c = catchOf(bbl), l = locOf.get(bbl);
+    return c !== undefined && l !== undefined && catchMean > 0 && locMean > 0 && l > 0 ? (c / catchMean) / (l / locMean) : undefined;
+  };
   const vacShare = (b: Bld, roll: StreetRoll, k: Comm) => Math.max(0, 1 - letOf(roll, k) / Math.max(1, b.cap[k] ?? 1));
   const bookOf = (b: Bld, roll: StreetRoll, k: Comm) => askOf((roll.ask ??= {}), k, e, b.mkt[k] ?? 0, vacShare(b, roll, k), m);
   // each trade's payroll, this month against last: the term a firm signs reads it (see THE TERM IS CHOSEN TOO)
@@ -418,9 +430,11 @@ function marketView(s: GameState, parcels: ParcelTable) {
   /**
    * THE BROKER'S SHORTLIST: up to SHORTLIST street buildings with room for
    * the firm, drawn by how close each is to the quality it shops for, how much
-   * room it has, how hard its owner lets and how dark its lobby is; each
-   * valued, with the firm's own suite (when it has one to renew) beside them.
-   * Best first.
+   * room it has, how keen its posted rent is against the market for it (a
+   * broker shows what is priced to let — the cube is the old stale-space
+   * weight's, `staleDiscount`^-3, now read off the landlord's actual post), how
+   * hard its owner lets and how dark its lobby is; each valued, with the
+   * firm's own suite (when it has one to renew) beside them. Best first.
    */
   const shop = (firm: Tenant, k: Comm, want: number, from: string | undefined, stay: Option | null, moving: boolean): Option[] => {
     const q = firm.quality ?? 50;
@@ -435,7 +449,9 @@ function marketView(s: GameState, parcels: ParcelTable) {
       const floor = minSfOf(b, k);
       if (avail < Math.max(floor, Math.min(want * 0.5, avail + 1))) continue;
       const letShare = 1 - avail / (b.cap[k] ?? 1);
-      const w = Math.sqrt(avail) * Math.exp(-Math.abs((b.sc[k] ?? 50) - q) / FIT_W) * b.care * (0.85 + 0.15 * letShare);
+      const mkt = b.mkt[k] ?? 0;
+      const keen = mkt > 0 ? Math.min(4, Math.pow(mkt / Math.max(0.01, postedEff(bookOf(b, roll, k), e, k, mkt, false)), 3)) : 1;
+      const w = Math.sqrt(avail) * Math.exp(-Math.abs((b.sc[k] ?? 50) - q) / FIT_W) * keen * b.care * (0.85 + 0.15 * letShare);
       if (!(w > 0)) continue;
       cands.push({ b, roll, avail, w }); tot += w;
     }
@@ -719,8 +735,12 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
         } else {
           renewInPlace(s, b, roll, t, need, stayOpt ? { face: stayOpt.ask, eff: bargain(stayOpt, opts.find((o) => !o.stay)) } : undefined, bookOf(b, roll, kk));
           noteRoll(roll);
-          // WHY: a firm of size that renewed for much less space writes its books
-          if (t.sf >= 5000 / 0.85 && need < t.sf * 0.85) { /* the giveback is written in renewInPlace */ }
+          // A SITTING TENANT WITH NOWHERE ELSE TO GO is the landlord's read of
+          // a tight market: its broker could show it nothing. The landlord
+          // learns what a letting at once teaches — the package back, then
+          // the face up (tenantMarket.ts noteLetting) — when it has nothing else
+          // of the kind to let.
+          if (!opts.some((o) => !o.stay) && availOf(b, roll, kk) < minSfOf(b, kk)) noteLetting(bookOf(b, roll, kk), 0, true, opening);
         }
       } else if (need > t.sf * 1.5 && rng(s, "leasing") < 0.03) {
         // Outgrown mid-lease: next door if the building has it, else go looking.

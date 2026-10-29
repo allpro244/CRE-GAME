@@ -18,6 +18,7 @@ import { creditWord, real, workStage, Row, useDeskView } from "@/ui/panels/share
 import { Employers, Districts, boardClimate, pendingHearings } from "@/ui/panels/CityStances";
 import { Industries } from "@/ui/panels/IndustriesView";
 import { economyByIndustry } from "@/engine/economy";
+import { capReadLine } from "@/engine/propmarket";
 import { CityHallBox } from "@/ui/panels/CityHall";
 
 /** The cycle in a sentence. Read by City → Pulse, which leads with it. */
@@ -735,6 +736,12 @@ export function EconomyPage() {
               {e.rentWhy?.[k] && (
                 <div className="mkt-card-sub" title={e.rentWhy[k]}>
                   {e.rentWhy[k]}
+                </div>
+              )}
+              {/* where the cap comes from: the class's closed deals (propmarket.ts) */}
+              {capReadLine(e, k) && (
+                <div className="mkt-card-sub" title={capReadLine(e, k) ?? undefined}>
+                  {capReadLine(e, k)}
                 </div>
               )}
             </button>

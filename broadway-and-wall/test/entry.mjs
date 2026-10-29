@@ -21,7 +21,7 @@ export const MODULES = [
   // tenantMarket: landlords price their own space, tenants shop (ONE_ECONOMY_PLAN.md step 4).
   "tenantMarket",
   "sim", "leasing", "actions", "credit", "value", "dev", "debt", "demand",
-  "invariants", "rivals", "sponsor", "mix", "acquire", "comps", "market",
+  "invariants", "rivals", "sponsor", "mix", "acquire", "comps", "propmarket", "market",
   "zoning", "landdev", "lotcode", "lotsplit", "lotsplitGeom", "products", "platdesign", "homes", "homeprice", "growth", "roads", "towngrowth", "unpack", "lenders", "proforma", "workout", "portfolio", "portfoliosale", "auction", "notes",
   "privateCredit", "broker", "loanbook", "amortize", "pricing", "ledger", "rivalDebt", "strategy", "corporate", "firmLog",
   // streetLoans: the private owners' mortgages, loan by loan (ONE_ECONOMY_PLAN.md step 5).

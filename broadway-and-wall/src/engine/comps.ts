@@ -21,6 +21,7 @@ import type { Disclosure } from "./value";
 import { initialCondition, noiAfterTaxYr, holdingNOIYr, asIfOwned, disclosureFor, landPsfNow, landRead, resolveRec, assetValue } from "./value";
 import { industryStress } from "./market";
 import { recordPropertyEvent } from "./history";
+import { printTrade } from "./propmarket";
 
 export interface Comp {
   m: number;            // month it closed
@@ -125,6 +126,9 @@ export function recordComp(
   // Rolling sheet vs century volume. The buffer stays short for the UI; the
   // counters keep every print that ever closed so a long-horizon report is not
   // capped at MAX_COMPS (a fake ceiling on street activity — CLAUDE.md).
+  // ...AND IT IS THE MARKET'S CAP RATE: every building that closes is a
+  // print on the cap tape the class read is taken from (propmarket.ts).
+  if (built) printTrade(s, rec, price, buyer, seller, cond, distress, offMarket);
   s.compsTotal = (s.compsTotal ?? 0) + 1;
   s.compsVolume = (s.compsVolume ?? 0) + px;
   if (s.comps.length > MAX_COMPS) s.comps.splice(0, s.comps.length - MAX_COMPS);

@@ -1626,7 +1626,7 @@ function mainlandRent(R: Rand, going: number, a: HouseholdArrays, i: number): nu
  */
 const COUPLE_SHARE = 0.55, ROOMMATE_SHARE = 0.30;
 function formFromChild(R: Rand, r: HouseholdRegister, i: number, e: Econ, pool: number[], singles: number[], atHome: number[], gone: Uint8Array): boolean {
-  const a = r.a!, w = a.wt[i];
+  let a = r.a!, w = a.wt[i];
   const emp = a.emp3[i], wage = a.wage3[i], pay = isWorking(emp) ? wage : 0, age = Math.max(18, a.oAge[i]);
   const cheap = 12 * r.mainRent * Math.exp(-0.674 * 0.25);
   const u = R.u(), together = u < COUPLE_SHARE + ROOMMATE_SHARE, couple = u < COUPLE_SHARE;
@@ -1634,10 +1634,18 @@ function formFromChild(R: Rand, r: HouseholdRegister, i: number, e: Econ, pool: 
   if (together) {
     // where the other is: on its own, or at home, as many of each as there are
     if (R.u() * (singles.length + atHome.length) < singles.length) {
-      if (couple || cheap / 2 <= SCREEN * pay) j = findMate(R, r, couple, couple ? singles : pool, gone, w, age);
+      if (couple || cheap / 2 <= SCREEN * pay) j = findMate(R, r, couple, couple ? singles : pool, gone, age);
     } else k = findHomeMate(R, r, atHome, gone, i, w, age, cheap, pay);
   }
   if (j < 0 && k < 0 && !(cheap <= SCREEN * pay)) return false;
+  // as many leave as the other agent stands for (all of this one, or part): the rest of this one stay at home as they were
+  a = r.a!;
+  const m = j >= 0 ? Math.min(w, a.wt[j]) : k >= 0 ? Math.min(w, a.wt[k]) : w;
+  if (w > m + 1e-6) {
+    const c = addAgent(r); a = r.a!;
+    for (const f of FIELD_NAMES) (a[f] as Uint8Array)[c] = (a[f] as Uint8Array)[i];
+    a.id[c] = r.nextId++; a.wt[c] = w - m; a.wt[i] = m; w = m;
+  }
   const un = a.un3[i], ind = a.ind3[i];
   const sav = j >= 0 ? Math.min(1.5 * wage / 12, Math.max(0, a.sav[i]) / 2) : 0;
   a.sav[i] -= sav;
@@ -1685,12 +1693,12 @@ function leaveHome(R: Rand, r: HouseholdRegister, i: number, e: Econ) {
   if (othersOf(a, i) > 0 && a.oAge[i] < 35 && R.u() < youngLf(a.oAge[i])) enterLabourForce(a, i, e);
   r.flow.formed = (r.flow.formed ?? 0) + a.wt[i];
 }
-/** A single adult's household of about this age (within five years) that can take in a partner (any) or a roommate (a childless renter across the water), standing for at least as many households as the one leaving home. */
-function findMate(R: Rand, r: HouseholdRegister, couple: boolean, list: number[], gone: Uint8Array, w: number, age: number): number {
+/** A single adult's household of about this age (within five years) that can take in a partner (any) or a roommate (a childless renter across the water). */
+function findMate(R: Rand, r: HouseholdRegister, couple: boolean, list: number[], gone: Uint8Array, age: number): number {
   const a = r.a!;
   for (let k = 0; k < 24 && list.length; k++) {
     const j = list[Math.floor(R.u() * list.length)];
-    if ((j < gone.length && gone[j]) || a.adults[j] !== 1 || a.partner[j] !== 0 || a.age[j] < 18 || Math.abs(a.age[j] - age) > 5 || a.wt[j] < w - 1e-6) continue;
+    if ((j < gone.length && gone[j]) || a.adults[j] !== 1 || a.partner[j] !== 0 || a.age[j] < 18 || Math.abs(a.age[j] - age) > 5) continue;
     if (!couple && (a.kids[j] > 0 || a.ten[j] !== TEN_MAINLAND)) continue;
     return j;
   }
@@ -1705,7 +1713,7 @@ function findMate(R: Rand, r: HouseholdRegister, couple: boolean, list: number[]
 function findHomeMate(R: Rand, r: HouseholdRegister, list: number[], gone: Uint8Array, i: number, w: number, age: number, cheap: number, pay: number): number {
   for (let t = 0; t < 24 && list.length; t++) {
     const a = r.a!, k = list[Math.floor(R.u() * list.length)];
-    if (k === i || (k < gone.length && gone[k]) || othersOf(a, k) <= 0 || Math.abs(Math.max(18, a.oAge[k]) - age) > 5 || a.wt[k] < w - 1e-6) continue;
+    if (k === i || (k < gone.length && gone[k]) || othersOf(a, k) <= 0 || Math.abs(Math.max(18, a.oAge[k]) - age) > 5) continue;
     if (cheap > SCREEN * (pay + (isWorking(a.emp3[k]) ? a.wage3[k] : 0))) continue;
     if (a.wt[k] > w + 1e-6) {
       const c = addAgent(r), b = r.a!;

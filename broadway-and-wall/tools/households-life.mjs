@@ -62,6 +62,8 @@ for (const seed of SEEDS) {
       const per = (x) => (1000 * x / persons / (yr.months / 12)).toFixed(1).padStart(5);
       const cat = yr.cat ? (() => { const t = Object.values(yr.cat).reduce((x, y) => x + y, 0); return Object.values(yr.cat).map((v) => (100 * v / t).toFixed(0).padStart(4)).join(""); })() : "  —";
       console.log(`  ${String(Math.round(m / 12)).padStart(2)}  ${Math.round(persons).toLocaleString("en-US").padStart(8)} | ${bands.map((x) => pc(x).padStart(6)).join("")} | ${per(yr.births)} ${per(yr.deaths)} ${per(yr.unions)} ${per(yr.splits)} | ${pc(alone / hh)}  ${(adults / hh).toFixed(2)} | ${pc(own / hh)} ${oo.map((x, k) => pc(x / Math.max(1, ob[k]), 0).padStart(5)).join("")} | ${pc(yr.evict / Math.max(1, yr.rentHh / yr.months) / (yr.months / 12), 2)} (${pc(yr.evIsl / Math.max(1, yr.islHh / yr.months) / (yr.months / 12), 2)}, ${pc(yr.evJob / Math.max(1e-9, yr.evict), 0)}) |${cat}`);
+      const notes = (g.why?.ev ?? []).filter((x) => x.k === "households.spend" && x.m > m - 120);
+      if (notes.length) console.log(`        cause ledger: ${notes.length} household spending falls written in the decade, e.g. "${notes.at(-1).t}"`);
       Object.assign(yr, { births: 0, deaths: 0, unions: 0, splits: 0, evict: 0, evIsl: 0, evJob: 0, rentHh: 0, islHh: 0, months: 0, cat: null });
     }
   }

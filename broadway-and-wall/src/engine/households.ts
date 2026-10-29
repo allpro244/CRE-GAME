@@ -33,6 +33,18 @@
 // owed, not a month a dollar short; and each move-out from the player's
 // flats is written to the cause ledger (why.ts) with its reason.
 //
+// STAGES 4-5 (2026-10-29): LIFE AND SPENDING. Every person dies at its age's
+// rate (CDC life table), children are born at their mother's age's rate (CDC
+// NVSS) and come of age at eighteen, singles move in together and couples
+// part at the record's rates by age, a widow keeps the larger pension; the
+// age pyramid is what those and the people the work brings make
+// (`registerPyramid`, tools/households-life.mjs). Each household's spending
+// goes to the categories households of its income buy (BLS CE by quintile,
+// `bookSpend`), and the firms' household sales are those categories' sum
+// (economy.ts `spendVector`); SNAP and the EITC reach the households whose
+// means qualify them (`fedTransfers`). A category's spending falling with job
+// losses is written to the cause ledger (`rollSpendYear`, `whyHouseholdSpend`).
+//
 // STORAGE is struct-of-arrays (typed arrays, one per field), so a month over
 // ten thousand households is a few milliseconds and a save is a few hundred
 // kilobytes. A save carries the arrays as base64 (`packHouseholdsForSave`);
@@ -376,22 +388,27 @@ const ADULT_AT = 18;
 const SIB_GAP = 2.5;
 /**
  * UNIONS: a single adult's household moves in with another's, a year, by age
- * <25 / 25-34 / 35-44 / 45-54 / 55-64 / 65+ — the marriage rate per 1,000
- * unmarried women (NCFMR, Marriage Rate in the U.S. 2022: 31 overall, highest
- * at 25-34) [S~]. Most first marriages follow living together (~70%, NSFG),
- * so the households that merge when a couple marries merged earlier, when it
- * moved in: in a steady state the moves-in-together run at the marriages plus
- * the cohabitations that end, which the split rate below carries. [S~]
+ * <25 / 25-34 / 35-44 / 45-54 / 55-64 / 65+ — the rate at which single adults
+ * start living with a partner, married or not: about a tenth a year in the
+ * twenties and early thirties, falling with age (NSFG 2011-19 union formation
+ * among unmarried, non-cohabiting women; NCFMR remarriage rates past 45) [S~].
+ * (The first cut used the marriage rate per unmarried woman alone, NCFMR 2022
+ * — 31 per 1,000 — but ~70% of first unions begin as cohabitation (NSFG), and
+ * moving in is when two households become one: measured, the share of
+ * households living alone climbed from 20% to 37% in thirty years against
+ * the CPS's steady 28%.)
  */
-const UNION_YR = [0.035, 0.07, 0.05, 0.03, 0.015, 0.004];
+const UNION_YR = [0.09, 0.11, 0.07, 0.045, 0.025, 0.008];
 /**
  * SPLITS: a couple parts, a year, by the householder's age, same bands — the
  * divorce rate per 1,000 married women (NCFMR 2022: 14.6 overall, about 3x
- * that under 25 and a third of it past 65) [S~]. The partner leaves to rent
- * on its own; the children stay (custody goes to the mother in ~80% of cases,
- * Census CPS; the register does not know which adult is the mother).
+ * that under 25 and a third of it past 65), with the cohabiting couples' far
+ * higher break-ups (about a tenth a year, NSFG; ~12% of couples cohabit, CPS)
+ * blended in [S~]. The partner leaves to rent on its own; the children stay
+ * (custody goes to the mother in ~80% of cases, Census CPS; the register
+ * does not know which adult is the mother).
  */
-const SPLIT_YR = [0.04, 0.025, 0.02, 0.015, 0.01, 0.004];
+const SPLIT_YR = [0.06, 0.04, 0.03, 0.02, 0.012, 0.005];
 /**
  * AVERAGE TAX RATES BY INCOME QUINTILE — CBO, The Distribution of Household
  * Income 2019: federal (income, payroll, excise) 0.6 / 6.9 / 13.0 / 17.4 /
@@ -584,7 +601,7 @@ export interface HouseholdRegister {
   /** This month's move-outs from the player's blocks: the cause-ledger event per block (bbl -> why id). */
   flatWhy?: Record<string, number>;
   /** THE HOUSEHOLDS' YEAR (stage 5), rolled for the cause ledger: spending by category, net income, layoffs, the jobless rate and the wage index; the month each category's fall was last written. */
-  yr?: { cat: Partial<Record<SpendCategory, number>>; income: number; layoffs: number; unemp: number; wage?: number; noted: Partial<Record<SpendCategory, number>> };
+  yr?: { cat: Partial<Record<SpendCategory, number>>; income: number; layoffs: number; unemp: number; wage?: number; hh?: number; noted: Partial<Record<SpendCategory, number>> };
   /** The arrays (in memory), or their base64 (in a save). */
   a?: HouseholdArrays;
   packed?: Partial<Record<FieldName, string>>;
@@ -2508,8 +2525,8 @@ function firstMonth(r: HouseholdRegister, i: number, e: Econ): void {
 const CAT_WORD: Record<SpendCategory, string> = {
   groceries: "groceries", goods: "goods", eatingOut: "eating out", services: "services", health: "health care", education: "education",
 };
-/** A category's fall on its year that is worth a line of its own (a real fall, after the year's pay growth). [K] */
-const SPEND_NOTE = 0.03;
+/** A category's fall on its year that is worth a line of its own: a real fall a household (after the year's pay growth) the size of a recession's — real consumer spending fell 1.6% from 2007 to 2009 while households grew ~0.8%, ~2.4% a household (BEA NIPA T1.1.6, Census HVS). [S~] */
+const SPEND_NOTE = 0.02;
 /**
  * THE HOUSEHOLDS' YEAR, rolled (households stage 5): each category's spending,
  * the households' net income, the layoffs and the jobless rate over the past
@@ -2522,20 +2539,22 @@ const SPEND_NOTE = 0.03;
 function rollSpendYear(s: GameState, r: HouseholdRegister) {
   const f = r.flow, cat = f.spendCat ?? zeroCat(), k = 1 / 12;
   const roll = (prev: number | undefined, x: number) => prev === undefined ? x : prev + k * (x - prev);
-  const y = (r.yr ??= { cat: {}, income: f.income, layoffs: f.layoffs ?? 0, unemp: s.econ.unemployment ?? 0, wage: r.wageRef, noted: {} });
+  let hh = 0;
+  for (let i = 0; i < r.n; i++) hh += r.a!.wt[i];
+  const y = (r.yr ??= { cat: {}, income: f.income, layoffs: f.layoffs ?? 0, unemp: s.econ.unemployment ?? 0, wage: r.wageRef, hh, noted: {} });
   const lab = { u: s.econ.unemployment ?? 0 };
   for (const c of SPEND_CATS) {
     const prev = y.cat[c];
     const chg = prev ? cat[c] / prev - 1 : 0;
-    // a fall, after the pay growth of the year (the wage index's), with work or income lost
-    const real = (1 + chg) * (y.wage ?? r.wageRef) / Math.max(1e-9, r.wageRef) - 1;
+    // a fall a household, after the pay growth of the year (the wage index's), with work or income lost
+    const real = (1 + chg) * ((y.hh ?? hh) / Math.max(1, hh)) * (y.wage ?? r.wageRef) / Math.max(1e-9, r.wageRef) - 1;
     const hurt = (f.layoffs ?? 0) > 1.2 * y.layoffs || f.income < (1 - SPEND_NOTE) * y.income || lab.u > y.unemp + 0.005;
     if (prev && real < -SPEND_NOTE && hurt && !(s.month - (y.noted[c] ?? -99) < 12)) {
       y.noted[c] = s.month;
       why(s, {
         k: "households.spend", a: "household", aid: c, name: CAT_WORD[c],
         n: { spend: cat[c], spendYear: chg, real, income: f.income / Math.max(1, y.income) - 1, layoffs: f.layoffs ?? 0, layoffsYear: 12 * y.layoffs, unemp: lab.u, unempYear: lab.u - y.unemp },
-        t: `Households spent ${(100 * -real).toFixed(1)}% less on ${CAT_WORD[c]} than over the past year · ${Math.round(12 * y.layoffs).toLocaleString("en-US")} laid off in the year · ${(100 * lab.u).toFixed(1)}% jobless`,
+        t: `Households spent ${(100 * -real).toFixed(1)}% less each on ${CAT_WORD[c]} than over the past year, after pay growth · ${Math.round(12 * y.layoffs).toLocaleString("en-US")} laid off in the year · ${(100 * lab.u).toFixed(1)}% jobless`,
       }, [...Object.values(r.layoffWhy ?? {}).slice(0, 3), whyTown(s)]);
     }
     y.cat[c] = roll(prev, cat[c]);
@@ -2544,6 +2563,7 @@ function rollSpendYear(s: GameState, r: HouseholdRegister) {
   y.layoffs = roll(y.layoffs, f.layoffs ?? 0);
   y.unemp = roll(y.unemp, lab.u);
   y.wage = roll(y.wage, r.wageRef);
+  y.hh = roll(y.hh, hh);
 }
 
 /**

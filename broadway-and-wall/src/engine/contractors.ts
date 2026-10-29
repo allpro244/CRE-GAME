@@ -39,9 +39,9 @@
 // THE MONEY. A contractor earns its winning markup on the work it puts in
 // place each month (the contract value spread over the build), the index
 // markup on its share of repair and fit-out (45% of construction work,
-// dev.ts MAINTENANCE_SHARE), and pays a fixed overhead of OVERHEAD on what its
-// crews could bill at full employment [S: CFMA's annual survey, GC general
-// and administrative ~3-4% of revenue; net margins 2-3%]. It opens with
+// dev.ts MAINTENANCE_SHARE), and pays overhead of OVERHEAD on what it bills
+// [S: CFMA's annual survey, GC general and administrative ~3-4% of revenue;
+// net margins 2-3%]: a contractor that wins work under that loses money. It opens with
 // capital of a tenth of a year's capacity [S: surety underwriting, bonding
 // capacity 10-20x working capital]. Under nothing, it fails. The player's
 // money moves only through the player's own job budget (the change-order
@@ -57,15 +57,26 @@ import { why, whyNation } from "./why";
 
 const OHP = 0.12, BID_SLOPE = 0.35, BID_SD = 0.06;
 const OVERHEAD = 0.035;
+/** Net margin on repair and service work [S: CFMA, GC net margins 2-3%]. */
+const MAINT_NET = 0.02;
 const CAPITAL_YEARS = 0.10;
 /** How fast the index follows its winning bids: an eight-month memory [K]. */
 const INDEX_RHO = 0.12;
-/** Crews a contractor's share drifts toward its share of the work over, months [K: crews follow the order book over about two years]. */
-const SHARE_TAU_M = 24;
+/** Crews a contractor's share drifts toward its share of the work over, months [K: crews follow the order book over about three years]. */
+const SHARE_TAU_M = 36;
 /** A failed contractor's crews: half find another contractor, half leave the trade (US construction lost ~30% of its workforce 2006-11) [K]. */
 const CREW_LEAVE = 0.5;
 /** How many general contractors a town like this carries, and the most a newcomer starts with. */
 const N_GC = 5, ENTRANT_SHARE = 0.08;
+/**
+ * BONDING CAPACITY. A public or institutional job needs a performance bond,
+ * and a surety writes a contractor about 10-20x its working capital in total
+ * backlog [S: surety underwriting practice]; 25x here counts its net worth
+ * beyond working capital. A contractor whose book would pass that does not
+ * bid, which is what stops one firm taking the town's whole order book, and
+ * what a loss-making year costs it beyond the loss.
+ */
+const BOND_MULT = 25;
 /** The floor area of a typical job (dev.ts TYPICAL_SF): one crew-load. */
 export const GC_JOB_SF = 26_000;
 /** A typical job's months in the ground (BUILD_MONTHS, stock-weighted). */
@@ -98,6 +109,8 @@ export interface ContractorBook {
   lastEntryM: number;
   /** crews that left the trade with a failure this month (read by tickCrews) */
   crewLoss: number;
+  /** capital is struck once the trades' workforce is known (tickCrews runs after the first month's index) */
+  funded?: boolean;
   /** this month's winning bids, for the page and probes */
   last?: { m: number; bids: { who: string; gc: string; markup: number; sf: number }[] };
 }
@@ -132,8 +145,8 @@ function book(s: GameState): ContractorBook {
   const used = new Set<string>();
   for (const f of firms) { let k = 0; while (used.has(f.name)) f.name = NAMES[(NAMES.indexOf(f.name) + ++k) % NAMES.length]; used.add(f.name); }
   const tot = firms.reduce((a, f) => a + f.share, 0);
-  const cap = workforce(e);
-  for (const f of firms) { f.share /= tot; f.cash = CAPITAL_YEARS * 12 * f.share * cap * unit; }
+  for (const f of firms) f.share /= tot;
+  void unit;
   e.gcs = { firms, idx: NaN, seq: N_GC, lastEntryM: s.month, crewLoss: 0 };
   return e.gcs;
 }
@@ -189,7 +202,8 @@ export function tickContractors(s: GameState): number {
     if (job.gc !== undefined && live.some((f) => f.id === job.gc)) continue;
     const load = loadOf(job);
     let best: Contractor | undefined, bm = Infinity;
-    for (const f of live) {
+    const bondable = B.funded ? live.filter((f) => ((booked.get(f.id) ?? 0) + load) * unit * JOB_MONTHS <= BOND_MULT * Math.max(0, f.cash)) : live;
+    for (const f of bondable.length ? bondable : live) {
       const m = markup(f, booked.get(f.id) ?? 0, load, cap, `${s.seed}|bid|${job.bbl}|${job.startM}|${f.id}|${s.month}`);
       if (m < bm) { bm = m; best = f; }
     }
@@ -212,19 +226,32 @@ export function tickContractors(s: GameState): number {
   B.idx = Number.isFinite(B.idx) ? B.idx + INDEX_RHO * (monthMarkup - B.idx) : monthMarkup;
   B.last = { m: s.month, bids: bids.map(({ w, ...b }) => { void w; return b; }) };
 
-  // ---- the contractors' books
+  // ---- the contractors' books: capital struck the first month the workforce is known
+  if (!B.funded) {
+    if (e.crewWorkforce === undefined) return B.idx;
+    for (const f of live) f.cash = CAPITAL_YEARS * 12 * f.share * cap * unit;
+    B.funded = true;
+  }
   const work = new Map<number, number>();
   for (const { job } of liveJobs(s)) {
     if (job.gc === undefined) continue;
     const months = Math.max(1, (job.deliverM ?? s.month + JOB_MONTHS) - job.startM);
     // the month's work in place, in crew-months, at the markup it won at
-    work.set(job.gc, (work.get(job.gc) ?? 0) + loadOf(job) * JOB_MONTHS / months * (job.gcBid ?? B.idx));
+    // the month's work in place, in crew-months, and the markup it earns over overhead
+    const wip = loadOf(job) * JOB_MONTHS / months;
+    work.set(job.gc, (work.get(job.gc) ?? 0) + wip * ((job.gcBid ?? B.idx) - OVERHEAD));
   }
   let shareWork = 0;
   const tot = [...booked.values()].reduce((a, b) => a + b, 0);
   B.crewLoss = 0;
   for (const f of live) {
-    const profitCrewMonths = (work.get(f.id) ?? 0) + B.idx * f.share * (e.crewSteady ?? 0) - OVERHEAD * f.share * cap;
+    // Overhead follows the work a contractor actually carries (it lays off
+    // the crews it has nothing for): a contractor loses money by winning work
+    // under its overhead, which is what bidding to keep crews in a lull is.
+    // Repair, service and fit-out work is not tendered on hard bid: it is
+    // negotiated and largely cost-plus, and it earns an ordinary net margin
+    // through a lull (MAINT_NET). New build is where a contractor can lose.
+    const profitCrewMonths = (work.get(f.id) ?? 0) + MAINT_NET * f.share * (e.crewSteady ?? 0);
     f.cash += profitCrewMonths * unit;
     // Crews follow the work: a contractor winning more than its share hires.
     const want = tot > 0 ? (booked.get(f.id) ?? 0) / tot : f.share;
@@ -240,13 +267,14 @@ export function tickContractors(s: GameState): number {
   // ---- an entrant, when the work is there and the town is short a builder
   const alive = B.firms.filter((f) => f.failedM === undefined);
   const util = (tot) / Math.max(1e-6, cap);
-  if (alive.length < N_GC && util > 0.9 && s.month - B.lastEntryM >= 6) {
+  // (A town with no builder left gets one at once: the work does not wait.)
+  if (alive.length === 0 || (alive.length < N_GC && util > 0.9 && s.month - B.lastEntryM >= 6)) {
     B.seq++;
     const used = new Set(B.firms.map((f) => f.name));
     let name = NAMES[Math.floor(hash01(`${s.seed}|gcname|${B.seq}`) * NAMES.length)];
     for (let k = 1; used.has(name) && k < NAMES.length; k++) name = NAMES[(NAMES.indexOf(name) + 1) % NAMES.length];
     if (used.has(name)) name = `${name.split(" ")[0]} & Sons ${B.seq}`;
-    const nf: Contractor = { id: B.seq, name, share: ENTRANT_SHARE, cash: 0, foundedM: s.month, won: 0 };
+    const nf: Contractor = { id: B.seq, name, share: alive.length ? ENTRANT_SHARE : 1, cash: 0, foundedM: s.month, won: 0 };
     for (const f of alive) f.share *= 1 - ENTRANT_SHARE;
     nf.cash = CAPITAL_YEARS * 12 * nf.share * cap * unit;
     B.firms.push(nf);

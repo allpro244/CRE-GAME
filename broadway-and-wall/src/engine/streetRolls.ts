@@ -142,8 +142,9 @@ function hashU(seed: number, key: string): number {
  * WHICH WORK A NEW FIRM IS FORMED FOR (ONE ECONOMY step 2): an industry with
  * room on this floor, by the size of its gap, and a trade on the street that
  * does that work (industries.ts TRADE_TO_INDUSTRY, by US employment); any
- * office trade for a headquarters. With no gap anywhere (the opening's fill,
- * the region's shed movers), the trade the street would have drawn. Two draws
+ * office trade for a headquarters (a shed mover: by the off-map firms' heads).
+ * With no gap anywhere (the opening's fill,
+ * a region with no off-map heads), the trade the street would have drawn. Two draws
  * either way.
  */
 function formFor(s: GameState, k: Comm, gap: Float64Array): { sector: Tenant["sector"]; ind?: number } {
@@ -1110,6 +1111,16 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       : tgt ? gapSf / FORM_M[k] * entry + fill
       : fill;
     if (!(form > 0)) continue;
+    // A shed firm moving onto the map from the region is one of the region's
+    // off-map shed firms: its industry is drawn by their heads (economy.ts
+    // `offHeads`), not by the nation's mix of the trade — a region with a
+    // few hundred textile workers off the map does not send a 400-head
+    // textile mill.
+    let pickW = gap[k];
+    if (k === "industrial" && !opening && eco?.offHeads?.length === N_IND) {
+      pickW = new Float64Array(N_IND);
+      for (let i = 0; i < N_IND; i++) if (floorOf(INDUSTRY_IDS[i]) === k) pickW[i] = eco.offHeads[i];
+    }
     // New firms, sized off the city's distribution of requirements, shopping
     // for space across the quality the town has.
     const capAll = scores[k].reduce((a, x) => a + x.cap, 0);
@@ -1128,7 +1139,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       if (!(want > 0)) break;
       // A firm the size of the gap's remainder forms only in proportion.
       if (want > form && rng(s, "leasing") > form / want) break;
-      const { sector, ind } = formFor(s, k, gap[k]);
+      const { sector, ind } = formFor(s, k, pickW);
       const credit: Credit = creditOfSize(k, want);
       const t: Tenant = {
         name: pickName(s, sector), use: k, sector, credit, quality: Math.round(q), sf: want, rentPsf: 0,

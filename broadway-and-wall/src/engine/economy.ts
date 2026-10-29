@@ -1351,12 +1351,17 @@ export function economyToEngine(s: GameState): void {
     // is (tenantMarket.ts `tenantHeads`). The region's sheds off the map are
     // sized from it (market.ts).
     const offFloorSf: Record<Floor, number> = { office: 0, retail: 0, industrial: 0 };
+    const offHeads: number[] = [];
     for (let i = 0; i < N_IND; i++) {
       const id = INDUSTRY_IDS[i], fl = floorOf(id);
       const off = Math.max(0, heads[i] * (1 - OFF_FLOOR[id]) - (E.cur.named[i] ?? 0));
+      offHeads.push(off);
       offFloorSf[fl] += off * SF_PER_JOB[fl] * sfMix(i, fl);
     }
     d.offFloorSf = offFloorSf;
+    // ...and by industry, in heads: a shed firm moving onto the map from the
+    // region is one of these (streetRolls.ts shed movers)
+    d.offHeads = offHeads;
     d.emp = E.emp.slice(); d.empPrev = (E.empPrev ?? E.emp).slice();
     d.target = E.emp.map((v, i) => v * (E.sigma?.[i] ?? 0));
     // each trade, by the heads it had in each industry at the opening (its own
@@ -1430,7 +1435,7 @@ export function migrateEconomy(s: GameState): void {
     for (const k of FLOORS) { const a = e.eco.floorSf[k], b = e.eco0.floorSf[k]; if (a && b) mig[k] = a / b; }
     e.eco0 = { ...e.eco0, floorSf: undefined, mig };
   }
-  if (e.eco) { delete e.eco.emp; delete e.eco.empPrev; delete e.eco.target; delete e.eco.offFloorSf; }
+  if (e.eco) { delete e.eco.emp; delete e.eco.empPrev; delete e.eco.target; delete e.eco.offFloorSf; delete e.eco.offHeads; }
   // the off-map sheds re-anchor on the floor they hold (market.ts `offRef`)
   delete e.offRef; delete e.offFloor0;
   delete e.islandFill;

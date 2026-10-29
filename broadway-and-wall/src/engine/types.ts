@@ -97,6 +97,8 @@ export interface EcoDrive {
   floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>;
   /** ...of which the off-map firms' (heads the named firms do not hold, at their industries' feet a worker), by class (sf). */
   offFloorSf?: Partial<Record<"office" | "retail" | "industrial", number>>;
+  /** ...and each industry's on-floor heads off the map. */
+  offHeads?: number[];
   /** Each industry's employment now and a month ago, and the heads the island's named firms are formed toward (its share at the opening). */
   emp?: number[]; empPrev?: number[]; target?: number[];
   /** Each trade's employment and real sales against the opening: its industries', by the heads it had in each. */

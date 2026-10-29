@@ -51,6 +51,7 @@ const worldHash = (g) => {
 const city = makeCity("somewhere", 1);
 E.normalizeParcels(city.parcels);
 const bbls = Object.keys(city.parcels);
+const OPEN_MAX = 0.08;
 const SEED = 550991, MONTHS = Number(process.env.MONTHS ?? 18);
 const start = () => E.firstListings(E.newGame(SEED, city.parcels), city.parcels, bbls);
 const tick = (g) => { g = E.advanceQuarter(g, city.parcels, bbls, city.adjacency); return g.gameOver ? { ...g, gameOver: null, cash: 6e6 } : g; };
@@ -70,7 +71,7 @@ console.log("\nTHE CITY'S FIRM BOOKS\n");
 // two runs with the books, one whose books are torn up every month
 let a = start(), b = start(), z = start();
 const hA = [], hB = [];
-let sumOk = true, mktOk = true, eqOk = true, bookOk = true, worldOk = true, worst = "", months = 0, flowsOk = true, payOk = true, fillOk = true, firstHeads = NaN, firstJobs = NaN;
+let sumOk = true, mktOk = true, eqOk = true, bookOk = true, worldOk = true, worst = "", months = 0, flowsOk = true, payOk = true, fillOk = true, openMax = 0, firstHeads = NaN, firstJobs = NaN;
 for (let m = 1; m <= MONTHS; m++) {
   a = tick(a); b = tick(b);
   z = tick(z);
@@ -97,16 +98,26 @@ for (let m = 1; m <= MONTHS; m++) {
   if (!(E.loanBook(L) >= 0) || !Number.isFinite(E.loanBook(L))) { bookOk = false; worst ||= `month ${m}: loan book ${E.loanBook(L)}`; }
   // one payroll (1b): the firms' cash wages are the register's wages
   if (!(Math.abs(l.hhWagesFirms - l.hhWagesRegister) <= 1e-9 * l.hhWagesRegister)) { payOk = false; worst ||= `month ${m}: firms pay ${l.hhWagesFirms}, the register is paid ${l.hhWagesRegister}`; }
-  // ...and the register's earners are each industry's heads, to within half a regional household
-  // (each household weighs what it stands for; since step 2 the region's
-  // households move between renting and owning as shares of their weight, so
-  // weights differ — an industry is filled to within half its heaviest earner's)
+  // ...and the register's earners fill each industry's heads: never more
+  // (layoffs cut an industry to its heads), and fewer only by the openings a
+  // labour market keeps. A month's openings are not all filled that month:
+  // the jobless find work at the CPS rate, and a household moves here for a
+  // job only once it has stood open a month — so an industry the town's own
+  // people pass over (a low-paying one) can sit short until the arrivals
+  // come. Demanding none open every month asked for a market with no
+  // openings; JOLTS job openings run 4-7% of employment (2015-2023), so an
+  // industry may be short up to 8% of its heads. Both to within half its
+  // heaviest household's weight: each household weighs what it stands for
+  // (since step 2 the region's move between renting and owning as shares of
+  // their weight, so weights differ).
   const R = a.households, A = R.a, wMax = new Array(l.heads.length).fill(0);
   for (let k = 0; k < R.n; k++) for (const [emp, ind] of [[A.emp1[k], A.ind1[k]], [A.emp2[k], A.ind2[k]]]) {
     if ((emp >= 0 || emp < -16) && ind < l.heads.length) wMax[ind] = Math.max(wMax[ind], A.wt[k]);
   }
   for (let i = 0; i < l.heads.length; i++) {
-    if (!(Math.abs(l.regEarners[i] - l.heads[i]) <= Math.max(wMax[i], R.wRegion) / 2 + 1e-6)) { fillOk = false; worst ||= `month ${m}: ${E.INDUSTRY_IDS[i]} has ${l.regEarners[i].toFixed(1)} earners for ${l.heads[i].toFixed(1)} heads (heaviest earner ${wMax[i].toFixed(1)})`; break; }
+    const half = Math.max(wMax[i], R.wRegion) / 2 + 1e-6, over = l.regEarners[i] - l.heads[i];
+    if (!(over <= half) || !(-over <= OPEN_MAX * l.heads[i] + half)) { fillOk = false; worst ||= `month ${m}: ${E.INDUSTRY_IDS[i]} has ${l.regEarners[i].toFixed(1)} earners for ${l.heads[i].toFixed(1)} heads (heaviest earner ${wMax[i].toFixed(1)})`; break; }
+    openMax = Math.max(openMax, -over / Math.max(1, l.heads[i]));
   }
   if (!Number.isFinite(firstHeads)) { firstHeads = l.heads.reduce((s, x) => s + x, 0); firstJobs = a.econ.jobs; }
 }
@@ -119,7 +130,7 @@ check(mktOk && flowsOk, "the market clears every month: what buyers paid in, sel
 check(eqOk, "every firm's equity is its cash less its debt, and no firm holds negative cash");
 check(bookOk, "the loan book is finite and non-negative");
 check(payOk, "one payroll: what the firms pay in wages is what the register's earners are paid, every month (to 1e-9)");
-check(fillOk, "the register's earners in each industry are its heads, to within half its heaviest household's weight, every month");
+check(fillOk, `the register's earners in each industry never exceed its heads, and fall short by no more than ${OPEN_MAX * 100}% of them (JOLTS-like openings; at most ${(openMax * 100).toFixed(1)}%), to within half its heaviest household's weight, every month`);
 {
   const ec = a.economy;
   // The opening is sized the engine's way, construction apart (it opens at

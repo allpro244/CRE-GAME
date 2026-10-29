@@ -2382,6 +2382,8 @@ export interface Econ {
   revAnchor?: { cpi: number; rent: Partial<Record<string, number>> };
   /** The street's let space, rentable space and unhoused seekers' wants by class, this month (streetRolls.ts). */
   streetSpace?: Partial<Record<BuiltClass, { let: number; cap: number; seek: number; ratio?: number; byBand?: { stock: number[]; occ: number[] } }>>;
+  /** The street's flats as its households hold them (households.ts, stage 2): feet let, feet on the street, and the feet the households across the water who want a flat here are looking for. */
+  flatSpace?: { let: number; cap: number; seek: number };
   /** The region's sheds off the map, occupied, on the city aggregate (market.ts). */
   aggOcc?: Partial<Record<BuiltClass, number>>;
   /** Household spending on goods against the opening, from the cost of consumer credit. */

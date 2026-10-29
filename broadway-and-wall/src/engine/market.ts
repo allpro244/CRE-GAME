@@ -4879,7 +4879,9 @@ export function tickEcon(s: GameState) {
     // looking is the firms still searching. Sheds run half and half: the
     // region's off the map stays on the aggregate below (`aggOcc`), the
     // mapped ones are the firms'.
-    const firms = k !== "multifamily" ? e.streetSpace?.[k] : undefined;
+    // (flats: the street's households since households stage 2 — who stays,
+    // who leaves, who chose a block from across the water; households.ts)
+    const firms = k !== "multifamily" ? e.streetSpace?.[k] : e.flatSpace;
     const offShare = firms ? Math.max(0, 1 - (firms.cap + (e.playerNow?.sf?.[k] ?? 0)) / Math.max(1, e.stock[k])) : 0;
     // The class's ledger and the map drift a few per cent apart over decades
     // (deliveries and demolitions are booked to the stock as they happen);
@@ -4893,7 +4895,7 @@ export function tickEcon(s: GameState) {
     // the town grew 30% in seven years), the shops fell back to the aggregate
     // equation and read a 98% shortage at 12% vacancy, and real shop rents
     // went 11 -> 85 in five years. Sheds stay split (most are off the map).
-    const firmsOnly = !!firms && (k === "office" || k === "retail" || offShare < 0.10);
+    const firmsOnly = !!firms && (k === "office" || k === "retail" || k === "multifamily" || offShare < 0.10);
     void offShare;
     if (firms && !firmsOnly) e.occupied[k] = (e.aggOcc ??= {})[k] ?? e.occupied[k];
     let absorb = 0;

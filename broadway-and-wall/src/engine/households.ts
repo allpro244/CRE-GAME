@@ -42,7 +42,7 @@
 // they are a shape parameter, stated as such (CLAUDE.md).
 import type { ParcelTable } from "@/data/types";
 import type { Econ, GameState } from "./types";
-import { HH_RENT_SHARE0, shortIndexOf } from "./market";
+import { HH_RENT_SHARE0, shortIndexOf, recordDeal } from "./market";
 import { resolveRecBare, useRentableSf } from "./value";
 import { flatUnitSf } from "./streetRolls";
 import { HH_SIZE, INCOME_SIGMA, TAX_INS, DTI, COMMUTE, REF_HOME, medianIncome, mortgageRate, fundamentalHomePsf } from "./homeprice";
@@ -489,7 +489,9 @@ function subsistence(e: Econ, persons: number): number {
   return SUBSIST_SHARE * (POVERTY_1 + POVERTY_ADD * Math.max(0, persons - 1)) * (e.priceLevel ?? 1) * (e.cpi ?? 1) / 12;
 }
 
-type Block = { idx: number; target: number; let: number; unitSf: number };
+type Block = { idx: number; target: number; let: number; unitSf: number;
+  /** a street block (its households let it, stage 2): its flats, its draw on movers and its month's letting limit, in flats */
+  street?: boolean; capU?: number; w?: number; limU?: number; rel?: number };
 
 /**
  * THE ISLAND'S FLATS, AS HOUSEHOLDS: every street block's let flats (its roll,
@@ -498,7 +500,7 @@ type Block = { idx: number; target: number; let: number; unitSf: number };
  * a flat let this month — its newest lease cohort, or the street's average for
  * a block that has none. Pure: it reads the parcels and the state.
  */
-type RawBlock = { bbl: string; units: number; unitSf: number; psf: number | null };
+type RawBlock = { bbl: string; units: number; unitSf: number; psf: number | null; street?: boolean; capU?: number; w?: number; limU?: number; rel?: number };
 /**
  * A street block's flat size, through the register's memo when it has one.
  * Resolving 2,000 records a month was most of a region month's cost, and a
@@ -509,7 +511,7 @@ type RawBlock = { bbl: string; units: number; unitSf: number; psf: number | null
 type UnitMemo = Record<string, number[]>;   // bbl -> [flat sf, month read, month last seen]
 function blockUnitSf(s: GameState, parcels: ParcelTable, bbl: string, memo?: UnitMemo): number {
   const m = s.month, hit = memo?.[bbl];
-  if (hit && hit[2] === m - 1 && m - hit[1] < 12) { hit[2] = m; return hit[0]; }
+  if (hit && hit[2] === m - 1 && m - hit[1] < 12 && hit.length > 3) { hit[2] = m; return hit[0]; }
   const rec = resolveRecBare(parcels, s, bbl);
   const cap = rec ? useRentableSf(rec, "multifamily") : 0;
   const unitSf = rec && cap > 0 ? Math.max(300, flatUnitSf(rec, cap)) : 0;
@@ -517,25 +519,29 @@ function blockUnitSf(s: GameState, parcels: ParcelTable, bbl: string, memo?: Uni
     // stagger the yearly re-reads across the months by the block's name
     let h = 0;
     for (let i = 0; i < bbl.length; i++) h = (h * 31 + bbl.charCodeAt(i)) | 0;
-    memo[bbl] = [unitSf, hit ? m : m - (Math.abs(h) % 12), m];
+    memo[bbl] = [unitSf, hit ? m : m - (Math.abs(h) % 12), m, cap];
   }
   return unitSf;
 }
 
-function rawBlocks(s: GameState, parcels: ParcelTable, memo?: UnitMemo): { raw: RawBlock[]; psfAvg: number } {
+function rawBlocks(s: GameState, parcels: ParcelTable, memo?: UnitMemo, all = false): { raw: RawBlock[]; psfAvg: number } {
   const e = s.econ;
   const raw: RawBlock[] = [];
   let rs = 0, sf = 0;
   for (const [bbl, roll] of Object.entries(e.flatRolls ?? {})) {
-    if (!(roll.occ > 0)) continue;
+    if (!(roll.occ > 0) && !all) continue;
     const unitSf = blockUnitSf(s, parcels, bbl, memo);
     if (!(unitSf > 0)) continue;
     // the rent a flat lets for this month: the block's asking rent (streetRolls), else its newest lease
     let newest: { rent: number; endM: number } | null = null;
     for (const x of roll.l ?? []) if (!newest || x.endM > newest.endM) newest = x;
-    const psf = roll.mkt ?? (newest ? newest.rent : null);
+    const psf = roll.ask ?? roll.mkt ?? (newest ? newest.rent : null);
     if (psf !== null) { rs += psf * roll.occ; sf += roll.occ; }
-    raw.push({ bbl, units: roll.occ / unitSf, unitSf, psf });
+    const capSf = memo?.[bbl]?.[3] ?? 0;
+    if (all && psf === null) continue;   // a block not yet priced by the street: next month
+    raw.push(all
+      ? { bbl, units: roll.occ / unitSf, unitSf, psf, street: true, capU: capSf / unitSf, w: roll.w ?? 1, limU: (roll.lim ?? 2 * unitSf) / unitSf, rel: roll.ask && roll.mkt ? roll.ask / roll.mkt : 1 }
+      : { bbl, units: roll.occ / unitSf, unitSf, psf });
   }
   const psfAvg = sf > 0 ? rs / sf : 0;
   for (const h of Object.values(s.holdings)) {
@@ -555,12 +561,12 @@ export function islandRenterHouseholds(s: GameState, parcels: ParcelTable): numb
   return rawBlocks(s, parcels).raw.reduce((t, x) => t + x.units, 0);
 }
 
-function readBlocks(s: GameState, parcels: ParcelTable, r: HouseholdRegister): { list: Block[]; byIdx: Map<number, Block>; psfAvg: number } {
+function readBlocks(s: GameState, parcels: ParcelTable, r: HouseholdRegister, byHH = false): { list: Block[]; byIdx: Map<number, Block>; psfAvg: number } {
   const ix = new Map<string, number>();
   r.blocks.forEach((b, i) => ix.set(b, i));
   const idxOf = (bbl: string) => { let i = ix.get(bbl); if (i === undefined) { i = r.blocks.length; r.blocks.push(bbl); ix.set(bbl, i); } return i; };
   const memo = (r.unitMemo ??= {});
-  const { raw, psfAvg } = rawBlocks(s, parcels, memo);
+  const { raw, psfAvg } = rawBlocks(s, parcels, memo, byHH);
   for (const k in memo) if (memo[k][2] < s.month) delete memo[k];   // off the street, or let to nobody
   const list: Block[] = [];
   const byIdx = new Map<number, Block>();
@@ -573,7 +579,7 @@ function readBlocks(s: GameState, parcels: ParcelTable, r: HouseholdRegister): {
     cum += x.units / r.wIsland;
     const target = Math.round(cum) - done;
     done += target;
-    const b: Block = { idx: idxOf(x.bbl), target, let: (psf * x.unitSf) / 12, unitSf: x.unitSf };
+    const b: Block = { idx: idxOf(x.bbl), target, let: (psf * x.unitSf) / 12, unitSf: x.unitSf, street: x.street, capU: x.capU, w: x.w, limU: x.limU, rel: x.rel };
     list.push(b); byIdx.set(b.idx, b);
   }
   return { list, byIdx, psfAvg };
@@ -1071,6 +1077,31 @@ function moveIn(R: Rand, r: HouseholdRegister, b: Block, e: Econ, m: number, poo
 }
 
 /**
+ * A STREET FLAT LET TO A HOUSEHOLD THAT CHOOSES IT (stage 2): one from across
+ * the water that wants this block at its rent, else nobody — the flat stands
+ * empty, and its rent answers. (A flat let to whoever was there left at the
+ * next renewal: the island's renters turned over 80% a year.)
+ */
+function letTo(R: Rand, r: HouseholdRegister, b: Block, e: Econ, m: number, want: number[], gone: Uint8Array): boolean {
+  const w = r.wIsland, A = r.a!;
+  for (let k = 0; k < 16 && want.length; k++) {
+    const c = want[Math.floor(R.u() * want.length)];
+    if ((c < gone.length && gone[c]) || A.ten[c] !== TEN_MAINLAND || A.wt[c] < w) continue;
+    if (!wantsIsland(r, A, c, e, b.let, -MOVE_LOG)) continue;
+    const i = addAgent(r), a = r.a!;
+    for (const f of FIELD_NAMES) (a[f] as Uint8Array)[i] = (a[f] as Uint8Array)[c];
+    a.id[i] = r.nextId++;
+    a.wt[c] -= w;
+    if (a.wt[c] < 1e-6 && c < gone.length) gone[c] = 1;
+    a.wt[i] = w; a.ten[i] = TEN_RENT; a.blk[i] = b.idx;
+    a.rent[i] = b.let; a.leaseEnd[i] = m + 12; a.owed[i] = 0; a.arrears[i] = 0;
+    r.flow.movedIn += w;
+    return true;
+  }
+  return false;
+}
+
+/**
  * An island household that leaves its flat for the region's rented homes:
  * its weight goes back to the pool across the water — onto a household like
  * it (its first earner's industry, else its status: in work, retired, out of
@@ -1440,7 +1471,11 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   const e = s.econ, m = s.month;
   const R = stream(s);
   const D = readDemand(s);
-  const B = readBlocks(s, parcels, r);
+  // THE HOUSEHOLDS LET THE STREET'S FLATS (stage 2): once they have made their
+  // first choices, a street block's flats are let to the households that
+  // choose it and empty when they leave; the rolls are written from them
+  const byHH = !!D && r.locMu !== undefined && !!e_flatRolls(s);
+  const B = readBlocks(s, parcels, r, byHH);
   r.flow = {
     movedOut: 0, movedIn: 0, evictions: 0, foreclosures: 0, spend: 0, income: 0, arrived: 0, left: 0, bought: 0, sold: 0,
     out: zeroOut(), leaseEnds: 0, leaseMoves: 0, formed: 0, rebought: 0,
@@ -1490,6 +1525,8 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
 
   const persons = (i: number) => a.adults[i] + a.kids[i];
   const H = homeMarket(e);
+  const atStart = new Map<number, number>();
+  for (let i = 0; i < n1; i++) if (a.ten[i] === TEN_RENT) atStart.set(a.blk[i], (atStart.get(a.blk[i]) ?? 0) + 1);
   let letSum = 0, letN = 0;
   for (const b of B.list) { letSum += b.target * b.let; letN += b.target; }
   const letAvg = letN > 0 ? letSum / letN : r.mainRent;
@@ -1685,11 +1722,34 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       }
       a.rent[i] = renew;
       a.leaseEnd[i] = m + 12;
+      if (byHH && b.street) recordDeal(e, "multifamily", m, (b.rel ?? 1) * renew / Math.max(1, b.let), b.unitSf * w, true);
     }
     const l = inBlock.get(b.idx);
     if (l) l.push(i); else inBlock.set(b.idx, [i]);
   }
+  // the street's blocks, in an order weighted by how well each draws movers
+  // (its score, how long it has stood empty, its owner's care: streetRolls)
+  const order = B.list.filter((b) => byHH && b.street).map((b) => ({ b, k: Math.pow(R.u(), 1 / Math.max(0.05, b.w ?? 1)) })).sort((p, q) => q.k - p.k);
+  for (const { b } of order) {
+    const l = inBlock.get(b.idx) ?? [];
+    const cap = Math.floor((b.capU ?? 0) / r.wIsland);
+    // a block that shrank (rebuilt smaller) gives notice to the households it can no longer hold
+    let extra = l.length - cap;
+    while (extra > 0) {
+      const k = Math.floor(R.u() * l.length);
+      const i = l[k]; l[k] = l[l.length - 1]; l.pop();
+      noteOut(r, i, "other", () => ({ n: {}, t: "A household moved out of a block being rebuilt" }));
+      toMainland(R, r, i, pool, gone, true); extra--;
+    }
+    // the flats empty since before this month, up to the block's letting pace, to households that choose them
+    const room = Math.max(0, Math.min(cap - (atStart.get(b.idx) ?? 0), cap - l.length, Math.floor((b.limU ?? 2) / r.wIsland)));
+    for (let k = 0; k < room; k++) {
+      if (!letTo(R, r, b, e, m, want, gone)) break;
+      recordDeal(e, "multifamily", m, b.rel ?? 1, b.unitSf * r.wIsland);
+    }
+  }
   for (const b of B.list) {
+    if (byHH && b.street) continue;
     const l = inBlock.get(b.idx) ?? [];
     let extra = l.length - b.target;
     // fewer households than the roll: those leaving are drawn at random
@@ -1772,14 +1832,19 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     // flats the market held let then went to whoever was across the water,
     // wanting the island or not, who left at the next renewal — the island's
     // renters turned over 80% a year and its demand never fell.
+    let seekW = 0;
     if (r.locMu !== undefined) {
       let wantW = 0;
       for (let i = 0; i < r.n; i++) {
         const t = A.ten[i];
-        if (t === TEN_RENT ? wantsIsland(r, A, i, e, A.rent[i], MOVE_LOG) : t === TEN_MAINLAND && wantsIsland(r, A, i, e, letAvg, -MOVE_LOG)) wantW += A.wt[i];
+        if (t === TEN_RENT ? wantsIsland(r, A, i, e, A.rent[i], MOVE_LOG) : t === TEN_MAINLAND && wantsIsland(r, A, i, e, letAvg, -MOVE_LOG)) {
+          wantW += A.wt[i];
+          if (t === TEN_MAINLAND) seekW += A.wt[i];
+        }
       }
       r.islandWant = wantW;
     }
+    if (byHH) writeRolls(s, r, B, seekW);
     // the renewals and the turnover, as the street's rolls and the player's flats read them (rolled over six months)
     const fl = r.flow;
     if ((fl.leaseEnds ?? 0) > 0) {
@@ -1797,6 +1862,49 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   OUTS = null; MINE = null; CTX = null;
   R.done();
 }
+
+/**
+ * THE STREET'S ROLLS, AS ITS HOUSEHOLDS HOLD THEM (stage 2): each street
+ * block's leases are its households' (feet, rent a foot a year, the month the
+ * lease ends), and the street's let, its capacity and the feet the households
+ * across the water are looking for go to the space market (market.ts reads
+ * `flatSpace` as it reads the firms' `streetSpace`).
+ */
+function writeRolls(s: GameState, r: HouseholdRegister, B: { list: Block[] }, seekW: number) {
+  const e = s.econ, a = r.a!, rolls = e.flatRolls!;
+  const cohorts = new Map<number, Map<string, { sf: number; rent: number; endM: number }>>();
+  const byIdx = new Map<number, Block>();
+  for (const b of B.list) if (b.street) byIdx.set(b.idx, b);
+  for (let i = 0; i < r.n; i++) {
+    if (a.ten[i] !== TEN_RENT) continue;
+    const b = byIdx.get(a.blk[i]);
+    if (!b) continue;
+    const rent = +((12 * a.rent[i]) / b.unitSf).toFixed(2), key = `${a.leaseEnd[i]}|${rent}`;
+    let c = cohorts.get(b.idx);
+    if (!c) { c = new Map(); cohorts.set(b.idx, c); }
+    const x = c.get(key);
+    if (x) x.sf += a.wt[i] * b.unitSf; else c.set(key, { sf: a.wt[i] * b.unitSf, rent, endM: a.leaseEnd[i] });
+  }
+  let let_ = 0, cap = 0, unit = 0;
+  for (const b of byIdx.values()) {
+    const roll = rolls[r.blocks[b.idx]];
+    if (!roll) continue;
+    const l = [...(cohorts.get(b.idx)?.values() ?? [])].map((x) => ({ ...x, sf: Math.round(x.sf) }));
+    roll.l = l;
+    roll.occ = l.reduce((t, x) => t + x.sf, 0);
+    const capSf = (b.capU ?? 0) * b.unitSf;
+    const vacant = capSf - roll.occ > b.unitSf;
+    if (vacant && roll.vac === undefined) roll.vac = s.month;
+    else if (!vacant) delete roll.vac;
+    let_ += roll.occ; cap += capSf; unit += capSf / Math.max(1, b.capU ?? 1);
+  }
+  const avgUnit = byIdx.size ? unit / byIdx.size : 850;
+  e.flatSpace = { let: let_, cap, seek: seekW * avgUnit };
+  // ...and the street's turnover is theirs (market.ts turnoverYr: the flats between tenants)
+  if (r.moveOutYr !== undefined) (e.turnMeas ??= {}).multifamily = r.moveOutYr;
+}
+
+function e_flatRolls(s: GameState) { return s.econ.flatRolls && Object.keys(s.econ.flatRolls).length > 0; }
 
 /** Drop the households marked gone, keep the order, and zero the tail so a save round-trips exactly. */
 function compact(r: HouseholdRegister, gone: Uint8Array): void {

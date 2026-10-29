@@ -85,18 +85,74 @@ function stopPsfNow(rec: ParcelRecord, econ: GameState["econ"], h: Holding, use?
 }
 
 
-const POOL: Record<Sector, string[]> = {
-  finance: ["Meridian Capital", "Harborline Securities", "Crown & Weir", "Bellamy Fund Group", "Quayside Partners"],
-  law: ["Ashe & Porter LLP", "Calder Marsh", "Winslow Legal", "Tern & Rigging", "Foundry Law Group"],
-  tech: ["Brightwater Systems", "Ledgerworks", "Spindrift Labs", "Cordage Software", "Beacon Analytics"],
-  media: ["The Alden Ledger", "Harborcast Studios", "Gullwing Press", "Northside Signal"],
-  insurance: ["Maritime Mutual", "Anchor Assurance", "Seawall Underwriters", "Garland Indemnity"],
-  logistics: ["Freightline Co.", "Slipway Cargo", "Gantry Freight", "Blue Hull Shipping"],
-  apparel: ["Tidewater Trading Co.", "Rowan Thread Works", "Salt & Selvedge", "Customs House Outfitters"],
-  food: ["The Chandler Room", "Bell Slip Provisions", "Kiln Street Roasters", "Founders Market Hall"],
-  medical: ["Harbor Medical Group", "Northside Clinic", "Beacon Dental", "Alden Diagnostics"],
-  design: ["Marsh & Vane Architects", "Cooper Lane Studio", "Pier Four Design", "Whitlow Drafting"],
+/**
+ * ONE NAME, ONE FIRM (2026-10-29). The pool was four or five names a trade
+ * for ~2,000 firms on the street, so a city had dozens of "Whitlow Drafting"s
+ * that were different firms with different books (the firm screens, #521).
+ * Each trade's names are now its patterns over the town's surnames and
+ * places — 2,400 to 4,800 a trade, every trade with a two-partner pattern
+ * (48 x 47) — in a fixed scrambled order; a new firm
+ * takes the first name at or after its draw that no firm in town is using
+ * (the street's rolls, the player's buildings, the firms looking). One draw a
+ * name, as before, so the leasing stream keeps its pace.
+ */
+const SURNAMES = [
+  "Alden", "Ashe", "Bellamy", "Calder", "Cooper", "Crane", "Daventry", "Ellery", "Fenwick", "Garland", "Hale", "Harrow",
+  "Ingram", "Keel", "Larkin", "Lowell", "Marsh", "Merritt", "Norland", "Oakes", "Pell", "Porter", "Quill", "Rowan",
+  "Sutter", "Thorne", "Tern", "Vane", "Weir", "Whitlow", "Winslow", "Yardley", "Abbott", "Brook", "Carver", "Dunmore",
+  "Everard", "Fairley", "Greer", "Holloway", "Kemble", "Lyle", "Mercer", "Nash", "Orme", "Prentice", "Rigging", "Strand",
+];
+const PLACES = [
+  "Meridian", "Harborline", "Quayside", "Slipway", "Gantry", "Northside", "Pier Four", "Bell Slip", "Kiln Street",
+  "Customs House", "Tidewater", "Seawall", "Beacon", "Brightwater", "Spindrift", "Gullwing", "Foundry", "Anchor",
+  "Maritime", "Crown", "Cordage", "Saltmarsh", "Wharf Street", "Dockside", "Lantern", "Mooring", "Capstan", "Chandlery",
+  "Blue Hull", "Ropewalk", "Lighthouse", "Breakwater", "Ferry Lane", "Water Street", "Old Pier", "Long Wharf",
+  "Granary", "Mill Race", "Signal Hill", "Fulton", "Battery", "Bowsprit", "Keystone", "Ledger", "Halyard", "Sextant",
+];
+const NAME_PATTERNS: Record<Sector, string[]> = {
+  finance: ["{P} Capital", "{P} Securities", "{S} & {T}", "{S} Fund Group", "{P} Partners", "{S} Advisors", "{P} Asset Management"],
+  law: ["{S} & {T} LLP", "{S} {T}", "{S} Legal", "{P} Law Group", "{S}, {T} & Co."],
+  tech: ["{P} Systems", "{P} Labs", "{P} Software", "{P} Analytics", "{S} Digital", "{P} Data", "{S} & {T} Technologies"],
+  media: ["The {P} Ledger", "{P} Studios", "{P} Press", "{P} Signal", "{S} Media", "{S} & {T} Media", "{S} Press"],
+  insurance: ["{P} Mutual", "{P} Assurance", "{P} Underwriters", "{S} Indemnity", "{S} & {T} Insurance"],
+  logistics: ["{P} Freight", "{P} Cargo", "{S} Shipping", "{P} Logistics", "{S} & {T} Forwarding"],
+  apparel: ["{P} Trading Co.", "{S} Thread Works", "{P} Outfitters", "{S} & {T} Clothiers", "{P} Mercantile"],
+  food: ["The {P} Room", "{P} Provisions", "{P} Roasters", "{P} Market Hall", "{S}'s Kitchen", "{S} & {T} Grocers"],
+  medical: ["{P} Medical Group", "{P} Clinic", "{P} Dental", "{S} Diagnostics", "{S} & {T} Physicians"],
+  design: ["{S} & {T} Architects", "{S} Studio", "{P} Design", "{S} Drafting", "{S} {T} Engineering"],
 };
+/** Every name a pattern makes, in an order scrambled by a fixed hash (so neighbours in the list are unalike). */
+const NAME_LISTS = new Map<Sector, string[]>();
+function namesFor(sector: Sector): string[] {
+  let list = NAME_LISTS.get(sector);
+  if (list) return list;
+  const out = new Set<string>();
+  for (const p of NAME_PATTERNS[sector] ?? NAME_PATTERNS.design) {
+    if (p.includes("{P}")) { for (const P of PLACES) out.add(p.replace("{P}", P)); continue; }
+    for (const S of SURNAMES) {
+      if (!p.includes("{T}")) { out.add(p.replace("{S}", S)); continue; }
+      for (const T of SURNAMES) if (T !== S) out.add(p.replace("{S}", S).replace("{T}", T));
+    }
+  }
+  const key = (n: string) => { let h = 2166136261; for (let i = 0; i < n.length; i++) { h ^= n.charCodeAt(i); h = Math.imul(h, 16777619); } h ^= h >>> 13; return Math.imul(h, 0x5bd1e995) >>> 0; };
+  list = [...out].sort((a, b) => key(a) - key(b) || (a < b ? -1 : 1));
+  NAME_LISTS.set(sector, list);
+  return list;
+}
+/** The names firms in town go by this month — built once a month's state, then kept up as names are taken. */
+const NAMES_IN_USE = new WeakMap<object, Set<string>>();
+function namesInUse(s: GameState): Set<string> {
+  const key = s.econ as object | undefined;
+  if (!key) return new Set(Object.values(s.holdings ?? {}).flatMap((h) => (h.tenants ?? []).map((t) => t.name)));
+  let set = NAMES_IN_USE.get(key);
+  if (set) return set;
+  set = new Set<string>();
+  for (const roll of Object.values(s.econ.streetRolls ?? {})) for (const t of roll.t) set.add(t.name);
+  for (const h of Object.values(s.holdings ?? {})) for (const t of h.tenants ?? []) set.add(t.name);
+  for (const k of s.econ.seekers ?? []) if (k.t) set.add(k.t.name);
+  NAMES_IN_USE.set(key, set);
+  return set;
+}
 
 /**
  * WHO IS ACTUALLY LOOKING FOR SPACE.
@@ -116,8 +172,13 @@ export function pickSector(s: GameState, cls: string): Sector {
   return arr[arr.length - 1];
 }
 export function pickName(s: GameState, sector: Sector): string {
-  const arr = POOL[sector];
-  return arr[Math.floor(rng(s, "leasing") * arr.length) % arr.length];
+  const arr = namesFor(sector), used = namesInUse(s);
+  const i0 = Math.floor(rng(s, "leasing") * arr.length) % arr.length;
+  for (let k = 0; k < arr.length; k++) {
+    const n = arr[(i0 + k) % arr.length];
+    if (!used.has(n)) { used.add(n); return n; }
+  }
+  return arr[i0];   // every name of the trade taken (thousands of firms in one trade): share one
 }
 // THE TENANT POOL FOLLOWS THE BUILDING. A bank does not sign fifteen years in
 // a building that leaks: credit tenants gather in good space, and lesser

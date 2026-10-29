@@ -1,23 +1,24 @@
-// THE CITY'S FIRM BOOKS AGAINST THE TOWN THEY SHADOW.
+// THE CITY'S FIRM BOOKS, MONTH BY MONTH.
 //
 //   node tools/economy.mjs                      1 seed x 30 years, the island
 //   SEEDS=550991,12007 YEARS=10 node tools/economy.mjs
 //
-// Steps 1-1b of ONE_ECONOMY_PLAN.md (src/engine/economy.ts, households.ts) are
-// a shadow: nothing reads the books, so the questions worth asking are
-// whether what they say agrees with what the engine already says, and what
-// they cost. Printed, for each seed:
-//   - every year: the shadow's jobs (named firms, the engine's construction
-//     trades, government per resident, and every other industry from its own
-//     demand) against the engine's `e.jobs`; the register's earners in work
-//     and its households against the engine's; the firms' payroll against the
-//     register's wages (one number since 1b — the gap must be zero); the
-//     multiplier; the oil price; the CPU the books and the register add;
-//   - at years 1/10/20/30: employment by industry, shadow against the
-//     engine's way of sizing it (named heads plus the off-map residual of
-//     e.jobs spread toward the nation's mix), and the EBITDA margin against
-//     the BEA's (gross operating surplus over output, Use table 2023);
+// Since step 2 of ONE_ECONOMY_PLAN.md the books drive the town (economy.ts,
+// households.ts): the firms' heads are its labour demand, the register's
+// earners fill them and are its jobs (`e.jobs`, read a month on). Printed,
+// for each seed:
+//   - every year: the firms' heads against the jobs the engine read (the
+//     register's earners in work, a month behind); the register's households;
+//     the firms' payroll against the register's wages (one number since 1b —
+//     the gap must be zero); the multiplier; the oil price; the CPU the books
+//     and the register add;
+//   - at years 1/10/20/30: heads by industry against each industry's
+//     employment (what its firms staff to, `staff`) and the register's earners
+//     in it, and the EBITDA margin against the BEA's (gross operating surplus
+//     over output, Use table 2023);
 //   - what construction was bought for, and its margin against the BEA's.
+// (tools/economy-century.mjs asks the century's questions: growth, decline,
+// unemployment, vacancy, rents, the multiplier and the export share.)
 // Run ONE seed at a time on a shared machine (4 cores, other agents).
 import { assertFreshBundle } from "../test/fresh.mjs";
 assertFreshBundle();
@@ -46,7 +47,7 @@ for (const seed of SEEDS) {
   const bbls = Object.keys(city.parcels);
   let g = E.firstListings(E.newGame(seed, city.parcels), city.parcels, bbls);
   console.log(`\nseed ${seed} — ${YEARS} years`);
-  console.log("  yr   jobs: shadow / engine        earners(reg) | households reg / eng      arrived left /yr | payroll firms / register    | mult I/II  jobs/exp  exported | oil $/bbl (real) | ms/mo books reg | save");
+  console.log("  yr   jobs: heads / engine         earners(reg) | households reg / eng      arrived left /yr | payroll firms / register    | mult I/II  jobs/exp  exported | oil $/bbl (real) | ms/mo books reg | save");
   const snaps = [];
   let arrY = 0, leftY = 0;
   for (let m = 1; m <= YEARS * 12; m++) {
@@ -94,8 +95,8 @@ for (const seed of SEEDS) {
     console.log(`  yr ${String(s.yr).padStart(2)}  C ${(l.C / 1e6).toFixed(1)}  G ${(l.G / 1e6).toFixed(1)}  P ${(l.P / 1e6).toFixed(2)}  X ${(l.X / 1e6).toFixed(1)}   | off-map share of jobs: shadow ${pc(1 - named / heads)}, engine ${pc(1 - named / l.jobsEngine)} | retired-headed ${pc(s.retired)}  persons ${f0(s.st.persons)} (engine population ${f0(s.pop)})  unemployment reg ${pc(s.st.unemployment, 1)} (engine ${pc(s.uEng, 1)})`);
   }
   // by industry at the snapshot years
-  console.log(`\n  EMPLOYMENT BY INDUSTRY, shadow (named + demand) against the engine's way of sizing it, and the register's earners`);
-  console.log(`  industry      ` + snaps.map((s) => `| yr ${String(s.yr).padStart(2)}  shadow  engine    gap   reg   `).join(""));
+  console.log(`\n  EMPLOYMENT BY INDUSTRY: heads (named + off-map) against the industry's employment (what its firms staff to), and the register's earners`);
+  console.log(`  industry      ` + snaps.map((s) => `| yr ${String(s.yr).padStart(2)}   heads     emp    gap   reg   `).join(""));
   for (let i = 0; i < IDS.length; i++) {
     console.log(`  ${IDS[i].padEnd(13)} ` + snaps.map((s) => { const r = s.bi[i]; return `| ${f0(r.heads).padStart(12)} ${f0(r.engHeads).padStart(7)} ${sg(r.heads / r.engHeads - 1).padStart(6)} ${f0(r.regEarners).padStart(6)}   `; }).join(""));
   }

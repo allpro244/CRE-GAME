@@ -52,6 +52,9 @@ import { staleDiscount } from "./absorption";
 import { tenantQualityTerms } from "./bands";
 import { drawTenantSf, sizeScale } from "./plates";
 import { noteTenantMove } from "./history";
+import { INDUSTRY_IDS, N_IND, TRADE_TO_INDUSTRY, floorOf } from "./industries";
+import { demandModel } from "./demand";
+import { whyFirmDark } from "./economy";
 
 export interface StreetRoll {
   t: Tenant[];
@@ -105,12 +108,54 @@ const FORM_M: Record<Comm, number> = { office: 9, retail: 6, industrial: 6 };
 /** Score points between the space a firm shops for and a building, per e-fold of its interest. */
 const FIT_W = 12;
 
+/**
+ * HOW MUCH OF A SHOP'S TRADE IS ITS WALKING CATCHMENT: half. A shop sells to
+ * the people who work and live within a walk of it (demand.ts `blockFoot`, a
+ * few hundred metres) and to everyone else who comes; convenience retail and
+ * restaurants draw most of their sales from a primary trade area of a few
+ * blocks to a mile, so a neighbourhood's share of a shop's sales is about
+ * half [K, shape parameter: the ICSC / Huff trade-area convention that the
+ * primary area is 50-70% of a centre's sales]. A shop's staff move with its
+ * catchment's share of the town's people at this elasticity, on top of its
+ * industry's employment — so a factory that closes takes trade from the shops
+ * around it (step 2), and the town's spending as a whole stays the industry's.
+ */
+const CATCHMENT = 0.5;
+
 /** A uniform [0,1) from a key — the same tenant in the same month always draws the same number. */
 function hashU(seed: number, key: string): number {
   let h = 2166136261 ^ (seed >>> 0);
   for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 16777619); }
   h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d); h ^= h >>> 12;
   return (h >>> 0) / 4294967296;
+}
+
+/**
+ * WHICH WORK A NEW FIRM IS FORMED FOR (ONE ECONOMY step 2): an industry with
+ * room on this floor, by the size of its gap, and a trade on the street that
+ * does that work (industries.ts TRADE_TO_INDUSTRY, by US employment); any
+ * office trade for a headquarters. With no gap anywhere (the opening's fill,
+ * the region's shed movers), the trade the street would have drawn. Two draws
+ * either way.
+ */
+function formFor(s: GameState, k: Comm, gap: Float64Array): { sector: Tenant["sector"]; ind?: number } {
+  const u1 = rng(s, "leasing"), u2 = rng(s, "leasing");
+  let tot = 0;
+  for (let i = 0; i < N_IND; i++) tot += gap[i];
+  if (!(tot > 0)) return { sector: pickSector(s, k) };
+  let x = u1 * tot, ind = N_IND - 1;
+  for (let i = 0; i < N_IND; i++) { x -= gap[i]; if (x < 0) { ind = i; break; } }
+  const id = INDUSTRY_IDS[ind];
+  const opts: [Tenant["sector"], number][] = [];
+  for (const [sec, list] of Object.entries(TRADE_TO_INDUSTRY[k]) as [Tenant["sector"], readonly [string, number][]][]) {
+    const tw = list.reduce((a, [, w]) => a + w, 0);
+    for (const [j, w] of list) if (j === id) opts.push([sec, w / Math.max(1e-9, tw)]);
+  }
+  if (!opts.length) return { sector: pickSector(s, k), ind };
+  const ot = opts.reduce((a, [, w]) => a + w, 0);
+  let y = u2 * ot;
+  for (const [sec, w] of opts) { y -= w; if (y < 0) return { sector: sec, ind }; }
+  return { sector: opts[opts.length - 1][0], ind };
 }
 
 /** Run `fn` on a private "leasing" stream seeded from the key; the world's streams are restored after. */
@@ -157,6 +202,20 @@ function ensureFirm(s: GameState, t: Tenant) {
 export function firmNeed(s: GameState, t: Tenant): number {
   ensureFirm(s, t);
   return (t.hcRef ?? t.sf) * (t.staff ?? 1) / Math.max(0.2, t.staffSign ?? 1) * rawNow(s, useOf(t));
+}
+
+/**
+ * EACH FIRM'S INDUSTRY (ONE ECONOMY step 2): the one it was formed in, else
+ * the one the city's books put it in (economy.ts `assign`). Read once a
+ * month off the books' columns. Pure.
+ */
+function industryMap(s: GameState): Map<number, number> {
+  const out = new Map<number, number>();
+  const E = s.economy;
+  if (!E?.f || !E.L?.slot) return out;
+  const n = E.L.slot.n, id = E.f.id as unknown as ArrayLike<number>, ind = E.f.ind as unknown as ArrayLike<number>;
+  for (let k = 0; k < n; k++) if (id[k] >= 0) out.set(id[k], ind[k]);
+  return out;
 }
 
 /** Headcount in reference feet — what the firm counts for against the town's demand. */
@@ -279,6 +338,16 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
 
   // Headcount that closed or left town this month, by class — what new firms replace.
   const lost: Record<string, number> = { office: 0, retail: 0, industrial: 0 };
+  const eco = e.eco, indOf = industryMap(s);
+  // each street building's block and its catchment's share of the town's people now
+  const foot = s.blockFoot, ofBbl = foot ? demandModel(parcels).ofBbl : undefined;
+  let footTot = 0;
+  if (foot) for (const v of Object.values(foot)) footTot += v;
+  const catchOf = (bbl: string) => {
+    const id = ofBbl?.get(bbl);
+    const v = id !== undefined ? foot?.[id] : undefined;
+    return v !== undefined && footTot > 0 ? v / footTot : undefined;
+  };
   const dzAcc: Record<string, [number, number]> = {};
   // ---- 1. the firms in the street's buildings: books, failures, expiries
   for (const [bbl, roll] of Object.entries(R)) {
@@ -295,22 +364,51 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       // one firm wins from its rivals another loses, so the firm-specific part
       // nets out across the trade — survivors growing must not add jobs the
       // trade does not have).
-      const emp = e.firmBooks?.[t.sector]?.emp ?? 1;
-      const prev = t.empRef ?? emp;
-      t.empRef = emp;
+      // ...ITS INDUSTRY'S, NOT ITS TRADE'S (2026-10-28, ONE ECONOMY step 2):
+      // the employment the city's books say its industry staffs to (economy.ts
+      // `staff`), month on month; a firm the books have not met yet keeps its
+      // staff for the month.
+      const ind = t.ind ?? indOf.get(t.fid!);
+      const iEmp = ind !== undefined ? eco?.emp?.[ind] : undefined;
+      const known = iEmp !== undefined && iEmp > 0;
+      const emp = known ? iEmp : 1;
+      const prev = known ? (t.empInd ?? emp) : 1;
+      if (known) t.empInd = emp;
+      // a shop: and its walking catchment's share of the town's people
+      let catchR = 1;
+      if (k === "retail") {
+        const c = catchOf(bbl);
+        if (c !== undefined && c > 0) { if (t.catch !== undefined && t.catch > 0) catchR = Math.pow(c / t.catch, CATCHMENT); t.catch = c; }
+      }
       const zNow = t.fin?.z ?? 0;
       const dz = zNow - ((t as Tenant & { zSeen?: number }).zSeen ?? zNow);
       (t as Tenant & { zSeen?: number }).zSeen = zNow;
       const za = (dzAcc[t.sector] ??= [0, 0]), hw = firmHc(t);
       za[0] += hw * dz; za[1] += hw;
-      t.staff = Math.max(0.05, Math.min(60, (t.staff ?? 1) * Math.sqrt(emp / Math.max(1e-6, prev)) * Math.exp(0.7 * (dz - (e.dzBar?.[t.sector] ?? 0)))));
+      // ...AND WHERE THE ISLAND HOLDS MORE OF ITS INDUSTRY THAN THE
+      // INDUSTRY'S WORK SUPPORTS (step 2: its share of the industry's
+      // employment at the opening, `islandFill` last month), its firms shed
+      // the excess at the pace new firms fill a shortfall (FORM_M). Half of a
+      // swing is the sitting firms', half new firms' or closures', in both
+      // directions; without this a shrinking industry's sitting firms kept
+      // staff its sales no longer paid for, since no entrant was there to
+      // take the other half. (A first cut took the whole fall on the sitting
+      // firms and a square root of the rise, which ratcheted every firm down
+      // in an industry whose employment merely wobbled: measured, a tech
+      // tenant's sales -58% since signing with its industry -1% on its year.)
+      const r = emp / Math.max(1e-6, prev);
+      const over = ind !== undefined ? Math.max(1, e.islandFill?.[ind] ?? 1) : 1;
+      const shed = over > 1 && COMM.includes(k) ? Math.pow(over, -1 / FORM_M[k as Comm]) : 1;
+      t.staff = Math.max(0.05, Math.min(60, (t.staff ?? 1) * Math.sqrt(r) * shed * catchR * Math.exp(0.7 * (dz - (e.dzBar?.[t.sector] ?? 0)))));
       // The contractual bump on each anniversary.
       const age = m - t.startM;
       if (age > 0 && age % 12 === 0) t.rentPsf = +(t.rentPsf * (1 + bumpOf(t) / 100)).toFixed(2);
       const f = tickTenantFin(e, t, m < (t.freeUntilM ?? -1) ? 0 : t.rentPsf * t.sf, e.creditIdx ?? 1);
       if (rng(s, "leasing") < tenantFailOdds(f, t.credit)) {
         if (k in lost) lost[k] += firmHc(t);
-        (e.streetFailed ??= []).push({ m, bbl, name: t.name, sf: t.sf, use: k, why: "dark", credit: t.credit });
+        // WHY (why.ts): a firm the size of an anchor (rivals.ts reads them) writes what failed it
+        const whyId = t.sf >= 8000 ? whyFirmDark(s, t, f, bbl) : undefined;
+        (e.streetFailed ??= []).push({ m, bbl, name: t.name, sf: t.sf, use: k, why: "dark", credit: t.credit, ...(whyId ? { whyId } : {}) });
         (e.failedSf ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] += t.sf;
         seeking.delete(t.fid!);
         vacate(roll, t);
@@ -401,17 +499,15 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     hc[k] += firmHc(t);
   }
   for (const sk of e.seekers) if (sk.t) { hc[sk.use] += firmHc(sk.t); space[sk.use]!.seek += sk.want; }
-  // Each trade's payroll this month against last, and what that asks of new
-  // firms by class: hc-weighted mean change, and half of the growth.
   e.dzBar = Object.fromEntries(Object.entries(dzAcc).map(([sec, [a, w]]) => [sec, w > 0 ? a / w : 0]));
+  // each trade's payroll this month against last (its industries', economy.ts): the term a signing firm chooses reads it
   const tradeR: Record<string, number> = {};
-  for (const [sec, b] of Object.entries(e.firmBooks ?? {})) {
-    const prevE = e.tradeEmpPrev?.[sec] ?? b.emp;
-    tradeR[sec] = b.emp / Math.max(1e-6, prevE);
-  }
+  for (const [sec, b] of Object.entries(e.firmBooks ?? {})) tradeR[sec] = b.emp / Math.max(1e-6, e.tradeEmpPrev?.[sec] ?? b.emp);
   e.tradeEmpPrev = Object.fromEntries(Object.entries(e.firmBooks ?? {}).map(([sec, b]) => [sec, b.emp]));
-  const trade: Record<Comm, { r: number; grow: number; w: number }> = { office: { r: 1, grow: 0, w: 0 }, retail: { r: 1, grow: 0, w: 0 }, industrial: { r: 1, grow: 0, w: 0 } };
   const secW: Partial<Record<Comm, Partial<Record<string, number>>>> = {};
+  // THE ISLAND'S FIRMS BY INDUSTRY AND FLOOR, in heads (ONE ECONOMY step 2):
+  // what new firms are formed against.
+  const named: Record<Comm, Float64Array> = { office: new Float64Array(N_IND), retail: new Float64Array(N_IND), industrial: new Float64Array(N_IND) };
   // What space costs the town's firms against what space and staff cost them
   // together, by class (market.ts reads it for how firms economise on floor).
   const shareAcc: Partial<Record<Comm, [number, number]>> = {};
@@ -425,19 +521,40 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   for (const k of COMM) { const a = shareAcc[k]; if (a && a[1] > 0) (e.spaceShare ??= {})[k] = a[0] / a[1]; }
   const tradeAdd = (t: Tenant) => {
     const k = useOf(t);
-    if (!(k in trade)) return;
-    const r = tradeR[t.sector] ?? 1, h = firmHc(t);
-    const x = trade[k];
-    x.r = (x.r * x.w + r * h) / Math.max(1e-9, x.w + h); x.w += h;
-    x.grow += h * (r - 1) * 0.5;
+    if (!(k in named)) return;
+    const h = firmHc(t);
     const ws = (secW[k] ??= {});
     ws[t.sector] = (ws[t.sector] ?? 0) + h;
+    const ind = t.ind ?? indOf.get(t.fid!);
+    if (ind !== undefined) named[k as Comm][ind] += h / SF_PER_JOB[k as Comm];
   };
   let jobs = 0;
   for (const roll of Object.values(R)) for (const t of roll.t) { tradeAdd(t); const k = useOf(t); if (k in SF_PER_JOB) jobs += firmHc(t) / SF_PER_JOB[k]; }
   for (const h of Object.values(s.holdings)) for (const t of h.tenants ?? []) { tradeAdd(t); const k = useOf(t); if (k in SF_PER_JOB) jobs += firmHc(t) / SF_PER_JOB[k]; }
   for (const sk of e.seekers) if (sk.t) { tradeAdd(sk.t); jobs += firmHc(sk.t) / SF_PER_JOB[sk.use]; }
   e.firmJobs = Math.round(jobs);
+  // WHAT EACH INDUSTRY WANTS OF THE ISLAND'S FLOORS: its employment times
+  // the island's share of it at the opening (economy.ts `sigma`), shared over
+  // the floors its named firms sit on (its own floor when it has none), less
+  // what the island's firms already employ. New firms form into that gap at
+  // the pace demand becomes a search (FORM_M); a town holding more firms than
+  // its industries support loses more at each lease's end (`ratio`, EXIT_BASE).
+  const gap: Record<Comm, Float64Array> = { office: new Float64Array(N_IND), retail: new Float64Array(N_IND), industrial: new Float64Array(N_IND) };
+  const want: Record<Comm, number> = { office: 0, retail: 0, industrial: 0 };
+  const tgt = eco?.target;
+  const fill: number[] = [];
+  if (tgt) for (let i = 0; i < N_IND; i++) {
+    let tot = 0;
+    for (const k of COMM) tot += named[k][i];
+    fill.push(tgt[i] > 0 ? tot / tgt[i] : 1);
+    for (const k of COMM) {
+      const split = tot > 0 ? named[k][i] / tot : (floorOf(INDUSTRY_IDS[i]) === k ? 1 : 0);
+      const t = tgt[i] * split;
+      want[k] += t;
+      gap[k][i] = Math.max(0, t - named[k][i]);
+    }
+  }
+  if (tgt) e.islandFill = fill;
   // The suites on the market now, for firms sized by what is on offer.
   const suites: Record<Comm, { avail: number; sc: number }[]> = { office: [], retail: [], industrial: [] };
   for (const [bbl, roll] of Object.entries(R)) {
@@ -452,7 +569,9 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   for (const k of COMM) {
     const d = e.demandAt?.[k];
     const sp = space[k]! as NonNullable<typeof space[Comm]> & { ratio?: number };
-    sp.ratio = 1;
+    let have = 0;
+    for (let i = 0; i < N_IND; i++) have += named[k][i];
+    sp.ratio = tgt && want[k] > 0 ? have / want[k] : 1;
     if (!scores[k].length) continue;
     // THE OPENING ONLY (growOpeningStreet): before the game the town is grown
     // to the size its opening space market says it is.
@@ -516,7 +635,11 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       }
       if (mg0 > 0) entry = Math.max(0, Math.min(1.6, mg / mg0));
     }
-    let form = k === "industrial" && !opening ? shedMovers : Math.max(0, lost[k] + trade[k].grow) * entry + fill;
+    let gapHc = 0;
+    for (let i = 0; i < N_IND; i++) gapHc += gap[k][i];
+    let form = k === "industrial" && !opening ? shedMovers
+      : tgt ? gapHc * SF_PER_JOB[k] / FORM_M[k] * entry + fill
+      : fill;
     if (!(form > 0)) continue;
     // New firms, sized off the city's distribution of requirements, shopping
     // for space across the quality the town has.
@@ -536,11 +659,12 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       if (!(want > 0)) break;
       // A firm the size of the gap's remainder forms only in proportion.
       if (want > form && rng(s, "leasing") > form / want) break;
-      const sector = pickSector(s, k);
+      const { sector, ind } = formFor(s, k, gap[k]);
       const credit: Credit = firmCredit(s, q);
       const t: Tenant = {
         name: pickName(s, sector), use: k, sector, credit, quality: Math.round(q), sf: want, rentPsf: 0,
         net: false, startM: m, endM: m, staff: 1, staffSign: 1, hcRef: want / rawNow(s, k),
+        ...(ind !== undefined ? { ind } : {}),
       } as Tenant;
       ensureFirm(s, t);
       e.seekers.push({ fid: t.fid!, use: k, want, since: m, why: "new", t });
@@ -632,6 +756,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     const freeM = Math.round(termM / 12 * 0.8 * concessionPressure(e, k) * rng(s, "leasing"));
     const carry: Partial<Tenant> = {
       fid: firm.fid, quality: firm.quality, staff: firm.staff, empRef: firm.empRef, fin: firm.fin,
+      ...(firm.ind !== undefined ? { ind: firm.ind } : {}), ...(firm.empInd !== undefined ? { empInd: firm.empInd } : {}),
     };
     const lease = streetLease(s, b.rec, b.cond, b.condIdx, k, take, { name: firm.name, sector: firm.sector, credit: firm.credit, ...carry }, rentMult, termM, freeM);
     // Signed for the people it has now, at today's rent.
@@ -901,7 +1026,10 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       // the CPS records it (about 22% of renters a year). At the opening that
       // adds up to about the old 45%; after it, it moves with the town.
       const out = Math.max(0, -(e.migRate ?? 0)) * 12 * 1.5;
-      const buy = 0.08 * Math.exp(-10 * ((e.tenureIdx ?? 1) - 1));
+      // (since ONE ECONOMY step 2, the household register's own buyers: the
+      // share of its renter households that bought last month, a year —
+      // households.ts `tickTenure` — not a second tenure margin)
+      const buy = e.eco?.buyRate ?? 0.08 * Math.exp(-10 * ((e.tenureIdx ?? 1) - 1));
       const jobs = 0.10 * Math.max(0.5, Math.min(2, ((e.jobs ?? 1) / Math.max(1, e.jobsPrevYr ?? e.jobs ?? 1)) ** 10));
       const moveOut = Math.min(0.85, 0.22 + out + buy + jobs);
       for (const x of roll.l) {

@@ -27,7 +27,6 @@ When you remove one, move it to **Removed** with the PR. When you add a mechanis
 | 22 | Anonymous part of each bank's loan book, and its delinquency formula | `lenders.ts` `anonDelinq` | step 5 (in progress) |
 | 25 | A receiver's half-built frame: land + sunk cost × random band | `rivals.ts` `orphanToTape` | step 7b: builders bid the frame on cost to complete |
 | 26 | Capital wave as a shift in every bidder's equity target | `blackswans.ts` → `propmarket.ts` `valueTo` | 6d-1: money chasing returns |
-| 27 | Portfolio size discount (2% + 1.6%/building to 18%, ×(1 + 1.5 × shut credit)) | `portfoliosale.ts` `sizeDiscount` | step 7b: the package clears at what the few firms that can fund the whole cheque bid — alone, with a fund raise, or as a JV — so the discount comes from how few can write it |
 
 ## Allowed exogenous inputs
 

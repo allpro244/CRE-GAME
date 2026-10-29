@@ -1093,7 +1093,15 @@ export function printLandTrade(s: GameState, rec: ParcelRecord, price: number, b
   const r = (s.rivals ?? []).find((x) => x.name === buyer);
   if (!r || !landBanker(r) || paramsOf(r).build > 0) return;
   const L = impliedLandLevel(s, rec, price);
-  if (L !== null) pushLandPrint(s, { m: s.month, L, w: distress || offMarket ? 0.5 : 1, kind: "t" });
+  // MARKET VALUE ASSUMES NEITHER PARTY UNDER COMPULSION (USPAP; the
+  // Interagency Appraisal Guidelines). A forced sale of dirt nobody can build
+  // on, to the one land banker in the room, is the price of the compulsion,
+  // not of the land; nor is a lot never exposed to the market. Measured with
+  // them in at half weight: the texture level fell 87% over 25 years (land
+  // median 61 -> 8 $/sf over six seeds) on distressed lots clearing at the
+  // only bid. Neither is a texture print.
+  if (distress || offMarket) return;
+  if (L !== null) pushLandPrint(s, { m: s.month, L, w: 1, kind: "t" });
 }
 
 /** A land round that did not close: the bid-ask midpoint, at half weight. */

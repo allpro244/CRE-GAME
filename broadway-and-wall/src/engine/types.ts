@@ -82,6 +82,15 @@ export interface EcoDrive {
   renters: number;
   /** Households arrived for work and left out of work this month (weighted); renter households that bought, as a share a year. */
   arrived: number; left: number; buyRate?: number;
+  /**
+   * HOUSEHOLDS STAGE 2: the renter households that want an island flat at the
+   * going rents (the flats' demand, market.ts); the island renters' move-out
+   * rate a year and the share of ending island leases that end in a move (the
+   * player's flats and the street's renewals); the last twelve months' home
+   * buyers, their pay a year and weight (the builders' sales, homeprice.ts).
+   */
+  islandWant?: number; flatMoveOut?: number; flatLeaseMove?: number;
+  buyers?: { m: number; inc: number; w: number }[];
   /** The firms' heads (labour demand); 0 before the books open. */
   heads: number;
   /** Floor the firms' heads take, by class (sf): on the floor, not at home, not in a building of their own. */
@@ -969,6 +978,8 @@ export interface Development {
   coverage?: number;
   /** How you chose to demise it, sf per space per use. Carried to delivery. */
   suites?: Partial<Record<BuiltClass, number>>;
+  /** The general contractor that won the job (contractors.ts), and its bid's markup over direct cost. */
+  gc?: number; gcBid?: number;
   costTotal: number;      // the budget as it stands today, escalation included
   hardCost: number;       // the part exposed to escalation under cost-plus
   contract: Contract;
@@ -1806,6 +1817,8 @@ export interface Alert {
   detail?: string;
   /** The building it is about, when it is about one — the card can take you there. */
   bbl?: string;
+  /** The event in the cause ledger (why.ts) behind it; the news line carries it too. */
+  why?: number;
   /** Something the firm already has is at stake (your ground tenant, your lender): it stops Year / Skip like a docket item. */
   stops?: boolean;
 }
@@ -1840,7 +1853,7 @@ export function raiseAlert(s: GameState, a: Omit<Alert, "id" | "q">) {
   // exactly what silencing the others costs: the interruption, and nothing
   // else.
   if (!s.news) s.news = [];
-  s.news.unshift({ q: s.month, kind: a.tone === "bad" ? "warn" : "event", text: `${a.title} — ${a.body}` });
+  s.news.unshift({ q: s.month, kind: a.tone === "bad" ? "warn" : "event", text: `${a.title} — ${a.body}`, ...(a.why ? { why: a.why } : {}) });
   // A queue the UI never drained would otherwise grow for a century. Eight is
   // more than anything realistic can raise between two renders.
   if (s.alerts.length > 8) s.alerts.splice(0, s.alerts.length - 8);
@@ -2350,6 +2363,15 @@ export interface Econ {
    * (0-1), against the reference building the class read is quoted for.
    */
   capFit?: Partial<Record<BuiltClass, [number, number, number]>>;
+  /**
+   * WHAT BUYERS HAVE SEEN OF EACH SUBMARKET (propmarket.ts tickLocBeliefs):
+   * per class and quality band (`bands` — address and building blended), the
+   * band's income (rent swing x occupancy) last month in logs (`li`), and a
+   * ten-year memory of how its income has moved against the class's: the
+   * mean monthly change (`g`) and its mean square (`v`). `lc` is the class's
+   * own log income last month; `n` months watched.
+   */
+  locSeen?: Partial<Record<BuiltClass, { li: number[]; lc: number; g: number[]; v: number[]; n: number }>>;
   /** The market's slack each new deal reads (the rent equation's monthly pressure). */
   dealPress?: Partial<Record<BuiltClass, number>>;
   /** Every street block of flats and the flats let in it (streetRolls.ts). */
@@ -2373,7 +2395,7 @@ export interface Econ {
   /** Each industry's heads in the island's named firms over the heads they are formed toward (streetRolls.ts): over 1, its firms shed the excess. */
   islandFill?: number[];
   /** The first month's drivers, which the space market's indices are read against. */
-  eco0?: { floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>; renters?: number; jobs?: number;
+  eco0?: { floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>; renters?: number; jobs?: number; islandWant?: number;
     /** a save reopened on step 2b's industries: each class's driver as it stood (economy.ts `migrateEconomy`) */
     mig?: Partial<Record<"office" | "retail" | "industrial", number>> };
   /** Each trade's payroll last month, for the firms' month-on-month change. */
@@ -2398,6 +2420,8 @@ export interface Econ {
   revAnchor?: { cpi: number; rent: Partial<Record<string, number>> };
   /** The street's let space, rentable space and unhoused seekers' wants by class, this month (streetRolls.ts). */
   streetSpace?: Partial<Record<BuiltClass, { let: number; cap: number; seek: number; ratio?: number; byBand?: { stock: number[]; occ: number[] } }>>;
+  /** The street's flats as its households hold them (households.ts, stage 2): feet let, feet on the street, and the feet the households across the water who want a flat here are looking for. */
+  flatSpace?: { let: number; cap: number; seek: number };
   /** The region's sheds off the map, occupied, on the city aggregate (market.ts). */
   aggOcc?: Partial<Record<BuiltClass, number>>;
   /** Household spending on goods against the opening, from the cost of consumer credit. */
@@ -2424,7 +2448,7 @@ export interface Econ {
   /** Business rent against the nation's at this town's opening — the parity `regionalPull` measures cost against. */
   regionRent0?: number;
   /** Black swans that have landed (blackswans.ts), for the paper and probes. */
-  blackSwans?: { m: number; kind: "fire" | "surge" | "wave" | "panic" | "fiscal" | "campus" | "embargo" | "arrivals"; size: number; sf: number;
+  blackSwans?: { m: number; kind: "fire" | "surge" | "wave" | "panic" | "fiscal" | "campus" | "embargo" | "arrivals" | "anchor" | "pandemic" | "war" | "foreign" | "techboom" | "tradewar"; size: number; sf: number;
     /** What the paper calls it, and for a fire the lots it took (stories.ts). */
     title?: string; bbls?: string[] }[];
   /** A bank panic in progress (blackswans.ts): months of full force left, then its fade. */
@@ -2435,8 +2459,32 @@ export interface Econ {
   gov?: import("./citygov").CityGov;
   /** Bumped whenever a city policy the land memo reads changes (citygov.ts). */
   govStamp?: number;
-  /** An anchor employer's campus (blackswans.ts): the hiring still landing, and whether it walks. */
+  /** An anchor employer's campus (blackswans.ts): the hiring still landing, and whether it walks. Old saves; replaced by `anchors`. */
   campus?: { pole: number; leftM: number; pullM: number; jump: number; walkM?: number; name: string };
+  /** Anchor employers that chose this city on its costs, and may leave on them (blackswans.ts). */
+  anchors?: import("./blackswans").Anchor[];
+  anchorSeq?: number;
+  /** The national swans in progress (blackswans.ts): a pandemic, a war, a foreign crisis, a tech boom, a trade war. */
+  natSwans?: import("./blackswans").NatSwan[];
+  /** What they do this month to the nation's spending, the world, the dollar, spreads, inflation and oil (read by tickNation next month). */
+  natSw?: import("./blackswans").NatSwanHooks;
+  /** Their orders for each trade this month (growth, read by tickIndustryCycle). */
+  swanSec?: Partial<Record<Sector, number>>;
+  /** Space a national swan has emptied for a while, per class, as a multiple of what is wanted (1 = none). */
+  swanSpace?: Partial<Record<BuiltClass, number>>;
+  /**
+   * What a building's operating costs are made of (inputs.ts tickOpexInputs):
+   * site labour at the town's wage, energy at the nation's prices and its oil,
+   * each a level in the cost index's units (equal to it on the day this began);
+   * and the property-insurance market — its premium rate against normal (log)
+   * and its capital against normal (log). Repairs read the cost index itself.
+   */
+  opexIdx?: { labour: number; energy: number; ins: number; insCap: number };
+  opexPrev?: { wage: number; energy: number };
+  /** The ten-year at the opening of the insurance cycle: investment income is read against it. */
+  opexRate0?: number;
+  /** The nation's oil (inputs.ts): real log price from the supply shocks, the swans' premium on top, and $ a barrel. */
+  oilBaseLn?: number; oilLn?: number; oil?: number; oilCpi0?: number;
   /** Monthly job pull from the black swans, read beside swanJobDrift in tickEcon. */
   bsJobPull?: number;
   /** A capital wave in progress and its cap-rate effect, points (negative while money floods in). */
@@ -2530,16 +2578,21 @@ export interface Econ {
    * reason the crew count is a market rather than a wall.
    */
   crewIdx?: number;
-  /** Last month's price level and wage index, read by the construction cost drift. */
-  costInputsPrev?: { cpi: number; wage: number };
+  /** Last month's materials price (the nation's prices and its oil), price level and wage index, read by the construction cost drift. */
+  costInputsPrev?: { cpi: number; wage: number; mat?: number };
+  /** The construction workforce, its repair and fit-out load and the queued orders, in crew-loads (dev.ts tickCrews; read by the contractors). */
+  crewWorkforce?: number; crewSteady?: number; crewOwed?: number;
+  /** The town's named general contractors and the index of their winning bids (contractors.ts). */
+  gcs?: import("./contractors").ContractorBook;
   /**
    * What a building's inputs cost (materials and site labour) before the
-   * contractor's margin; `costIdx` is this times `1 + bidPremium`.
+   * contractor's markup; `costIdx` is this times one plus the average winning
+   * bid's markup (contractors.ts).
    */
   costInputIdx?: number;
   /**
-   * The contractors' margin over a normal one, set by how booked the trades
-   * are: negative in a lull (bids under cost to keep crews), steep in a boom.
+   * Old saves only: the contractors' margin as an equation of how booked the
+   * trades were. Replaced by the named contractors' winning bids (`gcs`).
    */
   bidPremium?: number;
   /**
@@ -2759,10 +2812,6 @@ export interface Econ {
   siteHurdle?: Partial<Record<BuiltClass, number>>;
   /** Loan index at the opening, the reference for tenure choice (market.ts). */
   tenureRef?: number;
-  /** Log owning-over-renting cost at the opening, the reference for tenure choice (market.ts). */
-  tenureOwnRef?: number;
-  /** Renter share of households against the opening, rolled (market.ts). */
-  tenureIdx?: number;
   // THE PIPELINE AS A QUEUE, not a number. Every start is a cohort with a
   // month it will deliver in, so the game can answer the question every
   // developer actually asks — "what is coming, and when" — instead of only
@@ -4073,6 +4122,8 @@ export interface GameState {
     repudiatedM?: number;
     replaceM?: number;
     orphaned?: boolean;   // the sponsor died and the frame is standing there
+    /** The general contractor building it (contractors.ts), and its bid's markup over direct cost. */
+    gc?: number; gcBid?: number;
     listedM?: number;     // when the receiver put the frame on the tape
   }[];
   // Named starts owed back against the city's calibrated build rate — see

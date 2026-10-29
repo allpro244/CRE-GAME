@@ -13,6 +13,10 @@ import { whyTrade } from "./why";
 import { whyTown } from "./economy";
 import { tickCapRead } from "./propmarket";
 import { settleSupplyDeliveries } from "./supply";
+import { tickContractors } from "./contractors";
+
+/** Construction materials' real price per log point of real oil (see the cost index) [D]. */
+const MATERIALS_OIL = 0.15;
 
 export function mulberry32Step(a: number): { state: number; value: number } {
   a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -254,10 +258,6 @@ const SUBLET_BG: Record<BuiltClass, number> = {
  *  that arrives in town is looking the same month and has signed inside two.
  *  Shape parameters, from the length of the process; stated, not fitted. */
 /** Shortage-side rent sensitivity relative to office (see `vacTerm`). */
-/** Island-vs-mainland location elasticity of space demand (see `locEff`). Shape parameter. */
-const LOC_ELAST = 0.5;
-/** Location re-sorting happens only as households move: about a 5-year half-life. Shape parameter. */
-const LOC_ROLL = Math.LN2 / 60;
 // OFFICE REPRICES AT THE DEAL MARKET'S SPEED, NOT THE LEASE ROLL'S (2026-10-13).
 // Office sat at 1.0 on the argument that eight-year leases move asking rent
 // slowly — but lease length sets how fast IN-PLACE rent rolls, and this index
@@ -293,9 +293,6 @@ const AFFORD_ROLL: Record<BuiltClass, number> = {
   industrial: 1 / LEASE_TERM_M.industrial,
   multifamily: 1 / LEASE_TERM_M.multifamily,
 };
-/** Households form and split over years, not at each lease: a two-year
- *  half-life on flats' price response (see `affordRaw`). Shape parameter. */
-const HH_FORM_ROLL = Math.LN2 / 24;
 
 /** HOW MUCH SPACE A SECTOR'S CYCLE ACTUALLY MOVES. Demand for space is
  *  headcount times feet per head, so this multiplier is sized to the
@@ -373,8 +370,7 @@ function affordSoft(v: number): number {
  */
 const SIGMA_KL = 0.5;
 const SPACE_SHARE0: Record<BuiltClass, number> = { office: 0.14, retail: 0.2, industrial: 0.23, multifamily: 0 };
-/** A household's minimum home against the opening's average, and the share of income renters spend on rent (ACS). */
-const HH_MIN = 0.5;
+/** The share of income renters spend on rent (ACS): the level the household register's opening incomes are solved to. */
 export const HH_RENT_SHARE0 = 0.30;
 /** Online selling (see ONLINE in the secular block). */
 const ONLINE_0 = 0.02;      // share of store-type sales online at the opening (US 2000)
@@ -455,14 +451,6 @@ const NATVAC_RATE = 1 - Math.exp(-Math.LN2 / 240);
  * turned until a harness passes: `pnpm income` reports the consequence, and a
  * consequence outside its band is a finding about the rest of the model.
  */
-/**
- * Renter households per log point of owning cost over renting cost: ~1.1%
- * per mortgage point on the 1978-85 episode (homeownership 65.6% -> 63.9% as
- * mortgage rates went ~9.6% -> 13-16%, Census HVS), ~0.8% reading 2022-24
- * too; a point moves owning cost ~9%, so ~0.09. The household register's
- * buyers answer it (households.ts BUY_ELAST, step 2).
- */
-export const TENURE_PER_LOG = 0.09;
 // OFFICE 0.45 -> 0 (2026-10-14). The 0.45 rested on one unverified London
 // estimate of total occupancy demand, which the note above already says is
 // mostly a QUALITY effect. The quantity record runs the other way: US office
@@ -1769,9 +1757,9 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   return econ;
 }
 
-export function pushNewsPublic(s: GameState, kind: NewsItem["kind"], text: string) { pushNews(s, kind, text); }
-function pushNews(s: GameState, kind: NewsItem["kind"], text: string) {
-  s.news.unshift({ q: s.month, kind, text });
+export function pushNewsPublic(s: GameState, kind: NewsItem["kind"], text: string, why?: number) { pushNews(s, kind, text, why); }
+function pushNews(s: GameState, kind: NewsItem["kind"], text: string, why?: number) {
+  s.news.unshift({ q: s.month, kind, text, ...(why ? { why } : {}) });
   if (s.news.length > 120) s.news.length = 120;
 }
 
@@ -2119,14 +2107,6 @@ const HPI_UC_ELAST = 0.5;
 /** Months for prices to close their gap to the fundamental. */
 export const HPI_CHASE_M = 30;
 
-/** The cost of owning a home against the opening, real (house price x user cost). */
-export function ownCostIdx(e: Econ): number {
-  const n = e.nat;
-  if (!n) return 1;
-  const mort = (e.indexRate ?? 5.4) / 100 + 0.017;
-  const uc = hhUserCost(mort, n.hpiG3 ?? 0, n.inflExp ?? 0.02);
-  return (n.hpi ?? 1) * uc / Math.max(1e-6, n.hpiUc0 ?? uc);
-}
 
 /**
  * THE NATION'S SPENDING (2026-10-16). Output is what the country buys, built
@@ -2261,6 +2241,11 @@ function spendNation(
   // New borrowing is spending while the stock grows faster than output; paying it down is not (Biggs & Mayer 2010).
   const credFlow = ((n.credGap ?? 0) - (n.credGapPrev ?? n.credGap ?? 0)) * 12;
   const panic = e.panic?.force ?? 0;
+  // THE NATIONAL SWANS (blackswans.ts natSw): what a pandemic, a war, a
+  // foreign crisis, a tech boom or a trade war does to households' spending,
+  // firms' plans, the government's, the world's demand and the dollar. Each a
+  // level, glided in and out by its own episode; zero in a quiet world.
+  const sw = e.natSw;
   // CONFIDENCE. What households and firms believe about the years ahead is
   // the one input to spending no model of this economy can derive — news
   // about the future, a war, an election — so it is drawn, but persistent
@@ -2275,7 +2260,7 @@ function spendNation(
   // in what they borrow and save — car loans, card balances, deposits.
   d.rr = (d.rr ?? 0) + ((x.rAvg - x.rStar) - (d.rr ?? 0)) / P.RR_M;
   const cT = P.C0 / (1 - P.TAX) * ((1 - P.C_NOW) * d.Yp + P.C_NOW * Yd)
-    * Math.exp(d.cc - P.C_RATE * d.rr + 0.088 * lnH + 0.6 * refi - P.PREC * Math.max(0, du6) - 0.03 * panic)
+    * Math.exp(d.cc - P.C_RATE * d.rr + 0.088 * lnH + 0.6 * refi - P.PREC * Math.max(0, du6) - 0.03 * panic + (sw?.c ?? 0))
     + P.CRED_C * credFlow;
   d.C += (cT - d.C) / P.TAU_C;
   // FIRMS: capital for the output they expect, at what it costs to carry
@@ -2293,7 +2278,7 @@ function spendNation(
   // Goodwin). Labour's share drifts up about a point of output per point of
   // unemployment held under natural, over a year and a half.
   d.ws = (d.ws ?? 0) + (P.WS_U * (NAT_U_STAR - u) - (d.ws ?? 0)) / P.WS_M;
-  const kStar = K0 * (1 + P.YE_W * (d.Ye - 1)) * Math.pow(uc0 / uc, P.SIGMA_K) * fin * Math.exp(d.kc - P.PROF * d.ws);
+  const kStar = K0 * (1 + P.YE_W * (d.Ye - 1)) * Math.pow(uc0 / uc, P.SIGMA_K) * fin * Math.exp(d.kc - P.PROF * d.ws + (sw?.k ?? 0));
   const dep = (P.DELTA + P.GROW) * d.K;
   // Capital is easier to stop buying than to sell: gross investment does not fall below a third of replacement.
   const iWant = Math.max(dep * 0.35, dep + (kStar - d.K) / (P.TAU_K / 12)) + P.CRED_I * credFlow;
@@ -2304,7 +2289,7 @@ function spendNation(
   const ihT = P.IH0 * Math.pow((n.hpi ?? 1) / (n.hpiTrend ?? n.hpi ?? 1), 1.5) * Math.exp(-P.IH_RATE * (mortNow - (n.mortRef ?? mortNow)));
   d.Ih += (ihT - d.Ih) / P.IH_M;
   // GOVERNMENT: a steady share, a fiscal expansion under political pressure, the tools at the floor
-  const G = P.G0 + ((n.pressureM ?? 0) > 0 && x.shock !== 0 ? 0.6 * Math.abs(x.shock) : 0) + 0.009 * x.lbTools;
+  const G = P.G0 + ((n.pressureM ?? 0) > 0 && x.shock !== 0 ? 0.6 * Math.abs(x.shock) : 0) + 0.009 * x.lbTools + (sw?.g ?? 0);
   // THE WORLD IS AN ECONOMY TOO (2026-10-16). Exports rode a drawn AR(1)
   // standing in for the rest of the world. Now the rest of the world has its
   // own output gap (`d.f`), which its own spending shocks move and its own
@@ -2321,8 +2306,8 @@ function spendNation(
   d.wr = (d.wr ?? 0) + (ROW.POL * d.f - (d.wr ?? 0)) / ROW.POL_M;
   d.f = ROW.RHO * d.f - ROW.RATE * (d.wr ?? 0) + ROW.SIG * z;
   const homeReal = (n.policy ?? 4) / 100 - (n.inflExp ?? 0.02) - (n.neutralReal ?? 0.019);
-  d.q = (d.q ?? 0) + (ROW.UIP * (homeReal - (d.wr ?? 0)) - (d.q ?? 0)) / ROW.Q_M;
-  const X = X0 * Math.exp(ROW.X_INC * d.f - ROW.X_PRICE * (d.q ?? 0));
+  d.q = (d.q ?? 0) + (ROW.UIP * (homeReal - (d.wr ?? 0)) + (sw?.q ?? 0) - (d.q ?? 0)) / ROW.Q_M;
+  const X = X0 * Math.exp(ROW.X_INC * (d.f + (sw?.f ?? 0)) - ROW.X_PRICE * (d.q ?? 0) + (sw?.x ?? 0));
   const M = P.IMP * (d.C + d.I + d.Ih + G) * Math.exp(ROW.M_PRICE * (d.q ?? 0));
   const S = d.C + d.I + d.Ih + G + X - M;
   // INVENTORIES: shelves follow sales; production is sales plus restocking
@@ -2549,7 +2534,8 @@ export function tickNation(s: GameState) {
   const shortRate = n.policy / 100;
   n.corpFixed ??= longRate + 0.015;
   n.corpFixed += (longRate + 0.015 - n.corpFixed) / CORP_LADDER_M;
-  const corpRate = CORP_FLOAT * (shortRate + 0.02) + (1 - CORP_FLOAT) * n.corpFixed;
+  // ...plus whatever a national swan has done to credit spreads (blackswans.ts natSw.sp: a foreign crisis).
+  const corpRate = CORP_FLOAT * (shortRate + 0.02) + (1 - CORP_FLOAT) * n.corpFixed + (e.natSw?.sp ?? 0);
   n.corpRate = corpRate;
   // Against what that book would cost at neutral money: r* plus expected
   // inflation, plus the same blended spread.
@@ -2700,7 +2686,7 @@ export function tickNation(s: GameState) {
   const down = Math.min(0, phillips) + Math.min(0, easy);
   const bend = n.infl >= 0.01 ? 1 : Math.exp((n.infl - 0.01) / 0.01);
   const inflRaw = n.inflExp + (phillips - Math.min(0, phillips)) + (easy - Math.min(0, easy)) + down * bend
-    + shock + rrange(s, -0.004, 0.004, "nation");
+    + shock + (e.natSw?.infl ?? 0) + rrange(s, -0.004, 0.004, "nation");
   // PRICES FOLLOW PAY, AND PAY IS NOT CUT (2026-10-15). With the bank's word
   // gone, expectations could follow realised deflation down without limit: one
   // measured century ran -6%/yr for a decade at 7-8% unemployment while
@@ -3161,8 +3147,8 @@ const MOM_UNITS = 4;
 export const LOCATION_PULL = 0.04;           // per year, per unit of log cost gap
 const AGGLOM = 0.04;                  // output elasticity to employment
 export const WAGE_CURVE = -0.10;             // pay level to local unemployment (Blanchflower & Oswald 1994)
-export const WAGE_GAP_HALF_M = 24;           // months for the town's pay to close half its gap to the wage-curve level
-const WAGE_SHARE = 0.85;
+export const WAGE_GAP_HALF_M = 24;           // months for a firm's pay to close half its gap to what it takes to hire here (economy.ts)
+export const WAGE_SHARE = 0.85;
 
 /**
  * THE REGION AND THE ISLAND (2026-10-10). The town's population is a region:
@@ -4319,28 +4305,17 @@ export function tickEcon(s: GameState) {
     const burden = relRent;
     let affordRaw: number;
     if (k === "multifamily") {
-      // FROM HOUSEHOLDS' BUDGETS (2026-10-16). This was three income tiers
-      // with headship elasticities of -0.35/-0.25/-0.15 taken from the
-      // literature, a jobless rate read at 1.2% of renter households a point,
-      // and an income elasticity of 0.25 on top — four numbers from studies.
-      // Each is now what a household's budget does. A household needs at
-      // least HH_MIN of the opening's average home (the smallest flat people
-      // take before they double up instead: a studio is about half of the
-      // 900 sf the generator builds) and spends a fixed share of what it has
-      // left over on more (Stone 1954; Geary 1950). Its income is pay times
-      // the share of the town in work: a jobless household has less, and
-      // doubles up because of it. The one level that fixes the budget is a
-      // measured fact — US renters spend about 30% of income on rent
-      // (HH_RENT_SHARE0, ACS) — and from that and the minimum, every
-      // elasticity follows and moves with the town: at the opening, income
-      // 0.6 and price -0.4, falling as a town gets richer.
-      const realWage = (e.wageIdx ?? 1) / cpiNow;
-      const rw = realWage / Math.max(1e-6, e.wage0 ?? realWage);
-      const u = e.unemployment ?? OPENING_UNEMP;
-      const Y = rw * (1 - u) / (1 - OPENING_UNEMP) / HH_RENT_SHARE0;
-      const beta = (1 - HH_MIN) / (1 / HH_RENT_SHARE0 - HH_MIN);
-      const p = Math.max(0.05, burden);
-      affordRaw = Math.max(0.3, HH_MIN + beta * (Y - p * HH_MIN) / p);
+      // THE FLATS' DEMAND IS THE HOUSEHOLDS THAT CHOOSE THEM (households
+      // stage 2, 2026-10-29). This was a household budget — a minimum flat
+      // (HH_MIN) and a fixed share of income over it — applied to the region's
+      // renter households, and an island-against-mainland elasticity on top
+      // (LOC_ELAST, rolled over five years): statements about households that
+      // none of the register's households made. Each renter household now
+      // weighs an island flat against one across the water at the going rents
+      // and its own commute and pay (households.ts `wantsIsland`), so the
+      // price, income and location responses are all in the driver below, and
+      // here the flats take none of their own (FORMULA_LEDGER #10, flats).
+      affordRaw = 1;
     } else {
       // FROM THE FIRMS' OWN COSTS (2026-10-16). The exponent was -0.40 for
       // every commercial class. A firm trades floor against people at the
@@ -4356,39 +4331,20 @@ export function tickEcon(s: GameState) {
     }
     if (!e.affordEff) e.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
     // At the lease-rollover rate of THIS class, not of an office. See AFFORD_ROLL.
-    e.affordEff[k] += (k === "multifamily" ? HH_FORM_ROLL : AFFORD_ROLL[k]) * (affordRaw - e.affordEff[k]);
+    e.affordEff[k] += AFFORD_ROLL[k] * (affordRaw - e.affordEff[k]);
 
-    // ...AND THE MAINLAND IS NEXT DOOR (2026-10-12). `affordEff` is how much
-    // space a tenant takes at a price; it is not WHERE they take it. The island
-    // keeps its share of the region's households only "at given
-    // relative prices" (above), and nothing let that share move when the
-    // island got dear: the mainland builds at cost on cheap ground, so its
-    // real rent tracks real construction cost, and every point the island
-    // rents over that is a point of premium a household or firm can avoid by
-    // living or leasing across the water and commuting — the location margin
-    // of the Alonso-Muth-Mills city, far more elastic than taking less space.
-    // Without it a built-out island admitted the region's whole growth and
-    // compounded real rent 1.4%/yr for a century at normal vacancy.
-    // HALF-ELASTIC AND SLOW (2026-10-12). The first cut was unit-elastic at
-    // lease-rollover speed, and it ran the wrong way just as hard: doubling
-    // the island's flats was absorbed in three years with rent down only 20%,
-    // the island's share of the region's households up 58% — the mainland
-    // emptying onto the island inside a lease cycle. Households re-sort between
-    // core and suburbs only as they move, over years, and only partly on
-    // price. Elasticity 0.5 and a five-year half-life are shape parameters,
-    // stated as such.
-    if (e.costAnchorReal === undefined) e.costAnchorReal = (e.costIdx ?? 1) / cpiNow;
-    const mainlandReal = ((e.costIdx ?? 1) / cpiNow) / Math.max(1e-6, e.costAnchorReal);
-    // Households only: a firm's jobs are the island's jobs in this model (the
-    // region's population is derived from them, and their location is the
-    // job-level `regionalPull`), so letting a firm's floor leave while its
-    // jobs stay would be the same tenant in two places.
-    const locRaw = k === "multifamily"
-      ? Math.pow(Math.max(1e-6, relRent / Math.max(1e-6, mainlandReal)), -LOC_ELAST)
-      : 1;
-    if (!e.locEff) e.locEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
-    e.locEff[k] += LOC_ROLL * (locRaw - e.locEff[k]);
-
+    // THE MAINLAND IS NEXT DOOR — AND THE HOUSEHOLDS KNOW IT (households
+    // stage 2, 2026-10-29). This was `locEff`, the island's share of the
+    // region's households moved by island rent over the mainland's real
+    // construction cost at elasticity 0.5 with a five-year half-life — the
+    // Alonso-Muth-Mills location margin asserted for the whole region at once.
+    // Measured, it let the flats' capacity rail bind 29% of months (BASELINE
+    // rail.occ.multifamily.cap), because the region's renters grew faster than
+    // a half-elastic, five-year margin sent any of them across the water. The
+    // margin is now each household's own choice (households.ts `wantsIsland`:
+    // its rent, commute, pay and taste) and the driver is the households that
+    // made it; firms' floor stays where its jobs are (a firm's location is the
+    // job-level `regionalPull`).
     // THE INCOME ARGUMENT. A city that gets richer occupies more and better
     // space; a city that gets poorer gives it back. Real income per worker
     // against the town's opening real income — the INTENSIVE margin only,
@@ -4577,8 +4533,10 @@ export function tickEcon(s: GameState) {
     // Before the books open (the opening months) the opening's level stands.
     if (e.jobsFilled0 === undefined && (e.history?.length ?? 0) > 1 && (e.jobs ?? 0) > 0) e.jobsFilled0 = e.jobs;
     const eco = e.eco, eco0 = e.eco0;
+    // Flats: the renter households that want an island flat at the going
+    // rents (households stage 2), against the first month they chose.
     const driver = k === "multifamily"
-      ? (eco && eco0?.renters ? Math.max(0.05, eco.renters / eco0.renters) : 1)
+      ? (eco?.islandWant !== undefined && eco0?.islandWant ? Math.max(0.05, eco.islandWant / eco0.islandWant) : 1)
       : (eco?.floorSf && eco0?.floorSf?.[k] ? Math.max(0.05, (eco.floorSf[k] ?? 0) / eco0.floorSf[k]!) : 1);
     // A CLASS'S MOMENTUM IS ITS TENANTS' GROWTH AGAINST NORMAL. Monthly growth
     // of the driver less its own five-year average, smoothed over six months,
@@ -4615,7 +4573,9 @@ export function tickEcon(s: GameState) {
     // It multiplies rather than adding because it is a LEVEL, and it sits
     // outside `sectorMom` and `affordEff` because neither of those ever stops
     // reverting and this never reverts at all. See swans.ts.
-    const swanLvl = swanClassLevel(e, k);
+    // ...and the space a national swan has emptied for a while (a pandemic's
+    // offices: blackswans.ts swanSpace), which comes back as it ends.
+    const swanLvl = swanClassLevel(e, k) * (e.swanSpace?.[k] ?? 1);
     // The cycle is already in the driver (the tenants' own employment or
     // population); adding momentum on top would count it twice.
     const cycleTerm = 1;
@@ -4623,7 +4583,6 @@ export function tickEcon(s: GameState) {
       * Math.pow(driver, elastic)
       * cycleTerm
       * e.affordEff[k]
-      * (e.locEff?.[k] ?? 1)      // island against mainland — see LOC_ELAST
       * (e.incomeEff?.[k] ?? 1)   // the income argument — see INCOME_ELAST
       * swanLvl;
     // THE POOL. Demand takes about a year to form or dissolve, and demand
@@ -4659,7 +4618,7 @@ export function tickEcon(s: GameState) {
       // (Not the online shift since step 2: a shop's sales that ship from a
       // shed are the fulfilment industry's, so the shops' heads already fall
       // with it — economy.ts `spendVector`. Counting it here too took it twice.)
-      const lvl = (e.locEff?.[k] ?? 1) * (e.incomeEff?.[k] ?? 1) * swanClassLevel(e, k);
+      const lvl = (e.incomeEff?.[k] ?? 1) * swanLvl;
       (e.demandAt ??= {})[k] = { ref: targetRaw / Math.max(1e-6, e.affordEff[k]), eff: e.affordEff[k], raw: affordRaw, lvl };
     }
     if (!e.darkSf) e.darkSf = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
@@ -4718,7 +4677,9 @@ export function tickEcon(s: GameState) {
     // looking is the firms still searching. Sheds run half and half: the
     // region's off the map stays on the aggregate below (`aggOcc`), the
     // mapped ones are the firms'.
-    const firms = k !== "multifamily" ? e.streetSpace?.[k] : undefined;
+    // (flats: the street's households since households stage 2 — who stays,
+    // who leaves, who chose a block from across the water; households.ts)
+    const firms = k !== "multifamily" ? e.streetSpace?.[k] : e.flatSpace;
     const offShare = firms ? Math.max(0, 1 - (firms.cap + (e.playerNow?.sf?.[k] ?? 0)) / Math.max(1, e.stock[k])) : 0;
     // The class's ledger and the map drift a few per cent apart over decades
     // (deliveries and demolitions are booked to the stock as they happen);
@@ -4732,7 +4693,7 @@ export function tickEcon(s: GameState) {
     // the town grew 30% in seven years), the shops fell back to the aggregate
     // equation and read a 98% shortage at 12% vacancy, and real shop rents
     // went 11 -> 85 in five years. Sheds stay split (most are off the map).
-    const firmsOnly = !!firms && (k === "office" || k === "retail" || offShare < 0.10);
+    const firmsOnly = !!firms && (k === "office" || k === "retail" || k === "multifamily" || offShare < 0.10);
     void offShare;
     if (firms && !firmsOnly) e.occupied[k] = (e.aggOcc ??= {})[k] ?? e.occupied[k];
     let absorb = 0;
@@ -4856,7 +4817,6 @@ export function tickEcon(s: GameState) {
       * Math.pow(driver, elastic)
       * cycleTerm
       * affordRaw
-      * locRaw      // ...and the same island-vs-mainland choice (`locEff`)
       * incomeRaw   // the give-back reads the SAME arguments targetRaw does
       * swanLvl;
     const cyclical = Math.max(0, (e.occupied[k] - wantedNow) * DEMISABLE[k]);
@@ -5974,7 +5934,9 @@ export function tickEcon(s: GameState) {
     // bound, and it gets there within about a year — bids reprice on every
     // tender. A deep lull is a quick 10-20% drop; firms bidding under cost go
     // under (`tickCrews`), and the order book comes back to a smaller trade.
-    const premiumTarget = 0.35 * ((e.crewUtil ?? 1) - 1);
+    // (2026-10-29) The premium below was an equation of `crewUtil`; it is now
+    // the named contractors' winning bids (contractors.ts), each priced off
+    // the bidder's own book with the same slope.
     // ONE SLOPE (2026-10-09). This was 0.0026 below full employment and 0.0016
     // above, each set so its own extreme hit an ENR figure. Two gains on one
     // signal make the MEAN of an oscillating utilisation a drift: a market
@@ -5998,6 +5960,13 @@ export function tickEcon(s: GameState) {
     // (2026-10-09; this read the local CPI, which now carries local rent, so a
     // housing shortage would have raised the price of steel).
     const cpiNow = Math.max(0.35, e.natCpi ?? e.cpi ?? 1), wageNow = Math.max(0.1, e.wageIdx ?? 1);
+    // ...AND OIL (2026-10-29): diesel, asphalt, resin and the energy in steel
+    // and cement. Construction materials' real price moves about 0.15 per log
+    // point of real oil — 1974: materials +30% against CPI +11% with real
+    // crude up about 1.1 log points (BLS PPI; EIA) [D]. This is what an
+    // embargo does to building costs now, through the oil price, rather than
+    // a jump the swan wrote into the index.
+    const matNow = cpiNow * Math.exp(MATERIALS_OIL * (e.oilLn ?? 0));
     const prevIn = e.costInputsPrev;
     // ...LESS WHAT THE TRADES LEARN (2026-10-14). Pay rises with the town's
     // productivity; a site crew's output rises far more slowly — the Baumol
@@ -6009,9 +5978,9 @@ export function tickEcon(s: GameState) {
     // range, applied to the labour share only.
     const TRADES_PRODUCTIVITY = 0.007;
     const inputGrowth = prevIn
-      ? (1 - LABOUR_SHARE) * (cpiNow / prevIn.cpi - 1) + LABOUR_SHARE * ((wageNow / prevIn.wage - 1) - TRADES_PRODUCTIVITY / 12)
+      ? (1 - LABOUR_SHARE) * (matNow / (prevIn.mat ?? prevIn.cpi) - 1) + LABOUR_SHARE * ((wageNow / prevIn.wage - 1) - TRADES_PRODUCTIVITY / 12)
       : (e.inflExp ?? 0.02) / 12;
-    e.costInputsPrev = { cpi: cpiNow, wage: wageNow };
+    e.costInputsPrev = { cpi: cpiNow, wage: wageNow, mat: matNow };
     // The recession term (-0.0004/mo whenever the label read recession) is
     // gone: an idle trade is already in `bidPremium`, and a label is not a cost.
     const costDrift = inputGrowth;
@@ -6041,17 +6010,24 @@ export function tickEcon(s: GameState) {
     // twice its own price level on the first tick (2026-10-12).
     // The 0.6x-400x guards on `costIdx` are gone with the drift form: inputs
     // follow prices and wages, and the margin follows the order book.
-    if (e.bidPremium === undefined || e.costInputIdx === undefined) {
-      e.bidPremium = premiumTarget;
-      e.costInputIdx = e.costIdx / (1 + premiumTarget);
+    // THE NAMED CONTRACTORS BID (contractors.ts). Every job that broke ground
+    // goes to tender, each contractor prices it off its own book, and the
+    // index is the average winning bid's markup over direct cost. A new game
+    // (or a save from before them) opens at the index it already had: the
+    // input index is struck so that cost does not move on the day they arrive.
+    const opening = !e.gcs;
+    const wasMarkup = e.bidPremium;
+    if (e.costInputIdx !== undefined) {
+      e.costInputIdx = e.costInputIdx * Math.max(0.5, 1 + costDrift + catchUp + realPull + rrange(s, -0.0012, 0.0012));
+    } else rrange(s, -0.0012, 0.0012);
+    const markupNow = tickContractors(s);
+    if (opening) {
+      if (e.costInputIdx === undefined || wasMarkup === undefined) e.costInputIdx = e.costIdx / (1 + markupNow);
+      else e.gcs!.idx = wasMarkup;
+      delete e.bidPremium;
     }
-    e.costInputIdx = e.costInputIdx * Math.max(0.5,
-      // ...and a swan's materials shock (the embargo, blackswans.ts), whatever
-      // landed this month; consumed here so it is counted once.
-      1 + costDrift + catchUp + realPull + (e.costShock ?? 0) + rrange(s, -0.0012, 0.0012));
-    e.bidPremium += 0.12 * (premiumTarget - e.bidPremium);
     // A bid can be under cost, never under nothing.
-    e.costIdx = e.costInputIdx * Math.max(0.2, 1 + e.bidPremium);
+    e.costIdx = e.costInputIdx! * Math.max(0.2, 1 + e.gcs!.idx);
     e.costShock = 0;
   }
 

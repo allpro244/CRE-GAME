@@ -176,9 +176,23 @@ check(fillOk, "the register's earners in each industry are its heads, to within 
   check(ArrayBuffer.isView(viaJson.f.hc) && ArrayBuffer.isView(viaJson.L.slot.cash) && ecoHash({ economy: viaJson }) === ecoHash(a), "...which revive to the same books");
   let c = viaClone, d = { ...a, economy: JSON.parse(JSON.stringify(a.economy)) };
   d.streams = { ...a.streams };
+  // Each loaded game in a session of its own — its own parcel table, as a
+  // save opened in a fresh game is. Three games ticking on ONE table part
+  // ways for a reason that is not the save: the engine writes plats into the
+  // table (landdev.ts restoreCuts) and keys caches on it (demand.ts
+  // demandModel), so the first game's month moves the table under the next
+  // one's. Measured 2026-10-29 on this branch: identical on separate tables,
+  // parted in the rival and sales streams within a month on a shared one.
+  const session = () => {
+    const c2 = makeCity("somewhere", 1);
+    E.normalizeParcels(c2.parcels);
+    const b2 = Object.keys(c2.parcels);
+    return (g) => { g = E.advanceQuarter(g, c2.parcels, b2, c2.adjacency); return g.gameOver ? { ...g, gameOver: null, cash: 6e6 } : g; };
+  };
+  const tickC = session(), tickD = session();
   let ok = true, okJ = true;
   for (let m = 0; m < 12; m++) {
-    a = tick(a); c = tick(c); d = tick(d);
+    a = tick(a); c = tickC(c); d = tickD(d);
     if (ecoHash(a) !== ecoHash(c) || worldHash(a) !== worldHash(c)) ok = false;
     if (ecoHash(a) !== ecoHash(d)) okJ = false;
   }

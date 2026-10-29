@@ -55,6 +55,7 @@ console.log("\nHOUSEHOLD REGISTER\n");
 // two runs, same seed
 let a = start(), b = start();
 const hashesA = [], hashesB = [];
+let lifeB = 0, lifeD = 0, lifeP = 0;
 let stats0 = null, sumsOk = true, worst = "", booksFrom = 1, prevLab = null, lf0 = NaN, jobs0 = NaN, uNow = NaN;
 for (let m = 1; m <= MONTHS; m++) {
   const streamsBefore = { ...a.streams };
@@ -74,6 +75,7 @@ for (let m = 1; m <= MONTHS; m++) {
     && Math.abs(a.econ.unemployment - (prevLab.lf > 0 ? prevLab.unemployed / prevLab.lf : 0)) < 1e-9
     && Math.abs(a.econ.participation - prevLab.lf / prevLab.persons) < 1e-9);
   uNow = st.unemployment;
+  lifeB += a.households.flow.births ?? 0; lifeD += a.households.flow.deaths ?? 0; lifeP += lab.persons;
   const uBad = !(st.unemployment >= 0.025 && st.unemployment <= 0.15);
   if (!readOk || dR > 0.03 || uBad) { sumsOk = false; worst ||= `month ${m}: population ${a.econ.population} (register a month ago ${prevLab ? Math.round(prevLab.persons) : "-"}), renters ${(100 * dR).toFixed(2)}% off the flats, unemployment ${(100 * st.unemployment).toFixed(2)}%`; }
   prevLab = lab;
@@ -104,6 +106,21 @@ check(Math.round(E.registerLabour(a).persons) > 0 && a.econ.population > 0, `the
   check(bw > 0 && (r.buyers ?? []).every((x) => x.m > a.month - 12 && x.inc > 0), `the builders sell to the register's buyers: ${Math.round(bw)} households bought in the last year`);
 }
 
+// HOUSEHOLDS STAGES 4-5: life by the record's rates, and spending by category
+{
+  const r = a.households, f = r.flow, lab = E.registerLabour(a);
+  const py = E.registerPyramid(a), pyT = py.reduce((t, x) => t + x, 0);
+  check(Math.abs(pyT / lab.persons - 1) < 1e-6, `the age pyramid is the register's people: ${Math.round(pyT)} by age against ${Math.round(lab.persons)}`);
+  // over the run (a month of weighted agents is noisy): CDC NCHS 2023, 10.7 births and 9.2 deaths a year per 1,000 people
+  const yr = (x) => (12000 * x) / lifeP;
+  check(yr(lifeB) > 5 && yr(lifeB) < 18 && yr(lifeD) > 4 && yr(lifeD) < 18,
+    `over ${MONTHS} months, births ${yr(lifeB).toFixed(1)} and deaths ${yr(lifeD).toFixed(1)} a year per 1,000 people (US 10.7, 9.2)`);
+  const cat = f.spendCat ?? {}, ct = Object.values(cat).reduce((t, x) => t + x, 0);
+  check(f.spend > 0 && Math.abs(ct / f.spend - 1) < 1e-6, `the households' spending by category adds up to their spending: $${Math.round(ct).toLocaleString("en-US")} a month`);
+  const hm = E.householdMoney(a);
+  check(hm.spendCat === f.spendCat, "the economy's household demand reads the categories the households spent on (householdMoney.spendCat)");
+}
+
 // it reads the world and never writes it: a month of the register on a copy of
 // the state changes nothing but the register and its own stream
 {
@@ -125,7 +142,8 @@ check(Math.round(E.registerLabour(a).persons) > 0 && a.econ.population > 0, `the
   const text = JSON.stringify(packed);
   check(typeof packed.households.packed?.sav === "string" && !packed.households.a && a.households.a, "a save carries base64 columns and leaves the running game's arrays alone");
   const kb = JSON.stringify(packed.households).length / 1024;
-  check(kb < 800, `the register saves in ${kb.toFixed(0)} KB (${a.households.n} households)`);
+  // (850 KB since households stage 4: four one-byte columns more — the children's ages, the partner, the other adults' age)
+  check(kb < 850, `the register saves in ${kb.toFixed(0)} KB (${a.households.n} households)`);
   // A save is written to IndexedDB, which stores it by structured clone (v8
   // serialize here, as test/region-reload.mjs does), and the store resumes it
   // through migrateSaveState — which unpacks the columns. (The whole state

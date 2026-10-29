@@ -1558,7 +1558,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   }
   r.vacLeft = Array.from(V, (v) => +Math.max(0, v).toFixed(2));
   // 5. THE GOING RATE. An industry's pay bill is its going rate (BEA pay at
-  // the town's wage index, D.pay) times its earners; who gets which share of
+  // what its firms posted, D.pay) times its earners; who gets which share of
   // it is each earner's standing. Standing moves — a returning worker's
   // scarring, a household's draw — but the register keeps no tenure profile,
   // so without this the scar compounds spell on spell into industries that

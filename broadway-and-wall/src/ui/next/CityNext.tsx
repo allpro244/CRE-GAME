@@ -38,6 +38,7 @@ import { derive, nwOf, standingOf } from "@/ui/derive";
 import { realRentYoy } from "@/ui/panels/EconomyPage";
 import { boardClimate, pendingHearings, tradeRows } from "@/ui/panels/CityStances";
 import { real, STYLE_WORD } from "@/ui/panels/shared";
+import { CityHallBox } from "@/ui/panels/CityHall";
 import { Chips, DataTable, Stat, StatStrip, type Col } from "./DataTable";
 import { Figure, Spark, fmtFig, type FigFmt } from "./Figure";
 import { BarChart, Gauge, LineChart } from "@/ui/Chart";
@@ -414,6 +415,7 @@ export function MarketsOverview() {
           <LineChart series={[{ label: "Jobs", color: "#3a7d46", pts: tail.map((h) => (h.jobs ?? 0) / 1000) }]} yFmt={(v) => `${v.toFixed(0)}k`} xLabels={x} xAt={xAt} />
         </div>
       </div>
+      <CityHallBox />
     </div>
   );
 }

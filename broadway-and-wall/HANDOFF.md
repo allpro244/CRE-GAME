@@ -1419,3 +1419,49 @@ park amount are fixed. CITY_PLAN 15 (islands byte-identical to 14).
   never reaching the market, the island untouched by plan 15, month tick
   timing. `node test/bwcity-contract.mjs <file>` checks an Unreal export;
   `node unreal/tools/export-city.mjs --city region --seed N` writes one.
+
+## 14. CITY HALL (citygov.ts, Oct 2026)
+
+The owner: "a city politics system that has taxes and other policies that
+actually affect the game." `src/engine/citygov.ts` is the city government —
+a monthly budget, a bond book, a pension plan, policies and a mayor — held in
+`econ.gov` and ticked right after `tickBlackSwans`. `node test/citygov.mjs`.
+
+- **The budget is an identity.** Revenue: property tax on the assessor's roll
+  (the map's buildings at `classValuePsf` — the solve the build brake reads —
+  plus the town's houses, chasing the market on a 36-month lag, less what
+  abatements forgive), payroll tax, local sales tax, transfer tax on last
+  month's deeds, fees, state aid, interest. Spending: services and schools
+  (per head and per pupil at the town's wage), the pension contribution, debt
+  interest, capital. Δcash = rev − spend − principal + borrowed, every month.
+  Every constant carries its source in the file.
+- **The opening is solved, not chosen**: statutory 1.1% property tax; debt =
+  the steady state of 20-year serial issues for the capital programme; a
+  two-month reserve; pension 5.5× payroll at 75% funded — and the payroll tax
+  is whatever balances that budget (2.8% on the reference town; real range 1-4%).
+- **A crisis is a failed rollover and nothing else.** A maturity cash cannot
+  cover is rolled on notes; if the market is closed to the city that month
+  (spread ≥ 3 pts, or ≥ 1.25 while credit is shut — panic, `debtShut`,
+  `creditIdx < 0.55`) the state lends and a control board takes the budget:
+  services cut 5-20% and a property-tax surcharge of 5-40%, both sized off the
+  gap; capital deferred; held until three balanced years and a spread under
+  1.5. This REPLACES `FISCAL_HAZ` in blackswans.ts — the "shock" stream lost a
+  draw a month, so the other swans' timing re-rolled.
+- **Policies reach the engine through hooks that already existed**:
+  `econ.taxMult` (property tax → every NOI, value, residual, pro forma);
+  `taxAbate` on a development (fixed at groundbreak) and its holding (from
+  delivery) → `grossTaxYr`, the pro forma's exit yield (PV of the forgiven
+  tax, so the land residual prices it too), `holdingValue` (PV of what is
+  left); `transferTaxRate(s)` → `saleTaxQuote`, `streetSaleCost`, JV,
+  leasehold, recap, take-private; rent stabilisation → `flatRollStep` (your
+  flats) and `renewalAsk` (the street's); the service level and the payroll
+  tax → jobs and residents through `bsJobPull` / `bsMigPull`, as level effects
+  over two to five years. Civic works (demand.ts hearings) are refused under a
+  board or a closed market, and a funded one is charged to the capital budget.
+- **A citywide service level does not move `demandScore`**: that surface is
+  relative and centred every month by design, so a uniform shift is removed.
+  It moves population and jobs instead, which every rent reads.
+- **The mayor**: elections every four years, three platforms (pro-growth,
+  populist, austerity); a logit vote on unemployment, the tax burden and rent
+  burden against the opening, and the city's fiscal state, with incumbency, a
+  retrospective jobs term, and a 2-point candidate draw on the "citygov" stream.

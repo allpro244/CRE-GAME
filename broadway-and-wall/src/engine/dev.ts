@@ -9,12 +9,13 @@ import type { ParcelTable } from "@/data/types";
 import type { BtsCommitment, Builder, BuildingDesign, BuiltClass, Contract, DevUse, Development, Econ, GameState, MerchantBook, Rival, RivalStyle, UseMix } from "./types";
 import { hash01 } from "./competitorTraits";
 import { BUILT_CLASSES, cloneState, raiseAlert } from "./types";
+import { abatementAtStart } from "./citygov";
 import { logBooks, moveDeposit, moveFundCash, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
 import { rng, rrange, NATURAL_VAC, forwardVacancy, rentDriftAt, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, housableStock, payrollGrowth12 } from "./market";
 import { firmShort } from "./firm";
-import { resolveRec, marketRentPsfYr, opexPsf, taxRate, landValue, landRead, assetValue, ownedHoldingValue, RECOVERY_RATE, demandLinear, condGrade, condCeiling, openingCondIdx,
-  developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult, MGMT_FEE,
+import { classValuePsf, resolveRec, marketRentPsfYr, landValue, landRead, assetValue, ownedHoldingValue, demandLinear, condGrade, condCeiling, openingCondIdx,
+  developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
   mergedTouched, rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal, demandIdx, buildTier, tradeAreaDemand, HOMES_ONLY_ZONES } from "./value";
 import { isHoaBbl } from "./landdev";
 import { productOf, ANCHOR_NAMES, type ProductKey, type ProductSite } from "./products";
@@ -509,6 +510,9 @@ export interface DevPlan {
   stabNoi: number;
   /** The tax-loaded exit yield the mark uses (the hurdle's own), %. Value on completion = stabNoi ÷ this. */
   exitYield: number;
+  /** The first stabilised year's tax after any abatement, and the abatement priced (citygov.ts). */
+  taxYr1?: number;
+  taxAbate?: { pct: number; years: number } | null;
   /** 0..1, 0.5 = market standard. What you chose to build to. */
   spec: number;
   bts?: BtsCommitment;
@@ -700,16 +704,8 @@ export function cityValueToReplacement(s: GameState): number {
     // actually sign at; and it ignored the property tax entirely, which is a
     // real claim on a real building and is capitalised into every other value
     // in this engine.
-    const rent = e.effRentIdx?.[k] ?? e.rentIdx[k];
-    const occ = 1 - NATURAL_VAC[k];
-    const opex = opexPsf(k, e, false);
-    const recov = RECOVERY_RATE[k] ?? 0;
-    const egi = rent * occ + opex * recov * occ;
-    const noiPsf = egi - opex - egi * MGMT_FEE;
-    // Same tax solve as the land residual: value and the tax bill define each
-    // other, so V = NOI / (cap + t(1 - recovery)) rather than NOI / cap.
-    const cap = Math.max(3, e.capRate[k]) / 100;
-    const valuePsf = noiPsf / (cap + taxRate(e) * (1 - recov));
+    // (value.ts classValuePsf: the same solve the assessor's roll reads)
+    const valuePsf = classValuePsf(e, k);
     // The low-rise base, deliberately: this is a citywide average against a
     // citywide stock, and weighting the height premium would need a height
     // distribution nobody has measured. It biases the ratio UP for a tall town
@@ -948,7 +944,7 @@ export function planDevelopment(
     use, mix, floors: pf.floors, coverage: pf.coverage, contract, sf: pf.gsf,
     far: +(pf.gsf / rec.lotArea).toFixed(1), farMax,
     hardCost, softCost, contingency, demo, leaseUp, costTotal, landBasis, landCarry, basisTotal,
-    stabNoi, exitYield: exitYieldPct,
+    stabNoi, exitYield: exitYieldPct, taxYr1: pf.taxYr1, taxAbate: pf.abate,
     ltc, ltcMax, commitment, interestReserve, ratePct,
     lender: pf.lender, points: pf.points, pointsCost,
     equity: projectCost - commitment,
@@ -1158,7 +1154,7 @@ export function startAdaptiveReuse(
     interestReserve: plan.interestReserve, reserveUsed: 0,
     leaseUpReserve: plan.leaseUp, equityBudget: plan.equity,
     equitySpent: plan.equityAtClose, equityPrefunded: plan.equityAtClose,
-    ratePct: plan.ratePct, startM: next.month, deliverM: next.month + plan.months,
+    ratePct: plan.ratePct, startM: next.month, taxAbate: abatementAtStart(next.econ), deliverM: next.month + plan.months,
     baseMonths: plan.months, piped: true, signed: [], events: 0,
     mode: "reuse", reuseFrom: oldMix,
     reuseOldSf: rentableSf(rec),
@@ -2217,7 +2213,7 @@ export function startDevelopment(
         ? { takeout: { kind: "fixed" as const, ratePct: +(next.econ.indexRate + MINI_PERM_SPREAD + TAKEOUT_LOCK_PREMIUM).toFixed(2) } }
         : {}),
     ratePct: plan.ratePct,
-    startM: next.month, deliverM: next.month + plan.months, baseMonths: plan.months,
+    startM: next.month, taxAbate: abatementAtStart(next.econ), deliverM: next.month + plan.months, baseMonths: plan.months,
     piped: true,   // its cohort is in the market's queue, pushed above
     signed: [],
     bts: plan.bts,
@@ -2324,7 +2320,7 @@ export function takeoverDevelopment(
     equityBudget: Math.max(0, remaining - commitment), equitySpent: 0,
     equityPrefunded: 0,   // a takeover writes no cheque at close
     ratePct: +(s.econ.indexRate + 3.2).toFixed(2),
-    startM: s.month, deliverM: s.month + months, baseMonths: months,
+    startM: s.month, taxAbate: abatementAtStart(s.econ), deliverM: s.month + months, baseMonths: months,
     // the dead sponsor's start already queued this building's square feet in
     // deliveryQueue; reschedule to the takeover finish date.
     piped: true,
@@ -2908,6 +2904,10 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
   // month.
   const h = s.holdings[d.bbl];
   h.condition = "good";
+  // The abatement the job broke ground under runs from the certificate of
+  // occupancy (citygov.ts); grossTaxYr bills the forgiven share off.
+  if (d.taxAbate) h.taxAbate = { pct: d.taxAbate.pct, untilM: s.month + d.taxAbate.years * 12 };
+  else delete h.taxAbate;
   // NEW BONES. Ground-up is the only way to own the top of the condition scale —
   // see condCeiling: no amount of capital gets an old building here. That is a
   // real part of what a developer is buying and it was not modelled at all.

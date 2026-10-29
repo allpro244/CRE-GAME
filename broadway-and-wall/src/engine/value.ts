@@ -1381,6 +1381,9 @@ const LAND_SCALARS = [
   "homesStamp", "wageIdx", "population", "homesG12", "priceLevel",
   // the land developers' bids for farm tracts (growth.ts tractBid); growth.ts bumps it on every rewrite
   "growthStamp",
+  // the property-tax rate the council set (citygov.ts), and its policy stamp
+  // (abatements reach the residual through the pro forma)
+  "taxMult", "govStamp",
 ] as const;
 const LAND_CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
 const LAND_MKT_LEN = LAND_SCALARS.length + LAND_DICTS.length * (1 + LAND_CLASSES.length);
@@ -3311,11 +3314,39 @@ export function recoveryFor(
 // reimburses it; the landlord eats the share on vacant space and gross leases.
 export const TAX_RATE = 0.011;
 /**
- * The rate this year: the statutory one times whatever the city has had to
- * levy on top of it (`taxMult` — a fiscal crisis, blackswans.ts). One in
- * ordinary times, so every reader is unchanged unless a city goes broke.
+ * The rate this year: the statutory one times what City Hall levies against
+ * it (`taxMult`, set every month by citygov.ts from the rate the council
+ * adopted — a budget, a mayor's platform, a control board's surcharge). One
+ * where no government has been seated, so an old save reads as before.
  */
 export const taxRate = (econ?: { taxMult?: number }) => TAX_RATE * (econ?.taxMult ?? 1);
+
+/**
+ * WHAT A FOOT OF EACH CLASS IS WORTH, citywide: stabilised (or, given `occ`,
+ * actual) NOI the way this engine computes NOI, capitalised at the class's cap
+ * rate with the tax solve V = NOI / (cap + t(1 - recovery)). One copy, read by
+ * the build brake (dev.ts cityValueToReplacement) and by the assessor's roll
+ * (citygov.ts) — the city taxes the same value the market builds against.
+ */
+export function classValuePsf(e: Econ, k: BuiltClass, occ: number = 1 - NATURAL_VAC[k]): number {
+  const rent = e.effRentIdx?.[k] ?? e.rentIdx[k];
+  const opex = opexPsf(k, e, false);
+  const recov = RECOVERY_RATE[k] ?? 0;
+  const egi = rent * occ + opex * recov * occ;
+  const noiPsf = egi - opex - egi * MGMT_FEE;
+  const cap = Math.max(3, e.capRate[k]) / 100;
+  return noiPsf / (cap + taxRate(e) * (1 - recov));
+}
+
+/**
+ * THE SHARE OF A HOLDING'S TAX BILL AN ABATEMENT STILL FORGIVES (421-a, ICAP —
+ * citygov.ts): the abatement the job was started under, for its years from
+ * delivery. Zero once it has run out, or for a building that never had one.
+ */
+export function abatedShare(h: { taxAbate?: { pct: number; untilM: number } }, econ?: { m?: number }): number {
+  const a = h.taxAbate;
+  return a && (econ?.m ?? 0) < a.untilM ? a.pct : 0;
+}
 
 // Cap rates aren't one number per class: a trophy on the square trades tighter
 // than a tired walk-up on the edge of town. Demand is location; condition is
@@ -3732,10 +3763,12 @@ export function ownedContractNoiYr(
 // The landlord's share of the property-tax bill: net leases reimburse it,
 // so you pay on the vacant + gross-leased fraction of the building.
 /** The gross property-tax bill, before anyone reimburses anything. */
-export function grossTaxYr(rec: ParcelRecord, h: Holding, econ?: { taxMult?: number }): number {
+export function grossTaxYr(rec: ParcelRecord, h: Holding, econ?: { taxMult?: number; m?: number }): number {
   const assessed = h.assessed ?? h.costBasis;
   if (rec.class === "land" || !rec.bldgArea) return 0; // land carry already covers it
-  return assessed * taxRate(econ);
+  // An abated building is assessed at full value and billed less (citygov.ts).
+  const ab = abatedShare(h, econ);
+  return ab ? assessed * taxRate(econ) * (1 - ab) : assessed * taxRate(econ);
 }
 
 /**
@@ -4709,7 +4742,12 @@ function holdingValueOn(rec: ParcelRecord, econ: Econ, h: Holding, month?: numbe
   // A leasehold is marked as the freehold less the ground rent's value, so the
   // in-place leg is struck on the NOI before the ground rent and the rent is
   // taken off once, at the end, at the yield it trades at.
-  const contractNoi = holdingNOIYr(rec, econ, h, inGut ? month : Number.POSITIVE_INFINITY) + (h.groundRentOut?.rentYr ?? 0);
+  // A TAX ABATEMENT IS NOT INCOME FOREVER (citygov.ts). The roll pays the
+  // abated bill this year; a buyer capitalises the full bill and adds what is
+  // left of the abatement as the present value it is — the pro forma's
+  // exit-value identity, read on a standing building.
+  const tAb = month !== undefined ? taxAbatementTerms(rec, econ, h, month) : null;
+  const contractNoi = holdingNOIYr(rec, econ, h, inGut ? month : Number.POSITIVE_INFINITY) + (h.groundRentOut?.rentYr ?? 0) - (tAb?.saveYr ?? 0);
   // AND YOU CANNOT DIVIDE A NEGATIVE NOI BY A CAP RATE AT ALL.
   //
   // A building with no tenants pays operating costs and taxes and bills
@@ -4768,8 +4806,20 @@ function holdingValueOn(rec: ParcelRecord, econ: Econ, h: Holding, month?: numbe
     : leaseUpMark(rec, econ, h, month, capNoRoll, cap, contractNoi, stabNoi, true);
   const firstUp = asIs !== null ? blended + asIs.weight * Math.max(0, asIs.mark - blended) : blended;
   const marked = vac !== null ? Math.max(firstUp, vac.mark) : firstUp;
-  const freehold = Math.max(floor, marked - abate);
+  const freehold = Math.max(floor, marked - abate) + (tAb?.pv ?? 0);
   return h.groundRentOut ? Math.max(0, freehold - leaseholdGroundPv(h, econ)) : freehold;
+}
+
+/** What an abatement still saves the owner a year, and its present value at the building's all-in yield. */
+export function taxAbatementTerms(rec: ParcelRecord, econ: Econ, h: Holding, month: number): { saveYr: number; pv: number } | null {
+  const a = h.taxAbate;
+  if (!a || month >= a.untilM || !(a.pct > 0)) return null;
+  const full = propertyTaxYr(rec, { ...h, taxAbate: undefined }, econ);
+  const saveYr = Math.max(0, full - propertyTaxYr(rec, h, econ));
+  if (!(saveYr > 0)) return null;
+  const y = Math.max(0.01, capRateFor(rec, econ, h.condition, h.condIdx) / 100 + taxRate(econ) * taxBorneShare(rec));
+  const yrs = (a.untilM - month) / 12;
+  return { saveYr, pv: saveYr * (1 - Math.pow(1 + y, -yrs)) / y };
 }
 
 export function monthlyNOI(rec: ParcelRecord, econ: Econ, h: Holding, currentQ: number): number {

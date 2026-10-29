@@ -10,6 +10,8 @@ import "./next.css";
 import { useStore, type Page } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { UNREAL_HOST } from "@/state/unrealHost";
+import { BizSheet } from "@/ui/BizSheet";
+import { Industries } from "@/ui/panels/IndustriesView";
 import Palette from "@/ui/Palette";
 import YearReview, { ExitCard, GoalCard } from "@/ui/YearReview";
 import ClockProgress from "@/ui/ClockProgress";
@@ -117,6 +119,7 @@ export default function Shell() {
       <LensBar />
       <DrillLayer />
       <Palette />
+      <BizSheet />
       <AlertModal />
       <DefaultNoticeModal />
       <DecisionModal />
@@ -250,6 +253,7 @@ const NEXT_VIEW: Record<string, ReactElement> = {
   "v:l-offers": <LeasingOffers />,
   "v:l-expiring": <LeasingExpiring />,
   "v:l-vacancy": <LeasingVacancy />,
+  "v:m-industries": <Industries />,
   "v:m-districts": <CityMarkets part="districts" />,
   "v:m-building": <CityMarkets part="building" />,
   "v:c-news": <CityNews />,

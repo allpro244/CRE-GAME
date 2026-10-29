@@ -56,7 +56,10 @@ function incomingDeposits(s: GameState, bbl: string): number {
 export const CAP_GAINS_RATE = 0.2;    // long-term rate on true appreciation
 export const RECAPTURE_RATE = 0.25;   // §1250: depreciation comes back at 25%
 export const SALE_BROKERAGE = 0.015;  // the sell-side fee
-export const TRANSFER_TAX = 0.006;    // deed stamps, paid at the closing table
+// deed stamps, paid at the closing table — the statutory rate; the council
+// sets the rate in force (citygov.ts transferTaxRate)
+export { TRANSFER_TAX } from "./citygov";
+import { transferTaxRate } from "./citygov";
 export const EXCHANGE_WINDOW_M = 6;  // 1031: redeploy within six months or the tax comes due
 
 export type BuyProduct = string;   // "cash", or any id from debt.PRODUCTS
@@ -325,7 +328,7 @@ export function executePurchase(
       // the seller pays its own selling costs and gains tax, as on every other
       // sale on the street.
       const relief = settleSale(next, seller, bbl, price);
-      const costs = streetSaleCost(price);
+      const costs = streetSaleCost(price, s);
       seller.cash += price - relief - costs - tax;
       // A syndicated deed pays its deal investors out of the closing — see
       // jvLpTake (rivals.ts).
@@ -2928,7 +2931,7 @@ export function delist(s: GameState, bbl: string): GameState {
 export function saleTaxQuote(h: Holding, price: number, s?: GameState): { net: number; gain: number; tax: number; recapture: number; appreciation: number } {
   // A run process costs a point more in fees than a sign on the door, and that
   // point is the price of finding out what the market would actually pay.
-  const net = Math.round(price * (1 - saleFeeRate(h, s) - TRANSFER_TAX - SALE_FRICTION));
+  const net = Math.round(price * (1 - saleFeeRate(h, s) - transferTaxRate(s) - SALE_FRICTION));
   const depr = h.deprTaken ?? 0;
   const adjBasis = h.costBasis - depr;
   const gain = net - adjBasis;

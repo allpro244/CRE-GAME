@@ -209,6 +209,8 @@ export function SettingsPage() {
   const muteAlertKind = useStore((s) => s.muteAlertKind);
   const setAlertsOff = useStore((s) => s.setAlertsOff);
   const fpsOn = useStore((s) => s.fpsOn);
+  const regionCountry = useStore((s) => s.regionCountry);
+  const setRegionCountry = useStore((s) => s.setRegionCountry);
   const setFpsOn = useStore((s) => s.setFpsOn);
   const graphics = useStore((s) => s.graphics);
   const diorama = useStore((s) => s.diorama);
@@ -306,6 +308,23 @@ export function SettingsPage() {
         label="Hover card"
         detail="Point at a building on the map to see its owner, occupancy, rent, value and asking price. Off, the map stays clean and a click still opens the building. Also on the map's bottom strip as Stats."
       />
+      <div className="setting-row">
+        <div className="setting-text">
+          <div style={{ fontWeight: 600 }}>Region map edge</div>
+          <div className="hint" style={{ padding: 0 }}>
+            {regionCountry
+              ? "Extended: the country past the edge is drawn — farms, quarries, the airport, the rail yard. Background only, never for sale."
+              : "Original: the region map as it has always been, water to the edge. The island maps are the same either way."}
+          </div>
+        </div>
+        <div className="seg" role="radiogroup" aria-label="Region map edge">
+          {([[false, "Original"], [true, "Extended"]] as const).map(([v, label]) => (
+            <button key={label} type="button" role="radio" aria-checked={regionCountry === v}
+              className={"seg-btn" + (regionCountry === v ? " on" : "")}
+              onClick={() => setRegionCountry(v)}>{label}</button>
+          ))}
+        </div>
+      </div>
       <Toggle
         on={fpsOn}
         set={setFpsOn}

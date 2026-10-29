@@ -54,6 +54,18 @@ const USE_WORD: Record<string, string> = { office: "Office", retail: "Retail", m
 
 export const acresText = (ac: number) => (ac >= 10 ? ac.toFixed(0) : ac >= 1 ? ac.toFixed(1) : ac.toFixed(2)) + " ac";
 
+/**
+ * A REGION FACILITY'S CARD (region step 2c): what it is and that it is background. Numbers first, plain
+ * words: its size, its industry, and that the region's plants, yards and farms are not on the market.
+ */
+export function facilityTipHtml(f: { name: string; industryName: string; acres: number }): string {
+  return [
+    `<div class="ht-addr">${esc(f.name)}</div>`,
+    row(f.industryName, acresText(f.acres)),
+    `<div class="ht-sub">Region · not for sale</div>`,
+  ].join("");
+}
+
 export function tipHtml(g: GameState, parcels: Record<string, ParcelRecord>, rec0: ParcelRecord): string {
   const b = hoverBasics(g, parcels, rec0);
   return [

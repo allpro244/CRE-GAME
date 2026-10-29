@@ -31,6 +31,7 @@
 // the end of it or hands a frame to a receiver.
 import { drawRivalRaise, poolLeft, PITCH_MULT } from "./investors";
 import { fieldRoster, rivalCapitalMult, type RivalCapital } from "./setup";
+import { transferTaxRate } from "./citygov";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
 import { sweepApy, monthLabel, START_YEAR } from "./types";
@@ -802,7 +803,7 @@ export function transferDeed(s: GameState, bbl: string, to: Rival, price: number
     // secured stays owed, on the line.
     const relief = settleSale(s, r, bbl, Math.max(0, price));
     if (price > 0) {
-      const costs = streetSaleCost(price);
+      const costs = streetSaleCost(price, s);
       const lpOut = jvLpTake(jv, price - relief - costs, s.month);
       r.cash += price - relief - costs;
       r.cash -= lpOut;
@@ -5474,7 +5475,7 @@ export function rivalBuys(
     // Same event, same rule — a firm selling to another firm and a firm selling
     // to Hartford both retire the loan that was on the building, then the line.
     const relief = settleSale(s, seller, rec.bbl, price);
-    const costs = streetSaleCost(price);
+    const costs = streetSaleCost(price, s);
     seller.cash += price - relief - tax - costs;
     const partnersOut = jvLpTake(jv, price - relief - tax - costs, s.month);
     seller.cash -= partnersOut;
@@ -5541,7 +5542,7 @@ export function sellToOutsider(s: GameState, bbl: string, price: number): boolea
   const jv = takeJv(seller, bbl);
   forgetDeed(seller, bbl);
   const relief = settleSale(s, seller, bbl, price);
-  const costs = streetSaleCost(price);
+  const costs = streetSaleCost(price, s);
   seller.cash += price - relief - tax - costs;
   const partnersOut = jvLpTake(jv, price - relief - tax - costs, s.month);
   seller.cash -= partnersOut;
@@ -5635,13 +5636,13 @@ export function rivalAsk(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
  * rates as actions.ts (SALE_BROKERAGE, TRANSFER_TAX, SALE_FRICTION), about
  * 3.3% of the price. Rivals used to keep the whole price.
  */
-const STREET_SALE_COST = 0.015 + 0.006 + 0.012;
-export function streetSaleCost(price: number): number {
-  return Math.round(Math.max(0, price) * STREET_SALE_COST);
+const STREET_SALE_COST = 0.015 + 0.012;
+export function streetSaleCost(price: number, s?: GameState): number {
+  return Math.round(Math.max(0, price) * (STREET_SALE_COST + transferTaxRate(s)));
 }
 
 function disposalNet(s: GameState, r: Rival, bbl: string, px: number): number {
-  const gross = px - saleRelief(s, r, bbl, px) - gainsTaxOn(r, px) - streetSaleCost(px);
+  const gross = px - saleRelief(s, r, bbl, px) - gainsTaxOn(r, px) - streetSaleCost(px, s);
   return gross - jvLpTake(r.jvs?.[bbl], gross, s.month);
 }
 

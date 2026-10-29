@@ -18,7 +18,7 @@ import { civicCollection, civicWorks3d } from "./civic";
 import { siteDeeds } from "@/engine/actions";
 import type { ParcelTable } from "@/data/types";
 import Badges from "./Badges";
-import { esc, tipHtml } from "./hoverCard";
+import { esc, tipHtml, facilityTipHtml } from "./hoverCard";
 
 /**
  * AN ASSEMBLED SITE PAINTS AS ONE (owner, Oct 2026). A folded deed keeps its
@@ -360,6 +360,15 @@ export default function MapView() {
   // the whole 3D city and flew the camera back to the opening shot (owner,
   // Oct 2026: "once a year ... resets your view and reloads the entire game").
   const cityKey = city?.manifest ?? null;
+  // THE REGION MAP'S EDGE (Settings): the country round the window is laid with the city, so turning it on
+  // or off rebuilds the map once. Islands have none, and are left alone.
+  const regionCountry = useStore((s) => s.regionCountry);
+  const regionCountrySeen = useRef(regionCountry);
+  useEffect(() => {
+    if (regionCountrySeen.current === regionCountry) return;
+    regionCountrySeen.current = regionCountry;
+    if (city?.facilities?.length) setGlReset((n) => n + 1);
+  }, [regionCountry, city]);
   const builtCityRef = useRef<typeof city>(null);
   const plantRef = useRef<((c: NonNullable<typeof city>) => void) | null>(null);
   const [layerGen, setLayerGen] = useState(0);
@@ -560,6 +569,9 @@ export default function MapView() {
                 }
                 return out;
               })(),
+              // the region's background facilities and the country round the window (real/facilities.ts),
+              // only when the player has asked for them: off, the region map is the window it always was
+              ...(useStore.getState().regionCountry ? { facilities: cityNow.facilities, hinterland: cityNow.hinterland } : {}),
             }, (useStore.getState().game?.citySeed ?? 1) >>> 0);
             layer.setMonth(useStore.getState().game?.month ?? 0);
             // the foot-traffic gradient reads demand at plant time, so it has
@@ -655,7 +667,14 @@ export default function MapView() {
         };
         map.on("mousemove", (e) => {
           // one pick per frame, however fast the mouse moves
-          if (!pending) requestAnimationFrame(() => { const pt = pending; pending = null; if (pt) setHovered(pickAt(pt)); });
+          if (!pending) requestAnimationFrame(() => {
+            const pt = pending; pending = null;
+            if (!pt) return;
+            const bbl = pickAt(pt);
+            setHovered(bbl);
+            // off the market, a region facility under the pointer still answers to it (the card is the tooltip's)
+            if (!bbl && threeRef.current?.ready && threeRef.current.pickFacility(pt.x, pt.y)) map.getCanvas().style.cursor = "pointer";
+          });
           pending = { x: e.point.x, y: e.point.y };
         });
         map.on("mouseout", () => { pending = null; setHovered(null); });
@@ -667,8 +686,19 @@ export default function MapView() {
           // keeps the docked parcel card visible for the selection.
           // Read from the store — this listener outlives the render that mounted it.
           const st = useStore.getState();
-          if (bbl) st.focus(bbl, true);
-          else st.select(null);
+          if (bbl) { st.focus(bbl, true); return; }
+          st.select(null);
+          // A REGION FACILITY IS LOOKED AT, NOT BOUGHT: the camera goes to it and frames the whole of it
+          const three = threeRef.current;
+          const fac = three?.ready ? three.pickFacility(e.point.x, e.point.y) : null;
+          const fr = fac ? three!.facilityFrame(fac.id) : null;
+          if (fr) {
+            const box = map.getContainer().getBoundingClientRect();
+            // the facility's reach fills about half the shorter side of the window
+            const mpp = (fr.radius * 2.2) / Math.max(320, Math.min(box.width, box.height));
+            const zoom = Math.log2((78271.517 * Math.cos((fr.center[1] * Math.PI) / 180)) / Math.max(0.05, mpp));
+            map.easeTo({ center: fr.center, zoom: Math.min(16, Math.max(map.getMinZoom(), zoom)), pitch: 52, duration: 1400, essential: true });
+          }
         });
         // A DOUBLE CLICK OPENS THE BUILDING'S FULL PAGE (owner, Oct 2026). On a
         // lot it is ours, not the map's zoom; on open ground it still zooms.
@@ -2164,13 +2194,20 @@ export default function MapView() {
       const hoveredBBL = hov0 ? (g?.merged?.[hov0] ?? hov0) : hov0;
       const rec = hoverCard && hoveredBBL && hoveredBBL !== selectedBBL && table
         ? (g ? resolveRec(table, g, hoveredBBL) : null) ?? table[hoveredBBL] : null;
-      if (!rec) { tip.style.display = "none"; return; }
-      // One card per lot and month: the same numbers the property panel
-      // prints, read off the same functions, so the glance and the click agree.
-      const key = `${rec.bbl}|${g?.month}|${g?.holdings?.[rec.bbl] ? 1 : 0}|${g?.listings?.length}`;
-      if (key !== tipKey) { tipKey = key; tip.innerHTML = g ? tipHtml(g, table!, rec) : esc(rec.address); }
-      tip.style.display = "block";
       const r = container.getBoundingClientRect();
+      if (!rec) {
+        // OUT IN THE REGION: a background facility's card — what it is, and that it is not for sale
+        const fac = !hoveredBBL && hoverCard ? threeRef.current?.pickFacility(e.clientX - r.left, e.clientY - r.top) : null;
+        if (!fac) { tip.style.display = "none"; tipKey = ""; return; }
+        const key = "fac|" + fac.id;
+        if (key !== tipKey) { tipKey = key; tip.innerHTML = facilityTipHtml(fac); }
+      } else {
+        // One card per lot and month: the same numbers the property panel
+        // prints, read off the same functions, so the glance and the click agree.
+        const key = `${rec.bbl}|${g?.month}|${g?.holdings?.[rec.bbl] ? 1 : 0}|${g?.listings?.length}`;
+        if (key !== tipKey) { tipKey = key; tip.innerHTML = g ? tipHtml(g, table!, rec) : esc(rec.address); }
+      }
+      tip.style.display = "block";
       // keep the card on the map: flip it left / up near the far edges
       const x = e.clientX - r.left, y = e.clientY - r.top;
       const tw = tip.offsetWidth, th = tip.offsetHeight;

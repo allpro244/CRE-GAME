@@ -29,7 +29,8 @@ import type { GameState, Holding } from "./types";
 import { cloneState, logBooks } from "./types";
 import { ownedHoldingValueFromRec, resolveRec } from "./value";
 import { fundCashNeed, fundableNow } from "./credit";
-import { CAP_GAINS_RATE, RECAPTURE_RATE, TRANSFER_TAX } from "./actions";
+import { CAP_GAINS_RATE, RECAPTURE_RATE } from "./actions";
+import { transferTaxRate } from "./citygov";
 
 /** Lack of control and marketability on a minority stake — see the note above. */
 export const JV_MINORITY_DISCOUNT = 0.12;
@@ -153,7 +154,7 @@ export function sellStake(
 /** What buying the partner out costs today: the full pro-rata share of equity, plus counsel and transfer. */
 export function buyoutCost(s: GameState, parcels: ParcelTable, h: Holding): number {
   const equity = Math.max(0, equityOf(s, parcels, h));
-  return Math.round(equity * jvShare(h) * (1 + JV_DEAL_COST + TRANSFER_TAX));
+  return Math.round(equity * jvShare(h) * (1 + JV_DEAL_COST + transferTaxRate(s)));
 }
 
 export function buyOutPartner(

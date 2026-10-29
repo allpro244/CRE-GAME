@@ -25,7 +25,7 @@ export function mulberry32Step(a: number): { state: number; value: number } {
  *
  * `econ` is the default and mirrors `s.rng` for save/harness compatibility.
  */
-export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust" | "exit" | "land" | "nation" | "shock" | "capital" | "homes" | "growth";
+export type RngChannel = "econ" | "leasing" | "rivals" | "sales" | "dev" | "lenders" | "owners" | "indust" | "exit" | "land" | "nation" | "shock" | "capital" | "homes" | "growth" | "citygov";
 /**
  * THE RENT GROWTH A BUYER UNDERWRITES, in percentage points a year.
  *
@@ -47,7 +47,7 @@ export function underwrittenGrowthPct(e: { nat?: { inflExp?: number } }): number
   return CONTRACT_BUMP_PCT + inflationOverBumpPct(e);
 }
 
-export const RNG_CHANNELS: RngChannel[] = ["econ", "leasing", "rivals", "sales", "dev", "lenders", "owners", "indust", "shock"];
+export const RNG_CHANNELS: RngChannel[] = ["econ", "leasing", "rivals", "sales", "dev", "lenders", "owners", "indust", "shock", "citygov"];
 
 /** Seed independent streams from the campaign seed. Called from newGame. */
 export function initStreams(seed: number): Record<RngChannel, number> {

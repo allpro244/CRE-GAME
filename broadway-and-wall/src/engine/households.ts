@@ -1700,6 +1700,8 @@ function retire(emp: Int32Array, wg: Float32Array, i: number) {
 
 /**
  * THE MONTH'S LABOUR MARKET, against the firms' heads (stage 1b). In order:
+ *   0. a working household that would rather be where its pay buys more
+ *      (MOVE_ELAST) leaves first, its jobs this month's openings;
  *   1. layoffs: an industry with more of the register's earners than heads
  *      lets the difference go, earners drawn at random;
  *   2. the earners who arrived with work (EMP_OTHER) are placed in the
@@ -1711,7 +1713,7 @@ function retire(emp: Int32Array, wg: Float32Array, i: number) {
  *      second adult who looks for work like anyone else;
  *   5. each industry's earners are paid its going rate on average (below);
  *   6. a household with nobody in work and its insurance run out may leave
- *      (LEAVE_JOBLESS_M); returned for the caller to drop.
+ *      (LEAVE_JOBLESS_M); returned, with step 0's, for the caller to drop.
  * An earner's industry is the employer's; its pay is the industry's cash pay
  * times its own standing — kept, in proportion, through a move between
  * industries (economy.ts pays the same rate, so an industry's payroll is its
@@ -1725,6 +1727,31 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   const members: number[][] = Array.from({ length: N_IND }, () => []);
   // a slot is agent i's first earner (3i), second (3i+1) or other adult (3i+2)
   const EMP = () => [r.a!.emp1, r.a!.emp2, r.a!.emp3], IND = () => [r.a!.ind1, r.a!.ind2, r.a!.ind3], WAGE = () => [r.a!.wage1, r.a!.wage2, r.a!.wage3], UN = () => [r.a!.un1, r.a!.un2, r.a!.un3];
+  // 0. A WORKING HOUSEHOLD THAT WOULD RATHER BE WHERE ITS PAY BUYS MORE
+  // (MOVE_ELAST) leaves BEFORE the month's market, so the jobs it held are
+  // this month's openings, there for the jobless and the arrivals like any
+  // other. Deciding it after the market (as the jobless leavers in step 6 are
+  // decided: they hold no job) took earners out of an industry already filled
+  // to its heads, a regional household's weight short every time.
+  const pull = Math.pow(Math.max(0.01, realPayRel(e)), MOVE_ELAST);
+  const leave: number[] = [];
+  if (pull < 1) {
+    for (let i = 0; i < n0; i++) {
+      if (!(isWorking(a.emp1[i]) || isWorking(a.emp2[i]) || isWorking(a.emp3[i]))) continue;
+      if (!(R.u() < MOVE_M * (1 - pull))) continue;
+      leave.push(i); r.flow.left = (r.flow.left ?? 0) + a.wt[i];
+      for (let k = 0; k < 3; k++) if (EMP()[k][i] !== EMP_NONE) { EMP()[k][i] = EMP_NONE; IND()[k][i] = IND_NONE; WAGE()[k][i] = 0; UN()[k][i] = 0; }
+      if (a.ten[i] === TEN_RENT) {
+        r.flow.movedOut += a.wt[i];
+        noteOut(r, i, "other", () => ({
+          n: { realPay: +pull.toFixed(3) },
+          t: `A household left town for work elsewhere: pay here buys ${((1 - Math.pow(pull, 1 / MOVE_ELAST)) * 100).toFixed(0)}% less than in the nation`,
+        }));
+      }
+    }
+  }
+  const leaving = new Uint8Array(n0);
+  for (const i of leave) leaving[i] = 1;
   for (let i = 0; i < r.n; i++) for (let k = 0; k < 3; k++) {
     if (!isPlaced(EMP()[k][i]) || IND()[k][i] === IND_NONE) continue;
     N[IND()[k][i]] += a.wt[i]; members[IND()[k][i]].push(3 * i + k);
@@ -1855,8 +1882,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // from outside made each quit a household arriving: measured, the region
   // grew 17% more people and 23% more jobs in 25 years with quits on than off.
   const open = Float64Array.from(V, (v, i) => Math.min(v, r.vacLeft?.[i] ?? v));
-  // ...and only if what the job pays buys as much here as elsewhere (MOVE_ELAST)
-  const pull = Math.pow(Math.max(0.01, realPayRel(e)), MOVE_ELAST);
+  // ...and only if what the job pays buys as much here as elsewhere (MOVE_ELAST, `pull` above)
   for (let ind = 0; ind < N_IND; ind++) {
     while (open[ind] >= wR / 2) {
       open[ind] -= wR;
@@ -1948,28 +1974,15 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // 6. who leaves: nobody in work, insurance run out — an island renter too
   // (households stage 2: its flat empties and is let again from across the
   // water). A jobless other adult past six months out leaves on its own.
-  const leave: number[] = [];
   const c = r.a!;
   for (let i = 0; i < n0; i++) {
+    if (leaving[i]) continue;
     const e1 = c.emp1[i], e2 = c.emp2[i], e3 = c.emp3[i];
     if (e3 === EMP_UNEMP && c.un3[i] > UI_MONTHS && R.u() < LEAVE_JOBLESS_M) {
       if (othersOf(c, i) > 0) { c.adults[i]--; c.oAge[i] = othersOf(c, i) > 0 ? Math.max(18, c.oAge[i] - SIB_GAP) : 0; }
       c.emp3[i] = EMP_NONE; c.wage3[i] = 0; c.un3[i] = 0; c.ind3[i] = IND_NONE;
     }
-    if (isWorking(e1) || isWorking(e2) || isWorking(c.emp3[i])) {
-      // a working household that reconsiders where it lives, and would rather be where its pay buys more
-      if (pull < 1 && R.u() < MOVE_M * (1 - pull)) {
-        leave.push(i); r.flow.left = (r.flow.left ?? 0) + c.wt[i];
-        if (c.ten[i] === TEN_RENT) {
-          r.flow.movedOut += c.wt[i];
-          noteOut(r, i, "other", () => ({
-            n: { realPay: +pull.toFixed(3) },
-            t: `A household left town for work elsewhere: pay here buys ${((1 - Math.pow(pull, 1 / MOVE_ELAST)) * 100).toFixed(0)}% less than in the nation`,
-          }));
-        }
-      }
-      continue;
-    }
+    if (isWorking(e1) || isWorking(e2) || isWorking(c.emp3[i])) continue;
     const out = (e1 === EMP_UNEMP && c.un1[i] > UI_MONTHS) || (e2 === EMP_UNEMP && c.un2[i] > UI_MONTHS);
     if (out && R.u() < LEAVE_JOBLESS_M) {
       leave.push(i); r.flow.left = (r.flow.left ?? 0) + c.wt[i];

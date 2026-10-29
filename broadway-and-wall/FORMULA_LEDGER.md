@@ -23,7 +23,6 @@ When you remove one, move it to **Removed** with the PR. When you add a mechanis
 | 12 | Tenure (own vs rent) index | `market.ts` / `households.ts` `tenureIdx` | households stage 4 |
 | 13 | New-home sales pace (affordability to the 4th power) | `homeprice.ts` `salesPace` | households stage 4: qualified buyers |
 | 14 | Migration and participation formulas | `market.ts` (around 4100) | step 3 / households stage 4 |
-| 15 | Town wage index (closing toward a target) | `market.ts` `wageIdx` | §6c-D: firms post wages |
 | 16 | Construction cost index (input index × bid premium) | `market.ts` `costIdx` | step 8: named contractors, materials from industries |
 | 17 | Operating cost per sf per class | `value.ts` `opexPsf` | step 8: wages, energy, insurance |
 | 18 | Swan hazards: capital wave, campus/HQ, embargo, migration | `blackswans.ts` (`*_HAZ`) | step 8: national swans random by design; HQ and industry swans from firms |
@@ -40,6 +39,8 @@ When you remove one, move it to **Removed** with the PR. When you add a mechanis
 
 | What it was | Replaced by | PR |
 |---|---|---|
+| Town wage index closing toward a target (national pay × local prices over national × a wage curve × a size term, a town-wide freeze and owed raise, monthly noise) — #15 | each firm posts its own pay from its books and how hard it is to hire (the town's slack, its industry's unfilled openings, rent sharing; no nominal cuts, owed raises firm by firm); `wageIdx` is the heads-weighted average posted, read a month on (`economy.ts` `postPayAndPrices`) | §6c-D (`claude/wages-prices`) |
+| Local part of the CPI moving with local pay (`SERVICES_W` 0.25 × local pay growth over the nation's) | firms' own prices (unit cost and the demand they face, sticky ~9 months) against the nation's, at the share of the household basket bought in town | §6c-D (`claude/wages-prices`) |
 | Fiscal crisis on a random hazard (`FISCAL_HAZ`) | the city's own budget failing to roll its debt | city-gov (pending merge) |
 | Phantom buyers: fixed institutions, anonymous bidders, out-of-town tape buyers | named firms on the Players list paying from their own books | #511 |
 | Anonymous opening builders | builder firms from month 0 | #511 |

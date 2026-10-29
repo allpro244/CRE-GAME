@@ -845,10 +845,8 @@ export function openingCapSurvey(s: GameState, parcels: ParcelTable): void {
     }
   }
   for (const k of K) if (!(e.capRate[k] > 0)) e.capRate[k] = CAP_BASE[k];
-  // ...and the dirt with no building case opens at what the street's builders
-  // and land bankers say they would pay for it (FORMULA_LEDGER #24).
-  const land = surveyLand(s, parcels, 16).filter((L) => L > 0);
-  if (land.length >= 3) e.landIdx = wMedian(land.map((v) => ({ v, w: 1 })));
+  // (The opening land texture level stays the appraiser's provisional one:
+  // a survey of bids is not a sale — see tickLandRead.)
   e.capExp = { ...e.capRate };
   const reads = (e.capRead ??= {});
   for (const k of K) reads[k] = { n: 0, win: 0, med: e.capRate[k], p25: e.capRate[k], p75: e.capRate[k], ageM: 0, noBid: 0, trades: 0 };
@@ -1107,44 +1105,6 @@ export function noteLandRoundFailed(s: GameState, rec: ParcelRecord, li: Listing
 }
 
 /**
- * THE BROKER'S LAND SURVEY: for a spread of texture-governed lots, the best
- * number any builder or land banker on the street would put on each — once a
- * year when no such lot has printed in twelve months, and at the opening.
- * Half weight each, as the building survey.
- */
-function surveyLand(s: GameState, parcels: ParcelTable, want: number): number[] {
-  // THE TEXTURE IS WHAT SOMEBODY WAITING WOULD PAY. Only a land banker —
-  // a firm that buys dirt to hold, not to build — prices the dirt itself; a
-  // builder that wants a texture-governed lot is saying it pencils for it,
-  // which is evidence about the residual, not about the texture.
-  const firms = livingRivals(s).filter((r) => !r.stressMs && r.failedM === undefined && landBanker(r) && !(paramsOf(r).build > 0));
-  if (!firms.length) return [];
-  const lots: ParcelRecord[] = [];
-  for (const bbl of Object.keys(parcels)) {
-    const rec = resolveRec(parcels, s, bbl);
-    if (rec && (rec.class === "land" || !(rec.bldgArea > 0)) && rec.lotArea > 0 && !s.holdings[bbl]) lots.push(rec);
-  }
-  lots.sort((a, b) => a.demandScore - b.demandScore || (a.bbl < b.bbl ? -1 : 1));
-  const step = Math.max(1, Math.floor(lots.length / (want * 4)));
-  const out: number[] = [];
-  for (let i = Math.floor(step / 2); i < lots.length && out.length < want; i += step) {
-    const rec = lots[i];
-    if (!textureGoverned(rec, s.econ)) continue;
-    let best = 0;
-    for (const r of firms) best = Math.max(best, landMaxPrice(s, r, rec));
-    const mark = landPsfNow(rec, s.econ) * rec.lotArea;
-    if (mark > 0) out.push(s.econ.landIdx * Math.max(best, 0) / mark);
-  }
-  return out;
-}
-
-export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
-  if (s.month % 12 !== 6) return;
-  if ((s.landTape ?? []).some((p) => p.m > s.month - 12 && p.kind !== "s")) return;
-  for (const L of surveyLand(s, parcels, 6)) if (L > 0) pushLandPrint(s, { m: s.month, L, w: 0.5, kind: "s" });
-}
-
-/**
  * THE TEXTURE LEVEL, READ OFF THE LAND TAPE, monthly (market.ts) — the same
  * rules as a cap rate: a year of prints, two or three when thin, stale when
  * there are none. It used to be set: rent against construction cost to the
@@ -1153,7 +1113,16 @@ export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
  */
 export function tickLandRead(s: GameState): void {
   const e = s.econ;
-  const tape = (s.landTape ?? []).filter((p) => p.m >= s.month - TAPE_MONTHS && p.m < s.month + 1);
+  // CLOSED SALES ONLY. A bid that did not close, or a banker's indication, says
+  // nobody here pays the texture today — and for land an appraiser does not
+  // mark to that (USPAP: the sales comparison governs, and an unsold lot is
+  // not a sale). Measured with them in: the land bankers' option bids sit far
+  // under the texture on most lots, and the level fell 90% in twenty years
+  // (land median 72 -> 4 $/sf) — a city whose only land buyers are four
+  // banks of dirt and its builders has no other bidders for unbuildable
+  // land, which says more is missing from the land market (long-horizon
+  // holders, owner-users, parking) than that the land is worth nothing.
+  const tape = (s.landTape ?? []).filter((p) => p.kind === "t" && p.m >= s.month - TAPE_MONTHS && p.m < s.month + 1);
   let win = 0, sel: typeof tape = [];
   for (const w of [12, 24, 36]) {
     sel = tape.filter((p) => p.m > s.month - w);

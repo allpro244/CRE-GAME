@@ -73,7 +73,7 @@ import {
   FINANCE_LIKE, SPEND_SHARE, SPEND_BRIDGE, PAY_SPLIT, PROD_TAX_LOCAL, CORP_TAX, LOCAL_OWNER_SHARE,
   COMP_PER_WORKER_2023, BUYER_TYPES, REPAIR_PER_COMMERCIAL_RENT, REPAIR_PER_FLAT_RENT, REPAIR_OWNER_PER_VALUE_YR,
   OIL_PRICE_2000,
-  OFF_FLOOR, REMOTE, floorOf, NAT_TREND, CYCLE_BETA, FED_HEALTH_PER_PERSON_2023, MLR,
+  OFF_FLOOR, REMOTE, floorOf, sfMix, NAT_TREND, CYCLE_BETA, FED_HEALTH_PER_PERSON_2023, MLR,
   IND_ID_GOV, IND_ID_CON, IND_ID_INS, IND_ID_ONLINE, RETAIL_IDS, HEALTH_SPLIT, OLD24_TO_68,
   type IndustryId, type Floor, type BuyerType, type SpendCategory,
 } from "./industries";
@@ -89,6 +89,7 @@ import {
 import { HARD_COST_PSF, SOFT_COST, CONTINGENCY, constructionTypeMult } from "./value";
 import { householdMoney, registerPayroll, registerLabour, unpackHouseholds, whyHouseholdSpend } from "./households";
 import { why, whyOnce, whyNation, whyTenantBooks } from "./why";
+import { tenantHeads } from "./tenantMarket";
 
 // ---------------------------------------------------------------- the facts
 /** Off-map firms kept per industry: the sample each industry's off-map employment is shared over. [K] (precision, not a fact) */
@@ -304,9 +305,10 @@ export function economyStreamStep(st: number): number {
 
 // ---------------------------------------------------------------- reading the town
 interface Seen { sec: Sector; floor: Floor; hc: number; rentMo: number; z: number; ind?: number }
-/** Heads a tenant stands for: its headcount in reference feet (streetRolls.ts `firmHc`) over the engine's feet per job. */
+/** Heads a tenant stands for: its floor in reference feet over its industry's feet a worker (tenantMarket.ts `tenantHeads`). */
 function headsOf(t: Tenant, floor: Floor): number {
-  return (t.hcRef ?? t.sf) * (t.staff ?? 1) / Math.max(0.2, t.staffSign ?? 1) / SF_PER_JOB[floor];
+  void floor;
+  return tenantHeads(t);
 }
 /** Every named firm in town, in the engine's own order. Pure. */
 function readFirms(s: GameState): Map<number, Seen> {
@@ -1343,6 +1345,18 @@ export function economyToEngine(s: GameState): void {
       floorSf[floorOf(id)] += heads[i] * (1 - OFF_FLOOR[id]) * (1 - REMOTE[id]) * INDUSTRIES[id].sfPerWorker;
     }
     d.floorSf = floorSf;
+    // THE FLOOR THE OFF-MAP FIRMS NEED (FORMULA_LEDGER #10): each industry's
+    // on-floor heads the island's named firms do not hold, at its feet a
+    // worker on its class's floor — the same heads × sf a named firm's need
+    // is (tenantMarket.ts `tenantHeads`). The region's sheds off the map are
+    // sized from it (market.ts).
+    const offFloorSf: Record<Floor, number> = { office: 0, retail: 0, industrial: 0 };
+    for (let i = 0; i < N_IND; i++) {
+      const id = INDUSTRY_IDS[i], fl = floorOf(id);
+      const off = Math.max(0, heads[i] * (1 - OFF_FLOOR[id]) - (E.cur.named[i] ?? 0));
+      offFloorSf[fl] += off * SF_PER_JOB[fl] * sfMix(i, fl);
+    }
+    d.offFloorSf = offFloorSf;
     d.emp = E.emp.slice(); d.empPrev = (E.empPrev ?? E.emp).slice();
     d.target = E.emp.map((v, i) => v * (E.sigma?.[i] ?? 0));
     // each trade, by the heads it had in each industry at the opening (its own
@@ -1416,7 +1430,9 @@ export function migrateEconomy(s: GameState): void {
     for (const k of FLOORS) { const a = e.eco.floorSf[k], b = e.eco0.floorSf[k]; if (a && b) mig[k] = a / b; }
     e.eco0 = { ...e.eco0, floorSf: undefined, mig };
   }
-  if (e.eco) { delete e.eco.emp; delete e.eco.empPrev; delete e.eco.target; }
+  if (e.eco) { delete e.eco.emp; delete e.eco.empPrev; delete e.eco.target; delete e.eco.offFloorSf; }
+  // the off-map sheds re-anchor on the floor they hold (market.ts `offRef`)
+  delete e.offRef; delete e.offFloor0;
   delete e.islandFill;
   delete s.economy;
 }

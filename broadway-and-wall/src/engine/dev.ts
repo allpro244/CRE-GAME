@@ -3457,15 +3457,11 @@ export function cityInfillCap(
 export function useForZone(zone: string, demand: number, r: number, e?: Econ): DevUse {
   // The share of a sector that has structurally left. Capped below 1 because a
   // city never rezones the last of anything — somebody still needs a garage.
-  const gone = (k: BuiltClass) => {
-    const b0 = e?.baseStock0?.[k], b = e?.baseStock?.[k];
-    const fromBase = b0 && b ? clamp(1 - b / b0, 0, 0.8) : 0;
-    // Composition decline is sector exit for sheds — see block comment above.
-    const fromComp = k === "industrial"
-      ? clamp(1 - (e?.industComp ?? 1), 0, 0.8)
-      : 0;
-    return Math.max(fromBase, fromComp);
-  };
+  // (The price ratchet on `baseStock` it also read went with FORMULA_LEDGER
+  // #10: a sector leaves through its firms' heads, which `industComp` reads —
+  // the floor the industrial industries' heads take per job against the
+  // opening's.)
+  const gone = (k: BuiltClass) => k === "industrial" ? clamp(1 - (e?.industComp ?? 1), 0, 0.8) : 0;
   const here = (k: BuiltClass) => 1 - gone(k);
   /**
    * THE CRANE FILLS THE ORDER BOOK. Which is what an order book is for.

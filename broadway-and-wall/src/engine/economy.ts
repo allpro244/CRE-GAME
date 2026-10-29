@@ -113,7 +113,11 @@ const NO_SEC = 255;
 
 // ---------------------------------------------------------------- state
 /** The firms, one column per field; firm n is ledger slot n. */
-const F64 = ["hc", "z", "eq", "rev", "wages", "inputs", "rent", "prodTax", "interest", "incomeTax", "payout", "ebitda"] as const;
+const F64 = ["hc", "z", "eq", "rev", "wages", "inputs", "rent", "prodTax", "interest", "incomeTax", "payout", "ebitda",
+  // the last twelve months' revenue, a ring by month (REV_RING): the firm page's sparkline. Read by nothing in the world.
+  "h0", "h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "h9", "h10", "h11"] as const;
+/** Revenue history columns, indexed by month mod 12. */
+export const REV_RING = ["h0", "h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "h9", "h10", "h11"] as const;
 type F64Name = typeof F64[number];
 export type FirmColumns = { [K in F64Name]: Float64Array } & {
   /** A named firm's id (Tenant.fid, >= 0), or an off-map firm's (< 0). */
@@ -203,6 +207,8 @@ export interface EconomyState {
    * "since a year ago" reads (why.ts). Records; nothing decides on it.
    */
   ema?: { emp: number[]; X: number[]; hh: number[]; firms: number[]; share: number[]; heads: number; C: number };
+  /** The last 13 months by industry, oldest first, for the screens: output, heads, exports, EBITDA margin. Read by nothing in the world. */
+  ih?: { m: number; x: number[]; heads: number[]; ex: number[]; mg: number[] }[];
 }
 
 function allocCols(cap: number): FirmColumns {
@@ -965,6 +971,7 @@ export function tickEconomy(s: GameState): void {
     F.eq[n] += pbt - incomeTax - payout;
     F.rev[n] = rev; F.wages[n] = wages; F.inputs[n] = inLoc + inImp; F.rent[n] = rent; F.prodTax[n] = prodTax;
     F.interest[n] = interest; F.incomeTax[n] = incomeTax; F.payout[n] = payout; F.ebitda[n] = ebitda;
+    F[REV_RING[s.month % 12]][n] = rev;
     // a department's budget transfer is the city putting in or taking out capital, not income
     if (!P0) F.eq[n] = cashOf(L, n) - debtOf(L, n);
   }
@@ -1005,6 +1012,12 @@ export function tickEconomy(s: GameState): void {
     con, oil: E.oil ?? OIL_PRICE_2000, oilReal: Math.exp(E.lnOil ?? 0), health: { employers: insEmp, federal: fedHealth },
     ledgerSum: ledgerSum(L), ledgerGross: ledgerGross(L), market: cashOf(L, M), iters,
   };
+  // the screens' twelve-month trend by industry (written, never read by the world)
+  const revI = new Float64Array(N_IND), ebI = new Float64Array(N_IND);
+  for (let n = 0; n < nF; n++) { revI[F.ind[n]] += F.rev[n]; ebI[F.ind[n]] += F.ebitda[n]; }
+  const ih = (E.ih ??= []);
+  ih.push({ m: s.month, x: Array.from(x), heads: Array.from(heads), ex: Array.from(X), mg: Array.from(revI, (r, i) => (r > 0 ? ebI[i] / r : 0)) });
+  if (ih.length > 13) ih.splice(0, ih.length - 13);
 }
 
 // ---------------------------------------------------------------- what the engine reads (step 2)

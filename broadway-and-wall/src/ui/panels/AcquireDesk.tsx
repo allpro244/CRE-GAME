@@ -30,6 +30,7 @@ import { leasingOdds } from "@/engine/absorption";
 import { usd, sf, termLeft, pctSigned } from "@/ui/format";
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
 import { useLabel, physicalOcc, band, apMid, annualPayment, Row, LocSplitHint, Verdict } from "@/ui/panels/shared";
+import { BizLink } from "@/ui/BizSheet";
 
 /**
  * EMPTYING A BUILDING. Lifted out of the leasing desk so the three moves sit
@@ -186,7 +187,7 @@ export function DisclosedRoll({ bbl }: { bbl: string }) {
             return (
               <div key={i} className="roll-row">
                 <span className="roll-name">
-                  {t.name} <span className="roll-credit mono">{CREDIT_LABEL[t.credit]}</span>
+                  <BizLink t={t} /> <span className="roll-credit mono">{CREDIT_LABEL[t.credit]}</span>
                 </span>
                 <span className="roll-meta mono">
                   {sf(t.sf)} · ${t.rentPsf.toFixed(0)} {recoveryOf(t).toUpperCase()} · exp {monthLabel(t.endM)}

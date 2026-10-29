@@ -1,0 +1,53 @@
+/* A business's page and the industry screens (BizSheet.tsx, panels/IndustriesView.tsx).
+   Tokens only, so the dark theme is the same sheet. Above the desk pages (z 50),
+   under the engine's cards and the moments (z 79+). */
+.biz-backdrop {
+  position: fixed; inset: 0; z-index: 78; background: var(--scrim);
+  display: flex; align-items: flex-start; justify-content: center; padding: 48px 16px 16px; overflow-y: auto;
+}
+.biz-sheet {
+  width: min(760px, 100%); background: var(--surface-1); color: var(--text);
+  border: 1px solid var(--border); border-radius: var(--radius-lg); box-shadow: var(--shadow-3);
+  padding: var(--sp-4) var(--sp-5); font-size: var(--fs-sm);
+}
+.biz-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: var(--sp-3); }
+.biz-kicker { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: var(--tracking-caps); color: var(--text-3); }
+.biz-title { font-family: var(--font-display); font-size: var(--fs-xl); line-height: var(--lh-tight); }
+.biz-sub { color: var(--text-2); margin-top: 2px; }
+.biz-link {
+  background: none; border: none; padding: 0; margin: 0; font: inherit; color: inherit; cursor: pointer;
+  text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; text-align: left;
+}
+.biz-link:hover { color: var(--accent); }
+.biz-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--sp-3); margin: var(--sp-2) 0 var(--sp-3); }
+.biz-num { font-family: var(--font-mono); font-size: var(--fs-lg); }
+.biz-num.neg, .biz-tbl .neg { color: var(--neg); }
+.biz-lab { font-size: var(--fs-xs); color: var(--text-3); }
+.biz-spark { display: block; }
+.biz-why { background: var(--surface-2); border-radius: var(--radius-sm); padding: 6px 10px; margin-bottom: var(--sp-3); }
+.biz-cols { display: grid; grid-template-columns: 1.2fr 1fr; gap: var(--sp-4); }
+.biz-tbl { width: 100%; }
+.biz-tbl .num { font-family: var(--font-mono); }
+.biz-strong td { font-weight: 600; border-top: 1px solid var(--border-strong); }
+.biz-ind { padding-left: 14px !important; }
+@media (max-width: 640px) {
+  .biz-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .biz-cols { grid-template-columns: 1fr; }
+}
+
+/* the industry dashboard and the supply chain */
+.ind-group td { font-size: var(--fs-2xs); text-transform: uppercase; letter-spacing: var(--tracking-caps); color: var(--text-3); padding-top: 10px; }
+.ind-row { cursor: pointer; }
+.ind-row:hover td { background: var(--surface-3); }
+.ind-row.on td { background: var(--accent-soft); }
+.ind-chain { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); margin-top: var(--sp-2); }
+.ind-flow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; font-size: var(--fs-sm); }
+.ind-flow-name { position: relative; padding: 2px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ind-flow-bar { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent-soft); border-right: 2px solid var(--accent-bright); z-index: 0; }
+.ind-flow-bar.out { background: var(--teal-soft); border-right-color: var(--teal); }
+.ind-flow-name > span { position: relative; z-index: 1; }
+.ind-flow-v { font-family: var(--font-mono); text-align: right; white-space: nowrap; }
+.ind-yours { color: var(--accent); font-weight: 600; }
+.rent-exposure { margin: 4px 0 6px; font-size: var(--fs-xs); color: var(--text-2); }
+.rent-exposure b { font-family: var(--font-mono); font-weight: 600; color: var(--text); }
+@media (max-width: 640px) { .ind-chain { grid-template-columns: 1fr; } }

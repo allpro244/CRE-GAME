@@ -21,21 +21,28 @@ When you remove one, move it to **Removed** with the PR. When you add a mechanis
 | 10 | Space demand drivers per commercial class (affordability band, retail Cobb–Douglas), against the opening's occupied stock (`OPENING_VAC`, an initial condition). Office and shop firms form from industries' heads and sign from their own options (step 4); the aggregate still sizes off-map sheds, the rent response `demandAt.raw` and the sublet give-back | `market.ts` (`AFFORD_BAND`, `affordRaw`, `targetRaw`, `wantedNow`) | step 2 (firms' heads × sf/worker) |
 | 14 | Migration and participation formulas | `market.ts` (around 4100) | step 3 / households stage 4 |
 | 15 | Town wage index (closing toward a target) | `market.ts` `wageIdx` | §6c-D: firms post wages |
-| 16 | Construction cost index (input index × bid premium) | `market.ts` `costIdx` | step 8: named contractors, materials from industries |
-| 17 | Operating cost per sf per class | `value.ts` `opexPsf` | step 8: wages, energy, insurance |
-| 18 | Swan hazards: capital wave, campus/HQ, embargo, migration | `blackswans.ts` (`*_HAZ`) | step 8: national swans random by design; HQ and industry swans from firms |
 | 20 | The remaining term on an opening roll, and when it started (`buildRentRoll` age and expiry draws); the "three shapes" of an arriving party at the player's door (covenant +1, term ×1.35 / ×0.6) | `leasing.ts` | the town's pre-history (households stage 4 / step 9) |
 | 21 | Rival equity draws at founding (`initRivals`, `maybeNewFirm`: equity and leverage × random band) | `rivals.ts` | 6d-1: capital raised from savers' allocations |
 | 22 | Anonymous part of each bank's loan book, and its delinquency formula | `lenders.ts` `anonDelinq` | step 5 (in progress) |
-| 23 | Register holders' (ghost) asks: appraisal × a "denial" band, distress band | `sim.ts` `refreshListings`, `listHolderExit` | step 7b: holders' own situation (estate, partnership, loan) |
 | 24 | City land index (rent/cost residual × cycle × bidders' book, closing 4%/month) | `market.ts` `landIdx` | step 7: land read off closed lot sales and builders' residual bids |
 | 25 | A receiver's half-built frame: land + sunk cost × random band | `rivals.ts` `orphanToTape` | step 7b: builders bid the frame on cost to complete |
 | 26 | Capital wave as a shift in every bidder's equity target | `blackswans.ts` → `propmarket.ts` `valueTo` | 6d-1: money chasing returns |
+| 27 | Portfolio size discount (2% + 1.6%/building to 18%, ×(1 + 1.5 × shut credit)) | `portfoliosale.ts` `sizeDiscount` | step 7b: the package clears at what the few firms that can fund the whole cheque bid — alone, with a fund raise, or as a JV — so the discount comes from how few can write it |
+
+## Allowed exogenous inputs
+
+Not aggregates the city sets, so not on the list: the rest of the world's draws, which the city is too small to move.
+
+- **National swans are random by design** (`blackswans.ts`): the embargo, the capital wave, the arrivals, the pandemic, the war, the foreign crisis, the tech boom and the trade war, at hazards read off the record. Each reaches the city only through the national model, the oil price and the trades' orders, never as a rent.
+- **Nature's loss years for insurers** (`inputs.ts`, one in four, hashed from the seed and the year).
 
 ## Removed
 
 | What it was | Replaced by | PR |
 |---|---|---|
+| Construction cost index as inputs × a bid premium set from crew utilisation (was #16) | named general contractors bidding every job from their own books; the index is the average winning bid; materials read the nation's prices and oil (`contractors.ts`) | cleanup-8a |
+| Operating cost per sf per class × the construction cost index (was #17) | labour at the town's wage, energy at the nation's prices and oil, repairs at the cost index, insurance at replacement cost × a capital-driven hard/soft market (`value.ts` `OPEX_MIX`, `inputs.ts`) | cleanup-8a |
+| Swan hazards (was #18): `CAMPUS_HAZ` and the embargo's hand-written materials jump | an anchor employer choosing the city (and leaving it) on its pay, rents and taxes against other cities; the embargo reaches building costs through oil. National swans stay random by design (above) | cleanup-8a |
 | Fiscal crisis on a random hazard (`FISCAL_HAZ`) | the city's own budget failing to roll its debt | city-gov (pending merge) |
 | Phantom buyers: fixed institutions, anonymous bidders, out-of-town tape buyers | named firms on the Players list paying from their own books | #511 |
 | Anonymous opening builders | builder firms from month 0 | #511 |
@@ -53,3 +60,4 @@ When you remove one, move it to **Removed** with the PR. When you add a mechanis
 | Per-building cap spreads (location, quality, spec, reserve, product) | the appraiser's adjustment grid fitted to the prints (`econ.capFit`); bidders price reserves, re-letting capital and a product's buyer pool as cash flows and premia | step 7 |
 | Cap-rate floor over the 10Y (`CAP_FLOOR_OVER_INDEX`, #502) | each bidder's own cost of capital: the desks' debt-yield and coverage tests cap leverage in cheap money | step 7 |
 | Rival asks = value × random band (`rivalAsk`, fund-life, voluntary, grudge, duress `DURESS_BAND`, quiet-treaty price), lognormal tape bids around `capTarget`, a 0.88-0.96 private bid band, a 0.68-0.88 receiver recovery band | sellers' reservations from their own situation (`sellerTerms`: loan to clear, gains tax, value in use); bids from each firm's own underwriting (`bidRound`, `forcedSalePrice`) | step 7 |
+| Register holders' (ghost) asks: appraisal × a random "denial" band and a distress band | a holder's anchor — the higher of today's appraisal and last year's (loss aversion); a distressed holder prices at the street's best bid (`anchoredAsk`, `forcedSalePrice`) | step 7 (property-market-2) |

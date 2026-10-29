@@ -1080,6 +1080,14 @@ export function printLandTrade(s: GameState, rec: ParcelRecord, price: number, _
   // only land bankers printed): the level fell 87% over 25 years. Neither is
   // a print.
   if (distress || offMarket) return;
+  // ...AND A SELLER AGAINST A DEADLINE IS UNDER COMPULSION too: a fund at the
+  // end of its life, a merchant builder's exit, a non-core trim, an estate or a
+  // receiver (sellerTerms "forced": the reserve is only the loan, so unlevered
+  // dirt goes at any bid). Measured with them in: lots sold at 1-13% of
+  // appraisal to a builder bidding its thin residual, and the level fell
+  // 1.22 -> 0.04 in three years (seed 1).
+  const li = s.listings?.find((l) => l.bbl === rec.bbl);
+  if (li?.reason && li.reason !== "voluntary") return;
   const L = impliedLandLevel(s, rec, price);
   if (L !== null) pushLandPrint(s, { m: s.month, L, w: 1, kind: "t" });
 }
@@ -1087,7 +1095,7 @@ export function printLandTrade(s: GameState, rec: ParcelRecord, price: number, _
 /** A land round that did not close: the best bid and the ask met halfway, at half weight — read only when sales are thin. */
 export function noteLandRoundFailed(s: GameState, rec: ParcelRecord, li: Listing, round: { bids: Bid[] }): void {
   const top = round.bids[0];
-  if (!top || li.distress) return;
+  if (!top || li.distress || (li.reason && li.reason !== "voluntary")) return;
   const L = impliedLandLevel(s, rec, (top.bid + li.ask) / 2);
   if (L !== null) pushLandPrint(s, { m: s.month, L, w: 0.5, kind: "b" });
 }

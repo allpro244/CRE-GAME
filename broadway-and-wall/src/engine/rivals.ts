@@ -57,6 +57,7 @@ import { logFirm, milestone } from "./firmLog";
 import { developmentProForma, marketConstructionQuote, underwritingEcon } from "./proforma";
 import { dealView, maxPrice, bidderOf, sellerTerms, bidRound, forcedSalePrice, bankerHoldValue, holdValueFor, entrantBankerView, landBidRound, listingReserve, BUY_CLOSING } from "./propmarket";
 import { why } from "./why";
+import { beliefOf, beliefSignals } from "./beliefs";
 const CLASS_NOUN: Record<string, string> = { office: "office", multifamily: "apartments", retail: "retail", industrial: "industrial", land: "a site" };
 import { assembledBlock, reviewThesis, thesisFit, thesisLabel, thesisSellMult } from "./strategy";
 import { SURNAMES as OWNER_SURNAMES } from "./owners";
@@ -322,8 +323,10 @@ export function buildsWithoutBank(style: RivalStyle): boolean { return buildLtcC
 //    (Greenwood & Hanson 2015, ship building; the same shape in office
 //    starts). Others build against the cycle: a vulture buys and builds when
 //    rent is below its long-run level and expects it back. Each firm carries
-//    one lean, fixed at founding: +1 extrapolates the last three years of real
-//    rent growth through delivery; -1 expects the gap to the ten-year average
+//    one lean, fixed at founding: +1 carries the rent growth it has SEEN
+//    (beliefs.ts: its broker's comps, its own rolls and a survey two quarters
+//    old, remembered with half the weight on the last year) through
+//    delivery; -1 expects the gap to the ten-year average
 //    to close at the speed rent gaps close (Wheaton & Torto: about a quarter
 //    of the gap a year). Zero reads today's rent as the desk does. The style
 //    tilts the draw — merchant builders extrapolate, vultures and patient
@@ -346,40 +349,19 @@ export function firmOutlook(r: { id: string; style: RivalStyle }): number {
   const lean = (OUTLOOK_TILT[r.style] ?? 0) + (idHash(r.id, ":outlook") - 0.5) * 1.2;
   return Math.max(-1, Math.min(1, lean));
 }
-/** Real-rent momentum (3-year annualised) and level against the 10-year mean, per class. */
-let rentSigCache: { h: unknown; n: number; sig: Record<BuiltClass, { g: number; dev: number }> } | null = null;
-export function rentSignals(s: GameState): Record<BuiltClass, { g: number; dev: number }> {
-  const h = s.econ.history ?? [];
-  if (rentSigCache && rentSigCache.h === h && rentSigCache.n === h.length) return rentSigCache.sig;
-  const real = (p: (typeof h)[number] | undefined, k: BuiltClass) =>
-    p?.rent?.[k] && (p.cpi ?? 1) > 0 ? p.rent[k] / (p.cpi ?? 1) : NaN;
-  const sig = {} as Record<BuiltClass, { g: number; dev: number }>;
-  for (const k of ["office", "retail", "multifamily", "industrial"] as BuiltClass[]) {
-    const now = real(h[h.length - 1], k);
-    const then = real(h[h.length - 37], k);
-    const g = Number.isFinite(now) && Number.isFinite(then) && then > 0 ? Math.pow(now / then, 1 / 3) - 1 : 0;
-    let sum = 0, n = 0;
-    for (let i = Math.max(0, h.length - 120); i < h.length; i++) { const v = real(h[i], k); if (Number.isFinite(v)) { sum += v; n++; } }
-    const dev = n >= 36 && Number.isFinite(now) ? now / (sum / n) - 1 : 0;
-    // AN UNDERWRITER CARRIES A TREND, NOT A SPIKE. Investor surveys of the
-    // market rent growth professionals assume (PwC / Korpacz; RERC) run from
-    // about nothing to about 6% a year across markets and cycles, booms
-    // included. A three-year run of 40% a year, carried as 15% (the first
-    // clip), had extrapolating builders pricing a third more rent than the
-    // desk and took office vacancy to 33% in a single 100-year run.
-    sig[k] = { g: Math.max(-0.06, Math.min(0.06, g)), dev: Math.max(-0.6, Math.min(1.5, dev)) };
-  }
-  rentSigCache = { h, n: h.length, sig };
-  return sig;
-}
 /** What a builder with this lean thinks rent at stabilisation will be, as a multiple of today's. */
 export function outlookMult(s: GameState, r: { id: string; style: RivalStyle }, use: DevUse, months: number): number {
-  return leanMult(s, firmOutlook(r), use, months);
+  return leanMult(s, firmOutlook(r), use, months, r);
 }
-function leanMult(s: GameState, lean: number, use: DevUse, months: number): number {
+/**
+ * The momentum and level read through the builder's OWN forecast (beliefs.ts:
+ * its broker's comps, its rolls, a survey two quarters old) — not the town's
+ * true rent history. The anonymous trade reads the survey alone.
+ */
+function leanMult(s: GameState, lean: number, use: DevUse, months: number, who: { id: string } | null): number {
   if (lean === 0) return 1;
   const k: BuiltClass = use === "mixed" ? "multifamily" : use;
-  const { g, dev } = rentSignals(s)[k];
+  const { g, dev } = beliefOf(s, who, k);
   // Delivery plus the first year let.
   const H = Math.max(1, months / 12 + 1);
   const m = lean > 0
@@ -417,7 +399,7 @@ export function anonHurdle(s: GameState, plan: { yieldOnCost: number; exitCap: n
   const base = hurdleAt(plan, DEV_MARGIN);
   if (!withOutlook) return base;
   let best = -Infinity;
-  for (const lean of ANON_LEANS) best = Math.max(best, base * leanMult(s, lean, use, plan.months));
+  for (const lean of ANON_LEANS) best = Math.max(best, base * leanMult(s, lean, use, plan.months, null));
   return best;
 }
 /**
@@ -5405,7 +5387,7 @@ export function firmMaxPrice(s: GameState, r: Rival, rec: ParcelRecord): number 
   if (p.classes && !p.classes.includes(rec.class)) return 0;
   const v = assetValue(rec, s.econ, initialCondition(rec));
   const view = dealView(s, rec, rec.bbl, v);
-  return view ? maxPrice(s.econ, view, bidderOf(s, r, rec), rentSignals(s)).max : 0;
+  return view ? maxPrice(s.econ, view, bidderOf(s, r, rec), beliefSignals(s, r)).max : 0;
 }
 /**
  * DRY POWDER BURNS A HOLE. A fund that raised money and has not found a
@@ -5635,7 +5617,6 @@ export function rivalBuys(
   // ~25% and the top five at ~57% of the total.
   const streetAum = livingRivals(s).reduce((a, x) => a + Math.max(0, x.aum ?? 0), 0);
   const incomeView = !land && rec.bldgArea > 0 && !prefer ? dealView(s, rec, rec.bbl, price) : null;
-  const sig = rentSignals(s);
   for (const r of prefer ? [] : candidates) {
     const st = paramsOf(r);
     const builds = land && paramsOf(r).build > 0;
@@ -5670,7 +5651,7 @@ export function rivalBuys(
       // ITS OWN NUMBER (propmarket.ts): the firm's underwriting of this
       // building on its own capital. Ordinary stock over that number is not a
       // deal for this committee; distress still clears under it.
-      const mp = maxPrice(s.econ, incomeView, bidderOf(s, r, rec), sig).max;
+      const mp = maxPrice(s.econ, incomeView, bidderOf(s, r, rec), beliefSignals(s, r)).max;
       if (!isDistress && mp < price) continue;
       fitPp = need + 10 * (mp / Math.max(1, price) - 1);
     } else if (!isDistress && spreadPp + 0.15 < need) {

@@ -4591,6 +4591,13 @@ export interface GameState {
    */
   brokerRel?: Record<string, { name: string; fees: number; lastFeeM: number; ignores: number }>;
   /**
+   * WHAT EACH FIRM BELIEVES (beliefs.ts, ONE_ECONOMY_PLAN.md §6c-C): its own
+   * forecast of rent growth, vacancy, demand and cap rates per class, formed
+   * from what it has seen — its broker's comps, its own buildings and the
+   * lagged survey. Keyed by rival id, plus "street" for the anonymous trade.
+   */
+  beliefs?: Record<string, AgentBelief>;
+  /**
    * The player does not want the July docket thrown in their face. The auction
    * still happens, on the same day, with the same lots — this only stops the
    * card. The docket is on Marketplace either way, and so is the switch.
@@ -5760,6 +5767,31 @@ export function autoLeaseOnClose(s: GameState): boolean {
 }
 
 /** One print on the cap tape (propmarket.ts). */
+/** One class as one firm sees it (beliefs.ts). */
+export interface ClassBelief {
+  /** real effective rent as the firm has seen it, one point a quarter, oldest first (ten years) */
+  seen: number[];
+  /** the real rent growth it expects, a share a year (extrapolated from `seen`) */
+  g: number;
+  /** today's rent as it sees it against its own ten-year memory */
+  dev: number;
+  /** the vacancy it believes the class runs at */
+  vac: number;
+  /** the growth in occupied space it believes, a share a month */
+  dg: number;
+  /** the cap rate its broker quotes, % (the class read as of the shop's last trade) */
+  cap: number;
+  /** what this quarter's read was built from: leases its broker showed it, its own feet, the survey's age in months */
+  nC: number; ownSf: number; lagM: number;
+}
+export interface AgentBelief {
+  /** month of the last update */
+  m: number;
+  /** its brokerage (broker.ts house shops: "b0".."b2") */
+  shop: string;
+  c: Record<BuiltClass, ClassBelief>;
+}
+
 export interface CapPrint {
   m: number;
   k: BuiltClass;

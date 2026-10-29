@@ -38,6 +38,7 @@ import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind
 import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
+import { tickBeliefs } from "./beliefs";
 import { tickCorporate } from "./corporate";
 import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose, landFundBid } from "./rivals";
 import { openingCapSurvey, tickBrokerSurvey, tickLandSurvey, anchoredAsk, forcedSalePrice, BUY_CLOSING } from "./propmarket";
@@ -776,6 +777,8 @@ function tickMonth(
   // deliveries and lettings are now standing, so the city, the tenants and
   // the appraisers all read the same block this month.
   tickDemand(s, parcels);
+  // ...and every firm revises what it believes from what it has seen this quarter (beliefs.ts).
+  tickBeliefs(s, parcels);
   tickFund(s);
   windDownFund(s, parcels);
   tickTrustNote(s);

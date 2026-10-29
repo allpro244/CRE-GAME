@@ -268,7 +268,7 @@ function checks(runs) {
     "NCREIF/RCA cap rate minus UST10 1990-2024: ~1.5-5.5pp");
   add("Capital", "Cap rates lag the 10Y (best lag, years)", seedCheck(R, (r) => leadLag(diff(r.yr.map((x) => x.tenY)), diff(r.yr.map((x) => mean(CLASSES.map((k) => x.cap[k])))), 4).lag, 0, 3), nm,
     "cap rates follow rates with a 0-3 year lag and partial pass-through (Chervachidze-Wheaton 2013)");
-  add("Capital", "Cap rate yearly move |Δ| (median of classes)", seedCheck(R, (r) => median(CLASSES.map((k) => mean(diff(r.yr.map((x) => x.cap[k])).map(Math.abs)))), 0.1, 0.6), pp,
+  add("Capital", "Cap rate yearly move, mean abs change (median of classes)", seedCheck(R, (r) => median(CLASSES.map((k) => mean(diff(r.yr.map((x) => x.cap[k])).map(Math.abs)))), 0.1, 0.6), pp,
     "NCREIF/ACLI cap rates 1985-2024: typical annual move 0.2-0.5pp; 2009's +1.5pp was the extreme");
   add("Capital", "Deal-read share (years a sale priced the cap)", seedCheck(R, (r) => mean(r.yr.flatMap((x) => CLASSES.map((k) => x.capDeal[k] != null ? 1 : 0))), 0.6, 1), pc,
     "a cap rate read off closed deals needs deals: RCA tracks trades in every class in every major metro each year");
@@ -307,11 +307,11 @@ function checks(runs) {
     "BDS firm deaths ~8%/yr, mostly small; tenants failing in place a few %");
 
   const L = formulaLedger();
-  add("Integrity", "Formula ledger: aggregates still set from the top", { val: L.open, lo: 0, hi: 0, inShare: L.open ? 0 : 1, p10: L.open, p90: L.open, seedVals: [], grade: L.open ? "WATCH" : "PASS" }, (x) => String(x),
+  add("Integrity", "Formula ledger: aggregates still set from the top", { val: L.open, lo: 0, hi: 0, inShare: L.open ? 0 : 1, p10: L.open, p90: L.open, seedVals: [], grade: L.open ? "WATCH" : "PASS" }, (x) => Number.isFinite(x) ? String(x) : "—",
     `FORMULA_LEDGER.md open rows: #${L.ids.join(", #")} — target zero (plan §6c-F)`);
-  add("Integrity", "Non-finite econ fields (seed-years)", { val: runs.reduce((s, r) => s + r.yr.reduce((a, x) => a + (x.nan > 0 ? 1 : 0), 0), 0), lo: 0, hi: 0, inShare: 1, p10: 0, p90: 0, seedVals: [], grade: runs.some((r) => r.yr.some((x) => x.nan)) ? "FAIL" : "PASS" }, (x) => String(x),
+  add("Integrity", "Non-finite econ fields (seed-years)", { val: runs.reduce((s, r) => s + r.yr.reduce((a, x) => a + (x.nan > 0 ? 1 : 0), 0), 0), lo: 0, hi: 0, inShare: NaN, p10: NaN, p90: NaN, seedVals: [], grade: runs.some((r) => r.yr.some((x) => x.nan)) ? "FAIL" : "PASS" }, (x) => Number.isFinite(x) ? String(x) : "—",
     "a NaN anywhere is a bug: " + [...new Set(runs.flatMap((r) => r.nanPaths))].slice(0, 6).join(", "));
-  add("Integrity", "Frozen years (rents, jobs, prices, rates all unchanged)", { val: runs.reduce((s, r) => s + r.frozenYrs, 0), lo: 0, hi: 0, inShare: 1, p10: 0, p90: 0, seedVals: [], grade: runs.some((r) => r.frozenYrs) ? "FAIL" : "PASS" }, (x) => String(x),
+  add("Integrity", "Frozen years (rents, jobs, prices, rates all unchanged)", { val: runs.reduce((s, r) => s + r.frozenYrs, 0), lo: 0, hi: 0, inShare: NaN, p10: NaN, p90: NaN, seedVals: [], grade: runs.some((r) => r.frozenYrs) ? "FAIL" : "PASS" }, (x) => Number.isFinite(x) ? String(x) : "—",
     "the frozen world (CLAUDE.md): resurrected on gameOver; any frozen year is a bug");
   return rows;
 }

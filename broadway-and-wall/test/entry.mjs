@@ -18,6 +18,8 @@ export const MODULES = [
   "economy", "industries", "sfc",
   // why: the cause ledger behind every "Why?" chain (ONE_ECONOMY_PLAN.md §6e).
   "why",
+  // tenantMarket: landlords price their own space, tenants shop (ONE_ECONOMY_PLAN.md step 4).
+  "tenantMarket",
   "sim", "leasing", "actions", "credit", "value", "dev", "debt", "demand",
   "invariants", "rivals", "sponsor", "mix", "acquire", "comps", "propmarket", "market",
   "zoning", "landdev", "lotcode", "lotsplit", "lotsplitGeom", "products", "platdesign", "homes", "homeprice", "growth", "roads", "towngrowth", "unpack", "lenders", "proforma", "workout", "portfolio", "portfoliosale", "auction", "notes",

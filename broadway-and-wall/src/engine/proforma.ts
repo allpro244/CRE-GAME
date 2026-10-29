@@ -60,7 +60,7 @@ import type { ParcelRecord } from "@/data/types";
 import type { BtsCommitment, BuiltClass, Contract, DevUse, Econ, UseMix } from "./types";
 import { BUILT_CLASSES, CONSTRUCTION_LENDER } from "./types";
 import { productOf, layoutProduct, productHardCostBase, productBuildMonths, anchorShare, type ProductKey, type ProductSite } from "./products";
-import { NATURAL_VAC, CITY_STOCK, BUILD_MONTHS, LEASE_TERM_M, forwardVacancy, concessionTarget, CONC_DEPTH, rentDriftAt } from "./market";
+import { normalVac, CITY_STOCK, BUILD_MONTHS, LEASE_TERM_M, forwardVacancy, concessionTarget, CONC_DEPTH, rentTrend12 } from "./market";
 import {
   HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
   rentableRatio, marketRentPsfYr, opexPsf, locOpexMult, RECOVERY_RATE, MGMT_FEE, noiYr, capRateFor,
@@ -199,7 +199,7 @@ export function dominantOf(mix: UseMix): BuiltClass {
 export function leaseUpMarketAt(econ: Econ, mix: UseMix, vacOf: (u: BuiltClass) => number): number {
   const availability = overMix(mix, (u) =>
     vacOf(u) + (econ.sublet?.[u] ?? 0) / Math.max(1, econ.stock?.[u] ?? CITY_STOCK[u]));
-  const naturalAvailability = overMix(mix, (u) => NATURAL_VAC[u]);
+  const naturalAvailability = overMix(mix, (u) => normalVac(econ, u));
   const struct = overMix(mix, (u) => econ.structTight?.[u] ?? 0);
   const leaseRaw = availability / Math.max(0.001, naturalAvailability) - struct * 2.2;
   return 0.35 + 1.65 / (1 + Math.exp(-(leaseRaw - 1) / 0.4));
@@ -295,8 +295,8 @@ export function constructionSpaceTight(e: Econ, mix: UseMix): number {
   for (const u of BUILT_CLASSES) {
     const share = mix[u] ?? 0;
     if (share <= 0) continue;
-    const vac = e.cityVac?.[u] ?? NATURAL_VAC[u];
-    const gap = vac - NATURAL_VAC[u]; // negative = tight
+    const vac = e.cityVac?.[u] ?? normalVac(e, u);
+    const gap = vac - normalVac(e, u); // negative = tight
     const struct = e.structTight?.[u] ?? 0;
     // Up to ~12% more advance when the class is short space; asymptotic cap
     // replaces a hard rail that bound 73% of calls at 1.12 (pnpm rails).
@@ -493,7 +493,7 @@ export function withStreetRetail(mix: UseMix, floors: number, demand: number, ec
   // with retail slack and is gone 8pp over natural (shape parameter: the
   // depth at which ground-floor retail visibly stops being programmed —
   // post-2008 and post-2020 corridors — not a fitted number).
-  const natR = NATURAL_VAC.retail;
+  const natR = normalVac(econ, "retail");
   const slack = Math.max(0, (econ?.cityVac?.retail ?? natR) - natR);
   // ...AND WHETHER A SHOP PAYS (2026-10-14). Slack alone let towers keep
   // stapling shopfronts onto a street whose rents had fallen far behind the
@@ -687,17 +687,19 @@ export function underwritingEcon(econ: Econ, rentMult = 1): Econ {
     // ...and the concessions the market will be giving when it lets: the
     // package at delivery vacancy against today's (2026-10-12), the ratio
     // `devPencils` prices. Nothing in the pipeline, nothing changes.
-    const nat = NATURAL_VAC[u];
+    // (`nat`: what the market has normally run at, market.ts normalVac.)
+    const nat = normalVac(econ, u);
     const vNow = econ.cityVac?.[u] ?? nat;
     const vAt = econ.stock?.[u] ? forwardVacancy(econ, u) : vNow;
     const conc = (1 - CONC_DEPTH * concessionTarget(vAt - nat))
       / Math.max(0.05, 1 - CONC_DEPTH * concessionTarget(vNow - nat));
-    // ...and the rent itself at delivery: the market's own rent rule
-    // (`rentDriftAt`) run at the delivery vacancy over the build and the
-    // first half of the lease-up, ~30 months. A pipeline that will glut the
-    // market is forecast to cut the rent it delivers into; a shortage nobody
-    // is building into is forecast to raise it (2026-10-12).
-    const drift = econ.stock?.[u] ? Math.exp(rentDriftAt(u, vAt - nat) * DELIVERY_FORECAST_M) : 1;
+    // ...and the rent itself at delivery: where the comps have gone over the
+    // last year (market.ts rentTrend12), carried half the ~30 months to the
+    // middle of the lease-up — a market study extrapolates the trend and
+    // expects some of it to revert [K: half]. This read the city's rent
+    // equation at the delivery vacancy (`rentDriftAt`), which no rent follows
+    // any more (ONE ECONOMY step 4).
+    const drift = econ.stock?.[u] ? Math.exp(Math.max(-0.25, Math.min(0.25, 0.5 * rentTrend12(econ, u) * DELIVERY_FORECAST_M / 12))) : 1;
     const k = belief * rentMult;
     if (rentIdx[u] !== undefined) rentIdx[u] = rentIdx[u] * k;
     if (effRentIdx && effRentIdx[u] !== undefined) effRentIdx[u] = effRentIdx[u] * k * conc * drift;
@@ -1075,7 +1077,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   const fillMonths = overMix(mix, (u) => {
     const net = econ.landQueue?.[u]?.absYr;
     if (net === undefined) return 0;
-    const occ = (econ.stock?.[u] ?? 0) * (1 - (econ.cityVac?.[u] ?? NATURAL_VAC[u]));
+    const occ = (econ.stock?.[u] ?? 0) * (1 - (econ.cityVac?.[u] ?? normalVac(econ, u)));
     const a = Math.max(0, net) + occ / (LEASE_TERM_M[u] / 12);
     return a > 0 ? (rentable * (1 - preLet) * (u === "multifamily" ? 0.95 : 0.9)) / (a / 12) : 0;
   });
@@ -1113,7 +1115,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // package without it, taken off its stabilised rent. A shed on a big lot
   // barely moves it; a tower the size of the market prices its own glut.
   const ownConc = overMix(mix, (u) => {
-    const nat = NATURAL_VAC[u];
+    const nat = normalVac(econ, u);
     const vAt = forwardVacancy(econ, u);
     const vOwn = forwardVacancy(econ, u, rentable * (mix[u] ?? 0));
     return (1 - CONC_DEPTH * concessionTarget(vOwn - nat))

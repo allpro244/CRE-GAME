@@ -81,7 +81,7 @@ console.log("WHEN THE RATCHET IS FIRING (burden > 1.20), WHAT IS VACANCY DOING?"
 console.log("  class       %months firing   ...of those, vacancy is:");
 console.log("                                BELOW natural   AT the frictional floor   median vac   median avail");
 for (const k of CLASSES) {
-  const nat = E.NATURAL_VAC[k];
+  const nat = E.OPENING_VAC[k];
   const floor = nat * FRICTION_RATIO[k];
   const all = runs.flatMap(({ s }) => s);
   const firing = all.filter((r) => r.burden[k] > 1.20);
@@ -124,7 +124,7 @@ for (let d = 0; d < Math.floor(HZ / 120); d++) {
 console.log("\nWHAT A VACANCY GATE WOULD CHANGE");
 console.log("  class      firing now   firing if gated on vac >= natural   share suppressed");
 for (const k of CLASSES) {
-  const nat = E.NATURAL_VAC[k];
+  const nat = E.OPENING_VAC[k];
   const all = runs.flatMap(({ s }) => s);
   const firing = all.filter((r) => r.burden[k] > 1.20);
   const gated = firing.filter((r) => r.vac[k] >= nat);

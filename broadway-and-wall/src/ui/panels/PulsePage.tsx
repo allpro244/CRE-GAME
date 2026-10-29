@@ -5,7 +5,7 @@ import type { BuiltClass } from "@/engine/types";
 import { monthLabel } from "@/engine/types";
 import { cityValueToReplacement } from "@/engine/dev";
 import { standardsWord, underwritingStandards } from "@/engine/debt";
-import { NATURAL_VAC, SECTOR_LABEL } from "@/engine/market";
+import { normalVac, SECTOR_LABEL } from "@/engine/market";
 import { availability, marketBalance } from "@/engine/space";
 import { resolveRec } from "@/engine/value";
 import { sf, pct, pctSigned } from "@/ui/format";
@@ -104,7 +104,7 @@ export function PulsePage() {
         <thead>
           <tr>
             <th>Market</th>
-            <th className="num" title="Vacant + sublet / natural rate">Available</th>
+            <th className="num" title="Vacant + sublet / what it usually runs at">Available</th>
             <th>Balance</th>
             <th className="num">Rent $/sf</th>
             <th className="num" title="Real effective rent, year-on-year">Real rent · 12m</th>
@@ -131,7 +131,7 @@ export function PulsePage() {
                 onClick={() => goMarkets(k)} onKeyDown={(ev) => { if (ev.key === "Enter") goMarkets(k); }}>
                 <td>{SECTOR_LABEL[k]}</td>
                 <td className={"num" + (soft ? " neg" : "")}>
-                  {(v * 100).toFixed(1)}% <span className="dim">/ {(NATURAL_VAC[k] * 100).toFixed(1)}</span>
+                  {(v * 100).toFixed(1)}% <span className="dim">/ {(normalVac(e, k) * 100).toFixed(1)}</span>
                 </td>
                 <td className={soft ? "neg" : "dim"}>{bal.state}</td>
                 <td className="num">${e.rentIdx[k].toFixed(0)}</td>

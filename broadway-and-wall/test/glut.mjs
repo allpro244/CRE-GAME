@@ -28,7 +28,7 @@ const ok = (cond, msg) => { console.log(`${cond ? "PASS" : "FAIL"}  ${msg}`); if
 {
   const g = E.firstListings(E.newGame(550991, parcels), parcels, bbls);
   const at = (vac) => { const e = structuredClone(g.econ); e.cityVac.office = vac; return E.devPencils(e, "office"); };
-  const nat = E.NATURAL_VAC.office;
+  const nat = E.OPENING_VAC.office;
   // The pencil reads FORWARD vacancy (today's plus the pipeline), so "mild"
   // is the highest of 1.4x/1.3x/1.2x today that keeps the forward read
   // under 1.4x natural — the claim is about the forward, not the opening's

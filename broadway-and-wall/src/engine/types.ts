@@ -1664,6 +1664,8 @@ export interface BankFailure {
   delinq: number;
   /** What the desk was lending the player when it went. */
   yours: number;
+  /** The cause-ledger event (why.ts) that says what took it down. */
+  why?: number;
   reopenedM?: number;
   /** Loans the receiver put on the block, their face, and the summed ask (cents on the dollar × face). */
   sold?: number;
@@ -2050,6 +2052,13 @@ export interface Econ {
    * Absent on old saves and read as 1.
    */
   constructionAppetite?: number;
+  /**
+   * Every desk's live pricing (lenders.ts deskPricing; pricing.ts liveSpread):
+   * funding, expected loss, capital, running cost, rationing and the
+   * competitive adjustment, published so the pro forma prices construction
+   * off the same numbers as the quote desk. Absent on old saves (the sheet stands).
+   */
+  deskPx?: Record<string, import("./pricing").DeskPx>;
   /** Concession dial 0..1 — how much of the maximum giveaway (free rent +
    *  funded TI) the market currently hands tenants. Moves in months. */
   concIdx?: Record<BuiltClass, number>;
@@ -4206,10 +4215,31 @@ export interface GameState {
    * desk sells out of it and the bank statement on Research is a view of it.
    */
   cityLoans?: Record<string, CityLoan>;
+  /**
+   * THE PRIVATE OWNERS' MORTGAGES (streetLoans.ts), keyed by BBL — the paper
+   * the desks wrote to the named families, partnerships and institutions in
+   * the deed register. They used to be an anonymous book in lenders.ts.
+   */
+  streetLoans?: Record<string, StreetLoan>;
+  /** Each private holder's working cash, by holder id — what carries a building that does not carry itself. */
+  holderCash?: Record<string, number>;
+  /** Each private holder's cash flow before debt service, a year, at the last quarterly read. */
+  holderCfads?: Record<string, { cfads: number; cap: number }>;
+  /** Who held each private deed at the last read, so a change of hands is seen. */
+  streetDeedHolder?: Record<string, string>;
+  /** Each private deed's appraisal at the last annual read (streetLoans.ts). */
+  streetDeedValue?: Record<string, number>;
+  /**
+   * New term loans each desk wrote, by month, trailing twelve — the share of
+   * the town's new lending it is winning (lenders.ts, the competitive part).
+   */
+  loanTape?: { m: number; by: Record<string, number> }[];
   /** What each competitor did, in order (firmLog.ts). Display only. */
   firmLog?: import("./firmLog").FirmLogEntry[];
   /** Book-weighted appetite of the live desks — the banking system in one number. */
   bankApp?: number;
+  /** The credit window as last written to the cause ledger (lenders.ts). */
+  creditNoted?: number;
   /**
    * THE SIZE OF A LOAN IN THIS TOWN. Every desk's minimum cheque was a number
    * written for a city of $4M buildings; in a city whose median building is
@@ -5459,6 +5489,47 @@ export interface CityLoan {
    */
   spread?: number;
   cap?: { strike: number; expiresM: number };
+  /** The cause-ledger event of its most recent default (why.ts). */
+  whyId?: number;
+  /**
+   * THE SHARE THE NAMED DESK HOLDS. A loan bigger than any desk in town can
+   * carry is syndicated: the lead keeps what its capital and single-name room
+   * allow and sells the rest to banks out of town, which take their share of
+   * any loss. Absent = all of it.
+   */
+  share?: number;
+}
+
+/** A private owner's mortgage (streetLoans.ts). */
+export interface StreetLoan {
+  bbl: string;
+  lender: string;
+  /** The register's holder id, and the name the Banks page prints. */
+  holderId: string;
+  holder: string;
+  balance: number;
+  ratePct: number;
+  /** Floating paper: the margin over the short index. */
+  spread?: number;
+  product: string;
+  originM: number;
+  maturityM: number;
+  klass: string;
+  status: "current" | "watch" | "default";
+  /** Consecutive months the payment was not made. */
+  arrearsMs: number;
+  /** The building's net operating income after tax at the last read, a year. */
+  noiYr: number;
+  /** Its appraisal at the last read. */
+  value: number;
+  /** Times the desk has extended the balloon rather than file. */
+  extensions?: number;
+  /** The month the balloon fell due and was not repaid — a maturity default, until refinanced. */
+  balloonM?: number;
+  /** The cause-ledger event of its default (why.ts). */
+  whyId?: number;
+  /** The share the named desk holds; the rest is participated out of town (see CityLoan.share). */
+  share?: number;
 }
 
 export interface Workout {

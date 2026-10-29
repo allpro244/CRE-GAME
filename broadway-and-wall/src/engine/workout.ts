@@ -593,10 +593,10 @@ export function deedInLieu(
   const seniorLoss = Math.min(loss, Math.max(0, seniorBal - value * 0.88));
   const mezzLoss = loss - seniorLoss;
   if (seniorLoss > 0 && h.loan) {
-    chargeLenderLoss(next, w.lender, seniorLoss);
+    chargeLenderLoss(next, w.lender, seniorLoss, { borrower: "You", id: "player", bbl: w.bbl, cls: "income", how: "deed in lieu" });
   }
   if (mezzLoss > 0) {
-    chargeLenderLoss(next, h.mezz?.holder ?? "Cordage Debt Partners", mezzLoss);
+    chargeLenderLoss(next, h.mezz?.holder ?? "Cordage Debt Partners", mezzLoss, { borrower: "You", id: "player", bbl: w.bbl, cls: "junior", how: "deed in lieu" });
   }
   if (loss === 0) chargeLenderLoss(next, w.lender, 0);
   bumpLenderRel(next, w.lender, -12);

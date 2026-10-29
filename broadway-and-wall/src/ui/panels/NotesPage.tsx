@@ -57,6 +57,20 @@ export function bankStatement(game: GameState, parcels: ParcelTable, lenderName:
       status: x.status, bad: x.status !== "current",
     });
   }
+  // The private owners' mortgages (streetLoans.ts) — a named family or
+  // partnership, its building, its coupon, its balloon.
+  for (const x of Object.values(game.streetLoans ?? {})) {
+    if (x.lender !== lenderName) continue;
+    const rec = resolveRec(parcels, game, x.bbl);
+    if (!rec) continue;
+    rows.push({
+      bbl: x.bbl, borrower: x.holder, yours: false, dev: false,
+      klass: x.klass, district: districtLabel(rec),
+      balance: x.balance, rate: x.ratePct, matM: x.maturityM,
+      origLtv: null, curLtv: x.value > 0 ? x.balance / x.value : null,
+      status: x.status === "default" ? `${x.arrearsMs} mo behind` : x.status, bad: x.status !== "current",
+    });
+  }
   {
     // Construction paper sits with whichever desk the developer picked at
     // groundbreak; older jobs and takeovers fall back to the regional.

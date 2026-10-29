@@ -1,10 +1,10 @@
 // THE LOAN BOOK AND THE ONE PRICE LAW (BANKING.md).
 //
 // Asserts the identities the banking revamp rests on, each of which can fail:
-//   - a desk's book is its anonymous book plus the named loans it holds;
+//   - a desk's book is the named loans it holds, and nothing else;
 //   - every lien the player has is on the book, under the right holder;
-//   - the junior, the line and private money all widen when the window shuts;
-//   - the line answers to its bank's appetite;
+//   - the junior and private money widen when the window shuts;
+//   - the line answers to its bank's own losses and appetite;
 //   - the conduit can extend (it could not), the bought-note test is per note.
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -24,9 +24,9 @@ for (let m = 0; m < 4; m++) g = E.advanceMonth(g, parcels, bbls, adjacency);
 
 // ---- the book is the loans ----------------------------------------------
 for (const l of g.lenders) {
-  if (l.failedM !== undefined || l.anonBook === undefined) continue;
-  check(Math.abs(l.book - (l.anonBook + (l.namedBook ?? 0))) <= 2,
-    `${l.name}: book ${Math.round(l.book / 1e6)}M = anonymous ${Math.round(l.anonBook / 1e6)}M + named ${Math.round((l.namedBook ?? 0) / 1e6)}M`);
+  if (l.failedM !== undefined) continue;
+  check(l.anonBook === undefined && Math.abs(l.book - (l.namedBook ?? 0)) <= 2,
+    `${l.name}: book ${Math.round(l.book / 1e6)}M = its named loans ${Math.round((l.namedBook ?? 0) / 1e6)}M`);
 }
 const street = E.cityLoanBook(g).filter((x) => x.borrower !== "player");
 check(street.length > 0, `the street's mortgages are on the book (${street.length} loans)`);
@@ -68,8 +68,14 @@ for (const l of g.lenders) {
   const mezz = (s) => E.deskRatePct(s.econ.indexRate, E.productById("mezz").spread, { ci: s.econ.creditIdx, app: 1 });
   const dS = senior(shut) - senior(open), dM = mezz(shut) - mezz(open);
   check(dM > dS && dS > 0, `a shut window widens the junior (+${dM.toFixed(2)}) more than the senior (+${dS.toFixed(2)})`);
+  // THE LINE PRICES OFF ITS OWN BANK (pricing.ts liveSpread): a bank that
+  // has been writing off its income-property book charges more for the line.
   const lr = (s) => E.locRate(s);
-  check(lr(shut) > lr(open), `the line reprices with the window: ${lr(open).toFixed(2)}% → ${lr(shut).toFixed(2)}%`);
+  const burnt = clone(g);
+  const lb = burnt.lenders.find((l) => l.id === E.lineLender(burnt).id);
+  lb.lossEw = { ...(lb.lossEw ?? {}), income: (lb.balEw?.income ?? lb.book) * 0.03 };
+  E.priceDesks(burnt);
+  check(lr(burnt) > lr(open), `the line reprices with its bank's losses: ${lr(open).toFixed(2)}% → ${lr(burnt).toFixed(2)}%`);
   // The line needs a borrowing base (credit.ts locLimit: income after the
   // mortgages, or land) — a firm that owns nothing has no line to cut. Own
   // one building free and clear first.
@@ -83,6 +89,7 @@ for (const l of g.lenders) {
   const flush = clone(base);
   weak.lenders.find((l) => l.id === bank.id).appetite = 0.2;
   flush.lenders.find((l) => l.id === bank.id).appetite = 1.0;
+  E.priceDesks(weak); E.priceDesks(flush);
   check(E.locRate(weak) > E.locRate(flush), `a line at a rationing bank costs more: ${E.locRate(flush).toFixed(2)}% vs ${E.locRate(weak).toFixed(2)}%`);
   check(E.locLimit(weak, parcels) < E.locLimit(flush, parcels), "and advances less");
   const failed = clone(g);

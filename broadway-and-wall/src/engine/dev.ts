@@ -228,7 +228,7 @@ function settleMerchant(s: GameState, parcels: ParcelTable, bbl: string, m: Merc
   if (!m.lender || worth >= m.loan) return worth;
   // The desk marks it and lists it, and what it will not fetch is its loss.
   const ask = reoAsk(s, worth, m.loan, m.lender);
-  chargeLenderLoss(s, m.lender, Math.max(0, m.loan - ask));
+  chargeLenderLoss(s, m.lender, Math.max(0, m.loan - ask), { borrower: who?.name ?? "a merchant builder", id: "mb:" + (who?.id ?? bbl), bbl, cls: "construction", how: "keys handed back" });
   e.merchantTotals.handedBack += 1;
   e.merchantTotals.lossToLenders += Math.round(Math.max(0, m.loan - ask));
   if (!s.holdings[bbl] && !s.listings.some((l) => l.bbl === bbl)) {

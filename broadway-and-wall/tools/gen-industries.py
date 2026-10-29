@@ -63,7 +63,7 @@ F = [
  ("banks",       ["521CI"], "Banks and lenders", "Banks and investment", "office", "office", 200, 2620, 0, 0.09, 0.006, 1.3, "local", "finance"),
  ("securities",  ["523", "525"], "Securities, funds and trusts", "Banks and investment", "office", "office", 200, 1030, 0, 0.09, 0.025, 1.0, "local", "finance"),
  ("insurance",   ["524"], "Insurance", "Insurance", "office", "office", 190, 2950, 0, 0.10, 0.011, 1.1, "local", "insurance"),
- ("realestate",  ["ORE*0.14"], "Real estate brokers and managers", "Real estate", "office", "office", 230, 1730, 0, 0.10, 0.008, 1.4, "local", "finance"),
+ ("realestate",  ["ORE*0.14"], "Real estate brokers and managers", "Real estate", "office", "office", 230, 1172, 0, 0.10, 0.008, 1.4, "local", "finance"),
  ("rental",      ["532RL"], "Equipment rental and leasing", "Wholesale and warehouses", "office", "industrial-warehouse", 1200, 700, 0, 0.05, 0.005, 2.4, "local", "finance"),
  ("legal",       ["5411"], "Law firms", "Law and professional services", "office", "office", 250, 1190, 0, 0.11, 0.008, 0.5, "local", "law"),
  ("compdesign",  ["5415"], "IT services and computer design", "Tech and media", "office", "office", 175, 2500, 0, 0.13, 0.060, 0.5, "local", "tech"),
@@ -109,6 +109,19 @@ def parts(codes):
             out.append((c, 1.0))
     return out
 
+# AN INDUSTRY CUT FROM PART OF A BEA COLUMN (`code*share`) takes that share of
+# the column's output, inputs and value added. For the brokers' industry that is
+# wrong for its PAY: "Other real estate" (ORE) output is mostly rent (86%, paid
+# to landlords, see `rent` below), but most of the people ORE employs are the
+# brokers' and managers'. Taking 14% of ORE's compensation paid 1.73m workers
+# $11k a year each. So its compensation is ORE's (V001) at the brokers' and
+# managers' share of NAICS 531 wages, and its employment theirs - BLS QCEW
+# 2023 annual averages, private: NAICS 5312 355,726 jobs and $30.25bn of wages,
+# 5313 816,339 and $61.00bn, of 531's 1,798,275 and $135.64bn - the difference
+# out of its operating surplus, so its column still closes. (No other industry
+# is cut from part of a column.)
+COMP_SHARE = {'realestate': (30253186343 + 61003935850) / 135641780759}
+
 IDS = [f[0] for f in F]
 P = {f[0]: parts(f[1]) for f in F}
 IND_COLS = [c for c in hdr[2:73] if c]
@@ -129,12 +142,18 @@ def comm_use(comm_codes, cols):
     return sum(sc * cell(rc, c) for rc, sc in comm_codes for c in cols)
 
 x = {i: industry_out(i) for i in IDS}
+compMoved = {}
 data = {}
 A = {}
 for i in IDS:
     xi = x[i]
     va = lambda code: sum(si * cell(code, c) for c, si in P[i])
     comp, ptax, gos = va('V001') / xi, va('V002') / xi, va('V003') / xi
+    if i in COMP_SHARE:
+        (code, _), = P[i]
+        moved = COMP_SHARE[i] * cell('V001', code) / xi - comp
+        comp, gos = comp + moved, gos - moved
+        compMoved[i] = moved * xi
     rent = (bought(i, [('ORE', 0.86)]) + bought(i, [('HS', 1.0)])) / xi
     primary = (bought(i, [('Used', 1.0)]) + bought(i, [('Other', 1.0)])) / xi
     A[i] = [bought(i, P[j]) / xi for j in IDS]
@@ -162,7 +181,7 @@ for i in IDS:
                    exposure=dict(oil=round(oil, 3), credit=round(max(0, min(1, credit)), 2), construction=buyers['construction'], world=round(max(0.0, min(1.0, exp / max(1, out_c))), 2) if out_c > 0 else 0.0),
                    pceBn=round(hh / 1000, 1))
 
-totComp = sum(sum(si * cell('V001', c) for c, si in P[i]) for i in IDS)
+totComp = sum(sum(si * cell('V001', c) for c, si in P[i]) for i in IDS) + sum(compMoved.values())
 totEmp = sum(f[7] for f in F)
 compPerWorker = totComp * 1e6 / (totEmp * 1e3)
 

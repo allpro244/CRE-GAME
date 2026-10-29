@@ -49,14 +49,25 @@ const rMid = E.marketRentPsfYr(mid, g.econ, "good");
 const rTrophy = E.marketRentPsfYr(trophy, g.econ, "good");
 const rentSpread = rTrophy / rCheap;
 const costSpread = E.specCostMult(0.8) / E.specCostMult(0.2);
-const capCheap = E.capRateFor(cheap, g.econ, "good");
-const capTrophy = E.capRateFor(trophy, g.econ, "good");
+// The cap a trophy trades at is what its bidders pay (propmarket.ts): the same
+// firm, underwriting both, pays a lower yield for the bones that need less
+// capital plan. (The appraiser's spec adjustment is learned from the prints.)
+const firm = (g.rivals ?? []).find((r) => r.style === "core") ?? g.rivals[0];
+const bidYield = (r) => {
+  const f = { ...r, bbl: "fixture" };   // nothing disclosed on a made-up deed; one key for the committee's misread
+  const v = E.dealView(g, f, f.bbl, E.assetValue(f, g.econ, "good"), "good");
+  // stabilised, so the made-up deed's in-place roll does not enter
+  const uw = E.valueTo(g.econ, { ...v, noiPre: v.stabPre }, E.bidderOf(g, firm, f), E.rentSignals(g));
+  return ((v.stabPre - v.leaseCap) / uw.V) * 100;
+};
+const capCheap = bidYield(cheap);
+const capTrophy = bidYield(trophy);
 
 check(rTrophy > rMid && rMid > rCheap, `rent rises with spec  (${rCheap.toFixed(2)} → ${rMid.toFixed(2)} → ${rTrophy.toFixed(2)})`);
 check(rTrophy / rMid > 1.04 && rTrophy / rMid < 1.10, `trophy vs mid is a Class A/B rent band, not a doubling (${((rTrophy / rMid - 1) * 100).toFixed(1)}%)`);
 check(costSpread > rentSpread, `cost still moves more than rent  (cost ×${costSpread.toFixed(3)} vs rent ×${rentSpread.toFixed(3)})`);
-check(capTrophy < capCheap && capCheap - capTrophy < 0.25,
-  `trophy cap is a little tighter (${capTrophy.toFixed(2)} vs ${capCheap.toFixed(2)})`);
+check(capTrophy < capCheap && capCheap - capTrophy < 0.5,
+  `a bidder's yield on trophy bones is a little tighter (${capTrophy.toFixed(2)} vs ${capCheap.toFixed(2)})`);
 
 // Existing stock without a spec stamp must not silently reprice.
 const raw = { ...rec, buildSpec: undefined };

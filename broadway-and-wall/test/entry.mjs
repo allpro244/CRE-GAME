@@ -19,7 +19,7 @@ export const MODULES = [
   // why: the cause ledger behind every "Why?" chain (ONE_ECONOMY_PLAN.md §6e).
   "why",
   "sim", "leasing", "actions", "credit", "value", "dev", "debt", "demand",
-  "invariants", "rivals", "sponsor", "mix", "acquire", "comps", "market",
+  "invariants", "rivals", "sponsor", "mix", "acquire", "comps", "propmarket", "market",
   "zoning", "landdev", "lotcode", "lotsplit", "lotsplitGeom", "products", "platdesign", "homes", "homeprice", "growth", "roads", "towngrowth", "unpack", "lenders", "proforma", "workout", "portfolio", "portfoliosale", "auction", "notes",
   "privateCredit", "broker", "loanbook", "amortize", "pricing", "ledger", "rivalDebt", "strategy", "corporate", "firmLog",
   // absorption carries staleDiscount and leasingOdds — how an owner's ask falls

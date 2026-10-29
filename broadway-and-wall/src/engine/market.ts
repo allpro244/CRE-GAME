@@ -11,6 +11,7 @@ import { simulateHistory, driftInflTarget, shortIndexFor } from "./regime";
 import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
 import { whyTrade } from "./why";
 import { whyTown } from "./economy";
+import { tickCapRead } from "./propmarket";
 import { settleSupplyDeliveries } from "./supply";
 
 export function mulberry32Step(a: number): { state: number; value: number } {
@@ -763,9 +764,6 @@ function capitulation(over: number): number {
   return rampIn * Math.exp(-past / REPRICE_TAU);
 }
 
-export const CAP_VAC_BETA: Record<BuiltClass, number> = {
-  office: 0.12, retail: 0.09, multifamily: 0.06, industrial: 0.08,
-};
 // Rough citywide inventory by class, in sf — the denominator that turns other
 // people's construction into a rent effect you can feel.
 // Fallback only. The real inventory is COUNTED off the parcels at newGame —
@@ -1799,140 +1797,6 @@ const RUMORS: Record<MarketPhase, string[]> = {
     "The brokers have stopped scheduling tours for the secondary stock.",
   ],
 };
-
-/**
- * THE ALLOCATION TERM of a class's cap target: half a point of cap per point
- * its expected return sits over the four-class mean, guarded at +/-1.3. See
- * tickEcon for the calibration. A market with no trailing rent history
- * expects each class to return its own cap, so at the opening this reads the
- * caps themselves.
- */
-export function capFlowsOf(ret: Record<BuiltClass, number>, k: BuiltClass): number {
-  const mean = BUILT_CLASSES.reduce((a, c) => a + ret[c], 0) / BUILT_CLASSES.length;
-  return clamp(-0.65 * (ret[k] - mean), -1.3, 1.3);
-}
-
-/**
- * WHERE A CLASS'S CAP RATE IS HEADING — the monthly walk in tickEcon chases
- * this, and the opening (regime.ts) starts AT it, so the first months move on
- * news rather than on a cap rate correcting its own opening. `sector` and
- * `flows` are the allocation terms; both are zero on a market with no
- * trailing returns yet. See the long note in tickEcon for every term.
- */
-export function capTargetOf(e: Econ, k: BuiltClass, capIndex: number, sector = 0, flows = 0): number {
-  const crunch = 1.6 * Math.max(0, 1 - e.creditIdx);
-  const vacGap = (e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
-  // Unbounded (2026-10-13): vacancy cannot go below zero, so the compression
-  // side is bounded by physics; the widening side is how far a glut goes.
-  const vacRisk = CAP_VAC_BETA[k] * vacGap * 100;
-  // THE GROWTH A BUYER EXPECTS (2026-10-09). A yield is a required return
-  // less expected growth (Gordon; for property, Geltner et al. ch. 12), and
-  // the only growth in this target was expected inflation above 2%, through
-  // `capIndex`. So a class in a decade-long shortage, its real rent rising
-  // 3%/yr, capitalised exactly like a flat one. `growthExp` is each class's
-  // real rent growth as buyers have watched it — a ten-year memory, since
-  // what a yield capitalises is long-run growth — and it enters at half weight,
-  // because rent growth mean-reverts and cap rates are only a weak
-  // predictor of it (Plazzi, Torous & Valkanov 2010): buyers believe some
-  // of the trend, not all of it. Real growth only: the inflation part is
-  // already in `capIndex`.
-  // THE RATE PASS-THROUGH FLATTENS TOWARD ZERO (2026-10-13). It was a
-  // straight 0.55 of cap per point of index at every level, so a decade of
-  // 1% long rates priced flats at 2.5% and the normalisation that followed
-  // doubled every cap in town. The record bends: 1990-2007, the ten-year
-  // fell ~4 points and caps ~3 (a slope of 0.6-0.75); 2007-21 it fell ~3
-  // more and office caps did not move, apartments fell ~1.2 (0.0-0.4) — the
-  // spread over Treasuries went to records. Equity risk premia run high
-  // exactly when risk-free yields are low (Duarte & Rosa 2015), so a buyer
-  // does not capitalise the last points of a falling rate. The slope here is
-  // 0.55 x (1 - e^(-index/2)): ~0.51 at the 5.4 anchor, 0.29 at 1.5,
-  // integrated from the anchor so every level above ~5 is where it was.
-  const RATE_BEND = 2;
-  const rateTerm = 0.55 * ((capIndex - 5.4) + RATE_BEND * (Math.exp(-capIndex / RATE_BEND) - Math.exp(-5.4 / RATE_BEND)));
-  // A CAPITAL WAVE (blackswans.ts): foreign money bidding every cap down,
-  // then leaving. Points of cap, signed; zero when no wave is running.
-  const wave = e.capitalWave ?? 0;
-  const base = CAP_BASE[k] + rateTerm - 0.25 * (e.cycleDev ?? 0) + crunch + sector + vacRisk + wave;
-  // ONE TREND, PRICED ONCE (2026-10-11). `flows` reads `retExp`, which is
-  // trailing RENT growth plus yield — the same signal `growthExp` carries,
-  // on a four-year memory instead of ten. Added separately, the two priced
-  // one rent cycle twice, and only `growth` answered to the supply-price
-  // bound below, so the flows half walked straight past it. Measured over
-  // five 100-year towns: office caps ran 4.3 at the top of a boom and 13.6
-  // at the bottom of the bust that followed (map 2002), industrial 3.55 to
-  // 11.9 (map 3003) — nine points of cycle in one class, with the flows term
-  // on its +/-1.3 rail for years either side. The record's cyclical swing in a
-  // class's cap is two to four points (office 1990-92, 2007-09, 2022-24).
-  // So the money chasing a class and the growth its buyers believe are one
-  // discount, bounded once.
-  // HOW MUCH OF TODAY'S GROWTH A YIELD CAN CAPITALISE (2026-10-11). This was
-  // half of the ten-year trailing real growth, asserted ("buyers believe some
-  // of the trend, not all of it"). The share has a derivation. Rent growth
-  // mean-reverts: annual rent-growth autocorrelation runs about 0.5-0.7 in US
-  // office and industrial series, so a growth surprise decays at
-  // kappa = -ln(0.6) ~ 0.5 a year. In a Gordon model whose growth decays at
-  // kappa, current growth g0 lowers the cap by g0 x y/(y + kappa), y the
-  // no-growth yield — at y ~ 7% that is about an eighth of g0, not a half.
-  // Measured on the town map before this: office caps compressed to 5.3% on
-  // a 5.1% loan index at a boom's peak — a risk premium of nothing, below
-  // anything recorded even in 2007 — and swung 4.5 points into the bust that
-  // followed, against 1.5-2.5 in the early 1990s and 2008-09. After, over a
-  // size-mixed set of five 100-year towns: office value crashes deeper than
-  // 80% went 3 -> 0, the worst real office fall -81% -> -72%.
-  const yNoGrowth = Math.max(0.01, base / 100);
-  const GROWTH_DECAY = -Math.log(0.6);
-  let growth = (yNoGrowth / (yNoGrowth + GROWTH_DECAY)) * 100 * (e.growthExp?.[k] ?? 0) - flows;
-  // ...BUT NOBODY PAYS FOR GROWTH PAST THE RENT AT WHICH A RIVAL BUILDS NEXT
-  // DOOR (2026-10-09). A trend is only worth a lower yield while rent has
-  // room to run, and the room ends at the supply price: once new space
-  // pencils, more of it comes and the growth stops (DiPasquale & Wheaton
-  // 1996, ch. 10 — rents are bounded above by replacement cost in a market
-  // that can build). Extrapolated alone, a decade of shortage at 6%/yr real
-  // drove industrial caps onto their 2.75% floor in measured runs (4 worlds
-  // x 50 years), and that collapse — not rent reaching replacement cost —
-  // is what finally made sheds pencil: everyone broke ground at once at the
-  // peak and vacancy went to 16-25% for a decade. `siteHurdle` is how far
-  // the best sites the city would examine stand from building; at its cap
-  // rate today, a rent rise of 1/hurdle would make them clear. The most a
-  // buyer can rationally pay for growth that a competitor's building will
-  // end, even if the rise came tomorrow, is a yield of base x e^-room, so
-  // the trend's discount is bounded by base x (1 - e^-room) — and by nothing
-  // at all once the best site pencils. A use no vacant site permits has no
-  // hurdle, and nothing bounds its trend either. (A falling trend: below.)
-  const siteH = e.siteHurdle?.[k];
-  if (growth > 0 && siteH !== undefined && siteH > 0) {
-    // The hurdle was struck at the cap rate in force; restate it at the cap
-    // this buyer would pay with no growth in it.
-    const atBase = siteH * Math.max(0.5, e.capRate?.[k] ?? base) / Math.max(0.5, base);
-    const room = Math.max(0, -Math.log(atBase));
-    growth = Math.min(growth, base * (1 - Math.exp(-room)));
-  }
-  // ...AND NOBODY EXTRAPOLATES A FALL PAST THE SUPPLY PRICE EITHER. Below the
-  // rent at which anyone would build, no new space is coming; the glut ends
-  // when demand takes it up, and rent then has to climb back toward the cost
-  // of replacing the stock (DiPasquale & Wheaton 1996, ch. 10). Buyers price
-  // that: caps run LOWER, not higher, when rent sits under its long-run level
-  // (Sivitanides, Southard, Torto & Wheaton 2001). The years it takes to fill
-  // the empty floors are already in `vacRisk`. A falling trend still counts
-  // while sites pencil — supply is still arriving and the fall can continue.
-  //
-  // ...EXCEPT THE PART OF THE FALL THAT IS STRUCTURAL (2026-10-13). Reversion
-  // to replacement cost is a fact about CYCLES: a glut ends because demand
-  // grows into it. A class whose demand itself is shrinking — shopfronts in
-  // an e-commerce era, sheds in a deindustrialisation — does not grow back
-  // to its supply price, and its buyers know it: malls traded at 7-10% caps
-  // through 2015-20 with Treasuries under 3%, retail at ~6.3% in 2021 against
-  // 1.5%. Zeroing every fall here priced retail as if it would recover, and
-  // its cap rode the rate down to 3% (measured; then crashed 70%). The
-  // class's secular drift is kept, discounted at the persistence of an era
-  // rather than a cycle: eras run one to two decades (see `secular`), so
-  // ~1/15 a year where cyclical growth decays at GROWTH_DECAY.
-  if (growth < 0 && siteH !== undefined && siteH > 0 && siteH < 1) {
-    const drift = Math.min(0, e.secular?.[k]?.drift ?? 0);
-    growth = (yNoGrowth / (yNoGrowth + 1 / 15)) * 100 * drift;
-  }
-  return base - growth;
-}
 
 /**
  * CAPITAL AVAILABILITY, ONE MONTH — shared by tickEcon and the pre-history
@@ -5941,130 +5805,34 @@ export function tickEcon(s: GameState) {
     }
   }
 
-  // cap rates: class base, dragged by the loan index and the cycle, and gapped
-  // out when nobody will lend — a credit crunch reprices everything at once
-  //
-  // ...AND BY THE MONEY CHASING LAST YEAR'S WINNER. Before this term the class
-  // bases were constants, so a class could out-earn the others indefinitely
-  // and nothing ever repriced it. Measured: office took the highest rent
-  // growth AND the highest yield on every seed — a 3-4 point crude-return
-  // spread held for fifty years, and every player learned the same lesson:
-  // only build office. No real market permits that, because allocators chase
-  // trailing returns: money floods the winning class, bids its prices up,
-  // compresses its cap, and keeps arriving until its forward return no longer
-  // beats the field (industrial under a 4-cap by 2021 is the textbook case).
-  // The flows term below is that mechanism: each class's trailing realized
-  // return, EMA'd over ~4 years because institutional allocation moves on
-  // committee time, measured RELATIVE to the four-class mean so flows shuffle
-  // capital between classes without moving the overall level of yields.
+  // CAP RATES ARE WHAT THE DEALS SAY (ONE_ECONOMY_PLAN.md step 7). The class
+  // equation that lived here — a base, a pass-through of the loan index, the
+  // cycle, a crunch term, a vacancy beta, money chasing last year's winner —
+  // is gone (FORMULA_LEDGER.md, Removed). Named bidders underwrite buildings
+  // on their own capital (propmarket.ts); the read is the median of what
+  // closed. What is kept here is what the bidders READ: each class's real
+  // rent growth as they have watched it.
   {
     const h12 = e.history.length >= 12 ? e.history[e.history.length - 12] : undefined;
-    if (!e.retExp) e.retExp = { ...e.capRate };
+    if (!e.growthExp) e.growthExp = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     for (const k of BUILT_CLASSES) {
       const then = h12?.rent?.[k];
-      const g12 = then && then > 0 ? (e.rentIdx[k] / then - 1) * 100 : 0;
-      e.retExp[k] += 0.021 * ((g12 + e.capRate[k]) - e.retExp[k]);
-      // Real rent growth as buyers have watched it (see capTargetOf).
       const realG12 = then && then > 0 && h12?.cpi
         ? (e.rentIdx[k] / then) / ((e.cpi ?? 1) / h12.cpi) - 1 : 0;
-      if (!e.growthExp) e.growthExp = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
-      // A TEN-YEAR memory, not the four of `retExp`: a cap capitalises LONG-run
-      // growth, and survey expectations of it move slowly (Clayton, Ling &
-      // Naranjo 2009). At four years, measured, the term swung caps far
-      // enough to rest office on its 11% ceiling 17% of months and flats on
-      // their floor 11% — trailing noise priced as permanence.
+      // A TEN-YEAR memory: a cap capitalises LONG-run growth, and survey
+      // expectations of it move slowly (Clayton, Ling & Naranjo 2009).
       e.growthExp[k] += (1 / 120) * (clamp(realG12, -0.15, 0.15) - e.growthExp[k]);
+      // The econ stream drew a month of cap-rate noise per class here. The
+      // draw stays so the national path does not re-roll (HANDOFF §4); its
+      // value is no longer read by anything.
+      void rrange(s, -0.045, 0.045);
     }
   }
-  // THE INFLATION INSIDE A NOMINAL RATE IS ALSO INSIDE NEXT YEAR'S RENT.
-  //
-  // This term read the NOMINAL loan index, at 0.55 of cap per point. Measured
-  // over eight procedural cities x 100 years (`pnpm capvsrate`, Sep 2026):
-  // with the index above 10% the office cap sat ON the 11% ceiling in the
-  // median month, and the ceiling bound in 17.4% of ALL months (multifamily
-  // 7.7%) — because a Great Inflation puts the index at 12-16 and
-  // 0.55 x (14 - 5.4) asks for a 13% cap. The real record refused that every
-  // time it was asked: in 1981 the ten-year was 14% and office traded at
-  // 9-10; in 1978 it was 8.4% against caps of 8.5; through the whole of
-  // 1979-84 the spread of property yields over the ten-year was NEGATIVE, by
-  // as much as four points. A building is a real asset: its yield is a real
-  // rate plus a risk premium less growth, and when the public expects 8%
-  // inflation it expects 8% on the rent too, so the buyer capitalises against
-  // the index LESS that expectation.
-  //
-  // AND THE PASS-THROUGH IS ONE-SIDED, because rents are sticky downward. A
-  // lease carries a fixed 2-3% annual bump whatever the CPI does — which is
-  // why US rent growth never turned negative through 2010-15 at 1.5%
-  // inflation, and why office traded at 6.5-7% on a 2% ten-year then, not
-  // the 7.5-8% a symmetric real-rate model would ask for. The growth a buyer
-  // underwrites is floored at the contractual bump, so expected inflation
-  // enters only ABOVE the 2% target it is anchored to; at or under it this is
-  // exactly the nominal expression it replaces, and the modern-era
-  // calibration (office ~6.7 at a 2% index in a functioning market, 8.5 at
-  // 5.4) does not move by a basis point. Only the inflation eras move, and
-  // they move to where they were. Measured in cheap money the engine's own
-  // `inflExp` sits at ZERO in the median month, so the symmetric form was
-  // tried and rejected: it lifted every cheap-money cap by about a point,
-  // against the record. `inflExp` rather than realised inflation because a
-  // bond yield embeds what people EXPECT, and the engine already models
-  // expectations coming unanchored — which is exactly when this matters.
-  // Measured after: office on the ceiling 17.4% → 4.5% of months, multifamily
-  // 7.7% → 0.5%; what still touches it is a Volcker with a 7.6% REAL policy
-  // rate, which is the bank's number to answer for. Full table in ECONOMY.md.
-  const inflOver = inflationOverBumpPct(e);
-  const capIndex = e.indexRate - inflOver;
+  tickCapRead(s);
   for (const k of BUILT_CLASSES) {
-    // A sector in favour reprices harder than it used to: capital rotating
-    // into a class is most of what moves its cap rate, and at 14x a full
-    // sector cycle was worth under two-tenths of a point.
-    const sector = -30 * e.sectorMom[k];
-    // Asymmetric on purpose. Compression floors out at 60bp — nobody
-    // underwrites a shortage lasting forever — while a glut has much further
-    // to run, because a buyer staring at empty floors is pricing the years it
-    // takes to fill them.
-    // ...and they TRACK the cost of debt, at about half a point of cap for a
-    // point of rate net of above-target inflation (see above), which is what
-    // the real relationship looks like. At 0.38 the spread between yield and
-    // borrowing cost barely moved across a century of rates, so the
-    // fix-or-float decision and the timing of a levered purchase were both
-    // weather rather than judgement. At 0.55 a rate spike genuinely flips
-    // leverage negative and a rate collapse genuinely makes it free — which
-    // is the trade the player is supposed to be reading.
-    // Half a point of cap per point of trailing excess return, bracketed at
-    // +/-1.1 as a guard: the historical spread between the most- and
-    // least-favoured class's cap moved about two points across an allocation
-    // cycle (office vs industrial, 2007 to 2021), and this term's full swing
-    // matches that without ever being the largest term in the sum.
-    const flows = capFlowsOf(e.retExp!, k);
-    const target = capTargetOf(e, k, capIndex, sector, flows);
-    // WHAT INVESTORS REQUIRE (the target: rates, expected returns, the
-    // sector) is what bidders read (actions.ts tickListingAbsorption); WHERE
-    // THE INDEX SITS is where the last year's arm's-length sales cleared
-    // against it (2026-10-16). Each print says how far under or over the
-    // index's own value it traded, restated for how far the index has moved
-    // since. With fewer than three prints in a year the market has no
-    // evidence and the index drifts toward what investors require.
-    (e.capTarget ??= {})[k] = target;
-    let capNext = e.capRate[k] + 0.1 * (target - e.capRate[k]) + rrange(s, -0.045, 0.045);
-    {
-      const since = s.month - 12;
-      let w = 0, dv = 0, n = 0;
-      for (const c of s.comps ?? []) {
-        if (c.cls !== k || c.m < since || c.distress || c.offMarket || !(c.mv && c.mv > 0) || !(c.capAt && c.capAt > 0) || !(c.price > 0)) continue;
-        const dev = Math.log(c.mv * (c.capAt / Math.max(0.5, e.capRate[k])) / c.price);
-        w += c.price; dv += c.price * clamp(dev, -0.5, 0.5); n++;
-      }
-      if (n >= 3 && w > 0) capNext = e.capRate[k] * Math.exp(0.1 * dv / w);
-    }
-    e.capRate[k] = capNext;
-    // THE EXIT CAP A DEVELOPER UNDERWRITES, which is not this month's.
-    //
-    // Land is bought against a sale three or four years out, so the yield that
-    // prices it is a through-cycle one. Without this the land residual took a
-    // peak rent and capitalised it at a peak-compressed cap — the cycle counted
-    // twice inside a difference of large numbers, which is most of why land
-    // drew down 83-93% in every seed. A four-year memory, matching the horizon
-    // it is underwriting. See `residualLandPsf` in value.ts.
+    // THE EXIT CAP A DEVELOPER UNDERWRITES, which is not this month's. Land is
+    // bought against a sale three or four years out, so the yield that prices
+    // it is a through-cycle memory of the read (see `residualLandPsf`).
     if (!e.capExp) e.capExp = { ...e.capRate };
     e.capExp[k] += 0.021 * (e.capRate[k] - e.capExp[k]);
   }

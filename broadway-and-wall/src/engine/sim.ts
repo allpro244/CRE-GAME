@@ -40,6 +40,7 @@ import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDeprecia
 import { tickDemand, isCivicLand } from "./demand";
 import { tickCorporate } from "./corporate";
 import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose } from "./rivals";
+import { openingCapSurvey, tickBrokerSurvey } from "./propmarket";
 import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
@@ -253,6 +254,8 @@ export function newGame(
   // only knows once the economy has drawn its price level.
   if (parcels) s.lenders = initLenders(stockFromParcels(parcels), s.econ.priceLevel ?? 1);
   if (parcels) s.rivals = initRivals(s, parcels, Object.keys(parcels));
+  // Cap rates open where the street's own bidders say (propmarket.ts).
+  if (parcels) openingCapSurvey(s, parcels);
   // Make the map agree with itself before anybody looks at it: what is BUILT
   // on a block is part of what makes that block valuable, and the generator's
   // gravity score did not know that. See reconcileDemand.
@@ -438,6 +441,8 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
       continue;
     }
     if (floor > 0 && li.ask < floor) li.ask = Math.round(floor / 1000) * 1000;
+    // ...and a named seller never asks under its own reservation (propmarket.ts).
+    if (li.reserve !== undefined && li.ask < li.reserve) li.ask = li.reserve;
   }
   if (withdrawn.length) {
     const pulled = new Set(withdrawn);
@@ -818,6 +823,7 @@ function tickMonth(
   tickLandComps(s, parcels);
   tickBrokerCalls(s, parcels, bbls);
   tickListingAbsorption(s, parcels); // other buyers work the tape too
+  tickBrokerSurvey(s, parcels);     // a class with no print in a year gets the brokers' indications
   tickPortfolios(s, parcels);        // and the package market, where books trade whole
   tickTakePrivateApproach(s, parcels); // and a board that wants out rings the buyers who could close
   tickTalks(s, parcels);             // a negotiation left open goes stale

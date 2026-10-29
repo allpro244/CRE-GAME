@@ -223,6 +223,10 @@ function checks(runs) {
     "BLS 1948-2024 mean 5.7%");
   add("Labour", "Job growth, trend %/yr", seedCheck(R, (r) => trendG(r.yr.map((x) => x.jobs)), 0.0, 0.02), pc,
     "BLS CES metro payrolls 1990-2024: most large metros 0-2%/yr (plan gate: 0.5-1.5%)");
+  add("Labour", "Job growth acceleration (last 30 yrs minus first 30, pp/yr)", seedCheck(R, (r) => {
+    const j = r.yr.map((x) => x.jobs), n = Math.min(30, Math.floor(j.length / 3));
+    return trendG(j.slice(-n)) - trendG(j.slice(0, n));
+  }, -0.01, 0.01), pc, "metros mature: growth slows as a place fills and grows dear (Glaeser-Gyourko 2005); a century that speeds up is compounding");
   add("Labour", "Population growth, trend %/yr", seedCheck(R, (r) => trendG(r.yr.map((x) => x.pop)), -0.005, 0.02), pc,
     "Census metro population 1950-2020: -0.5 to +2%/yr for established cities");
   add("Labour", "Real pay vs nation (local/national, CPI-adjusted)", levelCheck(R, (x) => x.realPayRel, 0.85, 1.3), nm,
@@ -246,6 +250,8 @@ function checks(runs) {
     add("Space", `Real rent growth, ${k}, %/yr`, seedCheck(R, (r) => trendG(r.yr.map((x) => x.rentR[k])), -0.01, 0.015), pc,
       "NCREIF/CBRE real rents 1978-2024: about -1 to +1.5%/yr long-run (Eichholtz et al.: real rents near flat over centuries)");
   }
+  add("Space", "Occupied office sf per job, end over start", seedCheck(R, (r) => { const f = (x) => x.stock.office * (1 - x.vac.office) / x.jobs; return f(r.yr.at(-1)) / f(r.yr[0]); }, 0.7, 1.3), nm,
+    "office sf per office worker fell ~250→~190 over 1990-2020 (CBRE/NAIOP): space follows jobs within ±30% over a century");
   add("Space", "Real rent, yearly swing sd", seedCheck(R, (r) => median(COMM.map((k) => sd(lgr(r.yr.map((x) => x.rentR[k]))))), 0.02, 0.10), pc,
     "NCREIF/CBRE market rent growth sd ~3-8%/yr");
   add("Space", "Rent and vacancy move opposite (corr of Δlog rent, vacancy)", seedCheck(R, (r) => median(CLASSES.map((k) => {
@@ -262,6 +268,8 @@ function checks(runs) {
     "NCREIF/RCA cap rate minus UST10 1990-2024: ~1.5-5.5pp");
   add("Capital", "Cap rates lag the 10Y (best lag, years)", seedCheck(R, (r) => leadLag(diff(r.yr.map((x) => x.tenY)), diff(r.yr.map((x) => mean(CLASSES.map((k) => x.cap[k])))), 4).lag, 0, 3), nm,
     "cap rates follow rates with a 0-3 year lag and partial pass-through (Chervachidze-Wheaton 2013)");
+  add("Capital", "Cap rate yearly move |Δ| (median of classes)", seedCheck(R, (r) => median(CLASSES.map((k) => mean(diff(r.yr.map((x) => x.cap[k])).map(Math.abs)))), 0.1, 0.6), pp,
+    "NCREIF/ACLI cap rates 1985-2024: typical annual move 0.2-0.5pp; 2009's +1.5pp was the extreme");
   add("Capital", "Deal-read share (years a sale priced the cap)", seedCheck(R, (r) => mean(r.yr.flatMap((x) => CLASSES.map((k) => x.capDeal[k] != null ? 1 : 0))), 0.6, 1), pc,
     "a cap rate read off closed deals needs deals: RCA tracks trades in every class in every major metro each year");
   add("Capital", "Real land price growth, trend %/yr", seedCheck(R, (r) => trendG(r.yr.map((x) => x.landR)), -0.01, 0.03), pc,

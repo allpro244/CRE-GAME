@@ -666,7 +666,7 @@ export function sponsorShareOf(s: GameState, r: Rival): number {
  * contributes besides cash — its own land or standing building, at the basis
  * the job was underwritten on — which counts toward its share of the deal.
  */
-export function jvFund(s: GameState, r: Rival, bbl: string, cheque: number, inKind = 0, plan?: DevPlan): number {
+function jvFund(s: GameState, r: Rival, bbl: string, cheque: number, inKind = 0, plan?: DevPlan): number {
   // The terms are set when the deal is formed; later draws are called on them.
   const open = r.jvs?.[bbl];
   const g = open ? (open.g ?? SPONSOR_COINVEST) : sponsorShareOf(s, r);

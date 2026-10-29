@@ -25,10 +25,8 @@ import type { GameState, PortfolioListing, Rival } from "./types";
 import type { ParcelRecord, ParcelTable } from "../data/types";
 import { dollarLevel, rng, rrange } from "./market";
 import { assetValue, capRateFor, collateralAsIs, inPlace, resolveRec } from "./value";
-import { livingRivals, gradeOf, ownerOf, paramsOf, receiverDeskFor, forgetDeed, fitOf, streetSaleCost, jvFund } from "./rivals";
+import { livingRivals, gradeOf, ownerOf, paramsOf, receiverDeskFor, forgetDeed, fitOf, streetSaleCost } from "./rivals";
 import { packageBids, sellerTerms, forcedSalePrice } from "./propmarket";
-import { drawRivalRaise } from "./investors";
-import { logFirm } from "./firmLog";
 import { lenderByName, lenderPressure, raiseAlert } from "./lenders";
 import { streetRefiProceeds } from "./debt";
 import { financePackage, settleSale } from "./rivalDebt";
@@ -497,49 +495,17 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
     // against a book that just grew by eleven buildings.
     // THE PRICE IS THE BIDS (step 7b, propmarket.ts packageBids): each firm
     // with a track record values the book deed by deed on its own
-    // underwriting and bids alone, with a raise from the investor pool, or —
-    // when no one firm can write the cheque — two firms split it. The book
-    // clears at the best bid over the seller's floor; there is no size
+    // underwriting and bids what it can fund itself. The book clears at the
+    // best bid over the seller's floor, or not at all; there is no size
     // discount (FORMULA_LEDGER #27, Removed).
-    const pkgBids = packageBids(s, parcels, p.bbls, p.sellerId, !!p.reo);
+    const top = packageBids(s, parcels, p.bbls, p.sellerId, !!p.reo)[0];
     const floorPx = p.reserve ?? p.ask * (p.reo ? 0.88 : 0.92);
-    const top = pkgBids[0];
-    if (top?.partner && top.mine?.length && top.theirs?.length && top.bid >= floorPx) {
-      // NO ONE FIRM CAN WRITE IT; TWO CAN. The book is split along the line
-      // the two firms drew — each part a cheque one of them can carry — and
-      // each part goes back out as its own package at that firm's number.
-      const parts = [top.mine, top.theirs];
-      const grossAll = Math.max(1, p.gross);
-      s.portfolios = s.portfolios.filter((x) => x.id !== p.id);
-      for (const part of parts) {
-        if (part.length < 2) {
-          for (const b of part) {
-            const rec = resolveRec(parcels, s, b);
-            if (!rec || s.listings.some((l) => l.bbl === b)) continue;
-            s.listings.push({ bbl: b, ask: Math.round(assetValue(rec, s.econ, gradeOf(s, rec)) / 1000) * 1000, listedM: s.month, expiresM: s.month + 12, ...(p.reo ? { distress: true } : {}), ...(p.sellerId ? { sellerId: p.sellerId } : {}) });
-          }
-          continue;
-        }
-        const g = grossOf(s, parcels, part);
-        s.portfolios.push({ ...p, id: `pf${s.nextPortfolioId = (s.nextPortfolioId ?? 1) + 1}`, bbls: part, gross: g, ask: Math.round(p.ask * g / grossAll / 1000) * 1000, ...(p.reserve !== undefined ? { reserve: Math.round(p.reserve * g / grossAll) } : {}) });
-      }
-      continue;
-    }
-    if (top && !top.partner) {
+    if (top) {
       if (top.bid >= floorPx) {
         const winner = top.r;
         p.ask = top.bid;
         const winDebt = Math.min(p.ask, packageFinance(s, parcels, winner, p.bbls, p.ask).debt);
         const winEq = p.ask - winDebt;
-        // A RAISE FOR THE DEAL: the deal's investors write their share of the
-        // equity cheque on each deed (rivals.ts jvFund — the same syndicate
-        // terms a builder raises on), out of the city's investor pool.
-        if (top.raise > 0) {
-          let lp = 0;
-          for (const b of p.bbls) lp += jvFund(s, winner, b, winEq / p.bbls.length);
-          drawRivalRaise(s, lp);
-          logFirm(s, winner, "event", `Raised ${money(lp)} from investors for a ${p.bbls.length}-building package`, p.bbls[0], lp);
-        }
         // YOUR OWN PACKAGE CLEARING. Close each deed through acceptSaleOffer so
         // the mortgage payoff, facility release, prepay, tax, deposits and
         // Books lines match a single-asset sale. The old path deleted holdings

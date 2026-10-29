@@ -1018,15 +1018,31 @@ export function landBidRound(s: GameState, parcels: ParcelTable, rec: ParcelReco
 }
 
 /**
- * Which lots a price is evidence about the town's dirt on: any lot a builder,
- * a holder or the texture prices. A farm, a plat lot or a subdivision tract
- * trades to its own buyer (the farmer, the homebuilder, the land developer),
- * and the urban texture says nothing about it.
+ * Which lots a price is evidence about the texture level on: lots the texture
+ * prices, whoever buys them — a builder's purchase counts the same as a land
+ * banker's. A farm, a plat lot or a subdivision tract trades to its own buyer
+ * (the farmer, the homebuilder, the land developer), and the urban texture
+ * says nothing about it.
+ *
+ * A LOT A BUILDER'S RESIDUAL PRICES IS NOT EVIDENCE ABOUT THE TEXTURE, and
+ * that was measured three ways (six seeds, 25 years; the old formula held the
+ * level at 0.9-1.8 and the built sample's land at 39 real $/sf):
+ *  - price per unit of texture: a builder buys only where its residual clears
+ *    the floor, so every builder's print sits above the level; with sellers
+ *    holding their reservations the level ratcheted to 2-15x on five seeds of
+ *    six (built-sample land 39 -> 86 $/sf), and with sellers giving lots away
+ *    it whipsawed 0.08-5.3.
+ *  - price over appraisal (a sales-ratio study): a builder-priced lot's
+ *    appraisal does not carry the level, so each builder's purchase at
+ *    1.4-2x appraisal (it breaks ground; the appraiser's queue wait is not
+ *    its cost) compounded the level, and each one below divided it: one seed
+ *    fell 0.95 -> 0.017.
+ * The residual is the price on those lots already (value.ts readLand): a
+ * builder's purchase there tests the residual, not the dirt nobody builds on.
  */
 function urbanLot(rec: ParcelRecord, e: Econ): boolean {
   if (rec.ag || rec.homeLot || rec.tract) return false;
-  const w = landRead(rec, e).winner;
-  return w === "texture" || w === "builder" || w === "holder";
+  return landRead(rec, e).winner === "texture";
 }
 
 function pushLandPrint(s: GameState, p: { m: number; L: number; w: number; kind: "t" | "b" | "s" }) {
@@ -1043,16 +1059,9 @@ function pushLandPrint(s: GameState, p: { m: number; L: number; w: number; kind:
  * texture (the sales-comparison floor, `landRead().texture`, at the level of
  * the day), times that level. The texture adjusts for location the way an
  * appraiser adjusts a comparable; what is left is what dirt in this town
- * sells for. A builder's purchase counts the same as a land banker's: both
- * are arm's-length buyers paying what the lot is worth to them. Each print is
- * a level in its own right — the floor is proportional to the level, so the
- * print does not depend on the level it was struck at.
- *
- * Measured and reverted: a sales-ratio study (price over the APPRAISAL). On a
- * lot a builder prices, the appraisal does not carry the level at all, so
- * every builder's purchase above appraisal (1.4-2x: a buyer breaks ground and
- * does not wait in the appraiser's queue) multiplied the level again, and
- * every one below divided it: one seed of six fell 0.95 -> 0.017 in 25 years.
+ * sells for. Each print is a level in its own right — the floor is
+ * proportional to the level, so the print does not depend on the level it was
+ * struck at. (Which lots count, and why not the builder-priced ones: urbanLot.)
  */
 function impliedLandLevel(s: GameState, rec: ParcelRecord, price: number): number | null {
   if (!(price > 0) || !(rec.lotArea > 0) || !urbanLot(rec, s.econ)) return null;
@@ -1092,11 +1101,9 @@ export function noteLandRoundFailed(s: GameState, rec: ParcelRecord, li: Listing
  */
 export function tickLandRead(s: GameState): void {
   const e = s.econ;
-  // WHAT EVERY ARM'S-LENGTH BUYER PAID: builders on their residuals and land
-  // bankers on the option, alike. Read off land bankers alone, the level fell
-  // 87% in 25 years (land median 61 -> 8 $/sf, six seeds): the bankers are the
-  // low bidders on most lots, and the builders who set most land prices were
-  // left out. Closed sales govern (USPAP: the sales comparison); a round that
+  // WHAT EVERY ARM'S-LENGTH BUYER PAID for texture-priced dirt, builders and
+  // land bankers alike (urbanLot). Closed sales govern (USPAP: the sales
+  // comparison); a round that
   // did not close is an indication at half weight, read only where the sales
   // alone do not make the evidence in the window — as a cap read takes the
   // broker's survey only when nothing has printed.

@@ -47,7 +47,7 @@ import { resolveRecBare, useRentableSf } from "./value";
 import { flatUnitSf } from "./streetRolls";
 import { HH_SIZE, INCOME_SIGMA, TAX_INS, DTI, COMMUTE, REF_HOME, medianIncome, mortgageRate, fundamentalHomePsf } from "./homeprice";
 import { why } from "./why";
-import { whyIndustry } from "./economy";
+import { whyIndustry, whyFirmLoss, firmNamesOf } from "./economy";
 import { INDUSTRIES, INDUSTRY_IDS, N_IND, COMP_PER_WORKER_2023, PAY_SPLIT } from "./industries";
 
 // STAGE 1b (2026-10-28): THE REGISTER'S EARNERS ARE THE FIRMS' PAYROLL.
@@ -177,6 +177,36 @@ const LOC_SIGMA = 0.5, CROSS_KM = 8;
  * off — over the twelve months of a lease. [S~]
  */
 const MOVE_LOG = 1.5 / 12;
+/**
+ * WORKERS (ONE ECONOMY step 3, 2026-10-29). A worker looking for a job sees a
+ * shortlist of JOB_SHORTLIST openings — drawn by where the openings are, and
+ * within an industry by which firms are adding heads — and takes the one worth
+ * most to it: the pay, less what crossing the water to it costs from where the
+ * household lives (homeprice.ts COMMUTE, CROSS_KM), less SWITCH_PAY for a
+ * worker leaving the industry it knows (Neal 1995: displaced workers who
+ * change industry lose about 5% more of their pay than those who stay) [S~].
+ * Six a search is a shape parameter [K] (job seekers send one or two
+ * applications a week, Faberman & Kudlyak 2019).
+ */
+const JOB_SHORTLIST = 6, SWITCH_PAY = 0.95;
+/**
+ * ON-THE-JOB SEARCH: an employed worker looks each month at OJS_M and moves
+ * when an opening beats its job by QUIT_GAIN after the commute — a quit, and
+ * an opening at the firm it left. 5% a month looking and a 5% hurdle are shape
+ * parameters [K]; what they produce is checked against the record (BLS JOLTS
+ * quits ~2.0-2.5% of employment a month, 2015-19; job-to-job flows ~2%,
+ * Fujita, Moscarini & Postel-Vinay), not fitted to it.
+ */
+const OJS_M = 0.05, QUIT_GAIN = 0.05;
+/**
+ * THE MATCH: what one opening pays one worker, around its industry's going
+ * rate at the worker's standing — a lognormal spread of 0.15, the size of the
+ * gain a job change brings (Topel & Ward 1992: job changes average ~10% pay
+ * gains early in a career and account for a third of its wage growth) [S~].
+ * It is what makes a quit worth taking; the going rate (step 5 below) keeps
+ * each industry's average where its books pay it.
+ */
+const MATCH_SD = 0.15;
 /** The blocks a household looking for a flat sees: a broker's shortlist, about half a dozen (NMHC/Zillow renter surveys: renters tour a median of 4-6 homes before signing). [S~] */
 const SHORTLIST = 6;
 /**
@@ -373,6 +403,8 @@ export interface HouseholdFlows {
   out?: Record<MoveReason, number>;
   leaseEnds?: number; leaseMoves?: number;
   formed?: number; rebought?: number;
+  /** WORKERS (step 3): earners hired (from out of work or arriving), who quit for a better job, and who were laid off (weighted). */
+  hires?: number; quits?: number; layoffs?: number;
 }
 
 /** Why a household left its island flat. */
@@ -422,6 +454,10 @@ export interface HouseholdRegister {
   ownMu?: number; locMu?: number; islandWant?: number;
   leaseMoveRate?: number; moveOutYr?: number;
   buyers?: HomeBuyer[];
+  /** WORKERS (step 3): each firm's heads last month (employer code -> heads), and this month's layoff events by firm (code -> why id). */
+  firmHc?: Record<number, number>; layoffWhy?: Record<number, number>;
+  /** Each industry's openings still unfilled at the end of last month's matching: what a household may move to the region for. */
+  vacLeft?: number[];
   /** This month's move-outs from the player's blocks: the cause-ledger event per block (bbl -> why id). */
   flatWhy?: Record<string, number>;
   /** The arrays (in memory), or their base64 (in a save). */
@@ -595,16 +631,19 @@ function readBlocks(s: GameState, parcels: ParcelTable, r: HouseholdRegister, by
  * heads, and each industry's heads and cash pay. Null before the books open,
  * or in a month they did not run. Pure.
  */
-type Demand = { heads: Float64Array; codes: Int32Array[]; cum: Float64Array[]; live: Set<number>; pay: Float64Array };
+type Demand = { heads: Float64Array; codes: Int32Array[]; cum: Float64Array[]; live: Set<number>; pay: Float64Array;
+  /** each firm's heads this month, by register employer code (workers: who is hiring and who is cutting) */
+  hc: Map<number, number> };
 function readDemand(s: GameState): Demand | null {
   const E = s.economy;
   if (!E || !E.cur || E.cur.m !== s.month) return null;
   const f = E.f, n = E.L.slot.n;
   const lists: { code: number; hc: number }[][] = Array.from({ length: N_IND }, () => []);
   const live = new Set<number>();
+  const hc = new Map<number, number>();
   for (let k = 0; k < n; k++) {
     const id = f.id[k], code = id >= 0 ? id : EMP_OFF + id;
-    live.add(code);
+    live.add(code); hc.set(code, f.hc[k]);
     if (f.hc[k] > 0) lists[f.ind[k]].push({ code, hc: f.hc[k] });
   }
   const codes = lists.map((l) => Int32Array.from(l, (x) => x.code));
@@ -612,7 +651,7 @@ function readDemand(s: GameState): Demand | null {
   const w = s.econ.wageIdx ?? 1;
   const pay = new Float64Array(N_IND);
   for (let i = 0; i < N_IND; i++) pay[i] = industryCashPay(i, w);
-  return { heads: Float64Array.from(E.cur.heads), codes, cum, live, pay };
+  return { heads: Float64Array.from(E.cur.heads), codes, cum, live, pay, hc };
 }
 /** A firm of an industry, by its heads (one draw). */
 function drawFirm(R: Rand, D: Demand, ind: number): number {
@@ -1306,13 +1345,26 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
     N[IND()[k][i]] += a.wt[i]; members[IND()[k][i]].push(3 * i + k);
   }
   const shuffle = (l: number[]) => { for (let j = l.length - 1; j > 0; j--) { const q = Math.floor(R.u() * (j + 1)); const t = l[j]; l[j] = l[q]; l[q] = t; } return l; };
-  // 1. layoffs
+  // each firm's change in heads since last month: who is cutting and who is hiring
+  const prev = r.firmHc ?? {};
+  const grow = (code: number) => { const h = D.hc.get(code) ?? 0, p = prev[code] ?? h; return { h, p }; };
+  const shrinkFrac = (code: number) => { const { h, p } = grow(code); return p > 0 ? Math.max(0, (p - h) / p) : 0; };
+  // 1. LAYOFFS, BY THE FIRMS THAT CUT. An industry with more of the register's
+  // earners than heads lets the difference go, and the earners go from the
+  // firms that cut their heads this month, the most from the firms that cut
+  // the most (a member's draw weighs 1 + 20 x its firm's cut); the firm's
+  // name and why it cut are written to the cause ledger (below).
+  const laid = new Map<number, number>();
   for (let ind = 0; ind < N_IND; ind++) {
     if (!(N[ind] > D.heads[ind])) continue;
-    for (const sl of shuffle(members[ind])) {
+    const order = members[ind].map((sl) => ({ sl, key: Math.pow(R.u(), 1 / (1 + 20 * shrinkFrac(EMP()[sl % 3][(sl / 3) | 0]))) })).sort((p, q) => q.key - p.key);
+    for (const { sl } of order) {
       const i = (sl / 3) | 0, k = sl % 3, w = a.wt[i];
       if (N[ind] - D.heads[ind] < w / 2) continue;
+      const code = EMP()[k][i];
+      laid.set(code, (laid.get(code) ?? 0) + w);
       EMP()[k][i] = EMP_UNEMP; UN()[k][i] = 0; N[ind] -= w;
+      r.flow.layoffs = (r.flow.layoffs ?? 0) + w;
     }
   }
   const V = Float64Array.from(D.heads, (h, i) => h - N[i]);
@@ -1334,37 +1386,93 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
     const z = Math.log(Math.max(1, WAGE()[k][i] / share) / med) / INCOME_SIGMA;
     return Math.exp(WAGE_SIGMA * z - WAGE_SIGMA * WAGE_SIGMA / 2);
   };
-  const place = (i: number, k: number, ind: number) => {
-    const old = IND()[k][i], wg = WAGE()[k];
-    wg[i] = old === IND_NONE ? D.pay[ind] * standing(i, k) : wg[i] * D.pay[ind] / Math.max(1e-9, D.pay[old]);
-    EMP()[k][i] = drawFirm(R, D, ind); IND()[k][i] = ind; UN()[k][i] = 0;
-    V[ind] -= r.a!.wt[i];
+  // WHERE THE HOUSEHOLD LIVES, AND WHAT A JOB IS WORTH TO IT: the pay (its
+  // industry's going rate at the worker's standing, less SWITCH_PAY to change
+  // industry), less a year of crossing the water when the firm is on the
+  // other side (an island firm from the mainland, an off-map one from the island)
+  const onIsland = (i: number) => r.a!.ten[i] === TEN_RENT;
+  const cross = (i: number, code: number, wage: number) => (code >= 0) !== onIsland(i) && (code >= 0 || code < EMP_OFF) ? 12 * crossCostMo(e, wage) : 0;
+  const payAt = (i: number, k: number, ind: number) => {
+    const old = IND()[k][i], wg = WAGE()[k][i];
+    const base = old === IND_NONE ? D.pay[ind] * standing(i, k) : wg * D.pay[ind] / Math.max(1e-9, D.pay[old]);
+    return old !== IND_NONE && old !== ind ? base * SWITCH_PAY : base;
+  };
+  // a firm of an industry, by its heads, more for the firms adding heads (one draw)
+  const firmIn = (ind: number) => {
+    let c = drawFirm(R, D, ind);
+    const { h, p } = grow(c);
+    if (!(h > p) && D.codes[ind].length > 1) { const c2 = drawFirm(R, D, ind), g2 = grow(c2); if (g2.h > g2.p) c = c2; }
+    return c;
+  };
+  // the best of a shortlist of openings for this earner, or null
+  const bestJob = (i: number, k: number, only?: number) => {
+    let best: { ind: number; code: number; pay: number; value: number } | null = null;
+    for (let t = 0; t < JOB_SHORTLIST; t++) {
+      const ind = only ?? pickInd(r.a!.wt[i]);
+      if (ind < 0) break;
+      // ...and the match: the same job pays one worker more than another (MATCH_SD)
+      const code = firmIn(ind), pay = payAt(i, k, ind) * Math.exp(MATCH_SD * R.n() - MATCH_SD * MATCH_SD / 2), value = pay - cross(i, code, pay);
+      if (!best || value > best.value) best = { ind, code, pay, value };
+      if (only !== undefined && t >= 1) break;
+    }
+    return best;
+  };
+  const place = (i: number, k: number, job: { ind: number; code: number; pay: number }) => {
+    WAGE()[k][i] = job.pay;
+    EMP()[k][i] = job.code; IND()[k][i] = job.ind; UN()[k][i] = 0;
+    V[job.ind] -= r.a!.wt[i];
+    r.flow.hires = (r.flow.hires ?? 0) + r.a!.wt[i];
   };
   // 2. the earners who came with work
   const seekers: number[] = [];
   for (let i = 0; i < r.n; i++) for (let k = 0; k < 3; k++) if (EMP()[k][i] === EMP_OTHER) seekers.push(3 * i + k);
   for (const sl of shuffle(seekers)) {
-    const i = (sl / 3) | 0, k = sl % 3, ind = pickInd(a.wt[i]);
-    if (ind >= 0) place(i, k, ind);
+    const i = (sl / 3) | 0, k = sl % 3, job = bestJob(i, k);
+    if (job) place(i, k, job);
     else { EMP()[k][i] = EMP_UNEMP; UN()[k][i] = 1; }
   }
-  // 3. the jobless, at the finding rate, where there is a vacancy; the rest a month longer out
+  // 3. QUITS (before the jobless: the employed look at the same openings): a worker who looks this month (OJS_M) and finds an opening
+  // worth QUIT_GAIN more than its job after the commute moves; the job it
+  // left is an opening (filled by the next searcher, or by an arrival)
+  const working: number[] = [];
+  for (let i = 0; i < r.n; i++) for (let k = 0; k < 3; k++) if (isPlaced(EMP()[k][i]) && IND()[k][i] !== IND_NONE) working.push(3 * i + k);
+  for (const sl of shuffle(working)) {
+    if (!(R.u() < OJS_M)) continue;
+    const i = (sl / 3) | 0, k = sl % 3;
+    const cur = WAGE()[k][i] - cross(i, EMP()[k][i], WAGE()[k][i]);
+    const job = bestJob(i, k);
+    if (!job || !(job.value > cur * (1 + QUIT_GAIN))) continue;
+    const old = IND()[k][i];
+    V[old] += r.a!.wt[i];
+    place(i, k, job);
+    r.flow.hires = (r.flow.hires ?? 0) - r.a!.wt[i];
+    r.flow.quits = (r.flow.quits ?? 0) + r.a!.wt[i];
+  }
+  // 3b. the jobless, at the finding rate, where there is a vacancy; the rest a month longer out
   const jobless: number[] = [];
   for (let i = 0; i < r.n; i++) for (let k = 0; k < 3; k++) if (EMP()[k][i] === EMP_UNEMP) jobless.push(3 * i + k);
   for (const sl of shuffle(jobless)) {
     const i = (sl / 3) | 0, k = sl % 3;
     const hire = R.u() < UE_RATE, scar = R.n();
-    const ind = hire ? pickInd(a.wt[i]) : -1;
+    const job = hire ? bestJob(i, k) : null;
     // a returning worker takes a small cut in pay (job-loss scarring, Jacobson-LaLonde-Sullivan 1993) [S]
-    if (ind >= 0) { place(i, k, ind); WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * scar); }
+    if (job) { place(i, k, job); WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * scar); }
     else if (UN()[k][i] < 65535) UN()[k][i]++;
   }
   // 4. households arriving for the work the town's own people did not take
   const wR = r.wRegion, H = homeMarket(e);
   const ageWork = AGE_RENT.slice(0, 5), ageTot = ageWork.reduce((t, x) => t + x, 0);
   const ageP = ageWork.map((p) => p / ageTot);
+  // ...THE OPENINGS THE TOWN'S OWN PEOPLE HAVE HAD A MONTH TO FILL (step 3):
+  // an opening is posted, the jobless here and the workers looking for a
+  // better job see it first, and a household moves to the region for it only
+  // if it is still open a month on. Filling every opening the month it opened
+  // from outside made each quit a household arriving: measured, the region
+  // grew 17% more people and 23% more jobs in 25 years with quits on than off.
+  const open = Float64Array.from(V, (v, i) => Math.min(v, r.vacLeft?.[i] ?? v));
   for (let ind = 0; ind < N_IND; ind++) {
-    while (V[ind] >= wR / 2) {
+    while (open[ind] >= wR / 2) {
+      open[ind] -= wR;
       const i = addAgent(r), b = r.a!;
       b.wt[i] = wR;
       const band = pick(R, ageP);
@@ -1372,12 +1480,12 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       b.adults[i] = 1 + pick(R, ADULTS);
       b.kids[i] = b.age[i] >= 20 && b.age[i] < 60 ? pick(R, KIDS) : 0;
       const f1 = Math.exp(WAGE_SIGMA * R.n() - WAGE_SIGMA * WAGE_SIGMA / 2);
-      b.emp1[i] = drawFirm(R, D, ind); b.ind1[i] = ind; b.wage1[i] = D.pay[ind] * f1;
+      b.emp1[i] = firmIn(ind); b.ind1[i] = ind; b.wage1[i] = D.pay[ind] * f1;
       V[ind] -= wR;
       if (b.adults[i] >= 2 && R.u() < 0.70) {
         const j = pickInd(wR);
         const f2 = Math.exp(WAGE_SIGMA * R.n() - WAGE_SIGMA * WAGE_SIGMA / 2);
-        if (j >= 0) { b.emp2[i] = drawFirm(R, D, j); b.ind2[i] = j; b.wage2[i] = D.pay[j] * f2; V[j] -= wR; }
+        if (j >= 0) { b.emp2[i] = firmIn(j); b.ind2[i] = j; b.wage2[i] = D.pay[j] * f2; V[j] -= wR; }
         else { b.emp2[i] = EMP_UNEMP; b.un2[i] = 1; b.wage2[i] = D.pay[ind] * f2; }
       }
       // its other adult (a grown child, a relative) looks for work here too, at the rate for everyone over 16
@@ -1401,6 +1509,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       }
     }
   }
+  r.vacLeft = Array.from(V, (v) => +Math.max(0, v).toFixed(2));
   // 5. THE GOING RATE. An industry's pay bill is its going rate (BEA pay at
   // the town's wage index, D.pay) times its earners; who gets which share of
   // it is each earner's standing. Standing moves — a returning worker's
@@ -1424,6 +1533,28 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       if (isPlaced(EMPc[k][i]) && ind !== IND_NONE) WAGEc[k][i] *= scale[ind];
     }
   }
+  // the firms that cut, to the cause ledger: the island's named firms that let
+  // the most go this month (at most a dozen), each caused by the customer it
+  // lost (economy.ts whyFirmLoss) or else its industry's month
+  if (laid.size) {
+    const names = firmNamesOf(s);
+    const top = [...laid.entries()].filter(([c, w]) => c >= 0 && w >= 1 && grow(c).h < grow(c).p).sort((p, q) => q[1] - p[1]).slice(0, 12);
+    const ids: Record<number, number> = {};
+    for (const [code, w] of top) {
+      const name = names.get(code) ?? "A firm";
+      const indOf = D.codes.findIndex((l) => l.includes(code));
+      const { h, p } = grow(code);
+      ids[code] = why(s, {
+        k: "firm.layoff", a: "firm", aid: String(code), name,
+        n: { workers: Math.round(w), headsBefore: Math.round(p), heads: Math.round(h) },
+        t: `${name} laid off ${Math.round(w)} worker${Math.round(w) === 1 ? "" : "s"} · heads ${Math.round(p)} → ${Math.round(h)}`,
+      }, [whyFirmLoss(s, code) ?? (indOf >= 0 ? whyIndustry(s, indOf) : undefined)]);
+    }
+    r.layoffWhy = ids;
+  } else r.layoffWhy = {};
+  const nowHc: Record<number, number> = {};
+  for (const [c, h] of D.hc) nowHc[c] = +h.toFixed(2);
+  r.firmHc = nowHc;
   // 6. who leaves: nobody in work, insurance run out — an island renter too
   // (households stage 2: its flat empties and is let again from across the
   // water). A jobless other adult past six months out leaves on its own.
@@ -1482,7 +1613,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   const B = readBlocks(s, parcels, r, byHH);
   r.flow = {
     movedOut: 0, movedIn: 0, evictions: 0, foreclosures: 0, spend: 0, income: 0, arrived: 0, left: 0, bought: 0, sold: 0,
-    out: zeroOut(), leaseEnds: 0, leaseMoves: 0, formed: 0, rebought: 0,
+    out: zeroOut(), leaseEnds: 0, leaseMoves: 0, formed: 0, rebought: 0, hires: 0, quits: 0, layoffs: 0,
   };
   MINE = new Set(Object.keys(s.holdings ?? {}));
   OUTS = new Map();
@@ -1505,7 +1636,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     const lose = (emp: Int32Array, un_: Uint16Array, i: number) => {
       const x = emp[i];
       if (x === EMP_NONE || x === EMP_RETIRED) return;
-      if (x !== EMP_UNEMP && ((D && isPlaced(x) && !D.live.has(x)) || R.u() < SEP_RATE)) { emp[i] = EMP_UNEMP; un_[i] = 0; }
+      if (x !== EMP_UNEMP && ((D && isPlaced(x) && !D.live.has(x)) || R.u() < SEP_RATE)) { emp[i] = EMP_UNEMP; un_[i] = 0; r.flow.layoffs! += a.wt[i]; }
       lf += a.wt[i];
       if (emp[i] === EMP_UNEMP) un += a.wt[i];
     };

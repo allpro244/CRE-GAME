@@ -45,6 +45,21 @@
 // means qualify them (`fedTransfers`). A category's spending falling with job
 // losses is written to the cause ledger (`rollSpendYear`, `whyHouseholdSpend`).
 //
+// STAGE 6 (2026-10-29): WHO LIVES WITH WHOM, AND SAVING TO BUY. A young adult
+// at home joins the labour force as its age's participation rises
+// (`YOUNG_LF`) and leaves home at the CPS rate over all of them — to a
+// partner, a roommate or alone, each only if it can (`formFromChild`); a
+// household that moves joins only an agent alike in age and make-up
+// (`alike`); singles meet partners by households, not agents (`unite`); a
+// renter that plans to buy saves for the down payment (`DOWN_SAVE`); the
+// opening's owners are drawn by age band (OWN_BY_AGE); SNAP and the EITC
+// reach the share of the eligible that claim them (`takesUp`). Measured over
+// thirty years (tools/households-life.mjs, seed 550991): living alone 20% ->
+// 34% (was -> 38%; CPS 28%), adults a household 1.93 (1.95), 18-34-year-olds
+// 20% of people (was 17%; Census 22.6%). Ownership still falls, 65% -> 56%:
+// the down payment is not what binds (two in five renters 25-44 hold it; one
+// in four passes the lender's payment test; see DOWN_SAVE).
+//
 // STORAGE is struct-of-arrays (typed arrays, one per field), so a month over
 // ten thousand households is a few milliseconds and a save is a few hundred
 // kilobytes. A save carries the arrays as base64 (`packHouseholdsForSave`);
@@ -1251,6 +1266,15 @@ function lenderTakes(a: HouseholdArrays, i: number, H: HomeMkt): boolean {
  * cash for a home only by the luck of its opening draw: buyers thinned as the
  * opening's savers bought, and ownership fell 66% to 56% in thirty years with
  * every age band under the HVS's.
+ *
+ * MEASURED (stage 6, seed 550991): that was not the fault. Among renters of
+ * 25-44, about 40% already held the down payment and closing on the starter
+ * through the first twenty years, while about 25% passed the lender's payment
+ * test (`lenderTakes`) and about 10% planned to buy; renters 25-34 bought at
+ * ~10% a year and 35-44 at ~6%. The saving is kept because households who mean
+ * to buy do save for it, but ownership still drifts to ~56% in thirty years:
+ * what tightens is the payment, as the starter's price rose ~80% in twenty
+ * years against ~60% for renters' pay (homeprice.ts), not the cash.
  */
 const DOWN_SAVE = 0.06;
 function plansToBuy(r: HouseholdRegister, a: HouseholdArrays, i: number, H: HomeMkt): boolean {

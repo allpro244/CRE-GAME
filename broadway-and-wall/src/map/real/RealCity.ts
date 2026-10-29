@@ -8582,7 +8582,7 @@ export class RealCityLayer {
   private buildBackdrop() {
     const c = this.ctx as CityCtx;
     if (!c.facilities?.length || !c.hinterland) return;
-    this.backdrop = buildBackdrop(c.facilities, c.hinterland, (q) => this.project(q), this.meadowMat);
+    this.backdrop = buildBackdrop(c.facilities, c.hinterland, (q) => this.project(q), this.meadowMat, CANAL_WATER);
     this.scene.add(this.backdrop.root);
   }
   /** The region facility under a pointer (CSS px), where no lot is: a ray to the ground and a fence test. */

@@ -219,7 +219,7 @@ function propGeo(kind: string): THREE.BufferGeometry {
     case "barge": box(g, O, X, 60, 15, -1, 2.2, hex(0x5a3a2a), hex(0x2a2c2f)); break;
     case "pylon": box(g, O, X, 1, 1, 0, 9, GR, GR); box(g, O, [0, 1], 9, 0.5, 8, 8.6, GR, GR); break;
     case "logs": box(g, O, X, 12, 5, 0, 3, W, W); break;
-    case "tree": sphere(g, [0, 0], 1, 1.25, W, 7, 4); cyl(g, O, 0.12, 0.12, 0, 0.5, hex(0x4a3b2e), null, 5); break;
+    case "tree": sphere(g, [0, 0], 1, 1.25, W, 6, 3); break;   // a crown, ~24 triangles: from where these are seen the trunk is under it
     default: box(g, O, X, 4, 2, 0, 2, W, W);
   }
   return g.geometry();
@@ -260,9 +260,10 @@ export interface Backdrop {
 
 /**
  * Build the hinterland and its facilities. `ground` is the city's own rough-grass material, so the country
- * past the window is the same grass, in the same season, as the unbuilt land inside it.
+ * past the window is the same grass, in the same season, as the unbuilt land inside it; `waterColor` is
+ * the town's channel water, so the river does not change colour at the window's edge.
  */
-export function buildBackdrop(facs: RegionFacility[], hint: Hinterland, project: Proj, ground: THREE.Material): Backdrop {
+export function buildBackdrop(facs: RegionFacility[], hint: Hinterland, project: Proj, ground: THREE.Material, waterColor: number): Backdrop {
   const root = new THREE.Group();
   root.name = "region-backdrop";
   const P = (ll: [number, number]) => project(ll);
@@ -284,7 +285,8 @@ export function buildBackdrop(facs: RegionFacility[], hint: Hinterland, project:
     return t;
   })();
   const fieldMat = flatMat(-1, { map: fieldTex });
-  const waterMat = new THREE.MeshStandardMaterial({ color: 0x2f6a8f, roughness: 0.18, metalness: 0, envMapIntensity: 0.9, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+  // the river runs on past the window in the town's own channel water
+  const waterMat = new THREE.MeshStandardMaterial({ color: waterColor, roughness: 0.18, metalness: 0, envMapIntensity: 0.9, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
   /** a facility's whole-site ground (under its yards); everything else on a site lies over it */
   const BASE_PAD = new Set(["airfield", "plant", "ballast", "quarry", "gravel", "woods", "orchard"]);
   const shellMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82, metalness: 0.04, flatShading: true, envMapIntensity: 0.35 });

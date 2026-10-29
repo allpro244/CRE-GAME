@@ -50,7 +50,7 @@ console.log("\nFINITE DEMAND — letters come from a pool, not from empty floors
   check(req <= churn + growth + struct + 1,
     `requirement ${Math.round(req)} ≤ churn ${Math.round(churn)} + growth ${Math.round(growth)} + struct ${Math.round(struct)}`);
   const housable = e.stock[use] * (1 - E.frictionFloor(use));
-  const fringe = e.stock[use] * E.NATURAL_VAC[use] * 0.25;
+  const fringe = e.stock[use] * E.OPENING_VAC[use] * 0.25;
   check(pool <= housable + fringe + 1,
     `looking pool ${Math.round(pool)} ≤ housable + search fringe (${Math.round(housable + fringe)})`);
 }

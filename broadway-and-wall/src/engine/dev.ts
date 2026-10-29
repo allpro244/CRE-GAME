@@ -12,7 +12,7 @@ import { BUILT_CLASSES, cloneState, raiseAlert } from "./types";
 import { abatementAtStart } from "./citygov";
 import { logBooks, moveDeposit, moveFundCash, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
-import { rng, rrange, NATURAL_VAC, forwardVacancy, rentDriftAt, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, housableStock, payrollGrowth12 } from "./market";
+import { rng, rrange, normalVac, forwardVacancy, rentTrend12, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, housableStock, payrollGrowth12 } from "./market";
 import { firmShort } from "./firm";
 import { classValuePsf, resolveRec, marketRentPsfYr, landValue, landRead, assetValue, ownedHoldingValue, demandLinear, condGrade, condCeiling, openingCondIdx,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
@@ -214,7 +214,7 @@ function settleMerchant(s: GameState, parcels: ParcelTable, bbl: string, m: Merc
   // forecast. In a market that did what the developer expected this is its
   // own stabilised value, which cleared its margin; it falls short only when
   // the market moved against the scheme.
-  const lum1 = leaseUpMarketAt(e, m.mix, (u) => e.cityVac?.[u] ?? NATURAL_VAC[u]);
+  const lum1 = leaseUpMarketAt(e, m.mix, (u) => e.cityVac?.[u] ?? normalVac(e, u));
   const noi1 = m.noi * blendRent(e, m.mix) / Math.max(1e-6, m.rent0);
   const yld1 = m.yld * blendCap(e, m.mix) / Math.max(0.1, m.cap0);
   const worth = Math.max(0, Math.round(noi1 / Math.max(0.01, yld1) - m.leaseUp * Math.max(0, lum1 / Math.max(0.05, m.lum0) - 1)));
@@ -3565,8 +3565,8 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 // only ever touched `s.econ`, and the use-picker has the Econ but not the state.
 // Same function, one caller deeper — nothing about the number changed.
 function classAppetiteE(e: Econ, k: BuiltClass): number {
-  const vac = e.cityVac?.[k] ?? NATURAL_VAC[k];
-  const gap = vac - NATURAL_VAC[k];
+  const vac = e.cityVac?.[k] ?? normalVac(e, k);
+  const gap = vac - normalVac(e, k);
   const stk = e.stock?.[k] ?? CITY_STOCK[k];
   const coming = (e.pipeline?.[k] ?? 0) / Math.max(1, stk);   // pipeline as a share of stock
   const tight = clamp(1 - gap * 13 - coming * 5, 0, 2.1);
@@ -3903,8 +3903,8 @@ function redevelopmentBasis(rec: NonNullable<ReturnType<typeof resolveRec>>, e: 
 }
 
 function classPinnedOwed(e: Econ, k: BuiltClass, slack = 0.02): boolean {
-  const vac = e.cityVac?.[k] ?? NATURAL_VAC[k];
-  if (vac > frictionFloor(k) + slack) return false;
+  const vac = e.cityVac?.[k] ?? normalVac(e, k);
+  if (vac > frictionFloor(k, e) + slack) return false;
   return (e.structTight?.[k] ?? 0) > 0.06;
 }
 
@@ -3949,7 +3949,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
   // a pinned class with unpaid orders — both mean the wrecking ball is how a
   // built-out city answers. Not a vac-coefficient hike.
   const chronicShort = BUILT_CLASSES.some((k) => {
-    const pinned = (e.cityVac?.[k] ?? NATURAL_VAC[k]) <= frictionFloor(k) + 0.015;
+    const pinned = (e.cityVac?.[k] ?? normalVac(e, k)) <= frictionFloor(k, e) + 0.015;
     return pinned && ((e.structTight?.[k] ?? 0) > 0.08 || (e.startOwed?.[k] ?? 0) > 0);
   });
   // ONE CANDIDATE A MONTH, which is what the comment above has always said.
@@ -4129,7 +4129,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
     void stood; void stoodAge;
     const leadShort = classPinnedOwed(e, lead)
       || ((e.structTight?.[lead] ?? 0) > 0.06
-        && (e.cityVac?.[lead] ?? NATURAL_VAC[lead]) <= frictionFloor(lead) + 0.02);
+        && (e.cityVac?.[lead] ?? normalVac(e, lead)) <= frictionFloor(lead, e) + 0.02);
 
     // NOBODY DEMOLISHES A BUILDING AND LEAVES A HOLE.
     //
@@ -4234,7 +4234,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
         // Same size discipline as on vacant dirt: no bigger than this shop's
         // share of the class's standing stock.
         if (fl > 1 && u.plan.sf * (u.plan.mix?.[k] ?? 1) > rdev.maxShare * Math.max(1, e.stock?.[k] ?? 0)) continue;
-        if (forwardVacancy(e, k, u.plan.sf * (u.plan.mix?.[k] ?? 1), u.plan.months) > NATURAL_VAC[k] + rdev.vacTol) continue;
+        if (forwardVacancy(e, k, u.plan.sf * (u.plan.mix?.[k] ?? 1), u.plan.months) > normalVac(e, k) + rdev.vacTol) continue;
         const h = hurdleAt(u.plan, DEV_MARGIN) * rdev.outlook * momentumRead(s, k, rdev.momentum) / rdev.bar;
         if (!kids.length) nearH = Math.max(nearH, h);
         if (h < 1) continue;
@@ -4426,7 +4426,7 @@ function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) 
   // with composition at 0.94-0.81 and the shed stock 18% down from opening.
   // A deep glut that has lasted two years now qualifies whatever emptied it;
   // a shallower soft patch still needs the secular signal.
-  const deepOld = (e.cityVac?.industrial ?? 0) > NATURAL_VAC.industrial + 0.05
+  const deepOld = (e.cityVac?.industrial ?? 0) > normalVac(e, "industrial") + 0.05
     && (e.vacOverM?.industrial ?? 0) >= 24;
   if (ic > 0.92 && !deepOld) return;
   // DEFER TO EMPLOYMENT SHORTAGE, DON'T FREEZE. Clearing sheds onto the plat
@@ -4437,18 +4437,18 @@ function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) 
   // industrial soft 61% of months. Trickle clearance (~1/8 the ordinary rate)
   // still retires surplus floor space; densify keeps the crane priority.
   const officeShort = (e.structTight?.office ?? 0) > 0.08
-    && (e.cityVac?.office ?? NATURAL_VAC.office) <= frictionFloor("office") + 0.015;
+    && (e.cityVac?.office ?? normalVac(e, "office")) <= frictionFloor("office", e) + 0.015;
   const stock = e.stock?.industrial ?? 0;
   const occ = e.occupied?.industrial ?? 0;
-  const vac = e.cityVac?.industrial ?? NATURAL_VAC.industrial;
-  if (vac <= NATURAL_VAC.industrial + 0.015) return;
+  const vac = e.cityVac?.industrial ?? normalVac(e, "industrial");
+  if (vac <= normalVac(e, "industrial") + 0.015) return;
   // Envelope from OCCUPIED demand: stock that would put vacancy at natural
   // given today's tenants. Composition has already cut the looking pool;
   // what remains empty above natural is the surplus floor space that left
   // with manufacturing. (An absolute `stock0 × industComp` envelope ignored
   // job growth and aimed at a level the residual logistics market still
   // needed — clearance then either stalled or overshot.)
-  const need = occ / Math.max(0.5, 1 - NATURAL_VAC.industrial);
+  const need = occ / Math.max(0.5, 1 - normalVac(e, "industrial"));
   const empty = Math.max(0, stock - occ);
   const surplus = Math.min(Math.max(0, stock - need * 1.03), empty);
   if (surplus < 4000) return;
@@ -4564,7 +4564,7 @@ function tickSurplusExit(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // seed, 40% of the shed stock gone and real industrial rent still fell
   // from 1.36x to 0.59x. Industrial has its own valve.
   for (const use of ["office", "retail", "multifamily"] as BuiltClass[]) {
-    const natural = NATURAL_VAC[use];
+    const natural = normalVac(e, use);
     const vac = e.cityVac?.[use] ?? natural;
     if (vac <= natural + 0.05) continue;                    // deep, not cyclical
     if ((e.vacOverM?.[use] ?? 0) < 24) continue;            // old, not new
@@ -4672,7 +4672,7 @@ function retireOffMapSurplus(s: GameState, parcels: ParcelTable, bbls: string[])
   for (const k of BUILT_CLASSES) {
     const off = e.offMapSf[k] ?? 0;
     if (off < 1000) continue;
-    const natural = NATURAL_VAC[k];
+    const natural = normalVac(e, k);
     if ((e.cityVac?.[k] ?? natural) <= natural + 0.05) continue;
     if ((e.vacOverM?.[k] ?? 0) < 24) continue;
     const stock = Math.max(1, e.stock?.[k] ?? 0);
@@ -4705,7 +4705,7 @@ export function tickCityGrowth(
     const e2 = s.econ;
     const bookShort = BUILT_CLASSES.some((k) => classPinnedOwed(e2, k, 0.015));
     const shortOf = (th: number) => BUILT_CLASSES.some((k) => (e2.structTight?.[k] ?? 0) > th
-      && (e2.cityVac?.[k] ?? NATURAL_VAC[k]) <= frictionFloor(k) + 0.015);
+      && (e2.cityVac?.[k] ?? normalVac(e2, k)) <= frictionFloor(k, e2) + 0.015);
     if (bookShort || shortOf(0.08)) tickTeardowns(s, parcels, bbls, adjacency);
     if (shortOf(0.16)) tickTeardowns(s, parcels, bbls, adjacency);
   }
@@ -5037,7 +5037,7 @@ function developerLook(
         // over the real horizon, is what fills a market faster than demand
         // turns out to grow (Wheaton 1999). Read over 18 months, every shop
         // was more cautious than any real one and no market overshot.
-        if (forwardVacancy(s.econ, lead, ownSf, u.plan.months + PLAN_LEAD_M[lead]) > NATURAL_VAC[lead] + dev.vacTol) continue;
+        if (forwardVacancy(s.econ, lead, ownSf, u.plan.months + PLAN_LEAD_M[lead]) > normalVac(s.econ, lead) + dev.vacTol) continue;
         // THEIR OWN READ: yield on cost over the exit cap at the trade margin,
         // through their rent outlook and how they read the market's direction.
         // ...but only on a scheme that already clears its spread on today's
@@ -5195,14 +5195,15 @@ function drawDeveloper(s: GameState): DeveloperProfile {
 }
 
 /**
- * HOW A SHOP READS WHERE RENT IS HEADING: the market's own rent rule at
- * today's vacancy (`rentDriftAt`), over the two years to delivery, weighted
- * by their momentum — a trend follower adds it, a contrarian leans against
- * it. Capped at +/-25% so a belief is never larger than a cycle.
+ * HOW A SHOP READS WHERE RENT IS HEADING: what the comps did over the last
+ * year (market.ts rentTrend12), carried over the two years to delivery,
+ * weighted by their momentum — a trend follower adds it, a contrarian leans
+ * against it. Capped at +/-25% so a belief is never larger than a cycle.
+ * (This read the city's rent equation at today's vacancy, `rentDriftAt`,
+ * which no rent follows any more: ONE ECONOMY step 4.)
  */
 function momentumRead(s: GameState, k: BuiltClass, momentum: number): number {
-  const gap = (s.econ.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
-  const drift = Math.max(-0.25, Math.min(0.25, rentDriftAt(k, gap) * 24));
+  const drift = Math.max(-0.25, Math.min(0.25, rentTrend12(s.econ, k) * 2));
   return Math.exp(momentum * drift);
 }
 
@@ -5496,7 +5497,7 @@ export function seedOpeningPipeline(s: GameState, parcels: ParcelTable, bbls: st
   if (!s.cityJobs) s.cityJobs = [];
   const e = s.econ;
   let slack = 0;
-  for (const k of BUILT_CLASSES) slack += Math.max(0, (e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k]);
+  for (const k of BUILT_CLASSES) slack += Math.max(0, (e.cityVac?.[k] ?? normalVac(e, k)) - normalVac(e, k));
   slack /= BUILT_CLASSES.length;
   const util = Math.max(0.18, Math.min(1, 1 - slack * 7));
   const want = Math.round(crewCapacity(bbls, e) * util);

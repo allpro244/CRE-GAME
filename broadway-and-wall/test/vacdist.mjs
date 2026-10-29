@@ -44,7 +44,7 @@ const { loadCity } = await import(join(HERE, "city.mjs"));
 const { parcels: P0, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 const SEEDS = (process.env.SEEDS ?? "550991,12007,11,4242,91117,73303,22,33").split(",").map(Number);
 const HZ = Number(process.env.YRS ?? 60) * 12;
-const NAT = E.NATURAL_VAC;
+const NAT = E.OPENING_VAC;
 // ONE FLOOR, THE ENGINE'S. This used to hardcode FLOOR_RATIO with industrial
 // 0.32 and multifamily 0.22 — the swap of frictionFloor (industrial 0.22,
 // multifamily 0.30). A watcher that mirrors the number it is watching is the

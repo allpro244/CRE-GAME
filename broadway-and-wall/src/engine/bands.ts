@@ -28,7 +28,8 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState } from "./types";
 import { BUILT_CLASSES } from "./types";
-import { NATURAL_VAC } from "./market";
+import { normalVac } from "./market";
+import { bandReadOut } from "./tenantMarket";
 import { GROSS_TURNOVER } from "./turnover";
 import {
   N_BANDS, bandCenter, overallScore, scoreNatVac, locationRentMult, plateRentMult,
@@ -269,14 +270,22 @@ export function tickBands(e: Econ, k: BuiltClass) {
 
   }
 
-  // 4. RENT. Each band's swing chases its vacancy gap against the class's,
-  //    then the set is re-centred so the occupied-weighted mean is one.
-  const gapClass = NATURAL_VAC[k] - (1 - streetOcc / streetStock);
-  for (let b = 0; b < N_BANDS; b++) {
-    if (!(bk.stock[b] > 0)) continue;
-    const vac = 1 - bk.occ[b] / bk.stock[b];
-    const want = Math.max(0.2, 1 + BAND_RENT_BETA * ((nat[b] - vac) - gapClass));
-    bk.rent[b] += (want - bk.rent[b]) / BAND_RENT_TAU;
+  // 4. RENT. Offices, shops and sheds: each band's swing is what its leases
+  //    signed at against the class (tenantMarket.ts bandReadOut, ONE ECONOMY
+  //    step 4) — a band with no lease in the window keeps its swing. Flats:
+  //    each band's swing chases its vacancy gap against the class's. Then the
+  //    set is re-centred so the occupied-weighted mean is one.
+  if (k !== "multifamily" && e.streetRolls) {
+    const ro = bandReadOut(e, k, N_BANDS);
+    for (let b = 0; b < N_BANDS; b++) { const v = ro[b]; if (v !== undefined && v > 0) bk.rent[b] = Math.max(0.2, v); }
+  } else {
+    const gapClass = normalVac(e, k) - (1 - streetOcc / streetStock);
+    for (let b = 0; b < N_BANDS; b++) {
+      if (!(bk.stock[b] > 0)) continue;
+      const vac = 1 - bk.occ[b] / bk.stock[b];
+      const want = Math.max(0.2, 1 + BAND_RENT_BETA * ((nat[b] - vac) - gapClass));
+      bk.rent[b] += (want - bk.rent[b]) / BAND_RENT_TAU;
+    }
   }
   const occW = bk.occ.reduce((a, v) => a + v, 0);
   const mean = occW > 0 ? bk.occ.reduce((a, o, b) => a + o * bk!.rent[b], 0) / occW : 1;

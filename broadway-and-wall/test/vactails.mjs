@@ -72,7 +72,7 @@ console.log(`\nTHE VACANCY TAILS — ${process.env.ENGINE ?? "test/.engine.mjs"}
 console.log("THE TIGHT TAIL — is `cityVac` sitting on its clamp?");
 console.log("  class         floor    p01     p05   median      % of months ON the floor   longest stretch");
 for (const k of CLASSES) {
-  const floor = E.NATURAL_VAC[k] * FRICTION_RATIO[k];
+  const floor = E.OPENING_VAC[k] * FRICTION_RATIO[k];
   const all = runs.flatMap(({ s }) => s.map((r) => r.vac[k]));
   const on = all.filter((v) => v <= floor + 1e-9).length;
   let longest = 0;
@@ -98,7 +98,7 @@ for (const k of CLASSES) {
 console.log("\nTHE GLUT TAIL — vacTerm's quadratic was fitted at 7-9 points over natural");
 console.log("  class      %months >9pp over   %months >12pp   max gap   months/50y above 9pp   worst -%/yr at max gap");
 for (const k of CLASSES) {
-  const nat = E.NATURAL_VAC[k];
+  const nat = E.OPENING_VAC[k];
   const gaps = runs.flatMap(({ s }) => s.map((r) => r.avail[k] - nat));
   const over9 = gaps.filter((v) => v > 0.09).length;
   const over12 = gaps.filter((v) => v > 0.12).length;
@@ -138,7 +138,7 @@ const CAP_VAC_BETA = { office: 0.12, retail: 0.09, multifamily: 0.06, industrial
 console.log("\nTHE RAIL STACK AT THE TIGHT END — where each tightness signal stops responding");
 console.log("  class        capRate pins   leaseUp pins   vacancy pins      %months below the FIRST rail");
 for (const k of CLASSES) {
-  const nat = E.NATURAL_VAC[k];
+  const nat = E.OPENING_VAC[k];
   const capPin = nat - 0.6 / (CAP_VAC_BETA[k] * 100);
   const pullPin = nat / Math.pow(1.7, 1 / 0.9);
   const floor = nat * FRICTION_RATIO[k];
@@ -152,7 +152,7 @@ for (const k of CLASSES) {
 // Cap rates read `cityVac - NATURAL_VAC` directly, not availability. If the
 // vacancy is pinned, so is the risk premium.
 console.log("\nWHAT THE RAIL PINS — cap rate while office vacancy sits on its floor vs off it");
-const floorO = E.NATURAL_VAC.office * FRICTION_RATIO.office;
+const floorO = E.OPENING_VAC.office * FRICTION_RATIO.office;
 const onRail = [], offRail = [];
 for (const { s } of runs) for (const r of s) (r.vac.office <= floorO + 1e-9 ? onRail : offRail).push(r);
 console.log(`  months on the floor : ${onRail.length}  cap rate ${f(mean(onRail.map((r) => r.cap.office)))}%`

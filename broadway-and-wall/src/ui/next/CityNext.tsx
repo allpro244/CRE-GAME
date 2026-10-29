@@ -19,7 +19,7 @@ import { monthLabel, START_YEAR } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import { cityValueToReplacement } from "@/engine/dev";
 import { standardsWord, underwritingStandards } from "@/engine/debt";
-import { CITY_STOCK, NATURAL_VAC, SECTOR_LABEL, shortIndexOf } from "@/engine/market";
+import { CITY_STOCK, normalVac, SECTOR_LABEL, shortIndexOf } from "@/engine/market";
 import { availability, deliverySchedule, legDemand, legRent, legVacancy, marketBalance, monthsOfSupply, submarkets } from "@/engine/space";
 import { resolveRec, portfolioMark } from "@/engine/value";
 import { markRival, marketAppetite, rivalCondition } from "@/engine/rivals";
@@ -69,12 +69,12 @@ function classRows(g: GameState): ClassRow[] {
       const avail = availability(e, k);
       const bal = marketBalance(e, k);
       const stock = e.stock?.[k] ?? CITY_STOCK[k];
-      const direct = e.cityVac?.[k] ?? NATURAL_VAC[k];
+      const direct = e.cityVac?.[k] ?? normalVac(e, k);
       const pipe = e.pipeline?.[k] ?? 0;
       const abs12 = e.absorb12?.[k] ?? 0;
       const then = hist.length > 12 ? (hist[hist.length - 13]?.avail?.[k] ?? hist[hist.length - 13]?.vac?.[k]) : undefined;
       return {
-        k, label: SECTOR_LABEL[k], avail, nat: NATURAL_VAC[k], direct, state: bal.state, gap: bal.gap,
+        k, label: SECTOR_LABEL[k], avail, nat: normalVac(e, k), direct, state: bal.state, gap: bal.gap,
         rent: e.rentIdx[k], eff: e.effRentIdx?.[k] ?? e.rentIdx[k], realYoy: realRentYoy(e, k), cap: e.capRate[k],
         stock, occ: e.occupied?.[k] ?? stock * (1 - direct), pipe, pipePct: stock > 0 ? pipe / stock : 0,
         sched: sched[k], abs12, comp12: e.completions12?.[k] ?? 0, dmd: stock > 0 ? abs12 / stock : 0,
@@ -180,7 +180,7 @@ function subRows(g: GameState, p: ParcelTable, bbls: string[]): SubRow[] {
         const v = legVacancy(leg);
         out.push({
           key: `${m.district}:${k}`, district: m.district, name: m.name, k, use: SECTOR_LABEL[k], sf: leg.sf, vac: v,
-          vs: (v - availability(e, k)) * 1e4, rent: legRent(leg), demand: legDemand(leg), lots: leg.lots, vacantLots: m.vacantLots, nat: NATURAL_VAC[k],
+          vs: (v - availability(e, k)) * 1e4, rent: legRent(leg), demand: legDemand(leg), lots: leg.lots, vacantLots: m.vacantLots, nat: normalVac(e, k),
         });
       }
     }

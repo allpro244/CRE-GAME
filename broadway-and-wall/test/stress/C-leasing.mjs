@@ -336,7 +336,7 @@ function instrumented(seed) {
       // actually charges it: face rent over the paying months, less the
       // fit-out and the commission, spread over the term.
       const ner = (l.rentPsf * (l.termM - (l.freeM ?? 0)) / 12 - cost) / yrs;
-      const nat = E.NATURAL_VAC[use] ?? 0.1;
+      const nat = E.OPENING_VAC[use] ?? 0.1;
       const avail = (g.econ.cityVac?.[use] ?? nat)
         + (g.econ.sublet?.[use] ?? 0) / Math.max(1, g.econ.stock?.[use] ?? 1);
       deals.push({
@@ -856,7 +856,7 @@ function test10() {
     const cond = {};
     for (const u of ["office", "retail", "industrial", "multifamily"]) {
       cond[u] = (bg.econ.cityVac?.[u] ?? 0) + (bg.econ.sublet?.[u] ?? 0) / Math.max(1, bg.econ.stock?.[u] ?? 1)
-        - (E.NATURAL_VAC[u] ?? 0.1);
+        - (E.OPENING_VAC[u] ?? 0.1);
     }
     const h85 = {}, h50 = {};
     for (let m = 0; m < WATCH; m++) {
@@ -989,7 +989,7 @@ function test10() {
   const gBase = rows.filter((r) => r.W === GLUT_AT && r.m85 !== null).map((r) => r.m85);
   const gNever = glut.length - gDone.length, bNever = rows.filter((r) => r.W === GLUT_AT).length - gBase.length;
   const gVac = glut.length ? mean(glut.map((r) => r.vac ?? NaN)) : NaN;
-  const bVac = mean(rows.filter((r) => r.W === GLUT_AT).map((r) => r.gap + (E.NATURAL_VAC.office ?? 0.115)));
+  const bVac = mean(rows.filter((r) => r.W === GLUT_AT).map((r) => r.gap + (E.OPENING_VAC.office ?? 0.115)));
   console.log(`\n  THE SAME BUILDINGS DELIVERED INTO A MANUFACTURED GLUT (synthetic: +12% citywide stock in every`);
   console.log(`  class at month ${GLUT_AT} and nothing else touched — office vacancy ${pct(bVac)} -> ${pct(gVac)})`);
   console.log(`    control  n=${String(gBase.length + bNever).padStart(3)}   median ${gBase.length ? med(gBase) : "—"} months to 85%   never: ${bNever}`);

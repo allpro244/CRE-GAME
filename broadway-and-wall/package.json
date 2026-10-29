@@ -71,6 +71,7 @@
     "class-race": "node test/class-race.mjs",
     "econ-shape": "node test/econ-shape.mjs",
     "spec-rent": "node test/spec-rent.mjs",
+    "property-market": "node test/property-market.mjs",
     "reo-books": "node test/reo-books.mjs",
     "loc-draw": "node test/loc-draw.mjs",
     "fund": "node test/fund.mjs",

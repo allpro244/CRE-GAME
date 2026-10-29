@@ -355,6 +355,9 @@ function reservationOf(
   } else if (lenderSale) {
     reservation = Math.min(reservation, Math.round(ask * 0.88));
   }
+  // A NAMED SELLER'S OWN FLOOR (propmarket.ts sellerTerms) — the loan a sale
+  // must clear, the tax it crystallises — binds across the table as on the tape.
+  if (li?.reserve !== undefined) reservation = Math.max(reservation, Math.min(ask, li.reserve));
   return { reservation, ask };
 }
 

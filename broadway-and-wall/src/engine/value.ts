@@ -8,7 +8,7 @@ export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, NATURAL_VAC, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH, LEASE_TERM_M, forwardVacancy, inflationOverBumpPct } from "./market";
+import { industryStress, NATURAL_VAC, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH, LEASE_TERM_M, forwardVacancy } from "./market";
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
 import { splitRule, coverageMax, MINOR_FIXED, MINOR_PER_LOT, CORNER_K } from "./lotcode";
@@ -3364,70 +3364,38 @@ export function abatedShare(h: { taxAbate?: { pct: number; untilM: number } }, e
   return a && (econ?.m ?? 0) < a.untilM ? a.pct : 0;
 }
 
-// Cap rates aren't one number per class: a trophy on the square trades tighter
-// than a tired walk-up on the edge of town. Demand is location; condition is
-// quality. Spread runs roughly ±0.6 points around the citywide class cap.
+/**
+ * THE APPRAISER'S CAP RATE FOR THIS BUILDING: comps plus income.
+ *
+ * The class's cap rate is what its closed deals say (propmarket.ts
+ * tickCapRead: the median of a year of prints, restated to a reference
+ * building), and this building's is that read moved by the adjustment grid
+ * the same prints were fitted to — location, condition and spec, each worth
+ * whatever the buyers who closed actually paid for it (econ.capFit). Before
+ * any print exists the grid is flat and the read is the opening survey's.
+ *
+ * Nothing here is a spread asserted by a formula: the location, quality,
+ * spec, reserve and product spreads and the floor over the ten-year
+ * (FORMULA_LEDGER.md #2, #3) are gone. A trophy trades tighter than a walk-up
+ * on the edge of town only if the bidders paid more for it — and they do when
+ * the stack of money that wants it is cheaper, its plant needs less reserve,
+ * and more of them are in the room (propmarket.ts valueTo / bidRound).
+ *
+ * The bound at 2-20% is a guard on a broken input, not a price.
+ */
 export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition, condIdx?: number): number {
-  // A buyer underwrites each part against its own comps and adds them up; the
-  // blended cap rate is what falls out, not something quoted anywhere.
   const base = rec.class === "land" ? 6 : blend(rec, econ.capRate) || 6;
-  // LOCATION IS PRICED, AND IT IS PRICED HARD.
-  //
-  // This band used to be eight tenths of a point wide across the entire demand
-  // scale, which meant a fringe walk-up on a dead street traded within sixty
-  // basis points of a corner on the best block in Ashport. That is not a
-  // market; it is a spreadsheet with a location column nobody reads. Real
-  // prime-to-fringe spreads run two and a half to four points, and that gap is
-  // the central trade of the business: the fringe asset pays you more today
-  // and asks you to believe the street will change, while the prime one costs
-  // a fortune and lets you sleep. Without the spread there was no such choice
-  // and no reason ever to buy anything but the highest yield on the tape.
-  const locSpread = -((demandLinear(rec.demandScore) - 50) / 50) * 1.1;
-  // and so is the state of the building — a tired asset needs a discount to
-  // move, because the buyer is pricing the capital they are about to spend
-  // and so is the state of the building — a tired asset needs a discount to
-  // move, because the buyer is pricing the capital they are about to spend, and
-  // an obsolete one is priced as the capital plus a demolition risk
-  const qualSpread = condIdx !== undefined ? qualSpreadAt(condIdx) : qualSpreadAt(COND_CENTRE[condition] ?? 0.65);
-  // Permanent bones, not today's paint. Class A office trades ~50-100 bp
-  // tighter than Class B in the CBRE cap-rate surveys (2015-2024), trophy at
-  // the wide end; part of that is the condition gap qualSpread already prices,
-  // so the bones carry ±40 bp across spec 0..1 (Signature ~30 bp tighter than
-  // market, Box ~18 bp wider). It was ±15 bp, which left a trophy trading
-  // like a commodity building with a nicer lobby.
-  const specSpread = (0.5 - (rec.buildSpec ?? 0.5)) * 0.80;
-  // AFTER A SURGE THE WATER'S EDGE CARRIES A RISK PREMIUM (blackswans.ts).
-  // THE BUYER PRICES THE RESERVE THE BUILDING WILL NEED. A capital plan that
-  // holds the line costs CAP_PLAN_RATE of value a year scaled by wear (see
-  // tickLeasing), so a perpetual extra reserve of k of value a year is k on
-  // the cap — the buyer deducts replacement reserves before they pay, which is
-  // underwriting practice. Only the DIFFERENCE from market-spec plant is
-  // charged here: the market-spec reserve is already in the cap the street
-  // trades at, and charging it again would reprice every building in town.
-  // This is what stops a seller handing a value box's short-life plant to the
-  // next owner for free. BUILD_CLASS_PLAN.md.
   const cls = (rec.class === "land" ? "office" : rec.class) as BuiltClass;
-  const age = Math.max(0, START_YEAR + Math.floor((econ.m ?? 0) / 12) - (rec.yearBuilt || START_YEAR));
-  const wearRatio = (COND_DECAY[cls] ?? 0.0024) * (1 + Math.min(0.50, age / 220)) / COND_WEAR_REF;
-  const reserveSpread = 100 * CAP_PLAN_RATE * (specWearMult(rec.buildSpec) - 1) * wearRatio;
-  // A PRODUCT'S BUYER POOL (products.ts capSpread): a fifteen-year credit pad
-  // trades inside a centre, a single-purpose plant well outside a box [CBRE-C] [BG].
-  const productSpread = rec.product ? (productOf(rec.product)?.capSpread ?? 0) : 0;
-  // NO BUILDING TRADES FAR UNDER THE COST OF MONEY (owner, Oct 2026: a full
-  // building at market rents borrowed 43% at a 1.3 DSCR). The location
-  // discount stacked on a market cap that already tracks rates, so a prime
-  // apartment house appraised at a 3.7% cap on a 5.1% ten-year with loans at
-  // 6.5-7% — a price its own income could not carry, and so a loan no
-  // coverage test could size. Real prime yields sit at or over the ten-year
-  // (2005 apartments ~5% on a 4.3% ten-year; 2023 ~5.3% on 4%), the exception
-  // being an inflation era, when the buyer capitalises against the index less
-  // expected inflation above the bump (market.ts capIndex) — so the floor
-  // reads that same real-adjusted index, and stays out of the Great Inflation.
-  const floor = (econ.indexRate ?? 5) - inflationOverBumpPct(econ) + CAP_FLOOR_OVER_INDEX;
-  return clamp(Math.max(base + locSpread + qualSpread + specSpread + reserveSpread + productSpread, floor), 3.2, 13);
+  const b = econ.capFit?.[cls];
+  if (!b) return clamp(base, 2, 20);
+  const loc = Math.max(0, Math.min(1, demandLinear(rec.demandScore) / 100));
+  const q = condIdx ?? COND_CENTRE[condition] ?? 0.65;
+  const spec = rec.buildSpec ?? 0.5;
+  // the reference building (propmarket.ts CAP_REF_X): mid location, standard, market spec
+  const adj = b[0] * (loc - 0.5) + b[1] * (q - 0.6) + b[2] * (spec - 0.5);
+  return clamp(base * Math.exp(adj), 2, 20);
 }
-/** The least a stabilised building yields over the (inflation-adjusted) ten-year (capRateFor). */
-export const CAP_FLOOR_OVER_INDEX = 1.25;
+
 
 // Appraisals are opinions. Each parcel's appraisal carries a stable bias off
 // true value, and the honest range around it is about ±6%. Offers and lender

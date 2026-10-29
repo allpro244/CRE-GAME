@@ -1176,6 +1176,15 @@ export interface Listing {
   loanBasis?: number;
   /** A bank-owned listing: what the deed was marked at when the desk took it, so the page can say how far under it the ask is. */
   mark?: number;
+  /**
+   * THE SELLER'S RESERVATION where the seller is a named firm (propmarket.ts
+   * sellerTerms): the least it takes, from its own situation — the loan it
+   * must clear, the tax a sale crystallises, what the building is worth to it
+   * to keep. Never shown; a bid under it does not close.
+   */
+  reserve?: number;
+  /** The cause-ledger event that put it on the market (why.ts). */
+  whyId?: number;
 }
 
 /**
@@ -2323,8 +2332,17 @@ export interface Econ {
    * of the market's slack it signed in) and that slack (`p`).
    */
   deals?: Partial<Record<BuiltClass, { m: number; c: number; p: number; sf: number; r?: number }[]>>;
-  /** What investors require of each class (the cap-rate equation's target) — what bidders price at (market.ts). */
-  capTarget?: Partial<Record<BuiltClass, number>>;
+  /**
+   * THE CAP-RATE READ-OUT (propmarket.ts tickCapRead) — what each class's
+   * closed deals say, and how much evidence there is behind it.
+   */
+  capRead?: Partial<Record<BuiltClass, CapRead>>;
+  /**
+   * THE APPRAISER'S ADJUSTMENT GRID, learned from the prints (propmarket.ts):
+   * log-cap per unit of location (0-1), condition index (0-1) and build spec
+   * (0-1), against the reference building the class read is quoted for.
+   */
+  capFit?: Partial<Record<BuiltClass, [number, number, number]>>;
   /** The market's slack each new deal reads (the rent equation's monthly pressure). */
   dealPress?: Partial<Record<BuiltClass, number>>;
   /** Every street block of flats and the flats let in it (streetRolls.ts). */
@@ -4552,6 +4570,12 @@ export interface GameState {
   // an appraisal is an opinion and a closed sale is a fact.
   comps?: Comp[];
   /**
+   * THE CAP PRINTS (propmarket.ts): every building that closed, and the best
+   * bid on every round that did not, as the cap rate it implies on the
+   * appraiser's own income. Cap rates are statistics of this tape.
+   */
+  capTape?: CapPrint[];
+  /**
    * Lifetime closed-print count. The rolling `comps` buffer is capped for the
    * sheet UI; this counter is not, so a century report can tell cumulative
    * trade volume from the last 240 stamps.
@@ -5650,4 +5674,45 @@ export interface BankForeclosure {
 export function autoLeaseOnClose(s: GameState): boolean {
   if (s.autoLeaseNew !== undefined) return s.autoLeaseNew;
   return Object.values(s.holdings ?? {}).some((h) => !!h.autoLease && !h.groundLeased);
+}
+
+/** One print on the cap tape (propmarket.ts). */
+export interface CapPrint {
+  m: number;
+  k: BuiltClass;
+  bbl: string;
+  /** "t" a closed trade; "b" a round that did not close (bid-ask midpoint); "s" a broker's survey indication */
+  kind: "t" | "b" | "s";
+  /** the cap rate the price (or bid) implies on the appraiser's own income, % */
+  c: number;
+  /** the same at the ask, where there was one, % */
+  ca?: number;
+  /** location 0-1, condition index 0-1, build spec 0-1 */
+  x: [number, number, number];
+  /** evidence weight: 1 marketed; 0.5 distress, never exposed, or a bid that did not close */
+  w: number;
+  /** the winning bidder's debt rate, %, where a named bidder priced it */
+  rd?: number;
+  /** named bidders in the round */
+  nb?: number;
+  /** the trade's cause-ledger event */
+  why?: number;
+}
+
+/** A class's cap read-out (propmarket.ts tickCapRead). */
+export interface CapRead {
+  /** weighted prints in the window, and the window in months (0 = none in three years: the read is stale) */
+  n: number; win: number;
+  /** median and quartiles of the prints, restated to the reference building, % */
+  med: number; p25: number; p75: number;
+  /** median age of the evidence, months */
+  ageM: number;
+  /** median best-bid cap less ask cap on rounds bid on, points (wide = a thin market) */
+  bidAsk?: number;
+  /** buyers' median debt rate on the prints, %, and its move on the year before */
+  debt?: number; dDebt?: number;
+  /** rounds that drew no qualified bid; closed trades in the window */
+  noBid: number; trades: number;
+  /** the cause-ledger event for this read */
+  why?: number;
 }

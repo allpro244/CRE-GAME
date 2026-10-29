@@ -43,7 +43,7 @@
  * full model runs both.
  */
 import type { Econ, GameState, MarketPhase } from "./types";
-import { mulberry32Step, initStreams, tickNation, stepCredit, capTargetOf, capFlowsOf, inflationOverBumpPct } from "./market";
+import { mulberry32Step, initStreams, tickNation, stepCredit } from "./market";
 
 /**
  * THIS DRAWS FROM ITS OWN GENERATOR. The engine has one shared PRNG for the
@@ -197,25 +197,13 @@ export function simulateHistory(econ: Econ, seed: number, natural: Record<string
   }
   econ.effRentIdx = { ...econ.rentIdx };
 
-  // Cap rates open AT the target the monthly walk chases (capTargetOf) — the
-  // same rates, credit window and vacancy the player is shown — so the first
-  // year of cap moves is news, not a correction. The allocation term reads
-  // the caps themselves at the opening (capFlowsOf), so the target is a fixed
-  // point, found by iterating; it settles inside a handful of passes because
-  // the term's slope is under one. Without it office opened 0.7-0.8 points
-  // over where its own walk took it inside a year (measured over 60 openings,
-  // the era table included). Two-tenths of noise per class on top, the spread
-  // a month of transactions shows.
-  const capIndex = econ.indexRate - inflationOverBumpPct(econ);
-  const classes = Object.keys(econ.capRate) as (keyof typeof econ.capRate)[];
-  const base = Object.fromEntries(classes.map((c) => [c, capTargetOf(econ, c, capIndex)])) as typeof econ.capRate;
-  let caps = { ...base };
-  for (let it = 0; it < 12; it++) {
-    caps = Object.fromEntries(classes.map((c) => [c, base[c] + capFlowsOf(caps, c)])) as typeof econ.capRate;
-  }
-  for (const cls of classes) {
-    econ.capRate[cls] = +(caps[cls] + d(-0.2, 0.2)).toFixed(2);
-  }
+  // CAP RATES ARE NOT SET HERE. They open where the street's own bidders say
+  // (propmarket.ts openingCapSurvey, run at newGame once the firms exist);
+  // until then the appraiser holds the class's long-run average (CAP_BASE),
+  // which only the opening books the firms bring with them are marked at.
+  // The per-class draw that used to put noise on the opening caps is kept so
+  // this generator's sequence does not change.
+  for (const _cls of Object.keys(econ.capRate)) void d(-0.2, 0.2);
   return { months, uTrail };
 }
 

@@ -2492,6 +2492,8 @@ export interface Econ {
   arrivals?: { leftM: number; monthly: number };
   /** Monthly in-migration from the arrivals, read beside migration in tickEcon. */
   bsMigPull?: number;
+  /** The arrivals swan's part of `bsMigPull` this month, and the share of its households that want an island flat (households.ts, the wave). */
+  bsArrivals?: { monthly: number; island: number };
   /** Anonymous merchants' schemes settled at delivery, cumulative (see `settleMerchant` in dev.ts). Display and probes only. */
   merchantTotals?: { delivered: number; underBasis: number; handedBack: number; lossToLenders: number; equityLost: number };
   /** The street's last hundred deliveries: value the day it opened over all-in basis (dev.ts settleMerchant). */

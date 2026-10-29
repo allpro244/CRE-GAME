@@ -107,12 +107,15 @@ check(Math.round(E.registerLabour(a).persons) > 0 && a.econ.population > 0, `the
 // it reads the world and never writes it: a month of the register on a copy of
 // the state changes nothing but the register and its own stream
 {
-  const strip = (g) => { const { households, streams, why, ...rest } = g; void households; void why; const { households: _h, ...st } = streams ?? {}; void _h; return JSON.stringify({ ...rest, streams: st }); };
+  // (since households stage 2 it also lets the street's flats: the rolls, the space it reports, the deals and the turnover are its to write)
+  const strip = (g) => { const { households, streams, why, econ, ...rest } = g; void households; void why; const { households: _h, ...st } = streams ?? {}; void _h;
+    const { flatRolls, flatSpace, deals, dealPress, turnMeas, ...ec } = econ; void flatRolls; void flatSpace; void deals; void dealPress; void turnMeas;
+    return JSON.stringify({ ...rest, econ: ec, streams: st }); };
   const copy = structuredClone(a);
   const before = strip(copy);
   const s0 = copy.streams.households;
   E.tickHouseholdRegister(copy, city.parcels);
-  check(strip(copy) === before, "a month of the register writes nothing in the world it reads");
+  check(strip(copy) === before, "a month of the register writes nothing in the world it reads but the street's flats it lets");
   check(typeof copy.streams.households === "number" && copy.streams.households !== s0, "it draws on its own channel, s.streams.households");
 }
 

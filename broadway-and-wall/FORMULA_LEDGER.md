@@ -18,10 +18,7 @@ When you remove one, move it to **Removed** with the PR. When you add a mechanis
 | 7 | Trade boom/bust clock and `industryMom` | `market.ts` | step 2: industries from firms' orders (in progress) |
 | 8 | Industry shock hazard (`IND_SHOCK_HAZ`) | `market.ts` | step 2 |
 | 9 | Regional trend and pull | `market.ts` `regionTrend`, `regionalPull` | step 2: export base |
-| 10 | Space demand drivers per class (affordability band, `hhCredit`, retail Cobb–Douglas) | `market.ts` (`AFFORD_BAND`, around 5640) | step 2 (firms' heads × sf/worker) and households stage 2 |
-| 11 | Apartment turnover rate | `leasing.ts` `MF_TURNOVER` | households stage 2: households decide |
-| 12 | Tenure (own vs rent) index | `market.ts` / `households.ts` `tenureIdx` | households stage 4 |
-| 13 | New-home sales pace (affordability to the 4th power) | `homeprice.ts` `salesPace` | households stage 4: qualified buyers |
+| 10 | Space demand drivers per commercial class (affordability band, retail Cobb–Douglas) | `market.ts` (`AFFORD_BAND`, `affordRaw`) | step 2 (firms' heads × sf/worker) |
 | 14 | Migration and participation formulas | `market.ts` (around 4100) | step 3 / households stage 4 |
 | 15 | Town wage index (closing toward a target) | `market.ts` `wageIdx` | §6c-D: firms post wages |
 | 16 | Construction cost index (input index × bid premium) | `market.ts` `costIdx` | step 8: named contractors, materials from industries |
@@ -42,6 +39,10 @@ When you remove one, move it to **Removed** with the PR. When you add a mechanis
 | Phantom buyers: fixed institutions, anonymous bidders, out-of-town tape buyers | named firms on the Players list paying from their own books | #511 |
 | Anonymous opening builders | builder firms from month 0 | #511 |
 | Off-map jobs as a fixed share of town jobs (shadow) | each industry sized from its own demand | #515 (shadow) |
+| Flats' demand: a household budget (minimum flat `HH_MIN`, fixed rent share) on the whole region's renter households, and the island-vs-mainland margin `locEff` (`LOC_ELAST` 0.5, five-year roll) — part of #10 | each renter household choosing an island flat or one across the water by rent, commute, pay and its own taste (`households.ts` `wantsIsland`); the flats' demand is the households that want one (`islandWant`), and the street's flats are let to the households that choose each block (the rolls are written from the register; `market.ts` reads `flatSpace` as it reads the firms' `streetSpace`) | households 2 |
+| Apartment turnover `MF_TURNOVER` 45% (`leasing.ts`) and the street's renewals `0.22 + out + buy + jobs` (`streetRolls.ts`) — #11 | each island household deciding at its lease end: buy, choose the mainland at the renewal rent, leave town out of work, be evicted, end, or move for the CPS's other reasons (`households.ts`); the street and the player's flats read the rate they made | households 2 |
+| Tenure index and the buying hazard moved by it (`tenureIdx`, `TENURE_PER_LOG`, `ownCostIdx`) — #12 | renters buying when they have the down payment and closing cash, a payment inside the front-end ratio on a starter home, and owning no dearer than their taste allows (`households.ts` `buyCheck`) | households 2 |
+| New-home sales pace: households × national new-home rate × growth × affordability over the nation's (`homeprice.ts` `salesPace`) — #13 | the register's last twelve months of home buyers × new houses' share of purchases × the share of them who can carry this house | households 2 |
 | City cap rate per class (`capTargetOf`: rate pass-through, vacancy beta, crunch term, sector, flows, the monthly walk and its noise; `capFlowsOf`, `CAP_VAC_BETA`, `retExp`) | the median implied cap of a year of closed deals between named bidders (`propmarket.ts` `tickCapRead`), widened to two or three years when the market is thin; a broker survey of the bidders' own numbers once a year for a class with no print | step 7 (`claude/property-market`) |
 | Per-building cap spreads (location, quality, spec, reserve, product) | the appraiser's adjustment grid fitted to the prints (`econ.capFit`); bidders price reserves, re-letting capital and a product's buyer pool as cash flows and premia | step 7 |
 | Cap-rate floor over the 10Y (`CAP_FLOOR_OVER_INDEX`, #502) | each bidder's own cost of capital: the desks' debt-yield and coverage tests cap leverage in cheap money | step 7 |

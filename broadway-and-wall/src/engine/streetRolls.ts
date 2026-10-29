@@ -942,7 +942,10 @@ export function playerTenantLeft(s: GameState, t: Tenant, bbl: string) {
  * flats signed the same month at the same rent ($/sf/yr), each on a one-year
  * lease. `occ` is always the sum of the leases.
  */
-export interface FlatRoll { occ: number; vac?: number; l?: { sf: number; rent: number; endM: number }[] }
+/** A block's let flats: their feet, the month it fell vacant, its leases, and its asking rent this month ($/sf a year, for the households choosing where to live). */
+export interface FlatRoll { occ: number; vac?: number; l?: { sf: number; rent: number; endM: number }[]; mkt?: number;
+  /** the block's draw on movers (score, staleness, its owner's care) and its month's letting limit, sf (households.ts reads them) */
+  w?: number; lim?: number; ask?: number }
 
 const MF_LEASEUP = 0.08;
 
@@ -984,6 +987,13 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
   if (!e.flatRolls) return;
   privately(s, `streetflats|${s.month}`, () => {
     const m = s.month;
+    // THE HOUSEHOLDS LET THE FLATS (households stage 2, 2026-10-29). Once the
+    // household register has made its first choices, each block's leases are
+    // its households' — who renewed, who left, who chose it from across the
+    // water (households.ts writes the rolls) — and this only prices the
+    // blocks and measures them. Before then (and while the opening street is
+    // grown) the street's own renewals and lettings below.
+    const byHouseholds = !growing && s.households?.locMu !== undefined;
     // The town's jobs about a year ago (a twelve-month memory), for job moves.
     e.jobsPrevYr = (e.jobsPrevYr ?? e.jobs ?? 1) + ((e.jobs ?? 1) - (e.jobsPrevYr ?? e.jobs ?? 1)) / 12;
     const owners = new Map<string, NonNullable<GameState["rivals"]>[number]>();
@@ -998,12 +1008,27 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       if (!(cap > 0)) continue;
       roll.occ = Math.min(cap, roll.occ);
       const mkt = useRentPsfYr(rec, e, gradeOf(s, rec), "multifamily");
+      roll.mkt = +mkt.toFixed(2);
       // The roll's leases (an old save, or a block that has just joined the
       // street, carries only a count: its flats were let over the last year
       // at about today's rent).
       if (!roll.l) {
         roll.l = [];
         for (let i = 1; i <= 12; i++) if (roll.occ > 0) roll.l.push({ sf: roll.occ / 12, rent: +(mkt * rrange(s, 0.93, 1.01, "leasing")).toFixed(2), endM: m + i });
+      }
+      if (byHouseholds) {
+        const owner = owners.get(bbl);
+        const care = owner ? owner.leaseW ?? 0.85 + 0.3 * (paramsOf(owner).care.lease ?? 0.5) : 1;
+        const stale = staleDiscount(roll.vac === undefined ? 0 : m - roll.vac);
+        const sc = overallScore(rec, e, "multifamily");
+        const unit = Math.max(300, flatUnitSf(rec, cap));
+        roll.w = +(Math.exp((sc - 55) / 25) * Math.pow(1 / stale, 2) * care).toFixed(4);
+        // what a flat here lets for this month, as the street's lettings priced it: the block's rent, as the
+        // last six months' deals have moved it, less the concession a block that has stood empty gives
+        roll.ask = +(mkt * dealSlack(e, "multifamily") * stale).toFixed(2);
+        roll.lim = Math.round(Math.max(cap * MF_LEASEUP, unit * 2));
+        fs.push({ roll, cap, w: roll.w, unit, intake: 0, lim: roll.lim, mkt, sc });
+        continue;
       }
       // THE MONTH'S EXPIRIES (2026-10-16). Each lease ending this month either
       // renews — at today's rent for the block, less the discount a landlord
@@ -1014,29 +1039,23 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       // Each renewal and each new letting below is a deal the market reads.
       const slack = dealSlack(e, "multifamily");
       const keep: NonNullable<FlatRoll["l"]> = [];
-      // WHY RENTERS MOVE OUT, FROM WHAT IS HAPPENING (2026-10-16). This was a
-      // flat 45% a year. A renter household leaves its flat for a reason, and
-      // most of the reasons are flows this town already keeps: it leaves town
-      // (renters are about half again as mobile as everyone, so they carry
-      // more of any net out-migration), it buys (the US renter-to-owner rate,
-      // about 8% a year, falls as owning gets dear against renting — the
-      // same tenure margin as `tenureIdx`), or it moves for a job (about 10% a
-      // year of renters, more when the town is hiring). What is left is
-      // family life — a baby, a partner, a split, an old age — at the rate
-      // the CPS records it (about 22% of renters a year). At the opening that
-      // adds up to about the old 45%; after it, it moves with the town.
-      const out = Math.max(0, -(e.migRate ?? 0)) * 12 * 1.5;
-      // (since ONE ECONOMY step 2, the household register's own buyers: the
-      // share of its renter households that bought last month, a year —
-      // households.ts `tickTenure` — not a second tenure margin)
-      const buy = e.eco?.buyRate ?? 0.08 * Math.exp(-10 * ((e.tenureIdx ?? 1) - 1));
-      const jobs = 0.10 * Math.max(0.5, Math.min(2, ((e.jobs ?? 1) / Math.max(1, e.jobsPrevYr ?? e.jobs ?? 1)) ** 10));
-      const moveOut = Math.min(0.85, 0.22 + out + buy + jobs);
+      // WHY RENTERS MOVE OUT: THE HOUSEHOLDS DECIDE (households stage 2,
+      // 2026-10-29). This was 0.22 + out-migration + a buying rate + a job
+      // term, and before that a flat 45%. The street's renewals now follow the
+      // renter households themselves: the share of the island's ending leases
+      // that ended in a move last month (households.ts — each household buys,
+      // chooses a flat across the water at the renewal rent and its commute,
+      // leaves town out of work, or moves for family reasons), rolled over six
+      // months. Before the register's first month, the street's own measured
+      // turnover (market.ts turnoverYr).
+      const moveOut = Math.min(0.85, e.eco?.flatLeaseMove ?? turnoverYr(e, "multifamily"));
       for (const x of roll.l) {
         if (x.endM > m) { keep.push(x); continue; }
         // A stabilised block (citygov.ts) asks its sitting tenants no more than the guideline.
         const ask = renewalAsk(e, rec.yearBuilt, mkt * slack * 0.97, x.rent);
-        const pRenew = Math.max(0.1, Math.min(0.9, (1 - moveOut) - 0.8 * Math.log(ask / Math.max(0.01, x.rent))));
+        // (the renewal rent is in the households' own choice now — a rent the
+        // household will not pay is a household that chose the mainland)
+        const pRenew = Math.max(0.1, Math.min(0.9, 1 - moveOut));
         const stay = x.sf * pRenew * rrange(s, 0.85, 1.15, "leasing");
         flatOut += Math.max(0, x.sf - Math.max(0, stay));
         if (stay > 1) {
@@ -1058,6 +1077,7 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       after += roll.occ;
     }
     if (!fs.length) return;
+    if (byHouseholds) { measureFlatBands(e, fs); return; }
     if (!growing && after + flatOut > 0) {
       const r = 12 * flatOut / (after + flatOut), tm = (e.turnMeas ??= {});
       const was = tm.multifamily ?? turnoverYr(e, "multifamily");
@@ -1138,13 +1158,16 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
     // households spread by room, so a band of new blocks that were 95% let
     // read 30% empty, its rent swing fell to 0.26 and every new block
     // priced off it let at a third of what its desk had planned.
-    const byBand = { stock: new Array(N_BANDS).fill(0), occ: new Array(N_BANDS).fill(0) };
-    for (const f of fs) {
-      const b = Math.max(0, Math.min(N_BANDS - 1, Math.floor(f.sc / 10)));
-      byBand.stock[b] += f.cap; byBand.occ[b] += Math.min(f.cap, f.roll.occ);
-    }
-    e.flatBands = byBand;
+    measureFlatBands(e, fs);
   });
+}
+function measureFlatBands(e: GameState["econ"], fs: { roll: FlatRoll; cap: number; sc: number }[]) {
+  const byBand = { stock: new Array(N_BANDS).fill(0), occ: new Array(N_BANDS).fill(0) };
+  for (const f of fs) {
+    const b = Math.max(0, Math.min(N_BANDS - 1, Math.floor(f.sc / 10)));
+    byBand.stock[b] += f.cap; byBand.occ[b] += Math.min(f.cap, f.roll.occ);
+  }
+  e.flatBands = byBand;
 }
 
 /** A flat's size in this block: its residential feet over its units (households.ts reads the same). */

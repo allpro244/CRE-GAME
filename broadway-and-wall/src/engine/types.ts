@@ -82,6 +82,15 @@ export interface EcoDrive {
   renters: number;
   /** Households arrived for work and left out of work this month (weighted); renter households that bought, as a share a year. */
   arrived: number; left: number; buyRate?: number;
+  /**
+   * HOUSEHOLDS STAGE 2: the renter households that want an island flat at the
+   * going rents (the flats' demand, market.ts); the island renters' move-out
+   * rate a year and the share of ending island leases that end in a move (the
+   * player's flats and the street's renewals); the last twelve months' home
+   * buyers, their pay a year and weight (the builders' sales, homeprice.ts).
+   */
+  islandWant?: number; flatMoveOut?: number; flatLeaseMove?: number;
+  buyers?: { m: number; inc: number; w: number }[];
   /** The firms' heads (labour demand); 0 before the books open. */
   heads: number;
   /** Floor the firms' heads take, by class (sf): on the floor, not at home, not in a building of their own. */
@@ -2379,7 +2388,7 @@ export interface Econ {
   /** Each industry's heads in the island's named firms over the heads they are formed toward (streetRolls.ts): over 1, its firms shed the excess. */
   islandFill?: number[];
   /** The first month's drivers, which the space market's indices are read against. */
-  eco0?: { floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>; renters?: number; jobs?: number;
+  eco0?: { floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>; renters?: number; jobs?: number; islandWant?: number;
     /** a save reopened on step 2b's industries: each class's driver as it stood (economy.ts `migrateEconomy`) */
     mig?: Partial<Record<"office" | "retail" | "industrial", number>> };
   /** Each trade's payroll last month, for the firms' month-on-month change. */
@@ -2404,6 +2413,8 @@ export interface Econ {
   revAnchor?: { cpi: number; rent: Partial<Record<string, number>> };
   /** The street's let space, rentable space and unhoused seekers' wants by class, this month (streetRolls.ts). */
   streetSpace?: Partial<Record<BuiltClass, { let: number; cap: number; seek: number; ratio?: number; byBand?: { stock: number[]; occ: number[] } }>>;
+  /** The street's flats as its households hold them (households.ts, stage 2): feet let, feet on the street, and the feet the households across the water who want a flat here are looking for. */
+  flatSpace?: { let: number; cap: number; seek: number };
   /** The region's sheds off the map, occupied, on the city aggregate (market.ts). */
   aggOcc?: Partial<Record<BuiltClass, number>>;
   /** Household spending on goods against the opening, from the cost of consumer credit. */
@@ -2765,10 +2776,6 @@ export interface Econ {
   siteHurdle?: Partial<Record<BuiltClass, number>>;
   /** Loan index at the opening, the reference for tenure choice (market.ts). */
   tenureRef?: number;
-  /** Log owning-over-renting cost at the opening, the reference for tenure choice (market.ts). */
-  tenureOwnRef?: number;
-  /** Renter share of households against the opening, rolled (market.ts). */
-  tenureIdx?: number;
   // THE PIPELINE AS A QUEUE, not a number. Every start is a cohort with a
   // month it will deliver in, so the game can answer the question every
   // developer actually asks — "what is coming, and when" — instead of only

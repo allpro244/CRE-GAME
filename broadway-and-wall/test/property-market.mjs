@@ -36,14 +36,24 @@ let g = E.firstListings(E.newGame(SEED, parcels), parcels, bbls);
   ok("no class opens at the provisional table (CAP_BASE)", K.every((k) => Math.abs(g.econ.capRate[k] - E.CAP_BASE[k]) > 1e-6));
 }
 
-// ---- 2. a crunch, through the bidders' loans
-{
+// ---- 2. a crunch, through the bidders' loans — run after five years of play
+// (below), once every desk has books of its own to price off (lenders.ts)
+function crunch() {
   const rec = bbls.map((b) => E.resolveRec(parcels, g, b))
     .filter((r) => r && r.class === "office" && r.bldgArea > 0 && !E.ownerOf(g, r.bbl))
     .sort((a, b) => b.bldgArea - a.bldgArea)[5];
   const firm = (g.rivals ?? []).find((r) => !r.stressMs && (!E.paramsOf(r).classes || E.paramsOf(r).classes.includes("office")) && r.targetLtv > 0.5);
+  // A CRUNCH IS THE BANKS' OWN BOOKS (since step 5 a desk prices off its own
+  // costs, pricing.ts): the window shuts, the street's appetite falls, and
+  // each desk pays up for its money, books losses on its income loans and
+  // rations — the shape of 2008-09, a point of funding and half a point of
+  // loss. The buyers only read the quote.
   const at = (ci) => {
-    const s = { ...g, econ: { ...g.econ, creditIdx: ci } };
+    const shut = ci < 1;
+    const deskPx = Object.fromEntries(Object.entries(g.econ.deskPx ?? {}).map(([k, px]) => [k, shut
+      ? { ...px, dFund: px.dFund + 1.0, dEl: { ...px.dEl, income: (px.dEl.income ?? 0) + 0.5 }, pull: Math.max(px.pull, 0.8 * 0.35) }
+      : px]));
+    const s = { ...g, bankApp: shut ? 0.65 : g.bankApp, econ: { ...g.econ, creditIdx: ci, deskPx } };
     const v = E.dealView(s, rec, rec.bbl, E.assetValue(rec, s.econ, E.initialCondition(rec)));
     const { max, uw } = E.maxPrice(s.econ, v, E.bidderOf(s, firm, rec), E.rentSignals(s));
     return { max, uw, a: v.debtA, rd: v.rd };
@@ -108,6 +118,8 @@ let g = E.firstListings(E.newGame(SEED, parcels), parcels, bbls);
   const lines = K.map((k) => E.capReadLine(g.econ, k)).filter(Boolean);
   ok("the screens get one plain line per class", lines.length === 4, lines[0]);
 }
+
+crunch();
 
 console.log(fails ? `\n${fails} failed` : "\nall passed");
 process.exit(fails ? 1 : 0);

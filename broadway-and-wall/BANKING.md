@@ -13,41 +13,65 @@ decides who is exposed to whom and who is not paying.
 | file | what it owns |
 |---|---|
 | `engine/amortize.ts` | The only payment arithmetic: `monthlyPayment`, `scheduledPayment`, `recastPayment(loan, month)`, `CAP_PREMIUM_PCT`. Imports nothing. |
-| `engine/pricing.ts` | The only price law: `deskRatePct(bench, spread, {ci, app, ease, standingAdd, rel, dealAdd})` and `appetiteAdvance(app)`. Imports nothing. |
+| `engine/pricing.ts` | The price law. Desks in `s.lenders` price through `liveSpread(px, sheet, cls)` + `bankRatePct` off their own published parts (`econ.deskPx`); `deskRatePct` (window-based) remains only for private credit. `appetiteAdvance(app)`. Imports nothing. |
+| `engine/streetLoans.ts` | The private owners' mortgages (`s.streetLoans`), loan by loan: seeded from the deed register, paid or missed out of each holder's own cash flow, balloons refinanced at the best quote, foreclosed on the player's calendar. |
 | `engine/loanbook.ts` | `cityLoanBook(s, parcels?)`, which lists every named loan: yours (senior, mezz, facility, construction, the line) and the street's (the mortgage record and construction jobs). It also gives each loan's status (`current` / `watch` / `default`), and `deskTotals()` sums the list by holder. It is a view, not a store. |
 | `engine/ledger.ts` | The street's mortgage record: prunes rows whose deed moved, marks paper held outside the banks, and reconciles each firm's debt to its loans. |
 | `engine/rivalDebt.ts` | A firm's loans: origination at a real desk under the single-name and headroom limits (`deskRoom`), the line, sale payoffs, renewals, the monthly service and the payment status. |
-| `engine/lenders.ts` | The desks' balance sheets. Each month the book is rebuilt as the **anonymous book** plus the **named book**. |
+| `engine/lenders.ts` | The desks' balance sheets. Each month the book is the **named loans** and nothing else; `priceDesks` publishes each desk's price parts; the credit window is their capital-weighted appetite. |
 | `engine/credit.ts` | The revolver, written by a named bank (`lineLender`). It is sized and priced through that bank. |
 | `engine/workout.ts` | The workout table. Extension odds and terms depend on lender type (`deskCondition`, `EXT_TERMS`). |
 
-## A desk's book
+## A desk's book (2026-10-28: every loan named)
 
 ```
-book       = anonBook + named
-delinquent = (anonBook × anonDelinq + namedDefaulted) / book
+book       = Σ named loans (cityLoanBook): yours, the firms', the private owners', the cranes
+delinquent = named in default / book
+interest   = Σ coupons on the performing loans (lines without a coupon: index + book spread)
+losses     = what chargeLenderLoss booked this month, each against a named borrower (lossLog)
 ```
 
-- **Named loans** are counted from `cityLoanBook`. A loan is either being paid
-  or it is not. Its loss is booked when it actually happens, through
-  `chargeLenderLoss` at the deed in lieu, the auction or a street firm's
-  failure, at the size the collateral actually fetched.
-- **The anonymous book** is the paper written to the town's owners the game
-  does not run as firms. It is modelled as a population:
-  - it grows with appetite;
-  - it goes bad with vacancy, the cycle phase and the credit window
-    (`anonDelinq`);
-  - a third of what is delinquent is charged off over a year, and charged-off
-    paper leaves the book.
-- **Opening reconciliation (once).** The street's opening mortgages are carved
-  out of the stated opening book. Where they are more than 75% of it, the book
-  grows instead, and capital is scaled so that every desk opens the game at its
-  own capital target.
-- **Consequences that now follow from the arithmetic:**
-  - A loan you close takes capital ratio from the desk that writes it.
-  - A desk whose named borrowers stop paying reads as sick, and can die.
+- **There is no anonymous book.** The families, partnerships and institutions
+  in the deed register (owners.ts) carry their mortgages on the record
+  (`streetLoans.ts`), seeded from the same hashed deed facts their statements
+  used (`ownership.ts holderNoteTerms`: clear or not, the advance its kind
+  writes, how far into its term). Counted, they come to ~29% of the private
+  stock's value — the aggregate US CRE debt-to-value is ~25-35% — against the
+  55% `initLenders` sized the opening books at, so on the first tick each desk
+  keeps its capital RATIO on the smaller, real book (deposits shrink with it).
+- **A payment is made or missed.** Each quarter the register's buildings are
+  read (NOI after tax off the street rolls; appraisal annually) and each
+  holder's cash flow before debt (`holderCfads`: NOI less leasing, capital
+  plan and overhead). Each month the holder's account pays its debt service;
+  short, it stops feeding the buildings that carry themselves least. A missed
+  payment or an unrepaid balloon is a default; NOTICE_M + FORECLOSE_M later
+  the desk forecloses, sells at `reoAsk` and books the shortfall against the
+  holder by name. The building goes to the tape as REO and to a new owner.
+- **Borrowers shop.** `rivalDebt.deskQuotes` is every open sheet's quote on a
+  building; firms (`pickDesk`) and private owners (balloons, purchases) take
+  the cheapest that will write the amount and has room for it.
 
-## Pricing
+## Pricing — own costs and rivals (2026-10-28)
+
+`liveSpread = sheet + dFund + dEl[class] + pull + chase`, floored at
+`fund + EL + opex` (a desk never lends under its own cost), coupon never under
+0.05%. Published on `econ.deskPx` by `priceDesks` each month:
+
+| part | what it is |
+|---|---|
+| `fund` / `dFund` | the desk's marginal funding over the market rate, and against its own usual mix: deposits it pays up for, borrowed money it leans on (wholesale spread widens with the national credit window), a panic surcharge |
+| `el` / `dEl` | expected loss by class (income, construction, land, junior): ⅔ own 36-month loss experience + ⅓ the industry's long-run rate (`PRIOR_EL`: 0.35 / 1.0 / 1.5 / 1.5 %/yr) |
+| `cap` | target capital × risk weight (1.0, HVCRE 1.5) × pre-tax hurdle — shown, constant |
+| `pull` | 0.8 × (1 − appetite): a desk short of capital, margin, deposits or with a long watch list pulls back |
+| `chase` | the competitive pitch: behind its usual share of the town's new term lending (`loanTape`, 12 months) it prices under its rivals, ahead it prices over; ±0.75 guard |
+
+Appetite = capital vs target × margin × watch list × deposit flow. The **credit
+window** (`econ.creditIdx`, same field and scale) is `0.4 + 0.6 ×` the
+capital-weighted appetite, gliding at the old speeds; `stepCredit` now writes
+only the pre-history.
+
+## Pricing (before 2026-10-28)
+
 
 Every desk feeds `deskRatePct` the same facts and brings its personality
 through its spread:

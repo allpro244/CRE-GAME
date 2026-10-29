@@ -1804,6 +1804,12 @@ const RUMORS: Record<MarketPhase, string[]> = {
  * equation left behind, lag and all.
  */
 export function stepCredit(s: GameState) {
+  // ONLY BEFORE THERE ARE BANKS (2026-10-28). Once the desks exist the
+  // window is what they want to lend — their capital-weighted appetite, read
+  // off their own books (lenders.ts tickLenders). This equation now writes
+  // only the pre-history (regime.ts), the window the town opens into, when
+  // there are no desks to ask.
+  if (s.lenders?.length) return;
   const e = s.econ;
   // CREDIT READS WHAT LENDERS READ (2026-10-09), not the label: whether the
   // town's payrolls are growing (+2%/yr opens the window to the old

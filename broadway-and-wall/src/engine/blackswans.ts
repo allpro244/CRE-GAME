@@ -256,7 +256,7 @@ function startPanic(s: GameState) {
     // Between half its capital and more than all of it: some of the time it
     // survives on its knees, some of the time the examiners come on Friday.
     const loss = hit.capital * (0.5 + 0.8 * rng(s, "shock"));
-    chargeLenderLoss(s, hit.name, loss);
+    chargeLenderLoss(s, hit.name, loss, { borrower: "a book outside this city", cls: "income", how: "panic" });
     name = hit.name;
   }
   // How long the run lasts at full force: the acute phase of 1907 was about

@@ -42,7 +42,7 @@ import { underwrittenGrowthPct, dollarLevel, RENT_BASE, CAP_BASE } from "./marke
 import {
   assetValue, capRateFor, initialCondIdx, demandLinear, incomeValueAsIs, initialCondition, inPlace, landValue,
   marketAppraisal, noiYr, resolveRec, specWearMult, taxBorneShare, taxRate, useOccupancy, useRentableSf,
-  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, landPsfNow, DEV_MARGIN, queueFactor,
+  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, queueFactor,
 } from "./value";
 import { uses } from "./mix";
 import { productOf } from "./products";
@@ -1039,23 +1039,24 @@ function pushLandPrint(s: GameState, p: { m: number; L: number; w: number; kind:
 }
 
 /**
- * THE LEVEL A PRICE IMPLIES — A SALES-RATIO STUDY (IAAO Standard on Ratio
- * Studies): the level on the day times what the lot fetched over what it
- * appraised at. A builder's purchase counts the same as a land banker's: both
- * are arm's-length buyers paying what the lot is worth to them, and the read
- * moves until the town's land sells at its appraisals.
+ * THE LEVEL A PRICE IMPLIES: what the lot fetched per unit of the map's
+ * texture (the sales-comparison floor, `landRead().texture`, at the level of
+ * the day), times that level. The texture adjusts for location the way an
+ * appraiser adjusts a comparable; what is left is what dirt in this town
+ * sells for. A builder's purchase counts the same as a land banker's: both
+ * are arm's-length buyers paying what the lot is worth to them. Each print is
+ * a level in its own right — the floor is proportional to the level, so the
+ * print does not depend on the level it was struck at.
  *
- * Measured and reverted: price per unit of the TEXTURE (the floor) instead of
- * the appraisal. A builder pays the residual, which has nothing to do with the
- * map's texture, and only lots whose residual clears the floor sell to one, so
- * every builder's print read high, the floor rose, and the level whipsawed
- * 0.08-5.3 across six seeds in 25 years, frozen for years at the extremes
- * when nothing could sell. The ratio is neutral where a lot sells at its
- * appraisal and moves only on what the buyers say about the appraisals.
+ * Measured and reverted: a sales-ratio study (price over the APPRAISAL). On a
+ * lot a builder prices, the appraisal does not carry the level at all, so
+ * every builder's purchase above appraisal (1.4-2x: a buyer breaks ground and
+ * does not wait in the appraiser's queue) multiplied the level again, and
+ * every one below divided it: one seed of six fell 0.95 -> 0.017 in 25 years.
  */
 function impliedLandLevel(s: GameState, rec: ParcelRecord, price: number): number | null {
   if (!(price > 0) || !(rec.lotArea > 0) || !urbanLot(rec, s.econ)) return null;
-  const mark = landPsfNow(rec, s.econ) * rec.lotArea;
+  const mark = landRead(rec, s.econ).texture * rec.lotArea;
   if (!(mark > 0)) return null;
   const L = s.econ.landIdx * price / mark;
   return Number.isFinite(L) && L > 0 ? L : null;

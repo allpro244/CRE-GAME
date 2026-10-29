@@ -1389,6 +1389,8 @@ export interface RegisterLabour {
   ages: { kids: number; work: number; old: number };
   /** renter households: on the island, and across the water; owners; doubled up */
   islandRenters: number; mainlandRenters: number; owners: number; doubled: number;
+  /** the people and children in the island's flats (the island renters' households) */
+  islandPersons: number; islandKids: number;
 }
 /**
  * THE REGISTER'S PEOPLE AND ITS LABOUR FORCE, weighted (step 2): what the
@@ -1401,7 +1403,7 @@ export function registerLabour(s: GameState): RegisterLabour | null {
   if (!r) return null;
   if (!r.a) unpackHouseholds(r);
   const a = r.a!;
-  const out: RegisterLabour = { employed: 0, unemployed: 0, lf: 0, persons: 0, households: 0, ages: { kids: 0, work: 0, old: 0 }, islandRenters: 0, mainlandRenters: 0, owners: 0, doubled: 0 };
+  const out: RegisterLabour = { employed: 0, unemployed: 0, lf: 0, persons: 0, households: 0, ages: { kids: 0, work: 0, old: 0 }, islandRenters: 0, mainlandRenters: 0, owners: 0, doubled: 0, islandPersons: 0, islandKids: 0 };
   for (let i = 0; i < r.n; i++) {
     const w = a.wt[i];
     out.households += w;
@@ -1409,7 +1411,7 @@ export function registerLabour(s: GameState): RegisterLabour | null {
     out.ages.kids += w * a.kids[i];
     if (a.age[i] >= 65) out.ages.old += w * a.adults[i]; else out.ages.work += w * a.adults[i];
     const t = a.ten[i];
-    if (t === TEN_RENT) out.islandRenters += w; else if (t === TEN_MAINLAND) out.mainlandRenters += w; else if (t === TEN_OWN) out.owners += w; else out.doubled += w;
+    if (t === TEN_RENT) { out.islandRenters += w; out.islandPersons += w * (a.adults[i] + a.kids[i]); out.islandKids += w * a.kids[i]; } else if (t === TEN_MAINLAND) out.mainlandRenters += w; else if (t === TEN_OWN) out.owners += w; else out.doubled += w;
     for (const x of [a.emp1[i], a.emp2[i]]) {
       if (x === EMP_NONE || x === EMP_RETIRED) continue;
       if (x === EMP_UNEMP) out.unemployed += w; else out.employed += w;

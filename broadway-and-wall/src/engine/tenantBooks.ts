@@ -176,7 +176,9 @@ export function tickTenantFin(e: Econ, t: Tenant, rentDueYr: number, creditOpen:
   const priceLevel = (e.cpi ?? 1) / Math.max(1e-6, f.cpi0);
   const mth = e.m ?? 0;
   if (f.zM !== mth) {
-    f.z = Z_RHO * (f.z ?? 0) + Z_SIG * Z_GRADE[t.credit] * hashNormal(`${t.name}|${t.sector}|${Math.round(f.rev0)}|z|${mth}`);
+    // ...plus a named customer won or lost last month (economy.ts `tickLinks`): its share of sales, moved from or to its rivals
+    const link = t.fid !== undefined ? (e.eco?.linkDz?.[t.fid] ?? 0) : 0;
+    f.z = Z_RHO * (f.z ?? 0) + Z_SIG * Z_GRADE[t.credit] * hashNormal(`${t.name}|${t.sector}|${Math.round(f.rev0)}|z|${mth}`) + link;
     f.zM = mth;
   }
   const sig = Z_SIG * Z_GRADE[t.credit];

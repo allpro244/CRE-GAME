@@ -90,6 +90,14 @@ export interface EcoDrive {
   emp?: number[]; empPrev?: number[]; target?: number[];
   /** Each trade's employment and real sales against the opening: its industries', by the heads it had in each. */
   trade?: Partial<Record<Sector, { sales: number; emp: number; margin: number }>>;
+  /**
+   * THE CITY ITSELF, not its commuting region (citygov.ts reads it): the
+   * people and children in the island's flats (the register's island
+   * renters) and the jobs of the firms on the map (the named firms' heads).
+   */
+  island?: { persons: number; kids: number; households: number; jobs: number };
+  /** Named links won and lost this month (economy.ts `tickLinks`): each firm id's move in its fortune, log — its tenant books take it next month. */
+  linkDz?: Record<string, number>;
 }
 
 export interface FirmBook {

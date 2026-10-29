@@ -53,7 +53,7 @@
 // No other stream moves when City Hall does.
 import type { Econ, GameState } from "./types";
 import { BUILT_CLASSES, START_YEAR, raiseAlert } from "./types";
-import { rng, pushNewsPublic, islandResidents, SF_PER_HOME, NATURAL_VAC } from "./market";
+import { rng, pushNewsPublic, islandResidents, SF_PER_HOME, PEOPLE_PER_HOME, NATURAL_VAC } from "./market";
 import { TAX_RATE, classValuePsf } from "./value";
 import { HH_SIZE, fundamentalHomePsf, medianIncome } from "./homeprice";
 
@@ -311,6 +311,28 @@ export function renewalAsk(e: Econ, yearBuilt: number | undefined, ask: number, 
   return cap === null ? ask : Math.min(ask, rent * (1 + cap));
 }
 
+// ---------------------------------------------------------------- who the city is
+/**
+ * THE CITY'S OWN PEOPLE, NOT ITS COMMUTING REGION (2026-10-29). `e.population`
+ * is the household register's: every household of the town's labour shed,
+ * most of it across the water (since ONE_ECONOMY step 2, twice the old
+ * engine's count, because the jobs off the commercial floors joined the
+ * town's). City Hall taxes and serves the city: the people in the island's
+ * flats (the register's island renters, economy.ts `economyToEngine`) and the
+ * households in its plats' houses (homes.ts, each at PEOPLE_PER_HOME, with the
+ * register's children per household); its payroll tax falls on the jobs on
+ * its map (the named firms' heads). Before the books open, the island's
+ * occupied flats (market.ts `islandResidents`) and the town's jobs stand in.
+ */
+function cityPeople(e: Econ): { persons: number; kids: number; households: number } {
+  const isl = e.eco?.island;
+  const plat = Math.max(0, e.newHomes ?? 0);
+  const kidsPerHh = (e.ages?.kids ?? 0) / Math.max(1, e.eco?.households ?? ((e.population ?? 0) / HH_SIZE));
+  if (isl && isl.persons > 0) return { persons: isl.persons + plat * PEOPLE_PER_HOME, kids: isl.kids + plat * kidsPerHh, households: isl.households + plat };
+  const r = islandResidents(e);
+  return { persons: r.residents + plat * PEOPLE_PER_HOME, kids: (r.homes + plat) * kidsPerHh, households: r.homes + plat };
+}
+
 // ---------------------------------------------------------------- the roll and the lines
 /** The market value the assessor is chasing: the map's buildings at their actual occupancy, and the town's homes off it. */
 export function marketRoll(e: Econ): { commercial: number; homes: number } {
@@ -321,7 +343,7 @@ export function marketRoll(e: Econ): { commercial: number; homes: number } {
     const occ = clamp((e.occupied?.[k] ?? stk * (1 - NATURAL_VAC[k])) / stk, 0, 1);
     commercial += stk * Math.max(0, classValuePsf(e, k, occ));
   }
-  const households = (e.population ?? 0) / HH_SIZE;
+  const households = cityPeople(e).households;
   const off = Math.max(0, households - islandResidents(e).homes);
   const owners = Math.min(off, households * OWN_RATE);
   const homePrice = (e.homes?.psf ?? fundamentalHomePsf(e)) * HOME_SF;
@@ -339,12 +361,12 @@ function abatedValue(e: Econ, g: CityGov, m: number): number {
   return v;
 }
 
-function payrollBase(e: Econ): number { return (e.jobs ?? 0) * AVG_PAY * (e.wageIdx ?? 1); }
+function payrollBase(e: Econ): number { return (e.eco?.island?.jobs || e.jobs || 0) * AVG_PAY * (e.wageIdx ?? 1); }
 
 /** This month's lines, from the state as it stands — capital and transfers passed in. */
 function computeLines(s: GameState, g: CityGov, capital: number, transferBase: number): BudgetLines {
-  const e = s.econ, P = g.policy, w = e.wageIdx ?? 1, pop = e.population ?? 0;
-  const kids = e.ages?.kids ?? pop * 0.22;
+  const e = s.econ, P = g.policy, w = e.wageIdx ?? 1, city = cityPeople(e), pop = city.persons;
+  const kids = city.kids;
   const L = zeroLines();
   // What is provided: the council's service level on top of what residents at
   // this income ask for (Wagner), each unit priced at the town's wage (Baumol).
@@ -458,7 +480,7 @@ export function openCityGov(s: GameState): CityGov {
   };
   // THE DEBT THE CITY OPENS WITH is the steady state of its own capital
   // programme: twenty years of serial issues, each with its unmatured slices.
-  const capYr = CAPITAL_PC * (e.population ?? 0) * (e.costIdx ?? 1);
+  const capYr = CAPITAL_PC * cityPeople(e).persons * (e.costIdx ?? 1);
   const c = yieldFor(e, g, "bond");
   const firstJuly = m + ((6 - (m % 12) + 12) % 12 || 12);
   for (let k = 1; k <= BOND_YEARS; k++) g.bonds.push({ face: capYr / BOND_YEARS * (BOND_YEARS + 1 - k), coupon: c, matM: firstJuly + 12 * (k - 1), kind: "bond" });
@@ -521,7 +543,7 @@ export function tickCityGov(s: GameState) {
 
   // THE CAPITAL PROGRAMME: routine renewal (deferred when the market will not
   // fund it) and the civic works the council voted.
-  let capital = CAPITAL_PC * (e.population ?? 0) * (e.costIdx ?? 1) / 12 * (g.open && !g.control ? 1 : DEFERRED);
+  let capital = CAPITAL_PC * cityPeople(e).persons * (e.costIdx ?? 1) / 12 * (g.open && !g.control ? 1 : DEFERRED);
   for (const w of g.works) { const x = Math.min(w.left, w.perM); capital += x; w.left -= x; }
   g.works = g.works.filter((w) => w.left > 1);
   g.capUnfunded += capital;

@@ -1043,9 +1043,18 @@ export function frictionFloor(k: BuiltClass, e?: Econ): number {
  * project itself; so does every reader of this — the class pencil, the site
  * pro forma and the land residual (2026-10-12).
  */
-export function forwardVacancy(e: Econ, k: BuiltClass, extraSf = 0, monthsAhead = 18): number {
+export function forwardVacancy(
+  e: Econ, k: BuiltClass, extraSf = 0, monthsAhead = 18,
+  /**
+   * A developer's own market study (beliefs.ts): the vacancy it believes the
+   * class runs at and the demand growth it has seen, a share a month, in place
+   * of the true figures it could not know. The stock and the pipeline are
+   * public (the assessor's roll, the permits) and stay the town's.
+   */
+  view?: { vac: number; dg: number },
+): number {
   const nat = normalVac(e, k);
-  const vacNow = e.cityVac?.[k] ?? nat;
+  const vacNow = view ? view.vac : e.cityVac?.[k] ?? nat;
   if (!e.stock?.[k]) return vacNow;
   const stkNow = Math.max(1, e.stock[k]);
   const pipe = Math.max(0, e.pipeline?.[k] ?? 0) + Math.max(0, extraSf);
@@ -1053,7 +1062,7 @@ export function forwardVacancy(e: Econ, k: BuiltClass, extraSf = 0, monthsAhead 
   const queue = Math.max(0, e.structTight?.[k] ?? 0) * stkNow;
   // `monthsAhead`: 18 for a reader pricing the market in general; a developer
   // deciding whether to build reads to its own delivery date (`developerLook`).
-  const trendGrowth = Math.max(0, (e.classDrvTrend?.[k] ?? 0) * monthsAhead) * occNow;
+  const trendGrowth = Math.max(0, (view ? view.dg : e.classDrvTrend?.[k] ?? 0) * monthsAhead) * occNow;
   return clamp((stkNow + pipe - occNow - queue - trendGrowth) / (stkNow + pipe), 0, 1);
 }
 

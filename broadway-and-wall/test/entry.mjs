@@ -20,6 +20,8 @@ export const MODULES = [
   "why",
   // whyReads: the market-wide numbers' moves, written into the ledger once a month.
   "whyReads",
+  // beliefs: what each firm believes of rent, vacancy and caps, from what it has seen (§6c-C).
+  "beliefs",
   // tenantMarket: landlords price their own space, tenants shop (ONE_ECONOMY_PLAN.md step 4).
   "tenantMarket",
   "sim", "leasing", "actions", "credit", "value", "dev", "debt", "demand",

@@ -55,7 +55,7 @@ function crunch() {
       : px]));
     const s = { ...g, bankApp: shut ? 0.65 : g.bankApp, econ: { ...g.econ, creditIdx: ci, deskPx } };
     const v = E.dealView(s, rec, rec.bbl, E.assetValue(rec, s.econ, E.initialCondition(rec)));
-    const { max, uw } = E.maxPrice(s.econ, v, E.bidderOf(s, firm, rec), E.rentSignals(s));
+    const { max, uw } = E.maxPrice(s.econ, v, E.bidderOf(s, firm, rec), E.beliefSignals(s, firm));
     return { max, uw, a: v.debtA, rd: v.rd };
   };
   const open = at(1.1), shut = at(0.45);

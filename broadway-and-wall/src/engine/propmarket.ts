@@ -49,12 +49,13 @@ import { productOf } from "./products";
 import { stabViewFor, streetRefiProceeds } from "./debt";
 import { TI_ASK, renewalRefreshShare } from "./leasing";
 import {
-  livingRivals, paramsOf, fitOf, ownerOf, firmOutlook, rentSignals, deployPressure, contractedEquity, lineRoom,
+  livingRivals, paramsOf, fitOf, ownerOf, firmOutlook, deployPressure, contractedEquity, lineRoom,
   minTicket, boughtLastYear, gainsTax, streetSaleCost, spreadAdj, firmMaxPrice, firmMargin, landBanker,
 } from "./rivals";
 import { dealsPerYear, misreadPp } from "./competitorTraits";
 import { rowOn, deskWithRoom } from "./rivalDebt";
 import { why, whyGet, whyNation } from "./why";
+import { beliefSignals, whyBelief, hearsOfListing } from "./beliefs";
 import { money } from "./money";
 import { START_YEAR } from "./types";
 
@@ -277,7 +278,7 @@ export interface Underwriting {
  * — and no more growth than the rent at which a rival would build next door
  * allows (siteHurdle; DiPasquale & Wheaton ch. 10).
  */
-export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<typeof rentSignals>): Underwriting {
+export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<typeof beliefSignals>): Underwriting {
   const i = e.indexRate ?? 5;
   const rE = (bentIndex(i) + b.eqPrem + (e.capitalWave ?? 0)) / 100;
   const rd = v.debtA > 0 ? (v.rd + b.fileSpread) / 100 : rE;
@@ -285,6 +286,9 @@ export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<ty
   const gBase = underwrittenGrowthPct(e) / 100;
   // the class's record, and this submarket's own record against it (tickLocBeliefs)
   let belief = (e.growthExp?.[v.k] ?? 0) + v.locG;
+  // ...and its own forecast, from what IT has seen (beliefs.ts): its broker's
+  // comps, its own rolls and a survey two quarters old — not the town's true
+  // rent history, which no buyer has.
   if (rentSig && b.lean !== 0) {
     const sig = rentSig[v.k];
     belief += b.lean > 0 ? b.lean * sig.g : -b.lean * (1 / (1 + sig.dev) - 1) * GAP_CLOSE_YR;
@@ -316,7 +320,7 @@ export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<ty
 }
 
 /** The most this bidder pays: its value less the closing and the loan's points. */
-export function maxPrice(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<typeof rentSignals>): { max: number; uw: Underwriting } {
+export function maxPrice(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<typeof beliefSignals>): { max: number; uw: Underwriting } {
   const uw = valueTo(e, v, b, rentSig);
   return { max: uw.V / (1 + BUY_CLOSING + LOAN_POINTS * uw.w), uw };
 }
@@ -343,7 +347,7 @@ export interface Bid { r: Rival; max: number; bid: number; uw: Underwriting }
  * underwriting it on its own books. Sorted best first. `n` is how many were
  * in the room — the broker's read the bidders shade against.
  */
-export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress">): { bids: Bid[]; n: number; view: DealView | null } {
+export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress"> & { listedM?: number }): { bids: Bid[]; n: number; view: DealView | null } {
   const view = dealView(s, rec, li.bbl, li.ask);
   if (!view) return { bids: [], n: 0, view };
   const seller = ownerOf(s, rec.bbl);
@@ -351,6 +355,8 @@ export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
   const room: Rival[] = [];
   for (const r of livingRivals(s)) {
     if (r === seller || r.stressMs || r.failedM !== undefined) continue;
+    // THE LISTING BROKER CALLS ITS OWN BUYERS FIRST (beliefs.ts hearsOfListing).
+    if (!hearsOfListing(s, r, li)) continue;
     const st = paramsOf(r);
     if (st.classes && !st.classes.includes(rec.class)) continue;
     if (r.sheet && boughtLastYear(r, s.month) >= dealsPerYear(r.sheet)) continue;
@@ -360,11 +366,10 @@ export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
     room.push(r);
   }
   const n = room.length;
-  const sig = rentSignals(s);
   const bids: Bid[] = [];
   for (const r of room) {
     const b = bidderOf(s, r, rec);
-    const { max, uw } = maxPrice(s.econ, view, b, sig);
+    const { max, uw } = maxPrice(s.econ, view, b, beliefSignals(s, r));
     if (!(max > 0)) continue;
     let bid = Math.min(max * (1 - SHADE / Math.max(1, n)), affordable(s, r, view, b));
     bid = Math.round(bid / 1000) * 1000;
@@ -423,7 +428,7 @@ export function sellerTerms(
   s: GameState, r: Rival, rec: ParcelRecord, bbl: string, mark: number, why: SaleWhy, grade?: Condition,
 ): { reserve: number; ask: number; inUse: number } {
   const view = dealView(s, rec, bbl, Math.max(1, mark), grade);
-  const inUse = view ? valueTo(s.econ, view, bidderOf(s, r, rec), rentSignals(s)).V : mark;
+  const inUse = view ? valueTo(s.econ, view, bidderOf(s, r, rec), beliefSignals(s, r)).V : mark;
   const payoff = rowOn(s, r, bbl)?.balance ?? 0;
   const sellCost = streetSaleCost(1_000_000, s) / 1_000_000;
   const clear = payoff / Math.max(0.5, 1 - sellCost);
@@ -547,6 +552,8 @@ export function noteRoundClosed(s: GameState, bbl: string, round: { bids: Bid[];
     ev.n = { ...(ev.n ?? {}), bidders: round.bids.length, debtRate: p.rd ?? 0, ltv: +top.uw.w.toFixed(2) };
     const second = round.bids[1];
     ev.t += ` · ${round.bids.length} bid${round.bids.length === 1 ? "" : "s"}${second ? `, next ${money(second.bid)}` : ""} · debt ${(top.uw.rd * 100).toFixed(1)}% on ${Math.round(top.uw.w * 100)}%`;
+    // what the winner believed when it priced the building
+    (ev.c ??= []).push(whyBelief(s, top.r, p.k));
   }
 }
 
@@ -810,7 +817,6 @@ function surveyClass(s: GameState, parcels: ParcelTable, k: BuiltClass, want: nu
   recs.sort((a, b) => a.demandScore - b.demandScore || (a.bbl < b.bbl ? -1 : 1));
   if (!recs.length) return [];
   const step = Math.max(1, Math.floor(recs.length / want));
-  const sig = rentSignals(s);
   const out: { c: number; x: [number, number, number]; bbl: string }[] = [];
   for (let i = Math.floor(step / 2); i < recs.length; i += step) {
     const rec = recs[i];
@@ -818,7 +824,7 @@ function surveyClass(s: GameState, parcels: ParcelTable, k: BuiltClass, want: nu
     const mark = assetValue(rec, e, cond);
     const view = dealView(s, rec, rec.bbl, mark, cond);
     if (!view) continue;
-    const maxes = firms.map((r) => maxPrice(e, view, bidderOf(s, r, rec), sig).max).filter((m) => m > 0).sort((a, b) => b - a);
+    const maxes = firms.map((r) => maxPrice(e, view, bidderOf(s, r, rec), beliefSignals(s, r)).max).filter((m) => m > 0).sort((a, b) => b - a);
     const px = maxes[1] ?? maxes[0];
     if (!px) continue;
     const c = impliedCap(s, rec, rec.bbl, px, cond, view.condIdx);
@@ -904,7 +910,6 @@ export function packageBids(s: GameState, parcels: ParcelTable, bbls: string[], 
   if (recs.length < 2) return [];
   const views = recs.map((rec) => rec.class === "land" || !(rec.bldgArea > 0)
     ? null : dealView(s, rec, rec.bbl, Math.max(1, assetValue(rec, s.econ, initialCondition(rec)))));
-  const sig = rentSignals(s);
   const firms = livingRivals(s).filter((r) => r.id !== sellerId && !r.stressMs && r.failedM === undefined
     && s.month - (r.bornM ?? 0) >= PACKAGE_TRACK_M
     && !bbls.some((b) => ownerOf(s, b) === r)
@@ -919,7 +924,7 @@ export function packageBids(s: GameState, parcels: ParcelTable, bbls: string[], 
     for (let i = 0; i < recs.length; i++) {
       const v = views[i];
       const b = v ? bidderOf(s, r, recs[i]) : null;
-      const m = v && b ? maxPrice(s.econ, v, b, sig).max : landMaxPrice(s, r, recs[i]);
+      const m = v && b ? maxPrice(s.econ, v, b, beliefSignals(s, r)).max : landMaxPrice(s, r, recs[i]);
       if (!(m > 0)) { ok = false; break; }
       max += m;
       if (v && b) debtShare += Math.min(v.debtA, b.ltvCap) * m;

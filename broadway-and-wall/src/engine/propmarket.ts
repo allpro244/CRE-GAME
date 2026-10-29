@@ -42,7 +42,7 @@ import { underwrittenGrowthPct, dollarLevel, RENT_BASE, CAP_BASE } from "./marke
 import {
   assetValue, capRateFor, initialCondIdx, demandLinear, incomeValueAsIs, initialCondition, inPlace, landValue,
   marketAppraisal, noiYr, resolveRec, specWearMult, taxBorneShare, taxRate, useOccupancy, useRentableSf,
-  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, landPsfNow, DEV_MARGIN, queueFactor,
+  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, queueFactor,
 } from "./value";
 import { uses } from "./mix";
 import { productOf } from "./products";
@@ -1017,10 +1017,16 @@ export function landBidRound(s: GameState, parcels: ParcelTable, rec: ParcelReco
   return { bids, n };
 }
 
-/** Whether the appraisal of this lot rests on the map's texture — the only land the texture level is evidence about. */
-function textureGoverned(rec: ParcelRecord, e: Econ): boolean {
+/**
+ * Which lots a price is evidence about the town's dirt on: any lot a builder,
+ * a holder or the texture prices. A farm, a plat lot or a subdivision tract
+ * trades to its own buyer (the farmer, the homebuilder, the land developer),
+ * and the urban texture says nothing about it.
+ */
+function urbanLot(rec: ParcelRecord, e: Econ): boolean {
+  if (rec.ag || rec.homeLot || rec.tract) return false;
   const w = landRead(rec, e).winner;
-  return w === "texture";
+  return w === "texture" || w === "builder" || w === "holder";
 }
 
 function pushLandPrint(s: GameState, p: { m: number; L: number; w: number; kind: "t" | "b" | "s" }) {
@@ -1032,36 +1038,39 @@ function pushLandPrint(s: GameState, p: { m: number; L: number; w: number; kind:
   if (i > 0) s.landTape = t.slice(i);
 }
 
-/** The texture level a price implies on a texture-governed lot: the level on the day, times price over the appraisal. */
+/**
+ * THE TEXTURE LEVEL A PRICE IMPLIES: what the lot fetched per unit of the
+ * map's texture at today's level (the sales-comparison floor, `landRead
+ * .texture`), times the level. The texture adjusts for location the way an
+ * appraiser adjusts a comparable; what is left is what dirt in this town sells
+ * for. A builder's purchase counts the same as a land banker's: both are
+ * arm's-length buyers paying what the lot is worth to them.
+ */
 function impliedLandLevel(s: GameState, rec: ParcelRecord, price: number): number | null {
-  if (!(price > 0) || !(rec.lotArea > 0) || !textureGoverned(rec, s.econ)) return null;
-  const mark = landPsfNow(rec, s.econ) * rec.lotArea;
+  if (!(price > 0) || !(rec.lotArea > 0) || !urbanLot(rec, s.econ)) return null;
+  const mark = landRead(rec, s.econ).texture * rec.lotArea;
   if (!(mark > 0)) return null;
   const L = s.econ.landIdx * price / mark;
   return Number.isFinite(L) && L > 0 ? L : null;
 }
 
-/** A lot closed (comps.ts recordComp). Distress and never-exposed sales at half weight. */
-export function printLandTrade(s: GameState, rec: ParcelRecord, price: number, buyer: string, distress?: boolean, offMarket?: boolean): void {
-  // only a land banker's purchase prices the texture (see surveyLand)
-  const r = (s.rivals ?? []).find((x) => x.name === buyer);
-  if (!r || !landBanker(r) || paramsOf(r).build > 0) return;
-  const L = impliedLandLevel(s, rec, price);
+/** A lot closed (comps.ts recordComp), to any arm's-length buyer. */
+export function printLandTrade(s: GameState, rec: ParcelRecord, price: number, _buyer: string, distress?: boolean, offMarket?: boolean): void {
   // MARKET VALUE ASSUMES NEITHER PARTY UNDER COMPULSION (USPAP; the
-  // Interagency Appraisal Guidelines). A forced sale of dirt nobody can build
-  // on, to the one land banker in the room, is the price of the compulsion,
-  // not of the land; nor is a lot never exposed to the market. Measured with
-  // them in at half weight: the texture level fell 87% over 25 years (land
-  // median 61 -> 8 $/sf over six seeds) on distressed lots clearing at the
-  // only bid. Neither is a texture print.
+  // Interagency Appraisal Guidelines). A forced sale of dirt to the one bidder
+  // in the room is the price of the compulsion, not of the land; nor is a lot
+  // never exposed to the market. Measured with them in at half weight (when
+  // only land bankers printed): the level fell 87% over 25 years. Neither is
+  // a print.
   if (distress || offMarket) return;
+  const L = impliedLandLevel(s, rec, price);
   if (L !== null) pushLandPrint(s, { m: s.month, L, w: 1, kind: "t" });
 }
 
-/** A land round that did not close: the bid-ask midpoint, at half weight. */
+/** A land round that did not close: the best bid and the ask met halfway, at half weight — read only when sales are thin. */
 export function noteLandRoundFailed(s: GameState, rec: ParcelRecord, li: Listing, round: { bids: Bid[] }): void {
-  const top = round.bids.find((b) => landBanker(b.r) && !(paramsOf(b.r).build > 0));
-  if (!top) return;
+  const top = round.bids[0];
+  if (!top || li.distress) return;
   const L = impliedLandLevel(s, rec, (top.bid + li.ask) / 2);
   if (L !== null) pushLandPrint(s, { m: s.month, L, w: 0.5, kind: "b" });
 }
@@ -1075,20 +1084,22 @@ export function noteLandRoundFailed(s: GameState, rec: ParcelRecord, li: Listing
  */
 export function tickLandRead(s: GameState): void {
   const e = s.econ;
-  // CLOSED SALES ONLY. A bid that did not close, or a banker's indication, says
-  // nobody here pays the texture today — and for land an appraiser does not
-  // mark to that (USPAP: the sales comparison governs, and an unsold lot is
-  // not a sale). Measured with them in: the land bankers' option bids sit far
-  // under the texture on most lots, and the level fell 90% in twenty years
-  // (land median 72 -> 4 $/sf) — a city whose only land buyers are four
-  // banks of dirt and its builders has no other bidders for unbuildable
-  // land, which says more is missing from the land market (long-horizon
-  // holders, owner-users, parking) than that the land is worth nothing.
-  const tape = (s.landTape ?? []).filter((p) => p.kind === "t" && p.m >= s.month - TAPE_MONTHS && p.m < s.month + 1);
+  // WHAT EVERY ARM'S-LENGTH BUYER PAID: builders on their residuals and land
+  // bankers on the option, alike. Read off land bankers alone, the level fell
+  // 87% in 25 years (land median 61 -> 8 $/sf, six seeds): the bankers are the
+  // low bidders on most lots, and the builders who set most land prices were
+  // left out. Closed sales govern (USPAP: the sales comparison); a round that
+  // did not close is an indication at half weight, read only where the sales
+  // alone do not make the evidence in the window — as a cap read takes the
+  // broker's survey only when nothing has printed.
+  const tape = (s.landTape ?? []).filter((p) => p.m >= s.month - TAPE_MONTHS && p.m < s.month + 1);
   let win = 0, sel: typeof tape = [];
+  const evidence = (xs: typeof tape) => xs.reduce((a, p) => a + p.w, 0) >= MIN_EVIDENCE;
   for (const w of [12, 24, 36]) {
-    sel = tape.filter((p) => p.m > s.month - w);
-    if (sel.reduce((a, p) => a + p.w, 0) >= MIN_EVIDENCE) { win = w; break; }
+    const inW = tape.filter((p) => p.m > s.month - w);
+    const sales = inW.filter((p) => p.kind === "t");
+    if (evidence(sales)) { sel = sales; win = w; break; }
+    if (evidence(inW)) { sel = inW; win = w; break; }
   }
   // A LEVEL IS NOT READ OFF ONE OR TWO LOTS: with less than MIN_EVIDENCE in
   // three years the read stands where it was (a stale appraisal says so).
@@ -1104,9 +1115,9 @@ export function tickLandRead(s: GameState): void {
     out.why = why(s, {
       k: "market.land", a: "trade", aid: "land",
       n: { level: +med.toFixed(4), n: out.n, win, trades },
-      t: `land with no building case: ${trades} lot sale${trades === 1 ? "" : "s"} in ${win} months`
-        + `${sel.length > trades ? `, ${sel.length - trades} bid${sel.length - trades === 1 ? "" : "s"} or survey indications` : ""}`
-        + ` — the map's texture is worth ${med.toFixed(2)}x its opening scale`,
+      t: `land: ${trades} lot sale${trades === 1 ? "" : "s"} in ${win} months`
+        + `${sel.length > trades ? `, ${sel.length - trades} unclosed bid${sel.length - trades === 1 ? "" : "s"} at half weight` : ""}`
+        + ` — dirt sells at ${med.toFixed(2)}x the map's opening texture`,
     }, [whyNation(s)]);
   }
   e.landReadOut = out;

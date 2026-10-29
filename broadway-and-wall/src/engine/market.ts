@@ -11,7 +11,7 @@ import { simulateHistory, driftInflTarget, shortIndexFor } from "./regime";
 import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
 import { whyTrade } from "./why";
 import { whyTown } from "./economy";
-import { tickCapRead } from "./propmarket";
+import { tickCapRead, tickLandRead } from "./propmarket";
 import { settleSupplyDeliveries } from "./supply";
 
 export function mulberry32Step(a: number): { state: number; value: number } {
@@ -5843,38 +5843,14 @@ export function tickEcon(s: GameState) {
     e.capExp[k] += 0.021 * (e.capRate[k] - e.capExp[k]);
   }
 
-  // Citywide land index TRACKS the rent level rather than compounding off it —
-  // over a 100-year campaign a feedback term would run away into absurdity.
-  // Land is levered to rents (exponent > 1) and moody with the cycle, but it
-  // is always pulled back toward what the income actually supports.
-  // ...and it is RESIDUAL-SHAPED (ECONOMY.md): what a builder would pay is
-  // rents against construction cost, and NO BUILDER PAYS UP INTO A GLUT — the
-  // excess-vacancy discount is what finally lets a supply cycle reach the
-  // dirt. EFFECTIVE rents, because a builder underwrites what deals sign at,
-  // not what landlords quote.
-  const rentLevel = (e.effRentIdx?.office ?? e.rentIdx.office) / RENT_BASE.office;
-  const costLevel = Math.max(0.35 * (e.priceLevel ?? 1), e.costIdx ?? 1);
-  const vacDisc = 1 - 1.2 * Math.max(0, (e.cityVac?.office ?? NATURAL_VAC.office) - NATURAL_VAC.office);
-  // Homogeneous of degree 0 under a pure nominal scale: rent and cost both ×λ
-  // leave the ratio unchanged. The old cost^0.35 form grew as λ^0.75 under
-  // inflation alone, so a century of ordinary CPI pinned the landIdx rail at
-  // 40 even before real rents overheated — a load-bearing clamp, which is a
-  // fake (CLAUDE.md). The residual is rent against construction cost.
-  // ...AND DIRT IS WORTH WHAT SOMEBODY WILL PAY FOR IT TODAY (2026-10-14).
-  // The residual says what a lot is worth to a builder; how many builders are
-  // bidding says whether anyone pays it. With nobody building, a lot has no
-  // buyer but a patient one at a deep discount (US land prices fell 40-60%
-  // over 2007-11, raw land more), and when builders crowd back in they bid
-  // past the residual for the right sites. `buildDemand` is that book, read
-  // against this town's own decade (`buildNorm`): one is a normal year; nil
-  // is no bidders, which leaves about a third of the
-  // residual — what a lot fetches held for parking and patience. Prices
-  // discover in log terms, ~40% of the gap a year, with no rail: the guard is
-  // only that a price is positive.
-  const bookVsNormal = Math.max(0, e.buildDemand ?? 1) / Math.max(1e-6, e.buildNorm ?? e.buildDemand ?? 1);
-  const bidders = Math.pow((bookVsNormal + 0.2) / 1.2, 0.6);
-  const target = Math.pow(rentLevel / costLevel, 1.15) * (1 + 0.16 * e.cycleDev) * Math.max(0.25, vacDisc) * bidders;
-  e.landIdx = Math.max(1e-3, e.landIdx * Math.exp(0.04 * Math.log(Math.max(1e-6, target) / Math.max(1e-6, e.landIdx)) + rrange(s, -0.003, 0.003)));
+  // THE LAND TEXTURE LEVEL IS WHAT LOTS SELL FOR (FORMULA_LEDGER #24). It
+  // was set here: rent over construction cost to the 1.15, the cycle, a
+  // vacancy discount and a bidders' term, closed 4% a month. Now builders bid
+  // their own residuals and land bankers the option (propmarket.ts), and the
+  // level is read off the lots that sold or were bid on. The month's draw is
+  // kept so the national path does not re-roll (HANDOFF §4).
+  void rrange(s, -0.003, 0.003);
+  tickLandRead(s);
 
   // COSTS INFLATE AT LEAST AS FAST AS RENTS.
   //

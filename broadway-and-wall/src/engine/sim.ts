@@ -40,7 +40,7 @@ import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDeprecia
 import { tickDemand, isCivicLand } from "./demand";
 import { tickCorporate } from "./corporate";
 import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose } from "./rivals";
-import { openingCapSurvey, tickBrokerSurvey, anchoredAsk, forcedSalePrice } from "./propmarket";
+import { openingCapSurvey, tickBrokerSurvey, tickLandSurvey, anchoredAsk, forcedSalePrice } from "./propmarket";
 import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { tickStreetLoans } from "./streetLoans";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
@@ -844,6 +844,7 @@ function tickMonth(
   tickBrokerCalls(s, parcels, bbls);
   tickListingAbsorption(s, parcels); // other buyers work the tape too
   tickBrokerSurvey(s, parcels);     // a class with no print in a year gets the brokers' indications
+  tickLandSurvey(s, parcels);       // ...and so does dirt
   tickPortfolios(s, parcels);        // and the package market, where books trade whole
   tickTakePrivateApproach(s, parcels); // and a board that wants out rings the buyers who could close
   tickTalks(s, parcels);             // a negotiation left open goes stale

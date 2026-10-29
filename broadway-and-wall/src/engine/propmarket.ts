@@ -42,7 +42,7 @@ import { underwrittenGrowthPct, dollarLevel, RENT_BASE, CAP_BASE } from "./marke
 import {
   assetValue, capRateFor, initialCondIdx, demandLinear, incomeValueAsIs, initialCondition, inPlace, landValue,
   marketAppraisal, noiYr, resolveRec, specWearMult, taxBorneShare, taxRate, useOccupancy, useRentableSf,
-  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS,
+  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, landPsfNow, DEV_MARGIN,
 } from "./value";
 import { uses } from "./mix";
 import { productOf } from "./products";
@@ -50,7 +50,7 @@ import { stabViewFor, streetRefiProceeds } from "./debt";
 import { TI_ASK, renewalRefreshShare } from "./leasing";
 import {
   livingRivals, paramsOf, fitOf, ownerOf, firmOutlook, rentSignals, deployPressure, contractedEquity, lineRoom,
-  minTicket, boughtLastYear, gainsTax, streetSaleCost, spreadAdj, firmMaxPrice,
+  minTicket, boughtLastYear, gainsTax, streetSaleCost, spreadAdj, firmMaxPrice, firmMargin, landBanker,
 } from "./rivals";
 import { dealsPerYear, misreadPp } from "./competitorTraits";
 import { rowOn, deskWithRoom } from "./rivalDebt";
@@ -844,6 +844,10 @@ export function openingCapSurvey(s: GameState, parcels: ParcelTable): void {
     }
   }
   for (const k of K) if (!(e.capRate[k] > 0)) e.capRate[k] = CAP_BASE[k];
+  // ...and the dirt with no building case opens at what the street's builders
+  // and land bankers say they would pay for it (FORMULA_LEDGER #24).
+  const land = surveyLand(s, parcels, 16).filter((L) => L > 0);
+  if (land.length >= 3) e.landIdx = wMedian(land.map((v) => ({ v, w: 1 })));
   e.capExp = { ...e.capRate };
   const reads = (e.capRead ??= {});
   for (const k of K) reads[k] = { n: 0, win: 0, med: e.capRate[k], p25: e.capRate[k], p75: e.capRate[k], ageM: 0, noBid: 0, trades: 0 };
@@ -866,6 +870,184 @@ export function tickBrokerSurvey(s: GameState, parcels: ParcelTable): void {
       pushPrint(s, { m: s.month, k, bbl: p.bbl, kind: "s", c: p.c, x: p.x, w: 0.5 });
     }
   });
+}
+
+// ---------------------------------------------------------------- land (FORMULA_LEDGER #24)
+
+/**
+ * WHAT A FIRM WOULD PAY FOR A LOT, ON ITS OWN BOOKS.
+ *
+ *   A BUILDER bids its own residual: the street's best scheme for the lot
+ *   (landRead — highest and best use, the envelope, the queue it waits in),
+ *   with the margin taken at THIS firm's number (firmMargin) instead of the
+ *   trade's. The scheme's own wait and carry are kept: they are facts about
+ *   the lot, not the firm.
+ *   A LAND BANKER, which does not build, bids the option: the residual at the
+ *   rents a holder expects at the next peak, discounted for the wait
+ *   (landRead's holder bid), or the builder's residual where that is higher.
+ *
+ * Nobody here bids the map's texture: that number is the appraiser's, and it
+ * is what the prints test.
+ */
+export function landMaxPrice(s: GameState, r: Rival, rec: ParcelRecord): number {
+  if (!(rec.lotArea > 0)) return 0;
+  const p = paramsOf(r);
+  const builds = p.build > 0;
+  if (!builds && !landBanker(r)) return 0;
+  const lr = landRead(rec, s.econ);
+  const sc = lr.scheme;
+  let own = 0;
+  if (sc && sc.psf > 0) {
+    const gsf = sc.usable * rec.lotArea;
+    const value = sc.valuePsf * gsf, nonLand = sc.costPsf * gsf;
+    const atTrade = value / (1 + DEV_MARGIN) - nonLand;
+    if (atTrade > 0) {
+      const f = (sc.psf * rec.lotArea) / atTrade;   // the scheme's wait and carry, per dollar of residual
+      own = Math.max(0, f * (value / (1 + (builds ? firmMargin(r, s.month) : DEV_MARGIN)) - nonLand));
+    }
+  }
+  return builds ? own : Math.max(own, lr.holder * rec.lotArea);
+}
+
+/** A land bid round: builders and land bankers, each on its own number, shaded by the room and capped by its cash. */
+export function landBidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress">): { bids: Bid[]; n: number } {
+  const seller = ownerOf(s, rec.bbl);
+  const room: Rival[] = [];
+  for (const r of livingRivals(s)) {
+    if (r === seller || r.stressMs || r.failedM !== undefined) continue;
+    const p = paramsOf(r);
+    if (!(p.build > 0) && !landBanker(r)) continue;
+    if (p.classes && !p.classes.includes("land") && !(p.build > 0)) continue;
+    if (r.sheet && boughtLastYear(r, s.month) >= dealsPerYear(r.sheet)) continue;
+    if (r.sheet && fitOf(s, parcels, r, rec, !!li.distress) <= 0) continue;
+    room.push(r);
+  }
+  const n = room.length;
+  const bids: Bid[] = [];
+  // a lot is bought with equity and the land desk's half-advance (debt.ts "land")
+  const land = streetRefiProceeds(s, li.ask, 0, 0.95);
+  const a = li.ask > 0 ? land.principal / li.ask : 0;
+  for (const r of room) {
+    const max = landMaxPrice(s, r, rec);
+    if (!(max > 0)) continue;
+    const reserve = Math.max(500_000 * dollarLevel(s.econ), Math.max(0, r.cash) * 0.05);
+    const room$ = Math.max(0, lineRoom(s, r, r.aum ?? 0, r.markNoi ?? 0, r.markLand ?? 0));
+    const avail = r.cash - contractedEquity(s, r) + room$ - reserve;
+    if (!(avail > 0)) continue;
+    const bid = Math.round(Math.min(max * (1 - SHADE / Math.max(1, n)), avail / Math.max(0.05, 1 + BUY_CLOSING - a)) / 1000) * 1000;
+    if (!(bid > 0)) continue;
+    bids.push({ r, max, bid, uw: { V: max, r: 0, rE: 0, rd: land.ratePct / 100, w: a, g: 0 } });
+  }
+  bids.sort((x, y) => y.bid - x.bid);
+  return { bids, n };
+}
+
+/** Whether the appraisal of this lot rests on the map's texture — the only land the texture level is evidence about. */
+function textureGoverned(rec: ParcelRecord, e: Econ): boolean {
+  const w = landRead(rec, e).winner;
+  return w === "texture";
+}
+
+function pushLandPrint(s: GameState, p: { m: number; L: number; w: number; kind: "t" | "b" | "s" }) {
+  const t = (s.landTape ??= []);
+  t.push(p);
+  const cut = s.month - TAPE_MONTHS;
+  let i = 0;
+  while (i < t.length && (t[i].m < cut || t.length - i > TAPE_MAX)) i++;
+  if (i > 0) s.landTape = t.slice(i);
+}
+
+/** The texture level a price implies on a texture-governed lot: the level on the day, times price over the appraisal. */
+function impliedLandLevel(s: GameState, rec: ParcelRecord, price: number): number | null {
+  if (!(price > 0) || !(rec.lotArea > 0) || !textureGoverned(rec, s.econ)) return null;
+  const mark = landPsfNow(rec, s.econ) * rec.lotArea;
+  if (!(mark > 0)) return null;
+  const L = s.econ.landIdx * price / mark;
+  return Number.isFinite(L) && L > 0 ? L : null;
+}
+
+/** A lot closed (comps.ts recordComp). Distress and never-exposed sales at half weight. */
+export function printLandTrade(s: GameState, rec: ParcelRecord, price: number, distress?: boolean, offMarket?: boolean): void {
+  const L = impliedLandLevel(s, rec, price);
+  if (L !== null) pushLandPrint(s, { m: s.month, L, w: distress || offMarket ? 0.5 : 1, kind: "t" });
+}
+
+/** A land round that did not close: the bid-ask midpoint, at half weight. */
+export function noteLandRoundFailed(s: GameState, rec: ParcelRecord, li: Listing, round: { bids: Bid[] }): void {
+  const top = round.bids[0];
+  if (!top) return;
+  const L = impliedLandLevel(s, rec, (top.bid + li.ask) / 2);
+  if (L !== null) pushLandPrint(s, { m: s.month, L, w: 0.5, kind: "b" });
+}
+
+/**
+ * THE BROKER'S LAND SURVEY: for a spread of texture-governed lots, the best
+ * number any builder or land banker on the street would put on each — once a
+ * year when no such lot has printed in twelve months, and at the opening.
+ * Half weight each, as the building survey.
+ */
+function surveyLand(s: GameState, parcels: ParcelTable, want: number): number[] {
+  const firms = livingRivals(s).filter((r) => !r.stressMs && r.failedM === undefined && (paramsOf(r).build > 0 || landBanker(r)));
+  if (!firms.length) return [];
+  const lots: ParcelRecord[] = [];
+  for (const bbl of Object.keys(parcels)) {
+    const rec = resolveRec(parcels, s, bbl);
+    if (rec && (rec.class === "land" || !(rec.bldgArea > 0)) && rec.lotArea > 0 && !s.holdings[bbl]) lots.push(rec);
+  }
+  lots.sort((a, b) => a.demandScore - b.demandScore || (a.bbl < b.bbl ? -1 : 1));
+  const step = Math.max(1, Math.floor(lots.length / (want * 4)));
+  const out: number[] = [];
+  for (let i = Math.floor(step / 2); i < lots.length && out.length < want; i += step) {
+    const rec = lots[i];
+    if (!textureGoverned(rec, s.econ)) continue;
+    let best = 0;
+    for (const r of firms) best = Math.max(best, landMaxPrice(s, r, rec));
+    const mark = landPsfNow(rec, s.econ) * rec.lotArea;
+    if (mark > 0) out.push(s.econ.landIdx * Math.max(best, 0) / mark);
+  }
+  return out;
+}
+
+export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
+  if (s.month % 12 !== 6) return;
+  if ((s.landTape ?? []).some((p) => p.m > s.month - 12 && p.kind !== "s")) return;
+  for (const L of surveyLand(s, parcels, 6)) if (L > 0) pushLandPrint(s, { m: s.month, L, w: 0.5, kind: "s" });
+}
+
+/**
+ * THE TEXTURE LEVEL, READ OFF THE LAND TAPE, monthly (market.ts) — the same
+ * rules as a cap rate: a year of prints, two or three when thin, stale when
+ * there are none. It used to be set: rent against construction cost to the
+ * 1.15, times the cycle, a vacancy discount and a bidders' term, closed 4% a
+ * month (FORMULA_LEDGER #24, Removed).
+ */
+export function tickLandRead(s: GameState): void {
+  const e = s.econ;
+  const tape = (s.landTape ?? []).filter((p) => p.m >= s.month - TAPE_MONTHS && p.m < s.month + 1);
+  let win = 0, sel: typeof tape = [];
+  for (const w of [12, 24, 36]) {
+    sel = tape.filter((p) => p.m > s.month - w);
+    if (sel.reduce((a, p) => a + p.w, 0) >= MIN_EVIDENCE) { win = w; break; }
+  }
+  if (!win && sel.length) win = 36;
+  const prev = e.landReadOut;
+  if (!win) { e.landReadOut = { n: 0, win: 0, ageM: (prev?.ageM ?? 0) + 1, why: prev?.why }; return; }
+  const med = wMedian(sel.map((p) => ({ v: p.L, w: p.w })));
+  if (!(med > 0)) return;
+  const moved = Math.abs(Math.log(med / Math.max(1e-9, e.landIdx))) >= 0.02 || s.month % 12 === 0;
+  e.landIdx = med;
+  const trades = sel.filter((p) => p.kind === "t").length;
+  const out = { n: +sel.reduce((a, p) => a + p.w, 0).toFixed(1), win, ageM: Math.round(wMedian(sel.map((p) => ({ v: s.month - p.m, w: 1 })))), why: prev?.why };
+  if (moved) {
+    out.why = why(s, {
+      k: "market.land", a: "trade", aid: "land",
+      n: { level: +med.toFixed(4), n: out.n, win, trades },
+      t: `land with no building case: ${trades} lot sale${trades === 1 ? "" : "s"} in ${win} months`
+        + `${sel.length > trades ? `, ${sel.length - trades} bid${sel.length - trades === 1 ? "" : "s"} or survey indications` : ""}`
+        + ` — the map's texture is worth ${med.toFixed(2)}x its opening scale`,
+    }, [whyNation(s)]);
+  }
+  e.landReadOut = out;
 }
 
 /** For the UI: the read's line, numbers first. */

@@ -42,7 +42,8 @@ import { assetGrade, livingRivals, marketAppetite, markRival, paramsOf, tie, tra
 import { observe } from "./competitorReads";
 import { sheetOf } from "./rivals";
 import { assumeBook, loanBookTouched, syncDebt } from "./rivalDebt";
-import { buyQuote, executePurchase, TRANSFER_TAX } from "./actions";
+import { buyQuote, executePurchase } from "./actions";
+import { transferTaxRate } from "./citygov";
 import { fundableNow, fundAndBook } from "./credit";
 import { isCivicLand } from "./demand";
 import { PRODUCTS, allInCostPct, productById } from "./debt";
@@ -379,7 +380,7 @@ function runClose(
   let estNeed = 0;
   q.deeds.forEach((d, i) => {
     const share = shares[i];
-    const legTt = Math.round(d.value * TRANSFER_TAX);
+    const legTt = Math.round(d.value * transferTaxRate(s));
     tt += legTt;
     closing += Math.round(share * 0.02);
     if (err) {
@@ -588,7 +589,7 @@ export function tickTakePrivateApproach(s: GameState, parcels: ParcelTable) {
     if (est > purse) continue;
     const q = takePrivateQuote(s, parcels, r.id);
     if (!q?.available || q.situation === "healthy") continue;
-    const needEst = (q.ask - q.cash + q.debt) * 0.42 + q.gross * TRANSFER_TAX;
+    const needEst = (q.ask - q.cash + q.debt) * 0.42 + q.gross * transferTaxRate(s);
     if (needEst > purse) continue;
     if (!best || q.gross > best.q.gross) best = { r, q };
   }

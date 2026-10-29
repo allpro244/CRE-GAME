@@ -630,6 +630,8 @@ export interface Holding {
    * market (a vessel written today, an old save).
    */
   resRentPsf?: number;
+  /** A tax abatement the building was delivered under (citygov.ts: 421-a / ICAP): the share forgiven, until when. */
+  taxAbate?: { pct: number; untilM: number };
   stance?: -1 | 0 | 1; // rent posture: push / market / fill
   /**
    * AUTO-LEASE: every letter at this building — new tenants, renewals,
@@ -910,6 +912,8 @@ export interface Development {
   takeout?: { kind: "cap"; strike: number; expiresM: number } | { kind: "fixed"; ratePct: number };
   /** what it is being built to, 0..1 with 0.5 as market standard */
   spec?: number;
+  /** The tax abatement in force when ground broke (citygov.ts) — eligibility is fixed at commencement, as 421-a's was. */
+  taxAbate?: { pct: number; years: number };
   /** the look the developer chose (see BuildingDesign); looks only */
   design?: BuildingDesign;
   use: DevUse;
@@ -2342,10 +2346,12 @@ export interface Econ {
     title?: string; bbls?: string[] }[];
   /** A bank panic in progress (blackswans.ts): months of full force left, then its fade. */
   panic?: { leftM: number; force: number };
-  /** The property-tax rate as a multiple of the statutory one (fiscal crisis). */
+  /** The property-tax rate as a multiple of the statutory one — what City Hall levies (citygov.ts). */
   taxMult?: number;
-  /** A city that cannot pay its bills (blackswans.ts): the job loss still landing. */
-  fiscal?: { leftM: number; pullM: number };
+  /** City Hall: its budget, its bonds, its policies, its mayor (citygov.ts). */
+  gov?: import("./citygov").CityGov;
+  /** Bumped whenever a city policy the land memo reads changes (citygov.ts). */
+  govStamp?: number;
   /** An anchor employer's campus (blackswans.ts): the hiring still landing, and whether it walks. */
   campus?: { pole: number; leftM: number; pullM: number; jump: number; walkM?: number; name: string };
   /** Monthly job pull from the black swans, read beside swanJobDrift in tickEcon. */

@@ -24,7 +24,7 @@ const CLASSES = ["office", "retail", "multifamily", "industrial"];
 
 const { parcels, bbls } = loadCity(0, E.normalizeParcels);
 
-const natOf = (_g, k) => E.NATURAL_VAC[k];
+const natOf = (_g, k) => E.OPENING_VAC[k];
 
 const acc = {};
 for (const k of CLASSES) {

@@ -8,7 +8,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, AutoConcessions, AutoLeaseEntry, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, cloneState, CREDIT_LABEL } from "./types";
 import type { Tenant } from "./types";
-import { rng, rrange, recordDeal, NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, RENT_BASE } from "./market";
+import { rng, rrange, recordDeal, normalVac, MF_NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, RENT_BASE } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 /** Bare clamp so tools/rails.mjs can see the block-premium guards. */
@@ -1167,10 +1167,10 @@ export function concessionPressure(e: GameState["econ"], use: string): number {
   // this function maps the SAME dial onto its historical 0.22..2.1 output
   // range — so the LOI terms, the tour depth, and the Economy tab can never
   // disagree about how much a tenant can extract this month.
-  const k = (use === "office" || use === "retail" || use === "multifamily" || use === "industrial" ? use : "office") as keyof typeof NATURAL_VAC;
+  const k = (use === "office" || use === "retail" || use === "multifamily" || use === "industrial" ? use : "office") as BuiltClass;
   const c = e.concIdx?.[k];
   if (c !== undefined) return 0.22 + 1.88 * c;
-  const gap = (e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
+  const gap = (e.cityVac?.[k] ?? normalVac(e, k)) - normalVac(e, k);
   // Same package rule as the market's (concessionTarget), not a label nudge.
   return Math.max(0.22, Math.min(2.1, 1 + 11 * gap));
 }
@@ -1432,15 +1432,15 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const resSf = useRentableSf(rec, "multifamily");
       const stab = useOccupancy(rec, e, "multifamily", true);
       const now = h.occ ?? (h.deliveredM !== undefined && q - h.deliveredM < 1 ? 0 : target);
-      const occCity = e.occupied?.multifamily ?? (e.stock?.multifamily ?? 0) * (1 - NATURAL_VAC.multifamily);
+      const occCity = e.occupied?.multifamily ?? (e.stock?.multifamily ?? 0) * (1 - MF_NATURAL_VAC);
       const poolMF = e.pool?.multifamily ?? occCity;
-      const vacCity = e.cityVac?.multifamily ?? NATURAL_VAC.multifamily;
-      const match = (vacCity > NATURAL_VAC.multifamily && poolMF > occCity)
-        ? Math.max(0.55, Math.min(1, 1 - (vacCity - NATURAL_VAC.multifamily) * 2.2)) : 1;
+      const vacCity = e.cityVac?.multifamily ?? MF_NATURAL_VAC;
+      const match = (vacCity > MF_NATURAL_VAC && poolMF > occCity)
+        ? Math.max(0.55, Math.min(1, 1 - (vacCity - MF_NATURAL_VAC) * 2.2)) : 1;
       const movers = occCity * MF_TURNOVER / 12 + Math.max(0, (poolMF - occCity) * 0.055 * match);
       const vacantCity = Math.max(1, (e.stock?.multifamily ?? 0) - occCity);
       const mine = Math.max(0, resSf * (1 - now));
-      const quality = Math.max(0.3, stab / (1 - NATURAL_VAC.multifamily));
+      const quality = Math.max(0.3, stab / (1 - MF_NATURAL_VAC));
       const askRatio = managedRentPsfYr(rec, e, h, "multifamily")
         / Math.max(0.01, managedRentPsfYr(rec, e, { ...h, stance: 0 }, "multifamily"));
       const weight = quality * Math.pow(Math.max(0.5, askRatio), -3);

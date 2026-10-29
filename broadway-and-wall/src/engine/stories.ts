@@ -22,7 +22,7 @@ import { monthLabel, START_YEAR } from "./types";
 import { money } from "./money";
 import { firmShort } from "./firm";
 import { districtLabelOf } from "./mix";
-import { NATURAL_VAC } from "./market";
+import { normalVac } from "./market";
 
 export type StorySection = "yours" | "market" | "deeds" | "street" | "skyline" | "places";
 
@@ -834,7 +834,7 @@ function supplyStories(g: GameState): Story[] {
     const stock = now.stock[c], vacSf = Math.max(0, stock - now.occupied[c]);
     const absorb = g.econ.absorb12?.[c] ?? 0;
     if (!(stock > 0)) continue;
-    const vac = vacSf / stock, natural = NATURAL_VAC[c];
+    const vac = vacSf / stock, natural = normalVac(g.econ, c);
     const after = Math.max(0, vacSf + coming - absorb * (horizon / 12)) / (stock + coming);
     if (coming >= stock * 0.03 && after >= Math.max(vac + 0.02, natural * 1.25)) {
       out.push({

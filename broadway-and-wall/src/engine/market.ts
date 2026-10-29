@@ -911,7 +911,23 @@ export const RENT_BASE = { office: 35.50, retail: 26.00, multifamily: 30.22, ind
  */
 export const CONC_DEPTH = 0.30;
 
-export const NATURAL_VAC = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07 } as const;
+/**
+ * WHERE A TOWN'S MARKETS OPEN: availability by class as US markets have run it
+ * over the long run (CBRE / CoStar national series: office ~11.5%, shops
+ * ~8.5%, flats ~4.5%, sheds ~7%) [S]. An INITIAL CONDITION — the opening's
+ * occupied stock, the pre-game history's starting point, and the normal the
+ * town's people carry in their heads before the town has a record of its
+ * own (`normalVac`). Nothing reads it after the opening as a cause: since ONE
+ * ECONOMY step 4 office, shop and shed rents are the leases landlords and
+ * firms sign (tenantMarket.ts). This was NATURAL_VAC, the rate every rent in
+ * the town was pulled toward.
+ */
+export const OPENING_VAC = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07 } as const;
+/**
+ * THE FLATS' NATURAL VACANCY, still a driver of the flats' rent and lettings
+ * until households set them (FORMULA_LEDGER.md #4, households stage 2).
+ */
+export const MF_NATURAL_VAC = OPENING_VAC.multifamily;
 
 /**
  * WHAT THIS MARKET'S AVAILABILITY HAS RUN AT — the "normal" its landlords,
@@ -921,7 +937,7 @@ export const NATURAL_VAC = { office: 0.115, retail: 0.085, multifamily: 0.045, i
  * usual; nothing prices off it (ONE ECONOMY step 4: rents are the leases).
  */
 export function normalVac(e: Econ | undefined, k: BuiltClass): number {
-  return e?.natVac?.[k] ?? NATURAL_VAC[k];
+  return e?.natVac?.[k] ?? OPENING_VAC[k];
 }
 
 /**
@@ -1003,9 +1019,9 @@ export function cycleHot(e: Econ): number {
 export function cycleDown(e: Econ): number {
   return clamp(Math.max(-payrollGrowth12(e) / 0.015, labourSlack(e) / 0.03), 0, 1);
 }
-/** A class's availability (vacancy + sublet) over its natural vacancy. */
+/** A class's availability (vacancy + sublet) over what it has normally run at (`normalVac`). */
 export function useGap(e: Econ, k: BuiltClass): number {
-  return (e.cityVac?.[k] ?? NATURAL_VAC[k]) + (e.sublet?.[k] ?? 0) / Math.max(1, e.stock?.[k] ?? CITY_STOCK[k]) - NATURAL_VAC[k];
+  return (e.cityVac?.[k] ?? normalVac(e, k)) + (e.sublet?.[k] ?? 0) / Math.max(1, e.stock?.[k] ?? CITY_STOCK[k]) - normalVac(e, k);
 }
 
 
@@ -1024,9 +1040,9 @@ export function useGap(e: Econ, k: BuiltClass): number {
  * drift, with the drift invisible precisely because the watcher is the thing
  * that would have caught it. One definition, two readers.
  */
-export function frictionFloor(k: BuiltClass): number {
+export function frictionFloor(k: BuiltClass, e?: Econ): number {
   const ratio = k === "industrial" ? 0.22 : k === "multifamily" ? 0.30 : 0.32;
-  return NATURAL_VAC[k] * ratio;
+  return normalVac(e, k) * ratio;
 }
 
 /**
@@ -1039,7 +1055,7 @@ export function frictionFloor(k: BuiltClass): number {
  * pro forma and the land residual (2026-10-12).
  */
 export function forwardVacancy(e: Econ, k: BuiltClass, extraSf = 0, monthsAhead = 18): number {
-  const nat = NATURAL_VAC[k];
+  const nat = normalVac(e, k);
   const vacNow = e.cityVac?.[k] ?? nat;
   if (!e.stock?.[k]) return vacNow;
   const stkNow = Math.max(1, e.stock[k]);
@@ -1053,20 +1069,18 @@ export function forwardVacancy(e: Econ, k: BuiltClass, extraSf = 0, monthsAhead 
 }
 
 /**
- * WHERE RENT IS HEADING AT A GIVEN VACANCY, per month — the market's own
- * rent rule (`vacTerm` in the tick) without its cycle-phase dressing: the
- * shortage slope below natural, the glut curve above it, approaching the
- * Houston 1983-87 rate deep in a glut. A developer's market study reads it at
- * the vacancy the building will deliver into, so the forecast and the market
- * that will actually happen are one rule (2026-10-12).
+ * WHAT THE COMPS DID OVER THE LAST YEAR: the log change in the effective rent
+ * the town's leases signed at, twelve months on twelve (the history's
+ * `effRent`). What a market study reads when it asks where rent is heading —
+ * a trend, not a rule. This replaced `rentDriftAt`, the city's rent equation
+ * read at a forecast vacancy, which no rent follows any more (ONE ECONOMY
+ * step 4: rents are the leases).
  */
-export function rentDriftAt(k: BuiltClass, gap: number): number {
-  if (gap <= 0) return -gap * 0.070 * SHORT_SENS[k];
-  const FIT_MAX = 0.09, DEEP_RATE = 0.0155;
-  const glut = (gp: number) => gp * 0.070 + gp * gp * 0.85;
-  if (gap <= FIT_MAX) return -glut(gap);
-  const atFit = glut(FIT_MAX), span = DEEP_RATE - atFit, slope = 0.070 + 2 * 0.85 * FIT_MAX;
-  return -(atFit + span * (1 - Math.exp(-slope * (gap - FIT_MAX) / span)));
+export function rentTrend12(e: Econ, k: BuiltClass): number {
+  const h = e.history ?? [];
+  const then = h.length >= 12 ? h[h.length - 12] : undefined;
+  const a = then?.effRent?.[k] ?? then?.rent?.[k], b = e.effRentIdx?.[k] ?? e.rentIdx?.[k];
+  return a && b && a > 0 && b > 0 ? Math.log(b / a) : 0;
 }
 
 /**
@@ -1190,7 +1204,7 @@ export function reletLag(e: Econ | undefined, k: BuiltClass): number {
   if (!e?.stock || !e.occupied) return 1;
   const stk = Math.max(1, e.stock[k] ?? 0);
   const occ = Math.max(0, e.occupied[k] ?? 0);
-  const nat = e.natVac?.[k] ?? NATURAL_VAC[k];
+  const nat = normalVac(e, k);
   const movers = occ * (turnoverYr(e, k) / 12);
   const unhoused = Math.max(0, (e.pool?.[k] ?? occ) - occ);
   const vacant = Math.max(stk * 0.001, housableStock(e, k) - occ);
@@ -1218,8 +1232,8 @@ export function residenceVac(e: Econ, k: BuiltClass): number {
  * board rezones land for a use that is short, not for one that is empty.
  */
 export function classIsShort(e: Econ, k: BuiltClass, slack = 0.02): boolean {
-  const vac = e.cityVac?.[k] ?? NATURAL_VAC[k];
-  if (vac <= frictionFloor(k) + slack) return true;
+  const vac = e.cityVac?.[k] ?? normalVac(e, k);
+  if (vac <= frictionFloor(k, e) + slack) return true;
   return (e.structTight?.[k] ?? 0) > 0.06;
 }
 
@@ -1241,7 +1255,7 @@ export function noteTenantSfChange(s: GameState, use: BuiltClass, deltaSf: numbe
   if (!e.pool) e.pool = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
   const stk = Math.max(1, e.stock?.[use] ?? 1);
   const housable = housableStock(e, use);
-  const fringe = stk * (NATURAL_VAC[use] ?? 0.1) * 0.25;
+  const fringe = stk * normalVac(e, use) * 0.25;
   const cap = housable + fringe;
   const occ = e.occupied?.[use] ?? 0;
   // +deltaSf = space returned to market (departure); −deltaSf = space taken.
@@ -1496,12 +1510,12 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     baseStock: { ...CITY },
     baseStock0: { ...CITY },
     occupied: {
-      office: CITY.office * (1 - NATURAL_VAC.office),
-      retail: CITY.retail * (1 - NATURAL_VAC.retail),
-      multifamily: CITY.multifamily * (1 - NATURAL_VAC.multifamily),
-      industrial: CITY.industrial * (1 - NATURAL_VAC.industrial),
+      office: CITY.office * (1 - OPENING_VAC.office),
+      retail: CITY.retail * (1 - OPENING_VAC.retail),
+      multifamily: CITY.multifamily * (1 - OPENING_VAC.multifamily),
+      industrial: CITY.industrial * (1 - OPENING_VAC.industrial),
     },
-    cityVac: { ...NATURAL_VAC },
+    cityVac: { ...OPENING_VAC },
     absorb12: { office: 0, retail: 0, multifamily: 0, industrial: 0 },
     deliveryQueue: [],
     cohorts: { office: [], retail: [], multifamily: [], industrial: [] },
@@ -1573,10 +1587,10 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   }
   // The pool opens exactly balanced: the tenants the city started with.
   econ.pool = {
-    office: econ.stock.office * (1 - NATURAL_VAC.office),
-    retail: econ.stock.retail * (1 - NATURAL_VAC.retail),
-    multifamily: econ.stock.multifamily * (1 - NATURAL_VAC.multifamily),
-    industrial: econ.stock.industrial * (1 - NATURAL_VAC.industrial),
+    office: econ.stock.office * (1 - OPENING_VAC.office),
+    retail: econ.stock.retail * (1 - OPENING_VAC.retail),
+    multifamily: econ.stock.multifamily * (1 - OPENING_VAC.multifamily),
+    industrial: econ.stock.industrial * (1 - OPENING_VAC.industrial),
   };
   econ.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
   econ.incomeEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
@@ -1624,7 +1638,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // that history left behind — see regime.ts. Nothing about it is named.
   // Density sets the LEVEL; the history moves rents and vacancy on top.
   {
-    simulateHistory(econ, s.seed, NATURAL_VAC as unknown as Record<string, number>);
+    simulateHistory(econ, s.seed, OPENING_VAC as unknown as Record<string, number>);
     // The phase clock opens part-way through the phase the history ended in:
     // a recession runs as long as the nation's has left, anything else a
     // seeded share of its ordinary length. It used to open at ZERO, so the
@@ -1666,7 +1680,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
       const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
       const target = Math.exp(OPEN_Q_SIGMA * z);
       const qAt = (): number => {
-        const gap = (econ.cityVac[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
+        const gap = (econ.cityVac[k] ?? OPENING_VAC[k]) - OPENING_VAC[k];
         econ.effRentIdx = econ.effRentIdx ?? { ...econ.rentIdx };
         econ.effRentIdx[k] = econ.rentIdx[k] * (1 - CONC_DEPTH * concessionTarget(gap, econ.phase));
         const a = devPencils(econ, k);
@@ -1749,7 +1763,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // the market; the dial was spinning up. Seeded here at its own target, from
   // the same function the tick reads, the first months move only on news.
   for (const k of BUILT_CLASSES) {
-    const gap = (econ.cityVac[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
+    const gap = (econ.cityVac[k] ?? OPENING_VAC[k]) - OPENING_VAC[k];
     econ.concIdx[k] = concessionTarget(gap, econ.phase);
     econ.effRentIdx[k] = +(econ.rentIdx[k] * (1 - CONC_DEPTH * econ.concIdx[k])).toFixed(4);
   }
@@ -1765,7 +1779,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   }
   // Era rewrote vacancy; occupied has to match or month-zero vacancy is a lie.
   for (const k of BUILT_CLASSES) {
-    const vac = econ.cityVac[k] ?? NATURAL_VAC[k];
+    const vac = econ.cityVac[k] ?? OPENING_VAC[k];
     econ.occupied[k] = econ.stock[k] * (1 - vac);
     econ.pool[k] = econ.occupied[k];
   }
@@ -1833,7 +1847,7 @@ export function capFlowsOf(ret: Record<BuiltClass, number>, k: BuiltClass): numb
  */
 export function capTargetOf(e: Econ, k: BuiltClass, capIndex: number, sector = 0, flows = 0): number {
   const crunch = 1.6 * Math.max(0, 1 - e.creditIdx);
-  const vacGap = (e.cityVac?.[k] ?? NATURAL_VAC[k]) - NATURAL_VAC[k];
+  const vacGap = (e.cityVac?.[k] ?? normalVac(e, k)) - normalVac(e, k);
   // Unbounded (2026-10-13): vacancy cannot go below zero, so the compression
   // side is bounded by physics; the widening side is how far a glut goes.
   const vacRisk = CAP_VAC_BETA[k] * vacGap * 100;
@@ -4053,11 +4067,12 @@ export function tickEcon(s: GameState) {
     // faster on the rail so a decade of supply failure does not defend a
     // Manhattan ratio into the next cycle.
     const stock = Math.max(1, e.stock?.office ?? CITY_STOCK.office);
-    const availNow = (e.cityVac?.office ?? NATURAL_VAC.office)
+    const natO = normalVac(e, "office");
+    const availNow = (e.cityVac?.office ?? natO)
       + (e.sublet?.office ?? 0) / stock;
-    const tightNow = (NATURAL_VAC.office - availNow) / NATURAL_VAC.office;
+    const tightNow = (natO - availNow) / natO;
     const friction = residenceVac(e, "office");
-    const pinned = (e.cityVac?.office ?? NATURAL_VAC.office) <= friction + 1e-6;
+    const pinned = (e.cityVac?.office ?? natO) <= friction + 1e-6;
     const target = pinned ? 0 : tightNow;
     const gain = pinned ? 0.012 : 0.004;
     e.tightEma = (e.tightEma ?? 0) + gain * (target - (e.tightEma ?? 0));
@@ -4483,12 +4498,12 @@ export function tickEcon(s: GameState) {
     // relation to incomes gets used more sparingly.
     if (!e.stock) e.stock = { ...CITY_STOCK };
     if (!e.occupied) e.occupied = {
-      office: CITY_STOCK.office * (1 - NATURAL_VAC.office),
-      retail: CITY_STOCK.retail * (1 - NATURAL_VAC.retail),
-      multifamily: CITY_STOCK.multifamily * (1 - NATURAL_VAC.multifamily),
-      industrial: CITY_STOCK.industrial * (1 - NATURAL_VAC.industrial),
+      office: CITY_STOCK.office * (1 - OPENING_VAC.office),
+      retail: CITY_STOCK.retail * (1 - OPENING_VAC.retail),
+      multifamily: CITY_STOCK.multifamily * (1 - OPENING_VAC.multifamily),
+      industrial: CITY_STOCK.industrial * (1 - OPENING_VAC.industrial),
     };
-    if (!e.cityVac) e.cityVac = { ...NATURAL_VAC };
+    if (!e.cityVac) e.cityVac = { ...OPENING_VAC };
     if (!e.absorb12) e.absorb12 = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     e.stock[k] = stk + delivered;
     // ONE HOME PER HOUSEHOLD (2026-10-10). Flats read households at 0.75,
@@ -4846,7 +4861,7 @@ export function tickEcon(s: GameState) {
     // The cycle is already in the driver (the tenants' own employment or
     // population); adding momentum on top would count it twice.
     const cycleTerm = 1;
-    const targetRaw = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - NATURAL_VAC[k])
+    const targetRaw = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - OPENING_VAC[k])   // the opening's reference demand (an initial condition), moved by its drivers
       * Math.pow(driver, elastic)
       * cycleTerm
       * e.affordEff[k]
@@ -4891,7 +4906,7 @@ export function tickEcon(s: GameState) {
     }
     if (!e.darkSf) e.darkSf = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     const housable = housableStock(e, k);
-    const searchFringe = e.stock[k] * NATURAL_VAC[k] * 0.25;
+    const searchFringe = e.stock[k] * normalVac(e, k) * 0.25;
     const poolTarget = Math.min(targetRaw, housable + searchFringe);
     if (!e.pool) e.pool = { ...e.occupied };
     // HOW FAST DEMAND TURNS INTO A SEARCH, BY CLASS (2026-10-09). One rate
@@ -5079,7 +5094,7 @@ export function tickEcon(s: GameState) {
     // clone, the footprint firms want at that rent exceeds the one they hold,
     // and the marketed space is withdrawn — a fast floor under a glut,
     // arriving long before a single lease expires.
-    const wantedNow = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - NATURAL_VAC[k])
+    const wantedNow = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - OPENING_VAC[k])   // the same opening reference as targetRaw
       * Math.pow(driver, elastic)
       * cycleTerm
       * affordRaw
@@ -5279,7 +5294,7 @@ export function tickEcon(s: GameState) {
   // and at five points of office shortage vacancy is 6.5%, room above friction
   // 2.8pp, railSat 0.53 — so it delivers 1.44%/yr, barely half the figure this
   // comment claimed. The reachable MAXIMUM for office is 1.45%/yr (depth+room
-  // is fixed at NATURAL_VAC - frictionFloor = 7.82pp, and depth*railSat peaks
+  // is fixed at the natural rate - frictionFloor = 7.82pp, and depth*railSat peaks
   // at 0.0266 near room = 2.5pp); retail 0.91%, industrial 0.83%,
   // multifamily 0.34%. The 0.0045 ceiling on that branch is consequently
   // unreachable by 3.7x — it is a guard, and nothing rests on it.
@@ -5317,9 +5332,9 @@ export function tickEcon(s: GameState) {
     // about it — what availability has run at, over a long memory. The
     // national figures are where a town starts; from there each market's
     // normal is its own twenty-year history (half-life).
-    const avail = (e.cityVac?.[k] ?? NATURAL_VAC[k])
+    const avail = (e.cityVac?.[k] ?? normalVac(e, k))
       + (e.sublet?.[k] ?? 0) / Math.max(1, e.stock?.[k] ?? CITY_STOCK[k]);
-    const nv = (e.natVac ??= { ...NATURAL_VAC });
+    const nv = (e.natVac ??= { ...OPENING_VAC });
     // ...BUT NOT FROM A SHORTAGE. A month the market spends on its
     // between-tenants floor with tenants still queueing (`structTight`) is not
     // evidence of what normal is: it is the shortage itself, and learning from
@@ -5559,7 +5574,7 @@ export function tickEcon(s: GameState) {
     // cannot pretend to add the same pressure as the first — a market that
     // cannot get any tighter stops minting a constant shortage tax.
     const friction = residenceVac(e, k);
-    const vacNow = e.cityVac?.[k] ?? NATURAL_VAC[k];
+    const vacNow = e.cityVac?.[k] ?? normalVac(e, k);
     const pinned = vacNow <= friction + 1e-6;
     // Room above the frictional rail — 0 on the pin, rising as the market has
     // somewhere left to tighten. Same saturation the vacTerm shortage branch
@@ -6125,7 +6140,7 @@ export function tickEcon(s: GameState) {
   // not what landlords quote.
   const rentLevel = (e.effRentIdx?.office ?? e.rentIdx.office) / RENT_BASE.office;
   const costLevel = Math.max(0.35 * (e.priceLevel ?? 1), e.costIdx ?? 1);
-  const vacDisc = 1 - 1.2 * Math.max(0, (e.cityVac?.office ?? NATURAL_VAC.office) - NATURAL_VAC.office);
+  const vacDisc = 1 - 1.2 * Math.max(0, (e.cityVac?.office ?? normalVac(e, "office")) - normalVac(e, "office"));
   // Homogeneous of degree 0 under a pure nominal scale: rent and cost both ×λ
   // leave the ratio unchanged. The old cost^0.35 form grew as λ^0.75 under
   // inflation alone, so a century of ordinary CPI pinned the landIdx rail at
@@ -6471,9 +6486,9 @@ export function addStock(e: Econ, k: keyof typeof CITY_STOCK, sf: number) {
  * rather be elsewhere ends up touring your building. Glutted market: three
  * other landlords with empty floors return every call first.
  */
-export function vacancyPull(e: Econ, use: keyof typeof NATURAL_VAC): number {
-  const vac = e.cityVac?.[use] ?? NATURAL_VAC[use];
-  return Math.max(0.4, Math.min(1.7, Math.pow(NATURAL_VAC[use] / Math.max(0.005, vac), 0.9)));
+export function vacancyPull(e: Econ, use: BuiltClass): number {
+  const vac = e.cityVac?.[use] ?? normalVac(e, use);
+  return Math.max(0.4, Math.min(1.7, Math.pow(normalVac(e, use) / Math.max(0.005, vac), 0.9)));
 }
 
 function recordHistory(e: Econ, q: number, abs?: Record<string, number>, comp?: Record<string, number>) {

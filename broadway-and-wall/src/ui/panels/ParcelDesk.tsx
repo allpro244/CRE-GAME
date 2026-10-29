@@ -1045,7 +1045,7 @@ function ParcelPanelInner({
                 </div>,
                 ...inUse.map(({ t, i }) => {
                   const near = t.endM - game.month <= 24;
-                  const ri = near ? renewalIntent(game, rec, holding, t) : null;
+                  const ri = near ? renewalIntent(game, rec, holding, t, parcels) : null;
                   // HEADROOM, MEASURED. "growing" was a bare word; the row now
                   // says the numbers the desk acts on. "No room" is the SAME
                   // gate the engine's expansion letter tests (leasing.ts

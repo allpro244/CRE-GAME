@@ -21,7 +21,7 @@ function vacancyTight(s: GameState, use?: BuiltClass): number {
   return Math.max(-0.3, Math.min(0.35, (natHere - vacHere) * 3));
 }
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locOpexMult, taxRate, recoveryOf,
-  condGrade, initialCondIdx, condCeiling, qualityCycle, condWear, capPlanBillMo, CONDITION_RENT_MULT, ownedHoldingValue, demandIdx,
+  condGrade, initialCondIdx, condCeiling, condWear, capPlanBillMo, CONDITION_RENT_MULT, ownedHoldingValue,
   physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr, registerRolloverReader, flatsMarkPsf, flatsRollPsf, faceGrossUp, abatedShare } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
@@ -33,7 +33,7 @@ import { drawLeaseUpReserve, leaseUpRoom } from "./debt";
 import { fundReserve } from "./fund";
 import { partnerFunds } from "./jv";
 import { recordPropertyEvent, noteTenantMove } from "./history";
-import { pullSeeker, seekerSigned, playerTenantLeft, offerForPlayer } from "./streetRolls";
+import { pullSeeker, seekerSigned, playerTenantLeft, offerForPlayer, stayOdds } from "./streetRolls";
 
 import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
 import { stacksOf, assignTenantFloors, blocksOf, blockIdForSf, drawTenantSf, sizeScale, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
@@ -1219,36 +1219,45 @@ export function tiPressure(concession: number): number {
  * earned.
  */
 export interface RenewalRead { p: number; why: string[] }
-export function renewalIntent(s: GameState, rec: ParcelRecord, h: Holding, t: Tenant): RenewalRead {
+/**
+ * ...AND WHETHER THE STREET HAS BETTER (ONE ECONOMY step 4). Three of the terms
+ * below were stand-ins for the comparison a firm makes at its lease's end — a
+ * step down when it was paying 4% or 12% over market, a step for the
+ * building's address, and a step for a soft market putting better-built space
+ * in reach. The street's own firms make that comparison for real
+ * (streetRolls.ts, `tickFirms`): their suite at what their landlord posts
+ * against their broker's shortlist, net of the move. The player's tenants now
+ * make the same one (`stayOdds`): your rent less the market's package, against
+ * every street building that could take them. It is read in expectation and
+ * draws nothing — this is called by the valuation (`rolloverReserve`) and by
+ * the desk's screen, and a read that rolls a die moves the world it reads.
+ * What is left here is what the street's comparison does not see: how you run
+ * the building and the state of its plant, their trade, whether the space still
+ * fits, their covenant and tenure, the corner's capacity and a declined relief
+ * letter.
+ *
+ * The comparison's neutral is the street's own renewal rate at market rent
+ * (55-75% of expiring space by class, the lease-expiry studies), where the
+ * old base was 0.94 and the spread was all downside.
+ */
+export function renewalIntent(s: GameState, rec: ParcelRecord, h: Holding, t: Tenant, parcels?: ParcelTable): RenewalRead {
   const svc = h.svcIdx ?? SVC_START;
   const cond = h.condIdx ?? 0.6;
   const use = t.use ?? (rec.class as BuiltClass);
   const market = Math.max(1, managedRentPsfYr(rec, s.econ, h, use));
-  const over = t.rentPsf / market;
+  const street = stayOdds(s, parcels, t, use, t.sf, rec, overallScore(rec, s.econ, use, h.condIdx),
+    useRentPsfYr(rec, s.econ, h.condition, use, h.condIdx), market * (1 - compsPackage(s.econ, use as "office")), 60);
   const stress = industryStress(s.econ, t.sector);
   const boom = Math.max(0, s.econ.industryMom?.[t.sector] ?? 0);
   const need = t.sf * (t.staff ?? 1);
   const free = useVacantSf(rec, h, use, s.month);
   const fSvc = 0.74 + 0.48 * svc;
   const fCond = 0.84 + 0.30 * cond;
-  const fRent = over > 1.12 ? 0.74 : over > 1.04 ? 0.88 : over < 0.88 ? 1.10 : 1;
   const fInd = clampL(1 - stress * 0.55 + boom * 5, 0.45, 1.15);
   const fFit = need > t.sf * 1.30 ? (free > COMMERCIAL_SUITE_MIN ? 0.86 : 0.55)
     : need < t.sf * 0.78 ? 0.88 : 1;
   const fCred = t.credit === 2 ? 1.06 : t.credit === 0 ? 0.94 : 1;
-  // FLIGHT TO QUALITY ON THE WAY OUT. In a soft market a tenant in a budget
-  // building gets shown better space at a price it can now afford, and goes;
-  // in a tight one there is nowhere better to go. The cyclical half only — the
-  // level is in the arrival factor (absorption.ts "Specification"). Shape
-  // parameter on qualityCycle; see there.
-  const fClass = Math.exp(0.3 * ((rec.buildSpec ?? 0.5) - 0.5) * (qualityCycle(s.econ, use) - 1));
   const fTen = 1 + 0.05 * Math.min(2, (s.month - t.startM) / 120);
-  // Location works on the way OUT as well as the way in. A tenant in a prime
-  // building has nowhere better to go; a tenant on the fringe is one broker
-  // lunch away from a nicer address, and every roll of their lease is a chance
-  // to take it. This is what holds a fringe building's equilibrium occupancy
-  // in the high-70s instead of letting it grind to full over a decade.
-  const fLoc = clampL(0.88 + 0.20 * demandIdx(rec.demandScore), 0.88, 1.08);
   // AND A BUILDING CANNOT HOLD MORE THAN ITS CORNER SUPPORTS.
   //
   // supportableOcc caps who will MOVE IN; on its own that is only half an
@@ -1276,13 +1285,11 @@ export function renewalIntent(s: GameState, rec: ParcelRecord, h: Holding, t: Te
   if (fSvc < 0.95) why.push({ s: "unhappy with building operations", w: 1 - fSvc });
   if (fSvc > 1.10) why.push({ s: "satisfied with building operations", w: fSvc - 1 });
   if (fCond < 0.98) why.push({ s: `the plant is ${h.condition}`, w: 1 - fCond });
-  if (fRent < 1) why.push({ s: `they are ${Math.round((over - 1) * 100)}% over market`, w: 1 - fRent });
+  if (street.p < 0.9) why.push({ s: street.altAt ? `${street.altAt} offered them a better deal` : "a better deal down the street", w: 0.9 - street.p });
   if (fInd < 0.95) why.push({ s: `${INDUSTRY_LABEL[t.sector].toLowerCase()} is contracting`, w: 1 - fInd });
   if (fFit < 0.95) why.push({ s: need > t.sf ? "they have outgrown the space and there is nothing to give them" : "they are paying for space they no longer use", w: 1 - fFit });
-  if (fLoc < 0.97) why.push({ s: "a better building across town made them an offer", w: 1 - fLoc });
-  if (fClass < 0.98) why.push({ s: "the market is soft and better-built space came within their budget", w: 1 - fClass });
   why.sort((a, b) => b.w - a.w);
-  let p = clampL(0.94 * fSvc * fCond * fRent * fInd * fFit * fCred * fTen * fLoc * fClass, 0.10, 0.96);
+  const p = clampL(street.p * fSvc * fCond * fInd * fFit * fCred * fTen, 0.10, 0.96);
   const whyLines = why.length ? why.map((x) => x.s) : ["they simply moved"];
   return { p, why: whyLines };
 }
@@ -2044,7 +2051,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         });
         continue;
       }
-      const ri = renewalIntent(s, rec, h, t);
+      const ri = renewalIntent(s, rec, h, t, parcels);
       if (rng(s, "leasing") > ri.p) {
         t.nonRenewM = q;
         t.nonRenewWhy = ri.why[0];

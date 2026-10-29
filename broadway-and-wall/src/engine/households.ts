@@ -2600,6 +2600,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     for (let k = 0; k < -extra; k++) moveIn(R, r, b, e, m, pool, want, gone);
   }
   compact(r, gone);
+  if (r.n > MERGE_AT * MAX_AGENTS) consolidate(r);
   // the region's households: what the island's renters do not account for —
   // until the firm books open. From then the region's households are the
   // ones the work brought and kept (matchJobs), each standing for the weight
@@ -2758,6 +2759,51 @@ function writeRolls(s: GameState, r: HouseholdRegister, B: { list: Block[] }, se
 function e_flatRolls(s: GameState) { return s.econ.flatRolls && Object.keys(s.econ.flatRolls).length > 0; }
 
 /** Drop the households marked gone, keep the order, and zero the tail so a save round-trips exactly. */
+/**
+ * RECORDS ALIKE ARE MERGED NEAR THE CAP (households stage 6). A household
+ * that moves now joins only a record alike (`alike`), so records multiply
+ * (measured: ~5,700 at the opening, ~9,000 by year 10, ~12,000 by year 20).
+ * When the register passes MERGE_AT of MAX_AGENTS, records off the island
+ * that are the same household to within the register's resolution are
+ * merged into one standing for both: the same tenure, the same employers in
+ * every earner slot (so every firm's heads are kept), the same adults,
+ * partner, children and credit band, the householder's age within the same
+ * five years, and pay and savings each within the same quarter of a log
+ * point (so the spread of savings that decides who can buy, and who is
+ * evicted, is kept). Every dollar field is the weighted mean, so the
+ * households' pay, savings, debts, rents and homes add up to what they did;
+ * people are kept exactly. Merging stops at MERGE_TO of the cap. [K: a
+ * storage rule, not economics]
+ */
+const MERGE_AT = 0.85, MERGE_TO = 0.7;
+const MEAN_FIELDS = ["rent", "wage1", "wage2", "wage3", "sav", "debt", "debtRate", "mort", "mortRate", "mortPmt", "hval", "yperm", "owed"] as const;
+function consolidate(r: HouseholdRegister): void {
+  const a = r.a!, n = r.n, gone = new Uint8Array(n);
+  const lq = (x: number) => (x > 1 ? Math.round(4 * Math.log(x)) : -99);
+  const groups = new Map<string, number[]>();
+  for (let i = 0; i < n; i++) {
+    if (a.ten[i] === TEN_RENT) continue;
+    const key = [a.ten[i], a.emp1[i], a.emp2[i], a.emp3[i], a.ind1[i], a.ind2[i], a.ind3[i], a.adults[i], a.kids[i], a.partner[i], a.credit[i],
+      a.age[i] / 5 | 0, a.kids[i] > 0 ? a.kOld[i] / 5 | 0 : 0, othersOf(a, i) > 0 ? a.oAge[i] / 5 | 0 : 0,
+      lq(a.wage1[i] + a.wage2[i] + a.wage3[i]), lq(a.sav[i]), Number.isNaN(a.taste[i]) ? "n" : a.taste[i] > 0 ? "+" : "-"].join(",");
+    let g = groups.get(key);
+    if (!g) groups.set(key, g = []);
+    g.push(i);
+  }
+  let left = n;
+  const target = MERGE_TO * MAX_AGENTS;
+  for (const g of groups.values()) {
+    if (left <= target) break;
+    for (let k = 1; k < g.length && left > target; k++) {
+      const i = g[0], j = g[k], wi = a.wt[i], wj = a.wt[j], t = wi + wj;
+      for (const f of MEAN_FIELDS) { const c = a[f] as Float32Array; c[i] = (c[i] * wi + c[j] * wj) / t; }
+      a.age[i] = Math.round((a.age[i] * wi + a.age[j] * wj) / t);
+      a.taste[i] = Number.isNaN(a.taste[i]) ? a.taste[j] : Number.isNaN(a.taste[j]) ? a.taste[i] : (a.taste[i] * wi + a.taste[j] * wj) / t;
+      a.wt[i] = t; gone[j] = 1; left--;
+    }
+  }
+  compact(r, gone);
+}
 function compact(r: HouseholdRegister, gone: Uint8Array): void {
   const C = r.a!, nG = gone.length;
   // (in runs of kept agents, a native copyWithin per column: an element-wise

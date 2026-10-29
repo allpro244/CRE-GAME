@@ -454,6 +454,8 @@ export interface HouseholdRegister {
   buyers?: HomeBuyer[];
   /** WORKERS (step 3): each firm's heads last month (employer code -> heads), and this month's layoff events by firm (code -> why id). */
   firmHc?: Record<number, number>; layoffWhy?: Record<number, number>;
+  /** Each industry's openings still unfilled at the end of last month's matching: what a household may move to the region for. */
+  vacLeft?: number[];
   /** This month's move-outs from the player's blocks: the cause-ledger event per block (bbl -> why id). */
   flatWhy?: Record<string, number>;
   /** The arrays (in memory), or their base64 (in a save). */
@@ -1459,8 +1461,16 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   const wR = r.wRegion, H = homeMarket(e);
   const ageWork = AGE_RENT.slice(0, 5), ageTot = ageWork.reduce((t, x) => t + x, 0);
   const ageP = ageWork.map((p) => p / ageTot);
+  // ...THE OPENINGS THE TOWN'S OWN PEOPLE HAVE HAD A MONTH TO FILL (step 3):
+  // an opening is posted, the jobless here and the workers looking for a
+  // better job see it first, and a household moves to the region for it only
+  // if it is still open a month on. Filling every opening the month it opened
+  // from outside made each quit a household arriving: measured, the region
+  // grew 17% more people and 23% more jobs in 25 years with quits on than off.
+  const open = Float64Array.from(V, (v, i) => Math.min(v, r.vacLeft?.[i] ?? v));
   for (let ind = 0; ind < N_IND; ind++) {
-    while (V[ind] >= wR / 2) {
+    while (open[ind] >= wR / 2) {
+      open[ind] -= wR;
       const i = addAgent(r), b = r.a!;
       b.wt[i] = wR;
       const band = pick(R, ageP);
@@ -1497,6 +1507,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       }
     }
   }
+  r.vacLeft = Array.from(V, (v) => +Math.max(0, v).toFixed(2));
   // 5. THE GOING RATE. An industry's pay bill is its going rate (BEA pay at
   // the town's wage index, D.pay) times its earners; who gets which share of
   // it is each earner's standing. Standing moves — a returning worker's

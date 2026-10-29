@@ -926,6 +926,8 @@ export interface Development {
   coverage?: number;
   /** How you chose to demise it, sf per space per use. Carried to delivery. */
   suites?: Partial<Record<BuiltClass, number>>;
+  /** The general contractor that won the job (contractors.ts), and its bid's markup over direct cost. */
+  gc?: number; gcBid?: number;
   costTotal: number;      // the budget as it stands today, escalation included
   hardCost: number;       // the part exposed to escalation under cost-plus
   contract: Contract;
@@ -2462,16 +2464,21 @@ export interface Econ {
    * reason the crew count is a market rather than a wall.
    */
   crewIdx?: number;
-  /** Last month's price level and wage index, read by the construction cost drift. */
-  costInputsPrev?: { cpi: number; wage: number };
+  /** Last month's materials price (the nation's prices and its oil), price level and wage index, read by the construction cost drift. */
+  costInputsPrev?: { cpi: number; wage: number; mat?: number };
+  /** The construction workforce, its repair and fit-out load and the queued orders, in crew-loads (dev.ts tickCrews; read by the contractors). */
+  crewWorkforce?: number; crewSteady?: number; crewOwed?: number;
+  /** The town's named general contractors and the index of their winning bids (contractors.ts). */
+  gcs?: import("./contractors").ContractorBook;
   /**
    * What a building's inputs cost (materials and site labour) before the
-   * contractor's margin; `costIdx` is this times `1 + bidPremium`.
+   * contractor's markup; `costIdx` is this times one plus the average winning
+   * bid's markup (contractors.ts).
    */
   costInputIdx?: number;
   /**
-   * The contractors' margin over a normal one, set by how booked the trades
-   * are: negative in a lull (bids under cost to keep crews), steep in a boom.
+   * Old saves only: the contractors' margin as an equation of how booked the
+   * trades were. Replaced by the named contractors' winning bids (`gcs`).
    */
   bidPremium?: number;
   /**
@@ -4003,6 +4010,8 @@ export interface GameState {
     repudiatedM?: number;
     replaceM?: number;
     orphaned?: boolean;   // the sponsor died and the frame is standing there
+    /** The general contractor building it (contractors.ts), and its bid's markup over direct cost. */
+    gc?: number; gcBid?: number;
     listedM?: number;     // when the receiver put the frame on the tape
   }[];
   // Named starts owed back against the city's calibrated build rate — see

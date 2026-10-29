@@ -3803,20 +3803,25 @@ function tickCrews(s: GameState, bbls: string[]) {
   const steadyLoad = baseNew * (MAINTENANCE_SHARE / (1 - MAINTENANCE_SHARE));
   const workforce = Math.max(1, capacity + steadyLoad * (e.crewIdx ?? 1));
   const util = (live + owed / TYPICAL_SF + steadyLoad) / workforce;
+  // What the named contractors bid against (contractors.ts): the crews, the
+  // repair load they all share, and the queue of orders not yet started.
+  e.crewWorkforce = workforce; e.crewSteady = steadyLoad * (e.crewIdx ?? 1); e.crewOwed = owed / TYPICAL_SF;
   // A year's memory: a contractor hires on a book, not on a month.
   e.crewUtil = (e.crewUtil ?? util) + 0.08 * (util - (e.crewUtil ?? util));
   // The workforce that WOULD clear the book is the current one times how
   // oversubscribed it is; the industry walks toward it rather than jumping.
   const idx = e.crewIdx ?? 1;
-  // ...AND CONTRACTORS GO UNDER WHEN THEY BID BELOW COST (2026-10-14). A lull
-  // does not only idle men; a firm that wins work at a loss to keep its crew
-  // together runs out of capital, and its crew leaves the trade. US
-  // construction lost ~30% of its workforce over 2006-11, faster than idle
-  // time alone explains. The loss scales with how far under cost bids are
-  // (`bidPremium`, market.ts), and it is what makes the rebound sharp: the
-  // order book returns to a smaller industry.
-  const failing = Math.min(0, e.bidPremium ?? 0);
-  e.crewIdx = idx * (1 + 0.010 * ((e.crewUtil ?? 1) - 1) + 0.06 * failing);
+  // ...AND CONTRACTORS GO UNDER WHEN THEY BID BELOW COST. A lull does not
+  // only idle men; a firm that wins work at a loss to keep its crew together
+  // runs out of capital, and its crew leaves the trade. US construction lost
+  // ~30% of its workforce over 2006-11, faster than idle time alone explains.
+  // This was an equation of the average bid premium; now it is the crews of
+  // the named contractors that actually failed this month (contractors.ts),
+  // and it is what makes the rebound sharp: the order book returns to a
+  // smaller industry.
+  const lost = Math.min(0.9, e.gcs?.crewLoss ?? 0);
+  if (e.gcs) e.gcs.crewLoss = 0;
+  e.crewIdx = idx * (1 + 0.010 * ((e.crewUtil ?? 1) - 1)) * (1 - lost);
   // Land buyers are builders: the new-build book against what a town this
   // size ordinarily builds is how many bidders a lot has.
   const newBook = (live + owed / TYPICAL_SF) / Math.max(1e-6, baseNew);

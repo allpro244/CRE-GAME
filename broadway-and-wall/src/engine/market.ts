@@ -9,6 +9,10 @@ import { tickStreetTenants } from "./tenantBooks";
 import { simulateHistory, driftInflTarget, shortIndexFor } from "./regime";
 import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
 import { settleSupplyDeliveries } from "./supply";
+import { tickContractors } from "./contractors";
+
+/** Construction materials' real price per log point of real oil (see the cost index) [D]. */
+const MATERIALS_OIL = 0.15;
 
 export function mulberry32Step(a: number): { state: number; value: number } {
   a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -7177,7 +7181,9 @@ export function tickEcon(s: GameState) {
     // bound, and it gets there within about a year — bids reprice on every
     // tender. A deep lull is a quick 10-20% drop; firms bidding under cost go
     // under (`tickCrews`), and the order book comes back to a smaller trade.
-    const premiumTarget = 0.35 * ((e.crewUtil ?? 1) - 1);
+    // (2026-10-29) The premium below was an equation of `crewUtil`; it is now
+    // the named contractors' winning bids (contractors.ts), each priced off
+    // the bidder's own book with the same slope.
     // ONE SLOPE (2026-10-09). This was 0.0026 below full employment and 0.0016
     // above, each set so its own extreme hit an ENR figure. Two gains on one
     // signal make the MEAN of an oscillating utilisation a drift: a market
@@ -7201,6 +7207,13 @@ export function tickEcon(s: GameState) {
     // (2026-10-09; this read the local CPI, which now carries local rent, so a
     // housing shortage would have raised the price of steel).
     const cpiNow = Math.max(0.35, e.natCpi ?? e.cpi ?? 1), wageNow = Math.max(0.1, e.wageIdx ?? 1);
+    // ...AND OIL (2026-10-29): diesel, asphalt, resin and the energy in steel
+    // and cement. Construction materials' real price moves about 0.15 per log
+    // point of real oil — 1974: materials +30% against CPI +11% with real
+    // crude up about 1.1 log points (BLS PPI; EIA) [D]. This is what an
+    // embargo does to building costs now, through the oil price, rather than
+    // a jump the swan wrote into the index.
+    const matNow = cpiNow * Math.exp(MATERIALS_OIL * (e.oilLn ?? 0));
     const prevIn = e.costInputsPrev;
     // ...LESS WHAT THE TRADES LEARN (2026-10-14). Pay rises with the town's
     // productivity; a site crew's output rises far more slowly — the Baumol
@@ -7212,9 +7225,9 @@ export function tickEcon(s: GameState) {
     // range, applied to the labour share only.
     const TRADES_PRODUCTIVITY = 0.007;
     const inputGrowth = prevIn
-      ? (1 - LABOUR_SHARE) * (cpiNow / prevIn.cpi - 1) + LABOUR_SHARE * ((wageNow / prevIn.wage - 1) - TRADES_PRODUCTIVITY / 12)
+      ? (1 - LABOUR_SHARE) * (matNow / (prevIn.mat ?? prevIn.cpi) - 1) + LABOUR_SHARE * ((wageNow / prevIn.wage - 1) - TRADES_PRODUCTIVITY / 12)
       : (e.inflExp ?? 0.02) / 12;
-    e.costInputsPrev = { cpi: cpiNow, wage: wageNow };
+    e.costInputsPrev = { cpi: cpiNow, wage: wageNow, mat: matNow };
     // The recession term (-0.0004/mo whenever the label read recession) is
     // gone: an idle trade is already in `bidPremium`, and a label is not a cost.
     const costDrift = inputGrowth;
@@ -7244,17 +7257,24 @@ export function tickEcon(s: GameState) {
     // twice its own price level on the first tick (2026-10-12).
     // The 0.6x-400x guards on `costIdx` are gone with the drift form: inputs
     // follow prices and wages, and the margin follows the order book.
-    if (e.bidPremium === undefined || e.costInputIdx === undefined) {
-      e.bidPremium = premiumTarget;
-      e.costInputIdx = e.costIdx / (1 + premiumTarget);
+    // THE NAMED CONTRACTORS BID (contractors.ts). Every job that broke ground
+    // goes to tender, each contractor prices it off its own book, and the
+    // index is the average winning bid's markup over direct cost. A new game
+    // (or a save from before them) opens at the index it already had: the
+    // input index is struck so that cost does not move on the day they arrive.
+    const opening = !e.gcs;
+    const wasMarkup = e.bidPremium;
+    if (e.costInputIdx !== undefined) {
+      e.costInputIdx = e.costInputIdx * Math.max(0.5, 1 + costDrift + catchUp + realPull + rrange(s, -0.0012, 0.0012));
+    } else rrange(s, -0.0012, 0.0012);
+    const markupNow = tickContractors(s);
+    if (opening) {
+      if (e.costInputIdx === undefined || wasMarkup === undefined) e.costInputIdx = e.costIdx / (1 + markupNow);
+      else e.gcs!.idx = wasMarkup;
+      delete e.bidPremium;
     }
-    e.costInputIdx = e.costInputIdx * Math.max(0.5,
-      // ...and a swan's materials shock (the embargo, blackswans.ts), whatever
-      // landed this month; consumed here so it is counted once.
-      1 + costDrift + catchUp + realPull + (e.costShock ?? 0) + rrange(s, -0.0012, 0.0012));
-    e.bidPremium += 0.12 * (premiumTarget - e.bidPremium);
     // A bid can be under cost, never under nothing.
-    e.costIdx = e.costInputIdx * Math.max(0.2, 1 + e.bidPremium);
+    e.costIdx = e.costInputIdx! * Math.max(0.2, 1 + e.gcs!.idx);
     e.costShock = 0;
   }
 

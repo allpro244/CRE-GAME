@@ -468,13 +468,10 @@ function startNatSwan(s: GameState, kind: NatSwanKind, sevAt?: number) {
 // ---------------------------------------------------------------- the embargo
 
 function tickEmbargo(s: GameState) {
-  const e = s.econ, x = e.embargo;
-  if (!x) return;
-  // The materials premium lands over the first year, then is simply the new
-  // price of materials: nobody hands it back (the 1974 jump never reversed in
-  // nominal terms). `costShock` is read once per month by the cost index.
-  if (x.leftM > 0) { e.costShock = (e.costShock ?? 0) + x.monthly; x.leftM -= 1; }
-  else e.embargo = undefined;
+  // The materials premium is the oil price's now (inputs.ts; the cost index
+  // reads it): a save from before carries its old schedule to nothing.
+  const e = s.econ;
+  if (e.embargo) e.embargo = undefined;
 }
 
 function startEmbargo(s: GameState) {
@@ -488,10 +485,12 @@ function startEmbargo(s: GameState) {
     n.shockSev = 0.055 + 0.03 * rng(s, "shock");
     n.shockClusterM = Math.max(n.shockClusterM ?? 0, 96);
   }
-  // THE TRADES: materials 12-20% over and above the general inflation the
-  // cost index already passes through, landing over twelve months.
-  const jump = 0.12 + 0.08 * rng(s, "shock");
-  e.embargo = { leftM: 12, monthly: Math.pow(1 + jump, 1 / 12) - 1 };
+  // THE TRADES: the supply shock takes real oil up about 1.0-1.5 log points
+  // (inputs.ts, OIL_PER_SHOCK), and construction materials follow oil at
+  // 0.15 (market.ts MATERIALS_OIL): 15-25% over the general inflation, as in
+  // 1974. The draw is kept for the stream's sake and for the paper.
+  const jump = Math.exp(0.15 * 18 * (n?.shockSev ?? 0.07)) - 1;
+  void rng(s, "shock");
   (e.blackSwans ??= []).push({ m: s.month, kind: "embargo", size: Math.round(jump * 100), sf: 0, title: `the embargo of ${yr}` });
   const id = why(s, { k: "swan.embargo", a: "nation", name: `the embargo of ${yr}`, n: { supplyShock: n?.shockSev ?? 0, materials: jump }, t: `Oil embargo · supply shock ${(((n?.shockSev ?? 0)) * 100).toFixed(1)} points of inflation` }, [whyNation(s)]);
   raiseAlert(s, {

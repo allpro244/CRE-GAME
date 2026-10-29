@@ -39,6 +39,7 @@
  * The city's space market (market.ts) reads the result. Draws run on a private
  * stream, so the rest of the world's dice do not move with the street.
  */
+import { renewalAsk } from "./citygov";
 import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { BuiltClass, Condition, Credit, GameState, Holding, Tenant } from "./types";
 import { START_YEAR } from "./types";
@@ -1033,7 +1034,8 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       const moveOut = Math.min(0.85, 0.22 + out + buy + jobs);
       for (const x of roll.l) {
         if (x.endM > m) { keep.push(x); continue; }
-        const ask = mkt * slack * 0.97;
+        // A stabilised block (citygov.ts) asks its sitting tenants no more than the guideline.
+        const ask = renewalAsk(e, rec.yearBuilt, mkt * slack * 0.97, x.rent);
         const pRenew = Math.max(0.1, Math.min(0.9, (1 - moveOut) - 0.8 * Math.log(ask / Math.max(0.01, x.rent))));
         const stay = x.sf * pRenew * rrange(s, 0.85, 1.15, "leasing");
         flatOut += Math.max(0, x.sf - Math.max(0, stay));

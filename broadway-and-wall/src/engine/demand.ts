@@ -60,6 +60,7 @@ import { SECTORS, INDUSTRY_LABEL } from "./market";
 import { BUILT_CLASSES, type Sector } from "./types";
 import { voidContract } from "./acquire";
 import { tableVersion } from "./tableVersion";
+import { cityFundsWork } from "./citygov";
 
 /** What the neighbourhood panel can recommend: a use, or a mixed-use stack. */
 export type WantsKey = BuiltClass | "mixed";
@@ -1049,9 +1050,13 @@ function tickTransit(s: GameState, model: DemandModel, parcels: ParcelTable) {
   for (const l of [...(s.lines ?? [])]) {
     if (l.rumorM === undefined || s.month !== l.annM) continue;
     const kind: WorkKind = l.kind ?? "station";
-    if (hash01(`${s.seed}:shelve:${l.id}:${l.annM}`) < SHELVE_ODDS) {
+    // The politics (the hash) first; then the money — a work the city cannot
+    // bond for is cut from the capital budget (citygov.ts cityFundsWork).
+    const killed = hash01(`${s.seed}:shelve:${l.id}:${l.annM}`) < SHELVE_ODDS;
+    if (killed || !cityFundsWork(s, kind, l.id, l.openM - s.month)) {
       s.lines = (s.lines ?? []).filter((x) => x !== l);
-      s.news.unshift({ q: s.month, kind: "warn", text: WORK_COPY[kind].shelved(l.name), bbl: l.bbl });
+      s.news.unshift({ q: s.month, kind: "warn", text: killed ? WORK_COPY[kind].shelved(l.name)
+        : `City Hall cannot fund the ${kind} at ${l.name}: ${s.econ.gov?.control ? "the control board has frozen new capital spending" : "the city cannot borrow for it"}. The plan is shelved.`, bbl: l.bbl });
     } else {
       s.news.unshift({ q: s.month, kind: "event",
         text: WORK_COPY[kind].funded(l.name, Math.round((l.openM - s.month) / 12)), bbl: l.bbl });

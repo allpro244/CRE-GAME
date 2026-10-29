@@ -30,7 +30,7 @@ import type { GameState } from "./types";
 import { cloneState, logBooks } from "./types";
 import { ownedHoldingValue } from "./value";
 import { fundableNow, fundCashNeed } from "./credit";
-import { TRANSFER_TAX } from "./actions";
+import { transferTaxRate } from "./citygov";
 import { cloneWaterfall, distribute, lpCapShare, settlePeriod } from "./waterfall";
 import { closeSyndication, settleSyndications } from "./syndicate";
 import { playerTerms, type Band } from "./reputation";
@@ -63,7 +63,7 @@ export function recapQuote(s: GameState, parcels: ParcelTable, bbl: string): Rec
   const rate = RECAP_PREMIUM[playerTerms(s).band];
   const premium = Math.round(investorsTake * rate);
   const price = investorsTake + premium;
-  const transferTax = lpCapShare(w) > 0.5 ? Math.round(appraisal * lpCapShare(w) * TRANSFER_TAX) : 0;
+  const transferTax = lpCapShare(w) > 0.5 ? Math.round(appraisal * lpCapShare(w) * transferTaxRate(s)) : 0;
   return { ok: true, appraisal, equity, investorsTake, premium, transferTax, price, total: price + transferTax };
 }
 

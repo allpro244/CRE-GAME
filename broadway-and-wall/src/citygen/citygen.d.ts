@@ -27,6 +27,14 @@ declare module "@/citygen/index.mjs" {
     reserved?: Record<string, ReservedParcel>;
     /** The region map only: its ground layers in draw order (unrealExport, platPreview). */
     groundLayers?: string[];
+    /**
+     * The region map only: the heavy industry round the window (region/facilities.mjs) — drawn,
+     * named and clickable, never parcels, never for sale. Each carries its BEA industry code, so a
+     * later step can give it a firm's books.
+     */
+    facilities?: RegionFacility[];
+    /** The region map only: the country those stand in, past the window's edge. */
+    hinterland?: Hinterland;
     size?: string;
     stats: {
       lots: number; blocks: number; coverage: number; edges: number;
@@ -36,6 +44,49 @@ declare module "@/citygen/index.mjs" {
       /** How many buildings took each silhouette family. */
       shapes?: Record<string, number>;
     };
+  }
+
+  type LL = [number, number];
+  export type FacilityKind = "airport" | "railyard" | "refinery" | "metals" | "quarry" | "farm" | "orchard" | "forest" | "power";
+  /**
+   * One piece of a facility as the renderer draws it (region/facilities.mjs): `t` is the shape
+   * (pad, line, box, cyl, stack, ctower, sphere, cone, mound, tower, gantry, rack, pit, inst, scatter,
+   * rows) and `k` what it is. Points are lon/lat, `u` a world unit direction (x east, y north), sizes m.
+   * An `inst` entry is [lon, lat, heading (rad from east), scale, colour index, tier, kind].
+   */
+  export interface FacilityPart {
+    t: string; k?: string;
+    c?: LL; u?: LL; rows?: LL; w?: number; d?: number; h?: number; z0?: number; r?: number; r2?: number;
+    ring?: LL[]; hole?: LL[]; pts?: LL[]; at?: (number | string)[][];
+    [more: string]: unknown;
+  }
+  export interface RegionFacility {
+    /** stable within the region: "fac:airport", "fac:quarry:2" */
+    id: string;
+    kind: FacilityKind;
+    name: string;
+    /** BEA summary industry code (481, 482, 324, 331, 212, 111CA, 113FF, 22) and its plain word */
+    industry: string;
+    industryName: string;
+    footprint: LL[];
+    centroid: LL;
+    m2: number;
+    acres: number;
+    parts: FacilityPart[];
+    [more: string]: unknown;
+  }
+  export interface Hinterland {
+    /** how far past the window's edge the country is drawn, m */
+    belt: number;
+    extent: LL[];
+    /** polygons (outer ring, then holes): the country's land, the window excluded */
+    land: LL[][][];
+    /** the outline of all the land, window and country together: where the sea stops */
+    shoreline: LL[];
+    fields: { ring: LL[]; k: string; rows: LL }[];
+    water: { pts: LL[]; w: number; name?: string }[];
+    roads: { pts: LL[]; w: number; kind: string }[];
+    rail: { pts: LL[]; name?: string }[];
   }
 
   /** Fetch a city's baked data (Manhattan's plat) before makeCity. Idempotent. */

@@ -26,7 +26,8 @@ import { cloneState, logBooks } from "./types";
 import { bareLandRec, groundYieldPct, landValue, leaseholdGroundPv, ownedHoldingValueFromRec, resolveRec } from "./value";
 import { stackPayoff } from "./debt";
 import { fundCashNeed, fundableNow } from "./credit";
-import { CAP_GAINS_RATE, TRANSFER_TAX } from "./actions";
+import { CAP_GAINS_RATE } from "./actions";
+import { transferTaxRate } from "./citygov";
 import { consentFor } from "./vehicles";
 
 /** Ninety-nine years: the ordinary term for a ground lease a lender will finance under. */
@@ -78,7 +79,7 @@ export function leaseholdQuote(s: GameState, parcels: ParcelTable, bbl: string):
   const price = Math.round(landValue(bare, s.econ));
   const yieldPct = groundYieldPct(s.econ);
   const rentYr = Math.round(price * yieldPct / 100);
-  const costs = Math.round(price * (TRANSFER_TAX + LEASEHOLD_DEAL_COST));
+  const costs = Math.round(price * (transferTaxRate(s) + LEASEHOLD_DEAL_COST));
   const stack = stackPayoff(h, s.month, s.econ);
   const payoff = stack.balance + stack.penalty;
   const valueBefore = ownedHoldingValueFromRec(s, rec, h);
@@ -138,7 +139,7 @@ export function sellLandLeaseBack(
 /** What the fee costs to buy back today: the ground rent at the ground yield, plus the transfer. */
 export function landBuybackCost(s: GameState, h: Holding): number {
   const pv = leaseholdGroundPv(h, s.econ);
-  return Math.round(pv * (1 + TRANSFER_TAX + LEASEHOLD_DEAL_COST));
+  return Math.round(pv * (1 + transferTaxRate(s) + LEASEHOLD_DEAL_COST));
 }
 
 /** Buy the land back and own the building freehold again. */

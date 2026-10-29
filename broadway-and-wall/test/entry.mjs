@@ -28,6 +28,8 @@ export const MODULES = [
   "absorption", "space", "bands",
   // blackswans: the rare city-dating events (fire, surge, capital wave).
   "blackswans",
+  // citygov: City Hall — budget, bonds, policies, the mayor.
+  "citygov",
   // plates is floorplate inventory — stacks, vacant blocks, size draws.
   "plates",
   // regime is the pre-history: nationPhase and simulateHistory, so a harness

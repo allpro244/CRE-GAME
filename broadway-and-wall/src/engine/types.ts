@@ -105,6 +105,12 @@ export interface EcoDrive {
    * renters) and the jobs of the firms on the map (the named firms' heads).
    */
   island?: { persons: number; kids: number; households: number; jobs: number };
+  /**
+   * What the town's firms posted this month (economy.ts `postPayAndPrices`): their pay, heads-weighted
+   * (the town's wage index, read a month on), each industry's, their prices against the nation's at the
+   * household basket's local weights, and the share of that basket bought in town.
+   */
+  wage?: number; payIdx?: number[]; priceRel?: number; localShare?: number;
   /** Named links won and lost this month (economy.ts `tickLinks`): each firm id's move in its fortune, log — its tenant books take it next month. */
   linkDz?: Record<string, number>;
 }
@@ -2312,7 +2318,8 @@ export interface Econ {
    * that plateaus for a long time rather than pay that ratchets — without
    * changing where the trend ends up.
    */
-  wageDebt?: number;
+  /** The town's firms' prices against the nation's last month (market.ts CPI, economy.ts `postPayAndPrices`). */
+  priceRelPrev?: number;
   /** Labour-force participation, moving with how easy work is to find. */
   participation?: number;
   /** The nation's unemployment last month, for its monthly employment swing. */

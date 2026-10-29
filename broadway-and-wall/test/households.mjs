@@ -55,6 +55,7 @@ console.log("\nHOUSEHOLD REGISTER\n");
 // two runs, same seed
 let a = start(), b = start();
 const hashesA = [], hashesB = [];
+let lifeB = 0, lifeD = 0, lifeP = 0;
 let stats0 = null, sumsOk = true, worst = "", booksFrom = 1, prevLab = null, lf0 = NaN, jobs0 = NaN, uNow = NaN;
 for (let m = 1; m <= MONTHS; m++) {
   const streamsBefore = { ...a.streams };
@@ -74,6 +75,7 @@ for (let m = 1; m <= MONTHS; m++) {
     && Math.abs(a.econ.unemployment - (prevLab.lf > 0 ? prevLab.unemployed / prevLab.lf : 0)) < 1e-9
     && Math.abs(a.econ.participation - prevLab.lf / prevLab.persons) < 1e-9);
   uNow = st.unemployment;
+  lifeB += a.households.flow.births ?? 0; lifeD += a.households.flow.deaths ?? 0; lifeP += lab.persons;
   const uBad = !(st.unemployment >= 0.025 && st.unemployment <= 0.15);
   if (!readOk || dR > 0.03 || uBad) { sumsOk = false; worst ||= `month ${m}: population ${a.econ.population} (register a month ago ${prevLab ? Math.round(prevLab.persons) : "-"}), renters ${(100 * dR).toFixed(2)}% off the flats, unemployment ${(100 * st.unemployment).toFixed(2)}%`; }
   prevLab = lab;
@@ -109,10 +111,10 @@ check(Math.round(E.registerLabour(a).persons) > 0 && a.econ.population > 0, `the
   const r = a.households, f = r.flow, lab = E.registerLabour(a);
   const py = E.registerPyramid(a), pyT = py.reduce((t, x) => t + x, 0);
   check(Math.abs(pyT / lab.persons - 1) < 1e-6, `the age pyramid is the register's people: ${Math.round(pyT)} by age against ${Math.round(lab.persons)}`);
-  const yr = (x) => (12000 * x) / lab.persons;
-  // CDC NCHS 2023: 10.7 births and 9.2 deaths a year per 1,000 people (a month's draw is noisy: wide bands)
-  check(yr(f.births) > 3 && yr(f.births) < 25 && yr(f.deaths) > 2 && yr(f.deaths) < 25,
-    `this month's births ${yr(f.births).toFixed(1)} and deaths ${yr(f.deaths).toFixed(1)} a year per 1,000 people (US 10.7, 9.2)`);
+  // over the run (a month of weighted agents is noisy): CDC NCHS 2023, 10.7 births and 9.2 deaths a year per 1,000 people
+  const yr = (x) => (12000 * x) / lifeP;
+  check(yr(lifeB) > 5 && yr(lifeB) < 18 && yr(lifeD) > 4 && yr(lifeD) < 18,
+    `over ${MONTHS} months, births ${yr(lifeB).toFixed(1)} and deaths ${yr(lifeD).toFixed(1)} a year per 1,000 people (US 10.7, 9.2)`);
   const cat = f.spendCat ?? {}, ct = Object.values(cat).reduce((t, x) => t + x, 0);
   check(f.spend > 0 && Math.abs(ct / f.spend - 1) < 1e-6, `the households' spending by category adds up to their spending: $${Math.round(ct).toLocaleString("en-US")} a month`);
   const hm = E.householdMoney(a);

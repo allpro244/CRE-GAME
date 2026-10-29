@@ -177,6 +177,8 @@ const LOC_SIGMA = 0.5, CROSS_KM = 8;
  * off — over the twelve months of a lease. [S~]
  */
 const MOVE_LOG = 1.5 / 12;
+/** The blocks a household looking for a flat sees: a broker's shortlist, about half a dozen (NMHC/Zillow renter surveys: renters tour a median of 4-6 homes before signing). [S~] */
+const SHORTLIST = 6;
 /**
  * WORKING PAST SIXTY: the share of each age still in the labour force over
  * the prime-age rate (BLS CPS 2023 annual averages: 25-54 83.4%, 55-59 ~72%,
@@ -1727,13 +1729,20 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     const l = inBlock.get(b.idx);
     if (l) l.push(i); else inBlock.set(b.idx, [i]);
   }
-  // the street's blocks, in an order weighted by how well each draws movers
-  // (its score, how long it has stood empty, its owner's care: streetRolls)
-  const order = B.list.filter((b) => byHH && b.street).map((b) => ({ b, k: Math.pow(R.u(), 1 / Math.max(0.05, b.w ?? 1)) })).sort((p, q) => q.k - p.k);
-  for (const { b } of order) {
+  // THE STREET'S EMPTY FLATS, AND THE HOUSEHOLDS LOOKING FOR ONE (stage 2).
+  // A block that shrank (rebuilt smaller) gives notice to the households it
+  // can no longer hold; then each household across the water that wants an
+  // island flat looks, as a mover with a broker does, at a shortlist of the
+  // blocks with flats empty since before this month (a freed flat is made
+  // ready first) — drawn by how well each draws movers (its score, how long
+  // it has stood empty, its owner's care: streetRolls) — and takes the first
+  // it would pay for, up to each block's letting pace. A flat nobody chooses
+  // stands empty, and its rent answers.
+  const rooms: { b: Block; room: number }[] = [];
+  for (const b of B.list) {
+    if (!(byHH && b.street)) continue;
     const l = inBlock.get(b.idx) ?? [];
     const cap = Math.floor((b.capU ?? 0) / r.wIsland);
-    // a block that shrank (rebuilt smaller) gives notice to the households it can no longer hold
     let extra = l.length - cap;
     while (extra > 0) {
       const k = Math.floor(R.u() * l.length);
@@ -1741,11 +1750,28 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       noteOut(r, i, "other", () => ({ n: {}, t: "A household moved out of a block being rebuilt" }));
       toMainland(R, r, i, pool, gone, true); extra--;
     }
-    // the flats empty since before this month, up to the block's letting pace, to households that choose them
     const room = Math.max(0, Math.min(cap - (atStart.get(b.idx) ?? 0), cap - l.length, Math.floor((b.limU ?? 2) / r.wIsland)));
-    for (let k = 0; k < room; k++) {
-      if (!letTo(R, r, b, e, m, want, gone)) break;
-      recordDeal(e, "multifamily", m, b.rel ?? 1, b.unitSf * r.wIsland);
+    if (room > 0) rooms.push({ b, room });
+  }
+  if (rooms.length) {
+    let wTot = rooms.reduce((t, x) => t + (x.b.w ?? 1), 0);
+    const pickRoom = () => { let u = R.u() * wTot; for (const x of rooms) { if (x.room <= 0) continue; u -= x.b.w ?? 1; if (u <= 0) return x; } return rooms.find((x) => x.room > 0); };
+    const seekers = want.slice();
+    for (let j = seekers.length - 1; j > 0; j--) { const q = Math.floor(R.u() * (j + 1)); const t = seekers[j]; seekers[j] = seekers[q]; seekers[q] = t; }
+    for (const c of seekers) {
+      // each whole household the agent stands for looks once
+      for (let h = Math.floor(r.a!.wt[c] / r.wIsland); h > 0 && wTot > 0 && !(c < gone.length && gone[c]); h--) {
+        let took = false;
+        for (let k = 0; k < SHORTLIST; k++) {
+          const x = pickRoom();
+          if (!x) break;
+          if (!letTo(R, r, x.b, e, m, [c], gone)) continue;
+          recordDeal(e, "multifamily", m, x.b.rel ?? 1, x.b.unitSf * r.wIsland);
+          if (--x.room <= 0) wTot -= x.b.w ?? 1;
+          took = true; break;
+        }
+        if (!took) break;
+      }
     }
   }
   for (const b of B.list) {

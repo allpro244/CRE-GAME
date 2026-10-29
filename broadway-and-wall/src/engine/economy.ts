@@ -87,7 +87,7 @@ import {
   WAGE_CURVE, WAGE_GAP_HALF_M,
 } from "./market";
 import { HARD_COST_PSF, SOFT_COST, CONTINGENCY, constructionTypeMult } from "./value";
-import { householdMoney, registerPayroll, registerLabour, unpackHouseholds } from "./households";
+import { householdMoney, registerPayroll, registerLabour, unpackHouseholds, whyHouseholdSpend } from "./households";
 import { why, whyOnce, whyNation, whyTenantBooks } from "./why";
 
 // ---------------------------------------------------------------- the facts
@@ -361,21 +361,35 @@ function perHead(w: number) {
   return { opw, pay };
 }
 
-/** The household dollar by industry (purchaser -> producer), and the share of it that is primary goods (always imported). */
-function spendVector(online: number): { v: Float64Array; primary: number } {
+/**
+ * WHAT THE HOUSEHOLDS BOUGHT, BY INDUSTRY (households stage 5, 2026-10-29): each
+ * category's dollars as the register's households spent them
+ * (households.ts `bookSpend`: each household's own spending, in the shares
+ * households of its income spend, BLS CE by quintile), each bridged to the
+ * industries that make and sell it (industries.ts SPEND_BRIDGE, BEA PCE at
+ * producer prices), the shops' online share earned from a shed. What is left
+ * of a dollar — primary goods, always imported — leaks with the imports.
+ * (This was the register's total times the national basket, SPEND_SHARE: one
+ * mix of purchases for every town, whoever lived in it — FORMULA_LEDGER,
+ * Removed.) With `cat` null, a dollar of the national basket (the
+ * multiplier's marginal dollar when the register has not spent yet).
+ */
+function spendVector(online: number, cat: Record<SpendCategory, number> | null): { v: Float64Array; total: number } {
   const v = new Float64Array(N_IND);
-  let primary = 0;
-  for (const cat of Object.keys(SPEND_SHARE) as SpendCategory[]) {
-    const sh = SPEND_SHARE[cat];
-    for (const [k, x] of Object.entries(SPEND_BRIDGE[cat])) {
-      if (k === "primary") { primary += sh * (x ?? 0); continue; }
+  const w = cat ?? SPEND_SHARE;
+  let total = 0;
+  for (const c of Object.keys(SPEND_BRIDGE) as SpendCategory[]) {
+    const sh = w[c] ?? 0;
+    total += sh;
+    for (const [k, x] of Object.entries(SPEND_BRIDGE[c])) {
+      if (k === "primary") continue;
       v[INDUSTRY_INDEX[k as IndustryId]] += sh * (x ?? 0);
     }
   }
   // the online share of a shop's margin is earned by a seller shipping from a shed
   const o = Math.max(0, Math.min(1, online));
   for (const r of IND_RETAIL) { const moved = v[r] * o; v[r] -= moved; v[IND_ONLINE] += moved; }
-  return { v, primary };
+  return { v, total };
 }
 
 /** Each industry's own purchases per $ of its output: bought locally, and leaking out (imports and primary goods). */
@@ -1063,8 +1077,8 @@ export function tickEconomy(s: GameState): void {
   };
 
   // ---- 3. final demand
-  const sv = spendVector(e.online ?? 0);
   const C = hm.spend;
+  const sv = spendVector(e.online ?? 0, hm.spendCat);
   const G = heads[IND_GOV] * opw[IND_GOV];
   let firmRent = 0, comp = 0;
   for (let n = 0; n < nF; n++) { firmRent += rentOf(n); comp += wagesOf(n); }
@@ -1078,7 +1092,7 @@ export function tickEconomy(s: GameState): void {
   const insEmp = comp * PAY_SPLIT.insurance;
   const fedHealth = FED_HEALTH_PER_PERSON_2023 / 12 * w * hm.persons;
   const fH = new Float64Array(N_IND), fG = new Float64Array(N_IND), fC = new Float64Array(N_IND), fd = new Float64Array(N_IND);
-  for (let j = 0; j < N_IND; j++) fH[j] = C * sv.v[j];
+  for (let j = 0; j < N_IND; j++) fH[j] = sv.v[j];
   const fIns = new Float64Array(N_IND), fFed = new Float64Array(N_IND);
   for (const [h, wt] of IND_HEALTH) { fIns[h] = MLR * insEmp * wt; fFed[h] = fedHealth * wt; }
   fIns[IND_INS] += (1 - MLR) * insEmp;
@@ -1236,6 +1250,7 @@ export function tickEconomy(s: GameState): void {
   const H = ACCOUNTS.households, GOV = ACCOUNTS.government, LAND = ACCOUNTS.landlords, ROW = ACCOUNTS.rest, BANK = ACCOUNTS.bank;
   transfer(L, ROW, H, hm.pensions, "pensions", "row>hh:pensions");
   transfer(L, GOV, H, hm.ui, "ui", "gov>hh:unemployment insurance");
+  transfer(L, ROW, H, hm.transfers, "transfers", "row>hh:SNAP and EITC");
   transfer(L, H, ROW, hm.tax - hm.taxLocal, "tax", "hh>row:income tax");
   transfer(L, H, GOV, hm.taxLocal, "tax", "hh>gov:income and sales tax");
   transfer(L, H, LAND, hm.rent, "rent", "hh>land:rent");
@@ -1595,7 +1610,18 @@ export function whyIndustry(s: GameState, i: number): number | undefined {
       n: { emp: E.emp![i], empYear: de, exports: vsYear(l.buy[i][4], m.X[i]), households: vsYear(l.buy[i][0], m.hh[i]), firms: vsYear(l.buy[i][1], m.firms[i]), share: (E.lnShare?.[i] ?? 0) - m.share[i] },
       t: `${INDUSTRIES[id].label} · ${Math.round(E.emp![i]).toLocaleString("en-US")} jobs, ${sgn(de)} on its year · households ${sgn(vsYear(l.buy[i][0], m.hh[i]))} · firms ${sgn(vsYear(l.buy[i][1], m.firms[i]))} · exports ${sgn(vsYear(l.buy[i][4], m.X[i]))}`,
     };
-  }, () => Math.abs(dX) > Math.abs(dLocal) ? [whyNation(s), whyTown(s)] : [whyTown(s), whyNation(s)]);
+  }, () => {
+    if (Math.abs(dX) > Math.abs(dLocal)) return [whyNation(s), whyTown(s)];
+    // the households' channel moved most: what they bought of it, in the category that buys most of it (households stage 5)
+    const dH = l.buy[i][0] - m.hh[i], dF = l.buy[i][1] - m.firms[i];
+    const cat = s.households?.flow.spendCat;
+    if (cat && Math.abs(dH) >= Math.abs(dF)) {
+      let top: SpendCategory | undefined, best = 0;
+      for (const c of Object.keys(SPEND_BRIDGE) as SpendCategory[]) { const v = (cat[c] ?? 0) * (SPEND_BRIDGE[c][id] ?? 0); if (v > best) { best = v; top = c; } }
+      if (top) return [whyHouseholdSpend(s, top), whyTown(s), whyNation(s)];
+    }
+    return [whyTown(s), whyNation(s)];
+  });
 }
 
 /** A named firm's industry: the one it was formed in, else the one the books put it in. Pure. */
@@ -1657,7 +1683,9 @@ export function economyMultipliers(s: GameState): { outputI: number; outputII: n
   const net = gross - hm.tax;
   const mpc = net > 0 ? hm.spend / net : 0;
   const taxR = gross > 0 ? hm.tax / gross : 0;
-  const sv = spendVector(s.econ.online ?? 0).v;
+  // the marginal dollar is spent in the mix the town's households spent this month
+  const svc = spendVector(s.econ.online ?? 0, hm.spend > 0 ? hm.spendCat : null);
+  const sv = svc.v.map((x) => x / Math.max(1e-12, svc.total));
   const X = Float64Array.from(E.last.buy.map((b) => b[4]));
   const xs = X.reduce((a, v) => a + v, 0);
   if (!(xs > 0)) return null;

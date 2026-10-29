@@ -25,7 +25,10 @@ import type { GameState, PortfolioListing, Rival } from "./types";
 import type { ParcelRecord, ParcelTable } from "../data/types";
 import { dollarLevel, rng, rrange } from "./market";
 import { assetValue, capRateFor, collateralAsIs, inPlace, resolveRec } from "./value";
-import { livingRivals, gradeOf, ownerOf, paramsOf, receiverDeskFor, forgetDeed, fitOf, streetSaleCost } from "./rivals";
+import { livingRivals, gradeOf, ownerOf, paramsOf, receiverDeskFor, forgetDeed, fitOf, streetSaleCost, jvFund } from "./rivals";
+import { packageBids, sellerTerms, forcedSalePrice } from "./propmarket";
+import { drawRivalRaise } from "./investors";
+import { logFirm } from "./firmLog";
 import { lenderByName, lenderPressure, raiseAlert } from "./lenders";
 import { streetRefiProceeds } from "./debt";
 import { financePackage, settleSale } from "./rivalDebt";
@@ -35,22 +38,6 @@ import { sweepLocIdleCash, fundableNow } from "./credit";
 
 const money = (n: number) =>
   Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${Math.round(n / 1000)}K`;
-
-/**
- * THE SIZE DISCOUNT.
- *
- * Two buildings are a pair of deals. Eleven are a transaction with a shortlist
- * of maybe three counterparties in the city, and every one of them knows it.
- * Six per cent off at four buildings, widening toward eighteen at twenty — and
- * WIDER when credit is shut, because the number of people who can fund a
- * hundred-million-dollar cheque in a bad year is the whole story of what
- * distressed portfolios clear at.
- */
-export function sizeDiscount(n: number, creditIdx: number): number {
-  const base = Math.min(0.18, 0.02 + 0.016 * Math.max(0, n - 1));
-  const shut = Math.max(0, 1 - creditIdx);
-  return Math.min(0.34, base * (1 + 1.5 * shut));
-}
 
 /** What the individual buildings are worth, before the discount for buying them together. */
 export function grossOf(s: GameState, parcels: ParcelTable, bbls: string[]): number {
@@ -244,8 +231,9 @@ export function listStreetPortfolio(
   }
   const gross = grossOf(s, parcels, clean);
   if (gross <= 0) return { s, err: "Those parcels have no package value." };
-  const disc = sizeDiscount(clean.length, s.econ.creditIdx ?? 1);
-  const guide = Math.round(gross * (1 - disc) / 1000) * 1000;
+  // The guide is the sum of the appraisals; what the book clears at is what
+  // the firms that can write the cheque bid (propmarket.ts packageBids).
+  const guide = Math.round(gross / 1000) * 1000;
   const ask = askOverride && askOverride > 0 ? Math.round(askOverride / 1000) * 1000 : guide;
   s.portfolios ??= [];
   s.portfolios.push({
@@ -258,7 +246,7 @@ export function listStreetPortfolio(
   s.news.unshift({
     q: s.month, kind: "deal",
     text: `Package listed · ${clean.length} buildings · ${money(ask)}. `
-      + `Appraised ${money(gross)}; ${(disc * 100).toFixed(0)}% bulk discount.`,
+      + `Appraised ${money(gross)}; it clears at what the bidders who can fund the whole cheque offer.`,
   });
   return { s, msg: `${clean.length} buildings offered as one package at ${money(ask)}.` };
 }
@@ -475,7 +463,6 @@ export function packageCanClose(
 // ---------------------------------------------------------------------------
 export function tickPortfolios(s: GameState, parcels: ParcelTable) {
   s.portfolios ??= [];
-  const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
 
   // --- 1. does anything on the tape find a buyer this month? ---------------
   for (const p of [...s.portfolios]) {
@@ -508,22 +495,51 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
     // the sum of its parts is that this list is short: the buyer needs the
     // equity for the entire package at once, and the debt has to be lendable
     // against a book that just grew by eleven buildings.
-    const recs = p.bbls.map((b) => resolveRec(parcels, s, b)).filter(Boolean) as ParcelRecord[];
-    const fitPkg = (r: Rival) => packageFit(s, parcels, r, recs, !!p.reo);
-    const packageDebt = (r: Rival) => packageFinance(s, parcels, r, p.bbls, p.ask).debt;
-    const buyers = livingRivals(s).filter((r) => r.id !== p.sellerId && packageCanClose(s, parcels, r, p.bbls, p.ask, !!p.reo));
-    if (buyers.length) {
-      // A rival buying a rival's book. Rare, and it is how the big get big.
-      const hunger = buyers.map((r) => {
-        const st = paramsOf(r);
-        return { r, w: st.appetite * (1 + st.contra * (1 - ci)) * (p.reo ? st.distressBias : 1) * fitPkg(r) * (0.5 + rng(s)) };
-      }).sort((a, b) => b.w - a.w);
-      const under = p.ask / Math.max(1, p.gross);
-      // they take it when it is cheap enough relative to the parts
-      if (rng(s) < 0.09 * hunger[0].w * (under < 0.86 ? 1.8 : under < 0.95 ? 1 : 0.35)) {
-        const winner = hunger[0].r;
-        const winDebt = packageDebt(winner);
+    // THE PRICE IS THE BIDS (step 7b, propmarket.ts packageBids): each firm
+    // with a track record values the book deed by deed on its own
+    // underwriting and bids alone, with a raise from the investor pool, or —
+    // when no one firm can write the cheque — two firms split it. The book
+    // clears at the best bid over the seller's floor; there is no size
+    // discount (FORMULA_LEDGER #27, Removed).
+    const pkgBids = packageBids(s, parcels, p.bbls, p.sellerId, !!p.reo);
+    const floorPx = p.reserve ?? p.ask * (p.reo ? 0.88 : 0.92);
+    const top = pkgBids[0];
+    if (top?.partner && top.mine?.length && top.theirs?.length && top.bid >= floorPx) {
+      // NO ONE FIRM CAN WRITE IT; TWO CAN. The book is split along the line
+      // the two firms drew — each part a cheque one of them can carry — and
+      // each part goes back out as its own package at that firm's number.
+      const parts = [top.mine, top.theirs];
+      const grossAll = Math.max(1, p.gross);
+      s.portfolios = s.portfolios.filter((x) => x.id !== p.id);
+      for (const part of parts) {
+        if (part.length < 2) {
+          for (const b of part) {
+            const rec = resolveRec(parcels, s, b);
+            if (!rec || s.listings.some((l) => l.bbl === b)) continue;
+            s.listings.push({ bbl: b, ask: Math.round(assetValue(rec, s.econ, gradeOf(s, rec)) / 1000) * 1000, listedM: s.month, expiresM: s.month + 12, ...(p.reo ? { distress: true } : {}), ...(p.sellerId ? { sellerId: p.sellerId } : {}) });
+          }
+          continue;
+        }
+        const g = grossOf(s, parcels, part);
+        s.portfolios.push({ ...p, id: `pf${s.nextPortfolioId = (s.nextPortfolioId ?? 1) + 1}`, bbls: part, gross: g, ask: Math.round(p.ask * g / grossAll / 1000) * 1000, ...(p.reserve !== undefined ? { reserve: Math.round(p.reserve * g / grossAll) } : {}) });
+      }
+      continue;
+    }
+    if (top && !top.partner) {
+      if (top.bid >= floorPx) {
+        const winner = top.r;
+        p.ask = top.bid;
+        const winDebt = Math.min(p.ask, packageFinance(s, parcels, winner, p.bbls, p.ask).debt);
         const winEq = p.ask - winDebt;
+        // A RAISE FOR THE DEAL: the deal's investors write their share of the
+        // equity cheque on each deed (rivals.ts jvFund — the same syndicate
+        // terms a builder raises on), out of the city's investor pool.
+        if (top.raise > 0) {
+          let lp = 0;
+          for (const b of p.bbls) lp += jvFund(s, winner, b, winEq / p.bbls.length);
+          drawRivalRaise(s, lp);
+          logFirm(s, winner, "event", `Raised ${money(lp)} from investors for a ${p.bbls.length}-building package`, p.bbls[0], lp);
+        }
         // YOUR OWN PACKAGE CLEARING. Close each deed through acceptSaleOffer so
         // the mortgage payoff, facility release, prepay, tax, deposits and
         // Books lines match a single-asset sale. The old path deleted holdings
@@ -661,7 +677,8 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
             if (!rec || s.holdings[b] || s.listings.some((l) => l.bbl === b)) continue;
             const v = assetValue(rec, s.econ, gradeOf(s, rec));
             s.listings.push({
-              bbl: b, ask: Math.round(v * rrange(s, 0.62, 0.78) / 1000) * 1000,
+              // priced to move: what the street would bid today (propmarket.ts)
+              bbl: b, ask: Math.round((forcedSalePrice(s, parcels, rec, b, v) || v) / 1000) * 1000,
               listedM: s.month, expiresM: s.month + 12, distress: true,
             });
           }
@@ -746,17 +763,24 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
       const take = r.bbls.filter((b) => !s.holdings[b] && !s.listings.some((l) => l.bbl === b)).slice(0, 3 + Math.floor(rng(s) * 6));
       if (take.length >= 3) {
         const gross = grossOf(s, parcels, take);
-        const disc = sizeDiscount(take.length, ci);
+        // A FUND AT THE END OF ITS LIFE must sell, but not for less than
+        // clears the loans on the book (propmarket.ts sellerTerms, forced).
+        let reserve = 0;
+        for (const b of take) {
+          const rec = resolveRec(parcels, s, b);
+          if (rec) reserve += sellerTerms(s, r, rec, b, Math.max(1, assetValue(rec, s.econ, gradeOf(s, rec))), "forced").reserve;
+        }
+        const ask = Math.round(Math.max(gross, reserve) / 1000) * 1000;
         s.portfolios.push({
           id: `pf${s.nextPortfolioId = (s.nextPortfolioId ?? 1) + 1}`,
-          bbls: take, ask: Math.round(gross * (1 - disc) / 1000) * 1000, gross,
+          bbls: take, ask, gross, reserve,
           listedM: s.month, expiresM: s.month + 18, cuts: 0, sellerId: r.id,
           reason: `${r.name} is winding the fund down and would rather do one closing than ${take.length}.`,
         });
         s.news.unshift({
           q: s.month, kind: "deal",
-          text: `${r.name} has put ${take.length} buildings on the market as one package at ${money(Math.round(gross * (1 - disc)))}. `
-            + `Fund-life sale; ${(disc * 100).toFixed(0)}% off the sum of the parts.`,
+          text: `${r.name} has put ${take.length} buildings on the market as one package at ${money(ask)}. `
+            + `Fund-life sale; it clears at what the firms that can fund the whole cheque bid.`,
         });
       }
     }

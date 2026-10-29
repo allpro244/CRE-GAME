@@ -31,10 +31,8 @@ When you remove one, move it to **Removed** with the PR. When you add a mechanis
 | 20 | Opening tenant credit, rent and term dice on new rolls | `leasing.ts` `rollCredit` and roll generation | step 4 / step 2: tenants are real firms |
 | 21 | Rival equity draws at founding (`initRivals`, `maybeNewFirm`: equity and leverage × random band) | `rivals.ts` | 6d-1: capital raised from savers' allocations |
 | 22 | Anonymous part of each bank's loan book, and its delinquency formula | `lenders.ts` `anonDelinq` | step 5 (in progress) |
-| 24 | City land index (rent/cost residual × cycle × bidders' book, closing 4%/month) | `market.ts` `landIdx` | step 7: land read off closed lot sales and builders' residual bids |
 | 25 | A receiver's half-built frame: land + sunk cost × random band | `rivals.ts` `orphanToTape` | step 7b: builders bid the frame on cost to complete |
 | 26 | Capital wave as a shift in every bidder's equity target | `blackswans.ts` → `propmarket.ts` `valueTo` | 6d-1: money chasing returns |
-| 27 | Portfolio size discount (2% + 1.6%/building to 18%, ×(1 + 1.5 × shut credit)) | `portfoliosale.ts` `sizeDiscount` | step 7b: the package clears at what the few firms that can fund the whole cheque bid — alone, with a fund raise, or as a JV — so the discount comes from how few can write it |
 
 ## Removed
 
@@ -49,3 +47,5 @@ When you remove one, move it to **Removed** with the PR. When you add a mechanis
 | Cap-rate floor over the 10Y (`CAP_FLOOR_OVER_INDEX`, #502) | each bidder's own cost of capital: the desks' debt-yield and coverage tests cap leverage in cheap money | step 7 |
 | Rival asks = value × random band (`rivalAsk`, fund-life, voluntary, grudge, duress `DURESS_BAND`, quiet-treaty price), lognormal tape bids around `capTarget`, a 0.88-0.96 private bid band, a 0.68-0.88 receiver recovery band | sellers' reservations from their own situation (`sellerTerms`: loan to clear, gains tax, value in use); bids from each firm's own underwriting (`bidRound`, `forcedSalePrice`) | step 7 |
 | Register holders' (ghost) asks: appraisal × a random "denial" band and a distress band | a holder's anchor — the higher of today's appraisal and last year's (loss aversion); a distressed holder prices at the street's best bid (`anchoredAsk`, `forcedSalePrice`) | step 7 (property-market-2) |
+| City land index (rent/cost residual × cycle × bidders' book, closing 4%/month) | the texture level read off lot prints (12/24/36-month median of the level each sale or bid-ask midpoint implies on a texture-governed lot; a yearly survey of builders' and land bankers' bids when none printed); lots go through bid rounds — builders bid their own residual (their margin, no queue wait), land bankers the holder's option (`propmarket.ts` `landMaxPrice`, `landBidRound`, `tickLandRead`) | land-7b |
+| Portfolio size discount (`sizeDiscount`: 2% + 1.6%/building to 18%, widened by shut credit) | package bids: firms with a three-year track record value the book deed by deed, bid alone, with a raise from the investor pool, or split it between two firms; the book clears at the best bid over the seller's floor (`propmarket.ts` `packageBids`) | land-7b |

@@ -1199,6 +1199,8 @@ export interface Listing {
 export interface PortfolioListing {
   id: string;
   bbls: string[];
+  /** the least the seller takes for the whole book (a named firm's own floor: the loans it must clear); absent, 92% of the ask (a lender's 88%) */
+  reserve?: number;
   /** the number being asked for the whole book, today */
   ask: number;
   /** what the buildings appraise at individually — the ask is read against this */

@@ -42,7 +42,7 @@ import { underwrittenGrowthPct, dollarLevel, RENT_BASE, CAP_BASE } from "./marke
 import {
   assetValue, capRateFor, initialCondIdx, demandLinear, incomeValueAsIs, initialCondition, inPlace, landValue,
   marketAppraisal, noiYr, resolveRec, specWearMult, taxBorneShare, taxRate, useOccupancy, useRentableSf,
-  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, landPsfNow, DEV_MARGIN,
+  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, landPsfNow, DEV_MARGIN, queueFactor,
 } from "./value";
 import { uses } from "./mix";
 import { productOf } from "./products";
@@ -50,12 +50,13 @@ import { stabViewFor, streetRefiProceeds } from "./debt";
 import { TI_ASK, renewalRefreshShare } from "./leasing";
 import {
   livingRivals, paramsOf, fitOf, ownerOf, firmOutlook, rentSignals, deployPressure, contractedEquity, lineRoom,
-  minTicket, boughtLastYear, gainsTax, streetSaleCost, spreadAdj, firmMaxPrice, firmMargin, landBanker,
+  minTicket, boughtLastYear, gainsTax, streetSaleCost, spreadAdj, firmMaxPrice, firmMargin, landBanker, sponsorShareOf,
 } from "./rivals";
 import { dealsPerYear, misreadPp } from "./competitorTraits";
 import { rowOn, deskWithRoom } from "./rivalDebt";
 import { why, whyGet, whyNation } from "./why";
 import { money } from "./money";
+import { poolLeft } from "./investors";
 import { START_YEAR } from "./types";
 
 const K: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
@@ -872,6 +873,117 @@ export function tickBrokerSurvey(s: GameState, parcels: ParcelTable): void {
   });
 }
 
+// ---------------------------------------------------------------- big books (step 7b)
+
+/**
+ * A NEW FIRM DOES NOT BUY A BOOK (owner's rule: newcomers enter small, low on
+ * the list, with cash and no buildings, and never arrive as the biggest). A
+ * firm bids on a package once it has run a book of its own for three years —
+ * long enough to have the investors, the desks and the staff a portfolio
+ * closing needs. A shape parameter for "a track record".
+ */
+const PACKAGE_TRACK_M = 36;
+
+export interface PackageBid {
+  r: Rival;
+  /** the firm's own number for the whole book, and its bid */
+  max: number; bid: number;
+  /** equity raised from the investor pool for this one deal, $ (0 when the firm's own money covers it) */
+  raise: number;
+  /** a second firm taking part of the book alongside it, and the deeds each takes */
+  partner?: Rival; mine?: string[]; theirs?: string[];
+}
+
+/**
+ * WHO CAN BUY A WHOLE BOOK, AND FOR WHAT (step 7b). Every firm with a track
+ * record values the package building by building on its own underwriting
+ * (the same numbers it bids on the tape) and shades for the room. Then the
+ * cheque has to be written:
+ *
+ *   ALONE, from its account, its line and the desks' loan on the book;
+ *   WITH A RAISE, when it is short: the city's investor pool (local money and
+ *   family offices, investors.ts) puts up the rest if it has it — which in a
+ *   crunch, when the pool is spoken for and the desks cut the advance, it
+ *   does not;
+ *   WITH A PARTNER: two firms split the book, each taking the buildings it
+ *   values most against the other, each funding its own half — the joint
+ *   bid is the sum of the two halves.
+ *
+ * There is no size discount. A book trades back from the sum of its parts
+ * only because the list of people who can write the cheque is short, and
+ * shorter in a bad year — which is what this produces.
+ */
+export function packageBids(s: GameState, parcels: ParcelTable, bbls: string[], sellerId?: string, distress = false): PackageBid[] {
+  const recs = bbls.map((b) => resolveRec(parcels, s, b)).filter((r): r is ParcelRecord => !!r);
+  if (recs.length < 2) return [];
+  const views = recs.map((rec) => rec.class === "land" || !(rec.bldgArea > 0)
+    ? null : dealView(s, rec, rec.bbl, Math.max(1, assetValue(rec, s.econ, initialCondition(rec)))));
+  const sig = rentSignals(s);
+  const firms = livingRivals(s).filter((r) => r.id !== sellerId && !r.stressMs && r.failedM === undefined
+    && s.month - (r.bornM ?? 0) >= PACKAGE_TRACK_M
+    && !bbls.some((b) => ownerOf(s, b) === r)
+    && recs.every((rec) => !paramsOf(r).classes || paramsOf(r).classes!.includes(rec.class))
+    && (!r.sheet || recs.every((rec) => fitOf(s, parcels, r, rec, distress) > 0)));
+  // each firm's own number, deed by deed
+  const per = firms.map((r) => recs.map((rec, i) => {
+    const v = views[i];
+    return v ? maxPrice(s.econ, v, bidderOf(s, r, rec), sig).max : landMaxPrice(s, r, rec);
+  }));
+  const n = firms.length;
+  const shade = 1 - SHADE / Math.max(1, n);
+  const avail = (r: Rival) => {
+    const reserve = Math.max(1_000_000 * dollarLevel(s.econ), Math.max(0, r.cash) * 0.05);
+    const room = Math.max(0, lineRoom(s, r, r.aum ?? 0, r.markNoi ?? 0, r.markLand ?? 0));
+    return r.cash - contractedEquity(s, r) + room - reserve;
+  };
+  // the desks' loan on what a firm takes, at its own leverage
+  const debtOn = (f: number, idx: number[], price: number) => {
+    const r = firms[f];
+    let a = 0, w = 0;
+    for (const i of idx) { const v = views[i]; if (v) { a += Math.min(v.debtA, bidderOf(s, r, recs[i]).ltvCap) * per[f][i]; } w += per[f][i]; }
+    return price * (w > 0 ? a / w : 0);
+  };
+  const pool = poolLeft(s, "local") + poolLeft(s, "family");
+  const out: PackageBid[] = [];
+  const all = recs.map((_, i) => i);
+  for (let f = 0; f < n; f++) {
+    const r = firms[f];
+    const max = per[f].reduce((a, x) => a + x, 0);
+    if (!(max > 0) || per[f].some((x) => !(x > 0))) continue;
+    const bid = Math.round(max * shade / 1000) * 1000;
+    const need = bid * (1 + BUY_CLOSING) - debtOn(f, all, bid);
+    const short = need - avail(r);
+    if (short <= 0) { out.push({ r, max, bid, raise: 0 }); continue; }
+    // A RAISE for the rest — at most the firm's own equity again (a sponsor
+    // puts up a tenth to a fifth of a fund it runs; LPs will not back a deal
+    // its sponsor cannot carry a real piece of), and only what the pool has.
+    // Only a firm that raises deal money at all (its syndicate terms, rivals.ts sponsorShareOf).
+    if (sponsorShareOf(s, r) < 1 && short <= Math.min(pool, Math.max(0, avail(r)) * 4)) out.push({ r, max, bid, raise: Math.round(short) });
+  }
+  // A PARTNER: the two firms that value the book most, splitting it by who
+  // values each building more against the other, each funding its own part.
+  if (!out.length && n >= 2) {
+    const tot = per.map((xs) => xs.reduce((a, x) => a + x, 0));
+    const order = tot.map((t, i) => [t, i] as const).sort((a, b) => b[0] - a[0]);
+    const [ia, ib] = [order[0][1], order[1][1]];
+    const mine: number[] = [], theirs: number[] = [];
+    for (const i of all) (per[ia][i] / Math.max(1, tot[ia]) >= per[ib][i] / Math.max(1, tot[ib]) ? mine : theirs).push(i);
+    if (mine.length && theirs.length) {
+      const ma = mine.reduce((a, i) => a + per[ia][i], 0), mb = theirs.reduce((a, i) => a + per[ib][i], 0);
+      const ba = Math.round(ma * shade / 1000) * 1000, bb = Math.round(mb * shade / 1000) * 1000;
+      const okA = ba * (1 + BUY_CLOSING) - debtOn(ia, mine, ba) <= avail(firms[ia]);
+      const okB = bb * (1 + BUY_CLOSING) - debtOn(ib, theirs, bb) <= avail(firms[ib]);
+      if (ma > 0 && mb > 0 && okA && okB) {
+        out.push({
+          r: firms[ia], max: ma + mb, bid: ba + bb, raise: 0, partner: firms[ib],
+          mine: mine.map((i) => recs[i].bbl), theirs: theirs.map((i) => recs[i].bbl),
+        });
+      }
+    }
+  }
+  return out.sort((a, b) => b.bid - a.bid);
+}
+
 // ---------------------------------------------------------------- land (FORMULA_LEDGER #24)
 
 /**
@@ -902,7 +1014,18 @@ export function landMaxPrice(s: GameState, r: Rival, rec: ParcelRecord): number 
     const value = sc.valuePsf * gsf, nonLand = sc.costPsf * gsf;
     const atTrade = value / (1 + DEV_MARGIN) - nonLand;
     if (atTrade > 0) {
-      const f = (sc.psf * rec.lotArea) / atTrade;   // the scheme's wait and carry, per dollar of residual
+      // the scheme's wait and carry, per dollar of residual
+      let f = (sc.psf * rec.lotArea) / atTrade;
+      if (builds) {
+        // A BUILDER WHO BUYS IS AT THE FRONT OF THE QUEUE: it breaks ground,
+        // so the lot's wait behind better sites (queueFactor — what the
+        // appraisal of a lot nobody is building on carries) is not its cost;
+        // the carry through construction is. The queue is backed out of the
+        // scheme's own factor at the residual it was struck on.
+        let q = queueFactor(s.econ, sc.use, sc.psf);
+        for (let it = 0; it < 2; it++) q = queueFactor(s.econ, sc.use, (sc.psf / Math.max(1e-6, q)));
+        if (q > 0) f /= q;
+      }
       own = Math.max(0, f * (value / (1 + (builds ? firmMargin(r, s.month) : DEV_MARGIN)) - nonLand));
     }
   }

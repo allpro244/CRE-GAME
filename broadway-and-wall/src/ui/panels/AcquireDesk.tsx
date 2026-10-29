@@ -21,6 +21,8 @@ import { ownerAt } from "@/engine/ownership";
 import { unitStatus, buyoutQuote, BUYOUT_PREMIUM } from "@/engine/leasing";
 import { PRODUCTS, deskAdvice } from "@/engine/debt";
 import { stayingPower, lenderByName } from "@/engine/lenders";
+import { WhyButton } from "@/ui/WhyChain";
+import { loanWhy, loanLead } from "@/ui/whyLinks";
 import { coldOnDeed, coldRefuseMsg } from "@/engine/owners";
 import { uses as usesOf, useSf } from "@/engine/mix";
 import { gradeOf } from "@/engine/rivals";
@@ -1362,7 +1364,8 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
             {rec && rec.class !== "land" && rec.bldgArea > 0 && (
               <>
                 <Row k="Going-in cap" v={`${goingInPct.toFixed(2)}%`} bad={negLev} />
-                <Row k="Coupon" v={`${max.ratePct.toFixed(2)}%${negLev ? " — negative leverage" : ""}`} bad={negLev} />
+                <Row k="Coupon" v={`${max.ratePct.toFixed(2)}%${negLev ? " — negative leverage" : ""}`} bad={negLev}
+                  why={prodDef && max.principal > 0 ? <WhyButton id={loanWhy(game, prodDef.lender)} lead={loanLead(game, prodDef.lender, max.ratePct)} /> : undefined} />
                 {principal > 0 && <Row k={<Gloss term="debt yield">Debt yield</Gloss>} v={`${dy.toFixed(1)}%`} bad={dy < 8} />}
                 {principal > 0 && <Row k="Annual debt service" v={`−${usd(annualDs)}${prodDef && prodDef.ioM > 0 ? " (interest-only)" : ` (${prodDef?.amortYears ?? 30}-yr am)`}`} />}
                 {prodDef && (

@@ -53,7 +53,7 @@ import type { BuiltClass, Econ, GameState } from "./types";
 import { BUILT_CLASSES } from "./types";
 import { HARD_COST_PSF, SOFT_COST, CONTINGENCY } from "./value";
 import { pushNewsPublic } from "./market";
-import { why, whyNation } from "./why";
+import { why, whyNation, whyOnce } from "./why";
 
 const OHP = 0.12, BID_SLOPE = 0.35, BID_SD = 0.06;
 const OVERHEAD = 0.035;
@@ -335,13 +335,13 @@ function awardFirm(j: Job & { cost?: number; spent?: number }, bm: number, idx: 
 }
 
 /** The trades' month as a cause: how booked they are and the index markup. */
-function whyTrades(s: GameState): number {
+export function whyTrades(s: GameState): number {
   const B = s.econ.gcs;
-  return why(s, {
+  return whyOnce(s, `trades:${s.month}`, () => ({
     k: "construction.month", a: "trade", name: "construction",
     n: { util: s.econ.crewUtil ?? 1, markup: B?.idx ?? 0, contractors: B?.firms.filter((f) => f.failedM === undefined).length ?? 0 },
     t: `Construction trades ${Math.round((s.econ.crewUtil ?? 1) * 100)}% booked · winning bids ${((B?.idx ?? 0) * 100).toFixed(1)}% over direct cost`,
-  }, [whyNation(s)]);
+  }), () => [whyNation(s)]);
 }
 
 /** A contractor runs out of capital: its jobs go back out to tender, half its crews leave the trade. */

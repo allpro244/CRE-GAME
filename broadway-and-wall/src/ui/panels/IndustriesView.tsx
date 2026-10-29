@@ -7,6 +7,9 @@
 // opens below: what it buys and from whom, what it sells and to whom, in
 // dollars from the IO table on last month's output, with your tenants in it.
 // Numbers first. Reads only.
+import { WhyButton } from "@/ui/WhyChain";
+import { industryWhy } from "@/ui/whyLinks";
+import { whyLatest } from "@/engine/why";
 import { useState } from "react";
 import { useStore } from "@/state/store";
 import { economyByIndustry } from "@/engine/economy";
@@ -191,6 +194,7 @@ export function RentExposure({ holding }: { holding: Holding }) {
         {ind.map((f, i) => (
           <span key={f.key}>{i > 0 && " · "}<b>{(f.v * 100).toFixed(0)}%</b>{" "}
             <button type="button" className="biz-link" onClick={() => open(f.key)}>{shortInd(f.key as IndustryId)}</button>
+            <WhyButton id={industryWhy(game, f.key)} />
           </span>
         ))}
       </div>
@@ -199,6 +203,7 @@ export function RentExposure({ holding }: { holding: Holding }) {
         {buyers.map((f, i) => (
           <span key={f.key}>{i > 0 && " · "}<b>{(f.v * 100).toFixed(0)}%</b>{" "}
             {f.ind ? <button type="button" className="biz-link" onClick={() => open(f.key)}>{shortInd(f.ind)}</button> : f.label}
+            <WhyButton id={f.ind ? industryWhy(game, f.ind) : whyLatest(game, "town", 3)} />
           </span>
         ))}
         {ex.covered < ex.rentYr * 0.995 && <span className="dim"> · of the {((ex.covered / (ex.rentYr || 1)) * 100).toFixed(0)}% of rent with books</span>}

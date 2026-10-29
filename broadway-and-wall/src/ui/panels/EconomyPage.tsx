@@ -20,6 +20,8 @@ import { Industries } from "@/ui/panels/IndustriesView";
 import { economyByIndustry } from "@/engine/economy";
 import { capReadLine } from "@/engine/propmarket";
 import { CityHallBox } from "@/ui/panels/CityHall";
+import { WhyButton } from "@/ui/WhyChain";
+import { capWhy, rentWhy, vacWhy, landWhy, wageWhy, rateWhy, taxWhy, costWhy } from "@/ui/whyLinks";
 
 /** The cycle in a sentence. Read by City → Pulse, which leads with it. */
 export const PHASE_BLURB: Record<string, string> = {
@@ -870,7 +872,21 @@ export function EconomyPage() {
       {sel === "general" && (
         <StockVsLeased tail={tail} live={e} xFrom={xFrom} xTo={xTo} spanYrs={spanYrs} />
       )}
+      {sel === "general" && (
+        // WHAT MOVED THE CITY'S PRICES, each with its chain (whyReads.ts).
+        <div className="grid" style={{ marginTop: 6 }}>
+          <Row k="Base rate" v={`${e.indexRate.toFixed(2)}%`} why={<WhyButton id={rateWhy(game)} />} />
+          <Row k="Pay in town" v={`index ${(e.wageIdx ?? 1).toFixed(2)} · ${((e.unemployment ?? 0) * 100).toFixed(1)}% jobless`} why={<WhyButton id={wageWhy(game)} />} />
+          <Row k="Construction cost" v={`index ${(e.costIdx ?? 1).toFixed(2)}`} why={<WhyButton id={costWhy(game)} />} />
+          {e.gov && <Row k="City taxes" v={`property ${(e.gov.policy.propRate * 100).toFixed(2)}% · payroll ${(e.gov.policy.wageRate * 100).toFixed(2)}%`} why={<WhyButton id={taxWhy(game)} />} />}
+        </div>
+      )}
       {sel === "general" && <>{rateChart}<CityEconCharts tail={tail} spanYrs={spanYrs} /></>}
+      {sel === "land" && (
+        <div className="grid" style={{ marginTop: 6 }}>
+          <Row k="Land index" v={(e.landIdx * 100).toFixed(0)} why={<WhyButton id={landWhy(game)} />} />
+        </div>
+      )}
       {sel === "land" && <LandValueChart />}
       {sel === "banks" && <>{rateChart}<TheBanks /></>}
       {sel === "employers" && <Employers />}
@@ -881,7 +897,8 @@ export function EconomyPage() {
       <div className="hint">{bal.note}</div>
       <div className="grid" style={{ marginTop: 6 }}>
         <Row k="Inventory" v={`${(stock / 1e6).toFixed(1)}M sf`} />
-        <Row k="Vacant space" v={`${((stock * vacNow) / 1e6).toFixed(2)}M sf · ${(vacNow * 100).toFixed(1)}% available · usual ${(normalVac(e, focus) * 100).toFixed(1)}%`} bad={bal.gap > 0.025} strong />
+        <Row k="Vacant space" v={`${((stock * vacNow) / 1e6).toFixed(2)}M sf · ${(vacNow * 100).toFixed(1)}% available · usual ${(normalVac(e, focus) * 100).toFixed(1)}%`} bad={bal.gap > 0.025} strong
+          why={<WhyButton id={vacWhy(game, focus)} />} />
         {Math.abs(vacNow - directNow) > 0.003 && (
           <Row
             k="Direct vacancy"
@@ -961,7 +978,8 @@ export function EconomyPage() {
         <Row k="Rent" v={(() => {
           const d = ((e.rentIdx[focus] / RENT_BASE[focus]) - 1) * 100;
           return `$${e.rentIdx[focus].toFixed(2)}/sf · ${d >= 0 ? "+" : "−"}${Math.abs(d).toFixed(0)}% vs long-run base`;
-        })()} />
+        })()} why={<WhyButton id={rentWhy(game, focus)} />} />
+        <Row k="Cap rate" v={capReadLine(e, focus) ?? `${e.capRate[focus].toFixed(2)}%`} why={<WhyButton id={capWhy(game, focus)} />} />
         {(() => {
           const history = e.history ?? [];
           const yearAgo = history.length > 12 ? history[history.length - 13] : undefined;

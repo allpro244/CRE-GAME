@@ -69,7 +69,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, Sector } from "./types";
 import { raiseAlert, START_YEAR } from "./types";
-import { rng, pushNewsPublic, islandResidents, locationCost, WAGE_SHARE, INDUSTRY_LABEL } from "./market";
+import { rng, pushNewsPublic, locationCost, WAGE_SHARE, INDUSTRY_LABEL } from "./market";
 import { resolveRec } from "./value";
 import { chargeLenderLoss } from "./lenders";
 import { why, whyNation, whyOnce } from "./why";
@@ -509,22 +509,25 @@ function startEmbargo(s: GameState) {
  * region's mix — but newcomers do not arrive in equilibrium. They go where
  * their community already is and where a room can be had this week: the
  * Mariel arrivals went overwhelmingly to the city of Miami and Hialeah, not
- * the county at large. Half of them on the island is a shape parameter; the
- * location margin (`locEff`, market.ts) then sorts them back out over its
- * own five-year half-life, as those families did.
+ * the county at large. Half of them wanting the island is a shape parameter.
+ * They land in the household register (households.ts, the wave): renter
+ * households across the water looking for work, ARRIVALS_CORE of them with a
+ * taste for the island that wants a flat there at the going rent — so they
+ * are the flats' demand the month they come (`islandWant`), they take the
+ * island's empty flats the landlords' screens let them, and they sort
+ * themselves back out at their lease ends as any household does. (This was a
+ * poke at the island's location margin, `locEff`, which no longer feeds
+ * anything since households stage 2.)
  */
 const ARRIVALS_CORE = 0.5;
 
 function tickArrivals(s: GameState) {
   const e = s.econ, x = e.arrivals;
-  if (!x) { e.bsMigPull = 0; return; }
+  if (!x) { e.bsMigPull = 0; e.bsArrivals = undefined; return; }
   if (x.leftM > 0) {
     e.bsMigPull = x.monthly; x.leftM -= 1;
-    const share = Math.min(1, islandResidents(e).residents / Math.max(1, e.population ?? 1));
-    if (share > 0 && share < ARRIVALS_CORE && e.locEff) {
-      e.locEff.multifamily *= 1 + x.monthly * (ARRIVALS_CORE / share - 1);
-    }
-  } else { e.bsMigPull = 0; e.arrivals = undefined; }
+    e.bsArrivals = { monthly: x.monthly, island: ARRIVALS_CORE };
+  } else { e.bsMigPull = 0; e.arrivals = undefined; e.bsArrivals = undefined; }
 }
 
 function startArrivals(s: GameState) {

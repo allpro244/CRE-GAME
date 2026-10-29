@@ -9,7 +9,8 @@ import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert } from "./types";
 import { tickStreetTenants } from "./tenantBooks";
 import { simulateHistory, driftInflTarget, shortIndexFor } from "./regime";
 import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
-import { whyTrade } from "./why";
+import { whyTrade, why, whyAt, whyMark, whyNation } from "./why";
+import { whyVacancy, noteReads } from "./whyReads";
 import { whyTown } from "./economy";
 import { tickCapRead, tickLandRead } from "./propmarket";
 import { settleSupplyDeliveries } from "./supply";
@@ -5249,8 +5250,14 @@ export function tickEcon(s: GameState) {
       if (Math.abs(nomCh) >= 0.006 && ro) {
         const line = `${SECTOR_LABEL[k]} asking rents ${nomCh < 0 ? "fell" : "rose"} ${Math.abs(nomCh * 100).toFixed(1)}% this month — ${ro.n} leases in the last six months, ${(ro.sf / 1000).toFixed(0)}k sf, signed at $${ro.face.toFixed(2)} asking and $${ro.eff.toFixed(2)} after concessions.`;
         e.rentWhy = { ...(e.rentWhy ?? {}), [k]: line };
+        // THE CAUSE LEDGER: the move, its leases, and the market they signed in.
+        const rid = whyMark(s, `rent:${k}`, why(s, {
+          k: "market.rent", a: "trade", aid: k, name: SECTOR_LABEL[k],
+          n: { rent: e.rentIdx[k], eff: e.effRentIdx[k], ch: nomCh, leases: ro.n, sf: ro.sf },
+          t: `${SECTOR_LABEL[k]} asking rent $${e.rentIdx[k].toFixed(2)}/sf, ${nomCh >= 0 ? "+" : "−"}${Math.abs(nomCh * 100).toFixed(1)}% this month · ${ro.n} leases in six months, $${ro.eff.toFixed(2)} after concessions`,
+        }, [whyAt(s, `vac:${k}`) ?? whyVacancy(s, k), whyNation(s)]));
         if (Math.abs(nomCh) >= 0.012 || (ownsClass(s, k) && newsChance(s, `rentwhy:${k}`, 0.22))) {
-          s.news.unshift({ q: s.month, kind: nomCh < 0 ? "warn" : "info", text: line });
+          s.news.unshift({ q: s.month, kind: nomCh < 0 ? "warn" : "info", text: line, why: rid });
         }
       }
       continue;
@@ -6142,6 +6149,8 @@ export function tickEcon(s: GameState) {
   }
 
   recordHistory(e, s.month, monthAbs, monthComp);
+  // What moved on the screens this month, and why (whyReads.ts): ledger writes only.
+  noteReads(s);
 
   // THE VACANCY TELL — said out loud by a broker.
   //

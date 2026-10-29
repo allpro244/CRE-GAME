@@ -408,7 +408,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
         if (k in lost) lost[k] += firmHc(t);
         // WHY (why.ts): a firm the size of an anchor (rivals.ts reads them) writes what failed it
         const whyId = t.sf >= 8000 ? whyFirmDark(s, t, f, bbl) : undefined;
-        (e.streetFailed ??= []).push({ m, bbl, name: t.name, sf: t.sf, use: k, why: "dark", credit: t.credit, ...(whyId ? { whyId } : {}) });
+        (e.streetFailed ??= []).push({ m, bbl, name: t.name, fid: t.fid, sf: t.sf, use: k, why: "dark", credit: t.credit, ...(whyId ? { whyId } : {}) });
         (e.failedSf ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] += t.sf;
         seeking.delete(t.fid!);
         vacate(roll, t);
@@ -432,7 +432,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
         const exitP = Math.min(0.5, EXIT_BASE[k] * Math.pow(Math.max(0.5, Math.min(2, ratio(k))), 4));
         if (rng(s, "leasing") < exitP) {
           lost[k] += firmHc(t);
-          (e.streetFailed ??= []).push({ m, bbl, name: t.name, sf: t.sf, use: k, why: "left" });
+          (e.streetFailed ??= []).push({ m, bbl, name: t.name, fid: t.fid, sf: t.sf, use: k, why: "left" });
           vacate(roll, t);
           continue;
         }
@@ -913,7 +913,7 @@ export function seekerSigned(s: GameState, fid: number): Partial<Tenant> | null 
     const roll = e.streetRolls[k.from];
     roll.t = roll.t.filter((t) => t.fid !== fid);
     (roll.ready ??= []).push({ use: k.use, sf: firm.sf, readyM: s.month + Math.max(1, Math.round(reletMonths(k.use) * 0.5)) });
-    (e.streetFailed ??= []).push({ m: s.month, bbl: k.from, name: firm.name, sf: firm.sf, use: k.use, why: "left" });
+    (e.streetFailed ??= []).push({ m: s.month, bbl: k.from, name: firm.name, fid: firm.fid, sf: firm.sf, use: k.use, why: "left" });
   }
   if (!firm) return null;
   return { fid, quality: firm.quality, staff: firm.staff, empRef: firm.empRef, fin: firm.fin };

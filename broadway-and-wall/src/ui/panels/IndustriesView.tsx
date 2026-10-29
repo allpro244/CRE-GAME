@@ -1,29 +1,31 @@
 // THE INDUSTRIES AND WHO BUYS FROM WHOM (ONE_ECONOMY_PLAN step 9a).
 //
 // Markets → Industries: every industry in the town's firm books (economy.ts),
-// grouped plainly — jobs, sales a year, the share sold out of town, margin,
+// grouped into about twenty tenant types (industries.ts `type`; open a type to
+// see its industries) — jobs, sales a year, the share sold out of town, margin,
 // the last twelve months, its firms and yours. Pick one and its supply chain
 // opens below: what it buys and from whom, what it sells and to whom, in
 // dollars from the IO table on last month's output, with your tenants in it.
 // Numbers first. Reads only.
+import { useState } from "react";
 import { useStore } from "@/state/store";
 import { economyByIndustry } from "@/engine/economy";
-import { INDUSTRIES, INDUSTRY_IDS, INDUSTRY_INDEX, type IndustryId } from "@/engine/industries";
+import { INDUSTRIES, INDUSTRY_IDS, INDUSTRY_INDEX, TENANT_TYPES, type IndustryId } from "@/engine/industries";
 import type { Holding } from "@/engine/types";
 import { usd, sf, pctSigned } from "@/ui/format";
 import { BizLink, Spark, goIndustry } from "@/ui/BizSheet";
 import {
-  GROUP_WORD, bizPlaces, industryFirms, industryTrend, rentExposure, shortInd, supplyChain, yourTenantsByIndustry, type Flow,
+  bizPlaces, industryFirms, industryTrend, rentExposure, shortInd, supplyChain, yourTenantsByIndustry, type Flow,
 } from "@/ui/econView";
 import "@/ui/biz.css";
 
-const GROUPS = ["making", "moving", "selling", "office", "other"] as const;
 const k = (v: number) => (v >= 1e4 ? `${Math.round(v / 1000)}k` : Math.round(v).toLocaleString());
 
 export function Industries() {
   const game = useStore((s) => s.game)!;
   const focus = useStore((s) => s.industryFocus) as IndustryId | null;
   const open = goIndustry;
+  const [shown, setShown] = useState<Record<string, boolean>>({});
   const rows = economyByIndustry(game);
   if (!rows) {
     return <div className="hint">The town's firm books open the month after its households are counted. Advance a month.</div>;
@@ -44,15 +46,29 @@ export function Industries() {
           </tr>
         </thead>
         <tbody>
-          {GROUPS.flatMap((g) => [
-            <tr key={`g-${g}`} className="ind-group"><td colSpan={8}>{GROUP_WORD[g]}</td></tr>,
-            ...rows.filter((r) => INDUSTRIES[r.id].group === g).sort((a, b) => b.heads - a.heads).map((r) => {
+          {TENANT_TYPES.flatMap((g) => {
+            const mine = rows.filter((r) => INDUSTRIES[r.id].type === g && (r.heads > 0 || r.output > 0));
+            if (!mine.length) return [];
+            const tOut = mine.reduce((a, r) => a + r.output, 0), tEx = mine.reduce((a, r) => a + r.exports, 0);
+            const tYours = mine.reduce((a, r) => { const y = yours.get(r.id); return y ? { firms: a.firms + y.firms, sf: a.sf + y.sf } : a; }, { firms: 0, sf: 0 });
+            const isOpen = !!shown[g] || mine.some((r) => r.id === focus);
+            return [
+            <tr key={`g-${g}`} className="ind-row" onClick={() => setShown({ ...shown, [g]: !isOpen })}>
+              <td>{isOpen ? "▾" : "▸"} {g}{mine.length > 1 ? ` (${mine.length})` : ""}</td>
+              <td className="num">{k(mine.reduce((a, r) => a + r.heads, 0))}</td>
+              <td className="num">{usd(tOut * 12)}</td>
+              <td className="num">{(tEx / (tOut || 1) * 100).toFixed(0)}%</td>
+              <td></td><td></td>
+              <td className="num">{mine.reduce((a, r) => a + r.firms, 0)}</td>
+              <td className="num">{tYours.firms ? <span className="ind-yours">{tYours.firms} · {k(tYours.sf)} sf</span> : "—"}</td>
+            </tr>,
+            ...(!isOpen ? [] : mine.sort((a, b) => b.heads - a.heads).map((r) => {
               const tr = industryTrend(game, INDUSTRY_INDEX[r.id]);
               const chg = tr.x.length >= 2 && tr.x[0] > 0 ? tr.x[tr.x.length - 1] / tr.x[0] - 1 : null;
               const y = yours.get(r.id);
               return (
                 <tr key={r.id} className={"ind-row" + (focus === r.id ? " on" : "")} onClick={() => open(focus === r.id ? null : r.id)}>
-                  <td>{r.label}</td>
+                  <td>{"\u00a0\u00a0\u00a0"}{r.label}</td>
                   <td className="num">{k(r.heads)}</td>
                   <td className="num">{usd(r.output * 12)}</td>
                   <td className="num">{(r.exportShare * 100).toFixed(0)}%</td>
@@ -67,11 +83,12 @@ export function Industries() {
                   <td className="num">{y ? <span className="ind-yours">{y.firms} · {k(y.sf)} sf</span> : "—"}</td>
                 </tr>
               );
-            }),
-          ])}
+            })),
+            ];
+          })}
         </tbody>
       </table>
-      <div className="hint">Click an industry to see who it buys from and sells to. Sales are last month's at a yearly rate; margin is before interest.</div>
+      <div className="hint">Click a type to see its industries, and an industry to see who it buys from and sells to. Sales are last month's at a yearly rate; margin is before interest.</div>
       {focus && INDUSTRY_IDS.includes(focus) && <SupplyChain id={focus} />}
     </div>
   );

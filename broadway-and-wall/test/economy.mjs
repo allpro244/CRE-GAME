@@ -176,9 +176,23 @@ check(fillOk, "the register's earners in each industry are its heads, to within 
   check(ArrayBuffer.isView(viaJson.f.hc) && ArrayBuffer.isView(viaJson.L.slot.cash) && ecoHash({ economy: viaJson }) === ecoHash(a), "...which revive to the same books");
   let c = viaClone, d = { ...a, economy: JSON.parse(JSON.stringify(a.economy)) };
   d.streams = { ...a.streams };
+  // Each loaded game in a session of its own — its own parcel table, as a
+  // save opened in a fresh game is. Three games ticking on ONE table part
+  // ways for a reason that is not the save: the engine writes plats into the
+  // table (landdev.ts restoreCuts) and keys caches on it (demand.ts
+  // demandModel), so the first game's month moves the table under the next
+  // one's. Measured 2026-10-29 on this branch: identical on separate tables,
+  // parted in the rival and sales streams within a month on a shared one.
+  const session = () => {
+    const c2 = makeCity("somewhere", 1);
+    E.normalizeParcels(c2.parcels);
+    const b2 = Object.keys(c2.parcels);
+    return (g) => { g = E.advanceQuarter(g, c2.parcels, b2, c2.adjacency); return g.gameOver ? { ...g, gameOver: null, cash: 6e6 } : g; };
+  };
+  const tickC = session(), tickD = session();
   let ok = true, okJ = true;
   for (let m = 0; m < 12; m++) {
-    a = tick(a); c = tick(c); d = tick(d);
+    a = tick(a); c = tickC(c); d = tickD(d);
     if (ecoHash(a) !== ecoHash(c) || worldHash(a) !== worldHash(c)) ok = false;
     if (ecoHash(a) !== ecoHash(d)) okJ = false;
   }
@@ -186,6 +200,51 @@ check(fillOk, "the register's earners in each industry are its heads, to within 
   check(okJ, "and books that went through JSON play on identically too");
   const kb = v8.serialize(a.economy).length / 1024;
   check(kb < 1200, `the books save in ${kb.toFixed(0)} KB (${a.economy.L.slot.n} firms)`);
+}
+
+// ---------------------------------------------------------------- named links (step 2d)
+// Each named firm keeps a few named suppliers (economy.ts `tickLinks`). A
+// customer that closes takes from its supplier what it bought: the twin in
+// which one customer is gone shows its supplier's fortune down by about that
+// share and the cause ledger saying so, first in its books' chain.
+{
+  const lk = a.economy.lk;
+  const namedFids = new Set();
+  for (const roll of Object.values(a.econ.streetRolls)) for (const t of roll.t) if (t.fid !== undefined && t.use !== "multifamily") namedFids.add(t.fid);
+  const n = lk ? lk.s.length : 0;
+  check(n > 1.5 * namedFids.size, `the named firms keep named suppliers: ${n} links among ${namedFids.size} firms (${(n / Math.max(1, namedFids.size)).toFixed(1)} a firm as a customer)`);
+  // the supplier with the largest share in one customer
+  let best = -1, bestShare = 0;
+  const revOf = new Map();
+  for (let k = 0; k < a.economy.L.slot.n; k++) if (a.economy.f.id[k] >= 0) revOf.set(a.economy.f.id[k], a.economy.f.rev[k]);
+  for (let l = 0; l < n; l++) { const sh = lk.f[l] / Math.max(1, revOf.get(lk.s[l]) ?? 0); if (sh > bestShare && namedFids.has(lk.c[l]) && namedFids.has(lk.s[l])) { bestShare = sh; best = l; } }
+  check(best >= 0 && bestShare > 0.03, `a link carries real money: the largest is ${(bestShare * 100).toFixed(0)}% of its supplier's sales`);
+  if (best >= 0) {
+    const sup = lk.s[best], cus = lk.c[best];
+    const nameOfFid = (g, fid) => Object.values(g.econ.streetRolls).flatMap((r) => r.t).find((t) => t.fid === fid)?.name;
+    const cusName = nameOfFid(a, cus), supName = nameOfFid(a, sup);
+    const page = E.firmLinks(a, sup);
+    check(page.customers.some((c) => c.fid === cus), `the supplier's page lists ${cusName} among its customers (${page.customers.length} customers, ${page.suppliers.length} suppliers)`);
+    const zOf = (g) => { for (const roll of Object.values(g.econ.streetRolls)) for (const t of roll.t) if (t.fid === sup) return t.fin?.z; return undefined; };
+    const ctl = structuredClone(a), trt = structuredClone(a);
+    for (const roll of Object.values(trt.econ.streetRolls)) {
+      const gone = roll.t.find((t) => t.fid === cus);
+      if (gone) { roll.t = roll.t.filter((t) => t.fid !== cus); (trt.econ.streetFailed ??= []).push({ m: trt.month, bbl: "", name: gone.name, fid: gone.fid, sf: gone.sf, use: gone.use ?? "office", why: "dark", credit: gone.credit }); }
+    }
+    let c2 = ctl, t2 = trt;
+    for (let m = 0; m < 2; m++) { c2 = tick(c2); t2 = tick(t2); }
+    const dz = (zOf(t2) ?? 0) - (zOf(c2) ?? 0);
+    const ev = (t2.why?.ev ?? []).find((x) => x.k === "firm.lostCustomer" && x.aid === String(sup) && x.t.includes(cusName));
+    console.log(`    ${supName} loses ${cusName}: its fortune ${dz >= 0 ? "+" : ""}${(dz * 100).toFixed(1)} log points on its twin (the link was ${(bestShare * 100).toFixed(0)}% of its sales); "${ev?.t ?? "—"}"`);
+    check(!!ev && dz < 0.5 * Math.log(1 - Math.min(0.6, bestShare)), "a customer closing costs its named supplier that share of its fortune, and the cause ledger says whom it lost");
+    const tenant = Object.values(t2.econ.streetRolls).flatMap((r) => r.t).find((t) => t.fid === sup);
+    if (tenant?.fin) {
+      const id = E.whyTenantBooks(t2, tenant, tenant.fin);
+      const chain = t2.why.ev.find((x) => x.id === id);
+      const first = t2.why.ev.find((x) => x.id === chain?.c?.[0]);
+      check(first?.k === "firm.lostCustomer", `...and its books' "Why?" starts with a lost customer, before its industry: "${first?.t ?? "—"}"`);
+    }
+  }
 }
 
 // ---------------------------------------------------------------- the wires (step 2)
@@ -227,8 +286,11 @@ for (let m = 0; m < 24; m++) base24 = tick(base24);
 // whole export base loses 30% of its sales out of town (a Pittsburgh): every
 // class ends emptier than its twin, the exporters' own floor first — on this
 // map the base is offices (technology, insurance, finance, headquarters), so
-// offices lead — then the shops the payrolls spent in and the flats the
-// households rented (the export base's suppliers and its households).
+// offices lead the shops the payrolls spent in. The flats are not ordered:
+// a household that loses its job leaves its flat within months and flats
+// turn over at ~45% a year (leasing.ts MF_TURNOVER) against offices' leases
+// of five to ten, so the flats' smaller gap can reach a third of its peak
+// first (measured 2026-10-29: flats month 16, offices 21).
 {
   const iM = E.INDUSTRY_IDS.indexOf("machinery");
   let base = structuredClone(base24);
@@ -252,7 +314,7 @@ for (let m = 0; m < 24; m++) base24 = tick(base24);
   const jobs = r.trt.econ.jobs / r.ctl.econ.jobs - 1;
   console.log(`    the export base loses 30%: jobs ${(100 * jobs).toFixed(1)}% on the twin after five years; vacancy gap then ${CLS.map((k) => `${k} ${pp(last[k])}`).join(", ")}; a third of each one's peak reached at month ${CLS.map((k) => `${k} ${third[k]}`).join(", ")}`);
   check(jobs < -0.05 && CLS.every((k) => last[k] > 0), "an export slump costs the town jobs and leaves every class emptier than its twin");
-  check(third.office <= Math.min(third.retail, third.multifamily), "...the exporters' floor first (offices, on this map), then the shops and the flats");
+  check(third.office <= third.retail, "...the exporters' floor before the shops (offices, on this map)");
 }
 
 // WIRE 2: A FACTORY CLOSES. On a map with a real plant (city seed 3, its

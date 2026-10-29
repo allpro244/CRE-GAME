@@ -20,7 +20,7 @@
 // RULE FOR EVERY MECHANIC FROM HERE ON: it is not done until the events it
 // causes are written here with their causes.
 import type { GameState, Sector } from "./types";
-import { industryOfFirm, whyIndustry } from "./economy";
+import { industryOfFirm, whyIndustry, whyFirmLoss } from "./economy";
 import { INDUSTRY_INDEX, TRADE_TO_INDUSTRY, type IndustryId } from "./industries";
 
 export type WhyActor = "tenant" | "firm" | "rival" | "bank" | "city" | "household" | "player" | "nation" | "trade";
@@ -177,6 +177,9 @@ export function whyTenantBooks(s: GameState, t: { name: string; sector: string; 
   }, [firstCauseOf(s, t)]);
 }
 function firstCauseOf(s: GameState, t: { sector: string; fid?: number; ind?: number }): number {
+  // a named customer it lost (economy.ts `tickLinks`) before its industry's month
+  const lost = t.fid !== undefined ? whyFirmLoss(s, t.fid) : undefined;
+  if (lost !== undefined) return lost;
   const ind = industryOfFirm(s, t);
   return (ind !== undefined ? whyIndustry(s, ind) : undefined) ?? whyTrade(s, t.sector);
 }

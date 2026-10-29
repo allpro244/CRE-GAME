@@ -37,8 +37,9 @@ import { capPremiumOn } from "./amortize";
 import { targetCapital } from "./lenders";
 import type { Lender } from "./lenders";
 import { LOC_SPREAD } from "./credit";
-import { deskRatePct } from "./pricing";
+import { bankRatePct, liveSpread } from "./pricing";
 import { shortIndexOf } from "./market";
+import { why } from "./why";
 
 /** Deterministic 0..1 from a string. */
 function hash01(str: string): number {
@@ -176,8 +177,8 @@ export function deskWithRoom(s: GameState, obligorId: string, amount: number): b
     if (x.heldBy) continue;
     const a = acc.get(x.lender);
     if (!a) continue;
-    a.onDesk += x.balance;
-    if (x.obligorId === obligorId) a.exposure += x.balance;
+    a.onDesk += x.balance * (x.share ?? 1);
+    if (x.obligorId === obligorId) a.exposure += x.balance * (x.share ?? 1);
   }
   for (const r of s.rivals ?? []) {
     if ((r.lineBal ?? 0) > 0) {
@@ -204,8 +205,8 @@ export function deskRoom(s: GameState, l: Lender, obligorId: string, opening = f
   if (L) for (const k in L) {
     const x = L[k];
     if (x.lender !== l.name || x.heldBy) continue;
-    onDesk += x.balance;
-    if (x.obligorId === obligorId) exposure += x.balance;
+    onDesk += x.balance * (x.share ?? 1);
+    if (x.obligorId === obligorId) exposure += x.balance * (x.share ?? 1);
   }
   for (const r of s.rivals ?? []) {
     if (r.lineBank === l.name && (r.lineBal ?? 0) > 0) {
@@ -230,8 +231,8 @@ function deskRooms(s: GameState, obligorId: string, opening: boolean): Map<Lende
     if (x.heldBy) continue;
     const a = acc.get(x.lender);
     if (!a) continue;
-    a.onDesk += x.balance;
-    if (x.obligorId === obligorId) a.exposure += x.balance;
+    a.onDesk += x.balance * (x.share ?? 1);
+    if (x.obligorId === obligorId) a.exposure += x.balance * (x.share ?? 1);
   }
   for (const r of s.rivals ?? []) {
     if ((r.lineBal ?? 0) > 0) {
@@ -270,16 +271,17 @@ export interface Origination { lender: string; ratePct: number; termM: number; p
  * the desk that quotes the most writes it. If no desk has room for it, it goes
  * to whichever has the most — a syndicate, which is what `placeLoan` did.
  */
-export function pickDesk(
-  s: GameState, obligorId: string, amount: number, value: number, noiYr: number,
-  o: { klass?: string; stab?: StabView; condition?: string; opening?: boolean; seed?: string } = {},
-): Origination {
-  type C = Origination & { principal: number; room: number };
-  const cands: C[] = [];
-  // Every desk's `deskRoom` off one walk of the record, worked out the first
-  // time one is asked for: nothing below writes a loan, a line or a book.
-  let rooms: Map<Lender, number> | null = null;
-  const roomOf = (l: Lender) => (rooms ??= deskRooms(s, obligorId, o.opening ?? false)).get(l) ?? deskRoom(s, l, obligorId, o.opening);
+/**
+ * EVERY DESK'S QUOTE ON THIS BUILDING TODAY — what a borrower who is not the
+ * player gets when it rings round: each open sheet's coupon and the most it
+ * will write, cheapest first. The player's own desk shows the same quotes
+ * (debt.ts `quote`); the street and the private owners shop off this list.
+ */
+export function deskQuotes(
+  s: GameState, value: number, noiYr: number,
+  o: { klass?: string; stab?: StabView; condition?: string } = {},
+): (Origination & { principal: number })[] {
+  const out: (Origination & { principal: number })[] = [];
   for (const id of sheetsFor(noiYr)) {
     const p = productById(id);
     if (!p || !windowOpen(s, p)) continue;
@@ -287,8 +289,24 @@ export function pickDesk(
     if (!l || l.failedM !== undefined) continue;
     const q = quote(s, p, value, Math.max(0, noiYr), o.klass, true, p.bridge ? o.stab : undefined, o.condition);
     if (!(q.principal > 0)) continue;
-    cands.push({ lender: p.lender, ratePct: q.ratePct, termM: p.termM, product: p.id, principal: q.principal, room: roomOf(l) });
+    out.push({ lender: p.lender, ratePct: q.ratePct, termM: p.termM, product: p.id, principal: q.principal });
   }
+  return out.sort((a, b) => a.ratePct - b.ratePct);
+}
+
+export function pickDesk(
+  s: GameState, obligorId: string, amount: number, value: number, noiYr: number,
+  o: { klass?: string; stab?: StabView; condition?: string; opening?: boolean; seed?: string } = {},
+): Origination {
+  type C = Origination & { principal: number; room: number };
+  // Every desk's `deskRoom` off one walk of the record, worked out the first
+  // time one is asked for: nothing below writes a loan, a line or a book.
+  let rooms: Map<Lender, number> | null = null;
+  const roomOf = (l: Lender) => (rooms ??= deskRooms(s, obligorId, o.opening ?? false)).get(l) ?? deskRoom(s, l, obligorId, o.opening);
+  const cands: C[] = deskQuotes(s, value, noiYr, o).map((c) => {
+    const l = (s.lenders ?? []).find((x) => x.name === c.lender)!;
+    return { ...c, room: roomOf(l) };
+  });
   const funds = cands.filter((c) => c.principal >= amount * 0.98 && c.room >= amount)
     .sort((a, b) => a.ratePct - b.ratePct);
   if (funds.length) return funds[0];
@@ -303,7 +321,7 @@ export function pickDesk(
   const fallback = noiYr > 0 ? productById("harbor") : productById("land");
   return {
     lender: best?.name ?? fallback.lender,
-    ratePct: +deskRatePct(s.econ.indexRate, 2.2, { ci: s.econ.creditIdx ?? 1, app: best?.appetite ?? 1 }).toFixed(2),
+    ratePct: bankRatePct(s.econ.indexRate, liveSpread(best ? s.econ.deskPx?.[best.name] : undefined, 2.2, "income")),
     termM: fallback.termM, product: fallback.id,
   };
 }
@@ -337,6 +355,20 @@ export function originateRow(
   // A floater is written at the short index plus the desk's margin, with a
   // cap bought at the table (debt.ts originate: struck a point over today's
   // index, for the loan's term or three years, whichever is shorter).
+  // A LOAN NO DESK CAN CARRY IS SYNDICATED. pickDesk's last resorts hand a
+  // loan that fits nobody to the desk with the most room; that desk leads it,
+  // keeps what its capital and its single-name limit allow, and sells the
+  // rest to banks out of town. Measured before this: a $110M tower loan landed
+  // whole on a debt fund carrying $2M, and a $230M one on a money-centre desk
+  // carrying nothing, and each was closed by its regulator a few years later
+  // with no loss at all — its capital simply could not carry the book.
+  {
+    const l = (s.lenders ?? []).find((x) => x.name === d.lender);
+    if (l && !o.opening) {
+      const room = deskRoom(s, l, r.id, false) + (old && old.lender === l.name ? old.balance * (old.share ?? 1) : 0);
+      if (room < total) row.share = +Math.max(0.05, Math.min(1, room / total)).toFixed(4);
+    }
+  }
   if (productById(d.product ?? "harbor")?.floating) {
     const idx = shortIndexOf(s.econ);
     row.spread = +(row.ratePct - idx).toFixed(2);
@@ -402,10 +434,10 @@ export function lineBankOf(s: GameState, r: Rival): Lender | undefined {
 /** The line's coupon: the short index plus the line spread at its bank's appetite — the player's `locRate` arithmetic. */
 export function lineRatePct(s: GameState, r: Rival): number {
   const bank = lineBankOf(s, r);
-  return deskRatePct(shortIndexOf(s.econ), LOC_SPREAD, {
-    ci: s.econ.creditIdx ?? 1,
-    app: bank ? (bank.failedM !== undefined ? 0 : bank.appetite) : 1,
-  }) + fileSpreadAdj(r);
+  // The bank's own costs and appetite (pricing.ts liveSpread); a receiver
+  // holding a failed bank's line charges what the bank last did.
+  return bankRatePct(shortIndexOf(s.econ), liveSpread(bank ? s.econ.deskPx?.[bank.name] : undefined, LOC_SPREAD, "income", 1, "short"))
+    + fileSpreadAdj(r);
 }
 /** Draw the line: cash in, balance up, at the firm's bank. */
 export function drawLine(s: GameState, r: Rival, draw: number) {
@@ -628,6 +660,18 @@ export function markPayments(
     }
   }
   for (const x of rows) {
+    // THE CAUSE LEDGER (why.ts): the month a firm first misses on a loan, and
+    // why — what the building pays against its service, and how short the
+    // firm's account came up after its line. Records only.
+    if (missed.has(x.bbl) && !(x.arrearsMs ?? 0)) {
+      const svc = byRow[x.bbl] ?? 0;
+      x.whyId = why(s, {
+        k: "loan.default", a: "rival", aid: r.id, name: r.name, bbl: x.bbl,
+        n: { owedMo: Math.round(svc), buildingNoiMo: Math.round(noiOf(x.bbl) / 12), firmShortMo: Math.round(shortfall), balance: Math.round(x.balance), lineBal: Math.round(r.lineBal ?? 0) },
+        t: `${r.name} missed its payment to ${x.lender} · the building pays $${Math.round(noiOf(x.bbl) / 12 / 1000)}k/mo against $${Math.round(svc / 1000)}k/mo owed`
+          + ` · the firm was $${Math.round(shortfall / 1000)}k short after its line`,
+      });
+    }
     if (missed.has(x.bbl)) x.arrearsMs = (x.arrearsMs ?? 0) + 1;
     else x.arrearsMs = 0;
     x.status = (x.arrearsMs ?? 0) >= 1 ? "workout"

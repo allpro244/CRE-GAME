@@ -1323,7 +1323,11 @@ function chargeSponsorFailure(s: GameState, parcels: ParcelTable, r: Rival): { d
   const rowSum = rows.reduce((a, x) => a + x.balance, 0);
   const books = live.reduce((a, l) => a + l.book, 0);
   if (term > 0 && rowSum > 0) {
-    for (const x of rows) exposure[x.lender] = (exposure[x.lender] ?? 0) + term * (x.balance / rowSum);
+    // a syndicated row's out-of-town participants take their share (no desk here)
+    for (const x of rows) {
+      exposure[x.lender] = (exposure[x.lender] ?? 0) + term * (x.balance * (x.share ?? 1) / rowSum);
+      if ((x.share ?? 1) < 1) exposure["(participants out of town)"] = (exposure["(participants out of town)"] ?? 0) + term * (x.balance * (1 - (x.share ?? 1)) / rowSum);
+    }
   } else if (term > 0 && books > 0) {
     for (const l of live) exposure[l.name] = (exposure[l.name] ?? 0) + term * (l.book / books);
   }
@@ -1333,7 +1337,7 @@ function chargeSponsorFailure(s: GameState, parcels: ParcelTable, r: Rival): { d
   let worst = { name: "", amt: 0 };
   for (const [name, exp] of Object.entries(exposure)) {
     const share = Math.round((loss * exp) / total);
-    chargeLenderLoss(s, name, share);
+    chargeLenderLoss(s, name, share, { borrower: r.name, id: r.id, cls: "income", how: "firm failed" });
     if (share > worst.amt) worst = { name, amt: share };
   }
   // Only when it is big enough to be a story. A desk taking a hole worth more
@@ -4022,6 +4026,8 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
   if (!worst) return false;
   const desk = deskFor(s, r, worst.bbl);
   noteLost(s, r, worst.bbl);
+  const loanWhy = s.cityLoans?.[worst.bbl]?.whyId;   // the default behind it, for the cause ledger
+  const held = s.cityLoans?.[worst.bbl]?.share ?? 1;  // a syndicated row: the desk's own share of the loss
   const owed = dropDeed(s, r, worst.bbl);
   logFirm(s, r, "event", `Handed ${worst.rec.address} back to ${desk}`, worst.bbl, owed);
   milestone(s, r, surplus ? `Lost ${worst.rec.address} to foreclosure (${desk})` : `Handed ${worst.rec.address} back to ${desk}`);
@@ -4052,7 +4058,7 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
     expiresM: s.month + reoWindow(s, desk), distress: true, receiverFor: desk, reason: "receiver",
     loanBasis, mark: Math.round(deedV),
   });
-  chargeLenderLoss(s, desk, Math.max(0, owed - ask));
+  chargeLenderLoss(s, desk, Math.max(0, owed - ask) * held, { borrower: r.name, id: r.id, bbl: worst.bbl, cls: worst.rec.class === "land" ? "land" : "income", how: "foreclosure", why: loanWhy });
   const off = Math.max(0, 1 - ask / Math.max(1, deedV));
   s.news.unshift({
     q: s.month, kind: "warn",

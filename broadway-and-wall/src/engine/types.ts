@@ -2298,7 +2298,7 @@ export interface Econ {
   /** Share of the street's let space whose tenants failed beyond the background this month, by class. */
   streetFailShare?: Record<string, number>;
   /** The street's recent move-outs, newest last, capped: tenants that went dark, and tenants that left at lease end. */
-  streetFailed?: { m: number; bbl: string; name: string; sf: number; use: BuiltClass; why?: "dark" | "left"; to?: string; credit?: Credit; /** its event in the cause ledger (why.ts) */ whyId?: number }[];
+  streetFailed?: { m: number; bbl: string; name: string; fid?: number; sf: number; use: BuiltClass; why?: "dark" | "left"; to?: string; credit?: Credit; /** its event in the cause ledger (why.ts) */ whyId?: number }[];
   /** The player's rolls last month, so a building sold carries its tenants to the street. */
   heldTenants?: Record<string, Tenant[]>;
   /**

@@ -218,13 +218,12 @@ export interface EconomyState {
   /**
    * NAMED LINKS BETWEEN FIRMS (step 2d, `tickLinks`): supplier and customer
    * firm ids, the supplier's industry, the month it was signed and the month
-   * it is next up for renewal, and last month's flow ($ a month). Parallel
-   * arrays; the names of both ends, for the pages and the causes after a
-   * firm is gone. Read by nothing in the world but the fortunes they move
-   * (`linkDz`, delivered a month on through economyToEngine).
+   * it is next up for renewal, and last month's flow ($ a month). Typed
+   * columns, about 17 bytes a link in a save (`reviveLinks` mends a JSON
+   * copy). Read by nothing in the world but the fortunes they move (`linkDz`,
+   * delivered a month on through economyToEngine).
    */
-  lk?: { s: number[]; c: number[]; j: number[]; m0: number[]; ren: number[]; f: number[] };
-  lkName?: Record<string, string>;
+  lk?: Links;
   /** Each firm's latest loss of a customer that mattered: the cause ledger's event, the month, its share of sales. */
   lkLoss?: Record<string, { id: number; m: number; share: number }>;
   /** This month's moves in a firm's fortune from links won and lost (log), for its tenant books next month. */
@@ -815,6 +814,30 @@ export function tickFirms(s: GameState): void {
 }
 
 // ---------------------------------------------------------------- named links (step 2d)
+export interface Links { s: Int32Array; c: Int32Array; j: Uint8Array; m0: Int16Array; ren: Int16Array; f: Float32Array }
+type LinkRows = { s: number[]; c: number[]; j: number[]; m0: number[]; ren: number[]; f: number[] };
+const LINK_COLS = ["s", "c", "j", "m0", "ren", "f"] as const;
+function linksOf(r: LinkRows): Links {
+  return { s: Int32Array.from(r.s), c: Int32Array.from(r.c), j: Uint8Array.from(r.j), m0: Int16Array.from(r.m0), ren: Int16Array.from(r.ren), f: Float32Array.from(r.f) };
+}
+/** A save's links back to typed columns (a JSON copy turns them into plain objects). */
+function reviveLinks(E: EconomyState): void {
+  const lk = E.lk as unknown as Record<string, unknown> | undefined;
+  if (!lk || LINK_COLS.every((k) => ArrayBuffer.isView(lk[k]))) return;
+  const rows = Object.fromEntries(LINK_COLS.map((k) => {
+    const v = lk[k];
+    return [k, Array.isArray(v) ? v as number[] : ArrayBuffer.isView(v) ? Array.from(v as unknown as ArrayLike<number>) : Object.values((v ?? {}) as Record<string, number>)];
+  })) as LinkRows;
+  E.lk = linksOf(rows);
+}
+/** Each named firm's name now, by firm id: the street's rolls, the player's buildings, the firms looking. */
+function firmNames(s: GameState): Map<number, string> {
+  const out = new Map<number, string>();
+  for (const roll of Object.values(s.econ.streetRolls ?? {})) for (const t of roll.t) if (t.fid !== undefined) out.set(t.fid, t.name);
+  for (const h of Object.values(s.holdings)) for (const t of h.tenants ?? []) if (t.fid !== undefined) out.set(t.fid, t.name);
+  for (const k of s.econ.seekers ?? []) if (k.t?.fid !== undefined) out.set(k.t.fid, k.t.name);
+  return out;
+}
 /**
  * WHO SELLS TO WHOM, BY NAME (ONE_ECONOMY_PLAN step 2d). Each named firm keeps
  * a few real suppliers — "Ashe & Porter audits Ridgeway Machinery" — and buys
@@ -855,8 +878,10 @@ const LINKS_PER_FIRM = 3, LINK_SHARE = 0.5, CUSTOMER_CAP = 0.25, SWITCH_P = 0.15
 const TERM_LO = 24, TERM_SPAN = 25;
 function tickLinks(s: GameState, E: EconomyState, R: Rand, opening: boolean): void {
   const F = E.f, nF = E.L.slot.n, m = s.month;
-  const lk = (E.lk ??= { s: [], c: [], j: [], m0: [], ren: [], f: [] });
-  const names = (E.lkName ??= {});
+  reviveLinks(E);
+  const lk: LinkRows = E.lk
+    ? { s: Array.from(E.lk.s), c: Array.from(E.lk.c), j: Array.from(E.lk.j), m0: Array.from(E.lk.m0), ren: Array.from(E.lk.ren), f: Array.from(E.lk.f) }
+    : { s: [], c: [], j: [], m0: [], ren: [], f: [] };
   const dz = (E.linkDz ??= {});
   // books just opened (or reopened): the links found are relationships the firms already had
   const quiet = opening || !E.last || m - (E.openM ?? m) < LINKS_PER_FIRM + 1;
@@ -864,12 +889,10 @@ function tickLinks(s: GameState, E: EconomyState, R: Rand, opening: boolean): vo
   for (let n = 0; n < nF; n++) if (F.id[n] >= 0) slot.set(F.id[n], n);
   const costM = (n: number) => Math.max(1, F.wages[n] + F.inputs[n] + F.rent[n]);
   const distressed = (n: number) => cashOf(E.L, n) < costM(n);
-  // the street's names this month (a firm's own), and who went dark with a cause
-  const nameOf = new Map<number, string>();
-  for (const roll of Object.values(s.econ.streetRolls ?? {})) for (const t of roll.t) if (t.fid !== undefined) nameOf.set(t.fid, t.name);
-  for (const h of Object.values(s.holdings)) for (const t of h.tenants ?? []) if (t.fid !== undefined) nameOf.set(t.fid, t.name);
-  const gone = new Map<string, { why: string; id?: number }>();
-  for (const x of s.econ.streetFailed ?? []) if (x.m >= m - 1) gone.set(x.name, { why: x.why === "dark" ? "closed" : "left town", id: x.whyId });
+  // the firms' names this month, and who closed or left (by firm id) with its cause
+  const nameOf = firmNames(s);
+  const gone = new Map<number, { name: string; why: string; id?: number }>();
+  for (const x of s.econ.streetFailed ?? []) if (x.m >= m - 1 && x.fid !== undefined && !x.to) gone.set(x.fid, { name: x.name, why: x.why === "dark" ? "closed" : "left town", id: x.whyId });
   const loss = (l: number, how: string, cause?: number) => {
     const sf = lk.s[l], ns = slot.get(sf);
     if (ns === undefined) return;
@@ -877,7 +900,7 @@ function tickLinks(s: GameState, E: EconomyState, R: Rand, opening: boolean): vo
     if (!(share > 0) || quiet) return;
     dz[sf] = (dz[sf] ?? 0) + Math.log(1 - share);
     if (share < 0.02) return;
-    const sup = names[sf] ?? nameOf.get(sf) ?? "a firm", cus = names[lk.c[l]] ?? "a customer";
+    const sup = nameOf.get(sf) ?? "a firm", cus = nameOf.get(lk.c[l]) ?? gone.get(lk.c[l])?.name ?? "a customer";
     const id = why(s, {
       k: "firm.lostCustomer", a: "firm", aid: String(sf), name: sup,
       n: { share, flowYr: Math.round(lk.f[l] * 12) },
@@ -891,7 +914,7 @@ function tickLinks(s: GameState, E: EconomyState, R: Rand, opening: boolean): vo
   for (let l = 0; l < lk.s.length; l++) {
     const ns = slot.get(lk.s[l]), nc = slot.get(lk.c[l]);
     if (nc === undefined) {
-      const g = gone.get(names[lk.c[l]] ?? "");
+      const g = gone.get(lk.c[l]);
       loss(l, g?.why ?? "gone", g?.id);
       keep[l] = false; continue;
     }
@@ -937,17 +960,15 @@ function tickLinks(s: GameState, E: EconomyState, R: Rand, opening: boolean): vo
     const flow = Math.min(CUSTOMER_CAP * F.rev[ns], LINK_SHARE / ((have.get(fid) ?? 0) + 1) * F.rev[nc] * row[j] * (rpc[j] ?? 0));
     lk.f.push(flow);
     have.set(fid, (have.get(fid) ?? 0) + 1); pair.add(`${sf}:${fid}`);
-    names[sf] = nameOf.get(sf) ?? names[sf] ?? "a firm"; names[fid] = nameOf.get(fid) ?? names[fid] ?? "a firm";
     if (!quiet && F.rev[ns] > 0) dz[sf] = (dz[sf] ?? 0) + Math.log(1 + Math.min(0.5, flow / F.rev[ns]));
   }
-  // names nobody links any more
-  const live = new Set<number>([...lk.s, ...lk.c]);
-  for (const k of Object.keys(names)) if (!live.has(Number(k))) delete names[k];
+  E.lk = linksOf(lk);
   if (E.lkLoss) for (const [k, v] of Object.entries(E.lkLoss)) if (v.m < m - 24) delete E.lkLoss[k];
 }
 
 /** What each named link carried this month: its share of what the customer buys of the supplier's industry from town, capped (see tickLinks). */
 function linkFlows(E: EconomyState): void {
+  reviveLinks(E);
   const lk = E.lk;
   if (!lk || !lk.s.length) return;
   const F = E.f, slot = new Map<number, number>();
@@ -968,12 +989,14 @@ export function firmLinks(s: GameState, fid: number): { customers: { fid: number
   const out = { customers: [] as { fid: number; name: string; flow: number; share: number; since: number }[], suppliers: [] as { fid: number; name: string; flow: number; share: number; since: number; industry: string }[] };
   if (!E || !lk) return out;
   reviveEconomy(E);
-  const F = E.f;
+  reviveLinks(E);
+  const L2 = E.lk!;
+  const F = E.f, names = firmNames(s);
   const revOf = (id: number) => { for (let n = 0; n < E.L.slot.n; n++) if (F.id[n] === id) return F.rev[n]; return 0; };
-  const nm = (id: number) => E.lkName?.[id] ?? "a firm";
-  for (let l = 0; l < lk.s.length; l++) {
-    if (lk.s[l] === fid) out.customers.push({ fid: lk.c[l], name: nm(lk.c[l]), flow: lk.f[l], share: lk.f[l] / Math.max(1, revOf(fid)), since: lk.m0[l] });
-    if (lk.c[l] === fid) out.suppliers.push({ fid: lk.s[l], name: nm(lk.s[l]), flow: lk.f[l], share: lk.f[l] / Math.max(1, revOf(lk.s[l])), since: lk.m0[l], industry: INDUSTRIES[INDUSTRY_IDS[lk.j[l]]].label });
+  const nm = (id: number) => names.get(id) ?? "a firm";
+  for (let l = 0; l < L2.s.length; l++) {
+    if (L2.s[l] === fid) out.customers.push({ fid: L2.c[l], name: nm(L2.c[l]), flow: L2.f[l], share: L2.f[l] / Math.max(1, revOf(fid)), since: L2.m0[l] });
+    if (L2.c[l] === fid) out.suppliers.push({ fid: L2.s[l], name: nm(L2.s[l]), flow: L2.f[l], share: L2.f[l] / Math.max(1, revOf(L2.s[l])), since: L2.m0[l], industry: INDUSTRIES[INDUSTRY_IDS[L2.j[l]]].label });
   }
   out.customers.sort((a, b) => b.flow - a.flow); out.suppliers.sort((a, b) => b.flow - a.flow);
   return out;

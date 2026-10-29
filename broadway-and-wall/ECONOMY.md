@@ -3534,3 +3534,34 @@ rise more slowly than the old rule had them (its shortage slope was steeper),
 and the shop market splits into good corners that raise and structural
 vacancy that does not let — the town's shop vacancy runs about twice the old
 figure.
+
+**Follow-up (tenant market 2).** Measured, the two known faults had four causes,
+none of them a slope:
+
+- *A renewal could not reach a landlord's ask.* A sitting tenant was offered the
+  face no higher than the comps, so a full building's ask — passing costs
+  through, raised when a tenant had nowhere else to go — never reached a
+  renewal. It is now offered the ask; its options (runner-up, cost of moving)
+  are what discipline it.
+- *Space letting as expected held flat in dollars* and followed the comps down —
+  and the comps are the cheap end of what was on offer, since firms sign where
+  the deal is best. It now passes costs through and follows the comps up only;
+  down needs its own evidence, space sitting past patience.
+- *"Fast" was invisible.* A landlord raised only on a letting that filled the
+  building, against a patience learned from the same lettings, and its clock
+  ran from the building's last full month, so a tower letting a suite a month
+  was "dark for years". It now raises on any letting faster than the longer of
+  its patience and the class's ordinary months on market, by the share let,
+  and the clock is the age of the space on the market.
+- *Most of the extra shop vacancy was not on the market at all*: 6-8% of shop
+  space (8.4% at the opening) sat in remnants under the suite floor, carved by
+  generated rolls and by renewals that shrank or grew a few hundred feet.
+  Premises now never leave such a piece (the tenant keeps it or takes it, as
+  the player's renewals already did). What remains of shop vacancy is churn:
+  make-ready and space under six months on the market, from moves and failures
+  running ~13% of let space a year.
+
+Seed 550991, ten years: office index / CPI 0.86 -> 0.95 at ~10% vacancy;
+shop remnant 6.5% -> ~1% of stock. The player's renewal read (`renewalIntent`)
+now uses the same street comparison in expectation (`stayOdds`) and draws
+nothing.

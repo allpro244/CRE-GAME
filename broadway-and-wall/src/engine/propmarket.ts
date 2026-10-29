@@ -1299,24 +1299,33 @@ export function tickLandRead(s: GameState): void {
  * DIRT NOTHING HAS PRINTED ON FOR A YEAR gets the broker's survey once a year,
  * the same rule a cap rate with no print gets (tickBrokerSurvey): six
  * texture-priced lots across the town's range of locations, each priced at
- * what the room would pay — the second-best of the land funds' and builders'
- * own numbers (landMaxPrice), the best where only one would bid — at half
- * weight. Without it a land level nobody tests stands at the appraiser's
+ * what the room would pay — the best of the land funds' and builders' own
+ * numbers (landMaxPrice), shaded for the room exactly as a land round bids —
+ * at half weight. Without it a land level nobody tests stands at the appraiser's
  * opening number for decades: the lots it prices are the ones nobody can
  * build on, their owners list only when somebody would pay their
  * reservation, and the only other sales are forced. The prints are the
  * bidders' own numbers; nothing here is a formula for land.
+ *
+ * The sample is every vacant town lot, not only the texture-priced ones, and
+ * that was measured: surveyed on texture-priced lots alone, each lower level
+ * moved the better lots out of the texture set (their builders' residuals now
+ * cleared the lower floor), the lots left were worse, and the next survey
+ * read lower again — 1.31 to 0.06 in nine years (seed 3). A fixed sample has
+ * no such selection: the funds' and builders' numbers do not read the level.
+ * It runs when nothing has printed in a year, and whenever the read is stale.
  */
 export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
   if (s.month % 12 !== 6) return;
   const tape = s.landTape ?? [];
-  if (tape.some((p) => p.kind !== "s" && p.m > s.month - 12)) return;
+  const stale = !(s.econ.landReadOut?.win);
+  if (!stale && tape.some((p) => p.kind !== "s" && p.m > s.month - 12)) return;
   const firms = livingRivals(s).filter((r) => !r.stressMs && r.failedM === undefined && (paramsOf(r).build > 0 || landBanker(r)));
   if (!firms.length) return;
   const recs: ParcelRecord[] = [];
   for (const bbl of Object.keys(parcels)) {
     const rec = resolveRec(parcels, s, bbl);
-    if (rec && (rec.class === "land" || !(rec.bldgArea > 0)) && rec.lotArea > 0 && urbanLot(rec, s.econ)) recs.push(rec);
+    if (rec && (rec.class === "land" || !(rec.bldgArea > 0)) && rec.lotArea > 0 && !rec.ag && !rec.homeLot && !rec.tract) recs.push(rec);
   }
   if (!recs.length) return;
   recs.sort((a, b) => a.demandScore - b.demandScore || (a.bbl < b.bbl ? -1 : 1));
@@ -1326,10 +1335,14 @@ export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
   for (let i = Math.floor(step / 2); i < recs.length && n < want; i += step) {
     const rec = recs[i];
     const maxes = firms.map((r) => landMaxPrice(s, r, rec)).filter((m) => m > 0).sort((a, b) => b - a);
-    const px = maxes[1] ?? maxes[0];
-    if (!px) continue;
-    const L = impliedLandLevel(s, rec, px);
-    if (L !== null) { pushLandPrint(s, { m: s.month, L, w: 0.5, kind: "s" }); n++; }
+    if (!maxes.length) continue;
+    // the best number, shaded for the room as a land round bids (landBidRound)
+    const px = maxes[0] * (1 - SHADE / maxes.length);
+    // per unit of the map's texture, whoever's number it is (a fixed sample,
+    // not the lots the level itself makes texture-priced: see below)
+    const mark = landRead(rec, s.econ).texture * rec.lotArea;
+    const L = mark > 0 ? s.econ.landIdx * px / mark : NaN;
+    if (Number.isFinite(L) && L > 0) { pushLandPrint(s, { m: s.month, L, w: 0.5, kind: "s" }); n++; }
   }
 }
 

@@ -1,80 +1,81 @@
-// BLACK SWANS (2026-10-14). The owner: the old swans "never felt like an
-// actual swan — the effect didn't warrant the word, and they happened too
-// often", and they were all one thing, a trade's level re-rolled off the
-// industry mix. A swan is the event a city dates itself by. It is rare —
-// about two and a half a century across every family here — and when one
-// lands it is the story of the game.
+// BLACK SWANS (2026-10-14; split 2026-10-29, ONE_ECONOMY_PLAN.md step 8).
 //
-// Each family is a real mechanism with a real record behind it, and each acts
-// on the thing it actually hits — capital, credit, the tax bill, the cost of
-// building, a centre's fortunes, how many people need a home — never on a
-// rent directly. The market answers the way it answers anything.
-// (A great fire and a storm surge were tried and cut, owner 2026-10-14.)
+// The owner's rule, which this file is now built on: a swan is EITHER a
+// random national event — something that happens to the country by chance and
+// reaches the city through the national economy and its trades — OR it is
+// grown by the city's own simulation, from somebody's books. Nothing in
+// between, and nothing that sets a rent.
 //
+// RANDOM, NATIONAL (drawn here, on the "shock" stream, at hazards read off the
+// record). Each acts through the national model (market.ts tickNation and
+// spendNation: households' spending, firms' plans, the government's, the
+// world's demand, the dollar, credit spreads, inflation), the price of oil
+// (inputs.ts) and the trades' orders (`swanSec`, read by tickIndustryCycle
+// beside the national cycle). The market answers the way it answers anything.
+//
+//   THE EMBARGO — October 1973: a supply shock on the nation (oil x3,
+//     inflation 3% -> 12% in a year) and materials dearer than CPI.
 //   THE CAPITAL WAVE — 1986-90, when Japanese buyers paid yields nobody local
-//   would (Rockefeller Center, the Exxon Building at a record price), cap
-//   rates compressed for years, and then the money went home all at once and
-//   the early-1990s valuations crashed through where they had started. A
-//   white swan for whoever sells into it, a black one for whoever buys.
+//     would, then went home: cap rates in and back out.
+//   THE ARRIVALS — the Mariel boatlift (1980), the 1990-91 aliyah: 3-8% more
+//     people in months, doubling up before the builders catch up.
+//   THE PANDEMIC — 1918, 1957, 1968, 2020: services and travel collapse, then
+//     come back; offices empty for a while and refill. No permanent telework
+//     era (owner's ruling): the space comes back as the episode ends.
+//   THE WAR — Korea 1950, Vietnam 1965, the Gulf 1990, Iraq 2003, Ukraine
+//     2022: defense spending, oil, inflation, and a central bank told this is
+//     not the moment.
+//   THE FOREIGN CRISIS — Latin America 1982, Mexico 1994, Asia and Russia
+//     1997-98, the euro 2010-12: the world buys less, money runs to the dollar
+//     and credit spreads blow out.
+//   THE TECH BOOM — the 1920s radio, the 1960s electronics, 1995-2000, the
+//     2010s: technology and services exports run far ahead for years, and more
+//     often than not break.
+//   THE TRADE WAR — Smoot-Hawley 1930, the 1971 surcharge, 2002 steel,
+//     2018-19: tariffs raise import prices, retaliation takes factory and farm
+//     exports, investment waits.
 //
-//   THE PANIC — 1907 (the Knickerbocker Trust), 1970 (Penn Central's paper),
-//   2008 (Lehman). A big lender takes a hole somewhere far from this city's
-//   buildings, and overnight nobody will lend to anybody. It is not the
-//   business cycle closing the window, it is the window slamming in the
-//   middle of whatever the cycle was doing — and more often than not (1907
-//   and 2008 did, 1970 and 1998 did not) it drags the economy into the
-//   recession it was not otherwise due.
+// GROWN BY THE SIMULATION.
 //
-//   THE FISCAL CRISIS is no longer drawn here. A city does not go broke at
-//   random: it goes broke when its own budget has run a deficit long enough
-//   that the note it has to roll finds no buyer. That is citygov.ts — the
-//   budget, the bond market and the control board — and the crisis's effects
-//   (the layoffs, the surcharge, the jobs that leave) come from there now.
+//   THE PANIC — kept, and its odds grow with the private credit gap
+//     (Schularick & Taylor 2012); the hole lands on a named lender's books.
+//   THE FISCAL CRISIS — the city's own budget failing to roll its debt
+//     (citygov.ts); not drawn here.
+//   THE ANCHOR — no longer a hazard. A real employer looking for a
+//     headquarters or campus puts this city on a shortlist and chooses it, or
+//     not, on what the city costs against the alternatives — its pay, its
+//     business rents (market.ts cityLogCost, the same read that brakes the
+//     town's growth) and its taxes (citygov.ts); and one that came reviews
+//     the choice when its lease comes up and leaves if the city has grown
+//     dear. Strauss-Kahn & Vives (2009, "Why and where do headquarters
+//     move?", Regional Science and Urban Economics): about 5% of US
+//     headquarters relocate in a five-year span, toward metros with lower
+//     average wages, lower corporate taxes and more headquarters of their
+//     own sector.
 //
-//   THE CAMPUS — the white swan nobody can plan for: an anchor employer picks
-//   one of the town's centres for its headquarters or research campus, and
-//   the ground around it reprices on the morning of the announcement. And
-//   sometimes it walks before a shovel goes in (Amazon in Long Island City,
-//   November 2018 to February 2019), and whoever paid up for the land
-//   between owns very expensive dirt.
-//
-//   THE EMBARGO — October 1973. The oil exporters cut supply and the price of
-//   a barrel quadrupled in three months. Inflation went from 3% to 12% inside
-//   a year and the central bank chased it into the 1974-75 recession; and
-//   construction, which runs on diesel, asphalt, steel and resin, took it
-//   worst: the BLS construction-materials index rose about 30% in 1974 alone
-//   against CPI's 11%. Every job in the ground went over budget, every pro
-//   forma written the year before was wrong, and the developers who had
-//   fixed-price contracts and the ones who did not found out which they were.
-//
-//   THE ARRIVALS — April to October 1980, the Mariel boatlift: 125,000 people
-//   landed in Miami in five months, 7% of its labour force (Card 1990). And
-//   1990-91, when the Soviet Union opened its doors and Israel's population
-//   rose 8% in two years; rents went up by a third before the builders caught
-//   up. A wave of newcomers does not wait for a flat to be empty: they double
-//   up, take the spare room, and the town's housing is suddenly short. Card
-//   found Miami's labour market absorbed them within a few years — which is
-//   the jobs model's business, not this file's.
+// EVERY SWAN WRITES ITS CAUSE (why.ts): an event when it lands, caused by the
+// nation's month (or, for the anchor, by the city's costs), and the news line
+// carries the id.
 //
 // MEASURED (2026-10-14). Each forced at year ten on four seeds and read
 // against the same town without it:
 //   panic   credit index -0.4 for two years; a recession inside a year in
 //           three of four; a lender closed in two; jobs -3.5% at two years
-//   campus  jobs +3.6% by year six, real land +4%, the chosen centre +8-14
+// (The national swans' measurements are in FORMULA_LEDGER.md's removal note
+// and test/natswans.mjs.)
 //
 // Its own RNG stream ("shock"), so the economy's other draws do not move.
 
 import type { ParcelTable } from "@/data/types";
-import type { GameState } from "./types";
+import type { BuiltClass, Econ, GameState, Sector } from "./types";
 import { raiseAlert, START_YEAR } from "./types";
-import { rng, pushNewsPublic, islandResidents } from "./market";
+import { rng, pushNewsPublic, islandResidents, cityLogCost, WAGE_SHARE, INDUSTRY_LABEL } from "./market";
 import { resolveRec } from "./value";
 import { chargeLenderLoss } from "./lenders";
+import { why, whyNation, whyOnce } from "./why";
 
 const YEAR = 12;
 /** Annual odds, per city. Shape parameters from the record, stated as such. */
-// Every family together runs to about two and a half a century: a hundred-year
-// game sees two or three, and a given kind is once in a lifetime.
 const WAVE_HAZ = 1 / 200;
 const PANIC_HAZ = 1 / 200;
 /**
@@ -89,9 +90,33 @@ function panicHazard(credGap: number): number {
   return PANIC_HAZ * Math.exp(PANIC_PER_GAP * Math.max(-0.15, Math.min(0.25, credGap)));
 }
 const PANIC_PER_GAP = 15;
-const CAMPUS_HAZ = 1 / 200;
 const EMBARGO_HAZ = 1 / 250;
 const ARRIVALS_HAZ = 1 / 250;
+/**
+ * THE NATIONAL SWANS' ODDS, a year [S, read off the record]:
+ *   pandemic  1/60: Marani et al. (2021, PNAS) put a COVID-scale pandemic at
+ *             about 2% a year; Madhav et al. (2017, Disease Control
+ *             Priorities) a 1918-scale one at 1 in 100-200. The century had
+ *             1918, 1957, 1968 and 2020 (and 2009, mild): one in 50-100 for
+ *             one that moves an economy.
+ *   war       1/20: Korea 1950, Vietnam 1965, the Gulf 1990, Afghanistan and
+ *             Iraq 2001-03, Ukraine 2022 (oil) — five since 1945 that moved
+ *             defense spending a point of output or oil a third.
+ *   foreign   1/12: Laeven & Valencia (2018) systemic crises that reached US
+ *             exports, the dollar or spreads — 1982, 1994-95, 1997-98,
+ *             2010-12, 2015 — five in about fifty years.
+ *   tech      1/25: radio (1920s), electronics (1960s), PCs (1980s), the
+ *             internet (1995-2000), the 2010s — four or five a century.
+ *   trade war 1/20: 1930, 1971, the 1981-85 restraints, 2002, 2018-19, 2025
+ *             — six in about ninety-five years.
+ * Most draw small: severity runs 0.25-1 with a median near 0.45, so the
+ * country has a 2020 or a Korea once in a lifetime and a 1998 every decade.
+ */
+const PANDEMIC_HAZ = 1 / 60, WAR_HAZ = 1 / 20, FOREIGN_HAZ = 1 / 12, TECH_HAZ = 1 / 25, TRADEWAR_HAZ = 1 / 20;
+
+/** Probes only: switch the random draws off so a forced swan can be forked against a control with no other swan in either arm. */
+let drawing = true;
+export function setSwanDraws(on: boolean): void { drawing = on; }
 
 export function tickBlackSwans(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null) {
   void adjacency;
@@ -99,16 +124,345 @@ export function tickBlackSwans(s: GameState, parcels: ParcelTable, bbls: string[
   tickCapitalWave(s);
   tickPanic(s);
   e.bsJobPull = 0;
-  tickCampus(s);
+  tickLegacyCampus(s);
+  tickAnchors(s);
   tickEmbargo(s);
   tickArrivals(s);
+  tickNatSwans(s);
   // No swan in the opening year: the player has not had time to own anything.
-  if (s.month < YEAR) return;
+  if (s.month < YEAR || !drawing) { publishNatSwans(s); return; }
+  const live = (k: NatSwanKind) => (e.natSwans ?? []).some((x) => x.kind === k);
   if (!e.embargo && rng(s, "shock") < EMBARGO_HAZ / 12) startEmbargo(s);
   else if (!e.arrivals && rng(s, "shock") < ARRIVALS_HAZ / 12) startArrivals(s);
   else if (!e.capWave && rng(s, "shock") < WAVE_HAZ / 12) startCapitalWave(s);
   else if (!e.panic && rng(s, "shock") < panicHazard(e.nat?.credGap ?? 0) / 12) startPanic(s);
-  else if (!e.campus && rng(s, "shock") < CAMPUS_HAZ / 12) startCampus(s, parcels, bbls);
+  else if (!live("pandemic") && rng(s, "shock") < PANDEMIC_HAZ / 12) startNatSwan(s, "pandemic");
+  else if (!live("war") && rng(s, "shock") < WAR_HAZ / 12) startNatSwan(s, "war");
+  else if (!live("foreign") && rng(s, "shock") < FOREIGN_HAZ / 12) startNatSwan(s, "foreign");
+  else if (!live("techboom") && rng(s, "shock") < TECH_HAZ / 12) startNatSwan(s, "techboom");
+  else if (!live("tradewar") && rng(s, "shock") < TRADEWAR_HAZ / 12) startNatSwan(s, "tradewar");
+  else considerAnchor(s, parcels, bbls);
+  // The hooks are written after anything new has landed, and read by the
+  // nation and the trades next month.
+  publishNatSwans(s);
+}
+
+// ---------------------------------------------------------------- the national swans
+
+export type NatSwanKind = "pandemic" | "war" | "foreign" | "techboom" | "tradewar";
+export interface NatSwan {
+  kind: NatSwanKind;
+  m0: number;
+  /** 0.25..1: a 1957 to a 2020, a Gulf to a Korea */
+  sev: number;
+  /** months it runs at full force (a war's length, a trade war's, a boom's) */
+  len: number;
+  title: string;
+  why?: number;
+  /** a tech boom: growth a year over trend, whether it breaks, how far and how fast */
+  rate?: number; bust?: boolean; fall?: number; bustM?: number; peak?: number;
+  /** a trade war: the tariff on covered imports, times the share covered */
+  tariff?: number;
+}
+/** What the national swans do this month, as levels (log points or shares of output), read by market.ts next month. */
+export interface NatSwanHooks {
+  /** households' spending, log */
+  c: number;
+  /** the capital firms plan for, log */
+  k: number;
+  /** the world's output gap the city's exports sell into */
+  f: number;
+  /** the dollar's real level, log (+ dear) */
+  q: number;
+  /** government spending, share of output */
+  g: number;
+  /** export demand beyond the world's income (tariff retaliation, a boom's services), log */
+  x: number;
+  /** corporate credit spread, fraction */
+  sp: number;
+  /** oil's real premium, log */
+  oil: number;
+  /** the price-level push from oil and tariffs, log, and the annualised inflation it adds this month */
+  p: number;
+  infl: number;
+}
+
+/** 0 before it starts, rising over `rise` months, full for `hold`, then fading with time constant `tau`. */
+function env(a: number, rise: number, hold: number, tau: number): number {
+  if (a < 0) return 0;
+  if (a < rise) return (a + 1) / rise;
+  if (a < rise + hold) return 1;
+  return Math.exp(-(a - rise - hold) / tau);
+}
+
+/**
+ * HOW MUCH OF AN OIL PRICE RISE REACHES THE PRICE LEVEL DIRECTLY: about 0.03
+ * per log point (a 10% rise in crude adds 0.2-0.4 points to the CPI within a
+ * year: Blanchard & Gali 2007; Kilian 2008) [S]. Tariffs pass through to
+ * import prices about one for one (Amiti, Redding & Weinstein 2019, the
+ * 2018 tariffs), and imported content is about a tenth of what consumers buy
+ * (Hale, Hobijn, Nechio & Wilson 2019, SF Fed: ~10% of PCE) [S].
+ */
+const OIL_CPI = 0.03, IMPORT_SHARE = 0.10;
+
+function sevDraw(s: GameState): number {
+  const u = rng(s, "shock");
+  return 0.25 + 0.75 * u * u;
+}
+
+/** Months after which an episode has nothing left to give. */
+function natSwanEnd(x: NatSwan): number {
+  switch (x.kind) {
+    case "pandemic": return 6 + 18 + 4 * 24;
+    case "war": return 9 + x.len + 4 * 18;
+    case "foreign": return 3 + 9 + 4 * 18;
+    case "techboom": return x.len + (x.bustM ?? 0) + 4 * 12;
+    case "tradewar": return 6 + x.len + 4 * 18;
+  }
+}
+
+/** The episode's levels at age `a`: the nation's hooks, and the trades' and the space's levels. */
+function natSwanAt(x: NatSwan, a: number, h: NatSwanHooks, sec: Partial<Record<Sector, number>>, space: Partial<Record<BuiltClass, number>>) {
+  const v = x.sev;
+  const add = (k: Sector, d: number) => { sec[k] = (sec[k] ?? 0) + d; };
+  switch (x.kind) {
+    case "pandemic": {
+      // 2020: US real spending on services -18% from February to April and
+      // most of it back within a year; business investment -9% in the second
+      // quarter; world output -3.1% (IMF); relief about 10% of output over a
+      // year (the CARES Act). At severity 1 that is a consumption level 12%
+      // down for two to five months, fading over half a year.
+      const acute = 2 + Math.round(4 * v);
+      const e1 = env(a, 1, acute, 6);
+      h.c -= 0.12 * v * e1;
+      h.k -= 0.06 * v * e1;
+      h.f -= 0.04 * v * env(a, 2, acute, 9);
+      h.g += 0.03 * v * env(a, 1, acute + 6, 9);
+      // WHICH TRADES: restaurants and travel (leisure and hospitality payrolls
+      // -49% in April 2020, -10% at the end of 2021), shops, elective care
+      // (health payrolls -9%), against the sheds and the screens that gained
+      // (warehouse and e-commerce, software). Beyond the national swing each
+      // trade already takes from the output gap.
+      add("food", -0.25 * v * env(a, 1, acute, 9));
+      add("apparel", -0.12 * v * env(a, 1, acute, 6));
+      add("medical", -0.08 * v * env(a, 1, 1, 4));
+      add("logistics", 0.08 * v * env(a, 3, 12, 18));
+      add("tech", 0.04 * v * env(a, 3, 12, 18));
+      // OFFICES EMPTY FOR A WHILE. US office vacancy went from 12.6% (2019) to
+      // about 19-20% by 2024 (Moody's), sublease availability about doubled
+      // (CBRE: ~1.5% of inventory to ~2.9%): firms held their leases and
+      // marketed what they were not using. Seven per cent of the footprint
+      // wanted at severity 1, arriving over half a year, held a year and a
+      // half, returning over the next several. It ends: the owner has ruled
+      // out a permanent telework era.
+      space.office = (space.office ?? 1) * (1 - 0.07 * v * env(a, 6, 18, 24));
+      break;
+    }
+    case "war": {
+      // Defense spending: Korea +8 points of output (5% -> 13%), Vietnam +2,
+      // the 1980s build-up +1.5, Afghanistan and Iraq +1.2 (3.0% -> 4.7%).
+      // The deficit-financed part is what reaches demand: Korea was paid for
+      // largely by tax rises (the 1950-51 Revenue Acts) and rationing, so
+      // the stimulus at the top of the scale is about two points, not eight.
+      h.g += (0.006 + 0.016 * v * v) * env(a, 9, x.len, 18);
+      // Oil: the Gulf took WTI from $17 to $41 in three months (+0.9 log)
+      // and back within six; 2003 +0.3; 2022 +0.5.
+      h.oil += (0.25 + 0.6 * v) * env(a, 3, 4, 6);
+      add("tech", 0.05 * v * env(a, 12, x.len, 24));
+      add("logistics", 0.03 * v * env(a, 12, x.len, 24));
+      break;
+    }
+    case "foreign": {
+      // 1997-98: world growth 4.0% -> 2.5%, the trade-weighted dollar +15%
+      // against Asia, high-yield spreads +300bp and investment-grade +80bp
+      // (the CMBS market shut that autumn); 2014-15 the dollar +20%.
+      h.f -= (0.01 + 0.03 * v) * env(a, 3, 6, 12);
+      h.q += (0.04 + 0.12 * v) * env(a, 3, 9, 18);
+      h.sp += (0.004 + 0.016 * v) * env(a, 1, 3, 6);
+      const e2 = env(a, 2, 6, 12);
+      add("finance", -0.06 * v * e2);
+      add("insurance", -0.02 * v * e2);
+      add("logistics", -0.04 * v * e2);
+      add("apparel", -0.03 * v * e2);
+      add("food", -0.02 * v * e2);
+      break;
+    }
+    case "techboom": {
+      // 1995-2000: information payrolls +20% nationally (San Francisco +60%),
+      // equipment and software investment ~10% a year; 2000-02: tech payrolls
+      // down 20-30% from the peak, the Nasdaq -78%. A boom that holds keeps
+      // what it built (the 2010s). Levels in log points of the trade's orders.
+      const boomUp = Math.min(a, x.len) / 12 * (x.rate ?? 0.08);
+      let lvl = boomUp;
+      if (x.bust && a > x.len) lvl = boomUp - (x.fall ?? 0) * Math.min(1, (a - x.len) / Math.max(1, x.bustM ?? 24));
+      add("tech", lvl);
+      add("media", 0.5 * lvl);
+      add("design", 0.4 * lvl);
+      const boomE = a <= x.len ? env(a, 12, x.len, 12) : Math.exp(-(a - x.len) / 12);
+      h.k += 0.03 * v * boomE;
+      h.x += 0.02 * v * boomE;
+      if (x.bust && a > x.len) h.k -= 0.04 * v * env(a - x.len, 6, x.bustM ?? 24, 12);
+      break;
+    }
+    case "tradewar": {
+      // 2018-19: tariffs of 10-25% on about $350B of imports, passed through
+      // to import prices about one for one (Amiti, Redding & Weinstein 2019);
+      // retaliation took US soybean exports to China down three quarters and
+      // farm and factory exports with them; the uncertainty took 1-2% off
+      // investment (Caldara et al. 2020). 1930 was a 20% average tariff.
+      const e3 = env(a, 6, x.len, 18);
+      h.p += IMPORT_SHARE * (x.tariff ?? 0) * e3;
+      h.x -= (0.02 + 0.04 * v) * e3;
+      h.k -= (0.005 + 0.015 * v) * env(a, 3, x.len, 12);
+      add("apparel", -0.06 * v * e3);
+      add("food", -0.05 * v * e3);
+      add("logistics", -0.04 * v * e3);
+      break;
+    }
+  }
+}
+
+function tickNatSwans(s: GameState) {
+  const e = s.econ;
+  const list = e.natSwans;
+  if (!list?.length) return;
+  for (const x of [...list]) {
+    const a = s.month - x.m0;
+    if (x.kind === "techboom" && a === x.len) {
+      const label = INDUSTRY_LABEL.tech;
+      const id = why(s, {
+        k: x.bust ? "swan.techbust" : "swan.techheld", a: "nation", name: x.title,
+        n: { sev: x.sev, ratePerYr: x.rate ?? 0, fall: x.fall ?? 0 },
+        t: x.bust ? `${label} boom broke · orders to fall ${Math.round((x.fall ?? 0) * 100)} log points over ${x.bustM} months`
+          : `${label} boom held · the trade keeps what it built`,
+      }, [x.why, whyNation(s)]);
+      pushNewsPublic(s, x.bust ? "warn" : "info", x.bust
+        ? `The ${label.toLowerCase()} boom has broken. The valuations went first; the layoffs are next, and the space the trade took on the way up is about to come back.`
+        : `The ${label.toLowerCase()} boom has slowed to a walk without breaking. The trade keeps what it built.`, id);
+    }
+    if (a >= natSwanEnd(x)) {
+      e.natSwans = e.natSwans!.filter((y) => y !== x);
+      const id = why(s, { k: `swan.${x.kind}.over`, a: "nation", name: x.title, t: `${x.title} is behind the country` }, [x.why]);
+      pushNewsPublic(s, "info", `${x.title[0].toUpperCase()}${x.title.slice(1)} is behind the country now; what it left is the ordinary business cycle's to work through.`, id);
+    }
+  }
+  if (!e.natSwans!.length) delete e.natSwans;
+}
+
+/** Sum every episode at its age into the hooks the nation and the trades read. */
+function publishNatSwans(s: GameState) {
+  const e = s.econ;
+  const list = e.natSwans ?? [];
+  const prevP = e.natSw?.p ?? 0;
+  if (!list.length && !e.natSw && !e.swanSec && !e.swanSpace) return;
+  const h: NatSwanHooks = { c: 0, k: 0, f: 0, q: 0, g: 0, x: 0, sp: 0, oil: 0, p: 0, infl: 0 };
+  const sec: Partial<Record<Sector, number>> = {};
+  const space: Partial<Record<BuiltClass, number>> = {};
+  // Each trade's orders move by the change in each episode's level this
+  // month — per episode, so an episode that ends leaves what it did (a boom
+  // that held keeps its trade bigger) rather than snapping back on the day
+  // it is filed away.
+  const was: Partial<Record<Sector, number>> = {};
+  const scratch: NatSwanHooks = { c: 0, k: 0, f: 0, q: 0, g: 0, x: 0, sp: 0, oil: 0, p: 0, infl: 0 };
+  for (const x of list) {
+    natSwanAt(x, s.month - x.m0, h, sec, space);
+    natSwanAt(x, s.month - x.m0 - 1, scratch, was, {});
+  }
+  // The price level's push from oil and tariffs, and the inflation that is
+  // its change this month, annualised — what the nation's Phillips block adds.
+  h.p += OIL_CPI * h.oil;
+  h.infl = 12 * (h.p - prevP);
+  const growth: Partial<Record<Sector, number>> = {};
+  for (const k of new Set([...Object.keys(sec), ...Object.keys(was)]) as Set<Sector>) {
+    const d = (sec[k] ?? 0) - (was[k] ?? 0);
+    if (d !== 0) growth[k] = d;
+  }
+  if (!list.length && Math.abs(h.infl) < 1e-12) {
+    delete e.natSw; delete e.swanSec; delete e.swanSpace;
+    return;
+  }
+  e.natSw = h;
+  if (Object.keys(growth).length) e.swanSec = growth; else delete e.swanSec;
+  if (Object.keys(space).length) e.swanSpace = space; else delete e.swanSpace;
+}
+
+function startNatSwan(s: GameState, kind: NatSwanKind, sevAt?: number) {
+  const e = s.econ, n = e.nat;
+  const yr = START_YEAR + Math.floor(s.month / 12);
+  const v = sevAt ?? sevDraw(s);
+  const x: NatSwan = { kind, m0: s.month, sev: v, len: 0, title: "" };
+  let tone: "bad" | "good" = "bad", head = "", body = "", detail = "";
+  const nums: Record<string, number> = { sev: +v.toFixed(2) };
+  if (kind === "pandemic") {
+    x.title = `the pandemic of ${yr}`;
+    head = `The pandemic of ${yr}`;
+    body = v > 0.6
+      ? "A new virus is in every city in the country. Restaurants, hotels and airlines are closing their doors, offices are emptying, and the economy is falling faster than anyone has seen."
+      : "A new strain of influenza is moving through the country. Schools and offices are thinning out, restaurants and travel are quiet, and the economy is losing a step.";
+    detail = "Services and travel go first and come back last. Firms will hold their leases and put the space they are not using on the sublet market; it comes back as the episode passes, not overnight.";
+    nums.consumption = -0.12 * v;
+    nums.officeSpace = -0.07 * v;
+  } else if (kind === "war") {
+    x.len = Math.round(24 + 72 * rng(s, "shock"));
+    x.title = `the war of ${yr}`;
+    head = `War, ${yr}`;
+    const oil = 0.25 + 0.6 * v;
+    body = `The country is at war. Defense orders are going out, the price of a barrel is up ${Math.round((Math.exp(oil) - 1) * 100)}% on the supply scare, and Washington will be borrowing to pay for it.`;
+    detail = "Wars are paid for with borrowed money and higher prices. When the war is big, the central bank is told — politely, then less politely — that this is not the moment to raise rates. That is how Korea and Vietnam became inflations.";
+    // A big war is fought on borrowed money and the bank is leaned on (the
+    // Fed pegged rates until the 1951 Accord; Johnson and Martin, 1965).
+    // Measured (seed 550991, severity 1): held for the war's whole length the
+    // pressure took the output gap to +11 points in three years — the
+    // engine's fiscal-pressure channel compounding — against about +3 with
+    // the bank free; Korea ran perhaps +5. So the pressure is the record's
+    // length, below, not the war's.
+    // Only the largest, and not for the war's whole length: Korea's peg held
+    // nine months to the Accord; under Vietnam the Fed tightened anyway in
+    // 1966, a year and a half in. Nine to eighteen months.
+    if (n && v > 0.8) n.pressureM = Math.max(n.pressureM ?? 0, Math.min(x.len, Math.round(9 + 9 * (v - 0.8) / 0.2)));
+    nums.defense = 0.006 + 0.016 * v * v;
+    nums.oil = oil;
+    nums.months = x.len;
+  } else if (kind === "foreign") {
+    x.title = `the foreign crisis of ${yr}`;
+    head = `A crisis abroad, ${yr}`;
+    body = "Banks and currencies are failing overseas. Money is running to the dollar, the world is buying less of what this country makes, and credit spreads have blown out overnight.";
+    detail = "Exporters lose twice, to the slump abroad and to the dearer dollar. Lenders tighten while the spreads are wide, and anything that needs refinancing this year will cost more.";
+    nums.world = -(0.01 + 0.03 * v);
+    nums.dollar = 0.04 + 0.12 * v;
+    nums.spread = 0.004 + 0.016 * v;
+  } else if (kind === "techboom") {
+    tone = "good";
+    x.len = Math.round(36 + 24 * rng(s, "shock"));
+    x.rate = 0.03 + 0.05 * v;
+    // Six in ten break (1929's radio, 1970's electronics, 2000), the rest
+    // hold (the 2010s): a fall of 60-110% of what the boom added, over two
+    // to three years.
+    x.bust = rng(s, "shock") < 0.6;
+    x.peak = x.rate * x.len / 12;
+    x.fall = x.peak * (0.6 + 0.5 * rng(s, "shock"));
+    x.bustM = Math.round(24 + 12 * rng(s, "shock"));
+    x.title = `the technology boom of ${yr}`;
+    head = `A technology boom, ${yr}`;
+    body = `A new technology has the country's money behind it. Software and media firms are hiring about ${Math.round(x.rate * 100)}% a year faster than everyone else, and investment is pouring in.`;
+    detail = "Booms like this have broken more often than they have held. Every landlord who underwrites this growth continuing is betting it is a 2010s and not a 2000.";
+    nums.ratePerYr = x.rate;
+    nums.months = x.len;
+  } else {
+    x.len = Math.round(18 + 42 * rng(s, "shock"));
+    x.tariff = (0.03 + 0.12 * v) * (0.3 + 0.7 * v);
+    x.title = `the trade war of ${yr}`;
+    head = `Tariffs, ${yr}`;
+    body = `Washington has put tariffs on a wide range of imports and the trading partners have answered in kind. Import prices are going up and the factories' and farms' export orders are being cancelled.`;
+    detail = "A tariff is a tax on the buyer: prices rise, and the factories, ports and warehouses that live off trade lose the orders the other side retaliated against. Investment waits for the outcome.";
+    nums.tariff = x.tariff;
+    nums.exports = -(0.02 + 0.04 * v);
+    nums.months = x.len;
+  }
+  x.why = why(s, { k: `swan.${kind}`, a: "nation", name: x.title, n: nums, t: `${head} · severity ${v.toFixed(2)}` }, [whyNation(s)]);
+  (e.natSwans ??= []).push(x);
+  (e.blackSwans ??= []).push({ m: s.month, kind, size: Math.round(v * 100), sf: 0, title: x.title });
+  raiseAlert(s, { kind: "swan", tone, title: head, body, detail, why: x.why });
 }
 
 // ---------------------------------------------------------------- the embargo
@@ -139,8 +493,9 @@ function startEmbargo(s: GameState) {
   const jump = 0.12 + 0.08 * rng(s, "shock");
   e.embargo = { leftM: 12, monthly: Math.pow(1 + jump, 1 / 12) - 1 };
   (e.blackSwans ??= []).push({ m: s.month, kind: "embargo", size: Math.round(jump * 100), sf: 0, title: `the embargo of ${yr}` });
+  const id = why(s, { k: "swan.embargo", a: "nation", name: `the embargo of ${yr}`, n: { supplyShock: n?.shockSev ?? 0, materials: jump }, t: `Oil embargo · supply shock ${(((n?.shockSev ?? 0)) * 100).toFixed(1)} points of inflation` }, [whyNation(s)]);
   raiseAlert(s, {
-    kind: "swan", tone: "bad",
+    kind: "swan", tone: "bad", why: id,
     title: `The embargo of ${yr}`,
     body: `The oil exporters have cut supply and the price of a barrel has tripled in a month. Every price in the country is about to follow it, and construction first: diesel, asphalt, steel and resin are all oil. Expect materials about ${Math.round(jump * 100)}% dearer within the year, on top of the inflation itself.`,
     detail: "Every job in the ground is about to go over budget, and every pro forma written last year is wrong. The central bank will have to choose between the inflation and the jobs, and in 1974 it chose both, badly.",
@@ -183,8 +538,9 @@ function startArrivals(s: GameState) {
   e.arrivals = { leftM: months, monthly: Math.pow(1 + size, 1 / months) - 1 };
   const people = Math.round((e.population ?? 0) * size / 1000) * 1000;
   (e.blackSwans ??= []).push({ m: s.month, kind: "arrivals", size: Math.round(size * 1000), sf: 0, title: `the arrivals of ${yr}` });
+  const id = why(s, { k: "swan.arrivals", a: "nation", name: `the arrivals of ${yr}`, n: { people, share: size, months }, t: `${people.toLocaleString()} newcomers over ${months} months · ${(size * 100).toFixed(0)}% of the town` }, [whyNation(s)]);
   raiseAlert(s, {
-    kind: "swan", tone: "good",
+    kind: "swan", tone: "good", why: id,
     title: `The arrivals of ${yr}`,
     body: `A political upheaval abroad has opened a door that was shut for a generation, and this city is where the boats and the planes are landing. About ${people.toLocaleString()} people — ${(size * 100).toFixed(0)}% of the town — over the next ${months} months, and they need somewhere to live the week they arrive.`,
     detail: "They will not wait for a flat to come empty: families are doubling up already. Whoever owns apartments is about to find out what a housing shortage looks like from the right side, and the builders are about to find out how long it takes to catch up.",
@@ -205,7 +561,8 @@ function tickCapitalWave(s: GameState) {
   if (w.phase === "in") next("hold", Math.round(12 + 12 * rng(s, "shock")), w.to);
   else if (w.phase === "hold") {
     next("out", Math.round(12 + 12 * rng(s, "shock")), 0.3 + 0.3 * rng(s, "shock"));
-    pushNewsPublic(s, "warn", "The foreign buyers have gone home. The bids that set every price in town for five years are simply not there any more, and nobody local will pay what they paid.");
+    const id = why(s, { k: "swan.wave.out", a: "nation", n: { capPts: e.capWave?.to ?? 0 }, t: "Foreign buyers left · cap rates back out" }, [whyNation(s)]);
+    pushNewsPublic(s, "warn", "The foreign buyers have gone home. The bids that set every price in town for five years are simply not there any more, and nobody local will pay what they paid.", id);
   } else if (w.phase === "out") next("fade", 36, 0);
   else { e.capWave = undefined; e.capitalWave = 0; }
 }
@@ -215,8 +572,9 @@ function startCapitalWave(s: GameState) {
   const depth = -(0.8 + 0.7 * rng(s, "shock"));
   e.capWave = { phase: "in", leftM: 36, len: 36, from: e.capitalWave ?? 0, to: depth };
   (e.blackSwans ??= []).push({ m: s.month, kind: "wave", size: Math.round(-depth * 100), sf: 0, title: "foreign capital found the city" });
+  const id = why(s, { k: "swan.wave", a: "nation", n: { capPts: depth }, t: `Foreign capital arriving · cap rates ${depth.toFixed(1)} points over three years` }, [whyNation(s)]);
   raiseAlert(s, {
-    kind: "swan", tone: "good",
+    kind: "swan", tone: "good", why: id,
     title: "Foreign capital has found the city",
     body: `Buyers from abroad are paying yields nobody local will — trophy towers first, then everything. Over the next three years they will take about ${(-depth).toFixed(1)} points off every cap rate in town.`,
     detail: "It has happened before and it ended the same way every time: the money goes home at once, and the prices it set go with it. Selling into it is the trade; buying into it is the risk.",
@@ -235,7 +593,8 @@ function tickPanic(s: GameState) {
   p.force *= 0.87;
   if (p.force < 0.04) {
     s.econ.panic = undefined;
-    pushNewsPublic(s, "event", "The panic is over. Nobody announced it; the commercial paper simply started rolling again, and the lenders started taking calls.");
+    pushNewsPublic(s, "event", "The panic is over. Nobody announced it; the commercial paper simply started rolling again, and the lenders started taking calls.",
+      why(s, { k: "swan.panic.over", a: "bank", t: "The panic is over · lenders taking calls again" }));
   }
 }
 
@@ -247,7 +606,7 @@ function startPanic(s: GameState) {
   // buildings, which is what makes it a swan rather than the cycle. It lands
   // on one of the big desks, weighted by size, because it is always a big one.
   const live = (s.lenders ?? []).filter((l) => l.failedM === undefined && (l.kind === "bank" || l.kind === "life") && l.capital > 0);
-  let name = "";
+  let name = "", loss = 0;
   if (live.length) {
     const tot = live.reduce((a, l) => a + Math.max(1, l.book), 0);
     let u = rng(s, "shock") * tot;
@@ -255,7 +614,7 @@ function startPanic(s: GameState) {
     for (const l of live) { u -= Math.max(1, l.book); if (u <= 0) { hit = l; break; } }
     // Between half its capital and more than all of it: some of the time it
     // survives on its knees, some of the time the examiners come on Friday.
-    const loss = hit.capital * (0.5 + 0.8 * rng(s, "shock"));
+    loss = hit.capital * (0.5 + 0.8 * rng(s, "shock"));
     chargeLenderLoss(s, hit.name, loss);
     name = hit.name;
   }
@@ -264,8 +623,15 @@ function startPanic(s: GameState) {
   // to the following spring.
   e.panic = { leftM: Math.round(4 + 8 * rng(s, "shock")), force: 1 };
   (e.blackSwans ??= []).push({ m: s.month, kind: "panic", size: 1, sf: 0, title: `the Panic of ${yr}` });
+  // GROWN: its odds were the credit boom's, so the boom is the cause.
+  const credGap = e.nat?.credGap ?? 0;
+  const id = why(s, {
+    k: "swan.panic", a: "bank", ...(name ? { aid: name, name } : {}),
+    n: { loss: Math.round(loss), credGap, odds: panicHazard(credGap) / PANIC_HAZ },
+    t: `${name || "A trust company"} took a hole far from town · private credit ${(credGap * 100).toFixed(1)} points over trend, crisis odds x${(panicHazard(credGap) / PANIC_HAZ).toFixed(1)}`,
+  }, [whyNation(s)]);
   raiseAlert(s, {
-    kind: "swan", tone: "bad",
+    kind: "swan", tone: "bad", why: id,
     title: `The Panic of ${yr}`,
     body: (name ? `${name} has disclosed losses far from this city — a book nobody here knew it had — and ` : "A trust company has failed on losses nobody here knew about, and ")
       + "by the afternoon nobody would lend to anybody. Term sheets are being pulled mid-closing, lines are being cut, and the bond market has stopped quoting.",
@@ -273,90 +639,272 @@ function startPanic(s: GameState) {
   });
 }
 
-// ---------------------------------------------------------------- the campus
+// ---------------------------------------------------------------- the anchor
 
-const CAMPUS_KIND = [
-  "a technology company's second headquarters",
-  "a hospital system's research campus",
-  "a bank's new operations headquarters",
-  "a university's new science campus",
-  "a pharmaceutical company's research headquarters",
-];
+/**
+ * AN ANCHOR EMPLOYER CHOOSES ON COST (ONE_ECONOMY_PLAN.md §5, grown swans).
+ *
+ * The campus was a hazard: one in two hundred a year, a dice roll on whether
+ * it walked. Now a firm decides. A large employer siting a headquarters or a
+ * research campus runs a search and puts a handful of cities on a shortlist;
+ * this city reaches one at `ANCHOR_SHORTLIST_HAZ` a year [K: scale — HQ-scale
+ * relocations are about 1% of large firms a year (Strauss-Kahn & Vives 2009:
+ * ~5% of US headquarters in five years), a town this size is on few lists].
+ * Among `FINALISTS` (five: site-selection shortlists run three to five;
+ * Amazon's HQ2 had twenty) it wins with logit odds on its cost against
+ * theirs: the town's pay and business rent against the nation (cityLogCost,
+ * the same read that brakes its growth) plus its taxes against the opening
+ * (citygov.ts), the rivals drawn from the spread of US metro business costs
+ * (`PEER_SD`, about 10%: BEA regional price parities and QCEW average pay
+ * across metros). `COST_BETA` = 8 per log point [K]: a city 10% cheaper than
+ * the field is about twice as likely to be picked, the order of the
+ * location-cost elasticities in Bartik (1991).
+ *
+ * Between the announcement and the groundbreak the city can lose it: if its
+ * costs have risen past the margin it won by, or City Hall turned against the
+ * package (a populist mayor elected in the interval: Long Island City, 2019),
+ * or the city is under a control board and cannot pay what it promised.
+ *
+ * And one that came reviews the choice when its lease is up, ten to fifteen
+ * years on: it leaves if the city has grown dearer than when it chose, by
+ * more than the cost of moving (`MOVE_HURDLE`, a quarter of a log point: a
+ * headquarters move costs about a year or two of the savings it buys) — with
+ * the same logit odds, so about one in eight leave at an unchanged cost,
+ * which is Strauss-Kahn & Vives' 5% in five years over a twelve-year lease.
+ */
+export interface Anchor {
+  id: number;
+  name: string;
+  sector: Sector;
+  pole: number;
+  /** "coming" until it breaks ground, "here" while it hires and after, "leaving" while it goes */
+  state: "coming" | "here" | "leaving";
+  m0: number;
+  /** share of the city's jobs it brings, and the location jump at its centre */
+  gain: number;
+  jump: number;
+  /** months of hiring (or of leaving) still to land, and the monthly pull */
+  leftM: number;
+  pullM: number;
+  /** the city's cost (log, against the nation, taxes in) when it chose */
+  costAt: number;
+  breakM?: number;
+  reviewM?: number;
+  platformAt?: string;
+  bbl?: string;
+  why?: number;
+}
+const ANCHOR_SHORTLIST_HAZ = 1 / 20;
+const FINALISTS = 5;
+const COST_BETA = 8;
+const PEER_SD = 0.10;
+const MOVE_HURDLE = 0.25;
+/** Property tax against an occupier's gross rent: 1.1% of value at a 7% cap rate is about 16% (value.ts TAX_RATE, CAP_BASE) [D]. */
+const PROP_TAX_OF_RENT = 0.16;
 
-function tickCampus(s: GameState) {
-  const e = s.econ;
-  const c = e.campus;
-  if (!c) return;
-  if (c.walkM !== undefined) {
-    c.walkM -= 1;
-    if (c.walkM <= 0) {
-      // IT WALKED. The politics turned, the subsidy package became a campaign
-      // issue, and the company announced it would go elsewhere — after the
-      // land around the site had already repriced on the promise.
-      const p = s.poles?.[c.pole];
-      if (p) p.level = Math.max(-16, p.level - c.jump);
-      (e.blackSwans ??= []).push({ m: s.month, kind: "campus", size: -1, sf: 0, title: "the campus walked away" });
-      raiseAlert(s, {
-        kind: "swan", tone: "bad",
-        title: "The campus is not coming",
-        body: `${c.name[0].toUpperCase()}${c.name.slice(1)} has pulled out. The council fight over the subsidies went public, the company said it would not build where it was not wanted, and it has picked another city.`,
-        detail: "The land around the site repriced on the promise and has to come back down without it. Whoever bought ground there in the last year is holding the bag.",
-      });
-      e.campus = undefined;
-      return;
-    }
+/**
+ * The city's cost to an employer, in log points: pay and rent against the
+ * nation (market.ts cityLogCost) plus City Hall's taxes against the opening —
+ * the payroll tax on the wage bill, the property tax on the rent.
+ */
+export function anchorCost(e: Econ): { total: number; wage: number; rent: number; tax: number; agglom: number } {
+  const c = cityLogCost(e);
+  const g = e.gov;
+  let tax = 0;
+  if (g) {
+    tax += WAGE_SHARE * Math.log(1 + (g.policy.wageRate - g.policy0.wageRate));
+    tax += (1 - WAGE_SHARE) * Math.log(1 + PROP_TAX_OF_RENT * (g.policy.propRate / Math.max(1e-6, g.policy0.propRate) - 1));
   }
-  if (c.leftM > 0 && c.walkM === undefined) { e.bsJobPull = (e.bsJobPull ?? 0) + c.pullM; c.leftM -= 1; }
-  else if (c.leftM <= 0) e.campus = undefined;
+  return { total: c.total + tax, wage: c.wage, rent: c.rent, tax, agglom: c.agglom };
 }
 
-function startCampus(s: GameState, parcels: ParcelTable, bbls: string[]) {
+/** The city's costs this month as a cause (once a month). */
+function whyCityCost(s: GameState): number {
+  const c = anchorCost(s.econ);
+  const pct = (x: number) => `${x >= 0 ? "+" : ""}${(x * 100).toFixed(1)}%`;
+  return whyOnce(s, `citycost:${s.month}`, () => ({
+    k: "city.cost", a: "city",
+    n: { total: c.total, wage: c.wage, rent: c.rent, tax: c.tax },
+    t: `What the city costs an employer against the nation · pay ${pct(c.wage)} · rent ${pct(c.rent)} · taxes ${pct(c.tax)}`,
+  }), () => [whyNation(s)]);
+}
+
+const ANCHOR_KIND: { sector: Sector; what: string; names: string[] }[] = [
+  { sector: "tech", what: "headquarters", names: ["Corvane Systems", "Halyard Software", "Brightwater Networks", "Meridale Data"] },
+  { sector: "medical", what: "research campus", names: ["St. Aldric Health", "Northfield Biologics", "Carrow Therapeutics", "Lindqvist Medical"] },
+  { sector: "finance", what: "operations headquarters", names: ["Ashcombe Trust", "Pellham Capital", "Garrick National Bank", "Ostrander Financial"] },
+  { sector: "insurance", what: "headquarters", names: ["Holloway Mutual", "Brennard Assurance", "Kestrel Life", "Thornbury Casualty"] },
+  { sector: "media", what: "studio campus", names: ["Vantage Pictures", "Larkspur Media", "Redfern Broadcasting", "Calloway Press"] },
+];
+
+function considerAnchor(s: GameState, parcels: ParcelTable, bbls: string[], forced = false) {
   const e = s.econ;
   const poles = s.poles ?? [];
   if (poles.length < 2) return;
+  if ((e.anchors ?? []).some((a) => a.state === "coming")) return;
+  if (!forced && rng(s, "shock") >= ANCHOR_SHORTLIST_HAZ / 12) return;
+  // ON THE SHORTLIST. The other finalists' costs are drawn from the spread of
+  // US metros; this city wins on logit odds against them.
+  const c = anchorCost(e).total;
+  let others = 0;
+  for (let i = 1; i < FINALISTS; i++) {
+    const z = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "shock")))) * Math.cos(2 * Math.PI * rng(s, "shock"));
+    others += Math.exp(-COST_BETA * PEER_SD * z);
+  }
+  const mine = Math.exp(-COST_BETA * c);
+  const p = mine / (mine + others);
+  const kind = ANCHOR_KIND[Math.floor(rng(s, "shock") * ANCHOR_KIND.length)];
+  const name = kind.names[Math.floor(rng(s, "shock") * kind.names.length)];
+  const won = rng(s, "shock") < p;
+  const costWhy = whyCityCost(s);
+  if (!won) {
+    if (forced) return;
+    const id = why(s, { k: "anchor.passed", a: "firm", name, n: { odds: p, cost: c }, t: `${name} shortlisted the city for its ${kind.what} and chose elsewhere · odds were ${(p * 100).toFixed(0)}%` }, [costWhy]);
+    pushNewsPublic(s, "info", `${name} had the city on its shortlist for a new ${kind.what} and has chosen another. The site consultants' read: ${c > 0.02 ? "too dear" : "close, but not the cheapest"}.`, id);
+    return;
+  }
   // NOT THE ADDRESS EVERYBODY ALREADY KNOWS. Anchors go where the land is
   // cheap enough to assemble a campus and the subsidy is on offer — the
   // centre that is losing, not the one that won.
-  const order = poles.map((p, i) => ({ i, lvl: p.level })).sort((a, b) => a.lvl - b.lvl);
+  const order = poles.map((pl, i) => ({ i, lvl: pl.level })).sort((a, b) => a.lvl - b.lvl);
   const pick = order[Math.floor(rng(s, "shock") * Math.max(1, order.length - 1))].i;
-  const p = poles[pick];
+  const pole = poles[pick];
   // About as far as a well-located station moves a neighbourhood, and more:
   // eight to fourteen points at the site, fading with distance.
   const jump = 8 + 6 * rng(s, "shock");
-  p.level = Math.min(16, p.level + jump);
+  pole.level = Math.min(16, pole.level + jump);
   // The payroll: 1-2.5% of the city's jobs over four years, the anchor and
   // the suppliers, lawyers and lunch places it brings.
   const gain = 0.01 + 0.015 * rng(s, "shock");
-  const months = 48;
-  const name = CAMPUS_KIND[Math.floor(rng(s, "shock") * CAMPUS_KIND.length)];
-  // Three times in ten it walks before ground is broken.
-  const walks = rng(s, "shock") < 0.3;
-  e.campus = { pole: pick, leftM: months, pullM: Math.pow(1 + gain, 1 / months) - 1, jump, name,
-    ...(walks ? { walkM: Math.round(6 + 12 * rng(s, "shock")) } : {}) };
-  // Where: the biggest lot on the centre's own block (a pole is named for
-  // the block it was found on).
   let best = "", ba = -1;
   for (const b of bbls) {
     const r = parcels[b];
-    if (r?.block !== p.name) continue;
+    if (r?.block !== pole.name) continue;
     if ((r.lotArea ?? 0) > ba) { ba = r.lotArea ?? 0; best = b; }
   }
   const addr = best ? (resolveRec(parcels, s, best)?.address ?? "") : "";
-  (e.blackSwans ??= []).push({ m: s.month, kind: "campus", size: Math.round(gain * 1000), sf: 0, title: `${name} picked the city` });
+  const a: Anchor = {
+    id: (e.anchorSeq = (e.anchorSeq ?? 0) + 1), name, sector: kind.sector, pole: pick, state: "coming", m0: s.month,
+    gain, jump, leftM: 48, pullM: Math.pow(1 + gain, 1 / 48) - 1, costAt: c,
+    breakM: s.month + Math.round(6 + 12 * rng(s, "shock")), ...(e.gov ? { platformAt: e.gov.mayor.platform } : {}),
+    ...(best ? { bbl: best } : {}),
+  };
+  a.why = why(s, {
+    k: "anchor.chose", a: "firm", name, ...(best ? { bbl: best } : {}),
+    n: { odds: p, cost: c, gain, jump },
+    t: `${name} chose the city for its ${kind.what} · ${(gain * 100).toFixed(1)}% more jobs · won on cost, odds ${(p * 100).toFixed(0)}%`,
+  }, [costWhy]);
+  (e.anchors ??= []).push(a);
+  (e.blackSwans ??= []).push({ m: s.month, kind: "anchor", size: Math.round(gain * 1000), sf: 0, title: `${name} picked the city` });
   raiseAlert(s, {
-    kind: "swan", tone: "good", ...(best ? { bbl: best } : {}),
+    kind: "swan", tone: "good", ...(best ? { bbl: best } : {}), why: a.why,
     title: "An anchor has picked the city",
-    body: `${name[0].toUpperCase()}${name.slice(1)} is coming${addr ? `, on a campus by ${addr}` : ""}. About ${(gain * 100).toFixed(1)}% more jobs in the city over four years, and the blocks around the site are being re-priced this morning.`,
-    detail: "The ground near the site is worth more today than it was yesterday, and everybody knows it. The deal is not built yet — subsidy packages have been known to come apart in the council before a shovel goes in.",
+    body: `${name} is bringing its ${kind.what} here${addr ? `, on a campus by ${addr}` : ""}, after a search that had ${FINALISTS} cities on the list. About ${(gain * 100).toFixed(1)}% more jobs in the city over four years, and the blocks around the site are being re-priced this morning.`,
+    detail: "It chose on cost: pay, rent and taxes against the other finalists. The deal is not built yet — if the city's costs rise or City Hall turns on the package before the groundbreaking, it can still go elsewhere.",
   });
 }
 
+function tickAnchors(s: GameState) {
+  const e = s.econ;
+  const list = e.anchors;
+  if (!list?.length) return;
+  for (const a of [...list]) {
+    const pole = s.poles?.[a.pole];
+    if (a.state === "coming") {
+      if (s.month < (a.breakM ?? s.month)) continue;
+      // THE GROUNDBREAK, OR THE WALK. The firm looks again before it commits:
+      // what the city costs now against what it cost when it chose, City
+      // Hall's turn if the voters have since elected a mayor who ran against
+      // the package, and whether the city can pay what it promised at all.
+      const c = anchorCost(e).total;
+      const g = e.gov;
+      const turned = !!(g && a.platformAt && g.mayor.platform === "populist" && a.platformAt !== "populist");
+      const board = !!g?.control;
+      const pWalk = board ? 1 : Math.min(1, 1 / (1 + Math.exp(COST_BETA * (MOVE_HURDLE - (c - a.costAt)))) + (turned ? 0.4 : 0));
+      if (rng(s, "shock") < pWalk) {
+        if (pole) pole.level = Math.max(-16, pole.level - a.jump);
+        e.anchors = e.anchors!.filter((x) => x !== a);
+        const id = why(s, {
+          k: "anchor.walked", a: "firm", name: a.name, ...(a.bbl ? { bbl: a.bbl } : {}),
+          n: { costMove: c - a.costAt, odds: pWalk },
+          t: `${a.name} walked before the groundbreaking · ${board ? "the city under a control board" : turned ? "City Hall turned against the package" : `the city ${((c - a.costAt) * 100).toFixed(1)}% dearer than when it chose`}`,
+        }, [whyCityCost(s), a.why]);
+        (e.blackSwans ??= []).push({ m: s.month, kind: "anchor", size: -1, sf: 0, title: `${a.name} walked away` });
+        raiseAlert(s, {
+          kind: "swan", tone: "bad", ...(a.bbl ? { bbl: a.bbl } : {}), why: id,
+          title: "The campus is not coming",
+          body: `${a.name} has pulled out before the groundbreaking. ${board ? "The city is under a control board and cannot deliver the package it offered." : turned ? "The council fight over the subsidies went public, the new administration ran against the deal, and the company has picked another city." : "The city has grown dearer since it chose, and another finalist has made a better offer."}`,
+          detail: "The land around the site repriced on the promise and has to come back down without it. Whoever bought ground there since is holding the bag.",
+        });
+        continue;
+      }
+      a.state = "here";
+      a.reviewM = s.month + 120 + Math.floor(60 * rng(s, "shock"));
+      pushNewsPublic(s, "event", `${a.name} has broken ground on its campus. The hiring starts now.`,
+        why(s, { k: "anchor.broke", a: "firm", name: a.name, ...(a.bbl ? { bbl: a.bbl } : {}), t: `${a.name} broke ground` }, [a.why]));
+    }
+    if (a.state === "here") {
+      if (a.leftM > 0) { e.bsJobPull = (e.bsJobPull ?? 0) + a.pullM; a.leftM -= 1; }
+      if (s.month < (a.reviewM ?? Infinity)) continue;
+      // THE LEASE IS UP: stay, or go where it is cheaper. A real firm moves
+      // when the savings beat the cost of moving.
+      const c = anchorCost(e).total;
+      const pLeave = 1 / (1 + Math.exp(COST_BETA * (MOVE_HURDLE - (c - a.costAt))));
+      if (rng(s, "shock") < pLeave) {
+        a.state = "leaving";
+        a.leftM = 24;
+        a.pullM = Math.pow(1 + a.gain, -1 / 24) - 1;
+        const id = why(s, {
+          k: "anchor.leaving", a: "firm", name: a.name, ...(a.bbl ? { bbl: a.bbl } : {}),
+          n: { costMove: c - a.costAt, odds: pLeave, gain: a.gain },
+          t: `${a.name} is leaving at lease end · the city ${((c - a.costAt) * 100).toFixed(1)}% ${c >= a.costAt ? "dearer" : "cheaper"} than when it came`,
+        }, [whyCityCost(s), a.why]);
+        (e.blackSwans ??= []).push({ m: s.month, kind: "anchor", size: -Math.round(a.gain * 1000), sf: 0, title: `${a.name} left the city` });
+        raiseAlert(s, {
+          kind: "swan", tone: "bad", ...(a.bbl ? { bbl: a.bbl } : {}), why: id,
+          title: `${a.name} is leaving`,
+          body: `${a.name}'s lease is up and it is not renewing: it has found a city where its people and its space cost less. About ${(a.gain * 100).toFixed(1)}% of the city's jobs will go over the next two years.`,
+          detail: "Anchors choose a city on what it costs and leave on the same arithmetic. The suppliers, the lawyers and the lunch places it brought go with it.",
+        });
+      } else {
+        a.reviewM = s.month + 120 + Math.floor(60 * rng(s, "shock"));
+        // A renewal resets the comparison: the new lease is signed at today's costs.
+        a.costAt = c;
+      }
+      continue;
+    }
+    if (a.state === "leaving") {
+      if (a.leftM > 0) { e.bsJobPull = (e.bsJobPull ?? 0) + a.pullM; a.leftM -= 1; continue; }
+      if (pole) pole.level = Math.max(-16, pole.level - a.jump);
+      e.anchors = e.anchors!.filter((x) => x !== a);
+    }
+  }
+  if (!e.anchors!.length) delete e.anchors;
+}
+
+/** A campus from a save made before the anchor was grown: its hiring still lands, then it is done. */
+function tickLegacyCampus(s: GameState) {
+  const c = s.econ.campus;
+  if (!c) return;
+  if (c.walkM !== undefined || c.leftM <= 0) { s.econ.campus = undefined; return; }
+  s.econ.bsJobPull = (s.econ.bsJobPull ?? 0) + c.pullM;
+  c.leftM -= 1;
+}
+
 /** Fire one on demand — tests and probes only; the game never calls this. */
-export function forceBlackSwan(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null, kind: "embargo" | "arrivals" | "wave" | "panic" | "campus") {
+export function forceBlackSwan(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null,
+  kind: "embargo" | "arrivals" | "wave" | "panic" | "campus" | "anchor" | NatSwanKind, sev?: number) {
   void adjacency;
   if (kind === "embargo") startEmbargo(s);
   else if (kind === "arrivals") startArrivals(s);
   else if (kind === "wave") startCapitalWave(s);
   else if (kind === "panic") startPanic(s);
-  else startCampus(s, parcels, bbls);
+  else if (kind === "campus" || kind === "anchor") forceAnchor(s, parcels, bbls);
+  else startNatSwan(s, kind, sev);
+  publishNatSwans(s);
+}
+
+/** A shortlist the city wins, for probes: the same path, the shortlist hazard skipped, the win still on cost. */
+function forceAnchor(s: GameState, parcels: ParcelTable, bbls: string[]) {
+  for (let i = 0; i < 200 && !(s.econ.anchors ?? []).some((a) => a.m0 === s.month); i++) considerAnchor(s, parcels, bbls, true);
 }

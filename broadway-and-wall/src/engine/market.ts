@@ -1757,9 +1757,9 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   return econ;
 }
 
-export function pushNewsPublic(s: GameState, kind: NewsItem["kind"], text: string) { pushNews(s, kind, text); }
-function pushNews(s: GameState, kind: NewsItem["kind"], text: string) {
-  s.news.unshift({ q: s.month, kind, text });
+export function pushNewsPublic(s: GameState, kind: NewsItem["kind"], text: string, why?: number) { pushNews(s, kind, text, why); }
+function pushNews(s: GameState, kind: NewsItem["kind"], text: string, why?: number) {
+  s.news.unshift({ q: s.month, kind, text, ...(why ? { why } : {}) });
   if (s.news.length > 120) s.news.length = 120;
 }
 
@@ -2377,6 +2377,11 @@ function spendNation(
   // New borrowing is spending while the stock grows faster than output; paying it down is not (Biggs & Mayer 2010).
   const credFlow = ((n.credGap ?? 0) - (n.credGapPrev ?? n.credGap ?? 0)) * 12;
   const panic = e.panic?.force ?? 0;
+  // THE NATIONAL SWANS (blackswans.ts natSw): what a pandemic, a war, a
+  // foreign crisis, a tech boom or a trade war does to households' spending,
+  // firms' plans, the government's, the world's demand and the dollar. Each a
+  // level, glided in and out by its own episode; zero in a quiet world.
+  const sw = e.natSw;
   // CONFIDENCE. What households and firms believe about the years ahead is
   // the one input to spending no model of this economy can derive — news
   // about the future, a war, an election — so it is drawn, but persistent
@@ -2391,7 +2396,7 @@ function spendNation(
   // in what they borrow and save — car loans, card balances, deposits.
   d.rr = (d.rr ?? 0) + ((x.rAvg - x.rStar) - (d.rr ?? 0)) / P.RR_M;
   const cT = P.C0 / (1 - P.TAX) * ((1 - P.C_NOW) * d.Yp + P.C_NOW * Yd)
-    * Math.exp(d.cc - P.C_RATE * d.rr + 0.088 * lnH + 0.6 * refi - P.PREC * Math.max(0, du6) - 0.03 * panic)
+    * Math.exp(d.cc - P.C_RATE * d.rr + 0.088 * lnH + 0.6 * refi - P.PREC * Math.max(0, du6) - 0.03 * panic + (sw?.c ?? 0))
     + P.CRED_C * credFlow;
   d.C += (cT - d.C) / P.TAU_C;
   // FIRMS: capital for the output they expect, at what it costs to carry
@@ -2409,7 +2414,7 @@ function spendNation(
   // Goodwin). Labour's share drifts up about a point of output per point of
   // unemployment held under natural, over a year and a half.
   d.ws = (d.ws ?? 0) + (P.WS_U * (NAT_U_STAR - u) - (d.ws ?? 0)) / P.WS_M;
-  const kStar = K0 * (1 + P.YE_W * (d.Ye - 1)) * Math.pow(uc0 / uc, P.SIGMA_K) * fin * Math.exp(d.kc - P.PROF * d.ws);
+  const kStar = K0 * (1 + P.YE_W * (d.Ye - 1)) * Math.pow(uc0 / uc, P.SIGMA_K) * fin * Math.exp(d.kc - P.PROF * d.ws + (sw?.k ?? 0));
   const dep = (P.DELTA + P.GROW) * d.K;
   // Capital is easier to stop buying than to sell: gross investment does not fall below a third of replacement.
   const iWant = Math.max(dep * 0.35, dep + (kStar - d.K) / (P.TAU_K / 12)) + P.CRED_I * credFlow;
@@ -2420,7 +2425,7 @@ function spendNation(
   const ihT = P.IH0 * Math.pow((n.hpi ?? 1) / (n.hpiTrend ?? n.hpi ?? 1), 1.5) * Math.exp(-P.IH_RATE * (mortNow - (n.mortRef ?? mortNow)));
   d.Ih += (ihT - d.Ih) / P.IH_M;
   // GOVERNMENT: a steady share, a fiscal expansion under political pressure, the tools at the floor
-  const G = P.G0 + ((n.pressureM ?? 0) > 0 && x.shock !== 0 ? 0.6 * Math.abs(x.shock) : 0) + 0.009 * x.lbTools;
+  const G = P.G0 + ((n.pressureM ?? 0) > 0 && x.shock !== 0 ? 0.6 * Math.abs(x.shock) : 0) + 0.009 * x.lbTools + (sw?.g ?? 0);
   // THE WORLD IS AN ECONOMY TOO (2026-10-16). Exports rode a drawn AR(1)
   // standing in for the rest of the world. Now the rest of the world has its
   // own output gap (`d.f`), which its own spending shocks move and its own
@@ -2437,8 +2442,8 @@ function spendNation(
   d.wr = (d.wr ?? 0) + (ROW.POL * d.f - (d.wr ?? 0)) / ROW.POL_M;
   d.f = ROW.RHO * d.f - ROW.RATE * (d.wr ?? 0) + ROW.SIG * z;
   const homeReal = (n.policy ?? 4) / 100 - (n.inflExp ?? 0.02) - (n.neutralReal ?? 0.019);
-  d.q = (d.q ?? 0) + (ROW.UIP * (homeReal - (d.wr ?? 0)) - (d.q ?? 0)) / ROW.Q_M;
-  const X = X0 * Math.exp(ROW.X_INC * d.f - ROW.X_PRICE * (d.q ?? 0));
+  d.q = (d.q ?? 0) + (ROW.UIP * (homeReal - (d.wr ?? 0)) + (sw?.q ?? 0) - (d.q ?? 0)) / ROW.Q_M;
+  const X = X0 * Math.exp(ROW.X_INC * (d.f + (sw?.f ?? 0)) - ROW.X_PRICE * (d.q ?? 0) + (sw?.x ?? 0));
   const M = P.IMP * (d.C + d.I + d.Ih + G) * Math.exp(ROW.M_PRICE * (d.q ?? 0));
   const S = d.C + d.I + d.Ih + G + X - M;
   // INVENTORIES: shelves follow sales; production is sales plus restocking
@@ -2665,7 +2670,8 @@ export function tickNation(s: GameState) {
   const shortRate = n.policy / 100;
   n.corpFixed ??= longRate + 0.015;
   n.corpFixed += (longRate + 0.015 - n.corpFixed) / CORP_LADDER_M;
-  const corpRate = CORP_FLOAT * (shortRate + 0.02) + (1 - CORP_FLOAT) * n.corpFixed;
+  // ...plus whatever a national swan has done to credit spreads (blackswans.ts natSw.sp: a foreign crisis).
+  const corpRate = CORP_FLOAT * (shortRate + 0.02) + (1 - CORP_FLOAT) * n.corpFixed + (e.natSw?.sp ?? 0);
   n.corpRate = corpRate;
   // Against what that book would cost at neutral money: r* plus expected
   // inflation, plus the same blended spread.
@@ -2816,7 +2822,7 @@ export function tickNation(s: GameState) {
   const down = Math.min(0, phillips) + Math.min(0, easy);
   const bend = n.infl >= 0.01 ? 1 : Math.exp((n.infl - 0.01) / 0.01);
   const inflRaw = n.inflExp + (phillips - Math.min(0, phillips)) + (easy - Math.min(0, easy)) + down * bend
-    + shock + rrange(s, -0.004, 0.004, "nation");
+    + shock + (e.natSw?.infl ?? 0) + rrange(s, -0.004, 0.004, "nation");
   // PRICES FOLLOW PAY, AND PAY IS NOT CUT (2026-10-15). With the bank's word
   // gone, expectations could follow realised deflation down without limit: one
   // measured century ran -6%/yr for a decade at 7-8% unemployment while
@@ -3421,7 +3427,7 @@ const REGION_EDGE_SD = 0.012;                             // per year, stationar
 const AGGLOM = 0.04;                  // output elasticity to employment
 const WAGE_CURVE = -0.10;             // pay level to local unemployment (Blanchflower & Oswald 1994)
 const WAGE_GAP_HALF_M = 24;           // months for the town's pay to close half its gap to the wage-curve level
-const WAGE_SHARE = 0.85;
+export const WAGE_SHARE = 0.85;
 
 function openingRegionTrend(seed: number, parcels: ParcelTable): number {
   let lots = 0, vacant = 0;
@@ -3468,6 +3474,17 @@ function businessRentVsNation(e: Econ): number {
 }
 
 export function regionalPull(e: Econ): number {
+  return (e.regionTrend ?? 0) - LOCATION_PULL * cityLogCost(e).total;
+}
+
+/**
+ * WHAT THIS TOWN COSTS AN EMPLOYER against the nation, in log points: pay
+ * (the larger share of the bill) and business rent, against this town's own
+ * opening, less what its size adds to output. `regionalPull` brakes the town's
+ * growth on it, and an anchor employer choosing a city reads it too
+ * (blackswans.ts), so there is one answer to "is this town dear".
+ */
+export function cityLogCost(e: Econ): { total: number; wage: number; rent: number; agglom: number } {
   const wageRatio = (e.wageIdx ?? 1) / Math.max(1e-6, e.natWageIdx ?? e.wageIdx ?? 1);
   // AGAINST THIS TOWN'S OWN OPENING, NOT THE REFERENCE TABLE (2026-10-13).
   // Rent was read against RENT_BASE at national prices, and towns open at
@@ -3482,8 +3499,8 @@ export function regionalPull(e: Econ): number {
   // The persistent pull a young region does have is `regionTrend`.
   const rentRatio = businessRentVsNation(e) / Math.max(0.05, e.regionRent0 ?? businessRentVsNation(e));
   const scale = Math.max(0.2, (e.jobs ?? 1) / Math.max(1, e.jobs0 ?? e.jobs ?? 1));
-  const logCost = WAGE_SHARE * Math.log(wageRatio) + (1 - WAGE_SHARE) * Math.log(rentRatio) - AGGLOM * Math.log(scale);
-  return (e.regionTrend ?? 0) - LOCATION_PULL * logCost;
+  const wage = WAGE_SHARE * Math.log(wageRatio), rent = (1 - WAGE_SHARE) * Math.log(rentRatio), agglom = AGGLOM * Math.log(scale);
+  return { total: wage + rent - agglom, wage, rent, agglom };
 }
 
 export function tickIndustryCycle(s: GameState) {
@@ -3569,6 +3586,8 @@ export function tickIndustryCycle(s: GameState) {
     // borrow to buy (freight, inventory, building design) — the price of money.
     const demand = INDUSTRY_BETA[k] * NAT_SALES_PER_GAP * gapMove + e.indShock[k] + rrange(s, -0.0008, 0.0008) * vol
       + (bb && bb.sec === k && bb.phase !== "hold" ? bb.rate : 0)
+      // a national swan's orders for this trade (blackswans.ts swanSec)
+      + (e.swanSec?.[k] ?? 0)
       - FIRM_PROFILE[k].rateDem * 0.008 * books.ratePts / 12;
     e.indFortune[k] += -e.indFortune[k] / FORTUNE_TAU_M
       + FORTUNE_SD * Math.sqrt(2 / FORTUNE_TAU_M) * Math.sqrt(3) * rrange(s, -1, 1);
@@ -5684,7 +5703,9 @@ export function tickEcon(s: GameState) {
     // It multiplies rather than adding because it is a LEVEL, and it sits
     // outside `sectorMom` and `affordEff` because neither of those ever stops
     // reverting and this never reverts at all. See swans.ts.
-    const swanLvl = swanClassLevel(e, k);
+    // ...and the space a national swan has emptied for a while (a pandemic's
+    // offices: blackswans.ts swanSpace), which comes back as it ends.
+    const swanLvl = swanClassLevel(e, k) * (e.swanSpace?.[k] ?? 1);
     // The cycle is already in the driver (the tenants' own employment or
     // population); adding momentum on top would count it twice.
     const cycleTerm = 1;
@@ -5725,7 +5746,7 @@ export function tickEcon(s: GameState) {
     if (k !== "multifamily") {
       // ...and the space a worker takes beyond the rent: the island against the
       // mainland, income, and the structural shifts (remote work after a swan).
-      const lvl = (e.locEff?.[k] ?? 1) * (e.incomeEff?.[k] ?? 1) * swanClassLevel(e, k)
+      const lvl = (e.locEff?.[k] ?? 1) * (e.incomeEff?.[k] ?? 1) * swanLvl
         * (k === "retail" ? (e.secular?.retail?.idx ?? 1) : 1);
       (e.demandAt ??= {})[k] = { ref: targetRaw / Math.max(1e-6, e.affordEff[k]), eff: e.affordEff[k], raw: affordRaw, lvl };
     }

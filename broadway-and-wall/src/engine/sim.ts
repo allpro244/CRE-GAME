@@ -58,6 +58,7 @@ import { maybeEarlyLook } from "./broker";
 import { money } from "./money";
 import { tickBlackSwans } from "./blackswans";
 import { tickCityGov } from "./citygov";
+import { tickOilPrice } from "./inputs";
 import { netWorth, landRead, landValue, refreshLandQueue, ownerAskPsf } from "./value";
 import { normalizeSetup, inheritPortfolio, shortFirmName, SANDBOX_CASH, type GameSetup } from "./setup";
 import { purseOf, partnerShare, routeProceeds, taxShare } from "./vehicles";
@@ -715,6 +716,8 @@ function tickMonth(
   syncStreetRolls(s, parcels, bbls);
   tickStreetRolls(s, parcels);
   tickEcon(s);
+  // The nation's oil, priced for everything live that reads it (inputs.ts).
+  tickOilPrice(s);
   // ...and the town's renters move, to the households the city houses.
   tickStreetFlats(s, parcels);
   // ...the city's firms set their heads (economy.ts, the labour demand), the

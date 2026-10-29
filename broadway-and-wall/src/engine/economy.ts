@@ -53,7 +53,7 @@ import {
   INDUSTRIES, INDUSTRY_IDS, N_IND, INDUSTRY_INDEX, IO_A, IO_ROW_SUM, NAT_EMP_SHARE, TRADE_TO_INDUSTRY, FLOOR_DEFAULT,
   HQ_SHARE, FINANCE_LIKE, SPEND_SHARE, SPEND_BRIDGE, PAY_SPLIT, PROD_TAX_LOCAL, CORP_TAX, LOCAL_OWNER_SHARE,
   COMP_PER_WORKER_2023, BUYER_TYPES, REPAIR_PER_COMMERCIAL_RENT, REPAIR_PER_FLAT_RENT, REPAIR_OWNER_PER_VALUE_YR,
-  OIL_PRICE_2000, OIL_PER_SHOCK, OIL_RISE_M, OIL_HALF_LIFE_M,
+  OIL_PRICE_2000,
   type IndustryId, type Floor, type BuyerType, type SpendCategory,
 } from "./industries";
 import {
@@ -510,23 +510,14 @@ function constructionBought(s: GameState, hm: { rent: number; ownerValue: number
 
 // ---------------------------------------------------------------- the price of oil
 /**
- * THE NATION'S OIL PRICE, a month on (industries.ts OIL_*): its real level
- * runs toward OIL_PER_SHOCK x the supply shock in force (market.ts — a shock
- * under fiscal pressure is demand and moves no oil, as the engine's own
- * output block reads it), fast on the way up and back with a three-year
- * half-life; the dollar price is that times the nation's prices since the
- * opening. Deterministic; reads the nation, writes only the books.
+ * THE NATION'S OIL PRICE, as the live world prices it (inputs.ts
+ * tickOilPrice — the supply shocks and a war's premium): one oil price, which
+ * these books read and do not set.
  */
 function tickOil(s: GameState, E: EconomyState): void {
-  const n = s.econ.nat;
-  const sup = n && (n.shockM ?? 0) > 0 && !((n.pressureM ?? 0) > 0) ? (n.shockSev ?? 0) : 0;
-  const target = OIL_PER_SHOCK * sup;
-  const cur = E.lnOil ?? 0;
-  const k = target > cur ? 1 / OIL_RISE_M : 1 - Math.pow(0.5, 1 / OIL_HALF_LIFE_M);
-  E.lnOil = cur + (target - cur) * k;
-  const natCpi = s.econ.natCpi ?? s.econ.cpi ?? 1;
-  E.natCpi0 ??= natCpi;
-  E.oil = OIL_PRICE_2000 * (natCpi / Math.max(1e-6, E.natCpi0)) * Math.exp(E.lnOil);
+  E.lnOil = s.econ.oilLn ?? 0;
+  E.natCpi0 ??= s.econ.oilCpi0 ?? s.econ.natCpi ?? s.econ.cpi ?? 1;
+  E.oil = s.econ.oil ?? OIL_PRICE_2000;
 }
 
 // ---------------------------------------------------------------- the month, first half: who employs whom

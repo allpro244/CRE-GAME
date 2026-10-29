@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 # Generate broadway-and-wall/src/engine/industryData.ts from the BEA 2023 summary Use table
-# (Before Redefinitions, producers' prices) plus the hand facts below.
+# (Before Redefinitions, producers' prices) plus the hand facts below (ONE_ECONOMY_PLAN step 2b).
+# The hand facts' sources are written out in src/engine/industries.ts: employment (CES 2023, QCEW
+# for farms and forestry), space per worker (CBRE/BOMA, EIA MECS and CBECS), the off-floor and
+# remote shares, the national trends (CES 1990-2019) and cycle betas (CES 2007-09), where each
+# industry's firms are (INDUSTRIES_71.md 4b), and the trade whose financing each borrows.
 import openpyxl, json, sys
 
 # usage: python3 tools/gen-industries.py IOUse_Before_Redefinitions_PRO_1997-2023_Summary.xlsx src/engine/industryData.ts

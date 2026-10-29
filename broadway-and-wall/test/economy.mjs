@@ -215,7 +215,7 @@ check(fillOk, "the register's earners in each industry are its heads, to within 
     const ctl = structuredClone(a), trt = structuredClone(a);
     for (const roll of Object.values(trt.econ.streetRolls)) {
       const gone = roll.t.find((t) => t.fid === cus);
-      if (gone) { roll.t = roll.t.filter((t) => t.fid !== cus); (trt.econ.streetFailed ??= []).push({ m: trt.month, bbl: "", name: gone.name, sf: gone.sf, use: gone.use ?? "office", why: "dark", credit: gone.credit }); }
+      if (gone) { roll.t = roll.t.filter((t) => t.fid !== cus); (trt.econ.streetFailed ??= []).push({ m: trt.month, bbl: "", name: gone.name, fid: gone.fid, sf: gone.sf, use: gone.use ?? "office", why: "dark", credit: gone.credit }); }
     }
     let c2 = ctl, t2 = trt;
     for (let m = 0; m < 2; m++) { c2 = tick(c2); t2 = tick(t2); }

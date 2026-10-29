@@ -129,7 +129,7 @@ export function recordComp(
   // ...AND IT IS THE MARKET'S CAP RATE: every building that closes is a
   // print on the cap tape the class read is taken from (propmarket.ts).
   if (built) printTrade(s, rec, price, buyer, seller, cond, distress, offMarket);
-  else printLandTrade(s, rec, price, distress, offMarket);
+  else printLandTrade(s, rec, price, buyer, distress, offMarket);
   s.compsTotal = (s.compsTotal ?? 0) + 1;
   s.compsVolume = (s.compsVolume ?? 0) + px;
   if (s.comps.length > MAX_COMPS) s.comps.splice(0, s.comps.length - MAX_COMPS);

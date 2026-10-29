@@ -1090,14 +1090,17 @@ function impliedLandLevel(s: GameState, rec: ParcelRecord, price: number): numbe
 }
 
 /** A lot closed (comps.ts recordComp). Distress and never-exposed sales at half weight. */
-export function printLandTrade(s: GameState, rec: ParcelRecord, price: number, distress?: boolean, offMarket?: boolean): void {
+export function printLandTrade(s: GameState, rec: ParcelRecord, price: number, buyer: string, distress?: boolean, offMarket?: boolean): void {
+  // only a land banker's purchase prices the texture (see surveyLand)
+  const r = (s.rivals ?? []).find((x) => x.name === buyer);
+  if (!r || !landBanker(r) || paramsOf(r).build > 0) return;
   const L = impliedLandLevel(s, rec, price);
   if (L !== null) pushLandPrint(s, { m: s.month, L, w: distress || offMarket ? 0.5 : 1, kind: "t" });
 }
 
 /** A land round that did not close: the bid-ask midpoint, at half weight. */
 export function noteLandRoundFailed(s: GameState, rec: ParcelRecord, li: Listing, round: { bids: Bid[] }): void {
-  const top = round.bids[0];
+  const top = round.bids.find((b) => landBanker(b.r) && !(paramsOf(b.r).build > 0));
   if (!top) return;
   const L = impliedLandLevel(s, rec, (top.bid + li.ask) / 2);
   if (L !== null) pushLandPrint(s, { m: s.month, L, w: 0.5, kind: "b" });
@@ -1110,7 +1113,11 @@ export function noteLandRoundFailed(s: GameState, rec: ParcelRecord, li: Listing
  * Half weight each, as the building survey.
  */
 function surveyLand(s: GameState, parcels: ParcelTable, want: number): number[] {
-  const firms = livingRivals(s).filter((r) => !r.stressMs && r.failedM === undefined && (paramsOf(r).build > 0 || landBanker(r)));
+  // THE TEXTURE IS WHAT SOMEBODY WAITING WOULD PAY. Only a land banker —
+  // a firm that buys dirt to hold, not to build — prices the dirt itself; a
+  // builder that wants a texture-governed lot is saying it pencils for it,
+  // which is evidence about the residual, not about the texture.
+  const firms = livingRivals(s).filter((r) => !r.stressMs && r.failedM === undefined && landBanker(r) && !(paramsOf(r).build > 0));
   if (!firms.length) return [];
   const lots: ParcelRecord[] = [];
   for (const bbl of Object.keys(parcels)) {
@@ -1152,7 +1159,8 @@ export function tickLandRead(s: GameState): void {
     sel = tape.filter((p) => p.m > s.month - w);
     if (sel.reduce((a, p) => a + p.w, 0) >= MIN_EVIDENCE) { win = w; break; }
   }
-  if (!win && sel.length) win = 36;
+  // A LEVEL IS NOT READ OFF ONE OR TWO LOTS: with less than MIN_EVIDENCE in
+  // three years the read stands where it was (a stale appraisal says so).
   const prev = e.landReadOut;
   if (!win) { e.landReadOut = { n: 0, win: 0, ageM: (prev?.ageM ?? 0) + 1, why: prev?.why }; return; }
   const med = wMedian(sel.map((p) => ({ v: p.L, w: p.w })));

@@ -1106,9 +1106,25 @@ export function hashNormal(key: string): number {
     h1 ^= c; h1 = Math.imul(h1, 16777619);
     h2 = Math.imul(h2, 33) ^ c;
   }
-  const u1 = ((h1 >>> 0) % 1_000_000 + 0.5) / 1_000_000;
-  const u2 = ((h2 >>> 0) % 1_000_000 + 0.5) / 1_000_000;
+  // MIXED BEFORE USE (2026-10-29). Unmixed, a key that differs only in its
+  // last characters — a month, a quarter — moved h2 by a few units, so u2 and
+  // the sign of the draw barely changed: consecutive months' draws for one
+  // firm correlated 0.77. A tenant's fortune (tenantBooks.ts, AR(1) at 0.985
+  // on these draws) then wandered like a random walk with its own drift: its
+  // spread reached 0.48 in two years and ~2.0 in fifty against the 0.19 it
+  // was sized to, and its mean e^z 1.6 to 4 — so half of the town's
+  // professional firms ran at a loss while their industry made 22%. The
+  // murmur3 finaliser makes each key's draw independent of its neighbour's.
+  const u1 = (fmix32(h1) % 1_000_000 + 0.5) / 1_000_000;
+  const u2 = (fmix32(h2 ^ h1) % 1_000_000 + 0.5) / 1_000_000;
   return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+/** murmur3's 32-bit finaliser: every input bit moves every output bit. */
+function fmix32(h: number): number {
+  h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return h >>> 0;
 }
 export function ownerAskPsf(rec: ParcelRecord, econ: Econ): number {
   const model = landPsfNow(rec, econ);

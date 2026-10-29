@@ -11,17 +11,16 @@
 // lease or a mortgage, up to two earners with an employer and a wage, savings,
 // card debt at its own rate, and a credit record that remembers arrears.
 //
-// STAGE 1 IS A SHADOW. Nothing in the world reads this register yet. It is
-// seeded from the opening and ticked every month after the town's renters
-// have moved (sim.ts, after tickStreetFlats), it follows the aggregates the
-// engine already keeps — the flats let in each block, the region's
-// households, the town's jobless rate, its wage index — and it draws on its
-// own random stream (`s.streams.households`), so the world it shadows is byte
-// for byte the world without it (BASELINE.json does not move). Stage 2 turns
-// it round: the flats' occupancy, MF absorption and the tenure margin read
-// the register instead of the indices it now copies. `householdStats` is the
-// read stage 2 starts from, and `tools/households.mjs` holds the two answers
-// against each other until then.
+// STAGE 1 WAS A SHADOW (it followed the engine's aggregates). SINCE ONE
+// ECONOMY STEP 2 (2026-10-28) THE REGISTER IS THE TOWN'S PEOPLE: its earners
+// in work are the town's jobs, its jobless its unemployment, its households'
+// members its population and age mix, its renter households what the flats'
+// demand reads (economy.ts `economyToEngine`, read by market.ts a month on).
+// The island's renters are one for one with the flats the street's rolls have
+// let, drawn from — and returned to — the region's renter households across
+// the water; households buy and sell homes (`tickTenure`); they arrive for the
+// work the town's own people did not take and leave when out of it. It draws
+// on its own random stream (`s.streams.households`).
 //
 // STORAGE is struct-of-arrays (typed arrays, one per field), so a month over
 // ten thousand households is a few milliseconds and a save is a few hundred
@@ -32,7 +31,7 @@
 // they are a shape parameter, stated as such (CLAUDE.md).
 import type { ParcelTable } from "@/data/types";
 import type { Econ, GameState } from "./types";
-import { HH_RENT_SHARE0, shortIndexOf } from "./market";
+import { HH_RENT_SHARE0, shortIndexOf, ownCostIdx, TENURE_PER_LOG } from "./market";
 import { resolveRecBare, useRentableSf } from "./value";
 import { flatUnitSf } from "./streetRolls";
 import { HH_SIZE, INCOME_SIGMA, TAX_INS, medianIncome, mortgageRate } from "./homeprice";
@@ -85,6 +84,28 @@ const OWN_RATE = 0.656;
 const MORTGAGED = 0.62;
 /** Renters who move in a year: about 45% (NMHC; Census AHS) — the share of leases that end in a move. [S] */
 const RENTER_MOVE = 0.45;
+/**
+ * OWNERS WHO SELL AND RENT AGAIN: about 1.7% of owner households a year. CPS
+ * ASEC geographic mobility (2015-19): about 5% of owner households move in a
+ * year and about a third of those movers rent where they land; 86M owner
+ * households (Census HVS) [S~]. The other way — renters buying — is solved at
+ * the opening so the region's owners are a steady state there (`tickTenure`),
+ * about 5.5% of renters a year against the 4-5% of renter households that
+ * first-time buyers are (NAR Profile of Home Buyers and Sellers: ~1.6-2.2M a
+ * year on ~44M renter households) — a check, not a fit.
+ */
+const SELL_YR = 0.017;
+/**
+ * HOW MUCH THE BUYING ANSWERS WHAT OWNING COSTS AGAINST RENTING: the engine's
+ * tenure calibration (market.ts TENURE_PER_LOG, 0.09 renter households per
+ * log point of own-over-rent cost, the 1978-85 mortgage-rate episode, Census
+ * HVS) over the steady state's elasticity of the renter share to the buying
+ * hazard, about 0.65 at the opening's flows [D]: 0.09 / 0.65 = 0.14.
+ */
+// (a function, not a constant: market.ts imports this module, so in a bundle that
+// reaches households.ts first TENURE_PER_LOG is not yet set when this file runs —
+// the sim worker's bundle did, and every hazard came out NaN; test/worker-determinism.mjs)
+const buyElast = () => TENURE_PER_LOG / 0.65;
 /** Monthly employed-to-unemployed flow, about 1.4% (BLS CPS labour-force flows, 2015-19 average). [S] */
 const SEP_RATE = 0.014;
 /** Monthly unemployed-to-employed flow, about a quarter of the jobless a month (BLS CPS labour-force flows, 2015-19 average) — when there is a vacancy to take. [S] */
@@ -213,6 +234,8 @@ export interface HouseholdFlows {
   spend: number; income: number;
   /** Households (weighted) that came to the region for work, and that left it out of work (stage 1b). */
   arrived?: number; left?: number;
+  /** Households (weighted) that bought a home, and that sold and went back to renting (step 2). */
+  bought?: number; sold?: number;
 }
 
 export interface HouseholdRegister {
@@ -235,6 +258,12 @@ export interface HouseholdRegister {
   unitMemo?: Record<string, number[]>;
   /** The month's flows. */
   flow: HouseholdFlows;
+  /**
+   * TENURE (step 2): renters' monthly hazard of buying at the opening — solved
+   * so the opening's owners are a steady state (`tickTenure`) — the own-or-rent
+   * cost the opening chose at (log), and the plats' houses already sold.
+   */
+  hBuy0?: number; tenRef?: number; homesSeen?: number;
   /** The arrays (in memory), or their base64 (in a save). */
   a?: HouseholdArrays;
   packed?: Partial<Record<FieldName, string>>;
@@ -534,23 +563,36 @@ export function seedHouseholdRegister(s: GameState, parcels: ParcelTable): House
     fillPeople(R, r.a!, i, AGE_RENT, income, e, u0);
     fillMoney(R, r.a!, i, income, false, e);
   }
-  // the region's other households
-  const H = (e.population ?? 0) / HH_SIZE;
-  const islandW = r.n * r.wIsland;
-  r.wRegion = Math.max(0.01, (H - islandW) / REGION_N);
-  const ownShare = Math.max(0, Math.min(0.95, (OWN_RATE * H) / Math.max(1, H - islandW)));
+  // THE REGION'S OTHER HOUSEHOLDS, AS MANY AS THE OPENING'S JOBS NEED
+  // (2026-10-28, step 2). The register is the town's people now, so the
+  // region holds the households whose earners the town's jobs employ at the
+  // opening's jobless rate: the sample is drawn first, and each agent weighs
+  // what puts its labour force at the jobs over one less that rate. (It was
+  // the engine's population over the average household, which at the
+  // register's ~1.1 earners a household is about a quarter short of workers:
+  // the first year's arrivals made up the difference.)
+  const lfOf = (i: number) => [r.a!.emp1[i], r.a!.emp2[i]].filter((x) => x !== EMP_NONE && x !== EMP_RETIRED).length;
+  let islandLf = 0;
+  for (let i = 0; i < r.n; i++) islandLf += r.wIsland * lfOf(i);
   const first = r.n;
   const score: number[] = [];
   const inc: number[] = [];
+  let sampleLf = 0;
   for (let k = 0; k < REGION_N; k++) {
     const i = addAgent(r);
     const income = medianIncome(e) * Math.exp(INCOME_SIGMA * R.n());
     inc.push(income);
-    r.a!.wt[i] = r.wRegion;
     fillPeople(R, r.a!, i, AGE_ALL, income, e, u0);
+    sampleLf += lfOf(i);
     // ownership rises with income and with age (Census HVS by age and income)
     score.push(Math.log(income / medianIncome(e)) + 0.03 * (r.a!.age[i] - 45) + 0.8 * R.n());
   }
+  const lfNeed = (e.jobs ?? 0) / Math.max(0.5, 1 - u0);
+  r.wRegion = Math.max(0.01, (lfNeed - islandLf) / Math.max(1, sampleLf));
+  for (let k = 0; k < REGION_N; k++) r.a!.wt[first + k] = r.wRegion;
+  const islandW = first * r.wIsland;
+  const H = islandW + REGION_N * r.wRegion;
+  const ownShare = Math.max(0, Math.min(0.95, (OWN_RATE * H) / Math.max(1, H - islandW)));
   const cut = [...score].sort((x, y) => y - x)[Math.max(0, Math.round(ownShare * REGION_N) - 1)] ?? Infinity;
   const mRate = mortgageRate(e);
   for (let k = 0; k < REGION_N; k++) {
@@ -575,7 +617,7 @@ export function seedHouseholdRegister(s: GameState, parcels: ParcelTable): House
       }
     } else {
       a.ten[i] = TEN_MAINLAND;
-      a.rent[i] = rentMed * Math.exp(0.25 * R.n());
+      a.rent[i] = mainlandRent(R, rentMed, a, i);
     }
   }
   R.done();
@@ -598,15 +640,179 @@ function screened(median: number, rentMo: number, z: (k: number) => number): num
   return income;
 }
 
-/** A new island household taking a flat: a renter from the region at the island renters' income, who can carry the rent. */
-function moveIn(R: Rand, r: HouseholdRegister, b: Block, e: Econ, m: number) {
+/**
+ * A NEW ISLAND HOUSEHOLD TAKING A FLAT (step 2): a renter from across the
+ * water — one of the region's renter households, the first of SCREEN_TRIES
+ * applicants who can carry the rent (the landlord's screen), else the last —
+ * which moves its household (and its weight) onto the island. So the region's
+ * renters are one pool and the island's flats are where some of them live:
+ * a flat let on the island is a renter household fewer across the water, not
+ * a household more in the region (the register's renters are what the flats'
+ * demand reads, market.ts). With nobody across the water, a household arrives
+ * from outside, at the island renters' income.
+ */
+function moveIn(R: Rand, r: HouseholdRegister, b: Block, e: Econ, m: number, pool: number[], gone: Uint8Array) {
+  const w = r.wIsland;
+  let j = -1;
+  for (let k = 0; k < SCREEN_TRIES && pool.length; k++) {
+    const c = pool[Math.floor(R.u() * pool.length)];
+    const A = r.a!;
+    if ((c < gone.length && gone[c]) || A.ten[c] !== TEN_MAINLAND || A.wt[c] < w) continue;
+    j = c;
+    const inc = A.wage1[c] + A.wage2[c];
+    if (inc > 0 && (12 * b.let) / inc <= SCREEN) break;
+  }
   const i = addAgent(r), a = r.a!;
-  const income = screened(r.renterInc * medianIncome(e), b.let, () => R.n());
-  a.wt[i] = r.wIsland; a.ten[i] = TEN_RENT; a.blk[i] = b.idx;
+  if (j >= 0) {
+    for (const k of FIELD_NAMES) (a[k] as Uint8Array)[i] = (a[k] as Uint8Array)[j];
+    a.id[i] = r.nextId++;
+    a.wt[j] -= w;
+    if (a.wt[j] < 1e-6 && j < gone.length) gone[j] = 1;
+  } else {
+    const income = screened(r.renterInc * medianIncome(e), b.let, () => R.n());
+    fillPeople(R, a, i, AGE_RENT, income, e, e.unemployment ?? 0.05);
+    fillMoney(R, a, i, income, false, e);
+  }
+  a.wt[i] = w; a.ten[i] = TEN_RENT; a.blk[i] = b.idx;
   a.rent[i] = b.let; a.leaseEnd[i] = m + 12;
-  fillPeople(R, a, i, AGE_RENT, income, e, e.unemployment ?? 0.05);
-  fillMoney(R, a, i, income, false, e);
-  r.flow.movedIn += r.wIsland;
+  r.flow.movedIn += w;
+}
+
+/**
+ * An island household that leaves its flat for the region's rented homes:
+ * its weight goes back to the pool across the water — onto a household like
+ * it (its first earner's industry, else its status: in work, retired, out of
+ * work), since it keeps its jobs when it moves. Joining whoever came first
+ * moved working households' weight onto jobless ones a few at a time, which
+ * over decades is a leak of jobs into joblessness.
+ */
+function toMainland(R: Rand, r: HouseholdRegister, i: number, pool: number[], gone: Uint8Array) {
+  const a = r.a!;
+  gone[i] = 1; r.flow.movedOut += a.wt[i];
+  const kindOf = (x: number, ind: number) => x === EMP_RETIRED ? "r" : x === EMP_UNEMP ? "u" : x === EMP_NONE ? "n" : `w${ind}`;
+  const mine = kindOf(a.emp1[i], a.ind1[i]);
+  for (let k = 0; k < 24 && pool.length; k++) {
+    const j = pool[Math.floor(R.u() * pool.length)];
+    if ((j < gone.length && gone[j]) || a.ten[j] !== TEN_MAINLAND) continue;
+    const theirs = kindOf(a.emp1[j], a.ind1[j]);
+    if (k < 16 ? theirs !== mine : theirs[0] !== mine[0]) continue;
+    a.wt[j] += a.wt[i];
+    return;
+  }
+  // nobody across the water to join: the household itself rents there
+  gone[i] = 0; a.ten[i] = TEN_MAINLAND; a.blk[i] = -1; a.rent[i] = mainlandRent(R, r.mainRent, a, i);
+}
+
+/**
+ * OWN OR RENT (2026-10-28, step 2). Renter households with work buy at the
+ * month's hazard — the opening's (solved so the opening's owners are a
+ * steady state: their sales and their dissolutions over the renters) moved by
+ * what owning costs against renting (market.ts `ownCostIdx` against the
+ * flats' real rent, buyElast), on a mortgage of a fifth of their income
+ * (AHS) at the month's rate with a tenth down; owners sell and rent again at
+ * SELL_YR; the plats' new houses (homes.ts) are sold to the region's renters
+ * with work, one household each. It replaces the engine's tenure index as
+ * what the flats' demand reads (market.ts: the register's renter households).
+ *
+ * WHOLE HOUSEHOLDS MOVE, KEEPING WHO THEY ARE. A regional agent stands for
+ * ~20 households, so the renter count moves in steps of 20 — but buying and
+ * selling pull it back to where the hazards balance (at about 7% a year), so
+ * the noise is stationary, about 3% of the renters. Two tries at smoothing it
+ * by moving shares of weight between agents were worse than the noise: one
+ * spread sellers' weight over every renter and grew the jobless renters for
+ * ever (unemployment 21-35% from year 70); one landed it on households of the
+ * same kind, which concentrated the region onto a few agents (the heaviest
+ * standing for 1,600 households by year 48, whose retirement and dissolution
+ * then emptied and refilled the labour force at a stroke). The households
+ * that move one at a time here (an island renter, a plat house's buyer) put
+ * their weight on an owner of their own kind.
+ */
+function tickTenure(R: Rand, r: HouseholdRegister, e: Econ, gone: Uint8Array, pool: number[]) {
+  const a = r.a!, n = gone.length;
+  const sellM = SELL_YR / 12;
+  const rentRel = (e.effRentIdx?.multifamily ?? 1) / Math.max(0.1, e.cpi ?? 1);
+  const rel = Math.log(ownCostIdx(e) / Math.max(1e-6, rentRel));
+  if (r.hBuy0 === undefined) {
+    let out = 0, rent = 0;
+    for (let i = 0; i < n; i++) {
+      const w = a.wt[i];
+      if (a.ten[i] === TEN_OWN) out += w * (sellM + (a.age[i] >= 65 ? dissolveM(a.age[i]) : 0));
+      else if (a.ten[i] === TEN_RENT || a.ten[i] === TEN_MAINLAND) rent += w;
+    }
+    r.hBuy0 = rent > 0 ? out / rent : 0;
+    r.tenRef = rel;
+    r.homesSeen = e.newHomes ?? 0;
+  }
+  const hBuy = r.hBuy0 * Math.exp(-buyElast() * (rel - (r.tenRef ?? rel)));
+  // an owner like this household (its first earner's industry, else its status), drawn at random
+  const kindOf = (i: number) => { const x = a.emp1[i]; return x === EMP_RETIRED ? "r" : x === EMP_UNEMP ? "u" : x === EMP_NONE ? "n" : `w${a.ind1[i]}`; };
+  const ownersBy = new Map<string, number[]>();
+  const put = (k: string, i: number) => (ownersBy.get(k) ?? ownersBy.set(k, []).get(k)!).push(i);
+  for (let i = 0; i < n; i++) if (!gone[i] && a.ten[i] === TEN_OWN) { const k = kindOf(i); put(k, i); if (k[0] === "w") put("w", i); }
+  const ownerLike = (i: number) => {
+    const l = ownersBy.get(kindOf(i)) ?? ownersBy.get(kindOf(i)[0] === "w" ? "w" : kindOf(i));
+    return l && l.length ? l[Math.floor(R.u() * l.length)] : -1;
+  };
+  const mRate = mortgageRate(e);
+  let bought = 0, sold = 0;
+  for (let i = 0; i < n; i++) {
+    if (gone[i]) continue;
+    const t = a.ten[i], u = R.u();
+    if (t === TEN_OWN) {
+      if (u < sellM) {
+        a.sav[i] += Math.max(0, a.hval[i] - a.mort[i]) * 0.94;   // less the agent's 6%
+        a.ten[i] = TEN_MAINLAND; a.mort[i] = 0; a.mortPmt[i] = 0; a.hval[i] = 0;
+        a.rent[i] = mainlandRent(R, r.mainRent, a, i);
+        sold += a.wt[i];
+      }
+      continue;
+    }
+    if (t !== TEN_RENT && t !== TEN_MAINLAND) continue;
+    if (!(u < hBuy) || !(isWorking(a.emp1[i]) || isWorking(a.emp2[i]))) continue;
+    if (t === TEN_RENT) {
+      // an island renter who buys leaves its flat; its household joins the owners like it
+      const j = ownerLike(i);
+      if (j < 0) continue;
+      a.wt[j] += a.wt[i]; gone[i] = 1; r.flow.movedOut += a.wt[i]; bought += a.wt[i];
+      continue;
+    }
+    const income = a.wage1[i] + a.wage2[i];
+    const mo = mRate / 12, pmt = 0.20 * income / 12;
+    a.ten[i] = TEN_OWN; a.rent[i] = 0;
+    a.mortRate[i] = mRate; a.mortPmt[i] = pmt;
+    a.mort[i] = mo > 0 ? (pmt * (1 - Math.pow(1 + mo, -360))) / mo : pmt * 360;
+    a.hval[i] = a.mort[i] / 0.9;
+    a.sav[i] = Math.max(0, a.sav[i] - 0.1 * a.hval[i]);
+    bought += a.wt[i];
+  }
+  // the plats' houses, each to a household across the water with work, who joins the owners like it
+  const sales = Math.max(0, (e.newHomes ?? 0) - (r.homesSeen ?? 0));
+  r.homesSeen = e.newHomes ?? 0;
+  for (let k = 0, tries = 0; k < sales && pool.length && tries < 4 * sales + 8; tries++) {
+    const i = pool[Math.floor(R.u() * pool.length)];
+    if (gone[i] || a.ten[i] !== TEN_MAINLAND || a.wt[i] < 2 || !(isWorking(a.emp1[i]) || isWorking(a.emp2[i]))) continue;
+    const j = ownerLike(i);
+    if (j < 0) continue;
+    a.wt[i] -= 1; a.wt[j] += 1; bought += 1; k++;
+  }
+  r.flow.bought = (r.flow.bought ?? 0) + bought;
+  r.flow.sold = (r.flow.sold ?? 0) + sold;
+}
+
+/**
+ * A FLAT ACROSS THE WATER, AT A RENT THE HOUSEHOLD CAN CARRY (step 2): the
+ * mainland's going rent with its spread, but no more than the landlord's
+ * screen lets a household take on its pay (SCREEN of it — the same test an
+ * island flat applies). The draw was the going rent whatever the household
+ * earned, so a low earner across the water was put in a flat at twice its
+ * income and evicted three months later: measured, 17% of renter households
+ * a year against about 2.3% (Eviction Lab national eviction rate), which
+ * mattered once the register's renters became the flats' demand.
+ */
+function mainlandRent(R: Rand, going: number, a: HouseholdArrays, i: number): number {
+  const draw = going * Math.exp(0.25 * R.n());
+  const pay = a.wage1[i] + a.wage2[i];
+  return pay > 0 ? Math.min(draw, (SCREEN * pay) / 12) : draw;
 }
 
 /** A household forms in the region in place of one that dissolved: young, renting across the water. */
@@ -617,7 +823,7 @@ function formRegional(R: Rand, r: HouseholdRegister, i: number, e: Econ) {
   const income = r.renterInc * medianIncome(e) * Math.exp(INCOME_SIGMA * R.n());
   fillPeople(R, a, i, [1, 0, 0, 0, 0, 0], income, e, e.unemployment ?? 0.05);
   fillMoney(R, a, i, income, false, e);
-  a.ten[i] = TEN_MAINLAND; a.rent[i] = r.mainRent * Math.exp(0.25 * R.n());
+  a.ten[i] = TEN_MAINLAND; a.rent[i] = mainlandRent(R, r.mainRent, a, i);
 }
 
 /** One earner slot's gross pay this month: a wage, a pension, or unemployment insurance for its first UI_MONTHS. */
@@ -742,7 +948,7 @@ function matchJobs(R: Rand, r: HouseholdRegister, D: Demand, e: Econ, n0: number
         else { b.emp2[i] = EMP_UNEMP; b.un2[i] = 1; b.wage2[i] = D.pay[ind] * f2; }
       }
       fillMoney(R, b, i, b.wage1[i] + b.wage2[i], false, e);
-      b.ten[i] = TEN_MAINLAND; b.rent[i] = r.mainRent * Math.exp(0.25 * R.n());
+      b.ten[i] = TEN_MAINLAND; b.rent[i] = mainlandRent(R, r.mainRent, b, i);
       r.flow.arrived = (r.flow.arrived ?? 0) + wR;
     }
   }
@@ -806,7 +1012,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   const R = stream(s);
   const D = readDemand(s);
   const B = readBlocks(s, parcels, r);
-  r.flow = { movedOut: 0, movedIn: 0, evictions: 0, foreclosures: 0, spend: 0, income: 0, arrived: 0, left: 0 };
+  r.flow = { movedOut: 0, movedIn: 0, evictions: 0, foreclosures: 0, spend: 0, income: 0, arrived: 0, left: 0, bought: 0, sold: 0 };
   const wage = e.wageIdx ?? 1, cost = e.costIdx ?? 1, home = e.homes?.psf ?? wage;
   const gW = wage / Math.max(1e-9, r.wageRef), gC = cost / Math.max(1e-9, r.costRef), gH = home / Math.max(1e-9, r.homeRef);
   r.wageRef = wage; r.costRef = cost; r.homeRef = home;
@@ -847,6 +1053,9 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   }
 
   const persons = (i: number) => a.adults[i] + a.kids[i];
+  // the region's renter households across the water: where the island's movers come from and go back to
+  const pool: number[] = [];
+  for (let i = 0; i < n1; i++) if (!gone[i] && a.ten[i] === TEN_MAINLAND) pool.push(i);
   for (let i = 0; i < n1; i++) {
     if (gone[i]) continue;
     const w = a.wt[i];
@@ -865,7 +1074,24 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     const minPay = a.debt[i] > 25 ? a.debt[i] * (a.debtRate[i] / 12 + MIN_PRINCIPAL) : a.debt[i];
     // spending on the buffer-stock rule
     const target = bufferMonths(a.age[i]) * a.yperm[i];
-    const spend = Math.max(subsistence(e, persons(i)), a.yperm[i] - housing - minPay + KAPPA * (a.sav[i] - target));
+    // ...BUT THE RENT IS PAID FIRST (2026-10-28, step 2). A household short
+    // of money cuts what it buys before it misses the rent or the mortgage —
+    // down to the subsistence floor, drawing on its savings and its card —
+    // and falls behind only when even that is not enough (Gerardi, Herkenhoff,
+    // Ohanian & Willen 2018: households facing a shortfall cut consumption
+    // first; most who default have no liquid assets left). It spent its
+    // permanent income whatever this month's pay was, so a household whose
+    // pay had fallen kept spending and missed the rent: measured, 17% of
+    // renter households evicted a year against about 2.3% (Eviction Lab).
+    // The subsistence floor holds while there is money for it after the rent;
+    // under it, a household lives on what is left (and on what the register
+    // does not yet carry: SNAP, the food bank, family) and falls behind only
+    // when the rent itself cannot be met.
+    const room0 = Math.max(0, CARD_LIMIT[a.credit[i]] * 12 * Math.max(0, a.yperm[i]) - Math.max(0, a.debt[i] - minPay));
+    const can = a.sav[i] + net - minPay - housing + room0;
+    const sub = subsistence(e, persons(i));
+    const want = Math.max(sub, a.yperm[i] - housing - minPay + KAPPA * (a.sav[i] - target));
+    const spend = can < 0 ? sub : Math.min(want, can);
     let cash = a.sav[i] + net - spend - minPay - housing;
     a.debt[i] = Math.max(0, a.debt[i] - minPay);
     if (cash < 0) {
@@ -897,13 +1123,25 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     if ((ten === TEN_RENT || ten === TEN_MAINLAND) && a.arrears[i] >= EVICT_M) {
       r.flow.evictions += w;
       a.arrears[i] = 0;
-      if (ten === TEN_RENT) { gone[i] = 1; r.flow.movedOut += w; } else { a.ten[i] = TEN_DOUBLED; a.rent[i] = 0; }
+      if (ten === TEN_RENT) r.flow.movedOut += w;
+      // AN EVICTED HOUSEHOLD THAT STILL HAS AN INCOME RENTS AGAIN, CHEAPER
+      // (step 2): most evicted families move to worse and cheaper housing in
+      // the same region; doubling up is what the ones with nothing coming in
+      // do (Desmond 2016, Milwaukee Area Renters Study) — here, a flat across
+      // the water at the rent its pay can carry at the median burden (30%,
+      // HH_RENT_SHARE0). It used to double up whatever it earned, so every
+      // eviction was a renter household gone from the flats' demand.
+      const pay = a.wage1[i] + a.wage2[i];
+      if (gross > 0 && pay > 0) {
+        if (ten === TEN_RENT) { r.flow.movedOut -= w; toMainland(R, r, i, pool, gone); continue; }
+        a.rent[i] = Math.min(a.rent[i], (HH_RENT_SHARE0 * pay) / 12);
+      } else { a.ten[i] = TEN_DOUBLED; a.rent[i] = 0; a.blk[i] = -1; }
     } else if (ten === TEN_OWN && a.arrears[i] >= FORECLOSE_M) {
       r.flow.foreclosures += w;
       a.arrears[i] = 0; a.ten[i] = TEN_DOUBLED; a.mort[i] = 0; a.mortPmt[i] = 0; a.hval[i] = 0;
     } else if (ten === TEN_DOUBLED && isWorking(a.emp1[i]) && a.sav[i] > 3 * r.mainRent) {
       // a doubled-up household with work and a deposit takes its own flat across the water
-      a.ten[i] = TEN_MAINLAND; a.rent[i] = r.mainRent * Math.exp(0.25 * R.n());
+      a.ten[i] = TEN_MAINLAND; a.rent[i] = mainlandRent(R, r.mainRent, a, i);
     }
     // a year older on its month; births; children leaving; retirement; the end
     if ((m + a.id[i]) % 12 === 0 && a.age[i] < 110) {
@@ -913,19 +1151,25 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     if (a.adults[i] >= 2 && a.age[i] >= 20 && a.age[i] < 43 && a.kids[i] < 6 && R.u() < BIRTH_M) a.kids[i]++;
     if (a.kids[i] > 0 && a.age[i] >= 45 && R.u() < LEAVE_M * a.kids[i]) a.kids[i]--;
     if (a.age[i] >= 65 && R.u() < dissolveM(a.age[i])) {
-      if (a.ten[i] === TEN_RENT) { if (!gone[i]) { gone[i] = 1; r.flow.movedOut += w; } }
-      else formRegional(R, r, i, e);
+      // the household ends and a young one forms in its place, renting across
+      // the water (an island one's flat is let again from the region's renters)
+      // (an island household's flat is let again from the region's renters)
+      if (a.ten[i] === TEN_RENT && !gone[i]) r.flow.movedOut += w;
+      if (!gone[i]) { formRegional(R, r, i, e); a.wt[i] = w; }
     }
   }
 
-  // ---- the island's blocks: leases ending, then each block to the flats its roll has let
+  // ---- who owns and who rents (step 2), then the island's blocks: leases
+  // ending, then each block to the flats its roll has let — its movers in
+  // from across the water and out to it (`moveIn`, `toMainland`)
+  if (D) tickTenure(R, r, e, gone, pool);
   const inBlock = new Map<number, number[]>();
   for (let i = 0; i < n1; i++) {
     if (a.ten[i] !== TEN_RENT || gone[i]) continue;
     const b = B.byIdx.get(a.blk[i]);
-    if (!b) { gone[i] = 1; r.flow.movedOut += a.wt[i]; continue; }   // the block is gone, or empty
+    if (!b) { toMainland(R, r, i, pool, gone); continue; }   // the block is gone, or empty
     if (a.leaseEnd[i] <= m) {
-      if (R.u() < RENTER_MOVE) { gone[i] = 1; r.flow.movedOut += a.wt[i]; continue; }
+      if (R.u() < RENTER_MOVE) { toMainland(R, r, i, pool, gone); continue; }
       // renewed at the block's rent less the sitting tenant's discount, never cut more than 3% (streetRolls renewals)
       a.rent[i] = Math.max(a.rent[i] * 0.97, b.let * 0.97);
       a.leaseEnd[i] = m + 12;
@@ -940,9 +1184,9 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     while (extra > 0) {
       const k = Math.floor(R.u() * l.length);
       const i = l[k]; l[k] = l[l.length - 1]; l.pop();
-      gone[i] = 1; r.flow.movedOut += a.wt[i]; extra--;
+      toMainland(R, r, i, pool, gone); extra--;
     }
-    for (let k = 0; k < -extra; k++) moveIn(R, r, b, e, m);
+    for (let k = 0; k < -extra; k++) moveIn(R, r, b, e, m, pool, gone);
   }
   compact(r, gone);
   // the region's households: what the island's renters do not account for —
@@ -972,6 +1216,24 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     const out = new Uint8Array(r.n);
     for (const i of leaving) out[i] = 1;
     compact(r, out);
+  }
+  // A WAVE OF NEWCOMERS (blackswans.ts `bsMigPull`, a share of the people a
+  // month) lands as households renting across the water, looking for work —
+  // it does not wait for a vacancy or a flat (step 2: the register is the
+  // town's people, so this is where the wave lands).
+  const wave = e.bsMigPull ?? 0;
+  if (wave > 0 && D) {
+    let persons = 0;
+    for (let i = 0; i < r.n; i++) persons += r.a!.wt[i] * (r.a!.adults[i] + r.a!.kids[i]);
+    const agents = Math.round((persons * wave) / HH_SIZE / Math.max(0.01, r.wRegion));
+    for (let k = 0; k < agents; k++) {
+      const i = addAgent(r), b = r.a!;
+      const income = r.renterInc * medianIncome(e) * Math.exp(INCOME_SIGMA * R.n());
+      fillPeople(R, b, i, AGE_RENT.slice(0, 5).map((x) => x / 0.86).concat([0]), income, e, 1);
+      fillMoney(R, b, i, income, false, e);
+      b.wt[i] = r.wRegion; b.ten[i] = TEN_MAINLAND; b.rent[i] = mainlandRent(R, r.mainRent, b, i);
+      r.flow.arrived = (r.flow.arrived ?? 0) + r.wRegion;
+    }
   }
   R.done();
 }
@@ -1119,6 +1381,44 @@ export function householdMoney(s: GameState): {
  * Earners not yet placed with a firm (the register before the books open)
  * are not in it. Pure.
  */
+export interface RegisterLabour {
+  /** earners in work (placed with a firm, or arrived with work not yet placed), out of work, and both */
+  employed: number; unemployed: number; lf: number;
+  persons: number; households: number;
+  /** children; adults in households headed under 65; adults in households headed 65 and over */
+  ages: { kids: number; work: number; old: number };
+  /** renter households: on the island, and across the water; owners; doubled up */
+  islandRenters: number; mainlandRenters: number; owners: number; doubled: number;
+}
+/**
+ * THE REGISTER'S PEOPLE AND ITS LABOUR FORCE, weighted (step 2): what the
+ * engine's labour block reads as the town's employment, unemployment,
+ * participation, population and age mix (economy.ts `economyToEngine`).
+ * One pass, no sorting. Pure.
+ */
+export function registerLabour(s: GameState): RegisterLabour | null {
+  const r = s.households;
+  if (!r) return null;
+  if (!r.a) unpackHouseholds(r);
+  const a = r.a!;
+  const out: RegisterLabour = { employed: 0, unemployed: 0, lf: 0, persons: 0, households: 0, ages: { kids: 0, work: 0, old: 0 }, islandRenters: 0, mainlandRenters: 0, owners: 0, doubled: 0 };
+  for (let i = 0; i < r.n; i++) {
+    const w = a.wt[i];
+    out.households += w;
+    out.persons += w * (a.adults[i] + a.kids[i]);
+    out.ages.kids += w * a.kids[i];
+    if (a.age[i] >= 65) out.ages.old += w * a.adults[i]; else out.ages.work += w * a.adults[i];
+    const t = a.ten[i];
+    if (t === TEN_RENT) out.islandRenters += w; else if (t === TEN_MAINLAND) out.mainlandRenters += w; else if (t === TEN_OWN) out.owners += w; else out.doubled += w;
+    for (const x of [a.emp1[i], a.emp2[i]]) {
+      if (x === EMP_NONE || x === EMP_RETIRED) continue;
+      if (x === EMP_UNEMP) out.unemployed += w; else out.employed += w;
+    }
+  }
+  out.lf = out.employed + out.unemployed;
+  return out;
+}
+
 export function registerPayroll(s: GameState): { wages: Float64Array; earners: Float64Array } | null {
   const r = s.households;
   if (!r) return null;

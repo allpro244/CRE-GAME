@@ -3690,7 +3690,7 @@ function crewCapacity(bbls: string[], e?: Econ): number {
   for (const k of BUILT_CLASSES) stock += e?.stock?.[k] ?? 0;
   // The lot count is the fallback before the first tick has set a stock, and
   // the floor of 4 is a guard for the smallest island.
-  const base = stock > 0 ? (stock * NORMAL_PIPE_SHARE) / TYPICAL_SF : bbls.length / 165;
+  const base = stock > 0 ? (stock * normalPipeShare()) / TYPICAL_SF : bbls.length / 165;
   // ...AND THE TRADES FOLLOW THE WORK — see `tickCrews`. `crewIdx` is how far
   // the town's construction workforce sits above or below ordinary because of
   // how busy it has been.
@@ -3712,8 +3712,14 @@ function crewCapacity(bbls: string[], e?: Econ): number {
  * gap as "the factor the wall was suppressing". The wall is gone; the gap was a
  * bug waiting for somebody to notice, and it was pinning the construction
  * employment term on its ceiling in 56.6% of all months.
+ *
+ * READ WHEN USED, NOT COPIED WHEN THIS FILE LOADS (2026-10-29): market.ts and
+ * dev.ts import each other, and the sim worker's bundle (state/simWorker.ts)
+ * loads dev.ts first, so a copy taken here was `undefined` there — the
+ * browser's town opened with no pipeline at all, and the first month ran on
+ * NaNs (test/worker-determinism.mjs found it).
  */
-const NORMAL_PIPE_SHARE = REF_PIPE_SHARE;
+const normalPipeShare = () => REF_PIPE_SHARE;
 
 /**
  * Repair, renovation and fit-out as a share of all construction work — the part

@@ -104,6 +104,21 @@ check(Math.round(E.registerLabour(a).persons) > 0 && a.econ.population > 0, `the
   check(bw > 0 && (r.buyers ?? []).every((x) => x.m > a.month - 12 && x.inc > 0), `the builders sell to the register's buyers: ${Math.round(bw)} households bought in the last year`);
 }
 
+// HOUSEHOLDS STAGES 4-5: life by the record's rates, and spending by category
+{
+  const r = a.households, f = r.flow, lab = E.registerLabour(a);
+  const py = E.registerPyramid(a), pyT = py.reduce((t, x) => t + x, 0);
+  check(Math.abs(pyT / lab.persons - 1) < 1e-6, `the age pyramid is the register's people: ${Math.round(pyT)} by age against ${Math.round(lab.persons)}`);
+  const yr = (x) => (12000 * x) / lab.persons;
+  // CDC NCHS 2023: 10.7 births and 9.2 deaths a year per 1,000 people (a month's draw is noisy: wide bands)
+  check(yr(f.births) > 3 && yr(f.births) < 25 && yr(f.deaths) > 2 && yr(f.deaths) < 25,
+    `this month's births ${yr(f.births).toFixed(1)} and deaths ${yr(f.deaths).toFixed(1)} a year per 1,000 people (US 10.7, 9.2)`);
+  const cat = f.spendCat ?? {}, ct = Object.values(cat).reduce((t, x) => t + x, 0);
+  check(f.spend > 0 && Math.abs(ct / f.spend - 1) < 1e-6, `the households' spending by category adds up to their spending: $${Math.round(ct).toLocaleString("en-US")} a month`);
+  const hm = E.householdMoney(a);
+  check(hm.spendCat === f.spendCat, "the economy's household demand reads the categories the households spent on (householdMoney.spendCat)");
+}
+
 // it reads the world and never writes it: a month of the register on a copy of
 // the state changes nothing but the register and its own stream
 {

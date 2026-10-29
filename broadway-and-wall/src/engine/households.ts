@@ -118,8 +118,23 @@ const RESID_MOVE = 0.51 * 0.45;
  * 1.7% a year sell and rent again; the other 3.3% buy again — repeat buyers,
  * who are no change of tenure but are half the market a builder sells into
  * (`buyers`, homeprice.ts salesPace). [S~]
+ *
+ * BY THE HOUSEHOLDER'S AGE (households stage 4): owners' moves fall with age
+ * as everyone's do — CPS ASEC 2019 movers by householder's age, <25 ~35%,
+ * 25-34 ~22%, 35-44 ~12%, 45-54 ~8%, 55-64 ~6%, 65+ ~4% of households — so
+ * each band's owners move at that profile, scaled to average 5% over the
+ * nation's owners by age (ACS 2023: <25 2%, 25-34 9%, 35-44 16%, 45-54 18%,
+ * 55-64 22%, 65+ 33%) [S~]. One rate for every age (stage 2) moved an owner of
+ * 70 out of owning as often as one of 30 while nobody past working age could
+ * buy: measured, the 65+ ownership rate fell from 83% to 56% in forty years
+ * against the HVS's steady 79%.
  */
-const SELL_YR = 0.017, REBUY_YR = 0.05 - SELL_YR;
+const OWN_MOVE_YR = (() => {
+  const prof = [0.35, 0.22, 0.12, 0.08, 0.06, 0.04], mix = [0.02, 0.09, 0.16, 0.18, 0.22, 0.33];
+  const avg = prof.reduce((t, p, k) => t + p * mix[k], 0);
+  return prof.map((p) => (0.05 * p) / avg);
+})();
+const SELL_SHARE = 0.017 / 0.05;
 /**
  * WHAT A FIRST HOME TAKES (households stage 2, replaces the tenure index and
  * its hazard, FORMULA_LEDGER #12). A renter with work buys at a decision (its
@@ -345,17 +360,15 @@ export function deathM(age: number): number {
  * Births: Final Data for 2023 — total fertility 1.62) [S]. A household's woman
  * of childbearing age is its head's age (a householder and partner are within
  * a couple of years of each other, Census); a couple's household has one, a
- * single adult's half of one (about half of one-adult households are a
- * woman's, CPS); each other adult is half a woman at its own age (a grown
- * daughter or a relative: about one birth in eight is to a mother living in
- * her parents' home, Census CPS), her child one of the household's. [S~]
+ * householder without a partner half of one (about half of one-adult households are a
+ * woman's, CPS); each other adult is half a woman at the other adults' age
+ * (a grown daughter or a relative: about one birth in eight is to a mother
+ * living in her parents' home, Census CPS), her child one of the household's. [S~]
  */
 const ASFR = [12.7, 55.4, 91.0, 95.1, 54.5, 12.5, 1.1];
 const asfrM = (age: number) => age < 15 || age >= 50 ? 0 : ASFR[Math.min(6, Math.floor((age - 15) / 5))] / 1000 / 12;
-/** The other adults' age: a grown child's (the householder's less 28) once it is past 45, else its own. */
-const otherAge = (age: number) => age >= 46 ? age - 28 : age;
-function birthM(age: number, adults: number): number {
-  return (adults >= 2 ? 1 : 0.5) * asfrM(age) + 0.5 * Math.max(0, adults - 2) * asfrM(otherAge(age));
+function birthM(a: HouseholdArrays, i: number): number {
+  return (a.partner[i] === 1 ? 1 : 0.5) * asfrM(a.age[i]) + 0.5 * othersOf(a, i) * asfrM(a.oAge[i]);
 }
 /** A child comes of age at eighteen: an adult at home, with a place in the labour force (OTHER_LF). [S] */
 const ADULT_AT = 18;
@@ -476,13 +489,14 @@ const FIELDS = {
   emp3: Int32Array, wage3: Float32Array, un3: Uint16Array, ind3: Uint8Array,  // the other adults' earner (a grown child, a relative): OTHER_LF
   taste: Float32Array,    // its taste for the island, log points (LOC_SIGMA; NaN until drawn)
   owed: Float32Array,     // housing payments owed, dollars
-  // households stage 4: the children's ages — the oldest and the youngest, the rest spaced between (KID_UNKNOWN before they are drawn)
-  kOld: Uint8Array, kYoung: Uint8Array,
+  // households stage 4: the children's ages — the oldest and the youngest, the rest spaced between (KID_UNKNOWN before they are drawn);
+  // whether the second adult is a partner (else every adult past the householder is an other adult), and the other adults' eldest's age
+  kOld: Uint8Array, kYoung: Uint8Array, partner: Uint8Array, oAge: Uint8Array,
 } as const;
 /** A child's age the register has not drawn yet (a save from before stage 4). */
 const KID_UNKNOWN = 255;
 /** Columns a save from before them does not carry, and what they hold then. */
-const FIELD_DEFAULT: Partial<Record<keyof typeof FIELDS, number>> = { ind1: IND_NONE, ind2: IND_NONE, emp3: EMP_NONE, ind3: IND_NONE, taste: NaN, kOld: 255, kYoung: 255 };
+const FIELD_DEFAULT: Partial<Record<keyof typeof FIELDS, number>> = { ind1: IND_NONE, ind2: IND_NONE, emp3: EMP_NONE, ind3: IND_NONE, taste: NaN, kOld: 255, kYoung: 255, partner: 255, oAge: 255 };
 type FieldName = keyof typeof FIELDS;
 export type HouseholdArrays = { [K in FieldName]: InstanceType<(typeof FIELDS)[K]> };
 const FIELD_NAMES = Object.keys(FIELDS) as FieldName[];
@@ -491,6 +505,8 @@ export interface HouseholdFlows {
   /** Households (weighted) that left an island flat this month: moved, evicted, dissolved. */
   movedOut: number; movedIn: number;
   evictions: number; foreclosures: number;
+  /** of the evictions, island renters', and households with nobody in work */
+  evictIsland?: number; evictJobless?: number;
   /** Weighted spending and net income, a month — what stage 2 hands the shops. */
   spend: number; income: number;
   /** Households (weighted) that came to the region for work, and that left it out of work (stage 1b). */
@@ -510,6 +526,8 @@ export interface HouseholdFlows {
   hires?: number; quits?: number; layoffs?: number;
   /** LIFE (stage 4): people born and died, households that moved in together and couples that parted (weighted). */
   births?: number; deaths?: number; unions?: number; splits?: number;
+  /** What Washington paid the households this month by their means: SNAP and the EITC (weighted; `fedTransfers`). */
+  transfers?: number;
   /** SPENDING BY CATEGORY (stage 5): what the households spent this month on each (weighted; sums to `spend`). */
   spendCat?: Record<SpendCategory, number>;
 }
@@ -630,6 +648,59 @@ export function taxRate(gross: number, e: Econ): number {
   let i = 0; while (z > zs[i + 1]) i++;
   return TAX_RATES[i] + (TAX_RATES[i + 1] - TAX_RATES[i]) * (z - zs[i]) / (zs[i + 1] - zs[i]);
 }
+
+/**
+ * WHAT WASHINGTON PAYS A HOUSEHOLD OF ITS MEANS, a month (households stage 5,
+ * 2026-10-29): the two federal programmes that reach most low-income working
+ * households in cash or near-cash, at FY2024 rules, in dollars of the
+ * reference table moved with the town's prices as the poverty line is.
+ *   SNAP (USDA FNS, FY2024, 48 states): a household under 130% of the poverty
+ *     line (gross) gets the maximum allotment for its size less 30% of its net
+ *     income — gross less 20% of earnings, the standard deduction ($198) and
+ *     the shelter cost over half of what is left (capped at $672). [S]
+ *   EITC (IRS Rev. Proc. 2023-34, tax year 2024): on the couple's earnings, by
+ *     its children (0 / 1 / 2 / 3+): phase-in 7.65 / 34 / 40 / 45% to a
+ *     maximum of $632 / $4,213 / $6,960 / $7,830, phased out at 7.65 / 15.98 /
+ *     21.06 / 21.06% from $10,330 / $22,720 (a single filer; $17,250 / $29,640
+ *     a couple); none for a childless filer under 25 or past 64. Paid with the
+ *     refund in spring; spread over the year here. [S]
+ * Every eligible household takes both (SNAP take-up is ~82% of the eligible,
+ * EITC ~78%, USDA and IRS; those who do not are mostly the least in need). The
+ * register had neither: CBO's tax rates (TAX_RATES) count refundable credits
+ * as transfers, not as negative tax, so the bottom fifth's EITC was missing,
+ * and a family of four at the screen's limit fell short of its rent and its
+ * food every month (households 4-5: island evictions ran ~11% in the opening
+ * year against Eviction Lab's ~2.3%).
+ */
+const SNAP_MAX = [291, 535, 766, 973, 1155, 1386, 1532, 1751], SNAP_ADD = 219, SNAP_STD = 198, SNAP_SHELTER_CAP = 672;
+const EITC = [[0.0765, 632, 0.0765, 10_330], [0.34, 4213, 0.1598, 22_720], [0.40, 6960, 0.2106, 22_720], [0.45, 7830, 0.2106, 22_720]];
+const EITC_MARRIED_ADD = [17_250 - 10_330, 29_640 - 22_720, 29_640 - 22_720, 29_640 - 22_720];
+function fedTransfers(a: HouseholdArrays, i: number, e: Econ, grossMo: number, housing: number): number {
+  const px = (e.priceLevel ?? 1) * (e.cpi ?? 1);
+  const size = a.adults[i] + a.kids[i];
+  // SNAP
+  let snap = 0;
+  const poverty = (POVERTY_1 + POVERTY_ADD * Math.max(0, size - 1)) * px / 12;
+  if (grossMo <= 1.3 * poverty) {
+    const earned = slotEarn(a.emp1[i], a.wage1[i]) + slotEarn(a.emp2[i], a.wage2[i]) + slotEarn(a.emp3[i], a.wage3[i]);
+    const adj = Math.max(0, grossMo - 0.2 * earned - SNAP_STD * px);
+    const shelter = Math.min(SNAP_SHELTER_CAP * px, Math.max(0, housing - 0.5 * adj));
+    const max = (size <= 8 ? SNAP_MAX[Math.max(1, size) - 1] : SNAP_MAX[7] + SNAP_ADD * (size - 8)) * px;
+    snap = Math.max(0, max - 0.3 * Math.max(0, adj - shelter));
+  }
+  // the EITC, on the couple's earnings a year
+  const kidsK = Math.min(3, a.kids[i]);
+  let eitc = 0;
+  if (kidsK > 0 || (a.age[i] >= 25 && a.age[i] < 65)) {
+    const earnYr = 12 * (slotEarn(a.emp1[i], a.wage1[i]) + slotEarn(a.emp2[i], a.wage2[i])) / px;
+    const [rate, max, out, start] = EITC[kidsK];
+    const from = start + (a.partner[i] === 1 ? EITC_MARRIED_ADD[kidsK] : 0);
+    eitc = Math.max(0, Math.min(rate * earnYr, max) - out * Math.max(0, earnYr - from)) * px / 12;
+  }
+  return snap + eitc;
+}
+/** A slot's earnings this month (a wage, not a pension or insurance). */
+const slotEarn = (x: number, wage: number) => isWorking(x) ? wage / 12 : 0;
 
 /** Non-housing subsistence, a month, at the town's prices. */
 function subsistence(e: Econ, persons: number): number {
@@ -792,6 +863,7 @@ function fillPeople(R: Rand, a: HouseholdArrays, i: number, ageP: readonly numbe
   const band = pick(R, ageP);
   a.age[i] = AGE_LO[band] + Math.floor(R.u() * (AGE_HI[band] - AGE_LO[band] + 1));
   a.adults[i] = 1 + pick(R, ADULTS);
+  drawPartner(R, a, i);
   a.kids[i] = a.age[i] >= 20 && a.age[i] < 60 ? pick(R, KIDS) : 0;
   drawKidAges(R, a, i);
   const job = (emp: Int32Array, un: Uint16Array) => {
@@ -800,19 +872,34 @@ function fillPeople(R: Rand, a: HouseholdArrays, i: number, ageP: readonly numbe
   };
   // the head works at its age's rate (LF_AGE); a head who does not draws the pension
   const works = R.u() < lfAge(a.age[i]);
-  const other = a.adults[i] >= 3 && R.u() < OTHER_LF;
+  const other = othersOf(a, i) > 0 && R.u() < OTHER_LF;
   if (!works) {
     a.emp1[i] = EMP_RETIRED; a.wage1[i] = income;
     if (other) { a.wage3[i] = income * 0.4; job(a.emp3, a.un3); }
     return;
   }
-  const two = a.adults[i] >= 2 && R.u() < 0.70 * lfAge(a.age[i]);
+  const two = a.partner[i] === 1 && R.u() < 0.70 * lfAge(a.age[i]);
   if (two) { job(a.emp2, a.un2); }
   if (other) { job(a.emp3, a.un3); }
   job(a.emp1, a.un1);
   a.wage1[i] = income * payShare(a, i, 0); a.wage2[i] = two ? income * payShare(a, i, 1) : 0; a.wage3[i] = other ? income * payShare(a, i, 2) : 0;
   void e;
 }
+/**
+ * WHO THE ADULTS ARE (households stage 4): a household of two or more adults
+ * has a partner with 75% odds — CPS 2023: married couples 47% and unmarried
+ * partners 7% of households, against the 72% with two or more adults [S~] —
+ * and the rest are its other adults: past 38, a grown child born to a parent
+ * of 20-32; younger, a relative or a roommate within a few years of the
+ * householder (their eldest's age, `oAge`).
+ */
+function drawPartner(R: Rand, a: HouseholdArrays, i: number) {
+  a.partner[i] = a.adults[i] >= 2 && R.u() < 0.75 ? 1 : 0;
+  const age = a.age[i];
+  a.oAge[i] = othersOf(a, i) > 0 ? (age >= 38 ? Math.max(18, age - 20 - Math.floor(R.u() * 13)) : Math.max(18, age - 3 + Math.floor(R.u() * 7))) : 0;
+}
+/** The adults who are neither the householder nor its partner. */
+const othersOf = (a: HouseholdArrays, i: number) => Math.max(0, a.adults[i] - 1 - (a.partner[i] === 1 ? 1 : 0));
 /**
  * A household's children's ages, drawn when the household is (the opening, an
  * arrival): the oldest at any age its head could have had it from eighteen,
@@ -1052,9 +1139,11 @@ function homeMarket(e: Econ): HomeMkt {
   const uc = Math.max(0.035, rate + TAX_INS + MAINT - gExp);
   return { std, starter, rate, amort, ucMo: (starter * uc) / 12 };
 }
-/** Pay a lender counts: the working earners of the couple (not a grown child's, not a pension). */
+/** Pay a lender counts: the couple's earnings and pensions (not a grown child's). */
 function lendPay(a: HouseholdArrays, i: number): number {
-  return (isWorking(a.emp1[i]) ? a.wage1[i] : 0) + (isWorking(a.emp2[i]) ? a.wage2[i] : 0);
+  // ...and a pension: a lender counts Social Security and pension income that continues (Fannie Mae Selling Guide B3-3.1-09) [S]
+  const k = (x: number) => isWorking(x) || x === EMP_RETIRED;
+  return (k(a.emp1[i]) ? a.wage1[i] : 0) + (k(a.emp2[i]) ? a.wage2[i] : 0);
 }
 /**
  * Can this renter household buy, and if so how owning the starter compares
@@ -1089,20 +1178,33 @@ const erf = (x: number) => {
 const normCdf = (z: number) => 0.5 * (1 + erf(z / Math.SQRT2));
 /**
  * THE CENTRE OF THE TASTE FOR OWNING, solved once: where the renters'
- * expected buying at the opening (one decision a year each, at its rent)
- * replaces the owner households that leave owning — those who sell and rent,
- * and those who end — so the opening's ownership is a steady state, as the
- * opening's other stocks are.
+ * expected buying at the opening (one decision a year each, at its rent) is
+ * the nation's rate of first-time buying — about 2.0 million first-time buyers
+ * a year (NAR Profile of Home Buyers and Sellers 2019: 33% of ~5.3 million
+ * existing and ~0.7 million new homes sold) out of ~43 million renter
+ * households (Census HVS 2019): 4.6% of renters a year [S~].
+ *
+ * (Stage 2 solved it so the opening's buyers only replaced the owners who
+ * sell and the owners who die — the opening's ownership a steady state of its
+ * owners' exits alone. But every household that forms — a grown child leaving
+ * home, a couple parting, a family arriving for work — forms renting, so the
+ * buyers that balance only the exits let ownership fall for ever: measured,
+ * 66% to 54% in thirty years, with every age band under the HVS's. It came to
+ * renters buying at ~3% a year against the record's 4.6%.)
  */
+const FIRST_BUY_YR = 2.0 / 43;
 function solveOwnMu(r: HouseholdRegister, e: Econ): number {
   const a = r.a!, H = homeMarket(e);
-  let out = 0;
+  let renters = 0;
   const cs: number[] = [], ws: number[] = [];
   for (let i = 0; i < r.n; i++) {
     const w = a.wt[i], t = a.ten[i];
-    if (t === TEN_OWN) out += w * (SELL_YR / 12 + (a.adults[i] <= 1 ? deathM(a.age[i]) : 0));
-    else if (t === TEN_RENT || t === TEN_MAINLAND) { const c = buyCheck(a, i, H, a.rent[i]); if (c !== null) { cs.push(c); ws.push(w); } }
+    if (t !== TEN_RENT && t !== TEN_MAINLAND) continue;
+    renters += w;
+    const c = buyCheck(a, i, H, a.rent[i]);
+    if (c !== null) { cs.push(c); ws.push(w); }
   }
+  const out = (FIRST_BUY_YR / 12) * renters;
   const buys = (mu: number) => cs.reduce((t, c, k) => t + ws[k] * normCdf((mu - c) / OWN_SIGMA), 0) / 12;
   let lo = -6, hi = 6;
   if (buys(hi) < out) return hi;
@@ -1296,8 +1398,8 @@ function toMainland(R: Rand, r: HouseholdRegister, i: number, pool: number[], go
 }
 
 /**
- * OWN OR RENT (households stage 2). Owners sell and rent again at SELL_YR and
- * move to another home they buy at REBUY_YR (repeat buyers: no change of
+ * OWN OR RENT (households stage 2). Owners sell and rent again at SELL_SHARE of
+ * their age's moves and move to another home they buy at the rest (repeat buyers: no change of
  * tenure, but buyers a builder sells to); renters across the water decide on
  * their lease's anniversary whether to buy (`buyCheck`, the taste for owning
  * drawn at the decision) — island renters decide at their lease end, in the
@@ -1311,14 +1413,14 @@ function toMainland(R: Rand, r: HouseholdRegister, i: number, pool: number[], go
  */
 function tickTenure(R: Rand, r: HouseholdRegister, e: Econ, gone: Uint8Array, H: HomeMkt, m: number) {
   const a = r.a!, n = gone.length;
-  const sellM = SELL_YR / 12, rebuyM = REBUY_YR / 12;
+
   if (r.ownMu === undefined) r.ownMu = solveOwnMu(r, e);
   let bought = 0, sold = 0, rebought = 0;
   for (let i = 0; i < n; i++) {
     if (gone[i]) continue;
     const t = a.ten[i];
     if (t === TEN_OWN) {
-      const u = R.u();
+      const u = R.u(), mv = OWN_MOVE_YR[ageBand(a.age[i])] / 12, sellM = SELL_SHARE * mv, rebuyM = mv - sellM;
       if (u < sellM) {
         a.sav[i] += Math.max(0, a.hval[i] - a.mort[i]) * 0.94;   // less the agent's 6%
         a.ten[i] = TEN_MAINLAND; a.mort[i] = 0; a.mortPmt[i] = 0; a.hval[i] = 0;
@@ -1381,13 +1483,15 @@ function mainlandRent(R: Rand, going: number, a: HouseholdArrays, i: number): nu
  */
 function formFromChild(R: Rand, r: HouseholdRegister, i: number, e: Econ, pool: number[], gone: Uint8Array) {
   const a = r.a!, w = a.wt[i];
-  const emp = a.emp3[i], wage = a.wage3[i], un = a.un3[i], ind = a.ind3[i];
+  const emp = a.emp3[i], wage = a.wage3[i], un = a.un3[i], ind = a.ind3[i], age = Math.max(18, a.oAge[i]);
   a.adults[i]--; a.emp3[i] = EMP_NONE; a.wage3[i] = 0; a.un3[i] = 0; a.ind3[i] = IND_NONE;
+  // the next sibling (or relative) is the eldest at home now
+  a.oAge[i] = othersOf(a, i) > 0 ? Math.max(18, a.oAge[i] - SIB_GAP) : 0;
   r.flow.formed = (r.flow.formed ?? 0) + w;
   if (w < 0.5 * r.wRegion) {
     for (let k = 0; k < 24 && pool.length; k++) {
       const j = pool[Math.floor(R.u() * pool.length)];
-      if ((j < gone.length && gone[j]) || a.ten[j] !== TEN_MAINLAND || a.adults[j] !== 1 || a.age[j] >= 35) continue;
+      if ((j < gone.length && gone[j]) || a.ten[j] !== TEN_MAINLAND || a.adults[j] !== 1 || Math.abs(a.age[j] - age) > 5) continue;
       if (k < 16 && a.ind1[j] !== ind) continue;
       a.wt[j] += w;
       return;
@@ -1398,14 +1502,14 @@ function formFromChild(R: Rand, r: HouseholdRegister, i: number, e: Econ, pool: 
   // their parents, about 55% live with a spouse or partner) [S~]
   const p = PENDING;
   if (p >= 0 && p < r.n && a.adults[p] === 1 && Math.abs(a.wt[p] - w) <= 0.25 * w && R.u() < COUPLE_SHARE) {
-    a.adults[p] = 2; a.emp2[p] = emp; a.wage2[p] = wage; a.un2[p] = un; a.ind2[p] = ind;
+    a.adults[p] = 2; a.partner[p] = 1; a.emp2[p] = emp; a.wage2[p] = wage; a.un2[p] = un; a.ind2[p] = ind;
     a.wt[p] = (a.wt[p] + w) / 2;
     a.rent[p] = mainlandRent(R, r.mainRent, a, p);
     PENDING = -1;
     return;
   }
   const j = addAgent(r), b = r.a!;
-  b.wt[j] = w; b.age[j] = 19 + Math.floor(R.u() * 10); b.adults[j] = 1; b.kids[j] = 0;
+  b.wt[j] = w; b.age[j] = age; b.adults[j] = 1; b.kids[j] = 0;
   b.emp1[j] = emp; b.wage1[j] = wage; b.un1[j] = un; b.ind1[j] = ind;
   fillMoney(R, b, j, wage, false, e);
   b.ten[j] = TEN_MAINLAND; b.rent[j] = mainlandRent(R, r.mainRent, b, j);
@@ -1419,21 +1523,28 @@ const COUPLE_SHARE = 0.55;
  * TWO SINGLES MOVE IN TOGETHER (households stage 4): a single adult's
  * household and another's within eight years of its age (about three couples
  * in four are within five years, Census CPS 2022) [S~], both on the island or
- * both not — an island agent is one household, a regional one about twenty,
- * so a union joins agents of like weight. They live in the home that is
- * owned if either owns (the other's equity, if both do, is sold into their
- * savings), else the first's; the partner's earner, money, debts and
- * children join the household. Two households become one: the agent stands
- * for the mean of the two weights, so the people are kept. An island partner
- * moving out leaves a flat empty, which the street lets again.
+ * both not. They live in the home that is owned if either owns (the
+ * other's equity, if both do, is sold into their savings), else the first's;
+ * the partner's earner, money, debts and children join the household. Two
+ * households become one: an agent stands for many households, so the couple
+ * is as many of each as the smaller agent stands for, and the rest of the
+ * larger stay single (a copy of the first, or the partner's agent, lighter) —
+ * the people are kept exactly. An island partner moving out leaves a flat
+ * empty, which the street lets again.
  */
 function unite(R: Rand, r: HouseholdRegister, i: number, list: number[], gone: Uint8Array) {
   const a = r.a!, wi = a.wt[i], isl = a.ten[i] === TEN_RENT;
   for (let k = 0; k < 16 && list.length; k++) {
     const j = list[Math.floor(R.u() * list.length)];
     if (j === i || gone[j] || a.adults[j] !== 1 || Math.abs(a.age[j] - a.age[i]) > 8) continue;
-    if ((a.ten[j] === TEN_RENT) !== isl || Math.abs(a.wt[j] - wi) > 0.25 * Math.max(wi, a.wt[j])) continue;
-    const wj = a.wt[j];
+    if ((a.ten[j] === TEN_RENT) !== isl) continue;
+    const wj = a.wt[j], m = Math.min(wi, wj);
+    // the singles of the larger agent who do not pair stay as they were
+    if (wi > m + 1e-6) {
+      const k = addAgent(r), b = r.a!;
+      for (const f of FIELD_NAMES) (b[f] as Uint8Array)[k] = (b[f] as Uint8Array)[i];
+      b.id[k] = r.nextId++; b.wt[k] = wi - m;
+    }
     if (a.ten[j] === TEN_RENT) {
       r.flow.movedOut += wj;
       noteOut(r, j, "other", () => ({ n: {}, t: "A household moved in with a partner" }));
@@ -1446,7 +1557,7 @@ function unite(R: Rand, r: HouseholdRegister, i: number, list: number[], gone: U
     }
     // the partner's earner
     a.emp2[i] = a.emp1[j]; a.wage2[i] = a.wage1[j]; a.un2[i] = a.un1[j]; a.ind2[i] = a.ind1[j];
-    a.adults[i] = 2;
+    a.adults[i]++; a.partner[i] = 1;
     // the children
     if (a.kids[j] > 0) {
       const had = a.kids[i] > 0;
@@ -1460,8 +1571,9 @@ function unite(R: Rand, r: HouseholdRegister, i: number, list: number[], gone: U
     a.debt[i] = d; a.sav[i] += a.sav[j]; a.owed[i] += a.owed[j]; a.yperm[i] += a.yperm[j];
     a.arrears[i] = Math.max(a.arrears[i], a.arrears[j]);
     a.credit[i] = Math.max(a.credit[i], a.credit[j]); a.clean[i] = Math.min(a.clean[i], a.clean[j]);
-    a.wt[i] = (wi + wj) / 2; gone[j] = 1;
-    r.flow.unions! += a.wt[i];
+    a.wt[i] = m;
+    if (wj > m + 1e-6) a.wt[j] = wj - m; else gone[j] = 1;
+    r.flow.unions! += m;
     return;
   }
 }
@@ -1486,7 +1598,7 @@ function part(R: Rand, r: HouseholdRegister, i: number, e: Econ, pool: number[],
   }
   const sav = Math.max(0, a.sav[i]) / 2, debt = a.debt[i] / 2;
   a.sav[i] -= sav; a.debt[i] -= debt;
-  a.adults[i]--;
+  a.adults[i]--; a.partner[i] = 0;
   a.emp2[i] = EMP_NONE; a.wage2[i] = 0; a.un2[i] = 0; a.ind2[i] = IND_NONE;
   r.flow.splits! += w;
   if (w < 0.5 * r.wRegion) {
@@ -1688,19 +1800,20 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       const band = pick(R, ageP);
       b.age[i] = AGE_LO[band] + Math.floor(R.u() * (AGE_HI[band] - AGE_LO[band] + 1));
       b.adults[i] = 1 + pick(R, ADULTS);
+      drawPartner(R, b, i);
       b.kids[i] = b.age[i] >= 20 && b.age[i] < 60 ? pick(R, KIDS) : 0;
       drawKidAges(R, b, i);
       const f1 = Math.exp(WAGE_SIGMA * R.n() - WAGE_SIGMA * WAGE_SIGMA / 2);
       b.emp1[i] = firmIn(ind); b.ind1[i] = ind; b.wage1[i] = D.pay[ind] * f1;
       V[ind] -= wR;
-      if (b.adults[i] >= 2 && R.u() < 0.70) {
+      if (b.partner[i] === 1 && R.u() < 0.70) {
         const j = pickInd(wR);
         const f2 = Math.exp(WAGE_SIGMA * R.n() - WAGE_SIGMA * WAGE_SIGMA / 2);
         if (j >= 0) { b.emp2[i] = firmIn(j); b.ind2[i] = j; b.wage2[i] = D.pay[j] * f2; V[j] -= wR; }
         else { b.emp2[i] = EMP_UNEMP; b.un2[i] = 1; b.wage2[i] = D.pay[ind] * f2; }
       }
       // its other adult (a grown child, a relative) looks for work here too, at the rate for everyone over 16
-      if (b.adults[i] >= 3 && R.u() < OTHER_LF) {
+      if (othersOf(b, i) > 0 && R.u() < OTHER_LF) {
         b.emp3[i] = EMP_UNEMP; b.un3[i] = UI_MONTHS + 1;
         b.wage3[i] = 0.64 * medianIncome(e) * payShare(b, i, 2);
       }
@@ -1774,7 +1887,8 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   for (let i = 0; i < n0; i++) {
     const e1 = c.emp1[i], e2 = c.emp2[i], e3 = c.emp3[i];
     if (e3 === EMP_UNEMP && c.un3[i] > UI_MONTHS && R.u() < LEAVE_JOBLESS_M) {
-      c.adults[i] = Math.max(1, c.adults[i] - 1); c.emp3[i] = EMP_NONE; c.wage3[i] = 0; c.un3[i] = 0; c.ind3[i] = IND_NONE;
+      if (othersOf(c, i) > 0) { c.adults[i]--; c.oAge[i] = othersOf(c, i) > 0 ? Math.max(18, c.oAge[i] - SIB_GAP) : 0; }
+      c.emp3[i] = EMP_NONE; c.wage3[i] = 0; c.un3[i] = 0; c.ind3[i] = IND_NONE;
     }
     if (isWorking(e1) || isWorking(e2) || isWorking(c.emp3[i])) continue;
     const out = (e1 === EMP_UNEMP && c.un1[i] > UI_MONTHS) || (e2 === EMP_UNEMP && c.un2[i] > UI_MONTHS);
@@ -1825,7 +1939,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   r.flow = {
     movedOut: 0, movedIn: 0, evictions: 0, foreclosures: 0, spend: 0, income: 0, arrived: 0, left: 0, bought: 0, sold: 0,
     out: zeroOut(), leaseEnds: 0, leaseMoves: 0, formed: 0, rebought: 0, hires: 0, quits: 0, layoffs: 0,
-    births: 0, deaths: 0, unions: 0, splits: 0, spendCat: zeroCat(),
+    births: 0, deaths: 0, unions: 0, splits: 0, spendCat: zeroCat(), transfers: 0,
   };
   const med = medianIncome(e);
   MINE = new Set(Object.keys(s.holdings ?? {}));
@@ -1892,15 +2006,17 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   for (let i = 0; i < n1; i++) {
     if (gone[i]) continue;
     const w = a.wt[i];
-    // income
-    const gross = grossOf(a, i);
-    const net = gross * (1 - taxRate(gross * 12, e));
-    a.yperm[i] += PERM_ROLL * (net - a.yperm[i]);
     // housing
     const ten = a.ten[i];
     let housing = 0;
     if (ten === TEN_RENT || ten === TEN_MAINLAND) housing = a.rent[i];
     else if (ten === TEN_OWN) housing = a.mortPmt[i] + (TAX_INS / 12) * a.hval[i];
+    // income: pay less tax, and what Washington pays a household of its means (SNAP, the EITC)
+    const gross = grossOf(a, i);
+    const xfer = fedTransfers(a, i, e, gross, housing);
+    const net = gross * (1 - taxRate(gross * 12, e)) + xfer;
+    r.flow.transfers! += w * xfer;
+    a.yperm[i] += PERM_ROLL * (net - a.yperm[i]);
     // the card: interest accrues at its floating rate, the minimum is due
     a.debtRate[i] = short + CARD_SPREAD[a.credit[i]];
     if (a.debt[i] > 0) a.debt[i] *= 1 + a.debtRate[i] / 12;
@@ -1957,6 +2073,8 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     }
     if ((ten === TEN_RENT || ten === TEN_MAINLAND) && a.arrears[i] >= EVICT_M && a.owed[i] >= EVICT_OWED * a.rent[i]) {
       r.flow.evictions += w;
+      if (ten === TEN_RENT) r.flow.evictIsland = (r.flow.evictIsland ?? 0) + w;
+      if (!(isWorking(a.emp1[i]) || isWorking(a.emp2[i]) || isWorking(a.emp3[i]))) r.flow.evictJobless = (r.flow.evictJobless ?? 0) + w;
       const owed = a.owed[i], months = a.arrears[i];
       // the landlord writes the arrears off: most eviction judgments are never collected (Desmond 2016)
       a.owed[i] = 0; a.arrears[i] = 0;
@@ -1983,10 +2101,10 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       a.ten[i] = TEN_MAINLAND; a.rent[i] = mainlandRent(R, r.mainRent, a, i);
     }
     // a year older on its month — and past fifty, at its age's rate, retired (LF_AGE)
-    if (a.kids[i] > 0 && a.kOld[i] === KID_UNKNOWN) drawKidAges(R, a, i);
     if ((m + a.id[i]) % 12 === 0 && a.age[i] < 110) {
       a.age[i]++;
       if (a.kids[i] > 0) { a.kOld[i]++; a.kYoung[i]++; }
+      if (othersOf(a, i) > 0 && a.oAge[i] < 110) a.oAge[i]++;
       if (a.age[i] > LF_AGE[0][0]) {
         const h = 1 - lfAge(a.age[i]) / lfAge(a.age[i] - 1);
         if (R.u() < h) retire(a.emp1, a.wage1, i);
@@ -1994,7 +2112,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       }
     }
     // LIFE (stage 4): a birth at the mother's age's rate (ASFR)
-    if (a.kids[i] < 8 && R.u() < birthM(a.age[i], a.adults[i])) {
+    if (a.kids[i] < 8 && R.u() < birthM(a, i)) {
       if (a.kids[i] === 0) a.kOld[i] = 0;
       a.kids[i]++; a.kYoung[i] = 0;
       r.flow.births! += w;
@@ -2005,6 +2123,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       a.kids[i]--;
       if (a.kids[i] === 0) { a.kOld[i] = 0; a.kYoung[i] = 0; }
       else a.kOld[i] = a.kids[i] === 1 ? a.kYoung[i] : Math.round(a.kOld[i] - (a.kOld[i] - a.kYoung[i]) / (k0 - 1));
+      if (othersOf(a, i) === 0) a.oAge[i] = ADULT_AT;
       if (a.adults[i] < 250) a.adults[i]++;
       if (a.emp3[i] === EMP_NONE && R.u() < OTHER_LF) {
         a.emp3[i] = EMP_UNEMP; a.un3[i] = UI_MONTHS + 1; a.ind3[i] = IND_NONE;   // a new entrant draws no insurance
@@ -2014,26 +2133,25 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     }
     // a grown child with work leaves to form its own household, if its pay carries a flat across the water
     // (at the cheap end of the mainland's rents, the 25th percentile of their spread)
-    if (a.adults[i] >= 3 && isWorking(a.emp3[i]) && R.u() < FORM_M && 12 * r.mainRent * Math.exp(-0.674 * 0.25) <= SCREEN * a.wage3[i]) {
+    if (othersOf(a, i) > 0 && isWorking(a.emp3[i]) && R.u() < FORM_M && 12 * r.mainRent * Math.exp(-0.674 * 0.25) <= SCREEN * a.wage3[i]) {
       formFromChild(R, r, i, e, pool, gone);
     }
     // a single adult moves in with a partner; a couple parts (UNION_YR, SPLIT_YR)
     {
       const band = ageBand(a.age[i]);
-      if (a.adults[i] === 1 && a.age[i] >= 18) {
+      if (a.partner[i] === 0 && a.age[i] >= 18) {
         // each union is two singles: each starts one at half the rate and is chosen by another at about the other half
         if (R.u() < UNION_YR[band] / 24) unite(R, r, i, a.ten[i] === TEN_RENT ? singlesIsl : singlesReg, gone);
-      } else if (a.adults[i] >= 2 && R.u() < SPLIT_YR[band] / 12) {
+      } else if (a.partner[i] === 1 && R.u() < SPLIT_YR[band] / 12) {
         part(R, r, i, e, pool, gone);
       }
     }
     // DEATHS (LIFE_Q): each adult and child at its age's rate. The household
     // ends with its last adult; a partner who survives heads it and keeps the
     // larger pension (Social Security pays a widow or widower the larger of
-    // the two benefits, SSA) [S].
+    // the two benefits, SSA) [S]; else the eldest other adult heads it.
     {
-      const age = a.age[i], qA = deathM(age);
-      const others = Math.max(0, a.adults[i] - 2), oAge = otherAge(age);
+      const age = a.age[i], qA = deathM(age), others = othersOf(a, i);
       if (a.kids[i] > 0) {
         const qK = a.kids[i] * deathM((a.kOld[i] + a.kYoung[i]) / 2) + (a.kYoung[i] === 0 ? deathM(0) : 0);
         if (R.u() < qK) {
@@ -2042,30 +2160,33 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
           if (a.kids[i] === 0) { a.kOld[i] = 0; a.kYoung[i] = 0; }
         }
       }
-      if (others > 0 && R.u() < others * deathM(oAge)) {
+      if (others > 0 && R.u() < others * deathM(a.oAge[i])) {
         a.adults[i]--; r.flow.deaths! += w;
-        if (others === 1) { a.emp3[i] = EMP_NONE; a.wage3[i] = 0; a.un3[i] = 0; a.ind3[i] = IND_NONE; }
+        if (others === 1) { a.emp3[i] = EMP_NONE; a.wage3[i] = 0; a.un3[i] = 0; a.ind3[i] = IND_NONE; a.oAge[i] = 0; }
       }
-      const headDies = R.u() < qA, partnerDies = a.adults[i] >= 2 && R.u() < qA;
-      const dead = (headDies ? 1 : 0) + (partnerDies ? 1 : 0);
-      if (dead > 0) {
-        r.flow.deaths! += w * dead;
-        if (a.adults[i] > dead) {
-          const pen = Math.max(a.emp1[i] === EMP_RETIRED ? a.wage1[i] : 0, a.emp2[i] === EMP_RETIRED ? a.wage2[i] : 0);
-          if (dead === 2) {
-            // both: a grown child or relative at home heads it
-            a.emp1[i] = a.emp3[i]; a.wage1[i] = a.wage3[i]; a.un1[i] = a.un3[i]; a.ind1[i] = a.ind3[i];
-            a.emp3[i] = EMP_NONE; a.wage3[i] = 0; a.un3[i] = 0; a.ind3[i] = IND_NONE;
-            a.age[i] = Math.max(18, oAge);
-          } else if (headDies) {
-            a.emp1[i] = a.emp2[i]; a.wage1[i] = a.wage2[i]; a.un1[i] = a.un2[i]; a.ind1[i] = a.ind2[i];
-          }
+      const headDies = R.u() < qA, partnerDies = a.partner[i] === 1 && R.u() < qA;
+      if (headDies || partnerDies) {
+        r.flow.deaths! += w * ((headDies ? 1 : 0) + (partnerDies ? 1 : 0));
+        const pen = Math.max(a.emp1[i] === EMP_RETIRED ? a.wage1[i] : 0, a.emp2[i] === EMP_RETIRED ? a.wage2[i] : 0);
+        const survivor = (headDies && a.partner[i] === 1 && !partnerDies) || (!headDies && partnerDies);
+        if (survivor) {
+          // the couple is one: the survivor heads it
+          if (headDies) { a.emp1[i] = a.emp2[i]; a.wage1[i] = a.wage2[i]; a.un1[i] = a.un2[i]; a.ind1[i] = a.ind2[i]; }
           a.emp2[i] = EMP_NONE; a.wage2[i] = 0; a.un2[i] = 0; a.ind2[i] = IND_NONE;
-          a.adults[i] -= dead;
-          if (dead === 1 && pen > 0 && (a.emp1[i] === EMP_RETIRED || a.emp1[i] === EMP_NONE)) {
+          a.adults[i]--; a.partner[i] = 0;
+          if (pen > 0 && (a.emp1[i] === EMP_RETIRED || a.emp1[i] === EMP_NONE)) {
             const own = a.emp1[i] === EMP_RETIRED ? a.wage1[i] : 0;
             a.emp1[i] = EMP_RETIRED; a.wage1[i] = Math.max(pen, own);
           }
+        } else if (othersOf(a, i) > 0) {
+          // nobody of the couple left: the eldest other adult heads it, with the children
+          a.adults[i] -= 1 + a.partner[i]; a.partner[i] = 0;
+          a.emp1[i] = a.emp3[i]; a.wage1[i] = a.wage3[i]; a.un1[i] = a.un3[i]; a.ind1[i] = a.ind3[i];
+          a.emp2[i] = EMP_NONE; a.wage2[i] = 0; a.un2[i] = 0; a.ind2[i] = IND_NONE;
+          a.emp3[i] = EMP_NONE; a.wage3[i] = 0; a.un3[i] = 0; a.ind3[i] = IND_NONE;
+          a.age[i] = Math.max(18, a.oAge[i]);
+          a.oAge[i] = othersOf(a, i) > 0 ? Math.max(18, a.oAge[i] - SIB_GAP) : 0;
+          if (a.emp1[i] === EMP_NONE && a.age[i] < 65) { a.emp1[i] = EMP_UNEMP; a.un1[i] = UI_MONTHS + 1; a.wage1[i] = 0.64 * medianIncome(e); }
         } else {
           if (a.ten[i] === TEN_RENT) {
             r.flow.movedOut += w;
@@ -2372,8 +2493,10 @@ function compact(r: HouseholdRegister, gone: Uint8Array): void {
 function firstMonth(r: HouseholdRegister, i: number, e: Econ): void {
   const a = r.a!, w = a.wt[i];
   const gross = grossOf(a, i);
-  const net = gross * (1 - taxRate(gross * 12, e));
   const housing = a.rent[i];
+  const xfer = fedTransfers(a, i, e, gross, housing);
+  const net = gross * (1 - taxRate(gross * 12, e)) + xfer;
+  r.flow.transfers = (r.flow.transfers ?? 0) + w * xfer;
   const target = bufferMonths(a.age[i]) * a.yperm[i];
   const spend = Math.max(subsistence(e, a.adults[i] + a.kids[i]), a.yperm[i] - housing + KAPPA * (a.sav[i] - target));
   a.sav[i] = Math.max(0, a.sav[i] + net - spend - housing);
@@ -2521,6 +2644,8 @@ export function householdMoney(s: GameState): {
   persons: number; ownerValue: number;
   /** the month's spending by category (stage 5): the sum of what each household spent on each */
   spendCat: Record<SpendCategory, number>;
+  /** what Washington paid them by their means this month (SNAP, the EITC) */
+  transfers: number;
 } | null {
   const r = s.households;
   if (!r || !s.econ) return null;
@@ -2549,7 +2674,7 @@ export function householdMoney(s: GameState): {
   }
   // TAX_INS is ~1.0 points of property tax and ~0.5 of insurance (homeprice.ts)
   return { wages, pensions, ui, tax, taxLocal, rent, mortgage, propertyTax: ownerCost * (1 / 1.5), homeInsurance: ownerCost * (0.5 / 1.5), spend: r.flow.spend, households: hh, persons, ownerValue,
-    spendCat: r.flow.spendCat ?? zeroCat() };
+    spendCat: r.flow.spendCat ?? zeroCat(), transfers: r.flow.transfers ?? 0 };
 }
 
 /**
@@ -2588,7 +2713,10 @@ export function registerLabour(s: GameState): RegisterLabour | null {
     out.households += w;
     out.persons += w * (a.adults[i] + a.kids[i]);
     out.ages.kids += w * a.kids[i];
-    if (a.age[i] >= 65) out.ages.old += w * a.adults[i]; else out.ages.work += w * a.adults[i];
+    // the householder and partner at the householder's age, the other adults at theirs (stage 4)
+    const couple = Math.min(a.adults[i], a.partner[i] === 1 ? 2 : 1), oth = a.adults[i] - couple;
+    if (a.age[i] >= 65) out.ages.old += w * couple; else out.ages.work += w * couple;
+    if (a.oAge[i] >= 65) out.ages.old += w * oth; else out.ages.work += w * oth;
     const t = a.ten[i];
     if (t === TEN_RENT) { out.islandRenters += w; out.islandPersons += w * (a.adults[i] + a.kids[i]); out.islandKids += w * a.kids[i]; } else if (t === TEN_MAINLAND) out.mainlandRenters += w; else if (t === TEN_OWN) out.owners += w; else out.doubled += w;
     for (const x of [a.emp1[i], a.emp2[i], a.emp3[i]]) {
@@ -2603,8 +2731,8 @@ export function registerLabour(s: GameState): RegisterLabour | null {
 /**
  * THE REGISTER'S PEOPLE BY AGE (households stage 4), weighted, one entry a
  * year of age to 100+: each householder and partner at the householder's age,
- * other adults at it less 28 when it is past 45 (a grown child) and at it
- * otherwise, the children spread evenly from the youngest to the oldest. Pure.
+ * other adults at their eldest's, the children spread evenly from the
+ * youngest to the oldest. Pure.
  */
 export function registerPyramid(s: GameState): number[] | null {
   const r = s.households;
@@ -2614,10 +2742,11 @@ export function registerPyramid(s: GameState): number[] | null {
   const add = (age: number, w: number) => { out[Math.max(0, Math.min(100, Math.round(age)))] += w; };
   for (let i = 0; i < r.n; i++) {
     const w = a.wt[i], age = a.age[i], ad = a.adults[i], k = a.kids[i];
-    add(age, w * Math.min(2, ad));
-    if (ad > 2) add(otherAge(age), w * (ad - 2));
+    const couple = a.partner[i] === 1 ? 2 : 1;
+    add(age, w * Math.min(couple, ad));
+    if (ad > couple) add(a.oAge[i], w * (ad - couple));
     if (k > 0) {
-      const o = a.kOld[i] === KID_UNKNOWN ? 8 : a.kOld[i], y = a.kYoung[i] === KID_UNKNOWN ? 8 : a.kYoung[i];
+      const o = a.kOld[i], y = a.kYoung[i];
       for (let c = 0; c < k; c++) add(k === 1 ? o : y + (o - y) * c / (k - 1), w);
     }
   }
@@ -2685,6 +2814,7 @@ function reviveColumns(r: HouseholdRegister): void {
     }
   }
   r.a = a;
+  mendPeople(r);
 }
 
 export function unpackHouseholds(r: HouseholdRegister): void {
@@ -2698,6 +2828,25 @@ export function unpackHouseholds(r: HouseholdRegister): void {
   }
   r.a = a;
   delete r.packed;
+  mendPeople(r);
+}
+/**
+ * A register saved before households stage 4 has no children's ages, partner
+ * flags or other adults' ages: read them as stage 3 did — a second adult is a
+ * partner, an adult child is the householder's age less 28 once past 45, the
+ * eldest child 28 years younger than the householder (under 18), the rest
+ * SIB_GAP apart.
+ */
+function mendPeople(r: HouseholdRegister): void {
+  const a = r.a!;
+  for (let i = 0; i < r.n; i++) {
+    if (a.partner[i] === 255) a.partner[i] = a.adults[i] >= 2 ? 1 : 0;
+    if (a.oAge[i] === 255) a.oAge[i] = othersOf(a, i) > 0 ? Math.max(18, a.age[i] >= 46 ? a.age[i] - 28 : a.age[i]) : 0;
+    if (a.kOld[i] === KID_UNKNOWN || a.kYoung[i] === KID_UNKNOWN) {
+      a.kOld[i] = a.kids[i] > 0 ? Math.max(0, Math.min(ADULT_AT - 1, a.age[i] - 28)) : 0;
+      a.kYoung[i] = a.kids[i] > 0 ? Math.max(0, Math.round(a.kOld[i] - SIB_GAP * (a.kids[i] - 1))) : 0;
+    }
+  }
 }
 
 /** A state ready for a save: the register packed, nothing else touched (a shallow copy). */

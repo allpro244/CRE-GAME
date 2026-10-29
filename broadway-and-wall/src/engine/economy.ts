@@ -1239,6 +1239,7 @@ export function tickEconomy(s: GameState): void {
   const H = ACCOUNTS.households, GOV = ACCOUNTS.government, LAND = ACCOUNTS.landlords, ROW = ACCOUNTS.rest, BANK = ACCOUNTS.bank;
   transfer(L, ROW, H, hm.pensions, "pensions", "row>hh:pensions");
   transfer(L, GOV, H, hm.ui, "ui", "gov>hh:unemployment insurance");
+  transfer(L, ROW, H, hm.transfers, "transfers", "row>hh:SNAP and EITC");
   transfer(L, H, ROW, hm.tax - hm.taxLocal, "tax", "hh>row:income tax");
   transfer(L, H, GOV, hm.taxLocal, "tax", "hh>gov:income and sales tax");
   transfer(L, H, LAND, hm.rent, "rent", "hh>land:rent");

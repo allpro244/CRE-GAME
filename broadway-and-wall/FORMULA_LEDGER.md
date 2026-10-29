@@ -19,7 +19,7 @@ When you remove one, move it to **Removed** with the PR. When you add a mechanis
 | 8 | Industry shock hazard (`IND_SHOCK_HAZ`) | `market.ts` | step 2 |
 | 9 | Regional trend and pull | `market.ts` `regionTrend`, `regionalPull` | step 2: export base |
 | 10 | Space demand drivers per commercial class (affordability band, retail Cobb–Douglas) | `market.ts` (`AFFORD_BAND`, `affordRaw`) | step 2 (firms' heads × sf/worker) |
-| 14 | Migration and participation formulas | `market.ts` (around 4100) | step 3 / households stage 4 |
+| 14 | Migration by city services: a level effect (`SERVICE_MIG` × log service, over `MIG_ADJ_M`) poured into the register as a wave of newcomers (`citygov.ts` → `bsMigPull`); a negative pull is dropped, so a cut in services sends nobody away. (The market.ts migration and participation formulas went with step 2; births, deaths, unions and splits are the register's since households 4.) | `citygov.ts` | households weighing the city's services in where they live and whether they stay |
 | 15 | Town wage index (closing toward a target) | `market.ts` `wageIdx` | §6c-D: firms post wages |
 | 19 | 30% lowball letters of intent | `leasing.ts` (around 2292) | step 4: tenants bid from their own books and options |
 | 20 | Opening tenant credit, rent and term dice on new rolls | `leasing.ts` `rollCredit` and roll generation | step 4 / step 2: tenants are real firms |
@@ -41,6 +41,8 @@ Not aggregates the city sets, so not on the list: the rest of the world's draws,
 
 | What it was | Replaced by | PR |
 |---|---|---|
+| Household demand for each industry as the register's total spending × one national basket (`economy.ts` `spendVector`: `C × SPEND_SHARE` bridged through PCE) | each household's own spending (its income, savings and card on the buffer-stock rule) split by the shares households of its income spend (BLS CE 2022-23 by income quintile, `households.ts` `bookSpend`); the firms' household sales are the sum of what households spent on each category, bridged to industries (`economy.ts` `spendVector(online, spendCat)`) | households 4-5 |
+| The arrivals swan pushing the island's location margin (`blackswans.ts` → `e.locEff.multifamily`, dead since households 2) | the newcomers land in the register as renter households, half of them wanting an island flat (`households.ts`, the wave): they are the flats' demand and take the flats the landlords let them | households 4-5 |
 | Construction cost index as inputs × a bid premium set from crew utilisation (was #16) | named general contractors bidding every job from their own books; the index is the average winning bid; materials read the nation's prices and oil (`contractors.ts`) | cleanup-8a |
 | Operating cost per sf per class × the construction cost index (was #17) | labour at the town's wage, energy at the nation's prices and oil, repairs at the cost index, insurance at replacement cost × a capital-driven hard/soft market (`value.ts` `OPEX_MIX`, `inputs.ts`) | cleanup-8a |
 | Swan hazards (was #18): `CAMPUS_HAZ` and the embargo's hand-written materials jump | an anchor employer choosing the city (and leaving it) on its pay, rents and taxes against other cities; the embargo reaches building costs through oil. National swans stay random by design (above) | cleanup-8a |

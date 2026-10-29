@@ -701,25 +701,28 @@ function toMainland(R: Rand, r: HouseholdRegister, i: number, pool: number[], go
 }
 
 /**
- * OWN OR RENT (2026-10-28, step 2). Renters with work buy at the month's
- * hazard — the opening's (solved so the opening's owners are a steady state:
- * their sales and their dissolutions over the renters) moved by what owning
- * costs against renting (market.ts `ownCostIdx` against the flats' real rent,
- * BUY_ELAST); owners sell and rent again at SELL_YR; the plats' new houses
- * (homes.ts) are sold to the region's renters, one household each. It
- * replaces the engine's tenure index as what the flats' demand reads
- * (market.ts: the register's renter households).
+ * OWN OR RENT (2026-10-28, step 2). Renter households with work buy at the
+ * month's hazard — the opening's (solved so the opening's owners are a
+ * steady state: their sales and their dissolutions over the renters) moved by
+ * what owning costs against renting (market.ts `ownCostIdx` against the
+ * flats' real rent, BUY_ELAST), on a mortgage of a fifth of their income
+ * (AHS) at the month's rate with a tenth down; owners sell and rent again at
+ * SELL_YR; the plats' new houses (homes.ts) are sold to the region's renters
+ * with work, one household each. It replaces the engine's tenure index as
+ * what the flats' demand reads (market.ts: the register's renter households).
  *
- * THE REGION'S HOUSEHOLDS MOVE AS SHARES OF THEIR WEIGHT, NOT AS AGENTS. A
- * regional agent stands for ~20 households, so converting whole agents at a
- * monthly hazard made the region's renter count a random walk in steps of 20
- * — measured, twin worlds differed by ±5% in renter households within a year
- * with nothing different in them, and that walk was the flats' demand. So
- * each month a share of each working renter agent's weight passes to the
- * owners (spread over them by weight) and a share of each owner agent's
- * weight to the renters: the households the hazards say move, moved, with no
- * sampling noise. An island renter (one household an agent) still buys one
- * by one, and leaves its flat.
+ * WHOLE HOUSEHOLDS MOVE, KEEPING WHO THEY ARE. A regional agent stands for
+ * ~20 households, so the renter count moves in steps of 20 — but buying and
+ * selling pull it back to where the hazards balance (at about 7% a year), so
+ * the noise is stationary, about 3% of the renters. Two tries at smoothing it
+ * by moving shares of weight between agents were worse than the noise: one
+ * spread sellers' weight over every renter and grew the jobless renters for
+ * ever (unemployment 21-35% from year 70); one landed it on households of the
+ * same kind, which concentrated the region onto a few agents (the heaviest
+ * standing for 1,600 households by year 48, whose retirement and dissolution
+ * then emptied and refilled the labour force at a stroke). The households
+ * that move one at a time here (an island renter, a plat house's buyer) put
+ * their weight on an owner of their own kind.
  */
 function tickTenure(R: Rand, r: HouseholdRegister, e: Econ, gone: Uint8Array, pool: number[]) {
   const a = r.a!, n = gone.length;
@@ -738,76 +741,57 @@ function tickTenure(R: Rand, r: HouseholdRegister, e: Econ, gone: Uint8Array, po
     r.homesSeen = e.newHomes ?? 0;
   }
   const hBuy = r.hBuy0 * Math.exp(-BUY_ELAST * (rel - (r.tenRef ?? rel)));
-  // WHO THE MOVERS ARE. A household that buys or sells keeps its earners, its
-  // jobs and its pensions, so the weight that moves lands on households like
-  // it — the same work in the same industries, or the same retirement — on
-  // the other side of the tenure line. (The first cut spread it over every
-  // household there by weight; sellers' weight reached the jobless renters,
-  // who never bought it back, and over a century the region filled with
-  // jobless households — measured, unemployment 21-35% from year 70.) A
-  // household's kind is its earners' industries or status; a kind with no
-  // household on the other side lands on its first earner's alone, then on
-  // its status, and a weight with nowhere like it to go does not move.
-  const slotKind = (x: number, ind: number) => x === EMP_RETIRED ? "r" : x === EMP_UNEMP ? "u" : x === EMP_NONE ? "n" : isPlaced(x) && ind !== IND_NONE ? `w${ind}` : "w";
-  const kinds = (i: number) => {
-    const k1 = slotKind(a.emp1[i], a.ind1[i]);
-    return [`${k1}|${slotKind(a.emp2[i], a.ind2[i])}`, k1, k1[0]];
+  // an owner like this household (its first earner's industry, else its status), drawn at random
+  const kindOf = (i: number) => { const x = a.emp1[i]; return x === EMP_RETIRED ? "r" : x === EMP_UNEMP ? "u" : x === EMP_NONE ? "n" : `w${a.ind1[i]}`; };
+  const ownersBy = new Map<string, number[]>();
+  const put = (k: string, i: number) => (ownersBy.get(k) ?? ownersBy.set(k, []).get(k)!).push(i);
+  for (let i = 0; i < n; i++) if (!gone[i] && a.ten[i] === TEN_OWN) { const k = kindOf(i); put(k, i); if (k[0] === "w") put("w", i); }
+  const ownerLike = (i: number) => {
+    const l = ownersBy.get(kindOf(i)) ?? ownersBy.get(kindOf(i)[0] === "w" ? "w" : kindOf(i));
+    return l && l.length ? l[Math.floor(R.u() * l.length)] : -1;
   };
-  type Side = Map<string, { idx: number[]; w: number }>;
-  const index = (pick: (i: number) => boolean): Side => {
-    const m: Side = new Map();
-    for (let i = 0; i < n; i++) {
-      if (gone[i] || !pick(i)) continue;
-      for (const k of kinds(i)) { const b = m.get(k) ?? { idx: [], w: 0 }; b.idx.push(i); b.w += a.wt[i]; m.set(k, b); }
-    }
-    return m;
-  };
-  const owners = index((i) => a.ten[i] === TEN_OWN);
-  const renters = index((i) => a.ten[i] === TEN_MAINLAND);
-  const toOwn = new Map<number, number>(), toRent = new Map<number, number>();   // agent -> weight to add
+  const mRate = mortgageRate(e);
   let bought = 0, sold = 0;
-  // lands `d` of a household of kind `ks` on the other side, by weight; false when there is nobody like it
-  const land = (side: Side, ks: string[], d: number, out: Map<number, number>) => {
-    for (const k of ks) {
-      const b = side.get(k);
-      if (!b || !(b.w > 0)) continue;
-      for (const j of b.idx) out.set(j, (out.get(j) ?? 0) + d * a.wt[j] / b.w);
-      return true;
-    }
-    return false;
-  };
-  const sellM2 = sellM;
   for (let i = 0; i < n; i++) {
     if (gone[i]) continue;
-    const t = a.ten[i];
+    const t = a.ten[i], u = R.u();
     if (t === TEN_OWN) {
-      // owners who sell
-      const d = a.wt[i] * sellM2;
-      if (land(renters, kinds(i), d, toRent)) { a.wt[i] -= d; sold += d; }
+      if (u < sellM) {
+        a.sav[i] += Math.max(0, a.hval[i] - a.mort[i]) * 0.94;   // less the agent's 6%
+        a.ten[i] = TEN_MAINLAND; a.mort[i] = 0; a.mortPmt[i] = 0; a.hval[i] = 0;
+        a.rent[i] = mainlandRent(R, r.mainRent, a, i);
+        sold += a.wt[i];
+      }
       continue;
     }
     if (t !== TEN_RENT && t !== TEN_MAINLAND) continue;
-    const working = isWorking(a.emp1[i]) || isWorking(a.emp2[i]);
-    if (!working) continue;
-    // renters who buy: the region's with work, a share of each; the island's one by one (and it leaves its flat)
-    if (t === TEN_MAINLAND) { const d = a.wt[i] * hBuy; if (land(owners, kinds(i), d, toOwn)) { a.wt[i] -= d; bought += d; } continue; }
-    if (R.u() < hBuy && land(owners, kinds(i), a.wt[i], toOwn)) { gone[i] = 1; r.flow.movedOut += a.wt[i]; bought += a.wt[i]; }
+    if (!(u < hBuy) || !(isWorking(a.emp1[i]) || isWorking(a.emp2[i]))) continue;
+    if (t === TEN_RENT) {
+      // an island renter who buys leaves its flat; its household joins the owners like it
+      const j = ownerLike(i);
+      if (j < 0) continue;
+      a.wt[j] += a.wt[i]; gone[i] = 1; r.flow.movedOut += a.wt[i]; bought += a.wt[i];
+      continue;
+    }
+    const income = a.wage1[i] + a.wage2[i];
+    const mo = mRate / 12, pmt = 0.20 * income / 12;
+    a.ten[i] = TEN_OWN; a.rent[i] = 0;
+    a.mortRate[i] = mRate; a.mortPmt[i] = pmt;
+    a.mort[i] = mo > 0 ? (pmt * (1 - Math.pow(1 + mo, -360))) / mo : pmt * 360;
+    a.hval[i] = a.mort[i] / 0.9;
+    a.sav[i] = Math.max(0, a.sav[i] - 0.1 * a.hval[i]);
+    bought += a.wt[i];
   }
-  // the plats' houses, each to a household across the water with work
+  // the plats' houses, each to a household across the water with work, who joins the owners like it
   const sales = Math.max(0, (e.newHomes ?? 0) - (r.homesSeen ?? 0));
   r.homesSeen = e.newHomes ?? 0;
-  if (sales > 0) {
-    let wW = 0;
-    for (const i of pool) if (!gone[i] && a.ten[i] === TEN_MAINLAND && (isWorking(a.emp1[i]) || isWorking(a.emp2[i]))) wW += a.wt[i];
-    const plat = Math.min(sales, 0.5 * wW);
-    if (plat > 0) for (const i of pool) {
-      if (gone[i] || a.ten[i] !== TEN_MAINLAND || !(isWorking(a.emp1[i]) || isWorking(a.emp2[i]))) continue;
-      const d = plat * a.wt[i] / wW;
-      if (land(owners, kinds(i), d, toOwn)) { a.wt[i] -= d; bought += d; }
-    }
+  for (let k = 0, tries = 0; k < sales && pool.length && tries < 4 * sales + 8; tries++) {
+    const i = pool[Math.floor(R.u() * pool.length)];
+    if (gone[i] || a.ten[i] !== TEN_MAINLAND || a.wt[i] < 2 || !(isWorking(a.emp1[i]) || isWorking(a.emp2[i]))) continue;
+    const j = ownerLike(i);
+    if (j < 0) continue;
+    a.wt[i] -= 1; a.wt[j] += 1; bought += 1; k++;
   }
-  for (const [j, d] of toOwn) a.wt[j] += d;
-  for (const [j, d] of toRent) a.wt[j] += d;
   r.flow.bought = (r.flow.bought ?? 0) + bought;
   r.flow.sold = (r.flow.sold ?? 0) + sold;
 }

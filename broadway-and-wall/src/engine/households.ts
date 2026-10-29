@@ -1755,22 +1755,40 @@ function moveInWith(r: HouseholdRegister, j: number, couple: boolean, e: Econ,
  * larger stay single (a copy of the first, or the partner's agent, lighter) —
  * the people are kept exactly. An island partner moving out leaves a flat
  * empty, which the street lets again.
+ *
+ * WHO MEETS WHOM IS BY HOUSEHOLDS (stage 6): the partner is drawn in
+ * proportion to the households an agent stands for, and the singles of a
+ * larger agent left unpaired go on looking. Each single starts a union at
+ * half its age's rate and is chosen at about the other half only if the
+ * choosing is by households; drawn by agents, a regional agent of twenty
+ * singles met one partner where it should have met twenty, and a pairing of
+ * an agent of twenty with one of one paired one of the twenty. Measured,
+ * unions ran ~6 a year per 1,000 people against the ~11-12 at which US
+ * couples start living together (~2 million marriages, ~70% of first ones
+ * after cohabiting, and ~3 million cohabitations begun a year: CDC NSFG,
+ * NCFMR), and the share living alone climbed from 20% to 43% in thirty years.
  */
-function unite(R: Rand, r: HouseholdRegister, i: number, list: number[], gone: Uint8Array) {
-  const a = r.a!, wi = a.wt[i], isl = a.ten[i] === TEN_RENT;
+function unite(R: Rand, r: HouseholdRegister, i: number, list: number[], cum: Float64Array, gone: Uint8Array) {
+  let a = r.a!, wi = a.wt[i];
+  const isl = a.ten[i] === TEN_RENT, tot = list.length ? cum[list.length - 1] : 0;
   for (let k = 0; k < 16 && list.length; k++) {
-    const j = list[Math.floor(R.u() * list.length)];
-    if (j === i || gone[j] || a.adults[j] !== 1 || Math.abs(a.age[j] - a.age[i]) > 8) continue;
+    // a partner drawn by households, not by agents (an agent of twenty households is twenty singles to meet)
+    const x = R.u() * tot;
+    let lo = 0, hi = list.length - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1; if (cum[mid] > x) hi = mid; else lo = mid + 1; }
+    const j = list[lo];
+    if (j === i || gone[j] || a.adults[j] !== 1 || a.partner[j] !== 0 || Math.abs(a.age[j] - a.age[i]) > 8) continue;
     if ((a.ten[j] === TEN_RENT) !== isl) continue;
     const wj = a.wt[j], m = Math.min(wi, wj);
-    // the singles of the larger agent who do not pair stay as they were
+    // the singles of the larger agent who do not pair stay as they were — and go on looking
+    let rest = -1;
     if (wi > m + 1e-6) {
-      const k = addAgent(r), b = r.a!;
-      for (const f of FIELD_NAMES) (b[f] as Uint8Array)[k] = (b[f] as Uint8Array)[i];
-      b.id[k] = r.nextId++; b.wt[k] = wi - m;
+      rest = addAgent(r); a = r.a!;
+      for (const f of FIELD_NAMES) (a[f] as Uint8Array)[rest] = (a[f] as Uint8Array)[i];
+      a.id[rest] = r.nextId++; a.wt[rest] = wi - m;
     }
     if (a.ten[j] === TEN_RENT) {
-      r.flow.movedOut += wj;
+      r.flow.movedOut += m;
       noteOut(r, j, "other", () => ({ n: {}, t: "A household moved in with a partner" }));
     }
     // the home
@@ -1798,7 +1816,8 @@ function unite(R: Rand, r: HouseholdRegister, i: number, list: number[], gone: U
     a.wt[i] = m;
     if (wj > m + 1e-6) a.wt[j] = wj - m; else gone[j] = 1;
     r.flow.unions! += m;
-    return;
+    if (rest < 0) return;
+    i = rest; wi = a.wt[i];
   }
 }
 
@@ -2227,6 +2246,8 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   // the single adults' households, on the island and off it: who a single moves in with (`unite`)
   const singlesIsl: number[] = [], singlesReg: number[] = [];
   for (let i = 0; i < n1; i++) if (a.adults[i] === 1 && a.age[i] >= 18) (a.ten[i] === TEN_RENT ? singlesIsl : singlesReg).push(i);
+  const cumOf = (l: number[]) => { const c = new Float64Array(l.length); let t = 0; l.forEach((j, k) => { t += a.wt[j]; c[k] = t; }); return c; };
+  const cumIsl = cumOf(singlesIsl), cumReg = cumOf(singlesReg);
   // the young adults at home: who a young adult leaving home may leave with (`formFromChild`)
   const atHome: number[] = [];
   for (let i = 0; i < n1; i++) if (othersOf(a, i) > 0 && a.oAge[i] < 40) atHome.push(i);
@@ -2373,7 +2394,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       const band = ageBand(a.age[i]);
       if (a.partner[i] === 0 && a.age[i] >= 18) {
         // each union is two singles: each starts one at half the rate and is chosen by another at about the other half
-        if (R.u() < UNION_YR[band] / 24) unite(R, r, i, a.ten[i] === TEN_RENT ? singlesIsl : singlesReg, gone);
+        if (R.u() < UNION_YR[band] / 24) unite(R, r, i, a.ten[i] === TEN_RENT ? singlesIsl : singlesReg, a.ten[i] === TEN_RENT ? cumIsl : cumReg, gone);
       } else if (a.partner[i] === 1 && R.u() < SPLIT_YR[band] / 12) {
         part(R, r, i, e, pool, gone);
       }

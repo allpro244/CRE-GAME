@@ -29,9 +29,10 @@
 // Constants carry [S] when they are a measured fact with a source and [K]
 // when they are a shape parameter, stated as such (CLAUDE.md).
 import type { ParcelRecord } from "@/data/types";
-import type { BuiltClass, Econ, GameState, Tenant } from "./types";
+import type { BuiltClass, Credit, Econ, GameState, Tenant } from "./types";
+import { SIZE_DIST } from "./plates";
 import { tenantQualityTerms } from "./bands";
-import { FIRM_PROFILE, SF_PER_JOB, MAKE_READY_M, reletMonths, CONC_DEPTH } from "./market";
+import { FIRM_PROFILE, SF_PER_JOB, MAKE_READY_M, CONC_DEPTH } from "./market";
 import { IO_A, INDUSTRY_IDS, N_IND } from "./industries";
 
 export type Comm = "office" | "retail" | "industrial";
@@ -109,19 +110,23 @@ export const TASTE: Record<Comm, number> = { office: 0.10, retail: 0.08, industr
  * US gateway free rent went 9.7 to 12.5 months in a year (market.ts CONC_DEPTH
  * and the concession notes there).
  *
- *   COMPS_M      months for an ask, and a package, to close on the comps its
- *                broker shows it: an opinion of rent is refreshed about once a
- *                year [K].
+ *   COMPS_M      months for an ask to close on the comps its broker shows it,
+ *                and for a package to fade once there is nothing left to
+ *                let: an opinion of rent is refreshed about once a year [K].
  *   PKG_MAX      the deepest package: 15-20 months free on a ten-year office
  *                lease and $100-150/sf of fit-out in a glut, 30-40% of face
  *                (market.ts CONC_DEPTH) [S].
  *   PKG_STEP     how fast a package sweetens while space sits past patience:
- *                about a point a month, so a year past patience adds twelve
- *                points — a free month or so a year of term [K].
+ *                a point a month for each patience it has sat past, up to
+ *                three — so space a year dark in an office market adds about
+ *                three points a month and reaches the deepest package within
+ *                the year, which is the pace gateway free rent moved in 2020-21
+ *                (9.7 to 12.5 months in four quarters, with fit-out on top) [K].
  *   PKG_TAKE     how much of the package one quick letting takes back [K].
  *   CUT_DEEP     the steepest a face falls in a month, once the package is at
- *                its deepest and the space still sits: -18.6% a year, the
- *                Houston 1983-87 office rate [S].
+ *                its deepest and the space has sat three patiences past: -18.6%
+ *                a year, the Houston 1983-87 office rate [S]; a third of it for
+ *                each patience past, before.
  *   RAISE        the step a face rises by when space lets at once with no
  *                package left to take back, scaled down to nothing at the
  *                landlord's usual wait [K].
@@ -137,14 +142,22 @@ const PKG_MAX = 0.35;
 const PKG_STEP = 0.01;
 const PKG_TAKE = 0.03;
 const CUT_DEEP = 0.0155;
-const RAISE = 0.03;
+const RAISE = 0.06;
 const LET_MEMORY = 20;
 const VAC_MEMORY = 60;
 const STRESS_MOVE = 1.5, STRESS_RES = 0.96;
 
-/** The months of search in an ordinary turn — the landlord's opening patience (market.ts reletMonths less make-ready). */
+/**
+ * HOW LONG A LANDLORD EXPECTS EMPTY SPACE TO TAKE TO LET — its patience, before
+ * its own lettings teach it otherwise: the months available space spends on
+ * the market in an ordinary US market, about a year for office, ten months
+ * for shops and six for sheds (CoStar and CBRE months-on-market series,
+ * 2010s) [S~]. Not the months a suite sits between two tenants who were lined
+ * up (market.ts reletMonths): most empty space is not that.
+ */
+const MONTHS_ON_MARKET: Record<Comm, number> = { office: 12, retail: 10, industrial: 6 };
 export function searchMonths(k: Comm): number {
-  return Math.max(1, reletMonths(k) - MAKE_READY_M[k]);
+  return MONTHS_ON_MARKET[k];
 }
 
 // ---------------------------------------------------------------- the landlord's book
@@ -195,31 +208,48 @@ export function postedEff(L: LandlordAsk, e: Econ, k: Comm, mkt: number, sitting
  * patience — the package sweetened, then the face cut (both faster when its
  * loan is in trouble).
  */
-export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: { m: number; vacNow: number; darkM?: number; stressed: boolean; infl12: number }): void {
+export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: { m: number; vacNow: number; darkM?: number; stressed: boolean; infl12: number; holdFace?: boolean }): void {
   if (L.m >= opts.m) return;
   const months = Math.max(1, Math.min(12, opts.m - L.m));
   L.m = opts.m;
   L.v += (opts.vacNow - L.v) * Math.min(1, months / VAC_MEMORY);
   const comps = compsFace(e, mkt, k), pull = Math.min(1, months / COMPS_M);
   if (!(L.a > 0) || !Number.isFinite(L.a)) L.a = comps > 0 ? comps : 1;
-  let d = (opts.infl12 / 12) * months;
-  if (comps > 0) d += (Math.log(comps) - Math.log(L.a)) * pull;
-  L.c += (compsPackage(e, k) - L.c) * pull;
-  if (opts.darkM !== undefined && opts.darkM > L.t) {
-    const push = (1 - Math.exp(-(opts.darkM - L.t) / Math.max(1, L.t))) * (opts.stressed ? STRESS_MOVE : 1) * months;
-    if (L.c < PKG_MAX) L.c = Math.min(PKG_MAX, L.c + PKG_STEP * push);
-    else d -= CUT_DEEP * push;
+  const toComps = comps > 0 ? (Math.log(comps) - Math.log(L.a)) * pull : 0;
+  let d = 0;
+  if (opts.darkM !== undefined) {
+    // SPACE TO LET: the face holds — no rise with costs, and no chasing the
+    // comps up — and follows them down; past its patience the package is
+    // sweetened, the longer past the faster (up to three patiences' worth),
+    // and once the package is as deep as packages go, the face is cut.
+    d += Math.min(0, toComps);
+    if (opts.darkM > L.t) {
+      const push = Math.min(3, (opts.darkM - L.t) / Math.max(1, L.t)) * (opts.stressed ? STRESS_MOVE : 1) * months;
+      if (L.c < PKG_MAX) L.c = Math.min(PKG_MAX, L.c + PKG_STEP * push);
+      else if (!opts.holdFace) d -= CUT_DEEP * push / 3;
+    }
+  } else {
+    // NOTHING TO LET: the face follows the comps and its costs (the town's
+    // CPI over the year); the package — given to win a tenant for empty
+    // space — is not offered, and fades over the year a broker's opinion
+    // takes to refresh.
+    d += toComps + (opts.infl12 / 12) * months;
+    L.c *= 1 - pull;
   }
   L.c = Math.max(0, Math.min(PKG_MAX, L.c));
   L.a = +(L.a * Math.exp(Math.max(-0.2, Math.min(0.2, d)))).toFixed(2);
 }
 
-/** The landlord learns from a letting: how long it took, and — let at once — that it gave too much (the package back first, then the face up). */
-export function noteLetting(L: LandlordAsk, tom: number) {
-  if (tom < L.t) {
+/**
+ * The landlord learns from a letting: how long it took, and — let at once,
+ * with nothing else of the kind left to let — that it gave too much (the
+ * package back first, then the face up).
+ */
+export function noteLetting(L: LandlordAsk, tom: number, full: boolean, holdFace = false) {
+  if (tom < L.t && full) {
     const f = 1 - tom / Math.max(0.5, L.t);
     if (L.c > 0) L.c = Math.max(0, L.c - PKG_TAKE * f);
-    else L.a = +(L.a * Math.exp(RAISE * f)).toFixed(2);
+    else if (!holdFace) L.a = +(L.a * Math.exp(RAISE * f)).toFixed(2);
   }
   L.t += (Math.max(0.5, tom) - L.t) / LET_MEMORY;
 }
@@ -483,12 +513,22 @@ export function readOut(e: Econ, k: Comm, m: number): { face: number; eff: numbe
   const list = e.comps?.[k];
   if (!list) return null;
   while (list.length && list[0].m < m - COMP_WINDOW_M) list.shift();
-  let sf = 0, f = 0, ef = 0;
-  for (const c of list) { sf += c.sf; f += c.f * c.sf; ef += c.e * c.sf; }
+  // NEW LEASES ARE THE MARKET; renewals follow it. A renewal is priced off the
+  // comps (a sitting tenant is offered market), so counting it in the market
+  // it was priced from weighs the index toward itself — measured, it halved
+  // how fast rents rose in a tight market. Renewals count only where too few
+  // new leases signed to say anything (MIN_NEW).
+  let nNew = 0;
+  for (const c of list) if (!c.r) nNew++;
+  const useNew = nNew >= MIN_NEW;
+  let sf = 0, f = 0, ef = 0, n = 0;
+  for (const c of list) { if (useNew && c.r) continue; sf += c.sf; f += c.f * c.sf; ef += c.e * c.sf; n++; }
   if (!(sf > 0)) return null;
   const face = f / sf, eff = ef / sf;
-  return { face, eff, conc: Math.max(0, Math.min(1, (1 - eff / Math.max(1e-9, face)) / CONC_DEPTH)), sf, n: list.length };
+  return { face, eff, conc: Math.max(0, Math.min(1, (1 - eff / Math.max(1e-9, face)) / CONC_DEPTH)), sf, n };
 }
+/** New leases in the window below which renewals count in the read-out too [K]. */
+const MIN_NEW = 3;
 
 /**
  * EACH QUALITY BAND'S RENT AGAINST THE CLASS, read off the same comps: a band
@@ -502,6 +542,29 @@ export function bandReadOut(e: Econ, k: Comm, nBands: number): (number | undefin
   const sf = new Array(nBands).fill(0), v = new Array(nBands).fill(0);
   for (const c of list) { if (c.b >= 0 && c.b < nBands) { sf[c.b] += c.sf; v[c.b] += c.nb * c.sf; } }
   return sf.map((x, b) => (x > 0 && idx > 0 ? v[b] / x / idx : undefined));
+}
+
+// ---------------------------------------------------------------- a firm's covenant
+
+/**
+ * A FIRM'S COVENANT IS MOSTLY ITS SIZE. An investment-grade name sells to
+ * thousands of customers in several lines; a small unrated shop to a handful
+ * (tenantBooks.ts Z_GRADE: sales volatility falls steeply with size — Comin &
+ * Philippon 2005; Davis et al. 2006). On the street the largest firms hold
+ * about 30% of a class's let space as investment-grade names, the next 45% are
+ * mid-market and the smallest 25% weak (tenantBooks.ts STREET_GRADE_SF). So a
+ * firm's grade is where its floor sits in the class's requirement
+ * distribution (plates.ts SIZE_DIST, log-normal): above the size whose
+ * larger firms hold 30% of the feet it is a grade-2 name, above the size
+ * whose larger firms hold 75% a grade-1 [D: ln x = mu + sigma (sigma + z),
+ * z = 0.524 and -0.674]. This replaced a draw on the building's score.
+ */
+export function creditOfSize(k: Comm, sf: number): Credit {
+  const d = SIZE_DIST[k];
+  const lx = Math.log(Math.max(1, sf));
+  if (lx >= d.mu + d.sigma * (d.sigma + 0.524)) return 2;
+  if (lx >= d.mu + d.sigma * (d.sigma - 0.674)) return 1;
+  return 0;
 }
 
 // ---------------------------------------------------------------- why it left

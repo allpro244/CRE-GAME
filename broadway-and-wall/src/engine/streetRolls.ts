@@ -44,7 +44,7 @@ import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { BuiltClass, Condition, Credit, GameState, Holding, Tenant } from "./types";
 import { START_YEAR } from "./types";
 import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, assetValue, useOccupancy, N_BANDS, scoreRentMult } from "./value";
-import { genRentRoll, isCommercial, bumpOf, minLettableSf, streetLease, firmCredit, pickSector, pickName, termBandM, depositFor } from "./leasing";
+import { genRentRoll, isCommercial, bumpOf, minLettableSf, streetLease, pickSector, pickName, termBandM, depositFor } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
 import { tickTenantFin, tenantFailOdds, entrantMargin } from "./tenantBooks";
 import { rng, rrange, reletMonths, dealSlack, recordDeal, FIRM_PROFILE, turnoverYr } from "./market";
@@ -59,7 +59,7 @@ import { why, whyTenantBooks } from "./why";
 import { tenantFin } from "./tenantBooks";
 import {
   type LandlordAsk, type Option, SHORTLIST, TASTE, askOf, postedEff, compsFace, reviewAsk, noteLetting, reservation, locCtx, posOf, hourCost,
-  placeCost, worthOf, moveCostPsfYr, bargain, freeMonthsFor, gumbel, recordLease, movedLine, fmtPct,
+  placeCost, worthOf, moveCostPsfYr, bargain, freeMonthsFor, gumbel, recordLease, movedLine, fmtPct, creditOfSize, readOut,
 } from "./tenantMarket";
 
 export interface StreetRoll {
@@ -305,11 +305,17 @@ export function tickStreetRolls(s: GameState, parcels: ParcelTable) {
 /** True while the opening street is being grown (growOpeningStreet). */
 let growing = false;
 
-function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
+/**
+ * THE STREET AS A FIRM SHOPPING IT SEES IT, this month: its buildings, what
+ * each has free, what each landlord posts, and the broker's shortlist
+ * (tenantMarket.ts). One view, read by the street's month (tickFirms) and by
+ * the player's leasing desk, where a firm touring the player's floors weighs
+ * them against the same street.
+ */
+function marketView(s: GameState, parcels: ParcelTable) {
   const e = s.econ;
-  const R = e.streetRolls!;
+  const R = e.streetRolls ?? {};
   const m = s.month;
-  e.seekers ??= [];
   const owners = new Map<string, NonNullable<GameState["rivals"]>[number]>();
   for (const r of s.rivals ?? []) for (const b of r.bbls) owners.set(b, r);
   const blds = new Map<string, Bld>();
@@ -337,19 +343,6 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   const letOf = (roll: StreetRoll, k: Comm) => roll.t.reduce((a, t) => a + (useOf(t) === k ? t.sf : 0), 0);
   const notReady = (roll: StreetRoll, k: Comm) => (roll.ready ?? []).reduce((a, r) => a + (r.use === k && r.readyM > m ? r.sf : 0), 0);
   const availOf = (b: Bld, roll: StreetRoll, k: Comm) => Math.max(0, (b.cap[k] ?? 0) - letOf(roll, k) - notReady(roll, k));
-  const seeking = new Map<number, Seeker>();
-  for (const k of e.seekers) seeking.set(k.fid, k);
-  const ratio = (k: Comm) => e.streetSpace?.[k] && (e.streetSpace[k] as { ratio?: number }).ratio || 1;
-  const handed: Record<string, number> = { office: 0, retail: 0, industrial: 0 };
-  const vacate = (roll: StreetRoll, t: Tenant) => {
-    const k = useOf(t);
-    handed[k] = (handed[k] ?? 0) + t.sf;
-    (roll.ready ??= []).push({ use: k, sf: t.sf, readyM: m + Math.max(1, Math.round(reletMonths(k) * 0.5)) });
-  };
-
-  // Headcount that closed or left town this month, by class — what new firms replace.
-  const lost: Record<string, number> = { office: 0, retail: 0, industrial: 0 };
-  const eco = e.eco, indOf = industryMap(s);
   // each street building's block and its catchment's share of the town's people now
   const foot = s.blockFoot, ofBbl = foot ? demandModel(parcels).ofBbl : undefined;
   let footTot = 0;
@@ -359,8 +352,6 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     const v = id !== undefined ? foot?.[id] : undefined;
     return v !== undefined && footTot > 0 ? v / footTot : undefined;
   };
-  const dzAcc: Record<string, [number, number]> = {};
-
   // ---- THE TENANT MARKET (tenantMarket.ts): a firm's shortlist, valued from its own books
   const recOf = (bbl: string) => resolveRec(parcels, s, bbl);
   const ctx = locCtx(s, recOf);
@@ -463,6 +454,72 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     out.sort((a, b) => b.joint - a.joint);
     return out;
   };
+  return { R, m, owners, blds, bld, letOf, notReady, availOf, catchOf, foot, ctx, recOf, footRel, vacShare, bookOf, gTradeOf, termOf, value, shop, availIn, noteRoll, rollList };
+}
+/** The street as the player's leasing desk's prospects see it this month (one view a month). */
+const DESK_VIEW = new WeakMap<GameState, { m: number; v: ReturnType<typeof marketView> }>();
+function deskView(s: GameState, parcels: ParcelTable) {
+  const hit = DESK_VIEW.get(s);
+  if (hit && hit.m === s.month) return hit.v;
+  const v = marketView(s, parcels);
+  DESK_VIEW.set(s, { m: s.month, v });
+  return v;
+}
+
+/**
+ * WHAT A FIRM TOURING ONE OF THE PLAYER'S FLOORS OFFERS (ONE ECONOMY step 4).
+ * The firm weighs the player's space against its broker's shortlist on the
+ * street — what each is worth to it (tenantMarket.ts worthOf: the market rent
+ * for the address, its fit with the quality the firm shops for, its distance
+ * from the firm's partners and people, a shop's walk-ins) and what each
+ * landlord posts. It offers the player's posted rent when the player's space
+ * is the better deal, and otherwise the most it can pay and still do as well
+ * as on the street — where the runner-up's landlord would go to its own
+ * reservation. A firm with nowhere else to go offers the posted rent.
+ *
+ * `postEff` is what the player posts, effective (face less the market's
+ * package); returns the offer over it (at most 1), and the street building it
+ * was weighed against. This replaced a coin flip: three letters in ten offered
+ * 68-86% of the ask and the rest 90-110%, whoever the tenant was.
+ */
+export function offerForPlayer(s: GameState, parcels: ParcelTable, firm: Tenant, use: BuiltClass, sf: number, rec: ParcelRecord, score: number, mktHere: number, postEff: number, termM: number, sitting = false): { bid: number; alt?: string } {
+  if (!COMM.includes(use as Comm) || !(postEff > 0) || !(mktHere > 0)) return { bid: 1 };
+  const k = use as Comm;
+  const V = deskView(s, parcels);
+  const from = firm.fid !== undefined ? s.econ.seekers?.find((x) => x.fid === firm.fid)?.from : undefined;
+  const opts = V.shop(firm, k, sf, from, null, true);
+  const c = opts[0];
+  if (!c) return { bid: 1 };
+  const pc = placeCost(firm.fid !== undefined ? V.ctx.pts.get(firm.fid) : undefined, posOf(rec), hourCost(firm));
+  const worth = worthOf(firm, k, mktHere, score, sf, pc.cost, k === "retail" ? V.footRel(rec.bbl) : undefined);
+  const taste = TASTE[k] * mktHere * gumbel(rng(s, "leasing"));
+  // a sitting tenant renewing does not move; every street option costs it the move
+  const rMax = worth - (sitting ? 0 : moveCostPsfYr(s.econ, k, termM)) + taste - c.joint - (c.post - c.res);
+  return { bid: Math.max(0.4, Math.min(1, rMax / postEff)), alt: c.bbl };
+}
+
+function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
+  const e = s.econ;
+  const R = e.streetRolls!;
+  const m = s.month;
+  e.seekers ??= [];
+  const V = marketView(s, parcels);
+  const { owners, blds, bld, letOf, availOf, catchOf, ctx, recOf, bookOf, gTradeOf, termOf, value, shop, noteRoll, vacShare } = V;
+  const seeking = new Map<number, Seeker>();
+  for (const k of e.seekers) seeking.set(k.fid, k);
+  const ratio = (k: Comm) => e.streetSpace?.[k] && (e.streetSpace[k] as { ratio?: number }).ratio || 1;
+  const handed: Record<string, number> = { office: 0, retail: 0, industrial: 0 };
+  const vacate = (roll: StreetRoll, t: Tenant) => {
+    const k = useOf(t);
+    handed[k] = (handed[k] ?? 0) + t.sf;
+    (roll.ready ??= []).push({ use: k, sf: t.sf, readyM: m + Math.max(1, Math.round(reletMonths(k) * 0.5)) });
+  };
+
+  // Headcount that closed or left town this month, by class — what new firms replace.
+  const lost: Record<string, number> = { office: 0, retail: 0, industrial: 0 };
+  const eco = e.eco, indOf = industryMap(s);
+  const dzAcc: Record<string, [number, number]> = {};
+
   /** What the firm would renew for in its own building: what it needs, if the building has the room. */
   const renewTake = (b: Bld, roll: StreetRoll, t: Tenant, need: number) => {
     const k = useOf(t) as Comm;
@@ -507,8 +564,9 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     const effSigned = face * (1 - freeM / Math.max(1, termM));
     recordLease(e, k, m, face, effSigned, pick.mkt, pick.take, Math.max(0, Math.min(N_BANDS - 1, Math.floor(sc / 10))), scoreRentMult(e, k, sc));
     const since = roll.vac?.[k];
-    noteLetting(bookOf(b, roll, k), since === undefined ? 0 : Math.max(0, m - since));
-    if (availOf(b, roll, k) < minSfOf(b, k)) { roll.vac ??= {}; delete roll.vac[k]; }
+    const full = availOf(b, roll, k) < minSfOf(b, k);
+    noteLetting(bookOf(b, roll, k), since === undefined ? 0 : Math.max(0, m - since), full, opening);
+    if (full) { roll.vac ??= {}; delete roll.vac[k]; }
     // WHY IT MOVED: where it went, what it pays against what it paid, and how much nearer its partners and people it is.
     if ((fromBbl || fromPlayer) && !opening) {
       const oldRec = recOf((fromBbl ?? fromPlayer)!);
@@ -877,7 +935,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       // A firm the size of the gap's remainder forms only in proportion.
       if (want > form && rng(s, "leasing") > form / want) break;
       const { sector, ind } = formFor(s, k, gap[k]);
-      const credit: Credit = firmCredit(s, q);
+      const credit: Credit = creditOfSize(k, want);
       const t: Tenant = {
         name: pickName(s, sector), use: k, sector, credit, quality: Math.round(q), sf: want, rentPsf: 0,
         net: false, startM: m, endM: m, staff: 1, staffSign: 1, hcRef: want / rawNow(s, k),
@@ -932,6 +990,10 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   // THE LANDLORDS PRICE (tenantMarket.ts reviewAsk): each street owner reviews
   // its ask on each kind of space it has, from its own empty floors, how long
   // they have sat against how long it expected, its mortgage, and the comps.
+  // In the opening's years the town is grown on its opening economy held
+  // still, demand and all: the landlords sweeten their packages for space
+  // that sits, but do not cut faces against a demand that cannot answer —
+  // that would only ever cut.
   {
     const h12 = e.history?.length >= 12 ? e.history[e.history.length - 12] : undefined;
     const infl12 = h12?.cpiXS ? (e.cpiXS ?? 1) / h12.cpiXS - 1 : h12?.cpi ? (e.cpi ?? 1) / h12.cpi - 1 : (e.inflExp ?? 0.02);
@@ -941,7 +1003,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       for (const k of COMM) {
         if (!b.cap[k] || !(b.mkt[k]! > 0)) continue;
         const since = roll.vac?.[k];
-        reviewAsk(bookOf(b, roll, k), e, k, b.mkt[k]!, { m, vacNow: vacShare(b, roll, k), darkM: since === undefined ? undefined : m - since, stressed: b.stressed, infl12 });
+        reviewAsk(bookOf(b, roll, k), e, k, b.mkt[k]!, { m, vacNow: vacShare(b, roll, k), darkM: since === undefined ? undefined : m - since, stressed: b.stressed, infl12, holdFace: opening });
       }
     }
   }
@@ -1087,9 +1149,11 @@ export function seekerSigned(s: GameState, fid: number): Partial<Tenant> | null 
 }
 
 /** A tenant leaving one of the player's buildings, on its own feet, goes looking. */
-export function playerTenantLeft(s: GameState, t: Tenant, bbl: string) {
+export function playerTenantLeft(s: GameState, t: Tenant, bbl: string, whyId?: number) {
   if (t.defaulted) return;
   toSeekers(s, t, "move", bbl);
+  const sk = s.econ.seekers?.[s.econ.seekers.length - 1];
+  if (whyId && sk && sk.fid === t.fid) sk.whyId = whyId;
 }
 
 // ---------------------------------------------------------------- the flats
@@ -1371,10 +1435,18 @@ function growOpeningStreet(s: GameState, parcels: ParcelTable) {
     // this month's comps.
     e.streetFailed = [];
     e.deals = undefined;
-    // ...nor are its comps, and the landlords open at the comps the town
-    // opens on, keeping what they learned of how long their space takes.
-    e.comps = undefined;
-    for (const roll of Object.values(e.streetRolls ?? {})) for (const L of Object.values(roll.ask ?? {})) if (L) L.a = NaN;
+    // ...but its leases are the comps the town's rents open on (tenantMarket.ts
+    // readOut): the asking and effective indices and the package between them
+    // are what the street signed in the opening's last six months, so the
+    // game's first months restate nothing the street had not already done.
+    // The landlords keep their books.
+    for (const k of COMM) {
+      const ro = readOut(e, k, m0 - 1);
+      if (!ro || !e.effRentIdx || !e.concIdx) continue;
+      e.rentIdx[k] = +ro.face.toFixed(4);
+      e.effRentIdx[k] = +ro.eff.toFixed(4);
+      e.concIdx[k] = +ro.conc.toFixed(4);
+    }
     // ...and the market opens on what the firms hold, so its first month
     // does not restate the city's occupancy in one step.
     for (const k of ["office", "retail"] as const) {

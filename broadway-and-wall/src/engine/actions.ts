@@ -12,7 +12,7 @@ import { mergedTouched, ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, rivalCanClose, rivalsWhoCanClose, gradeOf, tie, forgetDeed, jvLpTake, noteRealised, streetSaleCost, gainsTax } from "./rivals";
-import { bidRound, listingReserve, noteRoundFailed, noteRoundClosed, impliedCap } from "./propmarket";
+import { bidRound, listingReserve, noteRoundFailed, noteRoundClosed, impliedCap, landBidRound, noteLandRoundFailed } from "./propmarket";
 import { PREMARKET_M } from "./beliefs";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
@@ -3956,6 +3956,22 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
           // does not cut its ask on it.
           if (li.listedM !== undefined && s.month - li.listedM < PREMARKET_M) { survivors.push(li); continue; }
           noteRoundFailed(s, rec, li, round);
+          survivors.push(top && !talk
+            ? { ...li, ask: Math.round(Math.max(listingReserve(li), li.ask * 0.95, top.bid * 1.04) / 1000) * 1000 }
+            : li);
+          continue;
+        }
+        px = top.bid;
+        winner = top.r;
+      } else if (!li.halfBuilt) {
+        // DIRT IS BID TOO (FORMULA_LEDGER #24): builders on their own residuals,
+        // land bankers on the option (propmarket.ts landBidRound). A lot used to
+        // close at its ask whenever a builder's residual covered it.
+        const lr = landBidRound(s, parcels, rec, li);
+        const reserve = Math.max(listingReserve(li), talk ? talk.yourPrice + 1 : 0);
+        const top = lr.bids[0];
+        if (!top || top.bid < reserve) {
+          noteLandRoundFailed(s, rec, li, lr);
           survivors.push(top && !talk
             ? { ...li, ask: Math.round(Math.max(listingReserve(li), li.ask * 0.95, top.bid * 1.04) / 1000) * 1000 }
             : li);

@@ -84,6 +84,7 @@ import {
 import {
   SF_PER_JOB, FIRM_PROFILE, LENDER_COVER, shortIndexOf, BUILD_MONTHS, SECTORS,
   LABOUR_FORCE_SLOWDOWN, FORTUNE_SD, FORTUNE_TAU_M, NAT_TREND_SD, NAT_TREND_TAU_M, NAT_SALES_PER_GAP, LOCATION_PULL, locationCost,
+  WAGE_CURVE, WAGE_GAP_HALF_M,
 } from "./market";
 import { HARD_COST_PSF, SOFT_COST, CONTINGENCY, constructionTypeMult } from "./value";
 import { householdMoney, registerPayroll, registerLabour, unpackHouseholds, whyHouseholdSpend } from "./households";
@@ -121,7 +122,10 @@ const NO_SEC = 255;
 /** The firms, one column per field; firm n is ledger slot n. */
 const F64 = ["hc", "z", "eq", "rev", "wages", "inputs", "rent", "prodTax", "interest", "incomeTax", "payout", "ebitda",
   // the last twelve months' revenue, a ring by month (REV_RING): the firm page's sparkline. Read by nothing in the world.
-  "h0", "h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "h9", "h10", "h11"] as const;
+  "h0", "h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "h9", "h10", "h11",
+  // what the firm pays a head (posted, nominal, in the engine's wage-index units), the raises it owes
+  // itself from months it could not cut, and its price against the nation's for its industry (§6c-D)
+  "pay", "owe", "price"] as const;
 /** Revenue history columns, indexed by month mod 12. */
 export const REV_RING = ["h0", "h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "h9", "h10", "h11"] as const;
 type F64Name = typeof F64[number];
@@ -230,6 +234,8 @@ export interface EconomyState {
   lkLoss?: Record<string, { id: number; m: number; share: number }>;
   /** This month's moves in a firm's fortune from links won and lost (log), for its tenant books next month. */
   linkDz?: Record<string, number>;
+  /** What the town's firms posted this month (`postPayAndPrices`), and the last 13 months of the town's posted pay. */
+  posted?: Posted; wageHist?: number[];
 }
 
 function allocCols(cap: number): FirmColumns {
@@ -1061,9 +1067,13 @@ export function tickEconomy(s: GameState): void {
   // within half an agent's weight of its heads and its pay per head moves with
   // who they are; the industry's BEA pay is what they are hired at.
   const pr = registerPayroll(s);
+  // ...and within an industry, by what each firm posts (`postPay`): a firm that pays more takes more of it
+  for (let n = 0; n < nF; n++) { if (!(F.pay[n] > 0)) F.pay[n] = w; if (!(F.price[n] > 0)) F.price[n] = 1; }
+  const hp = new Float64Array(N_IND);
+  for (let n = 0; n < nF; n++) hp[F.ind[n]] += F.hc[n] * F.pay[n];
   const wagesOf = (n: number) => {
     const i = F.ind[n];
-    return pr ? (heads[i] > 0 ? pr.wages[i] / PAY_SPLIT.cash * F.hc[n] / heads[i] : 0) : F.hc[n] * pay[i];
+    return pr ? (hp[i] > 0 ? pr.wages[i] / PAY_SPLIT.cash * F.hc[n] * F.pay[n] / hp[i] : 0) : F.hc[n] * pay[i] * F.pay[n] / w;
   };
 
   // ---- 3. final demand
@@ -1234,6 +1244,7 @@ export function tickEconomy(s: GameState): void {
   }
 
   linkFlows(E);
+  postPayAndPrices(s, E, pr, sv.v);
 
   // ---- 7. households, the city, the landlords
   const H = ACCOUNTS.households, GOV = ACCOUNTS.government, LAND = ACCOUNTS.landlords, ROW = ACCOUNTS.rest, BANK = ACCOUNTS.bank;
@@ -1354,6 +1365,10 @@ export function economyToEngine(s: GameState): void {
     d.trade = trade;
   }
   if (E?.linkDz && Object.keys(E.linkDz).length) { d.linkDz = E.linkDz; E.linkDz = {}; }
+  if (E?.posted) {
+    d.wage = E.posted.wage; d.payIdx = E.posted.payIdx.slice(); d.priceRel = E.posted.priceRel; d.localShare = E.posted.localShare;
+    whyPay(s, E.posted);
+  }
   e.eco = d;
   if (d.floorSf && !e.eco0?.floorSf) {
     // (a save reopened on the 68 industries keeps each class's driver where it stood: `migrateEconomy`)
@@ -1404,6 +1419,123 @@ export function migrateEconomy(s: GameState): void {
   if (e.eco) { delete e.eco.emp; delete e.eco.empPrev; delete e.eco.target; }
   delete e.islandFill;
   delete s.economy;
+}
+
+// ---------------------------------------------------------------- pay and prices (§6c-D)
+/**
+ * FIRMS SET THEIR OWN PAY AND PRICES (ONE_ECONOMY_PLAN §6c-D; FORMULA_LEDGER
+ * #15). The town's wage index and the local part of its price level used to be
+ * set from the top — pay closing toward national pay x local prices over
+ * national x a wage curve x a size term, and local prices moving with local
+ * pay. Now each firm decides, every month, from its own books and its own
+ * labour market, and the town's numbers are what they sum to:
+ *
+ * PAY. Every firm grants what every employer in the country grants (the
+ * nation's pay path: expectations, productivity, the nation's slack — market.ts
+ * `natWageIdx`), and moves its own premium over it toward what it takes to
+ * hire here:
+ *   - the town's slack: the register's unemployment against the nation's, at
+ *     the wage curve's elasticity, -0.10 (Blanchflower & Oswald 1994) [S];
+ *   - its industry's openings: the heads its industry staffs to that the
+ *     register has not filled, V_SLOPE [K: a point of unfilled jobs adds half
+ *     a point to the posted premium — firms short of hands outbid each other];
+ *   - its own ability to pay: rent sharing, RENT_SHARE of its margin over its
+ *     industry's (Card, Cardoso, Heining & Kline 2018: an elasticity of pay to
+ *     a firm's surplus of 0.05-0.15) [S~];
+ * closing half the gap in WAGE_GAP_HALF_M, as before. Nominal pay is not cut:
+ * a cut the firm could not make is owed and worked off by thinner raises
+ * (Card & Hyslop; the engine's old `wageDebt`, now each firm's own). The
+ * town's wage index is the heads-weighted average of what its firms post; each
+ * industry's average carries its earners' pay in the register (households.ts).
+ * Gone with the old formula: local prices in pay (a cheaper town no longer
+ * pays less because its flats are cheap — it pays less only if its workers
+ * are easier to hire) and the size term.
+ *
+ * PRICES. A firm's price against the nation's for its industry follows its
+ * unit cost — its pay against the nation's, at its industry's labour share
+ * (BEA compensation per $ of output); its inputs are bought at national
+ * prices — and the demand it faces, its industry's orders against the heads
+ * it has (PRICE_DEMAND [K]: a tenth of a log point per log point of excess
+ * demand). Sticky: a firm reprices in a given month with odds 1/PRICE_DUR_M,
+ * nine months on average (Nakamura & Steinsson 2008: median 8-11 months
+ * between regular price changes) [S]. The town's local prices are the
+ * household-spending-weighted average of its industries'; market.ts reads
+ * them into the CPI at the share of the household basket bought in town.
+ */
+const RENT_SHARE = 0.06, V_SLOPE = 0.5, PRICE_DUR_M = 9, PRICE_DEMAND = 0.1;
+export interface Posted { m: number; wage: number; payIdx: number[]; priceRel: number; localShare: number; openings: number; unemp: number; natW: number; wage12?: number }
+function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Array; earners: Float64Array } | null, spend: Float64Array): void {
+  const e = s.econ, F = E.f, nF = E.L.slot.n, m = s.month;
+  const natW = Math.max(1e-6, e.natWageIdx ?? e.wageIdx ?? 1);
+  const lab = registerLabour(s);
+  const uLoc = lab && lab.lf > 0 ? lab.unemployed / lab.lf : (e.unemployment ?? 0.05);
+  const uNat = e.nat?.unemp ?? uLoc;
+  const emp = E.emp ?? [], implied = E.last?.impliedHeads ?? [];
+  // each industry's openings: what its firms staff to that the register has not filled
+  const open = new Float64Array(N_IND);
+  let openings = 0, jobs = 0;
+  for (let i = 0; i < N_IND; i++) {
+    const want = emp[i] ?? 0, have = pr?.earners[i] ?? want;
+    open[i] = want > 0 ? Math.max(0, want - have) / want : 0;
+    openings += Math.max(0, want - have); jobs += want;
+  }
+  const close = 1 - Math.exp(-Math.LN2 / WAGE_GAP_HALF_M);
+  const slack = WAGE_CURVE * Math.log(Math.max(0.01, uLoc) / Math.max(0.01, uNat));
+  const prevNat = E.posted?.natW ?? natW;
+  for (let n = 0; n < nF; n++) {
+    const i = F.ind[n], I = INDUSTRIES[INDUSTRY_IDS[i]];
+    // ---- pay
+    const rel = Math.log(Math.max(1e-6, F.pay[n]) / prevNat);
+    const margin = F.rev[n] > 0 ? F.ebitda[n] / F.rev[n] : I.gos;
+    const target = slack + V_SLOPE * open[i] + RENT_SHARE * (margin - I.gos);
+    let next = natW * Math.exp(rel + (target - rel) * close);
+    if (next < F.pay[n]) { F.owe[n] += Math.log(F.pay[n] / next); next = F.pay[n]; }
+    else if (F.owe[n] > 0) {
+      const room = Math.log(next / F.pay[n]), repay = Math.min(F.owe[n], room * 0.12 + 0.00008);
+      F.owe[n] -= repay; next = F.pay[n] * Math.exp(room - repay);
+    }
+    F.owe[n] = Math.min(0.25, Math.max(0, F.owe[n]));
+    F.pay[n] = next;
+    // ---- price, when this firm reprices this month
+    if (hashU01(F.id[n], m) < 1 / PRICE_DUR_M) {
+      const costRel = 1 + I.comp * (F.pay[n] / natW - 1);
+      const press = emp[i] > 0 && implied[i] > 0 ? Math.log(implied[i] / emp[i]) : 0;
+      F.price[n] = Math.max(0.5, costRel * Math.exp(PRICE_DEMAND * press));
+    }
+  }
+  // ---- what the town's firms post, summed
+  const hp = new Float64Array(N_IND), hh = new Float64Array(N_IND), hpr = new Float64Array(N_IND);
+  let tp = 0, th = 0;
+  for (let n = 0; n < nF; n++) { const i = F.ind[n]; hp[i] += F.hc[n] * F.pay[n]; hh[i] += F.hc[n]; hpr[i] += F.hc[n] * F.price[n]; tp += F.hc[n] * F.pay[n]; th += F.hc[n]; }
+  const payIdx = Array.from(hp, (v, i) => (hh[i] > 0 ? v / hh[i] : natW));
+  let wp = 0, ws = 0, all = 0;
+  for (let i = 0; i < N_IND; i++) {
+    const local = spend[i] * (E.rpc[i] ?? 0);
+    all += spend[i];
+    if (hh[i] > 0 && local > 0) { wp += local * hpr[i] / hh[i]; ws += local; }
+  }
+  const wage = th > 0 ? tp / th : (e.wageIdx ?? 1);
+  const hist = (E.wageHist ??= []);
+  hist.push(wage); if (hist.length > 13) hist.shift();
+  E.posted = {
+    m, wage, payIdx, priceRel: ws > 0 ? wp / ws : 1, localShare: all > 0 ? ws / all : 0,
+    openings, unemp: uLoc, natW, wage12: hist.length === 13 ? wage / hist[0] - 1 : undefined,
+  };
+}
+/** A uniform [0,1) from a firm and a month: whether it reprices, the same in every copy of the game. */
+function hashU01(id: number, m: number): number {
+  let h = Math.imul((id | 0) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(m | 0, 0xc2b2ae35);
+  h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+/** Once a year, why the town's pay moved: what its firms posted, its openings and its jobless. */
+function whyPay(s: GameState, p: Posted): void {
+  if (s.month % 12 !== 0 || p.wage12 === undefined) return;
+  whyOnce(s, `town.wages:${s.month}`, () => ({
+    k: "town.wages", a: "city",
+    n: { wage12: p.wage12!, openings: Math.round(p.openings), unemp: p.unemp, priceRel: p.priceRel },
+    t: `wages ${p.wage12! >= 0 ? "up" : "down"} ${(Math.abs(p.wage12!) * 100).toFixed(1)}%: ${Math.round(p.openings).toLocaleString("en-US")} openings, ${(p.unemp * 100).toFixed(1)}% unemployed`,
+  }));
 }
 
 // ---------------------------------------------------------------- why (why.ts)

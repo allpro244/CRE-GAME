@@ -641,13 +641,21 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
     // listing and bid it to the comps. The owner's private misread pays a
     // developer only in a direct approach (`planDevelopment`'s land basis),
     // where one buyer meets one seller (Garmaise & Moskowitz 2004).
-    const value = Math.max(landValue(rec, s.econ), ownerAskPsf(rec, s.econ) * rec.lotArea);
+    const belief = ownerAskPsf(rec, s.econ) * rec.lotArea;
+    const value = Math.max(landValue(rec, s.econ), belief);
     if (!(value > 0)) return;
     const ask = Math.round(value * (distress ? rrange(s, 0.72, 0.90, "land") : rrange(s, 0.97, 1.08, "land")) / 1000) * 1000;
     s.listings.push({
       bbl, ask, listedM: s.month,
       expiresM: s.month + Math.round(rrange(s, LISTING_LIFE_M[0], LISTING_LIFE_M[1], "land")),
       distress: distress || undefined,
+      // ...AND THE RESERVATION IS STAMPED, or it is not one. Without it the
+      // floor was 92% of the CURRENT ask, which the haggle walks down 5% a
+      // round toward the one bid in the room: owners under no compulsion sold
+      // lots at 1-9% of appraisal to a builder bidding its thin residual, and
+      // those prints took the land level from 1.12 to 0.10 in four years
+      // (seed 4). An owner who will not get its number lets the listing lapse.
+      ...(distress ? {} : { reserve: Math.round(belief / 1000) * 1000 }),
     });
     listed.add(bbl);
     if (distress && newsChance(s, "motivated:" + bbl, 0.4)) {

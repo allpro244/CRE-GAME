@@ -183,7 +183,7 @@ export const HEALTH_SPLIT: Partial<Record<IndustryId, number>> = (() => {
  * floor is drawn into the industries that rent that kind of floor, weighted
  * by their US employment (CES 2023, thousands, as INDUSTRIES' empK) [S~]:
  *   office  finance -> banks 2,620 / securities 1,030 / real-estate brokers
- *           and managers 1,730; insurance -> insurance; law -> law firms;
+ *           and managers 1,172 (QCEW 2023 NAICS 5312-5313); insurance -> insurance; law -> law firms;
  *           design -> accounting, consulting, design and R&D; tech -> IT
  *           services 2,500 / data and internet 870 / software publishing 830;
  *           media -> broadcasting 900 / film and music 450 / publishing 830;
@@ -203,7 +203,7 @@ export const HEALTH_SPLIT: Partial<Record<IndustryId, number>> = (() => {
 export type Floor = "office" | "retail" | "industrial";
 export const TRADE_TO_INDUSTRY: Record<Floor, Partial<Record<Sector, readonly [IndustryId, number][]>>> = {
   office: {
-    finance: [["banks", 2620], ["securities", 1030], ["realestate", 1730]], insurance: [["insurance", 1]],
+    finance: [["banks", 2620], ["securities", 1030], ["realestate", 1172]], insurance: [["insurance", 1]],
     law: [["legal", 1]], design: [["professional", 1]],
     tech: [["compdesign", 2500], ["data", 870], ["publishing", 830]],
     media: [["telecom", 900], ["film", 450], ["publishing", 830]],

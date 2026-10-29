@@ -196,10 +196,24 @@ export function askOf(book: Partial<Record<Comm, LandlordAsk>>, k: Comm, e: Econ
   return L;
 }
 
-/** What the landlord posts, effective: the face less the package. A sitting tenant is offered the face no higher than the comps say (renewal at market). */
-export function postedEff(L: LandlordAsk, e: Econ, k: Comm, mkt: number, sitting: boolean): number {
-  const face = sitting ? Math.min(L.a, compsFace(e, mkt, k)) : L.a;
-  return face * (1 - L.c);
+/**
+ * What the landlord posts, effective: the face less the package. A sitting
+ * tenant is offered the same face a new one would be — its landlord's ask.
+ *
+ * It was offered the face no higher than the comps, "renewal at market". But
+ * the comps are the leases that signed on space that was empty, and in a tight
+ * market there is little of that: the market for a full building is what its
+ * landlord can get, and the tenant's say in it is its options — the runner-up
+ * on its broker's shortlist and the cost of moving (`bargain`). Capped at the
+ * comps, a full building's ask, which passes its costs through and rises when
+ * a tenant has nowhere else to go, never reached a renewal, and the comps
+ * themselves were the only way a renewal could move (measured: office rents
+ * -24% and sheds -29% against the old rule at LOWER vacancy, 6.9% and 7.0%).
+ * A landlord that asks more than its tenant's options are worth loses the
+ * tenant at the roll, which is the discipline the cap was standing in for.
+ */
+export function postedEff(L: LandlordAsk, _e: Econ, _k: Comm, _mkt: number, _sitting: boolean): number {
+  return L.a * (1 - L.c);
 }
 
 /**
@@ -217,17 +231,34 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
   if (!(L.a > 0) || !Number.isFinite(L.a)) L.a = comps > 0 ? comps : 1;
   const toComps = comps > 0 ? (Math.log(comps) - Math.log(L.a)) * pull : 0;
   let d = 0;
-  if (opts.darkM !== undefined) {
-    // SPACE TO LET: the face holds — no rise with costs, and no chasing the
-    // comps up — and follows them down; past its patience the package is
-    // sweetened, the longer past the faster (up to three patiences' worth),
+  if (opts.darkM !== undefined && opts.darkM <= L.t) {
+    // SPACE TO LET, NOT YET PAST ITS PATIENCE: priced like any space that is
+    // letting as expected — its costs passed through (the town's CPI over the
+    // year) and its face brought up to the comps when they have passed it.
+    // It held flat in dollars, so in a market where space lets as fast as its
+    // landlords expect, every new lease signed at last year's nominal rent
+    // and the read-out index fell in real terms by the rate of inflation,
+    // tight market or not (measured: office 1.24x over ten years against
+    // CPI 1.40x, at 10-13% vacancy). It does not follow the comps DOWN while
+    // its own space is letting as expected: the comps are the deals that
+    // signed, and a firm signs where the deal is best for it, so they are the
+    // cheap end of what was on offer — a landlord chasing them down with no
+    // evidence of its own ratchets the whole town toward its keenest
+    // landlord (measured, office -30% against the old rule at 6% vacancy).
+    // The evidence that it is dear is its space sitting past its patience,
+    // which is what sweetens it and then cuts it (below). Following them up
+    // is not the ratchet the full building's rule avoids: this space is
+    // tested by the market every month it sits.
+    d += (opts.infl12 / 12) * months + Math.max(0, toComps);
+  } else if (opts.darkM !== undefined) {
+    // SPACE THAT HAS SAT PAST ITS PATIENCE: the face holds — no rise with
+    // costs, and no chasing the comps up — and follows them down; the package
+    // is sweetened, the longer past the faster (up to three patiences' worth),
     // and once the package is as deep as packages go, the face is cut.
     d += Math.min(0, toComps);
-    if (opts.darkM > L.t) {
-      const push = Math.min(3, (opts.darkM - L.t) / Math.max(1, L.t)) * (opts.stressed ? STRESS_MOVE : 1) * months;
-      if (L.c < PKG_MAX) L.c = Math.min(PKG_MAX, L.c + PKG_STEP * push);
-      else if (!opts.holdFace) d -= CUT_DEEP * push / 3;
-    }
+    const push = Math.min(3, (opts.darkM - L.t) / Math.max(1, L.t)) * (opts.stressed ? STRESS_MOVE : 1) * months;
+    if (L.c < PKG_MAX) L.c = Math.min(PKG_MAX, L.c + PKG_STEP * push);
+    else if (!opts.holdFace) d -= CUT_DEEP * push / 3;
   } else {
     // NOTHING TO LET: the face passes its costs through (the town's CPI over
     // the year) and otherwise waits for its own leasing to say more — a
@@ -245,13 +276,28 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
 }
 
 /**
- * The landlord learns from a letting: how long it took, and — let at once,
- * with nothing else of the kind left to let — that it gave too much (the
- * package back first, then the face up).
+ * The landlord learns from a letting: how long the space was on the market,
+ * and — let faster than space ordinarily takes — that it gave too much (the
+ * package back first, then the face up), in proportion to the share of what it
+ * had to let that went (`share`: 1 when the letting fills it, or when a sitting
+ * tenant with nowhere else to go renews).
+ *
+ * Two changes, both measured. It learned only from a letting that FILLED the
+ * building, so a tower letting a suite a month off a floor that was never all
+ * gone never learned that it was cheap. And "fast" was measured against its
+ * own patience, which it learns from the same lettings: in a market that
+ * stays tight, a landlord whose space lets in two months comes to expect two
+ * months, and the signal that it is under-priced fades to nothing however
+ * tight the market stays. The yardstick is now the longer of its patience and
+ * the months space ordinarily takes to let in its class (MONTHS_ON_MARKET, the
+ * CoStar / CBRE series): space that lets in a fraction of an ordinary market's
+ * time is priced under the market, however used to it its landlord is. Its
+ * patience — what it waits before it sweetens — is still its own.
  */
-export function noteLetting(L: LandlordAsk, tom: number, full: boolean, holdFace = false) {
-  if (tom < L.t && full) {
-    const f = 1 - tom / Math.max(0.5, L.t);
+export function noteLetting(L: LandlordAsk, k: Comm, tom: number, share: number, holdFace = false) {
+  const yard = Math.max(L.t, searchMonths(k));
+  if (tom < yard && share > 0) {
+    const f = (1 - tom / yard) * Math.min(1, share);
     if (L.c > 0) L.c = Math.max(0, L.c - PKG_TAKE * f);
     else if (!holdFace) L.a = +(L.a * Math.exp(RAISE * f)).toFixed(2);
   }
@@ -298,8 +344,13 @@ export interface LocCtx {
 
 const CTX = new WeakMap<GameState, LocCtx>();
 
-/** The month's location context, built once a month per state. */
-export function locCtx(s: GameState, recOf: (bbl: string) => ParcelRecord | null | undefined): LocCtx {
+/**
+ * The month's location context, built once a month per state. `memo` false
+ * builds it without leaving it behind — for a read that must change nothing
+ * (a valuation), since which moment of the month the context is first built
+ * at is otherwise part of what the month does.
+ */
+export function locCtx(s: GameState, recOf: (bbl: string) => ParcelRecord | null | undefined, memo = true): LocCtx {
   const hit = CTX.get(s);
   if (hit && hit.m === s.month) return hit;
   const at = new Map<number, [number, number]>();
@@ -388,7 +439,7 @@ export function locCtx(s: GameState, recOf: (bbl: string) => ParcelRecord | null
     }
   }
   const ctx: LocCtx = { m: s.month, pts, at, ind };
-  CTX.set(s, ctx);
+  if (memo) CTX.set(s, ctx);
   return ctx;
 }
 

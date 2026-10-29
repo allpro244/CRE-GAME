@@ -102,7 +102,10 @@ const SELL_YR = 0.017;
  * HVS) over the steady state's elasticity of the renter share to the buying
  * hazard, about 0.65 at the opening's flows [D]: 0.09 / 0.65 = 0.14.
  */
-const BUY_ELAST = TENURE_PER_LOG / 0.65;
+// (a function, not a constant: market.ts imports this module, so in a bundle that
+// reaches households.ts first TENURE_PER_LOG is not yet set when this file runs —
+// the sim worker's bundle did, and every hazard came out NaN; test/worker-determinism.mjs)
+const buyElast = () => TENURE_PER_LOG / 0.65;
 /** Monthly employed-to-unemployed flow, about 1.4% (BLS CPS labour-force flows, 2015-19 average). [S] */
 const SEP_RATE = 0.014;
 /** Monthly unemployed-to-employed flow, about a quarter of the jobless a month (BLS CPS labour-force flows, 2015-19 average) — when there is a vacancy to take. [S] */
@@ -705,7 +708,7 @@ function toMainland(R: Rand, r: HouseholdRegister, i: number, pool: number[], go
  * month's hazard — the opening's (solved so the opening's owners are a
  * steady state: their sales and their dissolutions over the renters) moved by
  * what owning costs against renting (market.ts `ownCostIdx` against the
- * flats' real rent, BUY_ELAST), on a mortgage of a fifth of their income
+ * flats' real rent, buyElast), on a mortgage of a fifth of their income
  * (AHS) at the month's rate with a tenth down; owners sell and rent again at
  * SELL_YR; the plats' new houses (homes.ts) are sold to the region's renters
  * with work, one household each. It replaces the engine's tenure index as
@@ -740,7 +743,7 @@ function tickTenure(R: Rand, r: HouseholdRegister, e: Econ, gone: Uint8Array, po
     r.tenRef = rel;
     r.homesSeen = e.newHomes ?? 0;
   }
-  const hBuy = r.hBuy0 * Math.exp(-BUY_ELAST * (rel - (r.tenRef ?? rel)));
+  const hBuy = r.hBuy0 * Math.exp(-buyElast() * (rel - (r.tenRef ?? rel)));
   // an owner like this household (its first earner's industry, else its status), drawn at random
   const kindOf = (i: number) => { const x = a.emp1[i]; return x === EMP_RETIRED ? "r" : x === EMP_UNEMP ? "u" : x === EMP_NONE ? "n" : `w${a.ind1[i]}`; };
   const ownersBy = new Map<string, number[]>();

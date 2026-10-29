@@ -2492,7 +2492,9 @@ export interface Econ {
   /** Monthly job pull from the black swans, read beside swanJobDrift in tickEcon. */
   bsJobPull?: number;
   /** A capital wave in progress and its cap-rate effect, points (negative while money floods in). */
-  capWave?: { phase: "in" | "hold" | "out" | "fade"; leftM: number; len: number; from: number; to: number };
+  capWave?: { phase: "in" | "hold" | "out" | "fade"; leftM: number; len: number; from: number; to: number;
+    /** the share of the street's book the foreign money brings (the swan's draw), the dollars that is, what has been raised, and whether it has been called home */
+    share?: number; money?: number; raised?: number; home?: boolean };
   capitalWave?: number;
   /** The yield premium buyers demand for anything a storm surge can reach, after one has, and how far from the shore the worst one reached (m). */
   /** The embargo (blackswans.ts): the materials premium still landing. */
@@ -3243,6 +3245,9 @@ export interface Rival {
    * vehicle, which is what the old model assumed for everybody.
    */
   uncalled?: number;
+  /** Raised abroad in a capital wave (blackswans.ts); `homeBy` is when its investors called it home and its book goes to the tape. */
+  wave?: boolean;
+  homeBy?: number;
   /**
    * When each deed arrived, by BBL. The hold clock: a private-equity fund on
    * an IRR mandate and a family office holding for a generation both own

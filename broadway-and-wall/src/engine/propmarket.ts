@@ -279,7 +279,7 @@ export interface Underwriting {
  */
 export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<typeof rentSignals>): Underwriting {
   const i = e.indexRate ?? 5;
-  const rE = (bentIndex(i) + b.eqPrem + (e.capitalWave ?? 0)) / 100;
+  const rE = (bentIndex(i) + b.eqPrem) / 100;
   const rd = v.debtA > 0 ? (v.rd + b.fileSpread) / 100 : rE;
   const a = Math.min(v.debtA, b.ltvCap);
   const gBase = underwrittenGrowthPct(e) / 100;
@@ -350,7 +350,7 @@ export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
   const distress = !!li.distress;
   const room: Rival[] = [];
   for (const r of livingRivals(s)) {
-    if (r === seller || r.stressMs || r.failedM !== undefined) continue;
+    if (r === seller || r.stressMs || r.failedM !== undefined || r.homeBy !== undefined) continue;
     const st = paramsOf(r);
     if (st.classes && !st.classes.includes(rec.class)) continue;
     if (r.sheet && boughtLastYear(r, s.month) >= dealsPerYear(r.sheet)) continue;
@@ -1089,7 +1089,7 @@ export function holdValueFor(s: GameState, bv: BankerView, rec: ParcelRecord, wa
   belief = clamp(belief, -0.06, 0.06);
   // its cost of capital, real: the equity target and the land desk's loan at its leverage
   const i = e.indexRate ?? 5;
-  const rE = (bentIndex(i) + bv.eqPrem + (e.capitalWave ?? 0)) / 100;
+  const rE = (bentIndex(i) + bv.eqPrem) / 100;
   const land = streetRefiProceeds(s, 1_000_000, 0, 0.95);
   const w = Math.min(bv.ltvCap, land.principal / 1_000_000);
   const rd = (land.ratePct + bv.fileSpread) / 100;
@@ -1136,7 +1136,7 @@ export function landBidRound(s: GameState, parcels: ParcelTable, rec: ParcelReco
   const seller = ownerOf(s, rec.bbl);
   const room: Rival[] = [];
   for (const r of livingRivals(s)) {
-    if (r === seller || r.stressMs || r.failedM !== undefined) continue;
+    if (r === seller || r.stressMs || r.failedM !== undefined || r.homeBy !== undefined) continue;
     const p = paramsOf(r);
     if (!(p.build > 0) && !landBanker(r)) continue;
     if (p.classes && !p.classes.includes("land") && !(p.build > 0)) continue;

@@ -3065,6 +3065,70 @@ function maybeNewFirm(s: GameState) {
   });
 }
 
+// ---------------------------------------------------------------- foreign money
+
+/** Funds raised abroad when a capital wave finds the town. */
+const FOREIGN_FUNDS = [
+  "Marunouchi Estates America", "Rhein-Atlantik Immobilien", "Nordvik Pension Property", "Gulf Crescent Holdings",
+  "Han River Realty", "Tasman Property Trust", "Lusitania Capital", "Kaimon Realty USA", "Zurichsee Real Estate",
+  "Pearl Delta Investments",
+];
+
+/**
+ * THE CAPITAL WAVE IS MONEY, WITH NAMES (FORMULA_LEDGER #26). The swan
+ * (blackswans.ts) is the world's: investors abroad decide to buy this town,
+ * bringing a share of its book. It reached prices as a shift in EVERY bidder's
+ * equity target — the family office down the street suddenly wanting a point
+ * less — which is not what happened in 1986-91: the locals wanted what they
+ * always wanted and were outbid. Now the money arrives as funds raised abroad:
+ * one a month while the wave is coming in or holding, each a first close the
+ * size any new fund raises (the owner's rule: cash, no buildings), until the
+ * swan's share is raised. They are foreign-money profiles, whose equity target
+ * (EQUITY_PREMIUM.foreign, 4.5 points) is the one offshore money really
+ * accepts, so they win what they bid on and the cap reads off their prints.
+ * When the wave turns their investors call it home: every one of their deeds
+ * goes to the tape against that deadline (the fund-life path below).
+ * Its own money, not the city's pool.
+ */
+function tickForeignMoney(s: GameState) {
+  const w = s.econ.capWave;
+  if (!w || w.share === undefined) return;
+  if ((w.phase === "out" || w.phase === "fade") && !w.home) {
+    w.home = true;
+    for (const r of livingRivals(s)) if (r.wave) r.homeBy = s.month;
+    return;
+  }
+  if (w.phase !== "in" && w.phase !== "hold") return;
+  if (w.money === undefined) {
+    const aum = livingRivals(s).reduce((a, r) => a + Math.max(0, r.aum ?? 0), 0);
+    w.money = Math.round(w.share * aum);
+    w.raised = 0;
+  }
+  const left = w.money - (w.raised ?? 0);
+  const close = Math.round((4_000_000 + 6_000_000 * hash01(`${s.seed}:foreign:${s.month}`)) * sizeAreaScale(s) * (s.econ.cpi ?? 1));
+  if (left < 0.25 * close) return;
+  const used = new Set((s.rivals ?? []).map((r) => r.name));
+  const free = FOREIGN_FUNDS.filter((n) => !used.has(n));
+  if (!free.length) return;
+  const name = free[Math.floor(hash01(`${s.seed}:foreignname:${s.month}`) * free.length)];
+  const equity = Math.min(left, close);
+  w.raised = (w.raised ?? 0) + equity;
+  const uncalled = Math.round(equity * (0.30 + 0.20 * hash01(`${s.seed}:foreigncall:${s.month}`)));
+  const id = `r${s.rivals.length}`;
+  s.rivals.push({ id, name, style: "foreign", cash: equity - uncalled, debt: 0, bbls: [], targetLtv: 0, bornM: s.month, uncalled, wave: true });
+  const born = s.rivals[s.rivals.length - 1];
+  const pool = profilesForStyle("foreign");
+  seatProfile(s, born, pool[Math.floor(hash01(`${s.seed}:foreignprofile:${s.month}`) * pool.length)] ?? PROFILE_OF.foreignTrophy);
+  born.targetLtv = +(paramsOf(born).maxLtv * 0.9).toFixed(2);
+  milestone(s, born, `Raised abroad in the capital wave, with ${money(equity)}`);
+  why(s, {
+    k: "firm.founded", a: "rival", aid: id, name,
+    n: { equity, waveMoney: w.money, raised: w.raised },
+    t: `${name} raised ${money(equity)} abroad to buy here · ${money(w.raised)} of the wave's ${money(w.money)} now in town`,
+  });
+  s.news.unshift({ q: s.month, kind: "event", text: `${name} has raised ${money(equity)} abroad to buy in this town. New buyer in the market.` });
+}
+
 // ---------------------------------------------------------------- land funds
 
 /** Names for the town's land funds: patient money that buys dirt and waits for the builders. */
@@ -4516,6 +4580,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
   tickRivalSpinouts(s);
   maybeNewFirm(s);
   maybeLandFund(s, parcels);
+  tickForeignMoney(s);
   appraiseBooks(s, parcels);
   // fundJobs runs earlier in tickMonth — before tickEcon settles deliveries —
   // so schedule slips and orphans are visible to the space market. Cash draws
@@ -4818,7 +4883,10 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // clock at all — ends up owning the best of this city.
     const stH = paramsOf(r);
     let forcedBbl = null;
-    if (stH.holdM > 0 && !r.stressMs) {
+    // ...and money called home (a capital wave turning, tickForeignMoney) sells
+    // everything against that deadline.
+    const calledHome = r.homeBy !== undefined && s.month >= r.homeBy;
+    if ((stH.holdM > 0 || calledHome) && !r.stressMs) {
       let oldest = -1;
       for (const bbl of r.bbls) {
         // TWO ANSWERS TO ONE QUESTION, and it is deliberate that only one of
@@ -4841,7 +4909,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         // other style keep their ordinary hold clocks.
         const mandateReady = r.style === "merchant" && delivered !== undefined
           ? merchantExitReady(r, bbl, s.month)
-          : held >= stH.holdM;
+          : calledHome || held >= stH.holdM;
         if (mandateReady && held > oldest && !s.holdings[bbl] && !s.listings.some((l) => l.bbl === bbl)) {
           oldest = held; forcedBbl = bbl;
         }
@@ -5479,7 +5547,7 @@ export function rivalBuys(
     if (prefer.cash + fin0.draw < fin0.need) return null;
   }
   const candidates = prefer ? [prefer] : livingRivals(s).filter((r) => {
-    if (r === seller) return false;
+    if (r === seller || r.homeBy !== undefined) return false;
     const st = paramsOf(r);
     if (st.classes && !st.classes.includes(rec.class)) return false;
     // CAPACITY: a small shop digests two deals a year, a platform eight.

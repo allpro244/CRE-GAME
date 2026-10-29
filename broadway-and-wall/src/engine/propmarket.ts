@@ -1088,7 +1088,7 @@ export function holdValueFor(s: GameState, bv: BankerView, rec: ParcelRecord, wa
   const k: BuiltClass = use && (K as string[]).includes(use) ? use : "multifamily";
   let belief = e.growthExp?.[k] ?? 0;
   if (bv.lean !== 0) {
-    const sig = rentSignals(s)[k];
+    const sig = beliefSignals(s, { id: bv.id })[k]; // the fund's own belief (beliefs.ts), not the town's true trend
     belief += bv.lean > 0 ? bv.lean * sig.g : -bv.lean * (1 / (1 + sig.dev) - 1) * GAP_CLOSE_YR;
   }
   belief = clamp(belief, -0.06, 0.06);

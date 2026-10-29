@@ -2369,6 +2369,17 @@ export interface Econ {
   swanSec?: Partial<Record<Sector, number>>;
   /** Space a national swan has emptied for a while, per class, as a multiple of what is wanted (1 = none). */
   swanSpace?: Partial<Record<BuiltClass, number>>;
+  /**
+   * What a building's operating costs are made of (inputs.ts tickOpexInputs):
+   * site labour at the town's wage, energy at the nation's prices and its oil,
+   * each a level in the cost index's units (equal to it on the day this began);
+   * and the property-insurance market — its premium rate against normal (log)
+   * and its capital against normal (log). Repairs read the cost index itself.
+   */
+  opexIdx?: { labour: number; energy: number; ins: number; insCap: number };
+  opexPrev?: { wage: number; energy: number };
+  /** The ten-year at the opening of the insurance cycle: investment income is read against it. */
+  opexRate0?: number;
   /** The nation's oil (inputs.ts): real log price from the supply shocks, the swans' premium on top, and $ a barrel. */
   oilBaseLn?: number; oilLn?: number; oil?: number; oilCpi0?: number;
   /** Monthly job pull from the black swans, read beside swanJobDrift in tickEcon. */

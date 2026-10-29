@@ -831,6 +831,8 @@ function reviveLinks(E: EconomyState): void {
   E.lk = linksOf(rows);
 }
 /** Each named firm's name now, by firm id: the street's rolls, the player's buildings, the firms looking. */
+/** Each named firm's name by its id (households.ts reads it for the workers it lays off). */
+export function firmNamesOf(s: GameState): Map<number, string> { return firmNames(s); }
 function firmNames(s: GameState): Map<number, string> {
   const out = new Map<number, string>();
   for (const roll of Object.values(s.econ.streetRolls ?? {})) for (const t of roll.t) if (t.fid !== undefined) out.set(t.fid, t.name);

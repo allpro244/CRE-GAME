@@ -1,4 +1,4 @@
-// FIRM BOOKS IN SHADOW — ONE ECONOMY, STEP 1 (2026-10-28).
+// THE CITY'S FIRM BOOKS — ONE ECONOMY, STEPS 1 AND 2 (2026-10-28).
 //
 // Every named firm in town — each tenant with a firm id in the street's
 // rolls, the player's buildings and the queue of firms looking for space —
@@ -17,15 +17,17 @@
 //
 // Each month runs in two halves round the household register (sim.ts):
 //   tickFirms     firms open and close and every industry's heads are set —
-//                 the named firms' the engine's own, the rest from what their
-//                 industry sold last month (`demandHeads`); that is the labour
-//                 demand the register's earners are matched to (step 1b);
+//                 the named firms' the engine's own, the rest staffing toward
+//                 what their industry sold (`staff`, at the hiring and firing
+//                 lags), exports from the nation's demand for the industry and
+//                 the town's share of it (`exportHeads`); that is the labour
+//                 demand the register's earners are matched to;
 //   tickEconomy   the industries' output is SOLVED from final demand — the
 //                 register's spending, the government's own provision, what
 //                 the town buys of the trades (new building, houses, repairs
-//                 to the standing stock, public works) and exports moving with
-//                 the trades' sales or the nation's output and the factory
-//                 index — through the input-output table, every purchase
+//                 to the standing stock, public works), health care's
+//                 insurers and Washington, and exports — through the
+//                 input-output table, every purchase
 //                 either made in town (the local purchase coefficient) or
 //                 leaking out. Each industry's output is the revenue of its
 //                 firms, shared by size and fortune.

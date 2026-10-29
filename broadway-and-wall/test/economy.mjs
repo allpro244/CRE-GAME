@@ -230,13 +230,22 @@ for (let m = 0; m < 24; m++) base24 = tick(base24);
   check(third.office <= Math.min(third.retail, third.multifamily), "...the exporters' floor first (offices, on this map), then the shops and the flats");
 }
 
-// WIRE 2: A FACTORY CLOSES. On a map with a real plant (city seed 3, a
-// 146k sf works), its tenants shut and the floor goes dark; its workers no
-// longer pass the shops within a walk of it (demand.ts `blockFoot`,
-// streetRolls.ts CATCHMENT). Retail vacancy in the plant's neighbourhood
-// against its twin, over the eighteen months after (an empty works is bought
-// and rebuilt after that, and its catchment returns), and against the town's
-// shops beyond the neighbourhood.
+// WIRE 2: A FACTORY CLOSES. On a map with a real plant (city seed 3, its
+// biggest works at month 36), its tenants shut and the floor goes dark; its
+// workers no longer pass the shops within a walk of it (demand.ts
+// `blockFoot`, streetRolls.ts CATCHMENT). What is checked is the wire itself
+// on a FIXED COHORT: the shops trading round the plant at the closure, each
+// against itself in the twin, lose staff (their trade) against the same
+// comparison for the town's other shops. The neighbourhood's retail vacancy
+// against its twin is printed but not checked, because one map cannot see
+// it: the neighbourhood is 20-40 shops on ~100-150k sf, so one 15-20k sf shop
+// failing or letting moves it 10pp, and the two twins part ways in every
+// draw after the closure. Measured (2026-10-29) on game seeds 550991, 12007:
+// cohort staff -2.3%, -2.0% against the far shops' +0.6%, +0.1% (the works
+// is ~16% of its own block's walkers, less of its neighbours'); vacancy
+// near-minus-twin on seeds 550991, 12007, 73303 -0.7, -1.7, -2.2pp, far +0.9,
+// -0.5, -0.3pp — noise of a few points round an effect of a fraction of one.
+// (A first cut checked the vacancy and passed at +2.0pp on one seed: luck.)
 {
   const city3 = makeCity("somewhere", 3);
   E.normalizeParcels(city3.parcels);
@@ -266,17 +275,35 @@ for (let m = 0; m < 24; m++) base24 = tick(base24);
   const shut = roll.t.filter((t) => t.use === "industrial");
   roll.t = roll.t.filter((t) => t.use !== "industrial");
   (roll.ready ??= []).push(...shut.map((t) => ({ use: "industrial", sf: t.sf, readyM: trt.month + 1 })));
-  const nearGap = [], farGap = [];
+  const cohort = (g, inside) => {
+    const o = new Map();
+    for (const [bbl, roll] of Object.entries(g.econ.streetRolls)) {
+      if (near.has(model.ofBbl.get(bbl)) !== inside) continue;
+      for (const t of roll.t) if ((t.use ?? "office") === "retail" && t.staff > 0) o.set(t.fid, t.staff);
+    }
+    return o;
+  };
+  const cN = cohort(ctl, true), cF = cohort(ctl, false);
+  const logGap = (inside, C) => {
+    const A = cohort(trt, inside), B = cohort(ctl, inside);
+    let sum = 0, n = 0;
+    for (const f of C.keys()) { const a = A.get(f), b = B.get(f); if (a > 0 && b > 0) { sum += Math.log(a / b); n++; } }
+    return n ? sum / n : NaN;
+  };
+  const nearGap = [], farGap = [], nearStaff = [], farStaff = [];
   let foot = 1;
   for (let m = 0; m < 18; m++) {
     ctl = tick3(ctl); trt = tick3(trt);
     nearGap.push(shopVac(trt, true) - shopVac(ctl, true));
     farGap.push(shopVac(trt, false) - shopVac(ctl, false));
+    nearStaff.push(logGap(true, cN)); farStaff.push(logGap(false, cF));
     foot = Math.min(foot, trt.blockFoot[blk] / ctl.blockFoot[blk]);
   }
   const mn = (a) => a.reduce((s, x) => s + x, 0) / a.length;
-  console.log(`    a ${Math.round(facSf / 1000)}k sf works closes: its block's catchment falls to ${(100 * foot).toFixed(0)}% of the twin's; shops within a walk ${pp(mn(nearGap))} emptier over eighteen months, the rest of the town ${pp(mn(farGap))}`);
-  check(mn(nearGap) > 0.01 && mn(nearGap) > 3 * Math.max(0, mn(farGap)), "a factory closing raises retail vacancy around it, well beyond the rest of the town's");
+  const sN = Math.expm1(mn(nearStaff)), sF = Math.expm1(mn(farStaff));
+  console.log(`    a ${Math.round(facSf / 1000)}k sf works closes: its block's catchment falls to ${(100 * foot).toFixed(0)}% of the twin's; the ${cN.size} shops trading within a walk ${(100 * sN).toFixed(1)}% staff on their twins over eighteen months, the town's other ${cF.size} ${(100 * sF).toFixed(1)}%`);
+  console.log(`    (retail vacancy within a walk ${pp(mn(nearGap))} on the twin, the rest of the town ${pp(mn(farGap))}: not checked, see above)`);
+  check(foot < 0.95 && sN < -0.005 && sN < sF - 0.01, "a factory closing takes trade from the shops around it, beyond the rest of the town's");
 }
 
 if (bad) console.log(`\n  ${worst}`);

@@ -30,6 +30,10 @@ export const MODULES = [
   "absorption", "space", "bands",
   // blackswans: the rare city-dating events (fire, surge, capital wave).
   "blackswans",
+  // inputs: the nation's oil price and the input costs buildings and bids read.
+  "inputs",
+  // contractors: the named general contractors, their bids and the cost index they make.
+  "contractors",
   // citygov: City Hall — budget, bonds, policies, the mayor.
   "citygov",
   // plates is floorplate inventory — stacks, vacant blocks, size draws.

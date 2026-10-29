@@ -42,7 +42,7 @@ import { underwrittenGrowthPct, dollarLevel, RENT_BASE, CAP_BASE } from "./marke
 import {
   assetValue, capRateFor, initialCondIdx, demandLinear, incomeValueAsIs, initialCondition, inPlace, landValue,
   marketAppraisal, noiYr, resolveRec, specWearMult, taxBorneShare, taxRate, useOccupancy, useRentableSf,
-  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS,
+  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, queueFactor,
 } from "./value";
 import { uses } from "./mix";
 import { productOf } from "./products";
@@ -50,7 +50,7 @@ import { stabViewFor, streetRefiProceeds } from "./debt";
 import { TI_ASK, renewalRefreshShare } from "./leasing";
 import {
   livingRivals, paramsOf, fitOf, ownerOf, firmOutlook, rentSignals, deployPressure, contractedEquity, lineRoom,
-  minTicket, boughtLastYear, gainsTax, streetSaleCost, spreadAdj, firmMaxPrice,
+  minTicket, boughtLastYear, gainsTax, streetSaleCost, spreadAdj, firmMaxPrice, firmMargin, landBanker,
 } from "./rivals";
 import { dealsPerYear, misreadPp } from "./competitorTraits";
 import { rowOn, deskWithRoom } from "./rivalDebt";
@@ -844,6 +844,8 @@ export function openingCapSurvey(s: GameState, parcels: ParcelTable): void {
     }
   }
   for (const k of K) if (!(e.capRate[k] > 0)) e.capRate[k] = CAP_BASE[k];
+  // (The opening land texture level stays the appraiser's provisional one:
+  // a survey of bids is not a sale — see tickLandRead.)
   e.capExp = { ...e.capRate };
   const reads = (e.capRead ??= {});
   for (const k of K) reads[k] = { n: 0, win: 0, med: e.capRate[k], p25: e.capRate[k], p75: e.capRate[k], ageM: 0, noBid: 0, trades: 0 };
@@ -866,6 +868,282 @@ export function tickBrokerSurvey(s: GameState, parcels: ParcelTable): void {
       pushPrint(s, { m: s.month, k, bbl: p.bbl, kind: "s", c: p.c, x: p.x, w: 0.5 });
     }
   });
+}
+
+// ---------------------------------------------------------------- big books (step 7b)
+
+/**
+ * A NEW FIRM DOES NOT BUY A BOOK (owner's rule: newcomers enter small, low on
+ * the list, with cash and no buildings, and never arrive as the biggest). A
+ * firm bids on a package once it has run a book of its own for three years —
+ * long enough to have the investors, the desks and the staff a portfolio
+ * closing needs. A shape parameter for "a track record".
+ */
+const PACKAGE_TRACK_M = 36;
+
+export interface PackageBid {
+  r: Rival;
+  /** the firm's own number for the whole book, and its bid */
+  max: number; bid: number;
+}
+
+/**
+ * WHO CAN BUY A WHOLE BOOK, AND FOR WHAT (step 7b). Every firm with a track
+ * record values the package building by building on its own underwriting
+ * (the same numbers it bids on the tape) and shades for the room — and then
+ * has to write the cheque itself: its account, its corporate line and the
+ * desks' loan on the book (owner's decision: no fund raise, no joint venture
+ * for now). When nobody can, there is no bid; that is the market.
+ *
+ * There is no size discount. A book trades back from the sum of its parts
+ * only because the list of people who can write the cheque is short, and
+ * shorter in a bad year, when the desks cut the advance.
+ */
+export function packageBids(s: GameState, parcels: ParcelTable, bbls: string[], sellerId?: string, distress = false): PackageBid[] {
+  const recs = bbls.map((b) => resolveRec(parcels, s, b)).filter((r): r is ParcelRecord => !!r);
+  if (recs.length < 2) return [];
+  const views = recs.map((rec) => rec.class === "land" || !(rec.bldgArea > 0)
+    ? null : dealView(s, rec, rec.bbl, Math.max(1, assetValue(rec, s.econ, initialCondition(rec)))));
+  const sig = rentSignals(s);
+  const firms = livingRivals(s).filter((r) => r.id !== sellerId && !r.stressMs && r.failedM === undefined
+    && s.month - (r.bornM ?? 0) >= PACKAGE_TRACK_M
+    && !bbls.some((b) => ownerOf(s, b) === r)
+    && recs.every((rec) => !paramsOf(r).classes || paramsOf(r).classes!.includes(rec.class))
+    && (!r.sheet || recs.every((rec) => fitOf(s, parcels, r, rec, distress) > 0)));
+  const n = firms.length;
+  const shade = 1 - SHADE / Math.max(1, n);
+  const out: PackageBid[] = [];
+  for (const r of firms) {
+    // its own number, deed by deed, and the desks' loan on each at its own leverage
+    let max = 0, debtShare = 0, ok = true;
+    for (let i = 0; i < recs.length; i++) {
+      const v = views[i];
+      const b = v ? bidderOf(s, r, recs[i]) : null;
+      const m = v && b ? maxPrice(s.econ, v, b, sig).max : landMaxPrice(s, r, recs[i]);
+      if (!(m > 0)) { ok = false; break; }
+      max += m;
+      if (v && b) debtShare += Math.min(v.debtA, b.ltvCap) * m;
+    }
+    if (!ok || !(max > 0)) continue;
+    const bid = Math.round(max * shade / 1000) * 1000;
+    const debt = bid * (debtShare / max);
+    const reserve = Math.max(1_000_000 * dollarLevel(s.econ), Math.max(0, r.cash) * 0.05);
+    const room = Math.max(0, lineRoom(s, r, r.aum ?? 0, r.markNoi ?? 0, r.markLand ?? 0));
+    if (bid * (1 + BUY_CLOSING) - debt > r.cash - contractedEquity(s, r) + room - reserve) continue;
+    out.push({ r, max, bid });
+  }
+  return out.sort((a, b) => b.bid - a.bid);
+}
+
+
+// ---------------------------------------------------------------- land (FORMULA_LEDGER #24)
+
+/**
+ * WHAT A FIRM WOULD PAY FOR A LOT, ON ITS OWN BOOKS.
+ *
+ *   A BUILDER bids its own residual: the street's best scheme for the lot
+ *   (landRead — highest and best use, the envelope, the queue it waits in),
+ *   with the margin taken at THIS firm's number (firmMargin) instead of the
+ *   trade's. The scheme's own wait and carry are kept: they are facts about
+ *   the lot, not the firm.
+ *   A LAND BANKER, which does not build, bids the option: the residual at the
+ *   rents a holder expects at the next peak, discounted for the wait
+ *   (landRead's holder bid), or the builder's residual where that is higher.
+ *
+ * Nobody here bids the map's texture: that number is the appraiser's, and it
+ * is what the prints test.
+ */
+export function landMaxPrice(s: GameState, r: Rival, rec: ParcelRecord): number {
+  if (!(rec.lotArea > 0)) return 0;
+  const p = paramsOf(r);
+  const builds = p.build > 0;
+  if (!builds && !landBanker(r)) return 0;
+  const lr = landRead(rec, s.econ);
+  const sc = lr.scheme;
+  let own = 0;
+  if (sc && sc.psf > 0) {
+    const gsf = sc.usable * rec.lotArea;
+    const value = sc.valuePsf * gsf, nonLand = sc.costPsf * gsf;
+    const atTrade = value / (1 + DEV_MARGIN) - nonLand;
+    if (atTrade > 0) {
+      // the scheme's wait and carry, per dollar of residual
+      let f = (sc.psf * rec.lotArea) / atTrade;
+      if (builds) {
+        // A BUILDER WHO BUYS IS AT THE FRONT OF THE QUEUE: it breaks ground,
+        // so the lot's wait behind better sites (queueFactor — what the
+        // appraisal of a lot nobody is building on carries) is not its cost;
+        // the carry through construction is. The queue is backed out of the
+        // scheme's own factor at the residual it was struck on.
+        let q = queueFactor(s.econ, sc.use, sc.psf);
+        for (let it = 0; it < 2; it++) q = queueFactor(s.econ, sc.use, (sc.psf / Math.max(1e-6, q)));
+        if (q > 0) f /= q;
+      }
+      own = Math.max(0, f * (value / (1 + (builds ? firmMargin(r, s.month) : DEV_MARGIN)) - nonLand));
+    }
+  }
+  return builds ? own : Math.max(own, lr.holder * rec.lotArea);
+}
+
+/** A land bid round: builders and land bankers, each on its own number, shaded by the room and capped by its cash. */
+export function landBidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress">): { bids: Bid[]; n: number } {
+  const seller = ownerOf(s, rec.bbl);
+  const room: Rival[] = [];
+  for (const r of livingRivals(s)) {
+    if (r === seller || r.stressMs || r.failedM !== undefined) continue;
+    const p = paramsOf(r);
+    if (!(p.build > 0) && !landBanker(r)) continue;
+    if (p.classes && !p.classes.includes("land") && !(p.build > 0)) continue;
+    if (r.sheet && boughtLastYear(r, s.month) >= dealsPerYear(r.sheet)) continue;
+    if (r.sheet && fitOf(s, parcels, r, rec, !!li.distress) <= 0) continue;
+    room.push(r);
+  }
+  const n = room.length;
+  const bids: Bid[] = [];
+  // a lot is bought with equity and the land desk's half-advance (debt.ts "land")
+  const land = streetRefiProceeds(s, li.ask, 0, 0.95);
+  const a = li.ask > 0 ? land.principal / li.ask : 0;
+  for (const r of room) {
+    const max = landMaxPrice(s, r, rec);
+    if (!(max > 0)) continue;
+    const reserve = Math.max(500_000 * dollarLevel(s.econ), Math.max(0, r.cash) * 0.05);
+    const room$ = Math.max(0, lineRoom(s, r, r.aum ?? 0, r.markNoi ?? 0, r.markLand ?? 0));
+    const avail = r.cash - contractedEquity(s, r) + room$ - reserve;
+    if (!(avail > 0)) continue;
+    const bid = Math.round(Math.min(max * (1 - SHADE / Math.max(1, n)), avail / Math.max(0.05, 1 + BUY_CLOSING - a)) / 1000) * 1000;
+    if (!(bid > 0)) continue;
+    bids.push({ r, max, bid, uw: { V: max, r: 0, rE: 0, rd: land.ratePct / 100, w: a, g: 0 } });
+  }
+  bids.sort((x, y) => y.bid - x.bid);
+  return { bids, n };
+}
+
+/**
+ * Which lots a price is evidence about the texture level on: lots the texture
+ * prices, whoever buys them — a builder's purchase counts the same as a land
+ * banker's. A farm, a plat lot or a subdivision tract trades to its own buyer
+ * (the farmer, the homebuilder, the land developer), and the urban texture
+ * says nothing about it.
+ *
+ * A LOT A BUILDER'S RESIDUAL PRICES IS NOT EVIDENCE ABOUT THE TEXTURE, and
+ * that was measured three ways (six seeds, 25 years; the old formula held the
+ * level at 0.9-1.8 and the built sample's land at 39 real $/sf):
+ *  - price per unit of texture: a builder buys only where its residual clears
+ *    the floor, so every builder's print sits above the level; with sellers
+ *    holding their reservations the level ratcheted to 2-15x on five seeds of
+ *    six (built-sample land 39 -> 86 $/sf), and with sellers giving lots away
+ *    it whipsawed 0.08-5.3.
+ *  - price over appraisal (a sales-ratio study): a builder-priced lot's
+ *    appraisal does not carry the level, so each builder's purchase at
+ *    1.4-2x appraisal (it breaks ground; the appraiser's queue wait is not
+ *    its cost) compounded the level, and each one below divided it: one seed
+ *    fell 0.95 -> 0.017.
+ * The residual is the price on those lots already (value.ts readLand): a
+ * builder's purchase there tests the residual, not the dirt nobody builds on.
+ */
+function urbanLot(rec: ParcelRecord, e: Econ): boolean {
+  if (rec.ag || rec.homeLot || rec.tract) return false;
+  return landRead(rec, e).winner === "texture";
+}
+
+function pushLandPrint(s: GameState, p: { m: number; L: number; w: number; kind: "t" | "b" | "s" }) {
+  const t = (s.landTape ??= []);
+  t.push(p);
+  const cut = s.month - TAPE_MONTHS;
+  let i = 0;
+  while (i < t.length && (t[i].m < cut || t.length - i > TAPE_MAX)) i++;
+  if (i > 0) s.landTape = t.slice(i);
+}
+
+/**
+ * THE LEVEL A PRICE IMPLIES: what the lot fetched per unit of the map's
+ * texture (the sales-comparison floor, `landRead().texture`, at the level of
+ * the day), times that level. The texture adjusts for location the way an
+ * appraiser adjusts a comparable; what is left is what dirt in this town
+ * sells for. Each print is a level in its own right — the floor is
+ * proportional to the level, so the print does not depend on the level it was
+ * struck at. (Which lots count, and why not the builder-priced ones: urbanLot.)
+ */
+function impliedLandLevel(s: GameState, rec: ParcelRecord, price: number): number | null {
+  if (!(price > 0) || !(rec.lotArea > 0) || !urbanLot(rec, s.econ)) return null;
+  const mark = landRead(rec, s.econ).texture * rec.lotArea;
+  if (!(mark > 0)) return null;
+  const L = s.econ.landIdx * price / mark;
+  return Number.isFinite(L) && L > 0 ? L : null;
+}
+
+/** A lot closed (comps.ts recordComp), to any arm's-length buyer. */
+export function printLandTrade(s: GameState, rec: ParcelRecord, price: number, _buyer: string, distress?: boolean, offMarket?: boolean): void {
+  // MARKET VALUE ASSUMES NEITHER PARTY UNDER COMPULSION (USPAP; the
+  // Interagency Appraisal Guidelines). A forced sale of dirt to the one bidder
+  // in the room is the price of the compulsion, not of the land; nor is a lot
+  // never exposed to the market. Measured with them in at half weight (when
+  // only land bankers printed): the level fell 87% over 25 years. Neither is
+  // a print.
+  if (distress || offMarket) return;
+  // ...AND A SELLER AGAINST A DEADLINE IS UNDER COMPULSION too: a fund at the
+  // end of its life, a merchant builder's exit, a non-core trim, an estate or a
+  // receiver (sellerTerms "forced": the reserve is only the loan, so unlevered
+  // dirt goes at any bid). Measured with them in: lots sold at 1-13% of
+  // appraisal to a builder bidding its thin residual, and the level fell
+  // 1.22 -> 0.04 in three years (seed 1).
+  const li = s.listings?.find((l) => l.bbl === rec.bbl);
+  if (li?.reason && li.reason !== "voluntary") return;
+  const L = impliedLandLevel(s, rec, price);
+  if (L !== null) pushLandPrint(s, { m: s.month, L, w: 1, kind: "t" });
+}
+
+/** A land round that did not close: the best bid and the ask met halfway, at half weight — read only when sales are thin. */
+export function noteLandRoundFailed(s: GameState, rec: ParcelRecord, li: Listing, round: { bids: Bid[] }): void {
+  const top = round.bids[0];
+  if (!top || li.distress || (li.reason && li.reason !== "voluntary")) return;
+  const L = impliedLandLevel(s, rec, (top.bid + li.ask) / 2);
+  if (L !== null) pushLandPrint(s, { m: s.month, L, w: 0.5, kind: "b" });
+}
+
+/**
+ * THE TEXTURE LEVEL, READ OFF THE LAND TAPE, monthly (market.ts) — the same
+ * rules as a cap rate: a year of prints, two or three when thin, stale when
+ * there are none. It used to be set: rent against construction cost to the
+ * 1.15, times the cycle, a vacancy discount and a bidders' term, closed 4% a
+ * month (FORMULA_LEDGER #24, Removed).
+ */
+export function tickLandRead(s: GameState): void {
+  const e = s.econ;
+  // WHAT EVERY ARM'S-LENGTH BUYER PAID for texture-priced dirt, builders and
+  // land bankers alike (urbanLot). Closed sales govern (USPAP: the sales
+  // comparison); a round that
+  // did not close is an indication at half weight, read only where the sales
+  // alone do not make the evidence in the window — as a cap read takes the
+  // broker's survey only when nothing has printed.
+  const tape = (s.landTape ?? []).filter((p) => p.m >= s.month - TAPE_MONTHS && p.m < s.month + 1);
+  let win = 0, sel: typeof tape = [];
+  const evidence = (xs: typeof tape) => xs.reduce((a, p) => a + p.w, 0) >= MIN_EVIDENCE;
+  for (const w of [12, 24, 36]) {
+    const inW = tape.filter((p) => p.m > s.month - w);
+    const sales = inW.filter((p) => p.kind === "t");
+    if (evidence(sales)) { sel = sales; win = w; break; }
+    if (evidence(inW)) { sel = inW; win = w; break; }
+  }
+  // A LEVEL IS NOT READ OFF ONE OR TWO LOTS: with less than MIN_EVIDENCE in
+  // three years the read stands where it was (a stale appraisal says so).
+  const prev = e.landReadOut;
+  if (!win) { e.landReadOut = { n: 0, win: 0, ageM: (prev?.ageM ?? 0) + 1, why: prev?.why }; return; }
+  const med = wMedian(sel.map((p) => ({ v: p.L, w: p.w })));
+  if (!(med > 0)) return;
+  const moved = Math.abs(Math.log(med / Math.max(1e-9, e.landIdx))) >= 0.02 || s.month % 12 === 0;
+  e.landIdx = med;
+  const trades = sel.filter((p) => p.kind === "t").length;
+  const out = { n: +sel.reduce((a, p) => a + p.w, 0).toFixed(1), win, ageM: Math.round(wMedian(sel.map((p) => ({ v: s.month - p.m, w: 1 })))), why: prev?.why };
+  if (moved) {
+    out.why = why(s, {
+      k: "market.land", a: "trade", aid: "land",
+      n: { level: +med.toFixed(4), n: out.n, win, trades },
+      t: `land: ${trades} lot sale${trades === 1 ? "" : "s"} in ${win} months`
+        + `${sel.length > trades ? `, ${sel.length - trades} unclosed bid${sel.length - trades === 1 ? "" : "s"} at half weight` : ""}`
+        + ` — dirt sells at ${med.toFixed(2)}x the map's opening texture`,
+    }, [whyNation(s)]);
+  }
+  e.landReadOut = out;
 }
 
 /** For the UI: the read's line, numbers first. */

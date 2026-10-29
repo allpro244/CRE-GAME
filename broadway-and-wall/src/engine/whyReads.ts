@@ -16,7 +16,7 @@
 import type { BuiltClass, GameState } from "./types";
 import { BUILT_CLASSES, monthLabel } from "./types";
 import { why, whyAt, whyGet, whyMark, whyNation, whyOnce } from "./why";
-import { whyTown } from "./economy";
+import { whyTown, whyIndustry, industryOfFirm } from "./economy";
 import { whyTrades } from "./contractors";
 import { availability } from "./space";
 import { normalVac, SECTOR_LABEL } from "./market";
@@ -123,6 +123,17 @@ export function noteReads(s: GameState): void {
         t: `Land ${p ? `${sgnPct(ch)} since ${monthLabel(p.m)}` : `index ${(l * 100).toFixed(0)}`} · office rent ${sgnPct(dR)}, build cost ${sgnPct(dC)} · builders bidding ${book.toFixed(1)}x a normal year`,
       }, Math.abs(dR) >= Math.abs(dC) ? [rent, cost, whyNation(s)] : [cost, rent, whyNation(s)]));
     }
+  }
+
+  // THE INDUSTRIES YOUR RENT RESTS ON (IndustriesView RentExposure): each
+  // one's month, once a quarter, so the forward line can say why it moved.
+  if (s.month % 3 === 0) {
+    const inds = new Set<number>();
+    for (const h of Object.values(s.holdings ?? {})) for (const t of h.tenants ?? []) {
+      const i = industryOfFirm(s, t);
+      if (i !== undefined) inds.add(i);
+    }
+    for (const i of inds) whyIndustry(s, i);
   }
 
   // the base rate every loan prices off

@@ -12,6 +12,9 @@ import { usd, sf, pctSigned } from "@/ui/format";
 import { syndicateView } from "@/engine/syndicate";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { AssetHistory, WorkoutDesk } from "@/ui/panels/PropertyDesks";
+import { WhyButton } from "@/ui/WhyChain";
+import { capWhy, valueLead } from "@/ui/whyLinks";
+import { dominantUse } from "@/engine/mix";
 import { useLabel, band, PropTab, Big, Row, occRead, occLabel, occTitle, ShortBy } from "@/ui/panels/shared";
 
 /**
@@ -113,7 +116,8 @@ export function PropertyPage() {
   return (
     <div className="prop-page">
       <div className="stat-strip">
-        <Big label="Appraisal" value={band(bbl, value)} />
+        <Big label="Appraisal" value={band(bbl, value)}
+          why={built ? <WhyButton id={capWhy(game, dominantUse(rec))} lead={valueLead(game, dominantUse(rec), value, noi)} /> : undefined} />
         <Big
           label={leasedFee ? "Ground rent / yr" : "NOI / yr"}
           value={(built || leasedFee) ? usd(noi) : "—"}

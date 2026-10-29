@@ -215,11 +215,11 @@ export function ViewSwitch<T extends string>({ views, on, set, label }: {
   );
 }
 
-export function Big({ label, value, bad, title }: { label: string; value: string; bad?: boolean; title?: string }) {
+export function Big({ label, value, bad, title, why }: { label: string; value: string; bad?: boolean; title?: string; why?: ReactNode }) {
   const gloss = title ? undefined : glossFor(label);
   return (
     <div className="big-stat" title={title ?? gloss}>
-      <div className={"big-label" + (gloss ? " has-gloss" : "")}>{label}</div>
+      <div className={"big-label" + (gloss ? " has-gloss" : "")}>{label}{why && <> {why}</>}</div>
       {/* A long reading (a band, a label, "3.8 yrs avg") steps down a size
           rather than breaking across two or three lines of a tile. */}
       <div className={"big-value mono" + (bad ? " v-bad" : "") + (value.length > 14 ? " big-value-xl" : value.length > 9 ? " big-value-long" : "")}>{value}</div>
@@ -300,8 +300,10 @@ export function Neighbourhood({ bbl, block }: { bbl: string; block: string }) {
   );
 }
 
-export function Row({ k, v, strong, bad, title }: {
+export function Row({ k, v, strong, bad, title, why }: {
   k: ReactNode; v: string; strong?: boolean; bad?: boolean; title?: string;
+  /** a WhyButton: the chain behind the number, beside its label */
+  why?: ReactNode;
 }) {
   // A sentence of a value ("$4.15M total · $1.83M drawn as it rises over ~35
   // mo") wrapped to three ragged lines in the map card's right-hand column.
@@ -311,7 +313,7 @@ export function Row({ k, v, strong, bad, title }: {
   const gloss = title ? undefined : glossFor(k);
   return (
     <>
-      <div className={"k" + (gloss ? " has-gloss" : "")} title={title ?? gloss}>{k}</div>
+      <div className={"k" + (gloss ? " has-gloss" : "")} title={title ?? gloss}>{k}{why && <> {why}</>}</div>
       <div className={"v mono" + (strong ? " v-strong" : "") + (bad ? " v-bad" : "") + (long ? " v-long" : "")} title={title}>{v}</div>
     </>
   );

@@ -81,6 +81,22 @@ if (found) {
   check(ch.every((e) => typeof e.t === "string" && e.t.length > 0 && e.t.length < 140), "every step is one short line");
 }
 
+// ---- 3b. the numbers on the screens (whyReads.ts) ----------------------------------
+console.log("\n3b. the market numbers carry chains");
+{
+  // noteReads on a copy: only the ledger changes, and no random number is drawn
+  const c = structuredClone(g);
+  const strip = (x) => JSON.stringify({ ...x, why: undefined });
+  const before = strip(c);
+  E.noteReads(c);
+  check(strip(c) === before, "writing this month's reads changes nothing but the ledger");
+  for (const mark of ["vac:office", "rent:office", "rent:multifamily", "cost", "land", "wage", "rate"]) {
+    const id = E.whyAt(g, mark);
+    const ch = id ? E.whyChain(g, id, 4) : [];
+    check(ch.length >= 2, `${mark} has a chain (${ch.map((e) => e.k).join(" > ") || "none"})`);
+  }
+}
+
 // ---- 4. bounded -------------------------------------------------------------------
 check((g.why?.ev.length ?? 0) <= E.WHY_MAX * 1.1, `ledger bounded (${g.why?.ev.length ?? 0} events)`);
 

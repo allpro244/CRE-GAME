@@ -711,7 +711,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
           const whyId = t.sf >= 5000 && !opening ? why(s, {
             k: "tenant.leftTown", a: "tenant", aid: String(t.fid), name: t.name, bbl,
             n: { sf: t.sf, rentYr: Math.round(t.rentPsf * t.sf), firmsPerWork: +ratio(k).toFixed(2) },
-            t: `${t.name} left town at lease end · ${(t.sf / 1000).toFixed(1)}k sf · its trade has ${Math.round((ratio(k) - 1) * 100)}% more firms here than work`,
+            t: `${t.name} left town at lease end · ${(t.sf / 1000).toFixed(1)}k sf${ratio(k) > 1.05 ? ` · its trade has ${Math.round((ratio(k) - 1) * 100)}% more firms here than work` : ""}`,
           }, [whyTenantBooks(s, t, f)]) : undefined;
           (e.streetFailed ??= []).push({ m, bbl, name: t.name, fid: t.fid, sf: t.sf, use: k, why: "left", ...(whyId ? { whyId } : {}) });
           vacate(roll, t);

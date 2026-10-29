@@ -919,6 +919,8 @@ export const MF_NATURAL_VAC = OPENING_VAC.multifamily;
  * usual; nothing prices off it (ONE ECONOMY step 4: rents are the leases).
  */
 export function normalVac(e: Econ | undefined, k: BuiltClass): number {
+  // the flats keep their fixed rate until households set their rents (#4, households stage 2)
+  if (k === "multifamily") return MF_NATURAL_VAC;
   return e?.natVac?.[k] ?? OPENING_VAC[k];
 }
 

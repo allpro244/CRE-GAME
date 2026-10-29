@@ -90,6 +90,14 @@ export interface EcoDrive {
   emp?: number[]; empPrev?: number[]; target?: number[];
   /** Each trade's employment and real sales against the opening: its industries', by the heads it had in each. */
   trade?: Partial<Record<Sector, { sales: number; emp: number; margin: number }>>;
+  /**
+   * THE CITY ITSELF, not its commuting region (citygov.ts reads it): the
+   * people and children in the island's flats (the register's island
+   * renters) and the jobs of the firms on the map (the named firms' heads).
+   */
+  island?: { persons: number; kids: number; households: number; jobs: number };
+  /** Named links won and lost this month (economy.ts `tickLinks`): each firm id's move in its fortune, log — its tenant books take it next month. */
+  linkDz?: Record<string, number>;
 }
 
 export interface FirmBook {
@@ -2303,7 +2311,7 @@ export interface Econ {
   /** Share of the street's let space whose tenants failed beyond the background this month, by class. */
   streetFailShare?: Record<string, number>;
   /** The street's recent move-outs, newest last, capped: tenants that went dark, and tenants that left at lease end. */
-  streetFailed?: { m: number; bbl: string; name: string; sf: number; use: BuiltClass; why?: "dark" | "left"; to?: string; credit?: Credit; /** its event in the cause ledger (why.ts) */ whyId?: number }[];
+  streetFailed?: { m: number; bbl: string; name: string; fid?: number; sf: number; use: BuiltClass; why?: "dark" | "left"; to?: string; credit?: Credit; /** its event in the cause ledger (why.ts) */ whyId?: number }[];
   /** The player's rolls last month, so a building sold carries its tenants to the street. */
   heldTenants?: Record<string, Tenant[]>;
   /**
@@ -2344,7 +2352,9 @@ export interface Econ {
   /** Each industry's heads in the island's named firms over the heads they are formed toward (streetRolls.ts): over 1, its firms shed the excess. */
   islandFill?: number[];
   /** The first month's drivers, which the space market's indices are read against. */
-  eco0?: { floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>; renters?: number; jobs?: number };
+  eco0?: { floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>; renters?: number; jobs?: number;
+    /** a save reopened on step 2b's industries: each class's driver as it stood (economy.ts `migrateEconomy`) */
+    mig?: Partial<Record<"office" | "retail" | "industrial", number>> };
   /** Each trade's payroll last month, for the firms' month-on-month change. */
   tradeEmpPrev?: Partial<Record<string, number>>;
   /** each trade's mean firm-specific sales change last month (streetRolls) */

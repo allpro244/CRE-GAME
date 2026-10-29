@@ -6,7 +6,7 @@
 import { useEffect } from "react";
 import { useStore } from "@/state/store";
 import { useNext } from "@/ui/next/nextStore";
-import { firmBooks } from "@/engine/economy";
+import { firmBooks, firmLinks } from "@/engine/economy";
 import { CREDIT_LABEL, monthLabel } from "@/engine/types";
 import { INDUSTRY_INDEX } from "@/engine/industries";
 import { usd, sf, pctSigned } from "@/ui/format";
@@ -75,6 +75,7 @@ export function BizSheet() {
     ["Out-of-town buyers", b.revenueBy.exports],
   ] : [];
   const chg = hist.length >= 2 && hist[0] > 0 ? hist[hist.length - 1] / hist[0] - 1 : null;
+  const links = firmLinks(game, fid);
   return (
     <div className="biz-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <div className="biz-sheet" role="dialog" aria-label={`${name} books`}>
@@ -146,6 +147,26 @@ export function BizSheet() {
                     <tr className="dim"><td>Debt / yearly profit before interest</td><td className="num">{b.ebitda > 0 ? (b.debt / (b.ebitda * 12)).toFixed(1) + "×" : "—"}</td></tr>
                   </tbody>
                 </table>
+                {links.customers.length > 0 && (
+                  <table className="tbl biz-tbl" style={{ marginTop: 8 }}>
+                    <thead><tr><th>Top customers</th><th className="num">$ / yr</th><th className="num">% of sales</th></tr></thead>
+                    <tbody>
+                      {links.customers.slice(0, 5).map((c) => (
+                        <tr key={c.fid}><td><BizLink t={{ name: c.name, fid: c.fid }} /></td><td className="num">{yr(c.flow)}</td><td className="num">{(c.share * 100).toFixed(0)}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                {links.suppliers.length > 0 && (
+                  <table className="tbl biz-tbl" style={{ marginTop: 8 }}>
+                    <thead><tr><th>Top suppliers</th><th className="num">$ / yr</th><th>For</th></tr></thead>
+                    <tbody>
+                      {links.suppliers.slice(0, 5).map((c) => (
+                        <tr key={c.fid}><td><BizLink t={{ name: c.name, fid: c.fid }} /></td><td className="num">{yr(c.flow)}</td><td className="dim">{c.industry}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
                 {topBuyers.length > 0 && (
                   <div className="hint" style={{ marginTop: 8 }}>
                     Its industry sells most to{" "}

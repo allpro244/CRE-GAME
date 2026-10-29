@@ -1762,8 +1762,11 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       if (A.ten[i] === TEN_RENT) island += A.wt[i];
     }
     if (D && r.locMu === undefined && letN > 0) { r.locMu = solveLocMu(r, e, letOf); sortOpening(R, r, e, letOf); }
-    // An island renter is demand while it would stay at its block's asking
-    // rent (moving out costs it MOVE_LOG); a renter across the water while it
+    // An island renter is demand while it would stay at the rent its lease
+    // holds it to (moving out costs it MOVE_LOG) — the asking rent reaches it
+    // only at its renewal, where it decides again; reading the asking rent
+    // for every sitting tenant made demand jump with each repricing and the
+    // flats ran 28% empty and 2% empty by turns. A renter across the water while it
     // would move in at the island's (moving in costs the same). Counting every
     // sitting tenant as demand whatever it thought of its rent was tried: the
     // flats the market held let then went to whoever was across the water,
@@ -1773,7 +1776,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       let wantW = 0;
       for (let i = 0; i < r.n; i++) {
         const t = A.ten[i];
-        if (t === TEN_RENT ? wantsIsland(r, A, i, e, letOf(i), MOVE_LOG) : t === TEN_MAINLAND && wantsIsland(r, A, i, e, letAvg, -MOVE_LOG)) wantW += A.wt[i];
+        if (t === TEN_RENT ? wantsIsland(r, A, i, e, A.rent[i], MOVE_LOG) : t === TEN_MAINLAND && wantsIsland(r, A, i, e, letAvg, -MOVE_LOG)) wantW += A.wt[i];
       }
       r.islandWant = wantW;
     }

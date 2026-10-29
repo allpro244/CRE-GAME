@@ -54,6 +54,8 @@ import { money } from "./money";
 import { FUND_INVEST_M, FUND_PREF, FUND_PROMOTE } from "./fund";
 import { observe, yearOfWatching } from "./competitorReads";
 import { logFirm, milestone } from "./firmLog";
+import { dealView, maxPrice, bidderOf, sellerTerms, bidRound, forcedSalePrice } from "./propmarket";
+import { why } from "./why";
 const CLASS_NOUN: Record<string, string> = { office: "office", multifamily: "apartments", retail: "retail", industrial: "industrial", land: "a site" };
 import { assembledBlock, reviewThesis, thesisFit, thesisLabel, thesisSellMult } from "./strategy";
 import { SURNAMES as OWNER_SURNAMES } from "./owners";
@@ -1285,13 +1287,14 @@ function chargeSponsorFailure(s: GameState, parcels: ParcelTable, r: Rival): { d
   const none = { desk: "", owed: Math.max(0, r.debt) };
   if (r.debt <= 0) return none;
   // What the receiver gets back: the cash, and the buildings sold into the
-  // market that killed the borrower — the same distressed band the firm was
-  // already selling into on its way down, not a second invented number.
+  // market that killed the borrower — what the street would bid for each as a
+  // distress sale today (propmarket.ts forcedSalePrice), the same number the
+  // firm was weighing on its way down.
   let recovered = Math.max(0, r.cash);
   for (const bbl of r.bbls) {
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
-    recovered += assetValue(rec, s.econ, assetGrade(r, rec)) * rrange(s, 0.68, 0.88, "rivals");
+    recovered += forcedSalePrice(s, parcels, rec, bbl, assetValue(rec, s.econ, assetGrade(r, rec)));
   }
   const loss = Math.round(r.debt - recovered);
   if (loss <= 0) return none;
@@ -2246,7 +2249,7 @@ export function tickRivalRetirements(s: GameState, _parcels: ParcelTable) {
 }
 
 /** Deeds this firm took in the last twelve months — the capacity test. */
-function boughtLastYear(r: Rival, month: number): number {
+export function boughtLastYear(r: Rival, month: number): number {
   let n = 0;
   for (const m of Object.values(r.heldSince ?? {})) if (month - m < 12) n++;
   return n;
@@ -3773,12 +3776,6 @@ function callCapital(r: Rival, want: number): number {
  * it. The ladder above then does the thing that IS available: hand the keys
  * back, which costs no cash and takes the loan with it.
  */
-// What a sponsor under duress gets for a building, unchanged from the path this
-// replaces. Written once because the decision reads its midpoint and the ask
-// draws from it, and a hardcoded 0.78 beside a `rrange(0.68, 0.88)` is the same
-// band written down twice.
-const DURESS_BAND: [number, number] = [0.68, 0.88];
-const DURESS_MID = (DURESS_BAND[0] + DURESS_BAND[1]) / 2;
 
 function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: number): boolean {
   // Selling under duress gives away how much pain the firm will take.
@@ -3811,7 +3808,7 @@ function marketAssetToRaise(s: GameState, parcels: ParcelTable, r: Rival, need: 
     // disposal nets and both ends read it" while two expressions stood. The
     // agreement it reported (+0.01% over 291 sales) was the formula compared
     // against itself — a test that cannot fail.
-    const px = markAsset(s, r, rec, true).v * DURESS_MID;
+    const px = forcedSalePrice(s, parcels, rec, bbl, markAsset(s, r, rec, true).v);
     const net = disposalNet(s, r, bbl, px);
     if (!biggest || net > biggest.net) biggest = { bbl, rec, net };
     if (net >= need && (!pick || net < pick.net)) pick = { bbl, rec, net };
@@ -3880,11 +3877,15 @@ function listUnderDuress(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
     });
     return true;
   }
-  const px = Math.round(v * rrange(s, ...DURESS_BAND));
+  // PRICED TO MOVE: at what its broker says the room would pay today (the
+  // best named bid on a distress listing — propmarket.ts forcedSalePrice), or
+  // at the deed's appraisal when nobody would bid; and it takes any bid.
+  const heard = forcedSalePrice(s, parcels, sell.rec, sell.bbl, v);
+  const px = Math.round((heard > 0 ? heard : v) / 1000) * 1000;
   r.dumped = (r.dumped ?? 0) + 1;
   // The deed stays with them until somebody buys it — a firm selling under
   // pressure is still the owner, and that is the whole point of the trade.
-  s.listings.push({ bbl: sell.bbl, ask: px, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id, ...disclosed });
+  s.listings.push({ bbl: sell.bbl, ask: px, reserve: 0, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id, ...disclosed });
   logFirm(s, r, "event", `Short of cash — listed ${sell.rec.address} under appraisal`, sell.bbl, px);
   // A FIRM SELLING UNDER PRESSURE IS ALWAYS RECORDED, AND INTERRUPTS WHEN IT IS
   // ABOUT YOU. This had no gate at all — every distress listing in the city
@@ -3998,7 +3999,7 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
     // whether or not it had equity in it — 20 of 27 handbacks in a thirty-
     // year playthrough read "the $0 it is short is the bank's problem".
     const ratio = streetRefiProceeds(s, v, noi, st.maxLtv).principal / v;
-    if (!only && row.balance < v * DURESS_MID) {
+    if (!only && row.balance < forcedSalePrice(s, parcels, rec, bbl, v)) {
       // Not under water: kept as the foreclosure candidate (below).
       const cov = noi / Math.max(1, row.balance);
       if (!fore || cov < fore.cov) fore = { bbl, rec, v, ratio, cov };
@@ -4049,7 +4050,7 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
   const loanBasis = Math.min(deedV, Math.max(0, owed));
   // The courthouse price, and the borrower's surplus over the debt.
   if (surplus) {
-    const sale = deedV * DURESS_MID;
+    const sale = forcedSalePrice(s, parcels, worst.rec, worst.bbl, deedV);
     surplus = Math.max(0, Math.round(sale - Math.max(0, owed)));
     r.cash += surplus;
   }
@@ -4252,7 +4253,7 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
     //    short is the bank's problem" — dozens a month in a credit crunch.
     const onTape = s.listings.some((l) => l.bbl === bbl);
     if (onTape && (ext === undefined || s.month < ext + 8)) continue;   // on the market; the desk waits
-    if (!onTape && ext === undefined && disposalNet(s, r, bbl, v * DURESS_MID) > 0) {
+    if (!onTape && ext === undefined && disposalNet(s, r, bbl, forcedSalePrice(s, parcels, rec, bbl, v)) > 0) {
       listUnderDuress(s, parcels, r, bbl, rec);
       setExtended(r, bbl, s.month + 6);
       continue;
@@ -4698,13 +4699,24 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         // off-market while the weighting branch sat dead. About two in five
         // mandate exits for those styles close privately to another firm.
         const quietStyle = r.style === "family" || r.style === "foreign" || r.style === "core";
+        // A SELLER AGAINST A DEADLINE must sell, but not for less than clears
+        // the loan on the building (propmarket.ts sellerTerms).
+        const terms = sellerTerms(s, r, rec, forcedBbl, v, "forced", assetGrade(r, rec));
+        const whyId = why(s, {
+          k: "market.list", a: "rival", aid: r.id, name: r.name, bbl: forcedBbl,
+          n: { ask: terms.ask, heldM: s.month - (r.heldSince?.[forcedBbl] ?? r.bornM ?? 0) },
+          t: `${r.name} must sell ${rec.address}: ${recycle ? "non-core, too small for its book" : r.style === "merchant" ? "a merchant builder's exit" : `fund life — held ${Math.round((s.month - (r.heldSince?.[forcedBbl] ?? r.bornM ?? 0)) / 12)} years`}`,
+        });
         if (quietStyle && rng(s, "rivals") < 0.40) {
-          const price = Math.round(v * rrange(s, 0.96, 1.06, "rivals") / 1000) * 1000;
-          const buyer = rivalBuys(s, parcels, rec, price);
+          // THE QUIET TREATY: one buyer, rung privately — the firm whose own
+          // number is highest — and the two split the difference between the
+          // seller's reservation and that number (a bargain struck by two
+          // sides who both know it is a deal).
+          const round = bidRound(s, parcels, rec, { bbl: forcedBbl, ask: Math.max(1, v) });
+          const top = [...round.bids].sort((a, b) => b.max - a.max)[0];
+          const price = top && top.max >= terms.reserve ? Math.round((terms.reserve + top.max) / 2 / 1000) * 1000 : 0;
+          const buyer = price > 0 ? rivalBuys(s, parcels, rec, price, top.r, undefined, true) : null;
           if (buyer) {
-            // rivalBuys already recorded a marketed comp — restamp the flag.
-            const c = s.comps?.[s.comps.length - 1];
-            if (c && c.bbl === rec.bbl && c.m === s.month) c.offMarket = true;
             if (stakeIn(s, parcels, rec, r.id) && rng(s, "rivals") < 0.25) {
               s.news.unshift({
                 q: s.month, kind: "deal",
@@ -4715,7 +4727,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
             // Nobody would take it privately; fall through to the open tape.
             s.listings.push({
               bbl: forcedBbl,
-              ask: Math.round(v * rrange(s, 0.94, 1.04, "rivals") / 1000) * 1000,
+              ask: terms.ask, reserve: terms.reserve, whyId,
               listedM: s.month, expiresM: s.month + Math.round(rrange(s, 9, 16, "rivals")),
               sellerId: r.id,
               reason: recycle ? "non-core" : "fund-life",
@@ -4725,7 +4737,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
           // A seller against a deadline does not get to hold out for a number.
           s.listings.push({
             bbl: forcedBbl,
-            ask: Math.round(v * rrange(s, 0.94, 1.04, "rivals") / 1000) * 1000,
+            ask: terms.ask, reserve: terms.reserve, whyId,
             listedM: s.month, expiresM: s.month + Math.round(rrange(s, 9, 16, "rivals")),
             sellerId: r.id,
             reason: recycle ? "non-core" : r.style === "merchant" ? "merchant" : "fund-life",
@@ -4802,6 +4814,9 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       const rec = resolveRec(parcels, s, bbl);
       if (rec && !s.holdings[bbl] && !s.listings.some((l) => l.bbl === bbl)) {
         const v = conveyedValue(s, rec, bbl, false, assetGrade(r, rec));
+        // A FIRM CUTTING BACK TO ITS COVENANT must sell; one trimming into
+        // strength sells only at what the building is worth to it (sellerTerms).
+        const terms = sellerTerms(s, r, rec, bbl, v, mustSell ? "forced" : "voluntary", assetGrade(r, rec));
         // THE CORNER COMES BACK. If this is a building they took out from
         // under a live negotiation of yours, it does not hit the tape — they
         // ring you first, because a firm that knows you wanted it once knows
@@ -4809,7 +4824,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         // of losing a deal to somebody with a name.
         const beat = (s.beaten ?? []).find((b) => b.bbl === bbl && b.firmId === r.id);
         if (beat && !s.approaches[bbl]) {
-          const ask = Math.round(v * rrange(s, 1.02, 1.16, "rivals") / 1000) * 1000;
+          const ask = Math.max(terms.ask, Math.round(v / 1000) * 1000);
           // THE SAME RULE THE BROKER'S PHONE OBEYS. This channel always prices
           // over appraisal — that is what the grudge is worth to them — so it
           // is exactly the one the owner's rule is about: never pitch a
@@ -4833,7 +4848,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         // a willing seller asks a willing seller's price — and puts their name
         // on the listing, the same as a fund-life exit does.
         s.listings.push({
-          bbl, ask: Math.round(v * rrange(s, 1.00, 1.14, "rivals") / 1000) * 1000,
+          bbl, ask: terms.ask, reserve: terms.reserve,
           listedM: s.month, expiresM: s.month + Math.round(rrange(s, 6, 12, "rivals")),
           sellerId: r.id,
           reason: "voluntary",
@@ -5123,14 +5138,11 @@ function acquisitionLoan(s: GameState, rec: ParcelRecord, price: number): (r: Ri
 }
 
 /**
- * THE MOST A FIRM WOULD PAY FOR A BUILDING NOBODY HAS LISTED. The same tests
- * `rivalBuys` puts a listed building through, solved for the price: an
- * income building at the price where the firm's own yield over the coupon
- * (its hurdle, with the growth it underwrites) just passes; dirt, for a
- * firm that builds, at the builder's residual. Zero when the firm does not
- * buy the class at all — or the site does not suit it (COMPETITORS_PLAN.md
- * §2). The guard at 1.4x appraisal only catches a coupon that has fallen
- * through the floor — a required yield near zero.
+ * THE MOST A FIRM WOULD PAY FOR A BUILDING NOBODY HAS LISTED: an income
+ * building on the firm's own underwriting (propmarket.ts maxPrice — its rent
+ * view, the desks' loan for this building, its own equity target); dirt, for
+ * a firm that builds, at the builder's residual. Zero when the firm does not
+ * buy the class at all.
  */
 export function firmMaxPrice(s: GameState, r: Rival, rec: ParcelRecord): number {
   const p = paramsOf(r);
@@ -5146,12 +5158,8 @@ export function firmMaxPrice(s: GameState, r: Rival, rec: ParcelRecord): number 
   }
   if (p.classes && !p.classes.includes(rec.class)) return 0;
   const v = assetValue(rec, s.econ, initialCondition(rec));
-  const noi = inPlace(rec, s, rec.bbl, v).noi;
-  if (!(noi > 0) || !(v > 0)) return 0;
-  const coupon = (s.econ.indexRate + RATE_SPREAD) / 100;
-  const need = p.hurdle - 0.15 - 0.75 * (deployPressure(s, r) - 1);
-  const reqYield = coupon + (need - underwrittenGrowthPct(s.econ)) / 100;
-  return Math.min(v * 1.4, reqYield > 0.005 ? noi / reqYield : v * 1.4);
+  const view = dealView(s, rec, rec.bbl, v);
+  return view ? maxPrice(s.econ, view, bidderOf(s, r, rec), rentSignals(s)).max : 0;
 }
 /**
  * DRY POWDER BURNS A HOLE. A fund that raised money and has not found a
@@ -5380,6 +5388,8 @@ export function rivalBuys(
   // (Axtell 2001, Science) — with ~30 firms Zipf alone puts the largest at
   // ~25% and the top five at ~57% of the total.
   const streetAum = livingRivals(s).reduce((a, x) => a + Math.max(0, x.aum ?? 0), 0);
+  const incomeView = !land && rec.bldgArea > 0 && !prefer ? dealView(s, rec, rec.bbl, price) : null;
+  const sig = rentSignals(s);
   for (const r of prefer ? [] : candidates) {
     const st = paramsOf(r);
     const builds = land && paramsOf(r).build > 0;
@@ -5410,9 +5420,15 @@ export function rivalBuys(
       const mp = firmMaxPrice(s, r, rec);
       if (!(mp > 0) || (price > mp && !isDistress)) continue;
       fitPp = need + 0.5 * (mp / Math.max(1, price) - 1) * 10;
+    } else if (incomeView) {
+      // ITS OWN NUMBER (propmarket.ts): the firm's underwriting of this
+      // building on its own capital. Ordinary stock over that number is not a
+      // deal for this committee; distress still clears under it.
+      const mp = maxPrice(s.econ, incomeView, bidderOf(s, r, rec), sig).max;
+      if (!isDistress && mp < price) continue;
+      fitPp = need + 10 * (mp / Math.max(1, price) - 1);
     } else if (!isDistress && spreadPp + 0.15 < need) {
-      // Soft refuse: ordinary stock below the style's hurdle is not a deal
-      // for this committee. Distress and vultures still clear below the coupon.
+      // Soft refuse: dirt bought to hold, below the style's hurdle.
       continue;
     }
     const cyc = 1 + st.procyclical * ((s.econ.creditIdx ?? 1) - 1) + st.contra * shut;
@@ -5603,19 +5619,27 @@ export function rivalAsk(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
   const t = s.street?.[r.id];
   const known = t ? Math.min(0.05, 0.018 * t.deals) - Math.min(0.06, 0.03 * t.insults) : 0;
   const st = paramsOf(r);
+  // THEIR NUMBER, FROM THEIR OWN SITUATION (propmarket.ts sellerTerms): a firm
+  // in arrears takes what clears its loan; anybody else what the building is
+  // worth to it to keep, plus the tax a sale crystallises and the cost of
+  // selling, at its own patience. The asks used to be the appraisal times a
+  // random band per style (FORMULA_LEDGER.md #21).
+  if (!rec) return { ask: 0, note: `${r.name}: no deed to quote.` };
   if (r.stressMs && r.stressMs > 4) {
-    return { ask: Math.round(v * rrange(s, 0.80, 0.95, "rivals") * (1 - known)), note: `${r.name} needs liquidity; priced under appraisal.` };
+    const t = sellerTerms(s, r, rec, bbl, v, "duress", assetGrade(r, rec));
+    return { ask: Math.round(Math.max(t.reserve, Math.min(t.ask, t.inUse)) * (1 - known) / 1000) * 1000, note: `${r.name} needs liquidity; priced to clear its loan.` };
   }
+  const terms = sellerTerms(s, r, rec, bbl, v, "voluntary", assetGrade(r, rec));
   // A FIRM THAT DOES NOT NEED TO SELL prices like it: the old families, and
   // anybody whose sheet holds for a generation or carries NEVER sells.
   const patientHolder = r.sheet ? (r.sheet.hold >= 90 || !!r.rules?.includes("neverSells")) : r.style === "family";
   if (ltv < st.maxLtv * 0.6 && patientHolder) {
-    return { ask: Math.round(v * rrange(s, 1.18, 1.45, "rivals")), note: `${r.name}: family-held for two generations, no need to sell.` };
+    return { ask: terms.ask, note: `${r.name}: family-held for two generations, no need to sell.` };
   }
   // A patient seller lists high and waits (a quirk).
   const patientQ = r.quirks?.includes("patientSeller") ? 1.08 : 1;
   return {
-    ask: Math.round(v * rrange(s, st.patience - 0.04, st.patience + 0.12, "rivals") * (1 - known) * patientQ),
+    ask: Math.round(Math.max(terms.reserve, terms.ask * (1 - known) * patientQ) / 1000) * 1000,
     note: (t?.deals ?? 0) >= 2
       ? `${r.name}: ${t!.deals === 2 ? "two" : `${t!.deals}`} prior deals with you; friendlier price.`
       : (t?.insults ?? 0) > 0

@@ -763,9 +763,9 @@ export function statedLtv(
  * market would otherwise write.
  */
 export function streetRefiProceeds(
-  s: GameState, value: number, noiYr: number, maxLtv: number, stab?: StabView,
-): { principal: number; binding: string; lender: string } {
-  let best = 0, binding = "advance rate", lender = "";
+  s: GameState, value: number, noiYr: number, maxLtv: number, stab?: StabView, only?: string[],
+): { principal: number; binding: string; lender: string; ratePct: number } {
+  let best = 0, binding = "advance rate", lender = "", ratePct = 0;
   // WHICH DESKS EVEN LOOK AT IT. The three income desks — the regional, the
   // hometown bank, then hard money — walk any building. A SITE has no income,
   // so all three size it at zero on coverage, and the only money in this town
@@ -777,7 +777,7 @@ export function streetRefiProceeds(
   // street used to call quote() without it, so a lease-up sized to nearly
   // nothing on in-place income while the player could finance the plan — an
   // asymmetry in the player's favour that nobody asked for.
-  const desks = noiYr > 0 ? ["savings", "harbor", "cordage"] : ["land"];
+  const desks = noiYr > 0 ? (only ?? ["savings", "harbor", "cordage"]) : ["land"];
   for (const p of desks.map(productById)) {
     if (!windowOpen(s, p)) continue;
     const q = quote(s, p, value, noiYr, undefined, true, p.bridge ? stab : undefined);
@@ -788,9 +788,10 @@ export function streetRefiProceeds(
         : q.stabConstrained ? "stab"
         : q.dyConstrained ? "debt yield" : q.dscrConstrained ? "coverage" : "advance rate";
       lender = p.lender;
+      ratePct = q.ratePct;
     }
   }
-  return { principal: Math.round(Math.max(0, best)), binding, lender };
+  return { principal: Math.round(Math.max(0, best)), binding, lender, ratePct };
 }
 
 /** Whether this desk will look at you at all today. */

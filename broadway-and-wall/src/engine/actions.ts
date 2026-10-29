@@ -12,6 +12,7 @@ import { mergedTouched, ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, rivalCanClose, rivalsWhoCanClose, gradeOf, tie, forgetDeed, jvLpTake, noteRealised, streetSaleCost, gainsTax } from "./rivals";
+import { bidRound, listingReserve, noteRoundFailed, noteRoundClosed, impliedCap } from "./propmarket";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg, holderSheet } from "./owners";
@@ -3930,44 +3931,46 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
     const depth = li.distress ? qualifiedBuyers(s, rec, li.ask) : 0;
     const contested = li.distress && depth > 1 ? 1 + 0.22 * Math.min(4, depth - 1) : 1;
     if (rng(s, "sales") < base * priceFactor * contested * Math.max(0.25, marketAppetite(s)) * (talk ? 1.7 : 1)) {
-      // And whoever comes over the top pays for the privilege of ending it.
-      let px = talk ? Math.max(li.ask, Math.round(talk.yourPrice * rrange(s, 1.04, 1.12, "sales"))) : li.ask;
-      // THE PRICE IS THE BIDS (2026-10-16). The buyers who can close on it
-      // each value the building at what investors require of the class today
-      // (market.ts capTarget) and their own read of it; it clears at the
-      // second-best bid, above the seller's reserve, or it does not clear this
-      // month. The cap-rate index then follows where these sales cleared.
-      if (!talk && !li.distress && rec.class !== "land" && rec.bldgArea > 0) {
-        const k = rec.class as "office";
-        const tgt = s.econ.capTarget?.[k], idx = s.econ.capRate?.[k];
-        const atReq = value * (tgt && idx && tgt > 0 ? idx / tgt : 1);
-        const n = Math.max(1, Math.min(5, qualifiedBuyers(s, rec, li.ask)));
-        const bids: number[] = [];
-        for (let i = 0; i < n; i++) {
-          const z = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "sales")))) * Math.cos(2 * Math.PI * rng(s, "sales"));
-          bids.push(atReq * Math.exp(0.07 * z));
-        }
-        bids.sort((a, b) => b - a);
-        const reserve = li.ask * 0.92;
-        // A round that misses the reserve teaches the seller what the room
-        // will pay: the ask comes down toward the best bid (at most a twentieth
-        // a round), as a listing that sits does.
-        if (bids[0] < reserve) {
-          survivors.push({ ...li, ask: Math.round(Math.max(li.ask * 0.95, bids[0] * 1.04) / 1000) * 1000 });
+      // THE PRICE IS THE BIDS (ONE_ECONOMY_PLAN.md step 7). Every firm on the
+      // street that would and could buy it underwrites it on its own capital
+      // (propmarket.ts bidRound) and bids under its own number; the best bid
+      // takes it if it clears the seller's reservation — and, where you are
+      // across the table, beats your number. Otherwise nothing closes this
+      // month, the best bid goes on the cap tape as evidence, and the seller
+      // learns what the room pays: the ask comes toward the best bid (at most
+      // a twentieth a round), never under its own reservation.
+      // A lot is bought on the builders' residual (rivalBuys), at the ask.
+      let px = li.ask;
+      let winner: Rival | undefined;
+      const building = rec.class !== "land" && rec.bldgArea > 0;
+      let round: ReturnType<typeof bidRound> | null = null;
+      if (building) {
+        round = bidRound(s, parcels, rec, li);
+        const reserve = Math.max(listingReserve(li), talk ? talk.yourPrice + 1 : 0);
+        const top = round.bids[0];
+        if (!top || top.bid < reserve) {
+          noteRoundFailed(s, rec, li, round);
+          survivors.push(top && !talk
+            ? { ...li, ask: Math.round(Math.max(listingReserve(li), li.ask * 0.95, top.bid * 1.04) / 1000) * 1000 }
+            : li);
           continue;
         }
-        px = Math.round(Math.max(reserve, Math.min(bids[0], bids[1] ?? reserve)));
-      }
-      if (!talk && li.distress && depth > 1) {
-        // Each additional real bidder closes part of the gap between the
-        // receiver's number and what the building is worth. Five serious
-        // bidders take most of it; two take a fifth of it; one takes none.
-        const gap = Math.max(0, value / Math.max(1, li.ask) - 1);
-        px = Math.round(li.ask * (1 + gap * Math.min(0.85, 0.22 * (depth - 1))));
+        px = top.bid;
+        winner = top.r;
       }
       // Somebody takes it, and somebody has a name. Losing the same corner to
       // the same firm twice in a year is information; "another buyer" was not.
-      const buyer = rivalBuys(s, parcels, rec, px);
+      const askCap = round?.view ? impliedCap(s, rec, li.bbl, li.ask, round.view.cond, round.view.condIdx) : null;
+      let buyer = rivalBuys(s, parcels, rec, px, winner);
+      // The winner could not fund the close after all: the next bid that clears takes it.
+      if (!buyer && round) {
+        for (const b of round.bids.slice(1)) {
+          if (b.bid < Math.max(listingReserve(li), talk ? talk.yourPrice + 1 : 0)) break;
+          buyer = rivalBuys(s, parcels, rec, b.bid, b.r);
+          if (buyer) { px = b.bid; break; }
+        }
+      }
+      if (buyer && round) noteRoundClosed(s, li.bbl, round, askCap);
       if (talk && buyer) {
         delete s.talks![li.bbl];
         if (!Object.keys(s.talks!).length) delete s.talks;

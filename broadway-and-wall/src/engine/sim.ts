@@ -40,7 +40,7 @@ import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDeprecia
 import { tickDemand, isCivicLand } from "./demand";
 import { tickCorporate } from "./corporate";
 import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose } from "./rivals";
-import { openingCapSurvey, tickBrokerSurvey } from "./propmarket";
+import { openingCapSurvey, tickBrokerSurvey, anchoredAsk, forcedSalePrice } from "./propmarket";
 import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { tickStreetLoans } from "./streetLoans";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
@@ -344,7 +344,12 @@ function listHolderExit(s: GameState, parcels: ParcelTable) {
     // whether the building was a tenth let or fully let.
     const value = conveyedValue(s, rec, bbl, distress);
     if (value <= 0) continue;
-    const ask = Math.round(value * (distress ? rrange(s, 0.78, 0.93) : rrange(s, 0.96, 1.08)) / 1000) * 1000;
+    // An estate or split partnership prices to move (what the street would bid
+    // today); any other holder asks its anchor (propmarket.ts). The old bands'
+    // draws are kept so the stream does not re-roll. FORMULA_LEDGER #23.
+    void (distress ? rrange(s, 0.78, 0.93) : rrange(s, 0.96, 1.08));
+    const heard = distress ? forcedSalePrice(s, parcels, rec, bbl, value) : 0;
+    const ask = Math.round((distress ? (heard > 0 ? heard : value) : anchoredAsk(s.econ, rec, value)) / 1000) * 1000;
     // Only a holder whose register kind IS an estate may stamp reason:"estate".
     // Partnership/fund/developer exits used to wear that badge too —
     // Marketplace then read every book sale as an estate. Voluntary is the
@@ -510,8 +515,11 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     // to the new cap rate; they hold last year's number and wait. So in a
     // downturn the honest asks vanish and the tape fills with either dreamers
     // or people who have run out of road — and telling those apart is the job.
+    // (anchoredAsk, propmarket.ts: the higher of today's appraisal and last
+    // year's — loss aversion, not a random band. FORMULA_LEDGER #23.)
     const dn = cycleDown(s.econ);
-    const denial = rrange(s, 0.94 + 0.16 * dn, 1.10 + 0.18 * dn);
+    void rrange(s, 0.94 + 0.16 * dn, 1.10 + 0.18 * dn);   // the old band's draw, kept so the stream does not re-roll
+    const denial = anchoredAsk(s.econ, rec, value) / value;
     // A lender clearing troubled paper prices at loan basis, not appraisal.
     const cl = distress ? s.cityLoans?.[bbl] : undefined;
     let ask: number;
@@ -524,7 +532,13 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
       receiverFor = cl.lender;
       reason = "receiver";
     } else {
-      ask = Math.round(value * (distress ? rrange(s, 0.72, 0.90) : denial) / 1000) * 1000;
+      // AN OWNER WHO HAS RUN OUT OF ROAD prices to move: at what its broker
+      // hears the street would bid today (propmarket.ts forcedSalePrice), or
+      // the appraisal when nobody would.
+      const draw = distress ? rrange(s, 0.72, 0.90) : 0;   // the old band's draw, kept so the stream does not re-roll
+      void draw;
+      const heard = distress ? forcedSalePrice(s, parcels, rec, bbl, value) : 0;
+      ask = Math.round((distress ? (heard > 0 ? heard : value) : value * denial) / 1000) * 1000;
     }
     // THE ROLL IS WRITTEN WHEN IT COMES TO MARKET, NOT AT THE CLOSING.
     // See Listing.roll. A scratch holding is used purely as a vessel for

@@ -42,7 +42,7 @@ import { underwrittenGrowthPct, dollarLevel, RENT_BASE, CAP_BASE } from "./marke
 import {
   assetValue, capRateFor, initialCondIdx, demandLinear, incomeValueAsIs, initialCondition, inPlace, landValue,
   marketAppraisal, noiYr, resolveRec, specWearMult, taxBorneShare, taxRate, useOccupancy, useRentableSf,
-  useRentPsfYr, COND_DECAY, COND_WEAR_REF,
+  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS,
 } from "./value";
 import { uses } from "./mix";
 import { productOf } from "./products";
@@ -148,6 +148,8 @@ export interface DealView {
   prod: number;
   /** the dirt, for a buyer who builds */
   land: number;
+  /** what buyers have seen of this building's submarket (tickLocBeliefs): a risk premium in points, and income growth against the class, a share a year */
+  locPrem: number; locG: number;
 }
 
 /**
@@ -211,7 +213,8 @@ export function dealView(
     debtCap = q2.principal >= q1.principal * 1.45 ? Infinity : Math.max(q1.principal, q2.principal);
   }
   const prod = rec.product ? (productOf(rec.product)?.capSpread ?? 0) : 0;
-  return { rec, bbl, k, cond: c, condIdx: q, noiPre, stabPre, tau, leaseCap, cx, debtA, debtCap, rd: q1.ratePct, prod, land: landValue(rec, e) };
+  const loc = locBelief(e, rec, k, q);
+  return { rec, bbl, k, cond: c, condIdx: q, noiPre, stabPre, tau, leaseCap, cx, debtA, debtCap, rd: q1.ratePct, prod, land: landValue(rec, e), locPrem: loc.prem, locG: loc.g };
 }
 
 /** One bidder's temperament, as the underwriting reads it. */
@@ -280,7 +283,8 @@ export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<ty
   const rd = v.debtA > 0 ? (v.rd + b.fileSpread) / 100 : rE;
   const a = Math.min(v.debtA, b.ltvCap);
   const gBase = underwrittenGrowthPct(e) / 100;
-  let belief = e.growthExp?.[v.k] ?? 0;
+  // the class's record, and this submarket's own record against it (tickLocBeliefs)
+  let belief = (e.growthExp?.[v.k] ?? 0) + v.locG;
   if (rentSig && b.lean !== 0) {
     const sig = rentSig[v.k];
     belief += b.lean > 0 ? b.lean * sig.g : -b.lean * (1 / (1 + sig.dev) - 1) * GAP_CLOSE_YR;
@@ -291,7 +295,7 @@ export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<ty
   const siteH = e.siteHurdle?.[v.k];
   if (gr > 0 && siteH !== undefined && siteH > 0) gr = Math.min(gr, y0 * (1 - Math.exp(-Math.max(0, -Math.log(siteH)))));
   const g = gBase + gr;
-  const load = v.tau + v.cx + v.prod / 100 - b.misPp / 100;
+  const load = v.tau + v.cx + v.prod / 100 + v.locPrem / 100 - b.misPp / 100;
   const X = v.stabPre - v.leaseCap;
   // a guard on the denominator, not a price: a required yield under one per
   // cent would be a cost of capital this engine cannot produce
@@ -428,6 +432,25 @@ export function sellerTerms(
   if (why === "forced") return { reserve: round(clear), ask: round(Math.max(clear, mark)), inUse };
   const reserve = round(Math.max(clear, inUse + gainsTax(r, inUse) + streetSaleCost(inUse, s)));
   return { reserve, ask: round(reserve * Math.max(1, paramsOf(r).patience)), inUse };
+}
+
+/**
+ * A HOLDER UNDER NO PRESSURE ASKS ITS ANCHOR: the higher of what the building
+ * appraises at today and what it appraised at a year ago (today's value
+ * restated at last year's cap read). Sellers who would book a loss against
+ * their reference price list higher and sell slower — the loss aversion
+ * Genesove & Mayer (2001, Boston condos) and Bokhari & Geltner (2011,
+ * commercial) measure — so in a falling market the honest asks vanish and the
+ * bid-ask gap opens on its own. In a rising one they ask today's number.
+ * This replaced a random "denial" band (FORMULA_LEDGER #23).
+ */
+export function anchoredAsk(e: Econ, rec: ParcelRecord, value: number): number {
+  if (rec.class === "land" || !(rec.bldgArea > 0)) return value;
+  const k = rec.class as BuiltClass;
+  const h = e.history ?? [];
+  const then = h.length >= 13 ? h[h.length - 13]?.cap?.[k] : undefined;
+  const now = e.capRate?.[k];
+  return then && now && then > 0 ? value * Math.max(1, now / then) : value;
 }
 
 /** The least the seller of a listing takes: a named firm's own reservation, else the tape's 92% of ask (a lender's 88%). */
@@ -623,6 +646,85 @@ const CLASS_WORD: Record<BuiltClass, string> = { office: "office", retail: "reta
  */
 const MIN_EVIDENCE = 5;
 export function tickCapRead(s: GameState): void {
+  tickLocBeliefs(s.econ);
+  tickCapReadInner(s);
+}
+
+// ---------------------------------------------------------------- what buyers have seen of a submarket
+
+/**
+ * THE PRICE OF A SUBMARKET'S RISK. A buyer asks more of income that has swung
+ * more, and the market's price for a point of property income volatility is
+ * about four tenths of a point of return: NCREIF unlevered excess returns
+ * over their de-smoothed volatility, 1978-2019, run a Sharpe ratio of
+ * roughly 0.3-0.5. The equity targets (EQUITY_PREMIUM) are for the class's
+ * ordinary building, so only a submarket's volatility over the class's mean
+ * is charged — and a calmer one is credited. A calibrated fact, not a spread.
+ */
+const RISK_PRICE = 0.4;
+/** A ten-year memory, as `growthExp`: what a submarket has done over a cycle, not a season. */
+const LOC_MEMORY_M = 120;
+
+/**
+ * WHAT BUYERS SEE OF EACH SUBMARKET, monthly. The street's stock is kept in
+ * ten quality bands per class (bands.ts — the address and the building
+ * blended), each with its own occupancy and its own rent swing. A buyer
+ * watching the town sees each band's income (rent swing x occupancy) move,
+ * and remembers two things: how it has grown against the class, and how
+ * much it has swung. Nobody tells it that the edge of town is risky; it has
+ * watched the edge of town empty first in every glut (bands.ts: absorption
+ * leaves from the bottom of the scale).
+ */
+export function tickLocBeliefs(e: Econ): void {
+  if (!e.bands) return;
+  const seen = (e.locSeen ??= {});
+  const a = 1 / LOC_MEMORY_M;
+  for (const k of K) {
+    const bk = e.bands[k];
+    if (!bk) continue;
+    let incC = 0, stC = 0;
+    const inc = bk.stock.map((st, b) => {
+      if (!(st > 0)) return NaN;
+      incC += bk.rent[b] * bk.occ[b]; stC += st;
+      return Math.log(Math.max(1e-6, bk.rent[b] * bk.occ[b] / st));
+    });
+    if (!(stC > 0) || !(incC > 0)) continue;
+    const lc = Math.log(incC / stC);
+    const prev = seen[k];
+    if (!prev) { seen[k] = { li: inc, lc, g: inc.map(() => 0), v: inc.map(() => 0), n: 0 }; continue; }
+    for (let b = 0; b < inc.length; b++) {
+      // a band too thin to measure, or one that only just came into being, says nothing this month
+      if (!Number.isFinite(inc[b]) || !Number.isFinite(prev.li[b]) || bk.stock[b] < 0.005 * stC) continue;
+      const d = (inc[b] - prev.li[b]) - (lc - prev.lc);
+      prev.g[b] += a * (d - prev.g[b]);
+      prev.v[b] += a * (d * d - prev.v[b]);
+    }
+    prev.li = inc; prev.lc = lc; prev.n++;
+  }
+}
+
+/** The premium and relative growth a buyer reads for this building's band, from what it has seen. */
+function locBelief(e: Econ, rec: ParcelRecord, k: BuiltClass, condIdx: number): { prem: number; g: number } {
+  const seen = e.locSeen?.[k], bk = e.bands?.[k];
+  if (!seen || !bk || seen.n < 12) return { prem: 0, g: 0 };
+  // an exponential memory started from nothing reads too calm until it has filled: correct for it
+  const fill = 1 - Math.pow(1 - 1 / LOC_MEMORY_M, seen.n);
+  const sig = seen.v.map((v) => Math.sqrt(Math.max(0, v / fill) * 12) * 100);   // annual, points
+  let mean = 0, w = 0;
+  for (let b = 0; b < sig.length; b++) if (bk.stock[b] > 0) { mean += sig[b] * bk.stock[b]; w += bk.stock[b]; }
+  mean = w > 0 ? mean / w : 0;
+  const score = overallScore(rec, e, k, condIdx);
+  const b = Math.max(0, Math.min(N_BANDS - 1, Math.floor(score / 10)));
+  if (!(bk.stock[b] > 0)) return { prem: 0, g: 0 };
+  // HOW MUCH TO BELIEVE A THIN SUBMARKET. A band holding a few buildings
+  // swings with every tenant who moves, and a buyer credits its record in
+  // proportion to how much of the market it is (Buhlmann credibility: a band
+  // with a tenth of the class's stock is believed halfway; a shape parameter).
+  const cred = (bk.stock[b] / w) / (bk.stock[b] / w + 0.1);
+  return { prem: cred * RISK_PRICE * (sig[b] - mean), g: cred * (seen.g[b] / fill) * 12 };
+}
+
+function tickCapReadInner(s: GameState): void {
   const e = s.econ;
   const tape = s.capTape ?? [];
   const reads = (e.capRead ??= {});

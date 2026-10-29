@@ -2356,6 +2356,15 @@ export interface Econ {
    * (0-1), against the reference building the class read is quoted for.
    */
   capFit?: Partial<Record<BuiltClass, [number, number, number]>>;
+  /**
+   * WHAT BUYERS HAVE SEEN OF EACH SUBMARKET (propmarket.ts tickLocBeliefs):
+   * per class and quality band (`bands` — address and building blended), the
+   * band's income (rent swing x occupancy) last month in logs (`li`), and a
+   * ten-year memory of how its income has moved against the class's: the
+   * mean monthly change (`g`) and its mean square (`v`). `lc` is the class's
+   * own log income last month; `n` months watched.
+   */
+  locSeen?: Partial<Record<BuiltClass, { li: number[]; lc: number; g: number[]; v: number[]; n: number }>>;
   /** The market's slack each new deal reads (the rent equation's monthly pressure). */
   dealPress?: Partial<Record<BuiltClass, number>>;
   /** Every street block of flats and the flats let in it (streetRolls.ts). */

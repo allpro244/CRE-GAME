@@ -24,6 +24,7 @@ import { DebtPage } from "@/ui/panels/DebtPage";
 import { InvestorsPage } from "@/ui/panels/InvestorsPage";
 import { BanksPage } from "@/ui/panels/BankProfile";
 import { PropertyPage } from "@/ui/panels/PropertyPage";
+import { BizSheet } from "@/ui/BizSheet";
 import {
   DecisionModal, AlertModal, AuctionModal, DefaultNoticeModal, GameOverPage,
 } from "@/ui/panels/modals";
@@ -246,6 +247,8 @@ export default function GamePanels() {
           .modal-backdrop`), and the rest wait their turn behind it with a
           count on screen (CardQueue). So: what happened, then what it does to
           your own deed, then what wants an answer, then the auction. */}
+      {/* a business's books, over whatever page named it (BizLink) */}
+      <BizSheet />
       <AlertModal />
       <DefaultNoticeModal />
       <DecisionModal />

@@ -19,6 +19,7 @@ import { useLabel, occRead, occLabel, occTitle, Big } from "@/ui/panels/shared";
 import Fold from "@/ui/Fold";
 import { Rollover } from "@/ui/rollups/Rollover";
 import { OpsChoices } from "@/ui/panels/OpsChoices";
+import { BizLink } from "@/ui/BizSheet";
 
 export function LeasingPage() {
   const parcels = useStore((s) => s.parcels)!;
@@ -597,7 +598,7 @@ export function LeasingPage() {
                   return (
                   <tr key={r.h.bbl + ":" + i} onClick={() => go(r.h.bbl)}>
                     <td>
-                      <div>{t.name}</div>
+                      <div><BizLink t={t} /></div>
                       <div className="dim" style={{ fontSize: 11 }}>
                         {t.sector}{t.quality !== undefined ? ` · q${t.quality}` : ""} · {CREDIT_LABEL[t.credit]} · {recov === "nnn" ? "NNN" : recov === "base" ? "base yr" : "gross"}
                         {recov === "base" ? ` · stop $${(t.baseStopPsf ?? 0).toFixed(2)}` : ""}

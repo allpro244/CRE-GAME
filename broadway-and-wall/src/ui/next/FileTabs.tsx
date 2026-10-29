@@ -22,6 +22,8 @@ import { DataTable, Stat, StatStrip, type Col } from "./DataTable";
 import { Figure, fmtFig } from "./Figure";
 import { VerbButton } from "./Drawer";
 import { CapitalDesk } from "./CapitalDesk";
+import { BizLink } from "@/ui/BizSheet";
+import { RentExposure } from "@/ui/panels/IndustriesView";
 
 /** "Desk": the classic tab, hosted, for everything the table does not carry. */
 function Desk({ tabs, force }: { tabs: ("leasing" | "ops" | "money")[]; force?: boolean }) {
@@ -54,7 +56,7 @@ export function RentRollTab({ game, parcels, bbl, h }: { game: GameState; parcel
   const countering = focus !== null && lois.some((l) => l.id === focus);
   const args = { bbl };
   const cols: Col<LeaseRow>[] = [
-    { id: "name", label: "Tenant", get: (r) => r.t.name },
+    { id: "name", label: "Tenant", get: (r) => r.t.name, cell: (r) => <BizLink t={r.t} /> },
     { id: "use", label: "Use", get: (r) => r.t.use ?? rec.class },
     { id: "sector", label: "Sector", get: (r) => r.t.sector, hidden: true },
     { id: "sf", label: "sf", get: (r) => r.t.sf, fmt: "n" },
@@ -89,7 +91,7 @@ export function RentRollTab({ game, parcels, bbl, h }: { game: GameState; parcel
               const m = loiMarketPsf(game, parcels, l);
               return (
                 <tr key={l.id}>
-                  <td><span className="nx-strong-cell">{l.name}</span> <span className="nx-dim">{l.kind}</span></td>
+                  <td><span className="nx-strong-cell"><BizLink t={l} /></span> <span className="nx-dim">{l.kind}</span></td>
                   <td className="num mono">{Math.round(l.sf).toLocaleString()}</td>
                   <td className="num mono">{l.rentPsf.toFixed(2)}</td>
                   <td className={"num mono" + (m > 0 && l.rentPsf < m ? " nx-neg" : " nx-pos")}>{m > 0 ? fmtFig(l.rentPsf / m - 1, "pct") : "—"}</td>
@@ -109,6 +111,7 @@ export function RentRollTab({ game, parcels, bbl, h }: { game: GameState; parcel
           </tbody>
         </table>
       )}
+      <RentExposure holding={h} />
       <DataTable id="file-roll" cols={cols} rows={rows} rowKey={(r) => String(r.i) + r.t.name} initialSort={{ col: "sf", dir: -1 }} empty="No leases" />
       <Desk tabs={["leasing", "ops"]} force={countering} />
     </div>

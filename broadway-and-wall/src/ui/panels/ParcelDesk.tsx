@@ -43,6 +43,8 @@ import { platHomesView, tractLotQuote, houseValue, sfrRentMo } from "@/engine/ho
 import { tractYield } from "@/engine/platdesign";
 import { SplitTab } from "@/ui/next/SplitTab";
 import { splittable } from "@/engine/lotsplit";
+import { BizLink } from "@/ui/BizSheet";
+import { RentExposure } from "@/ui/panels/IndustriesView";
 
 // Re-exports so Portfolio / Debt / older imports keep a stable path.
 export {
@@ -1017,6 +1019,7 @@ function ParcelPanelInner({
       {on("leasing") && holding && commercial && holding.tenants.length > 0 && (
         <div className="deal">
           <div className="deal-head">Rent roll · {sf(leasedSf)} of {sf(Math.round(usesOf(rec).filter((u) => u !== "multifamily").reduce((a, u) => a + useRentableSf(rec, u), 0)))} rentable commercial</div>
+          <RentExposure holding={holding} />
           <div className="roll">
             {/* Grouped by market, because that is how it is managed. The shops
                 at grade renew against retail comps and the floors above against
@@ -1059,7 +1062,7 @@ function ParcelPanelInner({
                   const strained = t.strainedM !== undefined && game.month - t.strainedM < 24;
                   return (
                   <div key={i} className="roll-row">
-                    <span className="roll-name">{t.name} <span className="roll-credit mono">{CREDIT_LABEL[t.credit]}</span>
+                    <span className="roll-name"><BizLink t={t} /> <span className="roll-credit mono">{CREDIT_LABEL[t.credit]}</span>
                       {yrsIn >= 5 && <span className="dim"> · since {START_YEAR + Math.floor(t.startM / 12)}</span>}
                     </span>
                     <span className="roll-meta mono">

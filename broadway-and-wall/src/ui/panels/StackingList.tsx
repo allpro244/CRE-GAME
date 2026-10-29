@@ -1,6 +1,7 @@
 // FLOORPLATE STACKING — a list, not a diagram. Tenant / vacant block per floor.
 import { monthLabel } from "@/engine/types";
-import type { GameState, Holding } from "@/engine/types";
+import type { GameState, Holding, Tenant } from "@/engine/types";
+import { BizLink } from "@/ui/BizSheet";
 import type { ParcelRecord } from "@/data/types";
 import { assignTenantFloors, blocksOf, stacksOf } from "@/engine/plates";
 import { sf } from "@/ui/format";
@@ -26,6 +27,7 @@ export function StackingList({
     who: string;
     meta: string;
     vacant?: boolean;
+    t?: Tenant;
     floorLo: number;
     floorHi: number;
   }[] = [];
@@ -36,6 +38,7 @@ export function StackingList({
       key: `t:${t.name}:${t.startM}`,
       floors: t.floorLo === t.floorHi ? `Fl ${t.floorLo}` : `Fl ${t.floorLo}–${t.floorHi}`,
       who: t.name,
+      t,
       meta: `${sf(t.sf)} · $${t.rentPsf.toFixed(0)}/sf · exp ${monthLabel(t.endM)}`,
       floorLo: t.floorLo,
       floorHi: t.floorHi,
@@ -70,7 +73,7 @@ export function StackingList({
           {rows.map((r) => (
             <tr key={r.key} className={r.vacant ? "dim" : ""}>
               <td className="mono">{r.floors}</td>
-              <td>{r.who}</td>
+              <td>{r.t ? <BizLink t={r.t} /> : r.who}</td>
               <td className="num">{r.meta}</td>
               {canHold && (
                 <td>

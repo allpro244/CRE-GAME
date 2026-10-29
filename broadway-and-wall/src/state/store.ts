@@ -337,6 +337,12 @@ interface AppState {
   /** The rival whose own page the Players view is showing (null: the list). */
   firmFocus: string | null;
   openFirm: (id: string | null) => void;
+  /** The business (a tenant's firm id, economy.ts) whose books sheet is open over the page; null: closed. */
+  bizFocus: number | null;
+  openBiz: (fid: number | null) => void;
+  /** The industry the Markets → Industries view is showing its supply chain for. */
+  industryFocus: string | null;
+  openIndustry: (id: string | null) => void;
   /**
    * MARK THE OLDEST INTERRUPTION READ.
    *
@@ -1338,6 +1344,14 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setMapFilter: (f) => set({ mapFilter: f }),
+
+  bizFocus: null,
+  openBiz: (fid) => set({ bizFocus: fid }),
+  industryFocus: null,
+  openIndustry: (id) => {
+    set({ industryFocus: id, bizFocus: null });
+    if (id) { openViewOn("economy", "industries"); get().setPage("economy"); }
+  },
 
   firmFocus: null,
   openFirm: (id) => {

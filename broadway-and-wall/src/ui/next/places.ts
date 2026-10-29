@@ -84,6 +84,7 @@ export const PLACES: Place[] = [
     tabs: [
       { id: "overview", label: "Overview", page: "economy", view: "m-overview", width: "wide" },
       { id: "sectors", label: "Sectors", page: "economy", view: "c-markets", width: "wide" },
+      { id: "industries", label: "Industries", page: "economy", view: "m-industries", width: "wide" },
       { id: "districts", label: "Districts", page: "economy", view: "m-districts", width: "wide" },
       { id: "building", label: "Construction", page: "economy", view: "m-building", width: "wide" },
     ],

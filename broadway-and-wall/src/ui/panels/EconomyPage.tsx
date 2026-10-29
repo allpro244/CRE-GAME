@@ -16,6 +16,8 @@ import { TheBanks } from "@/ui/panels/BanksDesk";
 import { LandValueChart } from "@/ui/panels/MarketPage";
 import { creditWord, real, workStage, Row, useDeskView } from "@/ui/panels/shared";
 import { Employers, Districts, boardClimate, pendingHearings } from "@/ui/panels/CityStances";
+import { Industries } from "@/ui/panels/IndustriesView";
+import { economyByIndustry } from "@/engine/economy";
 
 /** The cycle in a sentence. Read by City → Pulse, which leads with it. */
 export const PHASE_BLURB: Record<string, string> = {
@@ -390,8 +392,8 @@ function StockVsLeased({ tail, live, xFrom, xTo, spanYrs }: {
 }
 
 const CLASSES_ALL = ["office", "retail", "multifamily", "industrial"] as const;
-type Stance = BuiltClass | "general" | "land" | "banks" | "employers" | "districts";
-const STANCES: readonly Stance[] = ["general", ...CLASSES_ALL, "land", "banks", "employers", "districts"];
+type Stance = BuiltClass | "general" | "land" | "banks" | "employers" | "industries" | "districts";
+const STANCES: readonly Stance[] = ["general", ...CLASSES_ALL, "land", "banks", "employers", "industries", "districts"];
 
 /**
  * THE REST OF THE STAT STRIP, WITH ITS HISTORY. The credit window, employment,
@@ -810,6 +812,25 @@ export function EconomyPage() {
                   </button>
                 );
               })()}
+              {/* THE FIRM BOOKS (economy.ts): every industry's jobs, sales and
+                  margin, and who buys from whom. */}
+              {(() => {
+                const rows = economyByIndustry(game);
+                if (!rows) return null;
+                const out = rows.reduce((a, r) => a + r.output, 0);
+                const ex = rows.reduce((a, r) => a + r.exports, 0);
+                const firms = rows.reduce((a, r) => a + r.firms, 0);
+                return (
+                  <button className={"mkt-card" + (sel === "industries" ? " mkt-card-on" : "")} onClick={() => setSel("industries")}>
+                    <div className="mkt-card-head">
+                      <span className="mkt-card-name">Industries</span>
+                      <span className="mono">{rows.length}</span>
+                    </div>
+                    <div className="mkt-card-state">{(ex / (out || 1) * 100).toFixed(0)}% sold out of town</div>
+                    <div className="mkt-card-sub mono">{firms.toLocaleString()} firms · ${((out * 12) / 1e9).toFixed(1)}B sales</div>
+                  </button>
+                );
+              })()}
               {(() => {
                 const { up, down } = boardClimate(game);
                 const filed = pendingHearings(game).length;
@@ -844,6 +865,7 @@ export function EconomyPage() {
       {sel === "land" && <LandValueChart />}
       {sel === "banks" && <>{rateChart}<TheBanks /></>}
       {sel === "employers" && <Employers />}
+      {sel === "industries" && <Industries />}
       {sel === "districts" && <Districts />}
       {isClass && <>
       <div className="page-section">{SECTOR_LABEL[focus]} · {bal.state}</div>

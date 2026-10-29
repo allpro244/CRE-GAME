@@ -33,6 +33,8 @@ import { NegotiationFooter, NegotiationPanel } from "./Negotiation";
 import { dealView } from "./deal";
 import { MoneyTab, RefiTable, RentRollTab } from "./FileTabs";
 import { SplitTab } from "./SplitTab";
+import { BizLink } from "@/ui/BizSheet";
+import { RentExposure } from "@/ui/panels/IndustriesView";
 
 type FileTab = "overview" | "leasing" | "money" | "build" | "split" | "deal" | "history";
 const FROM_PROP: Partial<Record<PropertyTab, FileTab>> = {
@@ -272,13 +274,14 @@ function Overview({ game, parcels, bbl, h }: { game: GameState; parcels: ParcelT
           </div>
         )}
       </div>
+      {ip.h && ip.h.tenants.length > 0 && <RentExposure holding={ip.h} />}
       {ip.h && ip.h.tenants.length > 0 && (
         <table className="nx-table">
           <thead><tr><th>Tenant</th><th className="num">sf</th><th className="num">$/sf</th><th className="num">vs mkt</th><th className="num">Ends</th></tr></thead>
           <tbody>
             {ip.h.tenants.slice().sort((a, b) => b.sf - a.sf).slice(0, 10).map((t, i) => (
               <tr key={t.name + i}>
-                <td>{t.name}</td>
+                <td><BizLink t={t} /></td>
                 <td className="num mono">{Math.round(t.sf).toLocaleString()}</td>
                 <td className="num mono">{t.rentPsf.toFixed(2)}</td>
                 <td className={"num mono" + (mkt > 0 && t.rentPsf < mkt ? " nx-neg" : " nx-pos")}>{mkt > 0 ? fmtFig(t.rentPsf / mkt - 1, "pct") : "—"}</td>

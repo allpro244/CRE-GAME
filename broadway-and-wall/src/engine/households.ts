@@ -256,6 +256,37 @@ const UE_RATE = 0.25;
  */
 const LEAVE_JOBLESS_M = 0.05 / 12;
 /**
+ * WORKERS CAN MOVE, SO REAL PAY IS WHAT A TOWN COMPETES ON (§6c-D). Pay here
+ * is set by the town's firms (economy.ts `postPayAndPrices`), and nothing in
+ * it reads the town's prices. What ties a metro's pay to its cost of living is
+ * that its workers compare what their pay buys here with what it buys
+ * elsewhere (Rosen 1979, Roback 1982): where it buys less, households leave
+ * and fewer come, the openings stay open and its firms bid pay up, and its
+ * rents fall with the households; where it buys more, they come, looking for
+ * work, and the slack holds pay down.
+ *
+ * `realRel` is the town's pay against the nation's over its prices against the
+ * nation's, both against the opening (the town starts where its people chose
+ * to live). A household's odds of being here go with realRel^MOVE_ELAST: the
+ * elasticity of a city's workforce to its real wage, low single digits in the
+ * spatial-equilibrium literature (Diamond 2016 AER estimates city labour
+ * supply elasticities of about 2-4 by skill; Moretti 2011, Handbook of Labor
+ * Economics, surveys) — 3 is taken [S~]. The households that reconsider where
+ * they live in a month are the interstate movers, about 2.5% a year (Census
+ * CPS; Molloy, Smith & Wozniak 2011) [S]: of those, the share that would
+ * rather be elsewhere, 1 - realRel^MOVE_ELAST, leaves; an opening is taken by
+ * a household from elsewhere with odds realRel^MOVE_ELAST (at most 1); and a
+ * town that pays more than its prices draws that excess, realRel^MOVE_ELAST
+ * - 1, of the movers' rate in households that come looking for work.
+ */
+const MOVE_M = 0.025 / 12, MOVE_ELAST = 3;
+/** What pay buys here against elsewhere (MOVE_ELAST above), from the engine's own indices. */
+export function realPayRel(e: Econ): number {
+  const pay = (e.wageIdx ?? 1) / Math.max(1e-9, e.natWageIdx ?? e.wageIdx ?? 1);
+  const px = (e.cpi ?? 1) / Math.max(1e-9, e.natCpi ?? e.cpi ?? 1);
+  return pay / Math.max(1e-9, px);
+}
+/**
  * The spread of pay round an industry's average: lognormal, sigma from the
  * mean over the median of all US wages, OEWS May 2023 ($65,470 mean, $23.11 an
  * hour = $48,069 median: sigma = sqrt(2 ln(mean/median)) = 0.79). That is the
@@ -424,6 +455,8 @@ export interface HouseholdRegister {
   wageRef: number; costRef: number; homeRef: number;
   /** each industry's posted pay last month (economy.ts), what its earners' pay is indexed by */
   payRef?: number[];
+  /** households a town that pays more than its prices has drawn, short of a whole one of the region's weight (MOVE_ELAST) */
+  drawAcc?: number;
   /** The island renters' median income over the town's median, fixed at the opening. */
   renterInc: number;
   /** The flats' effective rent index and the wage index at the opening: the engine's own burden is 30% moved by their ratio. */
@@ -632,6 +665,8 @@ function readBlocks(s: GameState, parcels: ParcelTable, r: HouseholdRegister, by
  * or in a month they did not run. Pure.
  */
 type Demand = { heads: Float64Array; codes: Int32Array[]; cum: Float64Array[]; live: Set<number>; pay: Float64Array;
+  /** each firm's posted pay against its industry's average (economy.ts `postPayAndPrices`), by register employer code */
+  rel: Map<number, number>;
   /** each firm's heads this month, by register employer code (workers: who is hiring and who is cutting) */
   hc: Map<number, number> };
 function readDemand(s: GameState): Demand | null {
@@ -640,18 +675,27 @@ function readDemand(s: GameState): Demand | null {
   const f = E.f, n = E.L.slot.n;
   const lists: { code: number; hc: number }[][] = Array.from({ length: N_IND }, () => []);
   const live = new Set<number>();
-  const hc = new Map<number, number>();
+  const hc = new Map<number, number>(), rel = new Map<number, number>();
+  const post = E.posted?.payIdx;
   for (let k = 0; k < n; k++) {
     const id = f.id[k], code = id >= 0 ? id : EMP_OFF + id;
     live.add(code); hc.set(code, f.hc[k]);
+    if (post && f.pay[k] > 0 && post[f.ind[k]] > 0) rel.set(code, f.pay[k] / post[f.ind[k]]);
     if (f.hc[k] > 0) lists[f.ind[k]].push({ code, hc: f.hc[k] });
   }
   const codes = lists.map((l) => Int32Array.from(l, (x) => x.code));
   const cum = lists.map((l) => { let t = 0; return Float64Array.from(l, (x) => (t += x.hc)); });
-  const w = s.econ.wageIdx ?? 1;
+  // an industry's going rate: what its firms posted (published a month on,
+  // as the engine reads every economy number); a firm's own pay is that times
+  // where its post stands in its industry this month (`rel`)
+  const w = s.econ.wageIdx ?? 1, pub = s.econ.eco?.payIdx;
   const pay = new Float64Array(N_IND);
-  for (let i = 0; i < N_IND; i++) pay[i] = industryCashPay(i, w);
-  return { heads: Float64Array.from(E.cur.heads), codes, cum, live, pay, hc };
+  for (let i = 0; i < N_IND; i++) pay[i] = industryCashPay(i, pub?.length === N_IND ? pub[i] : w);
+  return { heads: Float64Array.from(E.cur.heads), codes, cum, live, pay, rel, hc };
+}
+/** What a firm pays a worker at its industry's average standing, a year: its industry's going rate x its own post. */
+function firmPay(D: Demand, ind: number, code: number): number {
+  return D.pay[ind] * (D.rel.get(code) ?? 1);
 }
 /** A firm of an industry, by its heads (one draw). */
 function drawFirm(R: Rand, D: Demand, ind: number): number {
@@ -1392,9 +1436,9 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // other side (an island firm from the mainland, an off-map one from the island)
   const onIsland = (i: number) => r.a!.ten[i] === TEN_RENT;
   const cross = (i: number, code: number, wage: number) => (code >= 0) !== onIsland(i) && (code >= 0 || code < EMP_OFF) ? 12 * crossCostMo(e, wage) : 0;
-  const payAt = (i: number, k: number, ind: number) => {
-    const old = IND()[k][i], wg = WAGE()[k][i];
-    const base = old === IND_NONE ? D.pay[ind] * standing(i, k) : wg * D.pay[ind] / Math.max(1e-9, D.pay[old]);
+  const payAt = (i: number, k: number, ind: number, code: number) => {
+    const old = IND()[k][i], wg = WAGE()[k][i], here = firmPay(D, ind, code);
+    const base = old === IND_NONE ? here * standing(i, k) : wg * here / Math.max(1e-9, firmPay(D, old, EMP()[k][i]));
     return old !== IND_NONE && old !== ind ? base * SWITCH_PAY : base;
   };
   // a firm of an industry, by its heads, more for the firms adding heads (one draw)
@@ -1411,7 +1455,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       const ind = only ?? pickInd(r.a!.wt[i]);
       if (ind < 0) break;
       // ...and the match: the same job pays one worker more than another (MATCH_SD)
-      const code = firmIn(ind), pay = payAt(i, k, ind) * Math.exp(MATCH_SD * R.n() - MATCH_SD * MATCH_SD / 2), value = pay - cross(i, code, pay);
+      const code = firmIn(ind), pay = payAt(i, k, ind, code) * Math.exp(MATCH_SD * R.n() - MATCH_SD * MATCH_SD / 2), value = pay - cross(i, code, pay);
       if (!best || value > best.value) best = { ind, code, pay, value };
       if (only !== undefined && t >= 1) break;
     }
@@ -1470,9 +1514,12 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // from outside made each quit a household arriving: measured, the region
   // grew 17% more people and 23% more jobs in 25 years with quits on than off.
   const open = Float64Array.from(V, (v, i) => Math.min(v, r.vacLeft?.[i] ?? v));
+  // ...and only if what the job pays buys as much here as elsewhere (MOVE_ELAST)
+  const pull = Math.pow(Math.max(0.01, realPayRel(e)), MOVE_ELAST);
   for (let ind = 0; ind < N_IND; ind++) {
     while (open[ind] >= wR / 2) {
       open[ind] -= wR;
+      if (pull < 1 && !(R.u() < pull)) continue;
       const i = addAgent(r), b = r.a!;
       b.wt[i] = wR;
       const band = pick(R, ageP);
@@ -1480,12 +1527,12 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       b.adults[i] = 1 + pick(R, ADULTS);
       b.kids[i] = b.age[i] >= 20 && b.age[i] < 60 ? pick(R, KIDS) : 0;
       const f1 = Math.exp(WAGE_SIGMA * R.n() - WAGE_SIGMA * WAGE_SIGMA / 2);
-      b.emp1[i] = firmIn(ind); b.ind1[i] = ind; b.wage1[i] = D.pay[ind] * f1;
+      b.emp1[i] = firmIn(ind); b.ind1[i] = ind; b.wage1[i] = firmPay(D, ind, b.emp1[i]) * f1;
       V[ind] -= wR;
       if (b.adults[i] >= 2 && R.u() < 0.70) {
         const j = pickInd(wR);
         const f2 = Math.exp(WAGE_SIGMA * R.n() - WAGE_SIGMA * WAGE_SIGMA / 2);
-        if (j >= 0) { b.emp2[i] = firmIn(j); b.ind2[i] = j; b.wage2[i] = D.pay[j] * f2; V[j] -= wR; }
+        if (j >= 0) { b.emp2[i] = firmIn(j); b.ind2[i] = j; b.wage2[i] = firmPay(D, j, b.emp2[i]) * f2; V[j] -= wR; }
         else { b.emp2[i] = EMP_UNEMP; b.un2[i] = 1; b.wage2[i] = D.pay[ind] * f2; }
       }
       // its other adult (a grown child, a relative) looks for work here too, at the rate for everyone over 16
@@ -1565,7 +1612,20 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
     if (e3 === EMP_UNEMP && c.un3[i] > UI_MONTHS && R.u() < LEAVE_JOBLESS_M) {
       c.adults[i] = Math.max(1, c.adults[i] - 1); c.emp3[i] = EMP_NONE; c.wage3[i] = 0; c.un3[i] = 0; c.ind3[i] = IND_NONE;
     }
-    if (isWorking(e1) || isWorking(e2) || isWorking(c.emp3[i])) continue;
+    if (isWorking(e1) || isWorking(e2) || isWorking(c.emp3[i])) {
+      // a working household that reconsiders where it lives, and would rather be where its pay buys more
+      if (pull < 1 && R.u() < MOVE_M * (1 - pull)) {
+        leave.push(i); r.flow.left = (r.flow.left ?? 0) + c.wt[i];
+        if (c.ten[i] === TEN_RENT) {
+          r.flow.movedOut += c.wt[i];
+          noteOut(r, i, "other", () => ({
+            n: { realPay: +pull.toFixed(3) },
+            t: `A household left town for work elsewhere: pay here buys ${((1 - Math.pow(pull, 1 / MOVE_ELAST)) * 100).toFixed(0)}% less than in the nation`,
+          }));
+        }
+      }
+      continue;
+    }
     const out = (e1 === EMP_UNEMP && c.un1[i] > UI_MONTHS) || (e2 === EMP_UNEMP && c.un2[i] > UI_MONTHS);
     if (out && R.u() < LEAVE_JOBLESS_M) {
       leave.push(i); r.flow.left = (r.flow.left ?? 0) + c.wt[i];
@@ -1959,11 +2019,18 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   // month) lands as households renting across the water, looking for work —
   // it does not wait for a vacancy or a flat (step 2: the register is the
   // town's people, so this is where the wave lands).
+  // A TOWN WHOSE PAY BUYS MORE THAN ELSEWHERE draws movers the same way, at
+  // the excess of its pull over the movers' rate (MOVE_ELAST), carried month
+  // to month until it makes a whole household of the region's weight.
+  const draw = D ? MOVE_M * Math.max(0, Math.pow(Math.max(0.01, realPayRel(e)), MOVE_ELAST) - 1) : 0;
   const wave = e.bsMigPull ?? 0;
-  if (wave > 0 && D) {
+  if ((wave > 0 || draw > 0) && D) {
     let ppl = 0;
     for (let i = 0; i < r.n; i++) ppl += r.a!.wt[i] * (r.a!.adults[i] + r.a!.kids[i]);
-    const agents = Math.round((ppl * wave) / HH_SIZE / Math.max(0.01, r.wRegion));
+    r.drawAcc = (r.drawAcc ?? 0) + (ppl * draw) / HH_SIZE / Math.max(0.01, r.wRegion);
+    const drawn = Math.floor(r.drawAcc);
+    r.drawAcc -= drawn;
+    const agents = Math.round((ppl * wave) / HH_SIZE / Math.max(0.01, r.wRegion)) + drawn;
     for (let k = 0; k < agents; k++) {
       const i = addAgent(r), b = r.a!;
       const income = r.renterInc * medianIncome(e) * Math.exp(INCOME_SIGMA * R.n());

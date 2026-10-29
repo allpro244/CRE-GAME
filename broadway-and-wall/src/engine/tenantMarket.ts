@@ -234,16 +234,22 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
   if (opts.darkM !== undefined && opts.darkM <= L.t) {
     // SPACE TO LET, NOT YET PAST ITS PATIENCE: priced like any space that is
     // letting as expected — its costs passed through (the town's CPI over the
-    // year) and its face kept within reach of the comps, up as well as down.
+    // year) and its face brought up to the comps when they have passed it.
     // It held flat in dollars, so in a market where space lets as fast as its
     // landlords expect, every new lease signed at last year's nominal rent
     // and the read-out index fell in real terms by the rate of inflation,
     // tight market or not (measured: office 1.24x over ten years against
-    // CPI 1.40x, at 10-13% vacancy). Following the comps up is not the
-    // ratchet the full building's rule below avoids: this space is tested by
-    // the market every month it sits, and sitting past its patience is what
-    // sweetens it and then cuts it.
-    d += (opts.infl12 / 12) * months + toComps;
+    // CPI 1.40x, at 10-13% vacancy). It does not follow the comps DOWN while
+    // its own space is letting as expected: the comps are the deals that
+    // signed, and a firm signs where the deal is best for it, so they are the
+    // cheap end of what was on offer — a landlord chasing them down with no
+    // evidence of its own ratchets the whole town toward its keenest
+    // landlord (measured, office -30% against the old rule at 6% vacancy).
+    // The evidence that it is dear is its space sitting past its patience,
+    // which is what sweetens it and then cuts it (below). Following them up
+    // is not the ratchet the full building's rule avoids: this space is
+    // tested by the market every month it sits.
+    d += (opts.infl12 / 12) * months + Math.max(0, toComps);
   } else if (opts.darkM !== undefined) {
     // SPACE THAT HAS SAT PAST ITS PATIENCE: the face holds — no rise with
     // costs, and no chasing the comps up — and follows them down; the package

@@ -45,6 +45,8 @@ import { SplitTab } from "@/ui/next/SplitTab";
 import { splittable } from "@/engine/lotsplit";
 import { BizLink } from "@/ui/BizSheet";
 import { RentExposure } from "@/ui/panels/IndustriesView";
+import { WhyButton } from "@/ui/WhyChain";
+import { capWhy, rentWhy, valueLead, rentLead, taxWhy, landWhy } from "@/ui/whyLinks";
 
 // Re-exports so Portfolio / Debt / older imports keep a stable path.
 export {
@@ -717,7 +719,8 @@ function ParcelPanelInner({
           printed each of them a second time underneath. `dupe` drops them
           there and only there — the map card has no tiles. */}
       {on("summary") && <div className="grid">
-        {!dupe && <Row k="Appraisal" v={band(selectedBBL, value)} strong />}
+        {!dupe && <Row k="Appraisal" v={band(selectedBBL, value)} strong
+          why={isBuilt ? <WhyButton id={capWhy(game, dominantUse(rec))} lead={valueLead(game, dominantUse(rec), value, goingIn(game, selectedBBL, value).noi)} /> : undefined} />}
         {(() => {
           const prem = rec.locPremium ?? 1;
           const tags: string[] = [];
@@ -786,7 +789,8 @@ function ParcelPanelInner({
         {isBuilt && (() => {
           const legs = usesOf(rec);
           if (legs.length <= 1) {
-            return <Row k="Market rent" v={"$" + marketRentPsfYr(rec, game.econ, cond).toFixed(0) + " /sf/yr"} />;
+            return <Row k="Market rent" v={"$" + marketRentPsfYr(rec, game.econ, cond).toFixed(0) + " /sf/yr"}
+              why={<WhyButton id={rentWhy(game, dominantUse(rec))} lead={rentLead(game, dominantUse(rec), marketRentPsfYr(rec, game.econ, cond))} />} />;
           }
           return (
             <>
@@ -795,6 +799,7 @@ function ParcelPanelInner({
                   key={u}
                   k={`Market rent · ${CLASS_LABEL[u] ?? u}`}
                   v={"$" + useRentPsfYr(rec, game.econ, cond, u).toFixed(0) + " /sf/yr"}
+                  why={<WhyButton id={rentWhy(game, u)} lead={rentLead(game, u, useRentPsfYr(rec, game.econ, cond, u))} />}
                 />
               ))}
               <Row k="Blended" v={"$" + marketRentPsfYr(rec, game.econ, cond).toFixed(0) + " /sf/yr"} />
@@ -939,7 +944,8 @@ function ParcelPanelInner({
             </>
           );
         })()}
-        {omFull && holding && isBuilt && <Row k="Property tax / yr" v={usd(propertyTaxYr(rec, holding)) + (commercial ? " (your share)" : "")} />}
+        {omFull && holding && isBuilt && <Row k="Property tax / yr" v={usd(propertyTaxYr(rec, holding)) + (commercial ? " (your share)" : "")}
+          why={<WhyButton id={taxWhy(game)} lead={`Property tax ${usd(propertyTaxYr(rec, holding))} a year at the city's ${((game.econ.gov?.policy.propRate ?? 0) * 100).toFixed(2)}% of assessed value`} />} />}
         {omFull && <Row k="Lot area" v={sf(rec.lotArea)} />}
         {omFull && isBuilt && isMixedUse(rec) && <Row k="Use mix" v={mixLabel(rec)} />}
         {!dupe && <Row k={<span><Gloss term="FAR">FAR</Gloss> built / max</span>} v={`${builtFar.toFixed(1)} / ${farMax.toFixed(1)}`} />}
@@ -1635,7 +1641,7 @@ function ParcelPanelInner({
               </div>
               <div className="grid">
                 <Row k="Demolition cost" v={usd(demoCost)} bad={demoCost > fundableNow(game, parcels)} strong />
-                <Row k="Cleared land value" v={usd(dirt)} />
+                <Row k="Cleared land value" v={usd(dirt)} why={<WhyButton id={landWhy(game)} />} />
                 {farMax > 0 && <Row k="Buildable envelope" v={`${sf(Math.round(rec.lotArea * farMax))} at ${farMax.toFixed(1)} FAR`} />}
                 <Row k="Cash and line" v={usd(fundableNow(game, parcels))} bad={demoCost > fundableNow(game, parcels)} />
               </div>

@@ -25,7 +25,8 @@ import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locO
   physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr, registerRolloverReader, flatsMarkPsf, flatsRollPsf, faceGrossUp, abatedShare } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
-import { overallScore } from "./value";
+import { overallScore, scoreRentMult, N_BANDS } from "./value";
+import { recordLease } from "./tenantMarket";
 import { drawTenantQuality, tenantQualityTerms } from "./bands";
 import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook, operatingReserve, drawLineInPlace, parkedOnLine } from "./credit";
 import { drawLeaseUpReserve, leaseUpRoom } from "./debt";
@@ -4945,7 +4946,15 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
     if (stack) placeOnStack(rec, h.tenants, signed, stack);
     h.tenants.push(signed);
     // ...and it is a comp: the street's rents move on what the player signs.
-    recordDeal(s.econ, use, s.month, l.rentPsf / Math.max(0.01, useRentPsfYr(rec, s.econ, h.condition, use, h.condIdx)), sf);
+    {
+      const mktHere = useRentPsfYr(rec, s.econ, h.condition, use, h.condIdx);
+      if (use === "multifamily") recordDeal(s.econ, use, s.month, l.rentPsf / Math.max(0.01, mktHere), sf);
+      else {
+        const sc = overallScore(rec, s.econ, use, h.condIdx);
+        recordLease(s.econ, use, s.month, l.rentPsf, l.rentPsf * (1 - (l.freeM ?? 0) / Math.max(1, l.termM)), mktHere, sf,
+          Math.max(0, Math.min(N_BANDS - 1, Math.floor(sc / 10))), scoreRentMult(s.econ, use, sc), l.kind === "renewal");
+      }
+    }
     useUpShell(h, use, sf);
     blocksOf(rec, h);
     noteTenantSfChange(s, use, -sf);

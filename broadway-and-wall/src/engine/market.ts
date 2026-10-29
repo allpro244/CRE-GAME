@@ -12,6 +12,7 @@ import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swa
 import { whyTrade } from "./why";
 import { whyTown } from "./economy";
 import { settleSupplyDeliveries } from "./supply";
+import { readOut } from "./tenantMarket";
 
 export function mulberry32Step(a: number): { state: number; value: number } {
   a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -913,6 +914,17 @@ export const CONC_DEPTH = 0.30;
 export const NATURAL_VAC = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07 } as const;
 
 /**
+ * WHAT THIS MARKET'S AVAILABILITY HAS RUN AT — the "normal" its landlords,
+ * lenders, developers and appraisers have in their heads, learned from the
+ * town's own record (the market tick's `natVac`, a twenty-year memory),
+ * from where the town opened. A belief, read by whoever compares today with
+ * usual; nothing prices off it (ONE ECONOMY step 4: rents are the leases).
+ */
+export function normalVac(e: Econ | undefined, k: BuiltClass): number {
+  return e?.natVac?.[k] ?? NATURAL_VAC[k];
+}
+
+/**
  * WHERE THE CONCESSION DIAL IS HEADING, for an availability gap over natural
  * and a phase of the cycle. One function, read by the monthly tick and by the
  * opening of a game, so the town a player walks into is already at the
@@ -1084,7 +1096,7 @@ export function reletMonths(k: BuiltClass): number {
  * a shop. Months. The rest of `reletMonths` is search, and search is what a
  * tight market shortens.
  */
-const MAKE_READY_M: Record<BuiltClass, number> = { office: 2.5, retail: 1.5, multifamily: 0.4, industrial: 1.0 };
+export const MAKE_READY_M: Record<BuiltClass, number> = { office: 2.5, retail: 1.5, multifamily: 0.4, industrial: 1.0 };
 
 /** Ordinary commercial term. Sector exit rolls on it. */
 export const LEASE_TERM_YR = 8;
@@ -2501,7 +2513,8 @@ export function dealSlack(e: Econ, k: BuiltClass): number {
 }
 /** A lease signed: `rel` is its rent over the building's market rent (the index's, for that building). */
 export function recordDeal(e: Econ, k: BuiltClass, m: number, rel: number, sf: number, renewal = false) {
-  if ((k !== "office" && k !== "retail" && k !== "multifamily") || !(rel > 0) || !(sf > 0)) return;
+  // flats only: offices, shops and sheds are comps in tenantMarket.ts recordLease
+  if (k !== "multifamily" || !(rel > 0) || !(sf > 0)) return;
   const p = e.dealPress?.[k] ?? 0;
   const list = ((e.deals ??= {})[k] ??= []);
   list.push({ m, c: +(Math.log(rel) - DEAL_H * p).toFixed(5), p: +p.toFixed(6), sf: Math.round(sf), ...(renewal ? { r: 1 } : {}) });
@@ -5374,6 +5387,32 @@ export function tickEcon(s: GameState) {
     } else {
       e.vacOverM[k] = 0;
       e.vacWorst[k] = 0;
+    }
+    // OFFICES, SHOPS AND SHEDS: THE RENT IS WHAT THE LEASES SAY (ONE ECONOMY
+    // step 4, tenantMarket.ts). Where the town's firms are the market, each
+    // landlord prices its own space and each firm shops; the indices below —
+    // asking, effective, and the concession level between them — are the
+    // comps of the last six months read back, not an equation of vacancy.
+    // A month with no deal in the window leaves them standing.
+    if (k !== "multifamily" && e.streetRolls) {
+      const before = e.rentIdx[k];
+      const ro = readOut(e, k, s.month);
+      if (ro) {
+        e.rentIdx[k] = +ro.face.toFixed(4);
+        e.effRentIdx[k] = +ro.eff.toFixed(4);
+        e.concIdx[k] = +ro.conc.toFixed(4);
+      }
+      const nomCh = before > 0 ? e.rentIdx[k] / before - 1 : 0;
+      if (!e.rentPath) e.rentPath = {} as NonNullable<Econ["rentPath"]>;
+      e.rentPath[k] = { gap, vacTerm: 0, instant: 0, pressEma: 0, pressClamped: 0, clampBound: false, escalation: 0, anchor: 0, drift: nomCh, nomCh };
+      if (Math.abs(nomCh) >= 0.006 && ro) {
+        const line = `${SECTOR_LABEL[k]} asking rents ${nomCh < 0 ? "fell" : "rose"} ${Math.abs(nomCh * 100).toFixed(1)}% this month — ${ro.n} leases in the last six months, ${(ro.sf / 1000).toFixed(0)}k sf, signed at $${ro.face.toFixed(2)} asking and $${ro.eff.toFixed(2)} after concessions.`;
+        e.rentWhy = { ...(e.rentWhy ?? {}), [k]: line };
+        if (Math.abs(nomCh) >= 0.012 || (ownsClass(s, k) && newsChance(s, `rentwhy:${k}`, 0.22))) {
+          s.news.unshift({ q: s.month, kind: nomCh < 0 ? "warn" : "info", text: line });
+        }
+      }
+      continue;
     }
     const concTarget = concessionTarget(gap, e.phase);
     // A CONCESSION IS GIVEN IN A MONTH AND TAKEN BACK OVER A LEASE.

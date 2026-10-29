@@ -43,8 +43,8 @@ import { renewalAsk } from "./citygov";
 import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { BuiltClass, Condition, Credit, GameState, Holding, Tenant } from "./types";
 import { START_YEAR } from "./types";
-import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, assetValue, useOccupancy, N_BANDS } from "./value";
-import { genRentRoll, isCommercial, bumpOf, minLettableSf, streetLease, firmCredit, pickSector, pickName, termBandM, concessionPressure, depositFor } from "./leasing";
+import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, assetValue, useOccupancy, N_BANDS, scoreRentMult } from "./value";
+import { genRentRoll, isCommercial, bumpOf, minLettableSf, streetLease, firmCredit, pickSector, pickName, termBandM, depositFor } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
 import { tickTenantFin, tenantFailOdds, entrantMargin } from "./tenantBooks";
 import { rng, rrange, reletMonths, dealSlack, recordDeal, FIRM_PROFILE, turnoverYr } from "./market";
@@ -55,6 +55,12 @@ import { noteTenantMove } from "./history";
 import { INDUSTRY_IDS, N_IND, TRADE_TO_INDUSTRY, floorOf } from "./industries";
 import { demandModel } from "./demand";
 import { whyFirmDark } from "./economy";
+import { why, whyTenantBooks } from "./why";
+import { tenantFin } from "./tenantBooks";
+import {
+  type LandlordAsk, type Option, SHORTLIST, TASTE, askOf, postedEff, compsFace, reviewAsk, noteLetting, reservation, locCtx, posOf, hourCost,
+  placeCost, worthOf, moveCostPsfYr, bargain, freeMonthsFor, gumbel, recordLease, movedLine, fmtPct,
+} from "./tenantMarket";
 
 export interface StreetRoll {
   t: Tenant[];
@@ -62,6 +68,8 @@ export interface StreetRoll {
   vac?: Partial<Record<BuiltClass, number>>;
   /** Space handed back and being made ready — not yet showable. */
   ready?: { use: BuiltClass; sf: number; readyM: number }[];
+  /** The landlord's asking rent and what it has learned, by use (tenantMarket.ts). */
+  ask?: Partial<Record<Comm, LandlordAsk>>;
 }
 
 type Comm = "office" | "retail" | "industrial";
@@ -83,6 +91,10 @@ export interface Seeker {
   tourM?: number;
   /** the player's building it left, if it came from one */
   fromPlayer?: string;
+  /** what it paid and how far it sat from its partners and people where it was, for the line its move writes */
+  was?: { rent: number; dLink: number; dWork: number };
+  /** the cause-ledger event of its going to market */
+  whyId?: number;
 }
 
 /** Months a looking firm takes to find and sign space, on average (market.ts MOVE_IN_M). */
@@ -91,14 +103,6 @@ const SEARCH_M: Record<Comm, number> = { office: 6, retail: 4, industrial: 3 };
 const PATIENCE_M: Record<Comm, number> = { office: 15, retail: 10, industrial: 9 };
 /** Holdover: how long a firm whose lease has ended stays while it looks. */
 const HOLDOVER_M = 6;
-/**
- * Share of expiring firms that look around whatever else is true — a cheaper
- * or better-placed suite, a merger, a new partner who hates the commute. With
- * the outgrown, the trading-up, the cutting-back and those who find nothing
- * and stay, about 55% of office, 65% of shop and 75% of shed space renews in
- * place (CBRE / JLL lease-expiry studies; Prologis retention).
- */
-const MOVE_BASE: Record<Comm, number> = { office: 0.36, retail: 0.26, industrial: 0.18 };
 /** Share of expiring firms that close or leave town in a town with exactly the firms its payrolls support. */
 /** Of the sheds' leases that end, the share whose tenants relocate within the region rather than renew. */
 const SHED_MOVE = 0.3;
@@ -270,11 +274,14 @@ function toSeekers(s: GameState, t: Tenant, why: Seeker["why"], fromPlayer: stri
   if (!COMM.includes(use)) return;
   ensureFirm(s, t);
   const firm: Tenant = { ...structuredClone(t), freeUntilM: undefined, deposit: 0 };
-  (e.seekers ??= []).push({ fid: t.fid!, use, want: Math.round(firmNeed(s, firm)), since: s.month, why, t: firm, ...(fromPlayer ? { fromPlayer } : {}) });
+  (e.seekers ??= []).push({ fid: t.fid!, use, want: Math.round(firmNeed(s, firm)), since: s.month, why, t: firm,
+    ...(fromPlayer ? { fromPlayer, was: { rent: t.rentPsf, dLink: NaN, dWork: NaN } } : {}) });
 }
 
 interface Bld {
   bbl: string; rec: ParcelRecord; cond: Condition; condIdx: number; care: number; stressed: boolean;
+  /** where it is (metres), and its market rent by use this month (the read-out, value.ts useRentPsfYr) */
+  pos: [number, number] | null; mkt: Partial<Record<Comm, number>>;
   sc: Partial<Record<Comm, number>>; cap: Partial<Record<Comm, number>>;
   /** minLettableSf(rec, k), worked out once: the record is resolved once a month and never written. */
   min?: Partial<Record<Comm, number>>;
@@ -315,10 +322,14 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     const condIdx = initialCondIdx(rec, m, cond);
     const owner = owners.get(bbl);
     const care = owner ? owner.leaseW ?? 0.85 + 0.3 * (paramsOf(owner).care.lease ?? 0.5) : 1;
-    b = { bbl, rec, cond, condIdx, care, stressed: !!owner?.stressMs, sc: {}, cap: {} };
+    // AN OWNER UNDER PRESSURE: a firm under water, or a private holder whose
+    // mortgage is behind (streetLoans.ts) — it needs the rent now.
+    const loan = s.streetLoans?.[bbl];
+    const stressed = !!owner?.stressMs || (!!loan && loan.status !== "current");
+    b = { bbl, rec, cond, condIdx, care, stressed, sc: {}, cap: {}, pos: posOf(rec), mkt: {} };
     for (const k of COMM) {
       const c = useRentableSf(rec, k);
-      if (c > 0) { b.cap[k] = c; b.sc[k] = overallScore(rec, e, k, condIdx); }
+      if (c > 0) { b.cap[k] = c; b.sc[k] = overallScore(rec, e, k, condIdx); b.mkt[k] = useRentPsfYr(rec, e, cond, k, condIdx); }
     }
     blds.set(bbl, b);
     return b;
@@ -349,6 +360,181 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     return v !== undefined && footTot > 0 ? v / footTot : undefined;
   };
   const dzAcc: Record<string, [number, number]> = {};
+
+  // ---- THE TENANT MARKET (tenantMarket.ts): a firm's shortlist, valued from its own books
+  const recOf = (bbl: string) => resolveRec(parcels, s, bbl);
+  const ctx = locCtx(s, recOf);
+  // the people within a walk of each retail building against the street's average shop (the trips a shop sells to)
+  let catchW = 0, catchV = 0;
+  if (foot) for (const bbl of Object.keys(R)) {
+    const c = catchOf(bbl);
+    const b = bld(bbl);
+    const cap = b?.cap.retail ?? 0;
+    if (c !== undefined && cap > 0) { catchW += cap; catchV += cap * c; }
+  }
+  const catchMean = catchW > 0 ? catchV / catchW : 0;
+  const footRel = (bbl: string) => { const c = catchOf(bbl); return c !== undefined && catchMean > 0 ? c / catchMean : undefined; };
+  const vacShare = (b: Bld, roll: StreetRoll, k: Comm) => Math.max(0, 1 - letOf(roll, k) / Math.max(1, b.cap[k] ?? 1));
+  const bookOf = (b: Bld, roll: StreetRoll, k: Comm) => askOf((roll.ask ??= {}), k, e, b.mkt[k] ?? 0, vacShare(b, roll, k), m);
+  // each trade's payroll, this month against last: the term a firm signs reads it (see THE TERM IS CHOSEN TOO)
+  const gTradeOf = (sec: string) => {
+    const bk = e.firmBooks?.[sec as Tenant["sector"]], prevE = e.tradeEmpPrev?.[sec];
+    return bk && prevE ? Math.pow(bk.emp / Math.max(1e-6, prevE), 12) - 1 : 0;
+  };
+  const termOf = (firm: Tenant) => {
+    const band = termBandM(firm.credit);
+    return (band.loM + band.hiM) / 2 * Math.max(0.6, Math.min(1.4, Math.exp(-4 * gTradeOf(firm.sector))));
+  };
+  /**
+   * What `firm` would make of `take` feet of `k` in this building: what it is
+   * worth to the firm, what the landlord will take, the move, its taste.
+   */
+  const value = (firm: Tenant, k: Comm, b: Bld, roll: StreetRoll, take: number, termM: number, stay: boolean, moving: boolean): Option => {
+    const mkt = b.mkt[k] ?? 0;
+    const L = bookOf(b, roll, k);
+    const post = postedEff(L, e, k, mkt, stay);
+    const res = reservation(L, k, post, termM, stay, b.stressed);
+    const pc = placeCost(firm.fid !== undefined ? ctx.pts.get(firm.fid) : undefined, b.pos, hourCost(firm));
+    const worth = worthOf(firm, k, mkt, b.sc[k] ?? 50, take, pc.cost, k === "retail" ? footRel(b.bbl) : undefined);
+    const move = !stay && moving ? moveCostPsfYr(e, k, termM) : 0;
+    const joint = worth - post - move + TASTE[k] * mkt * gumbel(rng(s, "leasing"));
+    // a sitting tenant is offered the face no higher than the comps (a renewal at market)
+    const ask = stay ? Math.min(L.a, compsFace(e, mkt, k)) : L.a;
+    return { bbl: b.bbl, take, mkt, ask, post, res, worth, move, joint, dLink: pc.dLink, dWork: pc.dWork, ...(stay ? { stay: true } : {}) };
+  };
+  // The street's buildings, listed once: the search lets space and moves
+  // tenants inside rolls, and never adds, removes or replaces a roll.
+  const rollList = Object.entries(R);
+  // Each roll's empty space by use, remembered while its tenant list and its
+  // make-ready list are the arrays they were at the same lengths: in this
+  // month a roll changes only by a lease pushed on, a tenant filtered off
+  // (a new array) or a suite put to make-ready (pushed), or a tenant's feet
+  // changed at a renewal (which `noteRoll` forgets), never otherwise in place.
+  type AvailMemo = { t: Tenant[]; tl: number; r: StreetRoll["ready"]; rl: number; v: Partial<Record<Comm, number>> };
+  const availMemo = new Map<StreetRoll, AvailMemo>();
+  const availIn = (b: Bld, roll: StreetRoll, k: Comm) => {
+    const rl = roll.ready ? roll.ready.length : -1;
+    let am = availMemo.get(roll);
+    if (!am || am.t !== roll.t || am.tl !== roll.t.length || am.r !== roll.ready || am.rl !== rl) {
+      am = { t: roll.t, tl: roll.t.length, r: roll.ready, rl, v: {} };
+      availMemo.set(roll, am);
+    }
+    let v = am.v[k];
+    if (v === undefined) { v = availOf(b, roll, k); am.v[k] = v; }
+    return v;
+  };
+  const noteRoll = (roll: StreetRoll) => availMemo.delete(roll);
+  /**
+   * THE BROKER'S SHORTLIST: up to SHORTLIST street buildings with room for
+   * the firm, drawn by how close each is to the quality it shops for, how much
+   * room it has, how hard its owner lets and how dark its lobby is; each
+   * valued, with the firm's own suite (when it has one to renew) beside them.
+   * Best first.
+   */
+  const shop = (firm: Tenant, k: Comm, want: number, from: string | undefined, stay: Option | null, moving: boolean): Option[] => {
+    const q = firm.quality ?? 50;
+    const termM = termOf(firm);
+    const cands: { b: Bld; roll: StreetRoll; avail: number; w: number }[] = [];
+    let tot = 0;
+    for (const [bbl, roll] of rollList) {
+      if (bbl === from) continue;
+      const b = blds.get(bbl) ?? bld(bbl);
+      if (!b || !b.cap[k]) continue;
+      const avail = availIn(b, roll, k);
+      const floor = minSfOf(b, k);
+      if (avail < Math.max(floor, Math.min(want * 0.5, avail + 1))) continue;
+      const letShare = 1 - avail / (b.cap[k] ?? 1);
+      const w = Math.sqrt(avail) * Math.exp(-Math.abs((b.sc[k] ?? 50) - q) / FIT_W) * b.care * (0.85 + 0.15 * letShare);
+      if (!(w > 0)) continue;
+      cands.push({ b, roll, avail, w }); tot += w;
+    }
+    const out: Option[] = stay ? [stay] : [];
+    for (let n = 0; n < SHORTLIST && tot > 1e-12 && cands.length; n++) {
+      let u = rng(s, "leasing") * tot, at = cands.length - 1;
+      for (let i = 0; i < cands.length; i++) { u -= cands[i].w; if (u <= 0) { at = i; break; } }
+      const c = cands[at];
+      tot -= c.w; cands[at] = cands[cands.length - 1]; cands.pop();
+      const floor = minSfOf(c.b, k);
+      let take = Math.min(want, c.avail);
+      if (c.avail - take < floor) take = c.avail <= want * 1.4 ? c.avail : Math.max(floor, c.avail - floor);
+      if (take < floor) continue;
+      out.push(value(firm, k, c.b, c.roll, take, termM, false, moving));
+    }
+    out.sort((a, b) => b.joint - a.joint);
+    return out;
+  };
+  /** What the firm would renew for in its own building: what it needs, if the building has the room. */
+  const renewTake = (b: Bld, roll: StreetRoll, t: Tenant, need: number) => {
+    const k = useOf(t) as Comm;
+    if (need < t.sf) return Math.round(Math.max(Math.min(t.sf, minSfOf(b, k)), need));
+    return Math.round(t.sf + Math.min(need - t.sf, Math.max(0, (b.cap[k] ?? 0) - letOf(roll, k))));
+  };
+  /**
+   * A FIRM SIGNS where its shortlist says it is best off, at the rent it
+   * bargained (`bargain`: the landlord has to beat the runner-up): the
+   * landlord's asking rent on the face, the rest as free months. Writes the
+   * comp, teaches the landlord, and — for a firm that moved — the line that
+   * says why. Returns the lease.
+   */
+  const signAt = (firm: Tenant, k: Comm, pick: Option, second: Option | undefined, want: number, fromBbl: string | undefined, fromPlayer: string | undefined, was: Seeker["was"], cause?: number): Tenant | null => {
+    const b = blds.get(pick.bbl) ?? bld(pick.bbl);
+    const roll = R[pick.bbl];
+    if (!b || !roll) return null;
+    const sc = b.sc[k] ?? 50;
+    const qt = tenantQualityTerms(firm.quality ?? sc, sc);
+    const band = termBandM(firm.credit);
+    // THE TERM IS CHOSEN TOO (2026-10-16): within its covenant's band, a firm
+    // in a trade that is growing fast signs shorter — it expects to outgrow
+    // the suite, and a short lease is the option to move — and one in a
+    // shrinking trade signs longer at today's rent (Grenadier 1995 on the
+    // option value in lease term; the covenant bands stay, since they are
+    // what landlords and their lenders will take from each grade).
+    const termM = rrange(s, band.loM, band.hiM, "leasing") * qt.term * Math.max(0.6, Math.min(1.4, Math.exp(-4 * gTradeOf(firm.sector))));
+    const eff = bargain(pick, second);
+    const face = pick.ask;
+    const freeM = freeMonthsFor(face, eff, termM);
+    const carry: Partial<Tenant> = {
+      fid: firm.fid, quality: firm.quality, staff: firm.staff, empRef: firm.empRef, fin: firm.fin,
+      ...(firm.ind !== undefined ? { ind: firm.ind } : {}), ...(firm.empInd !== undefined ? { empInd: firm.empInd } : {}),
+    };
+    const lease = streetLease(s, b.rec, b.cond, b.condIdx, k, pick.take, { name: firm.name, sector: firm.sector, credit: firm.credit, ...carry },
+      face / Math.max(0.01, pick.mkt), termM, freeM);
+    // Signed for the people it has now, at today's rent.
+    lease.staffSign = firm.staff ?? 1;
+    lease.hcRef = want / rawNow(s, k);
+    roll.t.push(lease);
+    noteRoll(roll);
+    const effSigned = face * (1 - freeM / Math.max(1, termM));
+    recordLease(e, k, m, face, effSigned, pick.mkt, pick.take, Math.max(0, Math.min(N_BANDS - 1, Math.floor(sc / 10))), scoreRentMult(e, k, sc));
+    const since = roll.vac?.[k];
+    noteLetting(bookOf(b, roll, k), since === undefined ? 0 : Math.max(0, m - since));
+    if (availOf(b, roll, k) < minSfOf(b, k)) { roll.vac ??= {}; delete roll.vac[k]; }
+    // WHY IT MOVED: where it went, what it pays against what it paid, and how much nearer its partners and people it is.
+    if ((fromBbl || fromPlayer) && !opening) {
+      const oldRec = recOf((fromBbl ?? fromPlayer)!);
+      const old = placeCost(firm.fid !== undefined ? ctx.pts.get(firm.fid) : undefined, oldRec ? posOf(oldRec) : null, 1);
+      const rentCh = was?.rent ? effSigned / was.rent - 1 : NaN;
+      const grew = pick.take > firm.sf * 1.2 ? ` · ${(firm.sf / 1000).toFixed(1)}k → ${(pick.take / 1000).toFixed(1)}k sf` : "";
+      const line = movedLine(b.rec.address, rentCh, old.dLink, pick.dLink, old.dWork, pick.dWork) + grew;
+      const whyId = why(s, {
+        k: "tenant.moved", a: "tenant", aid: firm.fid !== undefined ? String(firm.fid) : undefined, name: firm.name, bbl: fromBbl ?? fromPlayer,
+        n: { sf: pick.take, rentPsf: +effSigned.toFixed(2), ...(Number.isFinite(rentCh) ? { rentCh: +rentCh.toFixed(3) } : {}),
+          ...(Number.isFinite(old.dLink - pick.dLink) ? { closerM: Math.round(old.dLink - pick.dLink) } : {}) },
+        t: `${firm.name} ${line}`,
+      }, [cause]);
+      if (fromBbl) {
+        (e.streetFailed ??= []).push({ m, bbl: fromBbl, name: firm.name, sf: firm.sf, use: k, why: "left", to: b.rec.address, whyId });
+        if (firm.sf >= 8000) noteTenantMove(s, { kind: "leave", who: firm.name, sf: firm.sf, bbl: fromBbl, to: b.rec.address });
+      } else if (fromPlayer) {
+        // One of the player's old tenants has landed — and where is news.
+        if (pick.take >= 8000) noteTenantMove(s, { kind: "leave", who: firm.name, sf: pick.take, bbl: fromPlayer, to: b.rec.address });
+        const owner = owners.get(b.bbl);
+        s.news.unshift({ q: m, kind: "info", why: whyId,
+          text: `${firm.name}, who left your building at ${oldRec?.address ?? "one of your buildings"}, has signed for ${(pick.take / 1000).toFixed(1)}k sf at ${b.rec.address}${owner ? ` — ${owner.name}'s building` : ""} · rent ${Number.isFinite(rentCh) ? fmtPct(rentCh) : "—"} against what it paid you.` });
+      }
+    }
+    return lease;
+  };
   // ---- 1. the firms in the street's buildings: books, failures, expiries
   for (const [bbl, roll] of Object.entries(R)) {
     const b = bld(bbl);
@@ -418,35 +604,66 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       const need = firmNeed(s, t);
       const mine = seeking.get(t.fid!);
       if (mine) {
-        // Holding over while it looks. When the holdover runs out it stays
-        // after all, on a fresh lease sized to what the building can give it.
+        // Holding over while it looks. When the holdover runs out it takes the
+        // best it has been shown — its own suite included, on a fresh lease
+        // sized to what the building can give it.
         mine.want = Math.round(need);
-        if (t.endM <= m) { seeking.delete(t.fid!); renewInPlace(s, b, roll, t, need); }
+        if (t.endM <= m) {
+          seeking.delete(t.fid!);
+          const kk = k as Comm;
+          const room = availOf(b, roll, kk);
+          const outgrown = need > t.sf * 1.25 && room < need - t.sf;
+          const stayOpt = outgrown ? null : value(t, kk, b, roll, renewTake(b, roll, t, need), termOf(t), true, true);
+          const opts = shop(t, kk, Math.round(need), bbl, stayOpt, true);
+          const best = opts[0];
+          if (best && !best.stay) {
+            const lease = signAt(t, kk, best, opts[1], Math.round(need), bbl, undefined, mine.was, mine.whyId);
+            if (lease) { vacate(roll, t); continue; }
+          }
+          renewInPlace(s, b, roll, t, need, stayOpt ? { face: stayOpt.ask, eff: bargain(stayOpt, opts.find((o) => !o.stay)) } : undefined, bookOf(b, roll, kk));
+          noteRoll(roll);
+        }
         keep.push(t);
         continue;
       }
-      const sc = b.sc[k] ?? 50, q = t.quality ?? sc;
-      const healthy = f.cover > 3 && f.liqM > 1.5, stressed = f.cover < 1.8 || f.liqM < 0.8;
       if (t.endM <= m) {
         // Closes or leaves town — more of them when the town has more firms than its payrolls support.
         const exitP = Math.min(0.5, EXIT_BASE[k] * Math.pow(Math.max(0.5, Math.min(2, ratio(k))), 4));
         if (rng(s, "leasing") < exitP) {
           lost[k] += firmHc(t);
-          (e.streetFailed ??= []).push({ m, bbl, name: t.name, fid: t.fid, sf: t.sf, use: k, why: "left" });
+          // WHY: a firm of size that left town writes its books as they stood
+          const whyId = t.sf >= 5000 && !opening ? why(s, {
+            k: "tenant.leftTown", a: "tenant", aid: String(t.fid), name: t.name, bbl,
+            n: { sf: t.sf, rentYr: Math.round(t.rentPsf * t.sf), firmsPerWork: +ratio(k).toFixed(2) },
+            t: `${t.name} left town at lease end · ${(t.sf / 1000).toFixed(1)}k sf · its trade has ${Math.round((ratio(k) - 1) * 100)}% more firms here than work`,
+          }, [whyTenantBooks(s, t, f)]) : undefined;
+          (e.streetFailed ??= []).push({ m, bbl, name: t.name, fid: t.fid, sf: t.sf, use: k, why: "left", ...(whyId ? { whyId } : {}) });
           vacate(roll, t);
           continue;
         }
-        let p = MOVE_BASE[k];
-        let why: Seeker["why"] = "move";
-        const room = availOf(b, roll, k);
-        if (need > t.sf * 1.25 && room < need - t.sf) { p = 0.85; why = "grow"; }
-        else if (healthy && sc < q - 10) { p += 0.25; why = "trade"; }      // can afford better: trades up
-        else if (stressed && sc > q + 8) { p += 0.25; why = "trade"; }      // must cut the rent: trades down
-        if (rng(s, "leasing") < p) {
-          e.seekers.push({ fid: t.fid!, use: k, want: Math.round(need), since: m, why, from: bbl });
-          seeking.set(t.fid!, e.seekers[e.seekers.length - 1]);
+        // THE FIRM SHOPS ITS RENEWAL (tenantMarket.ts): its own suite, at
+        // what its landlord will take from a sitting tenant, against the
+        // broker's shortlist, net of what moving costs. It renews in place
+        // when that is best and goes to market when it is not — or when it has
+        // outgrown a building with no room to give it.
+        const kk = k as Comm;
+        const room = availOf(b, roll, kk);
+        const outgrown = need > t.sf * 1.25 && room < need - t.sf;
+        const stayOpt = outgrown ? null : value(t, kk, b, roll, renewTake(b, roll, t, need), termOf(t), true, true);
+        const opts = shop(t, kk, Math.round(need), bbl, stayOpt, true);
+        const best = opts[0];
+        if (outgrown || (best && !best.stay)) {
+          const sk: Seeker = { fid: t.fid!, use: kk, want: Math.round(need), since: m, why: outgrown ? "grow" : "move", from: bbl,
+            was: { rent: t.rentPsf, dLink: stayOpt?.dLink ?? NaN, dWork: stayOpt?.dWork ?? NaN } };
+          e.seekers.push(sk);
+          seeking.set(t.fid!, sk);
           t.endM = m + HOLDOVER_M;
-        } else renewInPlace(s, b, roll, t, need);
+        } else {
+          renewInPlace(s, b, roll, t, need, stayOpt ? { face: stayOpt.ask, eff: bargain(stayOpt, opts.find((o) => !o.stay)) } : undefined, bookOf(b, roll, kk));
+          noteRoll(roll);
+          // WHY: a firm of size that renewed for much less space writes its books
+          if (t.sf >= 5000 / 0.85 && need < t.sf * 0.85) { /* the giveback is written in renewInPlace */ }
+        }
       } else if (need > t.sf * 1.5 && rng(s, "leasing") < 0.03) {
         // Outgrown mid-lease: next door if the building has it, else go looking.
         const room = availOf(b, roll, k);
@@ -673,115 +890,28 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     }
   }
 
-  // ---- 3. the search: every looking firm tours the empty suites
+  // ---- 3. the search: every looking firm takes its broker's shortlist and signs where it is best off
   const pool = [...e.seekers];
   for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(rng(s, "leasing") * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
   const signed = new Set<number>();
-  // The street's buildings, listed once: the search below lets space and moves
-  // tenants inside rolls, and never adds, removes or replaces a roll.
-  const rollList = Object.entries(R);
-  // Each roll's empty space by use, remembered while its tenant list and its
-  // make-ready list are the arrays they were at the same lengths: in this
-  // search a roll changes only by a lease pushed on, a tenant filtered off
-  // (a new array) or a suite put to make-ready (pushed), never in place.
-  type AvailMemo = { t: Tenant[]; tl: number; r: StreetRoll["ready"]; rl: number; v: Partial<Record<Comm, number>> };
-  const availMemo = new Map<StreetRoll, AvailMemo>();
-  const availIn = (b: Bld, roll: StreetRoll, k: Comm) => {
-    const rl = roll.ready ? roll.ready.length : -1;
-    let e = availMemo.get(roll);
-    if (!e || e.t !== roll.t || e.tl !== roll.t.length || e.r !== roll.ready || e.rl !== rl) {
-      e = { t: roll.t, tl: roll.t.length, r: roll.ready, rl, v: {} };
-      availMemo.set(roll, e);
-    }
-    let v = e.v[k];
-    if (v === undefined) { v = availOf(b, roll, k); e.v[k] = v; }
-    return v;
-  };
   for (const sk of pool) {
     if (sk.tourM !== undefined && m - sk.tourM < 3) continue;          // in talks at one of the player's buildings
     if (rng(s, "leasing") > 1 / SEARCH_M[sk.use]) continue;            // still looking
     const k = sk.use;
     const firm = sk.from ? R[sk.from]?.t.find((t) => t.fid === sk.fid) : sk.t;
     if (!firm) continue;
-    const q = firm.quality ?? 50;
-    // Every street building with a suite to show, weighted by how close it is
-    // to what this firm shops for, how much it has, how keen its price is,
-    // how hard its owner leases, and how dark the lobby is.
-    type C = { b: Bld; roll: StreetRoll; avail: number; w: number };
-    const cands: C[] = [];
-    let tot = 0;
-    for (const [bbl, roll] of rollList) {
-      if (bbl === sk.from) continue;
-      const b = blds.get(bbl) ?? bld(bbl);
-      if (!b || !b.cap[k]) continue;
-      const avail = availIn(b, roll, k);
-      const floor = minSfOf(b, k);
-      if (avail < Math.max(floor, Math.min(sk.want * 0.5, avail + 1))) continue;
-      const since = roll.vac?.[k];
-      const stale = staleDiscount(since === undefined ? 0 : m - since);
-      const letShare = 1 - avail / (b.cap[k] ?? 1);
-      const w = Math.sqrt(avail) * Math.exp(-Math.abs((b.sc[k] ?? 50) - q) / FIT_W)
-        * Math.pow(1 / stale, 3) * b.care * (0.85 + 0.15 * letShare);
-      if (!(w > 0)) continue;
-      cands.push({ b, roll, avail, w }); tot += w;
-    }
-    if (!(tot > 0)) continue;
-    let u = rng(s, "leasing") * tot, pick = cands[0];
-    for (const c of cands) { u -= c.w; if (u <= 0) { pick = c; break; } }
-    const { b, roll, avail } = pick;
-    const floor = minSfOf(b, k);
-    let take = Math.min(sk.want, avail);
-    if (avail - take < floor) take = avail <= sk.want * 1.4 ? avail : Math.max(floor, avail - floor);
-    if (take < floor) continue;
-    // THE DEAL. The building's market rent, marked down for how long the
-    // space has sat (the same markdown the player's floors carry), a tenant
-    // stretching up into better space offering under it and one settling
-    // below its usual paying over, a landlord in trouble taking less — and the
-    // bargaining between them.
-    const sc = b.sc[k] ?? 50;
-    const since = roll.vac?.[k];
-    const qt = tenantQualityTerms(q, sc);
-    const rentMult = staleDiscount(since === undefined ? 0 : m - since) * qt.rent * (b.stressed ? 0.96 : 1) * rrange(s, 0.94, 1.03, "leasing")
-      * dealSlack(e, k);
-    recordDeal(e, k, m, rentMult, take);
-    const band = termBandM(firm.credit);
-    // THE TERM IS CHOSEN TOO (2026-10-16): within its covenant's band, a firm
-    // in a trade that is growing fast signs shorter — it expects to outgrow
-    // the suite, and a short lease is the option to move — and one in a
-    // shrinking trade signs longer at today's rent (Grenadier 1995 on the
-    // option value in lease term; the covenant bands stay, since they are
-    // what landlords and their lenders will take from each grade).
-    const gTrade = Math.pow(tradeR[firm.sector] ?? 1, 12) - 1;
-    const termM = rrange(s, band.loM, band.hiM, "leasing") * qt.term * Math.max(0.6, Math.min(1.4, Math.exp(-4 * gTrade)));
-    const freeM = Math.round(termM / 12 * 0.8 * concessionPressure(e, k) * rng(s, "leasing"));
-    const carry: Partial<Tenant> = {
-      fid: firm.fid, quality: firm.quality, staff: firm.staff, empRef: firm.empRef, fin: firm.fin,
-      ...(firm.ind !== undefined ? { ind: firm.ind } : {}), ...(firm.empInd !== undefined ? { empInd: firm.empInd } : {}),
-    };
-    const lease = streetLease(s, b.rec, b.cond, b.condIdx, k, take, { name: firm.name, sector: firm.sector, credit: firm.credit, ...carry }, rentMult, termM, freeM);
-    // Signed for the people it has now, at today's rent.
-    lease.staffSign = firm.staff ?? 1;
-    lease.hcRef = sk.want / rawNow(s, k);
-    roll.t.push(lease);
-    roll.vac ??= {};
-    if (availOf(b, roll, k) < floor) delete roll.vac[k];
+    const opts = shop(firm, k, sk.want, sk.from, null, !!(sk.from || sk.fromPlayer));
+    if (!opts.length) continue;
+    const lease = signAt(firm, k, opts[0], opts[1], sk.want, sk.from, sk.fromPlayer, sk.was, sk.whyId);
+    if (!lease) continue;
     // ...and the space it leaves behind.
     if (sk.from) {
       const old = R[sk.from];
       if (old) {
         old.t = old.t.filter((t) => t.fid !== sk.fid);
         vacate(old, firm);
-        const oldRec = blds.get(sk.from)?.rec;
-        (e.streetFailed ??= []).push({ m, bbl: sk.from, name: firm.name, sf: firm.sf, use: k, why: "left", to: b.rec.address });
-        if (firm.sf >= 8000) noteTenantMove(s, { kind: "leave", who: firm.name, sf: firm.sf, bbl: sk.from, to: b.rec.address });
-        void oldRec;
+        noteRoll(old);
       }
-    } else if (sk.fromPlayer) {
-      // One of the player's old tenants has landed — and where is news.
-      if (take >= 8000) noteTenantMove(s, { kind: "leave", who: firm.name, sf: take, bbl: sk.fromPlayer, to: b.rec.address });
-      const owner = owners.get(b.bbl);
-      s.news.unshift({ q: m, kind: "info",
-        text: `${firm.name}, who left your building at ${resolveRec(parcels, s, sk.fromPlayer)?.address ?? "one of your buildings"}, has signed for ${(take / 1000).toFixed(1)}k sf at ${b.rec.address}${owner ? ` — ${owner.name}'s building` : ""}.` });
     }
     signed.add(sk.fid);
   }
@@ -798,6 +928,22 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       else if (!vacNow) delete roll.vac[k];
     }
     if (roll.vac && !Object.keys(roll.vac).length) delete roll.vac;
+  }
+  // THE LANDLORDS PRICE (tenantMarket.ts reviewAsk): each street owner reviews
+  // its ask on each kind of space it has, from its own empty floors, how long
+  // they have sat against how long it expected, its mortgage, and the comps.
+  {
+    const h12 = e.history?.length >= 12 ? e.history[e.history.length - 12] : undefined;
+    const infl12 = h12?.cpiXS ? (e.cpiXS ?? 1) / h12.cpiXS - 1 : h12?.cpi ? (e.cpi ?? 1) / h12.cpi - 1 : (e.inflExp ?? 0.02);
+    for (const [bbl, roll] of Object.entries(R)) {
+      const b = blds.get(bbl);
+      if (!b) continue;
+      for (const k of COMM) {
+        if (!b.cap[k] || !(b.mkt[k]! > 0)) continue;
+        const since = roll.vac?.[k];
+        reviewAsk(bookOf(b, roll, k), e, k, b.mkt[k]!, { m, vacNow: vacShare(b, roll, k), darkM: since === undefined ? undefined : m - since, stressed: b.stressed, infl12 });
+      }
+    }
   }
   // The month's totals, after the signings.
   for (const k of COMM) {
@@ -828,25 +974,44 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
 }
 
 /** A firm stays: a fresh lease at today's rent for the building, sized to what it needs if the building has the room. */
-function renewInPlace(s: GameState, b: Bld, roll: StreetRoll, t: Tenant, need: number) {
-  const k = useOf(t);
+/**
+ * A firm stays: a fresh lease sized to what it needs if the building has the
+ * room, at what it bargained against its runner-up (`eff`, $/sf/yr effective;
+ * the landlord's ask on the face and the difference as free months). With no
+ * bargain to hand — the opening's years, an old save — it pays the ask.
+ */
+function renewInPlace(s: GameState, b: Bld, roll: StreetRoll, t: Tenant, need: number, deal?: { face: number; eff: number }, L?: LandlordAsk) {
+  const k = useOf(t) as Comm;
   const m = s.month;
-  // A renewal is a deal too: today's market for the building, the tenant's
-  // saved moving costs off it, the market's slack at the table.
-  const rel = 0.97 * (b.stressed ? 0.96 : 1) * dealSlack(s.econ, k);
-  t.rentPsf = +(useRentPsfYr(b.rec, s.econ, b.cond, k, b.condIdx) * rel).toFixed(2);
+  const mkt = b.mkt[k] ?? useRentPsfYr(b.rec, s.econ, b.cond, k, b.condIdx);
+  // with no bargain to hand, the landlord's renewal offer: the face at market, its package off it
+  const face = deal?.face ?? (L ? Math.min(L.a, compsFace(s.econ, mkt, k)) : mkt);
+  const eff = deal?.eff ?? face * (1 - (L?.c ?? 0));
   // The renewal term is chosen as a new lease's is: within the covenant's
   // band, shorter for a firm whose trade is growing fast (see THE TERM IS
   // CHOSEN TOO).
   const band = termBandM(t.credit);
   const bk = s.econ.firmBooks?.[t.sector], prevE = s.econ.tradeEmpPrev?.[t.sector];
   const gTrade = bk && prevE ? Math.pow(bk.emp / Math.max(1e-6, prevE), 12) - 1 : 0;
-  t.endM = m + Math.round(rrange(s, band.loM, band.hiM, "leasing") * Math.max(0.6, Math.min(1.4, Math.exp(-4 * gTrade))));
+  const termM = Math.round(rrange(s, band.loM, band.hiM, "leasing") * Math.max(0.6, Math.min(1.4, Math.exp(-4 * gTrade))));
+  const freeM = freeMonthsFor(face, eff, termM);
+  t.rentPsf = +face.toFixed(2);
+  t.endM = m + termM;
+  t.freeUntilM = freeM > 0 ? m + freeM : undefined;
+  const was = t.sf;
   const floor = minSfOf(b, k);
   if (need < t.sf) t.sf = Math.round(Math.max(Math.min(t.sf, floor), need));
   else if (need > t.sf) {
     const room = Math.max(0, (b.cap[k] ?? 0) - roll.t.reduce((a, x) => a + (useOf(x) === k ? x.sf : 0), 0));
     t.sf = Math.round(t.sf + Math.min(need - t.sf, room));
+  }
+  // WHY: a firm of size that renewed for much less space says so, with the books that shrank it.
+  if (was >= 5000 && t.sf < was * 0.85 && t.fin && !growing) {
+    why(s, {
+      k: "tenant.downsized", a: "tenant", aid: t.fid !== undefined ? String(t.fid) : undefined, name: t.name, bbl: b.bbl,
+      n: { sfWas: was, sf: t.sf, staffCh: +((t.staff ?? 1) / Math.max(0.05, t.staffSign ?? 1) - 1).toFixed(3) },
+      t: `${t.name} renewed smaller · ${(was / 1000).toFixed(1)}k → ${(t.sf / 1000).toFixed(1)}k sf · staff ${fmtPct((t.staff ?? 1) / Math.max(0.05, t.staffSign ?? 1) - 1)} since it signed`,
+    }, [whyTenantBooks(s, t, tenantFin(s.econ, t))]);
   }
   t.staffSign = t.staff ?? 1;
   t.hcRef = need / rawNow(s, k);
@@ -854,7 +1019,9 @@ function renewInPlace(s: GameState, b: Bld, roll: StreetRoll, t: Tenant, need: n
   // for: it kept the old one, so a renewal at less rent or on less floor left
   // a deposit of four months' rent with the firm (invariants, seed 4000).
   t.deposit = depositFor(s, t.rentPsf, t.sf, t.credit);
-  recordDeal(s.econ, k, m, rel, t.sf, true);
+  const sc = b.sc[k] ?? 50;
+  recordLease(s.econ, k, m, face, face * (1 - freeM / Math.max(1, termM)), mkt, t.sf,
+    Math.max(0, Math.min(N_BANDS - 1, Math.floor(sc / 10))), scoreRentMult(s.econ, k, sc), true);
 }
 
 // ------------------------------------------------------- the player's buildings
@@ -1204,6 +1371,10 @@ function growOpeningStreet(s: GameState, parcels: ParcelTable) {
     // this month's comps.
     e.streetFailed = [];
     e.deals = undefined;
+    // ...nor are its comps, and the landlords open at the comps the town
+    // opens on, keeping what they learned of how long their space takes.
+    e.comps = undefined;
+    for (const roll of Object.values(e.streetRolls ?? {})) for (const L of Object.values(roll.ask ?? {})) if (L) L.a = NaN;
     // ...and the market opens on what the firms hold, so its first month
     // does not restate the city's occupancy in one step.
     for (const k of ["office", "retail"] as const) {

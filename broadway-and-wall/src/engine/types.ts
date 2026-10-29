@@ -2323,6 +2323,13 @@ export interface Econ {
    * of the market's slack it signed in) and that slack (`p`).
    */
   deals?: Partial<Record<BuiltClass, { m: number; c: number; p: number; sf: number; r?: number }[]>>;
+  /**
+   * THE COMMERCIAL COMPS (tenantMarket.ts recordLease, ONE ECONOMY step 4):
+   * every office, shop and shed lease signed in the last six months — face
+   * and effective rent in index dollars, its quality band — that the rent
+   * indices are read off.
+   */
+  comps?: Partial<Record<BuiltClass, import("./tenantMarket").Comp[]>>;
   /** What investors require of each class (the cap-rate equation's target) — what bidders price at (market.ts). */
   capTarget?: Partial<Record<BuiltClass, number>>;
   /** The market's slack each new deal reads (the rent equation's monthly pressure). */

@@ -3160,8 +3160,8 @@ const MOM_UNITS = 4;
 // ---------------------------------------------------------------------------
 export const LOCATION_PULL = 0.04;           // per year, per unit of log cost gap
 const AGGLOM = 0.04;                  // output elasticity to employment
-const WAGE_CURVE = -0.10;             // pay level to local unemployment (Blanchflower & Oswald 1994)
-const WAGE_GAP_HALF_M = 24;           // months for the town's pay to close half its gap to the wage-curve level
+export const WAGE_CURVE = -0.10;             // pay level to local unemployment (Blanchflower & Oswald 1994)
+export const WAGE_GAP_HALF_M = 24;           // months for the town's pay to close half its gap to the wage-curve level
 const WAGE_SHARE = 0.85;
 
 /**
@@ -3558,7 +3558,7 @@ export function tickEcon(s: GameState) {
     // engine was missing: a shortage raises rents, rents raise the price
     // level, the price level is what wages and leases escalate by, and real
     // pay is what tenants economise against.
-    const SHELTER_W = 0.33, SERVICES_W = 0.25;
+    const SHELTER_W = 0.33;
     const natCpiPrev = e.natCpi ?? e.cpi!;
     e.natCpi = natCpiPrev * (1 + natInfl / 12);
     const natCpi12 = h12?.natCpi ? e.natCpi / h12.natCpi - 1 : natInfl;
@@ -3590,7 +3590,19 @@ export function tickEcon(s: GameState) {
     // 26.8% — and pay, which follows the nation's, ran six times ahead of the
     // town's prices: real wages, jobs and real rents exploded. Only the LOCAL
     // difference is guarded now (a point a month either way).
-    const localM = (SHELTER_W * (shelter12 - natShelter12) + SERVICES_W * (wage12 - natWage12)) / 12;
+    // THE TOWN'S OWN GOODS AND SERVICES ARE PRICED BY ITS FIRMS (2026-10-29,
+    // §6c-D). This was SERVICES_W 0.25 of the basket moving with local pay
+    // against the nation's — pay standing in for prices. Now it is what the
+    // town's firms charge against the nation's for the same industries
+    // (economy.ts `postPayAndPrices`: unit cost and the demand they face,
+    // sticky), at the share of the non-shelter basket the register's
+    // households buy in town (`localShare`, the books' own), read a month on.
+    const priceRel = e.eco?.priceRel;
+    const localW = (1 - SHELTER_W) * (e.eco?.localShare ?? 0);
+    const dLocal = priceRel !== undefined && e.priceRelPrev !== undefined ? Math.log(priceRel / Math.max(1e-6, e.priceRelPrev)) : 0;
+    if (priceRel !== undefined) e.priceRelPrev = priceRel;
+    void wage12;
+    const localM = SHELTER_W * (shelter12 - natShelter12) / 12 + localW * dLocal;
     e.cpi = e.cpi! * (1 + natInfl / 12 + localM);
     // ...AND THE SAME BASKET WITHOUT THE RENT, which is what rents escalate
     // by (see `escalation` in the rent block). Asking rents marked to a price
@@ -3599,7 +3611,7 @@ export function tickEcon(s: GameState) {
     // the nation's, beyond any US metro on record (San Francisco's CPI-U
     // outran the national index by about 12% over 1984-2023). BLS publishes
     // this series — "all items less shelter" — for the same reason.
-    const inflXS = natInfl / 12 + (SERVICES_W / (1 - SHELTER_W)) * (wage12 - natWage12) / 12;
+    const inflXS = natInfl / 12 + (localW / (1 - SHELTER_W)) * dLocal;
     e.cpiXS = clamp((e.cpiXS ?? e.cpi!) * (1 + clamp(inflXS, -0.01, 0.02)), 0.5, 1000);
     // ...and expectations follow realised inflation slowly. This is the anchor
     // that keeps the spiral from either exploding or dying: fast enough that a
@@ -3708,123 +3720,33 @@ export function tickEcon(s: GameState) {
     // 2022's -1.7% was a labour-hoarding year, not a slack-labour-market year.
     const hoarding = -((e.nat?.recM ?? 0) > 0 ? (e.nat?.deep ? 0.021 : 0.011) : 0);
     const productivity = prodEra + hoarding;
-    // AND NOMINAL PAY DOES NOT GET CUT. It gets FROZEN, and inflation does the
-    // rest — which is the whole reason real wages fall while nominal ones do
-    // not, and the mechanism behind 1974-75 and 2021-22 alike.
+    // THE TOWN'S PAY IS WHAT ITS FIRMS POST (2026-10-29, ONE_ECONOMY_PLAN
+    // §6c-D; FORMULA_LEDGER #15, removed). It was set here: pay closing toward
+    // national pay x local prices over national x a wage curve on the town's
+    // unemployment x a size term, with a freeze and an owed raise. Each firm
+    // now posts its own pay from its own books and how hard it is to hire —
+    // the town's slack at the wage curve, its industry's unfilled openings,
+    // rent sharing — with the same downward rigidity, firm by firm
+    // (economy.ts `postPayAndPrices`), and the town's wage index is the
+    // heads-weighted average of what was posted, read a month on, as a
+    // statistician reads last month's payrolls. Before the books open, the
+    // town's employers grant what every employer in the country grants: the
+    // nation's path below.
     //
-    // Downward nominal wage rigidity is one of the most heavily evidenced
-    // facts in labour economics: the distribution of annual nominal wage
-    // changes has a large spike sitting exactly at zero and almost no mass
-    // below it (Card & Hyslop; Kahn). Flooring the growth factor at zero
-    // reproduces that spike rather than approximating it.
-    //
-    // It also has to be here rather than left to the arithmetic. Letting
-    // productivity vary made the nominal index fall in 4.00% of twelve-month
-    // windows, worst -2.22% — a quarter of a century of runs producing an
-    // outright cut in average pay, which does not happen to real economies.
-    // With the floor the same variation lands entirely on the real wage, which
-    // is where it belongs and where it was missing.
-    // ...AND THE FREEZE IS PAID FOR LATER, WHICH IS WHAT MAKES IT RIGIDITY
-    // RATHER THAN A SUBSIDY.
-    //
-    // Flooring alone truncates the bottom of a noisy series and keeps the top,
-    // so it RAISES the mean — measured, trend real wage growth went from
-    // 1.18%/yr to 1.71% and industrial real rent to +1.77% against a +1.5
-    // band, purely as an artefact of the clamp. That is a fake number arriving
-    // through the back door: nobody typed it, and it was still a thumb on the
-    // scale.
-    //
-    // Pent-up wage deflation is the real mechanism and it fixes the bias
-    // mechanically. The cut a firm could not make is not forgiven, it is owed:
-    // the shortfall accumulates and is worked off by under-granting later
-    // raises. Pay plateaus for years instead of ratcheting, which is the shape
-    // rigidity actually has, and the trend ends up where it would have been.
-    //
-    // It is worked off at 12%/month rather than instantly, because a firm that
-    // has frozen pay through a bad year does not claw it all back in the first
-    // good month — it grants a thin raise for a while, which is the observed
-    // pattern after every freeze.
-    // PAY IS SET AGAINST THE NATION'S EXPECTED INFLATION, NOT THE TOWN'S
-    // (2026-10-09). With the town's rent inside its price level, reading local
-    // `inflExp` here closed a direct indexation loop — rent up, local CPI up,
-    // local expectations up, local pay up, local services up, local CPI up —
-    // with a gain of about 0.58 per turn, and measured over 4 worlds x 50
-    // years it carried local pay to 1.24-2.08x the national path. Employers
-    // set raises against the price outlook every employer in the country
-    // shares and against how hard it is to hire HERE (`tight`). What a dear
-    // town costs its workers reaches their pay the way it does in life: some
-    // of them leave (the real-wage premium in migration), the labour market
-    // tightens, and pay is bid up through `tight` — the compensating
-    // differential as a consequence, not as an indexation clause.
-    //
-    // ...AND PAY CATCHES UP WITH THE INFLATION IT MISSED. Pure expectations
-    // left a permanent forecast error in pay: measured over 4 worlds x 50
-    // years the nation's expected inflation sat about half a point under
-    // realised, so real pay grew 0.1-1.0%/yr against 1.1% productivity — a
-    // workforce fooled for half a century. Wage setting indexes partly to
-    // last year's prices; Smets & Wouters (2007) estimate the indexation
-    // share at about 0.58, which is used here against the national CPI.
-    const payExp = 0.42 * (e.nat?.inflExp ?? e.inflExp) + 0.58 * natCpi12;
-    // A TOWN'S PAY IS A LEVEL AGAINST THE NATION'S, NOT A DRIFT FROM IT
-    // (2026-10-10). Pay grew at the nation's rate plus `tight` x 0.012 a
-    // month, so every month the town ran tighter than the nation added to a
-    // gap nothing closed: the relative wage had a unit root. Measured over two
-    // 100-year Frontier towns, local pay ended 1.25-1.36x the nation's with
-    // local unemployment at the nation's own level — a 9% REAL premium no
-    // labour market explains — and since employers read pay (regionalPull)
-    // the town stopped being chosen from about year 40.
-    //
-    // Regional pay is stationary relative to the nation (Blanchard & Katz
-    // 1992: relative wages return to normal within years), and its level
-    // follows local unemployment — the wage curve, an elasticity of about
-    // -0.1 of pay to the unemployment rate across regions in every country
-    // measured (Blanchflower & Oswald 1994). So the town's pay closes toward
-    //
-    //   national pay
-    //   x local prices / national prices   — equal real pay across places
-    //                                         when amenities are equal
-    //                                         (Rosen 1979; Roback 1982)
-    //   x (local u / national u)^-0.10    — the wage curve
-    //   x (jobs / opening jobs)^AGGLOM     — what its size adds to output,
-    //                                         the term regionalPull credits
-    //
-    // with a two-year half-life. Freezes and the owed raise below still apply.
-    const n0 = e.nat;
-    // Unbounded (2026-10-13): national unemployment cannot leave 0-1, which
-    // bounds this; the clamp held pay growth flat past 5.5 points of slack.
-    const natTight0 = n0 ? NAT_U_STAR - n0.unemp : 0;
-    const natGrowth0 = payExp / 12 + productivity / 12 + natTight0 * 0.012;
-    const natW = Math.max(1e-6, e.natWageIdx ?? e.wageIdx!);
-    const priceRatio = (e.cpi ?? 1) / Math.max(0.1, e.natCpi ?? e.cpi ?? 1);
-    const uRatio = Math.max(0.01, e.unemployment!) / Math.max(0.01, n0?.unemp ?? e.unemployment!);
-    const sizeRatio = Math.max(0.2, (e.jobs ?? 1) / Math.max(1, e.jobs0 ?? e.jobs ?? 1));
-    const target = natW * priceRatio * Math.pow(uRatio, WAGE_CURVE) * Math.pow(sizeRatio, AGGLOM);
-    const ecm = Math.log(target / Math.max(1e-6, e.wageIdx!)) * (1 - Math.exp(-Math.LN2 / WAGE_GAP_HALF_M));
-    const growth = natGrowth0 + ecm + rrange(s, -0.0004, 0.0004);
-    if (e.wageDebt === undefined) e.wageDebt = 0;
-    if (growth < 0) {
-      e.wageDebt -= growth;          // the cut nobody took, owed
-      e.wageIdx = clamp(e.wageIdx!, 0.7 * (e.priceLevel ?? 1), 400 * (e.priceLevel ?? 1));   // frozen: no cut, no rise
-    } else {
-      // Later raises are thinned until the debt is worked off.
-      const repay = Math.min(e.wageDebt, growth * 0.12 + 0.00008);
-      e.wageDebt -= repay;
-      e.wageIdx = clamp(e.wageIdx! * (1 + growth - repay), 0.7 * (e.priceLevel ?? 1), 400 * (e.priceLevel ?? 1));
-    }
-    e.wageDebt = clamp(e.wageDebt, 0, 0.25);
     // What the same worker earns elsewhere: the national path, expectations
-    // plus productivity, none of this town's tightness or slack.
-    // ...and the NATION's expectations and labour market, not this town's
-    // (2026-10-09). This read the local `inflExp`, so "what a worker earns
-    // elsewhere" moved with this town's own inflation, and a dear town looked
-    // ordinary to its employers. National pay is national expected inflation
-    // plus productivity plus the same Phillips slope on the nation's gap.
+    // plus productivity, none of this town's tightness or slack — the
+    // NATION's expectations and labour market (2026-10-09), indexed partly to
+    // last year's prices (Smets & Wouters 2007: about 0.58), and not cut in
+    // nominal terms.
+    const natPrev = e.natWageIdx ?? e.wageIdx!;
     {
       const n = e.nat;
       const natTight = n ? Math.max(-0.06, Math.min(0.055, NAT_U_STAR - n.unemp)) : 0;
       const natGrowth = (0.42 * (n?.inflExp ?? e.inflExp) + 0.58 * natCpi12) / 12 + productivity / 12 + natTight * 0.012;
-      e.natWageIdx = (e.natWageIdx ?? e.wageIdx!) * (1 + Math.max(0, natGrowth));
+      e.natWageIdx = natPrev * (1 + Math.max(0, natGrowth));
     }
+    const posted = e.eco?.wage;
+    e.wageIdx = posted !== undefined && posted > 0 ? posted : e.wageIdx! * (e.natWageIdx / Math.max(1e-9, natPrev));
 
     // Output is what the place makes: people working, times what each of them
     // produces. It is the broadest number in the game and the slowest to move.

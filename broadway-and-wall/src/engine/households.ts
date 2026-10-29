@@ -246,6 +246,8 @@ export interface HouseholdRegister {
   wIsland: number; wRegion: number;
   /** The indices last month, so incomes, rents and house values move with the town. */
   wageRef: number; costRef: number; homeRef: number;
+  /** each industry's posted pay last month (economy.ts), what its earners' pay is indexed by */
+  payRef?: number[];
   /** The island renters' median income over the town's median, fixed at the opening. */
   renterInc: number;
   /** The flats' effective rent index and the wage index at the opening: the engine's own burden is 30% moved by their ratio. */
@@ -1016,6 +1018,10 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   const wage = e.wageIdx ?? 1, cost = e.costIdx ?? 1, home = e.homes?.psf ?? wage;
   const gW = wage / Math.max(1e-9, r.wageRef), gC = cost / Math.max(1e-9, r.costRef), gH = home / Math.max(1e-9, r.homeRef);
   r.wageRef = wage; r.costRef = cost; r.homeRef = home;
+  // an earner's pay moves with what its industry's firms post (economy.ts `postPayAndPrices`, read a month on)
+  const payIdx = e.eco?.payIdx;
+  const gInd = payIdx && r.payRef?.length === payIdx.length ? payIdx.map((v, i) => v / Math.max(1e-9, r.payRef![i])) : null;
+  if (payIdx) r.payRef = payIdx.slice();
   r.mainRent *= gC;
   const short = shortIndexOf(e) / 100;
   const n0 = r.n;
@@ -1032,7 +1038,9 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       if (emp[i] === EMP_UNEMP) un += a.wt[i];
     };
     for (let i = 0; i < n0; i++) {
-      a.wage1[i] *= gW; a.wage2[i] *= gW; a.yperm[i] *= gW;
+      a.wage1[i] *= gInd && a.ind1[i] !== IND_NONE ? gInd[a.ind1[i]] : gW;
+      a.wage2[i] *= gInd && a.ind2[i] !== IND_NONE ? gInd[a.ind2[i]] : gW;
+      a.yperm[i] *= gW;
       if (a.ten[i] === TEN_MAINLAND) a.rent[i] *= gC;
       if (a.ten[i] === TEN_OWN) a.hval[i] *= gH;
       lose(a.emp1, a.un1, i); lose(a.emp2, a.un2, i);

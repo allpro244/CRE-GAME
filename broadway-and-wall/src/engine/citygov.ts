@@ -55,6 +55,8 @@ import type { Econ, GameState } from "./types";
 import { BUILT_CLASSES, START_YEAR, raiseAlert } from "./types";
 import { rng, pushNewsPublic, islandResidents, SF_PER_HOME, PEOPLE_PER_HOME, normalVac } from "./market";
 import { TAX_RATE, classValuePsf } from "./value";
+import { why as whyEv, whyAt, whyMark, whyNation } from "./why";
+import { whyTown } from "./economy";
 import { HH_SIZE, fundamentalHomePsf, medianIncome } from "./homeprice";
 
 // ---------------------------------------------------------------- the facts [S]
@@ -446,10 +448,10 @@ function ensureStream(s: GameState) {
     (s.streams as Record<string, number>).citygov = (h >>> 0) || 1;
   }
 }
-function note(s: GameState, g: CityGov, kind: CityGov["log"][number]["kind"], text: string, wire: "event" | "warn" | "info" = "event") {
+function note(s: GameState, g: CityGov, kind: CityGov["log"][number]["kind"], text: string, wire: "event" | "warn" | "info" = "event", whyId?: number) {
   (g.log ??= []).push({ m: s.month, kind, text });
   if (g.log.length > 80) g.log.shift();
-  pushNewsPublic(s, wire, text);
+  pushNewsPublic(s, wire, text, whyId);
 }
 const nextNovember = (m: number) => m + ((10 - (m % 12) + 12) % 12 || 12);
 
@@ -717,7 +719,13 @@ function fiscalYear(s: GameState, g: CityGov) {
   if (!!P.rentCap !== !!before.rentCap) bits.push(P.rentCap ? `rent stabilisation on every apartment built by ${P.rentCap.sinceYr} (renewals held to ~${Math.round(RGB_SHARE * 100)}% of inflation)` : "rent stabilisation repealed");
   if ((!!P.abate !== !!before.abate) || (!!P.rentCap !== !!before.rentCap)) e.govStamp = (e.govStamp ?? 0) + 1;
   const who = g.control ? "The control board" : `Mayor ${g.mayor.name}`;
-  (bits.length ? (t: string) => note(s, g, "policy", t) : (t: string) => pushNewsPublic(s, "info", t))(
+  // THE CAUSE LEDGER: a change in rates, caused by the gap and who closed it.
+  const taxWhy = bits.length ? whyMark(s, "tax", whyEv(s, {
+    k: "city.budget", a: "city", name: who,
+    n: { gap, propRate: P.propRate, wageRate: P.wageRate, propWas: before.propRate, wageWas: before.wageRate, service: P.service },
+    t: `FY${yr + 1} budget · ${gap > 0 ? `$${(gap / 1e6).toFixed(1)}M gap` : `$${(-gap / 1e6).toFixed(1)}M surplus`} · property tax ${(before.propRate * 100).toFixed(2)}% → ${(P.propRate * 100).toFixed(2)}% · payroll tax ${(before.wageRate * 100).toFixed(2)}% → ${(P.wageRate * 100).toFixed(2)}% · ${g.control ? "the control board" : `the mayor runs ${PLATFORM_LABEL[plat as Platform]}`}`,
+  }, [whyAt(s, "city:mayor"), whyTown(s), whyNation(s)])) : undefined;
+  (bits.length ? (t: string) => note(s, g, "policy", t, "event", taxWhy) : (t: string) => pushNewsPublic(s, "info", t))(
     `${who} adopted the FY${yr + 1} budget: $${((g.op12 + g.capUnfunded) / 1e6).toFixed(0)}M, ${gap > 0 ? `a $${(gap / 1e6).toFixed(1)}M gap` : `a $${(-gap / 1e6).toFixed(1)}M surplus`}.${bits.length ? " " + bits.join("; ") + "." : " No change in rates."}`);
   publish(e, g);
 }
@@ -742,6 +750,11 @@ function startCrisis(s: GameState, g: CityGov, need: number) {
   P.propRate = clamp(P.propRate * (1 + surcharge), TAX_RATE * PROP_LO, TAX_RATE * PROP_HI);
   g.crises.push({ m, face: need, spread: +spreadAt.toFixed(2), shut, cut: +cut.toFixed(3), surcharge: +surcharge.toFixed(3) });
   publish(e, g);
+  whyMark(s, "tax", whyMark(s, "city:mayor", whyEv(s, {
+    k: "city.crisis", a: "city",
+    n: { due: need, spread: spreadAt, cut, surcharge, propRate: P.propRate },
+    t: `$${(need / 1e6).toFixed(1)}M of city paper could not be rolled · spread ${spreadAt.toFixed(2)} pts · services −${Math.round(cut * 100)}%, property tax +${Math.round(surcharge * 100)}%`,
+  }, [whyTown(s), whyNation(s)])));
   (g.log ??= []).push({ m, kind: "crisis", text: `$${(need / 1e6).toFixed(1)}M came due and could not be rolled (spread ${spreadAt.toFixed(2)}${shut ? ", credit shut" : ""}); the state took the budget: services −${Math.round(cut * 100)}%, property tax +${Math.round(surcharge * 100)}%.` });
   (e.blackSwans ??= []).push({ m, kind: "fiscal", size: Math.round(cut * 100), sf: 0, title: "the city could not pay its bills" });
   raiseAlert(s, {
@@ -794,9 +807,14 @@ function election(s: GameState, g: CityGov) {
     ? { ...prev, terms: prev.terms + 1, nextElectionM: m + 48, share, uAt: u }
     : { name: drawName(s), platform: win, sinceM: m + 2, nextElectionM: m + 48, share, terms: 1, uAt: u };
   const why = [`unemployment ${(u * 100).toFixed(1)}%`, `taxes ${X.tax >= 0 ? "+" : ""}${X.tax.toFixed(0)}% of pay vs the opening`, `rents ${X.rent >= 0 ? "+" : ""}${X.rent.toFixed(0)}% of income`, g.control ? "the city under a control board" : `a ${(g.defShare * 100).toFixed(1)}% deficit`].join(", ");
+  const elWhy = whyMark(s, "city:mayor", whyEv(s, {
+    k: "city.election", a: "city", name: g.mayor.name,
+    n: { share, unemp: u, tax: X.tax, rent: X.rent, deficit: g.defShare },
+    t: `${g.mayor.name} (${PLATFORM_LABEL[win]}) ${reelect ? "re-elected" : "elected"} with ${(share * 100).toFixed(0)}% · ${why}`,
+  }, [whyTown(s), whyNation(s)]));
   note(s, g, "election", reelect
     ? `Election: Mayor ${prev.name} (${PLATFORM_LABEL[win]}) re-elected with ${(share * 100).toFixed(0)}% — ${why}.`
-    : `Election: ${g.mayor.name} (${PLATFORM_PARTY[win]}, ${PLATFORM_LABEL[win]}) wins City Hall with ${(share * 100).toFixed(0)}%, over Mayor ${prev.name} — ${why}. ${win === "growth" ? "Promises lower taxes and abatements for new building." : win === "populist" ? "Promises rent stabilisation and a bigger tax bill for landlords." : "Promises to balance the books, by cuts first."}`);
+    : `Election: ${g.mayor.name} (${PLATFORM_PARTY[win]}, ${PLATFORM_LABEL[win]}) wins City Hall with ${(share * 100).toFixed(0)}%, over Mayor ${prev.name} — ${why}. ${win === "growth" ? "Promises lower taxes and abatements for new building." : win === "populist" ? "Promises rent stabilisation and a bigger tax bill for landlords." : "Promises to balance the books, by cuts first."}`, "event", elWhy);
 }
 
 // ---------------------------------------------------------------- civic works

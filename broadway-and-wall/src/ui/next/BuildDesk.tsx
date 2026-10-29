@@ -37,6 +37,8 @@ import { usd, sf } from "@/ui/format";
 import { devUseLabel } from "@/ui/panels/shared";
 import { deskScheme, bestStarts, coverFor, productName, type DeskScheme } from "./scheme";
 import "./desks.css";
+import { WhyButton } from "@/ui/WhyChain";
+import { costWhy, landWhy } from "@/ui/whyLinks";
 
 /** The ground storey (BuildingDesign.base). A trading ground floor keeps its shops: arcade only. */
 const BASES: { key: NonNullable<BuildingDesign["base"]>; name: string; blurb: string; minFloors: number; shops: boolean }[] = [
@@ -452,8 +454,14 @@ function More({ d, bbl, set }: { d: DeskScheme; bbl: string; set: (p: Partial<De
 /** One disclosure for the numbers behind the verdict. */
 function Details({ d }: { d: DeskScheme }) {
   const p = d.plan;
-  if (!p) return null;
+  const game = useStore((s) => s.game);
+  if (!p || !game) return null;
   const st = p.product?.site;
+  // THE TWO MARKET PRICES A SCHEME IS BUILT FROM, each with its chain (whyReads.ts).
+  const why: Record<string, React.ReactNode> = {
+    Cost: <WhyButton id={costWhy(game)} lead={`Cost ${usd(p.costTotal)} at the town's construction index ${(game.econ.costIdx ?? 1).toFixed(2)}`} />,
+    Land: <WhyButton id={landWhy(game)} />,
+  };
   const rows: [string, string][] = [
     ["Building", `${sf(p.sf)} · ${p.floors} fl · FAR ${p.far} of ${p.farMax.toFixed(1)}`],
     ["Cost", `${usd(p.costTotal)} · $${Math.round(p.costTotal / Math.max(1, p.sf))}/sf`],
@@ -470,7 +478,7 @@ function Details({ d }: { d: DeskScheme }) {
     <details className="bd-details" open>
       <summary>Numbers</summary>
       <table className="bd-kv"><tbody>
-        {rows.map(([k, v]) => <tr key={k}><td>{k}</td><td className="mono">{v}</td></tr>)}
+        {rows.map(([k, v]) => <tr key={k}><td>{k}{why[k] && <> {why[k]}</>}</td><td className="mono">{v}</td></tr>)}
       </tbody></table>
     </details>
   );

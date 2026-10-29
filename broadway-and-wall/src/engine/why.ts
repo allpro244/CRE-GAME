@@ -80,6 +80,32 @@ export function whyOnce(s: GameState, key: string, make: () => Omit<WhyEvent, "i
   return id;
 }
 
+/**
+ * A NAMED POINTER to the latest event behind a number on a screen ("rent:office",
+ * "cap:retail", "land", "tax"): the screen asks `whyAt` for it and shows the
+ * chain. Kept in the ledger's own key table, so it is trimmed with the event
+ * it points at and nothing outside the ledger changes.
+ */
+export function whyMark(s: GameState, name: string, id: number | undefined): number | undefined {
+  if (id) ledger(s).key[`@${name}`] = id;
+  return id;
+}
+/** The event a named pointer holds, while the ledger still has it. Pure. */
+export function whyAt(s: GameState, name: string): number | undefined {
+  const id = s.why?.key[`@${name}`];
+  return id && whyGet(s, id) ? id : undefined;
+}
+/** The newest once-a-month event under a key prefix ("industry:law"), looking back `back` months. Pure. */
+export function whyLatest(s: GameState, prefix: string, back = 12): number | undefined {
+  const K = s.why?.key;
+  if (!K) return undefined;
+  for (let m = s.month; m >= s.month - back; m--) {
+    const id = K[`${prefix}:${m}`];
+    if (id && whyGet(s, id)) return id;
+  }
+  return undefined;
+}
+
 /** Drop what is older than the window or over the cap; forget keys that point at nothing. */
 export function trimWhy(s: GameState): void {
   const L = s.why;

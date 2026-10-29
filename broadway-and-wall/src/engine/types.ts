@@ -1216,6 +1216,8 @@ export interface Listing {
 export interface PortfolioListing {
   id: string;
   bbls: string[];
+  /** the least the seller takes for the whole book (a named firm's own floor: the loans it must clear); absent, 92% of the ask (a lender's 88%) */
+  reserve?: number;
   /** the number being asked for the whole book, today */
   ask: number;
   /** what the buildings appraise at individually — the ask is read against this */
@@ -2364,6 +2366,8 @@ export interface Econ {
    * closed deals say, and how much evidence there is behind it.
    */
   capRead?: Partial<Record<BuiltClass, CapRead>>;
+  /** The land texture level's read-out (propmarket.ts tickLandRead): evidence, window (0 = stale), median age. */
+  landReadOut?: { n: number; win: number; ageM: number; why?: number };
   /**
    * THE APPRAISER'S ADJUSTMENT GRID, learned from the prints (propmarket.ts):
    * log-cap per unit of location (0-1), condition index (0-1) and build spec
@@ -4642,6 +4646,13 @@ export interface GameState {
    * appraiser's own income. Cap rates are statistics of this tape.
    */
   capTape?: CapPrint[];
+  /**
+   * THE LAND PRINTS (propmarket.ts): every lot whose appraisal rested on the
+   * map's texture (no builder or holder bid above it) that sold, was bid on,
+   * or was surveyed, as the texture level it implies (`L`, in units of
+   * econ.landIdx). The texture level is a statistic of this tape.
+   */
+  landTape?: { m: number; L: number; w: number; kind: "t" | "b" | "s" }[];
   /**
    * Lifetime closed-print count. The rolling `comps` buffer is capped for the
    * sheet UI; this counter is not, so a century report can tell cumulative

@@ -74,6 +74,7 @@ import {
   COMP_PER_WORKER_2023, BUYER_TYPES, REPAIR_PER_COMMERCIAL_RENT, REPAIR_PER_FLAT_RENT, REPAIR_OWNER_PER_VALUE_YR,
   OIL_PRICE_2000, OIL_PER_SHOCK, OIL_RISE_M, OIL_HALF_LIFE_M,
   OFF_FLOOR, REMOTE, floorOf, NAT_TREND, CYCLE_BETA, FED_HEALTH_PER_PERSON_2023, MLR,
+  IND_ID_GOV, IND_ID_CON, IND_ID_INS, IND_ID_ONLINE, RETAIL_IDS, HEALTH_SPLIT, OLD24_TO_68,
   type IndustryId, type Floor, type BuyerType, type SpendCategory,
 } from "./industries";
 import {
@@ -85,7 +86,7 @@ import {
   LABOUR_FORCE_SLOWDOWN, FORTUNE_SD, FORTUNE_TAU_M, NAT_TREND_SD, NAT_TREND_TAU_M, NAT_SALES_PER_GAP, LOCATION_PULL, locationCost,
 } from "./market";
 import { HARD_COST_PSF, SOFT_COST, CONTINGENCY, constructionTypeMult } from "./value";
-import { householdMoney, registerPayroll, registerLabour } from "./households";
+import { householdMoney, registerPayroll, registerLabour, unpackHouseholds } from "./households";
 import { why, whyOnce, whyNation, whyTenantBooks } from "./why";
 
 // ---------------------------------------------------------------- the facts
@@ -106,8 +107,13 @@ const CASH_KEEP_M = 1.5, PAYOUT_M = 0.15;
 /** Debt moves toward what a lender would write over three years (market.ts tickFirmBook, tenantBooks.ts). [K] */
 const DEBT_ADJ_M = 36;
 
-const IND_GOV = INDUSTRY_INDEX.government, IND_CON = INDUSTRY_INDEX.construction, IND_SHOPS = INDUSTRY_INDEX.shops, IND_FUL = INDUSTRY_INDEX.fulfil;
-const IND_HE = INDUSTRY_INDEX.healthedu, IND_INS = INDUSTRY_INDEX.insurance;
+const IND_GOV = INDUSTRY_INDEX[IND_ID_GOV], IND_CON = INDUSTRY_INDEX[IND_ID_CON], IND_INS = INDUSTRY_INDEX[IND_ID_INS];
+const IND_ONLINE = INDUSTRY_INDEX[IND_ID_ONLINE];
+const IND_RETAIL = RETAIL_IDS.map((k) => INDUSTRY_INDEX[k]);
+/** The care industries and each one's share of a health dollar (industries.ts HEALTH_SPLIT). */
+const IND_HEALTH = (Object.entries(HEALTH_SPLIT) as [IndustryId, number][]).map(([k, w]) => [INDUSTRY_INDEX[k], w] as const);
+/** Industries with no firm in the metro (industries.ts `where`): always bought from out of town. */
+const OUTSIDE = INDUSTRY_IDS.map((k) => INDUSTRIES[k].where === "outside");
 const FLOORS: readonly Floor[] = ["office", "retail", "industrial"];
 const NO_SEC = 255;
 
@@ -346,8 +352,8 @@ function spendVector(online: number): { v: Float64Array; primary: number } {
     }
   }
   // the online share of a shop's margin is earned by a seller shipping from a shed
-  const moved = v[IND_SHOPS] * Math.max(0, Math.min(1, online));
-  v[IND_SHOPS] -= moved; v[IND_FUL] += moved;
+  const o = Math.max(0, Math.min(1, online));
+  for (const r of IND_RETAIL) { const moved = v[r] * o; v[r] -= moved; v[IND_ONLINE] += moved; }
   return { v, primary };
 }
 
@@ -469,14 +475,16 @@ function closeBooks(L: Ledger, n: number) {
 }
 
 /**
- * THE OFF-MAP FIRMS AT THE OPENING (step 2). The town's employment (e.jobs)
- * less the named firms' heads holds, first, the work that serves the region's
- * people from buildings of its own — government at its national share of the
- * town's jobs, health and education's off-floor part at its own (industries.ts
- * OFF_FLOOR; the town's size counts them, market.ts `citySize`) — and
- * construction at what the town buys of it; then the rest toward the nation's
- * industry mix, to the industries the street leaves short. If the residual
- * cannot hold the first three they share what there is.
+ * THE OFF-MAP FIRMS AT THE OPENING (step 2; by industry since 2b). The town's
+ * employment (e.jobs) less the named firms' heads holds, first, the work done
+ * from buildings of its own — each industry's off-floor part (industries.ts
+ * OFF_FLOOR: hospitals, schools, City Hall, depots, the region's airport and
+ * yards) at its national share of the town's jobs, which is what the town's
+ * size counts (market.ts `citySize`) — and construction at what the town buys
+ * of it; then the rest toward the nation's industry mix, to the industries the
+ * street leaves short. If the residual cannot hold the first part, they share
+ * what there is. Industries with no firm in the metro (`where`: outside) hold
+ * none.
  */
 function openingOffMap(s: GameState, named: Float64Array, conOpen: number): Float64Array {
   const jobs = s.econ.jobs ?? 0;
@@ -484,25 +492,40 @@ function openingOffMap(s: GameState, named: Float64Array, conOpen: number): Floa
   for (let i = 0; i < N_IND; i++) namedTot += named[i];
   let O = Math.max(0, jobs - namedTot);
   const out = new Float64Array(N_IND);
-  const gov = Math.max(0, NAT_EMP_SHARE.government * jobs - named[IND_GOV]);
-  const he = NAT_EMP_SHARE.healthedu * OFF_FLOOR.healthedu * jobs;
-  const fixed = gov + he + conOpen;
+  const own = new Float64Array(N_IND);
+  let fixed = conOpen;
+  for (let i = 0; i < N_IND; i++) {
+    if (i === IND_CON || OUTSIDE[i]) continue;
+    const id = INDUSTRY_IDS[i];
+    own[i] = Math.max(0, NAT_EMP_SHARE[id] * OFF_FLOOR[id] * jobs - (OFF_FLOOR[id] >= 1 ? named[i] : 0));
+    fixed += own[i];
+  }
   const k = fixed > O ? O / fixed : 1;
-  out[IND_GOV] = k * gov; out[IND_HE] = k * he; out[IND_CON] = k * conOpen;
+  for (let i = 0; i < N_IND; i++) out[i] = k * own[i];
+  out[IND_CON] = k * conOpen;
   O -= k * fixed;
   const d = new Float64Array(N_IND);
   let dt = 0;
   for (let i = 0; i < N_IND; i++) {
-    if (i === IND_CON || i === IND_GOV) continue;
-    const share = NAT_EMP_SHARE[INDUSTRY_IDS[i]] * (i === IND_HE ? 1 - OFF_FLOOR.healthedu : 1);
-    d[i] = Math.max(0, share * jobs - named[i]);
+    if (i === IND_CON || OUTSIDE[i]) continue;
+    const id = INDUSTRY_IDS[i];
+    if (OFF_FLOOR[id] >= 1) continue;
+    d[i] = Math.max(0, NAT_EMP_SHARE[id] * (1 - OFF_FLOOR[id]) * jobs - named[i]);
     dt += d[i];
   }
-  for (let i = 0; i < N_IND; i++) {
-    if (i === IND_CON || i === IND_GOV) continue;
-    out[i] += O * (dt > 0 ? d[i] / dt : NAT_EMP_SHARE[INDUSTRY_IDS[i]]);
-  }
+  for (let i = 0; i < N_IND; i++) if (d[i] > 0) out[i] += O * d[i] / dt;
   return out;
+}
+
+/**
+ * WHAT A HEAD COSTS IN RENT, a month: on the floor its industry rents, the
+ * market's rent for its feet; in a building of its own (OFF_FLOOR — a
+ * hospital, a depot, the airport), what its industry pays for structures per
+ * dollar of output (industries.ts `rent`, BEA) [D].
+ */
+function rentPerHead(s: GameState, i: number, opw: Float64Array): number {
+  const id = INDUSTRY_IDS[i], I = INDUSTRIES[id], off = OFF_FLOOR[id];
+  return (1 - off) * I.sfPerWorker * marketRent(s, i) / 12 + off * opw[i] * I.rent;
 }
 
 // ---------------------------------------------------------------- what the nation buys
@@ -674,7 +697,7 @@ function openingConstruction(s: GameState, E: EconomyState, hm: { rent: number; 
   let D = 0;
   for (let i = 0; i < N_IND; i++) {
     if (i === IND_CON) continue;
-    firmRent += eng[i] * INDUSTRIES[INDUSTRY_IDS[i]].sfPerWorker * marketRent(s, i) / 12;
+    firmRent += eng[i] * rentPerHead(s, i, opw);
     D += A_FLAT[i * N_IND + IND_CON] * (named[i] + eng[i]) * opw[i];
   }
   D += conTotal(constructionBought(s, hm, firmRent));
@@ -797,7 +820,7 @@ export function tickEconomy(s: GameState): void {
   const F = E.f, nF = L.slot.n;
   const heads = Float64Array.from(E.cur.heads);
   const rentMkt = new Float64Array(N_IND);
-  for (let i = 0; i < N_IND; i++) rentMkt[i] = INDUSTRIES[INDUSTRY_IDS[i]].sfPerWorker * marketRent(s, i) / 12;
+  for (let i = 0; i < N_IND; i++) rentMkt[i] = rentPerHead(s, i, opw);
   const rentOf = (n: number) => F.id[n] >= 0 ? F.rent[n] : F.hc[n] * rentMkt[F.ind[n]];
 
   // ---- each firm's payroll this month: its industry's earners' pay in the
@@ -829,11 +852,11 @@ export function tickEconomy(s: GameState): void {
   const fedHealth = FED_HEALTH_PER_PERSON_2023 / 12 * w * hm.persons;
   const fH = new Float64Array(N_IND), fG = new Float64Array(N_IND), fC = new Float64Array(N_IND), fd = new Float64Array(N_IND);
   for (let j = 0; j < N_IND; j++) fH[j] = C * sv.v[j];
-  const fIns = new Float64Array(N_IND);
-  fIns[IND_HE] = MLR * insEmp; fIns[IND_INS] = (1 - MLR) * insEmp;
+  const fIns = new Float64Array(N_IND), fFed = new Float64Array(N_IND);
+  for (const [h, wt] of IND_HEALTH) { fIns[h] = MLR * insEmp * wt; fFed[h] = fedHealth * wt; }
+  fIns[IND_INS] += (1 - MLR) * insEmp;
   fG[IND_GOV] = G; fC[IND_CON] = P;
-  for (let j = 0; j < N_IND; j++) fd[j] = fH[j] + fIns[j] + fG[j] + fC[j];
-  fd[IND_HE] += fedHealth;
+  for (let j = 0; j < N_IND; j++) fd[j] = fH[j] + fIns[j] + fFed[j] + fG[j] + fC[j];
 
   if (opening) {
     // the register's people once the opening's jobs are filled: government follows them from here
@@ -875,7 +898,7 @@ export function tickEconomy(s: GameState): void {
     let firms = 0, conB = 0;
     for (let i = 0; i < N_IND; i++) { const a = A_FLAT[i * N_IND + j] * x[i]; if (i === IND_CON) conB += a; else firms += a; }
     const r = E.rpc[j];
-    buy.push([r * (fH[j] + fIns[j] + (j === IND_HE ? fedHealth : 0)), r * firms, r * fG[j], r * (fC[j] + conB), X[j]]);
+    buy.push([r * (fH[j] + fIns[j] + fFed[j]), r * firms, r * fG[j], r * (fC[j] + conB), X[j]]);
   }
 
   // ---- 5. the buyers pay the market
@@ -896,9 +919,12 @@ export function tickEconomy(s: GameState): void {
   transfer(L, ACCOUNTS.landlords, ACCOUNTS.rest, (1 - rCon) * landBuild, "imports", "land>row:imports");
   transfer(L, ACCOUNTS.rest, M, xTot, "exports", "row>mkt:exports");
   // Washington pays for the care its programmes cover; what is treated out of town never touches it
-  transfer(L, ACCOUNTS.rest, M, E.rpc[IND_HE] * fedHealth, "health", "row>mkt:medicare and medicaid");
+  let fedLocal = 0;
+  for (const [h] of IND_HEALTH) fedLocal += E.rpc[h] * fFed[h];
+  transfer(L, ACCOUNTS.rest, M, fedLocal, "health", "row>mkt:medicare and medicaid");
   // an employer's insurance dollar buys care and the insurer's service, here as far as the town supplies them
-  const insLocal = MLR * E.rpc[IND_HE] + (1 - MLR) * E.rpc[IND_INS];
+  let insLocal = (1 - MLR) * E.rpc[IND_INS];
+  for (const [h, wt] of IND_HEALTH) insLocal += MLR * wt * E.rpc[h];
 
   // ---- 6. every firm's month (its payroll: `wagesOf`, above)
   const { loc, imp } = inputSplit(E.rpc);
@@ -1086,8 +1112,54 @@ export function economyToEngine(s: GameState): void {
     d.trade = trade;
   }
   e.eco = d;
-  if (d.floorSf && !e.eco0?.floorSf) { (e.eco0 ??= {}).floorSf = { ...d.floorSf }; e.eco0.jobs = d.jobs; }
+  if (d.floorSf && !e.eco0?.floorSf) {
+    // (a save reopened on the 68 industries keeps each class's driver where it stood: `migrateEconomy`)
+    const mig = e.eco0?.mig;
+    (e.eco0 ??= {}).floorSf = mig
+      ? Object.fromEntries(Object.entries(d.floorSf).map(([k, v]) => [k, (v ?? 0) / Math.max(1e-6, mig[k as Floor] ?? 1)]))
+      : { ...d.floorSf };
+    e.eco0.jobs ??= d.jobs;
+    delete e.eco0.mig;
+  }
   (e.eco0 ??= {}).renters ??= d.renters;
+}
+
+/**
+ * A SAVE FROM BEFORE STEP 2b (24 industries). Its books are closed and reopen
+ * on the 68 this month, as at an opening (the firms already exist: their cash
+ * is the bank's deposits), sized on the town as it now stands; every earner's,
+ * tenant's and street firm's industry is renumbered to its old industry's
+ * largest successor (industries.ts OLD24_TO_68); and each class's demand
+ * driver carries on from where it stood rather than restarting at one.
+ * Called first thing in the month (sim.ts), before the street reads it.
+ */
+export function migrateEconomy(s: GameState): void {
+  const E = s.economy;
+  if (!E || !(E.rpc?.length) || E.rpc.length === N_IND) return;
+  const map = OLD24_TO_68.map((k) => INDUSTRY_INDEX[k]);
+  const re = (i: number | undefined) => (i !== undefined && i < map.length ? map[i] : undefined);
+  const r = s.households;
+  if (r) {
+    if (!r.a) unpackHouseholds(r);
+    const a = r.a!;
+    for (let i = 0; i < r.n; i++) {
+      if (a.ind1[i] < map.length) a.ind1[i] = map[a.ind1[i]];
+      if (a.ind2[i] < map.length) a.ind2[i] = map[a.ind2[i]];
+    }
+  }
+  const fix = (t: Tenant) => { if (t.ind !== undefined) { const v = re(t.ind); if (v === undefined) delete t.ind; else t.ind = v; } delete t.empInd; };
+  for (const roll of Object.values(s.econ.streetRolls ?? {})) for (const t of roll.t) fix(t);
+  for (const h of Object.values(s.holdings)) for (const t of h.tenants ?? []) fix(t);
+  for (const k of s.econ.seekers ?? []) if (k.t) fix(k.t);
+  const e = s.econ;
+  if (e.eco?.floorSf && e.eco0?.floorSf) {
+    const mig: Partial<Record<Floor, number>> = {};
+    for (const k of FLOORS) { const a = e.eco.floorSf[k], b = e.eco0.floorSf[k]; if (a && b) mig[k] = a / b; }
+    e.eco0 = { ...e.eco0, floorSf: undefined, mig };
+  }
+  if (e.eco) { delete e.eco.emp; delete e.eco.empPrev; delete e.eco.target; }
+  delete e.islandFill;
+  delete s.economy;
 }
 
 // ---------------------------------------------------------------- why (why.ts)

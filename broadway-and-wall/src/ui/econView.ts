@@ -76,9 +76,6 @@ export function bizWhy(g: GameState, name: string): { id: number; t: string; m: 
   return null;
 }
 
-export const GROUP_WORD: Record<string, string> = {
-  making: "Making things", moving: "Moving goods", selling: "Shops and services", office: "Offices", other: "Other",
-};
 
 /** Each industry's last 13 months, oldest first: output, jobs, exports and margin series. */
 export function industryTrend(g: GameState, i: number) {

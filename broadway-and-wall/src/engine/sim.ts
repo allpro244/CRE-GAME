@@ -17,7 +17,7 @@ import { tickSplits, tickRivalSplits, materializeSplits, materializeSplit } from
 import { tickHomes } from "./homes";
 import { tickGrowth } from "./growth";
 import { tickHouseholdRegister } from "./households";
-import { tickFirms, tickEconomy, economyToEngine } from "./economy";
+import { tickFirms, tickEconomy, economyToEngine, migrateEconomy } from "./economy";
 import { materializeNeighbourhoods, materializeNeighbourhood } from "./unpack";
 import { useRentableSf, overallScore, N_BANDS } from "./value";
 import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls";
@@ -695,6 +695,8 @@ function tickMonth(
   // a save's finished plats are lots before anything reads the table (landdev.ts)
   restoreCuts(s, parcels, bbls);
   setRivalAdjacency(adjacency);
+  // a save from before the 68 industries reopens its books on them (economy.ts)
+  migrateEconomy(s);
   s.month++;
   const drawnAtOpen = s.loc?.drawnTotal ?? 0;
 

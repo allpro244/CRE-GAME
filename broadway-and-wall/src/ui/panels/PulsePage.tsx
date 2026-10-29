@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { WhyButton } from "@/ui/WhyChain";
 import { useStore } from "@/state/store";
 import type { BuiltClass } from "@/engine/types";
 import { monthLabel } from "@/engine/types";
@@ -201,7 +202,7 @@ export function PulsePage() {
                 {headlines.map((n, i) => (
                   <div key={i} className={"pulse-item news-" + n.kind + (n.bbl ? " news-clickable" : "")}
                     onClick={n.bbl ? () => focus(n.bbl!, true) : undefined}>
-                    <NewsText text={n.text} />{n.bbl ? " ✈" : ""}
+                    <NewsText text={n.text} />{n.bbl ? " ✈" : ""}<WhyButton id={n.why} />
                   </div>
                 ))}
               </div>

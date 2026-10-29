@@ -27,6 +27,8 @@ import { FlatBuf, GRASS_U, TURF_U, bloomTex, grassMaterial, inRing as inRingPk, 
 import { Traffic, type Car, type Crosser, type NetRaw } from "./traffic";
 import { MORE_FORMS, SIGNATURE_FORMS, SIGNATURE_BY_KEY, SIGNATURE_MIN_H, formInEra, formFits, ellipse, rect, chamfered, star8, roundTri, yPlan, turn, type SignatureKey } from "./signature";
 import { BOOK_PICKER } from "./patternbook/register";
+import { buildBackdrop, type Backdrop } from "./facilities";
+import type { RegionFacility } from "@/citygen/index.mjs";
 import type { FacadeGroup } from "./patternbook/types";
 import { TILE, TOWER_FAMS, FAMILY_SPECS, VARIANTS, TINTS, familyFor, roofTone, shade, pick, liveryFor, baseOf, FLAT_ROOFED, GLASSY, WALKUP, TANK_FAMS, STONE_TOWER, RUSTIC_BASE, BAY_P, QUOIN_P, styleOf, type ArchStyle, NO_PAINT, type FamilySpec, type Painter, type Livery } from "./facades";
 export type { CityCtx, PlayerItem };
@@ -1453,6 +1455,13 @@ async function paceSteps<T>(g: Generator<void, T>, pace: () => Promise<void>): P
 /** How many floats a stepped loop walks between steps: about a millisecond of work. */
 const STEP_FLOATS = 1 << 20;
 
+/** Point in polygon, for local-metre rings. */
+function inRingXY(r: P2[], x: number, y: number): boolean {
+  let ins = false;
+  for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const xi = r[i][0], yi = r[i][1], xj = r[j][0], yj = r[j][1]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-15) + xi) ins = !ins; }
+  return ins;
+}
+
 class Buf {
   pos = new F32(); nrm = new F32(); uv = new F32(); col = new F32(); ao = new F32();
   pt = new F32(); tc = new F32(); ac = new F32();
@@ -1776,6 +1785,9 @@ export class RealCityLayer {
   private async buildAll() {
     this.sliceEnd = performance.now() + RealCityLayer.SLICE_MS;
     try {
+      // the country round the region's window first: the sea stops at its shore (buildCity lays the sea)
+      this.buildBackdrop();
+      await this.breathe(true);
       await this.buildCity();
       this.pickGrid = null;   // shop bays indexed the lots mid-build; heights are final now
       await this.buildGround();
@@ -1900,6 +1912,7 @@ export class RealCityLayer {
     // The graphics setting pulls that horizon in, and on Medium and Low takes
     // the garden-scale furniture with it.
     const far = distM > this.cullM, veryFar = distM > Math.max(4200, this.cullM * 1.6);
+    this.backdrop?.update(fx, fy, distM);
     for (const f of this.fleets) f.mesh.visible = f.list === this.boats ? !veryFar : !far;
     for (const k of this.quality === "high" ? FAR_PROPS : FAR_PROPS_LOW) { const m = this.inst.get(k); if (m) m.visible = !far; }
     const beds = this.inst.get("flowerbed");
@@ -5260,7 +5273,11 @@ export class RealCityLayer {
     if (landLL && landLL.length >= 4) {
       const land = landLL.map((q) => this.project(q));
       const outer = new THREE.Shape([new THREE.Vector2(-30000, -30000), new THREE.Vector2(30000, -30000), new THREE.Vector2(30000, 30000), new THREE.Vector2(-30000, 30000)]);
-      const holePts = (ringArea(land) > 0 ? land.slice().reverse() : land).map(([x, y]) => new THREE.Vector2(x, y));
+      // ON A REGION MAP THE SEA STOPS AT THE COUNTRY'S SHORE, not the window's edge: the hinterland
+      // (facilities.ts) is land, and its pits sink below where the water would be. The surf below is
+      // still traced on the window's own coast.
+      const hole = this.backdrop?.shore ?? land;
+      const holePts = (ringArea(hole) > 0 ? hole.slice().reverse() : hole).map(([x, y]) => new THREE.Vector2(x, y));
       outer.holes.push(new THREE.Path(holePts));
       const dry = ((this.ctx as { shore?: { ring: P2[]; kind: string }[] }).shore ?? [])
         .map((d) => ({ ring: d.ring.map((q) => this.project(q)), hard: d.kind === "seawall" || d.kind === "pier" || d.kind === "breakwater" }));
@@ -7531,6 +7548,10 @@ export class RealCityLayer {
         const ox = ccw ? uy : -uy, oy = ccw ? -ux : ux;        // outward, into the water
         const off = 140 + rnd() * 260;
         const fwd = rnd() < 0.5;
+        // the window's edge on a region map is the country, not the sea: no launch there (the same draws
+        // are taken, so every later choice is the one it always was)
+        const shore = this.backdrop?.shore;
+        if (shore && [0.1, 0.5, 0.9].some((t) => inRingXY(shore, a[0] + (b[0] - a[0]) * t + ox * off, a[1] + (b[1] - a[1]) * t + oy * off))) { rnd(); rnd(); rnd(); continue; }
         this.boats.push({
           x: (fwd ? a[0] : b[0]) + ox * off, y: (fwd ? a[1] : b[1]) + oy * off,
           ux: fwd ? ux : -ux, uy: fwd ? uy : -uy, len: L, ph: rnd() * L, spd: 4 + rnd() * 4,
@@ -8556,6 +8577,42 @@ export class RealCityLayer {
     return lotAt(p.x, p.y, null);
   }
 
+  // ---- the region's background facilities (facilities.ts) ---------------
+  private backdrop: Backdrop | null = null;
+  private buildBackdrop() {
+    const c = this.ctx as CityCtx;
+    if (!c.facilities?.length || !c.hinterland) return;
+    this.backdrop = buildBackdrop(c.facilities, c.hinterland, (q) => this.project(q), this.meadowMat, CANAL_WATER);
+    this.scene.add(this.backdrop.root);
+  }
+  /** The region facility under a pointer (CSS px), where no lot is: a ray to the ground and a fence test. */
+  pickFacility(px: number, py: number): RegionFacility | null {
+    if (this.queue || !this.backdrop) return null;
+    const el = this.map?.getContainer();
+    if (!el) return null;
+    const w = el.clientWidth || 1, h = el.clientHeight || 1;
+    const nx = (px / w) * 2 - 1, ny = 1 - (py / h) * 2;
+    const toWorld = (z: number) => new THREE.Vector3(nx, ny, z).applyMatrix4(this.camera.projectionMatrixInverse).applyMatrix4(this.camera.matrix);
+    const a = toWorld(-1), b = toWorld(1);
+    if (![a.x, a.y, a.z, b.x, b.y, b.z].every(Number.isFinite)) return null;
+    const dir = b.sub(a).normalize();
+    const o = new THREE.Vector3().setFromMatrixPosition(this.camera.matrix);
+    if (dir.z >= 0) return null;
+    const t = -o.z / dir.z;
+    return this.backdrop.pick(o.x + dir.x * t, o.y + dir.y * t);
+  }
+  /** Where a facility is and how big, for putting the camera on it: centre (lon/lat), reach and height (m). */
+  facilityFrame(id: string): { center: [number, number]; radius: number; height: number } | null {
+    const f = this.backdrop?.frameOf(id);
+    if (!f) return null;
+    const kx = 111320 * Math.cos((this.center[1] * Math.PI) / 180);
+    return { center: [this.center[0] + f.c[0] / kx, this.center[1] + f.c[1] / 111320], radius: f.r, height: f.h };
+  }
+  /** What the backdrop draws (a probe's frame-cost note). */
+  backdropStats() { return this.backdrop?.stats() ?? null; }
+  /** Show or hide the whole backdrop (a probe's A/B of its frame cost). */
+  setBackdropVisible(on: boolean) { if (this.backdrop) { this.backdrop.root.visible = on; this.map?.triggerRepaint(); } }
+
   buildingFrame(bbl: string): { radius: number; height: number } | null {
     if (this.queue) return null;   // still building
     const ring = this.siteRing(this.siteParent.get(bbl) ?? bbl, this.deeds);
@@ -8578,6 +8635,7 @@ export class RealCityLayer {
   }
 
   private applyMonth() {
+    this.backdrop?.setMonth(this.month, this.snowGround);
     const w2 = Math.cos((2 * Math.PI * (this.month - 6)) / 12);     // 1 in June, -1 in December
     // a city-builder's afternoon: the sun a few degrees lower than noon would
     // put it, so every block throws a shadow long enough to model it

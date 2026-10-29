@@ -16,6 +16,8 @@
 export const MODULES = [
   // economy, industries and sfc: the city's firm books, industries and ledger (ONE_ECONOMY_PLAN.md steps 0-1).
   "economy", "industries", "sfc",
+  // why: the cause ledger behind every "Why?" chain (ONE_ECONOMY_PLAN.md §6e).
+  "why",
   "sim", "leasing", "actions", "credit", "value", "dev", "debt", "demand",
   "invariants", "rivals", "sponsor", "mix", "acquire", "comps", "market",
   "zoning", "landdev", "lotcode", "lotsplit", "lotsplitGeom", "products", "platdesign", "homes", "homeprice", "growth", "roads", "towngrowth", "unpack", "lenders", "proforma", "workout", "portfolio", "portfoliosale", "auction", "notes",

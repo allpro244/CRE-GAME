@@ -39,6 +39,7 @@ import { townConfig, villageConfig } from "./town.mjs";
 import { makeFrame } from "./frame.mjs";
 import { packBits, PLAT_GEN, ERA_YEARS, platFor } from "./plats.mjs";
 import { designPlat } from "./platdesign.mjs";
+import { placeFacilities } from "./facilities.mjs";
 
 export const REGION = "region";
 // A fictional place on the Public Land Survey (central Illinois). Only the
@@ -583,6 +584,10 @@ export function makeRegion(seed, opts = {}) {
     bbox: [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)],
     region: { km: S / 1000, centre: LL(M.centre), commerce: { county: M.commerce.county, townHouseholds: M.commerce.townHh, sites: M.commerce.placed.map((s) => ({ type: s.type, name: s.name, sf: s.sf, lotSf: s.lotSf, parcels: s.parcels })) }, river: M.river.name, coast: !!M.coast, rotation: F.k, towns: M.towns.map((t) => t.name), townAreaKm2: +(M.townArea / 1e6).toFixed(2) },
   };
+  // ---------------- THE COUNTRY BEYOND THE WINDOW (facilities.mjs): the airport, the yard, the refinery, the
+  // works, the quarries, the big farms and the power station, drawn round the market and never in it. Its own
+  // stream; the land model is only read, so everything above is byte-identical with or without it.
+  const { facilities, hinterland } = regionFacilitiesLL(M, seed, F, LL);
   const reservedCount = { homes: 0, farm: 0, civic: 0 };
   for (const r of Object.values(reserved)) reservedCount[r.tenure]++;
   return {
@@ -593,10 +598,51 @@ export function makeRegion(seed, opts = {}) {
     buildings3d: b3,
     reserved,
     groundLayers: REGION_GROUND_LAYERS,
+    facilities,
+    hinterland,
     stats: {
       ...data.stats, blocks: towns.reduce((a, t) => a + (t.city.stats?.blocks ?? 0), 0), coverage: town.stats?.coverage?.pct ?? 0,
       reserved: reservedCount, neighbourhoods: nbStats.length, homes: nbStats.reduce((a, n) => a + n.homes, 0),
       townHouses: [...houseLike].length, streetTrees, trees: Math.min(TREE_CAP, trees.length),
+    },
+  };
+}
+
+// ---------------------------------------------------------------- the background facilities, in lon/lat
+/**
+ * placeFacilities (canonical metres) turned into the world: points to lon/lat, directions to world unit
+ * vectors (x east, y north), an instance's heading to a world angle (radians from east).
+ */
+function regionFacilitiesLL(M, seed, F, LL) {
+  const { facilities, hinterland } = placeFacilities(M, seed);
+  const dirW = (u) => { const w = F.dirW(u); return [+w[0].toFixed(5), +w[1].toFixed(5)]; };
+  const ang = (u) => { const w = F.dirW(u); return +Math.atan2(w[1], w[0]).toFixed(4); };
+  const ring = (r) => r.map(LL);
+  const part = (p) => {
+    const o = { ...p };
+    if (p.c) o.c = LL(p.c);
+    if (p.u) o.u = dirW(p.u);
+    if (p.rows) o.rows = dirW(p.rows);
+    if (p.ring) o.ring = ring(p.ring);
+    if (p.hole) o.hole = ring(p.hole);
+    if (p.pts) o.pts = ring(p.pts);
+    if (p.at) o.at = p.at.map(([x, y, ux, uy, s, col, z, k]) => [...LL([x, y]), ang([ux, uy]), s, col, z, k]);
+    return o;
+  };
+  return {
+    facilities: facilities.map((f) => ({
+      ...f, footprint: ring(f.footprint), centroid: LL(f.centroid),
+      acres: +(f.m2 / ACRE).toFixed(0), parts: f.parts.map(part),
+    })),
+    hinterland: {
+      belt: hinterland.belt,
+      extent: ring(hinterland.extent),
+      land: hinterland.land.map((poly) => poly.map(ring)),
+      shoreline: ring(hinterland.shoreline),
+      fields: hinterland.fields.map((f) => ({ ring: ring(f.ring), k: f.k, rows: dirW(f.rows) })),
+      water: hinterland.water.map((w) => ({ pts: ring(w.pts), w: Math.round(w.w), name: w.name })),
+      roads: hinterland.roads.map((r) => ({ pts: ring(r.pts), w: r.w, kind: r.kind })),
+      rail: hinterland.rail.map((r) => ({ pts: ring(r.pts), name: r.name })),
     },
   };
 }

@@ -322,8 +322,9 @@ export const IO_ROW_SUM: Record<IndustryId, number> = Object.fromEntries(
  *   office  finance -> banking 3,650 / real-estate services 2,450 (the FIRE
  *           desks that are not insurance); law and design -> professional
  *           services; tech and media -> technology and media; insurance ->
- *           insurance; medical -> health. Any office firm is a headquarters
- *           with HQ_SHARE odds (below).
+ *           insurance; medical -> health; a food or apparel firm's office
+ *           is its head office (management of companies). A firm's industry
+ *           is its trade's: a law firm is never drawn a headquarters.
  *   retail  apparel -> shops; food -> restaurants 16,700 / groceries 3,100
  *           (CES food and beverage stores); medical -> health.
  *   sheds   logistics -> wholesale 6,100 / fulfilment 1,850 / transport
@@ -350,12 +351,6 @@ export const TRADE_TO_INDUSTRY: Record<Floor, Partial<Record<Sector, readonly [I
 };
 /** A floor's industry when its trade has no row above. */
 export const FLOOR_DEFAULT: Record<Floor, IndustryId> = { office: "professional", retail: "shops", industrial: "wholesale" };
-/**
- * Headquarters' share of office-desk employment: management of companies
- * (CES 2,450k) over finance, insurance, real estate, professional and
- * business, information and management combined (34,150k) [D].
- */
-export const HQ_SHARE = 2450 / 34150;
 
 /**
  * HOW EACH INDUSTRY IS FINANCED: the engine trade whose books (market.ts

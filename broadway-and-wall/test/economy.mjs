@@ -132,6 +132,22 @@ check(fillOk, "the register's earners in each industry are its heads, to within 
   let have = 0;
   for (let n = 0; n < ec.L.slot.n; n++) if (named.has(ec.f.id[n])) have++;
   check(have === named.size, `every named street firm has books: ${have} of ${named.size}`);
+  // ONE NAME, ONE FIRM; A FIRM IS WHAT ITS NAME SAYS (the firm screens, #521:
+  // two "Whitlow Drafting"s; "Ashe & Porter LLP" a company's head office).
+  {
+    const byName = new Map(), hqTrades = new Set(), iHq = E.INDUSTRY_IDS.indexOf("hq");
+    const indOf = new Map();
+    for (let n = 0; n < ec.L.slot.n; n++) if (ec.f.id[n] >= 0) indOf.set(ec.f.id[n], ec.f.ind[n]);
+    for (const roll of Object.values(a.econ.streetRolls)) for (const t of roll.t) {
+      if (t.fid === undefined) continue;
+      (byName.get(t.name) ?? byName.set(t.name, new Set()).get(t.name)).add(t.fid);
+      if (indOf.get(t.fid) === iHq) hqTrades.add(t.sector);
+    }
+    const shared = [...byName].filter(([, f]) => f.size > 1);
+    check(shared.length === 0, `no two firms in town share a name: ${byName.size} names${shared.length ? `, shared: ${shared.slice(0, 3).map(([k, f]) => `${k} x${f.size}`).join(", ")}` : ""}`);
+    const wrong = [...hqTrades].filter((k) => !["food", "apparel"].includes(k));
+    check(wrong.length === 0, `a head office is a goods firm's desk, never a law, design or finance firm's${wrong.length ? `: ${wrong.join(", ")}` : ""}`);
+  }
   const fb = E.firmBooks(a, [...named][0]);
   const byBuyer = Object.values(fb.revenueBy).reduce((s, v) => s + v, 0);
   check(fb && Math.abs(byBuyer - fb.revenue) < 1e-6 * fb.revenue && Math.abs(fb.equity - (fb.cash - fb.debt)) < 1e-6 * (1 + fb.cash + fb.debt),

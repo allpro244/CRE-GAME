@@ -70,7 +70,7 @@ import type { BuiltClass, EcoDrive, GameState, Sector, Tenant } from "./types";
 import { BUILT_CLASSES } from "./types";
 import {
   INDUSTRIES, INDUSTRY_IDS, N_IND, INDUSTRY_INDEX, IO_A, IO_ROW_SUM, NAT_EMP_SHARE, TRADE_TO_INDUSTRY, FLOOR_DEFAULT,
-  HQ_SHARE, FINANCE_LIKE, SPEND_SHARE, SPEND_BRIDGE, PAY_SPLIT, PROD_TAX_LOCAL, CORP_TAX, LOCAL_OWNER_SHARE,
+  FINANCE_LIKE, SPEND_SHARE, SPEND_BRIDGE, PAY_SPLIT, PROD_TAX_LOCAL, CORP_TAX, LOCAL_OWNER_SHARE,
   COMP_PER_WORKER_2023, BUYER_TYPES, REPAIR_PER_COMMERCIAL_RENT, REPAIR_PER_FLAT_RENT, REPAIR_OWNER_PER_VALUE_YR,
   OIL_PRICE_2000, OIL_PER_SHOCK, OIL_RISE_M, OIL_HALF_LIFE_M,
   OFF_FLOOR, REMOTE, floorOf, NAT_TREND, CYCLE_BETA, FED_HEALTH_PER_PERSON_2023, MLR,
@@ -92,10 +92,13 @@ import { why, whyOnce, whyNation, whyTenantBooks } from "./why";
 /** Off-map firms kept per industry: the sample each industry's off-map employment is shared over. [K] (precision, not a fact) */
 export const OFF_PER = 6;
 /**
- * A firm's own fortunes: the same process the engine's tenant books run
- * (tenantBooks.ts Z_RHO, Z_SIG — monthly persistence 0.985, a small firm's
- * sales ~19% either side of its trade's; Census BDS), for the off-map
- * sample. A named firm reads its tenant books' own draw.
+ * The off-map sample's fortunes. A named firm reads its tenant books' own
+ * draw (tenantBooks.ts Z_SIG, a single firm's). An off-map "firm" is a sixth
+ * of an industry's off-map employment — many firms — so its fortune is their
+ * average and far narrower than one firm's; since sales are shared against
+ * each group's own mean (tickEconomy, step 6), this only moves sales between
+ * the six, never between the map and the rest of the industry. [K] precision,
+ * not a fact: the tenant books' persistence, at the older single-firm step.
  */
 const Z_RHO = 0.985, Z_SIG = 0.033;
 /** Months of costs a firm keeps in cash; surplus over it paid out at 15% a month (tenantBooks.ts CASH_KEEP_M; JPMorgan Chase Institute 2016). [S] */
@@ -391,12 +394,19 @@ function financing(ind: number) {
   return like ? FIRM_PROFILE[like] : null;
 }
 
-/** Industry for a named firm new to the books: its trade on its floor, by US employment; any office firm a headquarters at HQ_SHARE. */
+/**
+ * Industry for a named firm new to the books: its trade on its floor, by US
+ * employment. A firm is what its name says it is: a law firm is professional
+ * services, never a headquarters. (Until 2026-10-29 any office firm was drawn
+ * a headquarters at HQ_SHARE, and the firm screens (#521) showed "Ashe &
+ * Porter LLP" as a company's head office losing 25% on its sales.) The
+ * town's head offices are the goods trades' desks (TRADE_TO_INDUSTRY: a food
+ * or apparel firm's office) and the off-map sample's.
+ */
 function assign(R: Rand, sec: Sector, floor: Floor, intended?: number): number {
-  const a = R.u(), b = R.u();   // always two draws: the stream's pace does not depend on the answer
+  R.u(); const b = R.u();   // always two draws: the stream's pace does not depend on the answer
   // a firm the street formed for an industry's work (streetRolls.ts) is in that industry
   if (intended !== undefined && intended >= 0 && intended < N_IND) return intended;
-  if (floor === "office" && a < HQ_SHARE) return INDUSTRY_INDEX.hq;
   const opts = TRADE_TO_INDUSTRY[floor][sec];
   if (!opts || !opts.length) return INDUSTRY_INDEX[FLOOR_DEFAULT[floor]];
   const tot = opts.reduce((t, o) => t + o[1], 0);
@@ -886,8 +896,24 @@ export function tickEconomy(s: GameState): void {
 
   // ---- 6. every firm's month (its payroll: `wagesOf`, above)
   const { loc, imp } = inputSplit(E.rpc);
+  // A FIRM'S SALES: its heads' share of its industry's output, by its fortune
+  // AGAINST ITS OWN KIND'S. The named firms' fortunes are their tenant books'
+  // (tenantBooks.ts: sales against their own reference, with the failures
+  // gone — the survivors' mean ran e^z ~1.6 by year two), the off-map
+  // sample's a stationary draw about zero. Weighed together raw, a named
+  // firm sold 60% more per head than the same industry off the map, and the
+  // off-map firms were left the remainder at a loss (health -6%, fulfilment
+  // -51%, 2026-10-29). Luck is relative (streetRolls.ts, `dzBar`): each group's
+  // fortunes are read against the group's own mean, so a head sells the
+  // industry's average on or off the map and a firm's luck is its own.
+  const zh = new Float64Array(2 * N_IND), zs = new Float64Array(2 * N_IND);
+  for (let n = 0; n < nF; n++) { const g = 2 * F.ind[n] + (F.id[n] >= 0 ? 1 : 0); zh[g] += F.hc[n]; zs[g] += F.hc[n] * Math.exp(F.z[n]); }
   const wsum = new Float64Array(N_IND), nInd = new Float64Array(N_IND), wt = new Float64Array(nF);
-  for (let n = 0; n < nF; n++) { wt[n] = F.hc[n] * Math.exp(F.z[n]); wsum[F.ind[n]] += wt[n]; nInd[F.ind[n]]++; }
+  for (let n = 0; n < nF; n++) {
+    const g = 2 * F.ind[n] + (F.id[n] >= 0 ? 1 : 0);
+    wt[n] = F.hc[n] * Math.exp(F.z[n]) * (zs[g] > 0 ? zh[g] / zs[g] : 1);
+    wsum[F.ind[n]] += wt[n]; nInd[F.ind[n]]++;
+  }
   const credit = Math.max(0, Math.min(1, ((e.creditIdx ?? 1) - 0.5) / 0.5));
   let wagesCash = 0;
   for (let n = 0; n < nF; n++) {

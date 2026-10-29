@@ -47,13 +47,24 @@ export interface TenantFin {
  * A FIRM'S OWN FORTUNES (2026-10-16). Two firms in one trade do not have one
  * year: one wins the big client and the other loses it. Each firm's sales run
  * on its trade's plus a persistent shock of its own — monthly persistence 0.985,
- * so a good or bad run lasts years — sized so a small unrated firm's sales sit
- * about 19% either side of its trade's (the dispersion of small-firm revenue
- * growth in the Census Business Dynamics Statistics runs 20-35%). Failures come out of
- * this and the trade's year through the books; nothing is drawn at a fixed rate.
+ * so a good or bad run lasts years — sized so a small unrated firm's sales
+ * GROW at the dispersion small firms' do: 20-35% a year either side of its
+ * trade's (Census Business Dynamics Statistics) [S]. A year's change in z
+ * has a spread of Z_SIG/sqrt(1-rho^2) x sqrt(2(1-rho^12)) = 3.33 Z_SIG, so
+ * 0.075 gives 25% [D]; the level then sits 0.43 either side of the trade's, a
+ * 90/10 ratio of ~3 in sales per head, inside the 2-4 measured within US
+ * industries (Syverson 2011, JEL) [S]. Failures come out of this and the
+ * trade's year through the books; nothing is drawn at a fixed rate.
+ * (Until 2026-10-29 this was 0.033, "19% either side" as a LEVEL, and the
+ * draws it scaled were correlated 0.77 month to month (value.ts hashNormal,
+ * unmixed), so the fortunes wandered far wider than either number said.
+ * Measured on seed 550991 over ten years, firms going dark a year by grade,
+ * small / mid-market / investment grade, against ~5% / ~1.5% / ~0.5%
+ * (S&P long-run, SBA): correlated draws at 0.033, 7.2% / 3.8% / 2.1%;
+ * independent draws at 0.033, 0.6% / 0.1% / 0.1%; at 0.075, 4.7% / 0.8% / 0.2%.)
  */
 const Z_RHO = 0.985;
-const Z_SIG = 0.033;
+const Z_SIG = 0.075;
 /**
  * ...and by covenant, because covenant is mostly size: an investment-grade
  * name sells to thousands of customers in several lines, a small unrated

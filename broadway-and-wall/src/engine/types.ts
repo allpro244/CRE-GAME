@@ -2353,6 +2353,13 @@ export interface Econ {
    */
   deals?: Partial<Record<BuiltClass, { m: number; c: number; p: number; sf: number; r?: number }[]>>;
   /**
+   * THE COMMERCIAL COMPS (tenantMarket.ts recordLease, ONE ECONOMY step 4):
+   * every office, shop and shed lease signed in the last six months — face
+   * and effective rent in index dollars, its quality band — that the rent
+   * indices are read off.
+   */
+  comps?: Partial<Record<BuiltClass, import("./tenantMarket").Comp[]>>;
+  /**
    * THE CAP-RATE READ-OUT (propmarket.ts tickCapRead) — what each class's
    * closed deals say, and how much evidence there is behind it.
    */

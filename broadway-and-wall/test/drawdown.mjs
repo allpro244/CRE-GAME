@@ -69,7 +69,7 @@ for (let i = 0; i < N; i++) {
     capv.push(e.capRate[K]);
     if (lot) land.push(E.landPsfNow(parcels[lot], e) / cpi);
     const avail = (e.cityVac?.[K] ?? 0) + (e.sublet?.[K] ?? 0) / Math.max(1, e.stock?.[K] ?? 1);
-    gapS.push(avail - E.NATURAL_VAC[K]);
+    gapS.push(avail - E.OPENING_VAC[K]);
     overS.push(e.vacOverM?.[K] ?? 0);
   }
   const an = anatomy(val);

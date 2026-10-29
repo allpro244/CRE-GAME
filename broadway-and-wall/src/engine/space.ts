@@ -16,7 +16,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState } from "./types";
 import { BUILT_CLASSES } from "./types";
-import { NATURAL_VAC, CITY_STOCK } from "./market";
+import { normalVac, CITY_STOCK } from "./market";
 import { resolveRec, useOccupancy, useRentPsfYr, initialCondition, useRentableSf } from "./value";
 import { uses, districtLabel } from "./mix";
 
@@ -114,7 +114,7 @@ export function projectVacancy(e: Econ, k: BuiltClass, month: number, months = 3
   // — which is the honest naive projection, because whether it comes back off
   // the market or gets taken by a subtenant, it is a foot that has to be filled
   // before a new building's first floor is.
-  let occ = (e.occupied?.[k] ?? stock * (1 - NATURAL_VAC[k])) - (e.sublet?.[k] ?? 0);
+  let occ = (e.occupied?.[k] ?? stock * (1 - normalVac(e, k))) - (e.sublet?.[k] ?? 0);
   // absorption decays toward zero over the horizon: assuming today's pace runs
   // forever is how every over-optimistic pro forma in the business is written
   const base = (e.absorb12?.[k] ?? 0) / 12;
@@ -143,13 +143,13 @@ export type Balance = "acute shortage" | "landlord's market" | "balanced" | "ten
  */
 export function availability(e: Econ, k: BuiltClass): number {
   const stock = e.stock?.[k] ?? CITY_STOCK[k];
-  return (e.cityVac?.[k] ?? NATURAL_VAC[k]) + (e.sublet?.[k] ?? 0) / Math.max(1, stock);
+  return (e.cityVac?.[k] ?? normalVac(e, k)) + (e.sublet?.[k] ?? 0) / Math.max(1, stock);
 }
 
 /** The one-word verdict, and the sentence behind it. */
 export function marketBalance(e: Econ, k: BuiltClass): { state: Balance; gap: number; note: string } {
   const vac = availability(e, k);
-  const gap = vac - NATURAL_VAC[k];
+  const gap = vac - normalVac(e, k);
   const state: Balance =
     gap < -0.035 ? "acute shortage" :
     gap < -0.012 ? "landlord's market" :

@@ -3503,3 +3503,34 @@ quarter as they fall a point under it.
 
 Recessions (1.7 a decade, median 12 months) and curve inversion (14% of
 months) are unchanged.
+
+# THE TENANT MARKET (ONE ECONOMY step 4) — rents are the leases
+
+Office, shop and shed rents no longer follow the city's vacancy against a
+"natural" rate. `tenantMarket.ts` holds the two sides:
+
+- **Landlords post a face rent and a package** from their own leasing. Space
+  that sits past the landlord's patience (about a year for office, ten
+  months for shops, six for sheds) gets a sweeter package, then a lower face;
+  space that lets at once, or a sitting tenant with nowhere else to go,
+  takes the package back, then raises the face. Full buildings pass their
+  costs through; empty ones follow the comps down. Owners whose mortgage is
+  behind move faster and take less.
+- **Firms shop.** A firm looking for space, or at the end of its lease, gets
+  a broker's shortlist and weighs each building on its market rent, its fit
+  with the quality the firm shops for, distance to its named partners and its
+  island staff, a shop's walk-ins net of what the address already charges, the
+  posted rent and the cost of moving. It takes the best; a close runner-up at
+  a hungrier landlord buys it a concession.
+- **The indices are read-outs**: asking and effective rent, the package
+  between them and the quality bands' swing are the last six months' new
+  leases, normalised to an ordinary building.
+
+Measured on seed 550991 (`test/tenantmarket.mjs`, 10-15 years): renewals at
+lease end 56-68% of office, 57-67% of shop and 53-57% of shed space, against
+the lease-expiry studies' 55 / 65 / 75%; office packages run 15-25% of face
+at 13-15% vacancy and vanish below 8%. Known: rents in a tight office market
+rise more slowly than the old rule had them (its shortage slope was steeper),
+and the shop market splits into good corners that raise and structural
+vacancy that does not let — the town's shop vacancy runs about twice the old
+figure.

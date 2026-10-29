@@ -8,7 +8,7 @@ export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, NATURAL_VAC, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH, LEASE_TERM_M, forwardVacancy } from "./market";
+import { industryStress, normalVac, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH, LEASE_TERM_M, forwardVacancy } from "./market";
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
 import { splitRule, coverageMax, MINOR_FIXED, MINOR_PER_LOT, CORNER_K } from "./lotcode";
@@ -1240,7 +1240,7 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   // What the market can absorb by delivery is the unhoused queue plus the
   // tenant base's trend growth over a typical build (18 months), at its own
   // demand elasticity.
-  const nat = NATURAL_VAC[k];
+  const nat = normalVac(e, k);
   const vacNow = e.cityVac?.[k] ?? nat;
   const vac = forwardVacancy(e, k);
   // ...and the concession package that vacancy will command, against the one
@@ -1803,7 +1803,7 @@ export function openingCondIdx(spec = 0.5): number {
  * one when the market is tight. A shape parameter, stated as one.
  */
 export function qualityCycle(econ: Econ, use: BuiltClass): number {
-  const nat = NATURAL_VAC[use] ?? 0.08;
+  const nat = normalVac(econ, use);
   const vac = econ.cityVac?.[use] ?? nat;
   return Math.max(0.6, Math.min(1.9, 0.4 + 0.6 * (vac / Math.max(0.01, nat))));
 }
@@ -1927,20 +1927,21 @@ function bandKernel(score: number): Float64Array {
  * street's own stock so the scale averages to the class. A shape parameter.
  */
 export function scoreNatVac(econ: Econ, use: BuiltClass, score: number): number {
-  const raw = (sc: number) => NATURAL_VAC[use] * (1.45 - 0.75 * sc / 100);
+  const nat = normalVac(econ, use);
+  const raw = (sc: number) => nat * (1.45 - 0.75 * sc / 100);
   const st = econ.bands?.[use]?.stock;
-  let mean = NATURAL_VAC[use];
+  let mean = nat;
   if (st) {
     let a = 0, w = 0;
     for (let b = 0; b < N_BANDS; b++) { a += raw(bandCenter(b)) * st[b]; w += st[b]; }
     if (w > 0) mean = a / w;
   }
-  return raw(score) * NATURAL_VAC[use] / Math.max(1e-9, mean);
+  return raw(score) * nat / Math.max(1e-9, mean);
 }
 /** The street's vacancy around a score (kernel over the bands); absent bands, the street's or the city's. */
 export function scoreVacOf(econ: Econ, use: BuiltClass, score: number): number {
   const bk = econ.bands?.[use];
-  const fallback = econ.streetVac?.[use] ?? econ.cityVac?.[use] ?? NATURAL_VAC[use];
+  const fallback = econ.streetVac?.[use] ?? econ.cityVac?.[use] ?? normalVac(econ, use);
   if (!bk) return fallback;
   let st = 0, oc = 0;
   const k = bandKernel(score);
@@ -2940,8 +2941,8 @@ export function flatsRollPsf(rec: ParcelRecord, econ: Econ, h: Holding): number 
 //              real rolls (streetRolls.ts), and a 68% building is 68% because
 //              of who left it and who would not come.
 // RETIRED. This was the level occupancy sat at, and it disagreed with
-// 1 - NATURAL_VAC by 1.5-6.0pp per class — see the derivation at `base` in
-// useOccupancy. The level now comes from NATURAL_VAC, which is the same number
+// 1 - the natural rate by 1.5-6.0pp per class — see the derivation at `base` in
+// useOccupancy. The level now comes from the natural rate (market.ts normalVac), which is the same number
 // the city's own vacancy model is calibrated to, so there is one answer to
 // "how full is this class" instead of two. Kept only as a record of what the
 // numbers used to be: office 0.84, retail 0.89, multifamily 0.94, industrial
@@ -3071,7 +3072,7 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, sta
   // tilt below — which was standing in for exactly this — stands down.
   const tierLive = !!econ.bands?.[use];
   const sc = tierLive ? overallScore(rec, econ, use) : 50;
-  const natHere = tierLive ? scoreNatVac(econ, use, sc) : NATURAL_VAC[use];
+  const natHere = tierLive ? scoreNatVac(econ, use, sc) : normalVac(econ, use);
   const vacNow = tierLive ? scoreVacOf(econ, use, sc) : (econ.streetVac?.[use] ?? econ.cityVac?.[use]);
   let mktDelta = Number.isFinite(vacNow) ? (natHere - (vacNow as number)) * 0.85 : 0;
   // QUALITY SEGMENTS THE MARKET (ECONOMY.md): when the market sheds tenants,
@@ -3089,7 +3090,7 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, sta
   // `mktDelta` is deliberately written as a DIFFERENCE from natural vacancy so
   // that at the natural rate it is exactly zero and the calibration underneath
   // is untouched. That intent was defeated by the thing it is a difference
-  // from: OCC_BASE was a free constant sitting 1.5-6.0pp BELOW 1 - NATURAL_VAC
+  // from: OCC_BASE was a free constant sitting 1.5-6.0pp BELOW 1 - the natural rate
   // (office 0.84 against 0.885, industrial 0.87 against 0.930), so at the very
   // moment the city model said a class was exactly at its natural rate, this
   // function said its buildings were several points emptier than that.
@@ -3391,7 +3392,7 @@ export const taxRate = (econ?: { taxMult?: number }) => TAX_RATE * (econ?.taxMul
  * the build brake (dev.ts cityValueToReplacement) and by the assessor's roll
  * (citygov.ts) — the city taxes the same value the market builds against.
  */
-export function classValuePsf(e: Econ, k: BuiltClass, occ: number = 1 - NATURAL_VAC[k]): number {
+export function classValuePsf(e: Econ, k: BuiltClass, occ: number = 1 - normalVac(e, k)): number {
   const rent = e.effRentIdx?.[k] ?? e.rentIdx[k];
   const opex = opexPsf(k, e, false);
   const recov = RECOVERY_RATE[k] ?? 0;
@@ -4010,7 +4011,7 @@ export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition, 
 function stabilisedIncome(rec: ParcelRecord, econ: Econ, condition: Condition, capY: number, condIdx?: number): number {
   const noiNow = noiYr(rec, econ, condition, false, condIdx);
   if (!econ.cityVac || !econ.landQueue) return noiNow / capY;
-  const natEcon = { ...econ, cityVac: { ...econ.cityVac, ...NATURAL_VAC } } as Econ;
+  const natEcon = { ...econ, cityVac: { ...econ.cityVac, ...Object.fromEntries(BUILT_CLASSES.map((k) => [k, normalVac(econ, k)])) } } as Econ;
   const noiNat = noiYr(rec, natEcon, condition, false, condIdx);
   const gap = noiNat - noiNow;
   if (!(Math.abs(gap) > 0)) return noiNow / capY;
@@ -4022,7 +4023,7 @@ function stabilisedIncome(rec: ParcelRecord, econ: Econ, condition: Condition, c
   }
   const h = econ.history ?? [];
   const stock = h.length ? (h[h.length - 1].stock?.[use] ?? 0) : 0;
-  const excess = Math.max(0, ((econ.cityVac[use] ?? NATURAL_VAC[use]) - NATURAL_VAC[use]) * stock);
+  const excess = Math.max(0, ((econ.cityVac[use] ?? normalVac(econ, use)) - normalVac(econ, use)) * stock);
   const absYr = econ.landQueue[use]?.absYr ?? 0;
   // PV of a loss that starts at `gap` and falls linearly to zero over T years:
   // gap * (1/r - (1 - e^{-rT}) / (r^2 T)). T -> infinity is gap / r, today's

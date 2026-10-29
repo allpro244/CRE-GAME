@@ -74,7 +74,7 @@ const KLASS = process.env.CLASS ?? "office";
 const SETTLE = 60; // skip the opening five years, same as vacdist
 
 const CLASSES = ["office", "retail", "multifamily", "industrial"];
-const NAT = E.NATURAL_VAC;
+const NAT = E.OPENING_VAC;
 
 const mean = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN;
 const med = (xs) => {

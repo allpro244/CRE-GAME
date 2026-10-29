@@ -95,7 +95,7 @@ if (growing.length) {
 
 // Friction floor must not have been hiked to fake the result.
 check(
-  Math.abs(fr - E.NATURAL_VAC.office * 0.32) < 1e-9,
+  Math.abs(fr - E.OPENING_VAC.office * 0.32) < 1e-9,
   `friction floor still NATURAL_VAC×0.32 (${(fr * 100).toFixed(2)}%), not a vac-coefficient hike`,
 );
 

@@ -5,7 +5,7 @@ import { useStore } from "@/state/store";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import type { BuiltClass, EconHistoryPoint } from "@/engine/types";
 import { capitalRatio, targetCapital } from "@/engine/lenders";
-import { NATURAL_VAC, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor, housableStock, islandResidents, PEOPLE_PER_HOME, chairStance } from "@/engine/market";
+import { normalVac, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor, housableStock, islandResidents, PEOPLE_PER_HOME, chairStance } from "@/engine/market";
 import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply, availability } from "@/engine/space";
 import { LineChart, BarChart, Gauge } from "@/ui/Chart";
 import { bandTable } from "@/engine/bands";
@@ -502,7 +502,7 @@ export function EconomyPage() {
   // in a shortage — plotting that is how each class looked like a ruler
   // for twenty years while the market (sublet + empty) was the one that
   // moved, or failed to.
-  const directNow = e.cityVac?.[focus] ?? NATURAL_VAC[focus];
+  const directNow = e.cityVac?.[focus] ?? normalVac(e, focus);
   const vacNow = availability(e, focus);
   const stock = e.stock?.[focus] ?? CITY_STOCK[focus];
   const mos = monthsOfSupply(e, focus);
@@ -571,8 +571,8 @@ export function EconomyPage() {
   const xFrom = `${START_YEAR + Math.floor((tail[0]?.q ?? game.month) / 12)}`;
   const xTo = `${START_YEAR + Math.floor(game.month / 12)}`;
   const spanYrs = Math.max(1, Math.round(((tail[tail.length - 1]?.q ?? game.month) - (tail[0]?.q ?? game.month)) / 12));
-  const vacSeries = tail.map((h) => (h.avail?.[focus] ?? h.vac?.[focus] ?? NATURAL_VAC[focus]) * 100);
-  const directSeries = tail.map((h) => (h.vac?.[focus] ?? NATURAL_VAC[focus]) * 100);
+  const vacSeries = tail.map((h) => (h.avail?.[focus] ?? h.vac?.[focus] ?? normalVac(e, focus)) * 100);
+  const directSeries = tail.map((h) => (h.vac?.[focus] ?? normalVac(e, focus)) * 100);
   const rentSeries = tail.map((h) => h.rent?.[focus] ?? e.rentIdx[focus]);
   // pre-v30 history has no effective series; fall back to asking so the two
   // lines simply overlap until the concession machinery has lived a month
@@ -716,7 +716,7 @@ export function EconomyPage() {
                 <span className="mkt-card-name">{SECTOR_LABEL[k]}</span>
                 <span className="mono">{(v * 100).toFixed(1)}%</span>
               </div>
-              <Gauge value={v} natural={NATURAL_VAC[k]} lo={0} hi={0.28} fmt={(x) => `${(x * 100).toFixed(1)}%`} />
+              <Gauge value={v} natural={normalVac(e, k)} lo={0} hi={0.28} fmt={(x) => `${(x * 100).toFixed(1)}%`} />
               <div className="mkt-card-state">{b.state}</div>
               <div className={"mkt-card-sub" + (rentYoy < -0.025 ? " neg" : "")}>
                 effective rents {rentWord} · {pctSigned(rentYoy)} real / 12m
@@ -881,12 +881,12 @@ export function EconomyPage() {
       <div className="hint">{bal.note}</div>
       <div className="grid" style={{ marginTop: 6 }}>
         <Row k="Inventory" v={`${(stock / 1e6).toFixed(1)}M sf`} />
-        <Row k="Vacant space" v={`${((stock * vacNow) / 1e6).toFixed(2)}M sf · ${(vacNow * 100).toFixed(1)}% available · natural ${(NATURAL_VAC[focus] * 100).toFixed(1)}%`} bad={bal.gap > 0.025} strong />
+        <Row k="Vacant space" v={`${((stock * vacNow) / 1e6).toFixed(2)}M sf · ${(vacNow * 100).toFixed(1)}% available · usual ${(normalVac(e, focus) * 100).toFixed(1)}%`} bad={bal.gap > 0.025} strong />
         {Math.abs(vacNow - directNow) > 0.003 && (
           <Row
             k="Direct vacancy"
-            v={`${(directNow * 100).toFixed(1)}% · frictional floor ${(frictionFloor(focus) * 100).toFixed(1)}%`}
-            strong={directNow <= frictionFloor(focus) + 1e-6}
+            v={`${(directNow * 100).toFixed(1)}% · frictional floor ${(frictionFloor(focus, e) * 100).toFixed(1)}%`}
+            strong={directNow <= frictionFloor(focus, e) + 1e-6}
           />
         )}
         {(() => {
@@ -1012,7 +1012,7 @@ export function EconomyPage() {
                   }]
                 : []),
             ]}
-            bands={[{ at: NATURAL_VAC[focus] * 100, label: "natural rate" }]}
+            bands={[{ at: normalVac(e, focus) * 100, label: "usual" }]}
             yFmt={pctFmt}
             split={vacSeries.length}
             xLabels={[xFrom, `${START_YEAR + Math.floor((game.month + 36) / 12)}`]}
@@ -1282,14 +1282,14 @@ export function EconomyPage() {
               <tr key={m.district} style={{ cursor: "default" }}>
                 <td>{m.name}</td>
                 <td className="num">{(leg.sf / 1e6).toFixed(2)}M sf</td>
-                <td className={"num" + (v > NATURAL_VAC[focus] + 0.03 ? " neg" : "")}>{(v * 100).toFixed(1)}%</td>
+                <td className={"num" + (v > normalVac(e, focus) + 0.03 ? " neg" : "")}>{(v * 100).toFixed(1)}%</td>
                 <td className="num dim">{d >= 0 ? "+" : ""}{(d * 100).toFixed(1)} pts</td>
                 <td className="num">${legRent(leg).toFixed(2)}</td>
                 <td className="num">{legDemand(leg).toFixed(0)}</td>
                 <td className="num">{m.vacantLots}</td>
                 <td className="dim">
-                  {v < NATURAL_VAC[focus] - 0.02 ? "tight"
-                    : v > NATURAL_VAC[focus] + 0.04 ? "soft"
+                  {v < normalVac(e, focus) - 0.02 ? "tight"
+                    : v > normalVac(e, focus) + 0.04 ? "soft"
                     : "balanced"}
                 </td>
               </tr>
@@ -1367,7 +1367,7 @@ export function EconomyPage() {
       {(sel === "general" || isClass) && <>
       <div className="page-section">Model</div>
       <div className="hint">
-        Employment → space demand (lagged) · rents move on vacancy vs natural rate · starts follow rent vs build cost · your deliveries count as supply
+        Employment → space demand (lagged) · offices, shops and sheds: rents are the leases signed, landlords price their own space · starts follow rent vs build cost · your deliveries count as supply
       </div>
       </>}
     </div>

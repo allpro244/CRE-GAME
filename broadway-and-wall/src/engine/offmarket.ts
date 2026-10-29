@@ -45,6 +45,7 @@ import { ownerAnswersCall } from "./actions";
 import { livingRivals, ownerOf, rivalBuys, firmMaxPrice, styleHunt, fitOf, deployPressure } from "./rivals";
 import { money } from "./money";
 import { tableVersion } from "./tableVersion";
+import { loneBid } from "./propmarket";
 
 /**
  * Calls a month for a firm of appetite 1 in an ordinary credit market. A
@@ -137,7 +138,8 @@ function callOwner(
   } else {
     // "Make me an offer": open under the limit; an owner whose number is
     // within reach names it, and the firm meets it if it can.
-    const bid = Math.round(max * rrange(s, 0.88, 0.96, "rivals") / 1000) * 1000;
+    // Nobody else is on the phone, so it shades as a lone bidder (propmarket.ts).
+    const bid = Math.round(loneBid(max) / 1000) * 1000;
     if (bid >= ans.reserve) price = bid;
     else if (bid >= ans.reserve * 0.9 && ans.reserve <= max) price = ans.reserve;
   }

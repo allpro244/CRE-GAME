@@ -87,15 +87,35 @@ check(stats0.agents > 3000 && stats0.wIsland === 1, `island renters one for one 
 check(stats0.medianBurden > 0.25 && stats0.medianBurden < 0.36, `the opening's median rent burden ${(100 * stats0.medianBurden).toFixed(1)}% (the engine's flats are built on 30%)`);
 check(Math.round(E.registerLabour(a).persons) > 0 && a.econ.population > 0, `the town's population is the register's people: ${Math.round(a.econ.population)}`);
 
+// HOUSEHOLDS STAGE 2: the households decide, and the engine reads what they decided
+{
+  const r = a.households, st = E.householdStats(a), lab = E.registerLabour(a);
+  const lfHh = lab.lf / lab.households, empP = lab.employed / lab.persons;
+  // BLS/Census: ~1.28 in the labour force per household, ~0.48 employed per person (2023)
+  check(lfHh > 1.05 && lfHh < 1.45 && empP > 0.40 && empP < 0.55, `participation: ${lfHh.toFixed(2)} in the labour force a household, ${empP.toFixed(3)} employed a person (US ~1.28, ~0.48)`);
+  check(r.locMu !== undefined && r.ownMu !== undefined && a.econ.eco?.islandWant === r.islandWant && a.econ.eco0?.islandWant > 0,
+    `the flats' demand is the households that want an island flat: ${Math.round(r.islandWant)} now against ${Math.round(a.econ.eco0?.islandWant ?? 0)} at the opening (${Math.round(st.islandRenters)} island renter households)`);
+  const out = st.flow.out ?? {};
+  const reasons = Object.keys(out).filter((k) => out[k] > 0);
+  check(r.leaseMoveRate > 0.15 && r.leaseMoveRate < 0.75 && r.moveOutYr > 0.15 && r.moveOutYr < 0.9,
+    `island leases ending in a move ${(100 * r.leaseMoveRate).toFixed(0)}%, move-outs ${(100 * r.moveOutYr).toFixed(0)}% of renters a year (NMHC/AHS ~45%); this month's reasons: ${reasons.map((k) => `${k} ${out[k].toFixed(0)}`).join(", ")}`);
+  check(a.econ.eco?.flatMoveOut === r.moveOutYr && a.econ.eco?.flatLeaseMove === r.leaseMoveRate, "the street's renewals and the player's flats read the households' own move-out rates");
+  const bw = (r.buyers ?? []).reduce((t, x) => t + x.w, 0);
+  check(bw > 0 && (r.buyers ?? []).every((x) => x.m > a.month - 12 && x.inc > 0), `the builders sell to the register's buyers: ${Math.round(bw)} households bought in the last year`);
+}
+
 // it reads the world and never writes it: a month of the register on a copy of
 // the state changes nothing but the register and its own stream
 {
-  const strip = (g) => { const { households, streams, ...rest } = g; void households; const { households: _h, ...st } = streams ?? {}; void _h; return JSON.stringify({ ...rest, streams: st }); };
+  // (since households stage 2 it also lets the street's flats: the rolls, the space it reports, the deals and the turnover are its to write)
+  const strip = (g) => { const { households, streams, why, econ, ...rest } = g; void households; void why; const { households: _h, ...st } = streams ?? {}; void _h;
+    const { flatRolls, flatSpace, deals, dealPress, turnMeas, ...ec } = econ; void flatRolls; void flatSpace; void deals; void dealPress; void turnMeas;
+    return JSON.stringify({ ...rest, econ: ec, streams: st }); };
   const copy = structuredClone(a);
   const before = strip(copy);
   const s0 = copy.streams.households;
   E.tickHouseholdRegister(copy, city.parcels);
-  check(strip(copy) === before, "a month of the register writes nothing in the world it reads");
+  check(strip(copy) === before, "a month of the register writes nothing in the world it reads but the street's flats it lets");
   check(typeof copy.streams.households === "number" && copy.streams.households !== s0, "it draws on its own channel, s.streams.households");
 }
 

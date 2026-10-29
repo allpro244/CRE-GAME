@@ -18,6 +18,8 @@ import { LoiCard, TrayClear } from "@/ui/panels/DealsPage";
 import { useLabel, occRead, occLabel, occTitle, Big } from "@/ui/panels/shared";
 import Fold from "@/ui/Fold";
 import { Rollover } from "@/ui/rollups/Rollover";
+import { WhyButton } from "@/ui/WhyChain";
+import { whyGet } from "@/engine/why";
 import { OpsChoices } from "@/ui/panels/OpsChoices";
 import { BizLink } from "@/ui/BizSheet";
 
@@ -492,7 +494,14 @@ export function LeasingPage() {
                   </td>
                   <td>{useLabel(r.rec)}</td>
                   <td className="num">{sf(r.rec.bldgArea)}</td>
-                  <td className={"num" + (r.occ < 0.75 ? " neg" : "")} title={occTitle(r.or)}>{occLabel(r.or)}</td>
+                  <td className={"num" + (r.occ < 0.75 ? " neg" : "")} title={occTitle(r.or)}>{occLabel(r.or)}{(() => {
+                    // WHY A FLAT EMPTIED: the households that left this month, and why (households.ts)
+                    const id = game.households?.flatWhy?.[r.h.bbl];
+                    const ev = whyGet(game, id);
+                    if (!ev || ev.m !== game.month) return null;
+                    const n = ev.n?.households ?? 0;
+                    return <div className="dim" style={{ fontSize: 11 }} onClick={(e) => e.stopPropagation()}>{n} household{n === 1 ? "" : "s"} left <WhyButton id={id} /></div>;
+                  })()}</td>
                   {(() => {
                     // IN PLACE AGAINST THE MARKET. The rent roll over the feet
                     // it is paid on, beside what the same space lets for today.

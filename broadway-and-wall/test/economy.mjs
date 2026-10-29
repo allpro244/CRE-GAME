@@ -303,7 +303,19 @@ for (let m = 0; m < 24; m++) base24 = tick(base24);
   console.log(`    a plant's market collapses: the twelve-month vacancy gap first stands a point over the twin at month ${CLS.map((k) => `${k} ${f[k]}`).join(", ")}; industrial ${pp(Math.max(...ma.industrial))} at most`);
   const end = Object.fromEntries(CLS.map((k) => [k, ma[k].at(-1)]));
   console.log(`    ...and three years on: ${CLS.map((k) => `${k} ${pp(end[k])}`).join(", ")}`);
-  check(Number.isFinite(f.industrial) && CLS.every((k) => k === "industrial" || end[k] < end.industrial), "a plant's slump empties its own floor most: industrial vacancy rises a point over its twin, and ends furthest over it");
+  // READ AT THE PEAK, NOT AT THREE YEARS (2026-10-29, after step 7). The wire
+  // is that the plant's own floor empties first and most. Where the shed
+  // market is tight — seed 550991 after the property market and #526 runs
+  // industrial vacancy at 1-3%, near its frictional floor — other occupiers
+  // take the plant's space within three years (measured: the twin's gap
+  // peaks at +1.1pp at month 12 and is +0.4pp by month 36, stock identical in
+  // both twins), while the lost payrolls are still emptying shops and
+  // offices. Refilling a tight shed market is what one does, so the end-state
+  // order is the market's answer, not the wire's.
+  const peak = Object.fromEntries(CLS.map((k) => [k, Math.max(...ma[k])]));
+  check(Number.isFinite(f.industrial) && CLS.every((k) => k === "industrial" || f[k] > f.industrial)
+    && CLS.every((k) => k === "industrial" || peak[k] < peak.industrial),
+    "a plant's slump empties its own floor most: industrial is the first class a point over its twin, and its gap peaks highest");
 }
 {
   const trt = structuredClone(base24);

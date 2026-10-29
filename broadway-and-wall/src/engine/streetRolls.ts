@@ -59,7 +59,7 @@ import { why, whyTenantBooks } from "./why";
 import { tenantFin } from "./tenantBooks";
 import {
   type LandlordAsk, type Option, SHORTLIST, TASTE, askOf, postedEff, compsFace, reviewAsk, noteLetting, reservation, locCtx, posOf, hourCost,
-  placeCost, worthOf, moveCostPsfYr, bargain, freeMonthsFor, gumbel, recordLease, movedLine, fmtPct, creditOfSize, readOut,
+  placeCost, worthOf, footFactor, moveCostPsfYr, bargain, freeMonthsFor, gumbel, recordLease, movedLine, fmtPct, creditOfSize, readOut,
 } from "./tenantMarket";
 
 export interface StreetRoll {
@@ -403,7 +403,8 @@ function marketView(s: GameState, parcels: ParcelTable) {
     const joint = worth - post - move + TASTE[k] * mkt * gumbel(rng(s, "leasing"));
     // a sitting tenant is offered the face no higher than the comps (a renewal at market)
     const ask = stay ? Math.min(L.a, compsFace(e, mkt, k)) : L.a;
-    return { bbl: b.bbl, take, mkt, ask, post, res, worth, move, joint, dLink: pc.dLink, dWork: pc.dWork, ...(stay ? { stay: true } : {}) };
+    const ff = footFactor(k, k === "retail" ? footRel(b.bbl) : undefined);
+    return { bbl: b.bbl, take, mkt, ff, ask, post, res, worth, move, joint, dLink: pc.dLink, dWork: pc.dWork, ...(stay ? { stay: true } : {}) };
   };
   // The street's buildings, listed once: the search lets space and moves
   // tenants inside rolls, and never adds, removes or replaces a roll.
@@ -578,7 +579,8 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     roll.t.push(lease);
     noteRoll(roll);
     const effSigned = face * (1 - freeM / Math.max(1, termM));
-    recordLease(e, k, m, face, effSigned, pick.mkt, pick.take, Math.max(0, Math.min(N_BANDS - 1, Math.floor(sc / 10))), scoreRentMult(e, k, sc));
+    // the comp, normalised to an ordinary building — a shop's walk-ins taken out with its address
+    recordLease(e, k, m, face, effSigned, pick.mkt * pick.ff, pick.take, Math.max(0, Math.min(N_BANDS - 1, Math.floor(sc / 10))), scoreRentMult(e, k, sc));
     const since = roll.vac?.[k];
     const full = availOf(b, roll, k) < minSfOf(b, k);
     noteLetting(bookOf(b, roll, k), since === undefined ? 0 : Math.max(0, m - since), full, opening);
@@ -694,7 +696,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
             const lease = signAt(t, kk, best, opts[1], Math.round(need), bbl, undefined, mine.was, mine.whyId);
             if (lease) { vacate(roll, t); continue; }
           }
-          renewInPlace(s, b, roll, t, need, stayOpt ? { face: stayOpt.ask, eff: bargain(stayOpt, opts.find((o) => !o.stay)) } : undefined, bookOf(b, roll, kk));
+          renewInPlace(s, b, roll, t, need, stayOpt ? { face: stayOpt.ask, eff: bargain(stayOpt, opts.find((o) => !o.stay)), ff: stayOpt.ff } : undefined, bookOf(b, roll, kk));
           noteRoll(roll);
         }
         keep.push(t);
@@ -733,7 +735,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
           seeking.set(t.fid!, sk);
           t.endM = m + HOLDOVER_M;
         } else {
-          renewInPlace(s, b, roll, t, need, stayOpt ? { face: stayOpt.ask, eff: bargain(stayOpt, opts.find((o) => !o.stay)) } : undefined, bookOf(b, roll, kk));
+          renewInPlace(s, b, roll, t, need, stayOpt ? { face: stayOpt.ask, eff: bargain(stayOpt, opts.find((o) => !o.stay)), ff: stayOpt.ff } : undefined, bookOf(b, roll, kk));
           noteRoll(roll);
           // A SITTING TENANT WITH NOWHERE ELSE TO GO is the landlord's read of
           // a tight market: its broker could show it nothing. The landlord
@@ -1062,7 +1064,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
  * the landlord's ask on the face and the difference as free months). With no
  * bargain to hand — the opening's years, an old save — it pays the ask.
  */
-function renewInPlace(s: GameState, b: Bld, roll: StreetRoll, t: Tenant, need: number, deal?: { face: number; eff: number }, L?: LandlordAsk) {
+function renewInPlace(s: GameState, b: Bld, roll: StreetRoll, t: Tenant, need: number, deal?: { face: number; eff: number; ff?: number }, L?: LandlordAsk) {
   const k = useOf(t) as Comm;
   const m = s.month;
   const mkt = b.mkt[k] ?? useRentPsfYr(b.rec, s.econ, b.cond, k, b.condIdx);
@@ -1102,7 +1104,7 @@ function renewInPlace(s: GameState, b: Bld, roll: StreetRoll, t: Tenant, need: n
   // a deposit of four months' rent with the firm (invariants, seed 4000).
   t.deposit = depositFor(s, t.rentPsf, t.sf, t.credit);
   const sc = b.sc[k] ?? 50;
-  recordLease(s.econ, k, m, face, face * (1 - freeM / Math.max(1, termM)), mkt, t.sf,
+  recordLease(s.econ, k, m, face, face * (1 - freeM / Math.max(1, termM)), mkt * (deal?.ff ?? 1), t.sf,
     Math.max(0, Math.min(N_BANDS - 1, Math.floor(sc / 10))), scoreRentMult(s.econ, k, sc), true);
 }
 

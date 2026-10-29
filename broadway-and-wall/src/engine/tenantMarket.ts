@@ -420,8 +420,8 @@ export interface Option {
   bbl: string;
   /** feet it would take here */
   take: number;
-  /** the building's market rent (effective, read-out) */
-  mkt: number;
+  /** the building's market rent (effective, read-out), and a shop's walk-ins on it (`footFactor`) */
+  mkt: number; ff: number;
   /** the landlord's ask (face), what it posts after its package (effective), and what it would go to */
   ask: number; post: number; res: number;
   /** what the space is worth to this firm, $/sf/yr, before rent */
@@ -452,8 +452,18 @@ export function gumbel(u: number): number {
  */
 export function worthOf(t: Tenant, k: Comm, mkt: number, sc: number, take: number, distCostYr: number, footRel?: number): number {
   const fit = tenantQualityTerms(t.quality ?? sc, sc).rent;
-  const foot = k === "retail" && footRel !== undefined && footRel > 0 ? Math.pow(Math.max(0.25, Math.min(4, footRel)), 0.5) : 1;
-  return mkt * fit * foot - distCostYr / Math.max(1, take);
+  return mkt * fit * footFactor(k, footRel) - distCostYr / Math.max(1, take);
+}
+/**
+ * A SHOP'S WALK-INS against what its address's rent already charges for, as a
+ * multiple of what the space is worth: half the trade is the walking
+ * catchment (streetRolls.ts CATCHMENT), so sales — and what a shop can pay —
+ * move with the square root of its walk-ins [K: the same elasticity]. Read
+ * the same way when a comp is normalised (`recordLease`), so a good corner's
+ * rent is the corner's, not the town's.
+ */
+export function footFactor(k: Comm, footRel?: number): number {
+  return k === "retail" && footRel !== undefined && footRel > 0 ? Math.pow(Math.max(0.25, Math.min(4, footRel)), 0.5) : 1;
 }
 
 /** Moving cost, $/sf/yr over the term. */

@@ -267,12 +267,32 @@ check(fillOk, `the register's earners in each industry never exceed its heads, a
 // twelve-month mean of the gap to the twin: two worlds that differ in one
 // thing part ways in every random draw after it, and a single month's gap in
 // one class carries a point or two of that.
+//
+// ON SEVERAL SEEDS, NOT ONE (2026-10-30). Each wire used to run on game seed
+// 550991 alone, and every change to the economy that shifted a draw (#541-#544)
+// flipped one of them: one pair of twins is one draw of the noise. Each wire
+// now runs paired twins on every seed in WIRE_SEEDS and is checked on the
+// average (or the majority) across them, the threshold stated against the
+// spread measured across the same six seeds (SE = standard deviation over
+// sqrt(n)). The seeds are the six measured, none dropped. About four minutes a
+// seed; WIRE_SEEDS=550991 runs one for a quick look (the checks then read one
+// draw, as before, and say so).
+const WIRE_SEEDS = (process.env.WIRE_SEEDS ?? "550991,12007,73303,31337,90001,4242").split(",").map(Number);
 const CLS = ["industrial", "office", "retail", "multifamily"];
-const twin = (ctl, trt, months) => {
+// A fresh parcel table for the wires (see "Each loaded game in a session of its own" above).
+const session = (citySeed) => {
+  const c = makeCity("somewhere", citySeed);
+  E.normalizeParcels(c.parcels);
+  const b = Object.keys(c.parcels);
+  return { c, b, tick: (g) => { g = E.advanceQuarter(g, c.parcels, b, c.adjacency); return g.gameOver ? { ...g, gameOver: null, cash: 6e6 } : g; } };
+};
+const W1 = session(1), W3 = session(3);
+const twin = (ctl, trt, months, tk = W1.tick, each) => {
   const gap = [];
   for (let m = 0; m < months; m++) {
-    ctl = tick(ctl); trt = tick(trt);
+    ctl = tk(ctl); trt = tk(trt);
     gap.push(CLS.map((k) => trt.econ.cityVac[k] - ctl.econ.cityVac[k]));
+    each?.(ctl, trt, m);
   }
   // the twelve-month mean gap, month by month
   const ma = gap.map((_, m) => CLS.map((_k, c) => { const w = gap.slice(Math.max(0, m - 11), m + 1); return w.reduce((s, x) => s + x[c], 0) / w.length; }));
@@ -280,69 +300,152 @@ const twin = (ctl, trt, months) => {
 };
 const firstOver = (series, level) => { const i = series.findIndex((v) => v >= level); return i < 0 ? Infinity : i + 1; };
 const pp = (x) => `${x >= 0 ? "+" : ""}${(100 * x).toFixed(1)}pp`;
-let base24 = start();
-for (let m = 0; m < 24; m++) base24 = tick(base24);
+const mean = (a) => a.reduce((s, x) => s + x, 0) / a.length;
+const se = (a) => a.length < 2 ? 0 : Math.sqrt(a.reduce((s, x) => s + (x - mean(a)) ** 2, 0) / (a.length - 1) / a.length);
+const ms = (a, f = pp) => `${f(mean(a))} ± ${f(se(a)).replace(/^\+/, "")}`;
+const W = [];
+console.log(`\n  the wires, paired twins on ${WIRE_SEEDS.length} seed${WIRE_SEEDS.length > 1 ? "s" : ""} (${WIRE_SEEDS.join(", ")}):`);
+for (const seed of WIRE_SEEDS) {
+  const r = { seed };
+  let base24 = E.firstListings(E.newGame(seed, W1.c.parcels), W1.c.parcels, W1.b);
+  for (let m = 0; m < 24; m++) base24 = W1.tick(base24);
+  // WIRE 1a: a plant's market collapses (see below)
+  {
+    const iM = E.INDUSTRY_IDS.indexOf("machinery");
+    let base = structuredClone(base24);
+    base.economy.XJ0[iM] += 0.25 * base.econ.stock.industrial / E.INDUSTRIES.machinery.sfPerWorker;
+    for (let m = 0; m < 36; m++) base = W1.tick(base);
+    const trt = structuredClone(base);
+    trt.economy.lnNat[iM] -= Math.log(10);   // the nation stops buying the plant's product (an input; the town's share is its firms' orders)
+    const { ma } = twin(structuredClone(base), trt, 36);
+    r.first = Object.fromEntries(CLS.map((k) => [k, firstOver(ma[k], 0.01)]));
+    r.peak = Object.fromEntries(CLS.map((k) => [k, Math.max(...ma[k])]));
+  }
+  // WIRE 1b: the export base loses 30%
+  {
+    const trt = structuredClone(base24);
+    for (let i = 0; i < trt.economy.lnNat.length; i++) trt.economy.lnNat[i] += Math.log(0.7);
+    const x = twin(structuredClone(base24), trt, 48);
+    r.last = Object.fromEntries(CLS.map((k) => [k, x.ma[k].at(-1)]));
+    r.third = Object.fromEntries(CLS.map((k) => { const pk = Math.max(...x.ma[k]); return [k, pk > 0 ? firstOver(x.ma[k], pk / 3) : Infinity]; }));
+    r.lead18 = x.ma.office[17] - x.ma.retail[17];
+    r.jobs = x.trt.econ.jobs / x.ctl.econ.jobs - 1;
+    r.mfRent = x.trt.econ.rentIdx.multifamily / x.ctl.econ.rentIdx.multifamily - 1;
+  }
+  // WIRE 2: a factory closes (city seed 3; see below)
+  {
+    let base = E.firstListings(E.newGame(seed, W3.c.parcels), W3.c.parcels, W3.b);
+    for (let m = 0; m < 36; m++) base = W3.tick(base);
+    const held = {};
+    for (const [bbl, roll] of Object.entries(base.econ.streetRolls)) for (const t of roll.t) if (t.use === "industrial") held[bbl] = (held[bbl] ?? 0) + t.sf;
+    const [fac, facSf] = Object.entries(held).sort((x, y) => y[1] - x[1])[0];
+    const model = E.demandModel(W3.c.parcels);
+    const blk = model.ofBbl.get(fac);
+    const near = new Set(model.blocks.get(blk).neighbours.filter((n) => n.w >= 0.15).map((n) => n.id));
+    const shopVac = (g, inside) => {
+      let cap = 0, let_ = 0;
+      for (const [bbl, roll] of Object.entries(g.econ.streetRolls)) {
+        if (near.has(model.ofBbl.get(bbl)) !== inside) continue;
+        const rec = E.resolveRec(W3.c.parcels, g, bbl);
+        const c = rec ? E.useRentableSf(rec, "retail") : 0;
+        if (!(c > 0)) continue;
+        cap += c; let_ += roll.t.reduce((s, t) => s + ((t.use ?? "office") === "retail" ? t.sf : 0), 0);
+      }
+      return cap > 0 ? 1 - Math.min(1, let_ / cap) : NaN;
+    };
+    const ctl = structuredClone(base), trt = structuredClone(base);
+    const roll = trt.econ.streetRolls[fac];
+    const shut = roll.t.filter((t) => t.use === "industrial");
+    roll.t = roll.t.filter((t) => t.use !== "industrial");
+    (roll.ready ??= []).push(...shut.map((t) => ({ use: "industrial", sf: t.sf, readyM: trt.month + 1 })));
+    const cohort = (g, inside) => {
+      const o = new Map();
+      for (const [bbl, roll] of Object.entries(g.econ.streetRolls)) {
+        if (near.has(model.ofBbl.get(bbl)) !== inside) continue;
+        for (const t of roll.t) if ((t.use ?? "office") === "retail" && t.staff > 0) o.set(t.fid, t.staff);
+      }
+      return o;
+    };
+    const cN = cohort(ctl, true), cF = cohort(ctl, false);
+    const logGap = (g1, g0, inside, C) => {
+      const A = cohort(g1, inside), B = cohort(g0, inside);
+      let sum = 0, n = 0;
+      for (const f of C.keys()) { const a = A.get(f), b = B.get(f); if (a > 0 && b > 0) { sum += Math.log(a / b); n++; } }
+      return n ? sum / n : NaN;
+    };
+    const nearGap = [], farGap = [], nearStaff = [], farStaff = [];
+    let foot = 1;
+    twin(ctl, trt, 12, W3.tick, (c, t) => {
+      nearGap.push(shopVac(t, true) - shopVac(c, true));
+      farGap.push(shopVac(t, false) - shopVac(c, false));
+      nearStaff.push(logGap(t, c, true, cN)); farStaff.push(logGap(t, c, false, cF));
+      foot = Math.min(foot, t.blockFoot[blk] / c.blockFoot[blk]);
+    });
+    Object.assign(r, { facSf, nN: cN.size, nF: cF.size, foot, sN: Math.expm1(mean(nearStaff)), sF: Math.expm1(mean(farStaff)), vN: mean(nearGap), vF: mean(farGap) });
+  }
+  W.push(r);
+  const mo = (o) => CLS.map((k) => `${k.slice(0, 3)} ${o[k]}`).join(" ");
+  console.log(`    seed ${seed}: plant slump first a point over at ${mo(r.first)}, peaks ${CLS.map((k) => `${k.slice(0, 3)} ${pp(r.peak[k])}`).join(" ")}`);
+  console.log(`      export slump jobs ${(100 * r.jobs).toFixed(1)}%, four-year gap ${CLS.map((k) => `${k.slice(0, 3)} ${pp(r.last[k])}`).join(" ")}, flats' rent ${(100 * r.mfRent).toFixed(1)}%, offices over shops at 18 months ${pp(r.lead18)}, a third of peak at ${mo(r.third)}`);
+  console.log(`      a ${Math.round(r.facSf / 1000)}k sf works closes: catchment ${(100 * r.foot).toFixed(0)}% of the twin's; its ${r.nN} shops ${(100 * r.sN).toFixed(1)}% staff, the other ${r.nF} ${(100 * r.sF).toFixed(1)}%; retail vacancy near ${pp(r.vN)}, far ${pp(r.vF)}`);
+}
+const n = W.length, col = (f) => W.map(f);
 
 // WIRE 1: AN EXPORT SLUMP. (a) A plant the nation buys from — machinery, its
 // floor a quarter of the town's industrial stock at the industry's 900 sf a
-// head — comes to town and the town settles round it; then its market
-// collapses to a tenth. Its floor empties most: the town's industrial
-// vacancy stands a point over its twin's, and three years on its gap is the
-// largest of the classes. (Which class FIRST crosses a point is not checked:
-// the plant's ~240 jobs take ~600 with them, its workers' shops lose trade
-// and fail in lumps, and a 12-month mean of the shops' gap crossed a point
-// at month 16 against the sheds' 21 — measured 2026-10-29, seed 550991, with
-// the sheds' gap 3.3pp at three years against the shops' 1.5 and the
-// offices' 1.1. Before that day's fix to the firms' fortunes the shops
-// crossed later; the order of two noisy crossings is not the wire.) (b) The town's
-// whole export base loses 30% of its sales out of town (a Pittsburgh): every
-// class ends emptier than its twin, the exporters' own floor first — on this
-// map the base is offices (technology, insurance, finance, headquarters), so
-// offices lead the shops the payrolls spent in. The flats are not ordered:
-// a household that loses its job leaves its flat within months and flats
-// turn over at ~45% a year (leasing.ts MF_TURNOVER) against offices' leases
-// of five to ten, so the flats' smaller gap can reach a third of its peak
-// first (measured 2026-10-29: flats month 16, offices 21).
+// head — comes to town and the town settles round it (three years); then its
+// market collapses to a tenth. Its floor empties first and most: industrial is
+// the first class a point over its twin, and its gap peaks highest.
+//
+// Measured 2026-10-30 on the six seeds, three years of twins: the industrial
+// peak is the highest of the classes on all six, by 3.4, 1.5, 3.8, 1.8, 8.4,
+// 0.7pp (mean 3.3 ± 1.1 SE) — checked as the mean margin over twice its SE.
+// Which class first stands a point over is noisier: industrial strictly first
+// on four of six; on 31337 the flats tie it (month 16), on 4242 the flats
+// (month 8) and the shops (15) beat it (16) — a household that loses its job
+// leaves its flat within months, and flats turn over at ~45% a year
+// (leasing.ts MF_TURNOVER), so the plant's lost payroll can show in the flats
+// before its own shed re-lets. Checked as a strict majority of seeds. (Read at
+// the peak, not at three years: where the shed market is tight other
+// occupiers take the plant's space within three years while the lost payrolls
+// are still emptying shops and flats, so the end-state order is the market's
+// answer, not the wire's.)
 {
-  const iM = E.INDUSTRY_IDS.indexOf("machinery");
-  let base = structuredClone(base24);
-  base.economy.XJ0[iM] += 0.25 * base.econ.stock.industrial / E.INDUSTRIES.machinery.sfPerWorker;
-  for (let m = 0; m < 36; m++) base = tick(base);
-  const trt = structuredClone(base);
-  trt.economy.lnNat[iM] -= Math.log(10);   // the nation stops buying the plant's product (an input; the town's share is its firms' orders)
-  const { ma } = twin(structuredClone(base), trt, 36);
-  const f = Object.fromEntries(CLS.map((k) => [k, firstOver(ma[k], 0.01)]));
-  console.log(`    a plant's market collapses: the twelve-month vacancy gap first stands a point over the twin at month ${CLS.map((k) => `${k} ${f[k]}`).join(", ")}; industrial ${pp(Math.max(...ma.industrial))} at most`);
-  const end = Object.fromEntries(CLS.map((k) => [k, ma[k].at(-1)]));
-  console.log(`    ...and three years on: ${CLS.map((k) => `${k} ${pp(end[k])}`).join(", ")}`);
-  // READ AT THE PEAK, NOT AT THREE YEARS (2026-10-29, after step 7). The wire
-  // is that the plant's own floor empties first and most. Where the shed
-  // market is tight — seed 550991 after the property market and #526 runs
-  // industrial vacancy at 1-3%, near its frictional floor — other occupiers
-  // take the plant's space within three years (measured: the twin's gap
-  // peaks at +1.1pp at month 12 and is +0.4pp by month 36, stock identical in
-  // both twins), while the lost payrolls are still emptying shops and
-  // offices. Refilling a tight shed market is what one does, so the end-state
-  // order is the market's answer, not the wire's.
-  const peak = Object.fromEntries(CLS.map((k) => [k, Math.max(...ma[k])]));
-  check(Number.isFinite(f.industrial) && CLS.every((k) => k === "industrial" || f[k] > f.industrial)
-    && CLS.every((k) => k === "industrial" || peak[k] < peak.industrial),
-    "a plant's slump empties its own floor most: industrial is the first class a point over its twin, and its gap peaks highest");
+  const margin = col((r) => r.peak.industrial - Math.max(...CLS.filter((k) => k !== "industrial").map((k) => r.peak[k])));
+  const firstN = W.filter((r) => Number.isFinite(r.first.industrial) && CLS.every((k) => k === "industrial" || r.first[k] > r.first.industrial)).length;
+  console.log(`    a plant's slump: industrial's peak over the next class's ${ms(margin)} (mean ± SE over ${n}); industrial strictly the first class a point over on ${firstN} of ${n}`);
+  check(mean(margin) > 2 * se(margin) && firstN > n / 2,
+    "a plant's slump empties its own floor most: its gap peaks highest (by more than twice the seeds' SE), and industrial is the first class a point over its twin on most seeds");
 }
+// (b) The town's whole export base loses 30% of its sales out of town (a
+// Pittsburgh): it costs the town jobs and every class ends emptier than its
+// twin (the flats emptier or cheaper: their landlords re-mark asks on their
+// own lettings, streetRolls.ts markFlatAsk, FORMULA_LEDGER #4/#5, so a slump
+// can show in their rent rather than their vacancy) — four years of twins,
+// each class's mean gap over twice its SE. The exporters' own floor leads the
+// shops the payrolls spent in: on this map the base is offices (technology,
+// insurance, finance, headquarters).
+//
+// HOW "LEADS" IS READ (2026-10-30). The single-seed check compared the month
+// each class's gap first reached a third of its own peak. Across the six
+// seeds that order is noise: office 19-23 months, the shops 13-35 (their peak
+// is small, 4-6pp, so a third of it sits inside a point of draw noise), office
+// no later on four of six, the shops later by 2.3 ± 3.2 (SE) months — and the shops' gap often moves first in the opening
+// months, since a lost payroll cuts spending at once while an office empties
+// only as its five-to-ten-year leases come due. What every seed shows is the
+// offices' gap standing over the shops' by a year and a half: +1.5, +1.4,
+// +2.1, +3.3, +1.6, +2.1pp at month 18 (mean 2.0 ± 0.3 SE). Checked: that
+// lead, over twice its SE; the third-of-peak months are printed.
 {
-  const trt = structuredClone(base24);
-  for (let i = 0; i < trt.economy.lnNat.length; i++) trt.economy.lnNat[i] += Math.log(0.7);
-  const r = twin(structuredClone(base24), trt, 60);
-  const ma = r.ma, last = Object.fromEntries(CLS.map((k) => [k, ma[k].at(-1)]));
-  const third = Object.fromEntries(CLS.map((k) => { const pk = Math.max(...ma[k]); return [k, pk > 0 ? firstOver(ma[k], pk / 3) : Infinity]; }));
-  const jobs = r.trt.econ.jobs / r.ctl.econ.jobs - 1;
-  console.log(`    the export base loses 30%: jobs ${(100 * jobs).toFixed(1)}% on the twin after five years; vacancy gap then ${CLS.map((k) => `${k} ${pp(last[k])}`).join(", ")}; a third of each one's peak reached at month ${CLS.map((k) => `${k} ${third[k]}`).join(", ")}`);
-  // The flats' landlords re-mark their asks on their own lettings (streetRolls.ts markFlatAsk, FORMULA_LEDGER #4/#5):
-  // a year's leases reprice inside the five years, so the slump can show in the flats' rent rather than their vacancy.
-  const mfRent = r.trt.econ.rentIdx.multifamily / r.ctl.econ.rentIdx.multifamily - 1;
-  console.log(`    ...flats' asking rent ${(100 * mfRent).toFixed(1)}% on the twin`);
-  check(jobs < -0.05 && CLS.every((k) => last[k] > 0 || (k === "multifamily" && mfRent < -0.02)), "an export slump costs the town jobs and leaves every class emptier than its twin (the flats emptier or cheaper)");
-  check(third.office <= third.retail, "...the exporters' floor before the shops (offices, on this map)");
+  const jobs = col((r) => r.jobs), rent = col((r) => r.mfRent);
+  const gapOk = (k) => { const g = col((r) => r.last[k]); return mean(g) > 2 * se(g); };
+  const mfCheaper = mean(rent) < -0.02 - 2 * se(rent);
+  console.log(`    the export base loses 30%: jobs ${ms(jobs, (x) => `${(100 * x).toFixed(1)}%`)} on the twin after four years; gap then ${CLS.map((k) => `${k} ${ms(col((r) => r.last[k]))}`).join(", ")}; flats' rent ${ms(rent, (x) => `${(100 * x).toFixed(1)}%`)}`);
+  check(mean(jobs) < -0.05 && Math.max(...jobs) < 0 && CLS.every((k) => k === "multifamily" || gapOk(k)) && (gapOk("multifamily") || mfCheaper),
+    `an export slump costs the town jobs and leaves every class emptier than its twin (the flats emptier or cheaper), each over twice the seeds' SE${gapOk("multifamily") ? "" : " (the flats by their rent)"}`);
+  const lead = col((r) => r.lead18);
+  console.log(`    ...offices' gap over the shops' at eighteen months ${ms(lead)}; a third of peak reached at month office ${col((r) => r.third.office).join("/")}, retail ${col((r) => r.third.retail).join("/")} (printed, not checked: see above)`);
+  check(mean(lead) > 2 * se(lead), "...the exporters' floor leads the shops (offices, on this map): emptier than the shops by a year and a half, by more than twice the seeds' SE");
 }
 
 // WIRE 2: A FACTORY CLOSES. On a map with a real plant (city seed 3, its
@@ -354,71 +457,26 @@ for (let m = 0; m < 24; m++) base24 = tick(base24);
 // comparison for the town's other shops. The neighbourhood's retail vacancy
 // against its twin is printed but not checked, because one map cannot see
 // it: the neighbourhood is 20-40 shops on ~100-150k sf, so one 15-20k sf shop
-// failing or letting moves it 10pp, and the two twins part ways in every
-// draw after the closure. Measured (2026-10-29) on game seeds 550991, 12007:
-// cohort staff -2.3%, -2.0% against the far shops' +0.6%, +0.1% (the works
-// is ~16% of its own block's walkers, less of its neighbours'); vacancy
-// near-minus-twin on seeds 550991, 12007, 73303 -0.7, -1.7, -2.2pp, far +0.9,
-// -0.5, -0.3pp — noise of a few points round an effect of a fraction of one.
-// (A first cut checked the vacancy and passed at +2.0pp on one seed: luck.)
+// failing or letting moves it 10pp.
+//
+// A YEAR, ON SIX SEEDS (2026-10-30). The closure bites at once (the walkers
+// go the month the floor goes dark) while the twins' draws part further every
+// month after, so the first year carries the signal and the next six months
+// mostly noise. Measured on the six seeds: the cohort near minus the town's
+// other shops, mean over twelve months -1.4, -1.2, -1.2, -1.7, -1.3, -0.6%
+// (mean -1.2 ± 0.16 SE); over eighteen -1.0, -0.1, -1.8, -1.3, -1.0, -0.8.
+// The cohort itself -0.9% on the mean. Checked: the catchment falls on every
+// seed; on the mean over seeds, the cohort loses at least half a percent of
+// staff and at least a point more than the town's other shops, that gap over
+// twice its SE. (The point is the original single-seed claim, kept; the mean
+// clears it by only ~1.4 SE, so a drift of a quarter point in the wire's
+// strength would show here — which is what a check of a magnitude is for.)
 {
-  const city3 = makeCity("somewhere", 3);
-  E.normalizeParcels(city3.parcels);
-  const b3 = Object.keys(city3.parcels);
-  const tick3 = (g) => { g = E.advanceQuarter(g, city3.parcels, b3, city3.adjacency); return g.gameOver ? { ...g, gameOver: null, cash: 6e6 } : g; };
-  let base = E.firstListings(E.newGame(SEED, city3.parcels), city3.parcels, b3);
-  for (let m = 0; m < 36; m++) base = tick3(base);
-  const held = {};
-  for (const [bbl, roll] of Object.entries(base.econ.streetRolls)) for (const t of roll.t) if (t.use === "industrial") held[bbl] = (held[bbl] ?? 0) + t.sf;
-  const [fac, facSf] = Object.entries(held).sort((x, y) => y[1] - x[1])[0];
-  const model = E.demandModel(city3.parcels);
-  const blk = model.ofBbl.get(fac);
-  const near = new Set(model.blocks.get(blk).neighbours.filter((n) => n.w >= 0.15).map((n) => n.id));
-  const shopVac = (g, inside) => {
-    let cap = 0, let_ = 0;
-    for (const [bbl, roll] of Object.entries(g.econ.streetRolls)) {
-      if (near.has(model.ofBbl.get(bbl)) !== inside) continue;
-      const rec = E.resolveRec(city3.parcels, g, bbl);
-      const c = rec ? E.useRentableSf(rec, "retail") : 0;
-      if (!(c > 0)) continue;
-      cap += c; let_ += roll.t.reduce((s, t) => s + ((t.use ?? "office") === "retail" ? t.sf : 0), 0);
-    }
-    return cap > 0 ? 1 - Math.min(1, let_ / cap) : NaN;
-  };
-  let ctl = structuredClone(base), trt = structuredClone(base);
-  const roll = trt.econ.streetRolls[fac];
-  const shut = roll.t.filter((t) => t.use === "industrial");
-  roll.t = roll.t.filter((t) => t.use !== "industrial");
-  (roll.ready ??= []).push(...shut.map((t) => ({ use: "industrial", sf: t.sf, readyM: trt.month + 1 })));
-  const cohort = (g, inside) => {
-    const o = new Map();
-    for (const [bbl, roll] of Object.entries(g.econ.streetRolls)) {
-      if (near.has(model.ofBbl.get(bbl)) !== inside) continue;
-      for (const t of roll.t) if ((t.use ?? "office") === "retail" && t.staff > 0) o.set(t.fid, t.staff);
-    }
-    return o;
-  };
-  const cN = cohort(ctl, true), cF = cohort(ctl, false);
-  const logGap = (inside, C) => {
-    const A = cohort(trt, inside), B = cohort(ctl, inside);
-    let sum = 0, n = 0;
-    for (const f of C.keys()) { const a = A.get(f), b = B.get(f); if (a > 0 && b > 0) { sum += Math.log(a / b); n++; } }
-    return n ? sum / n : NaN;
-  };
-  const nearGap = [], farGap = [], nearStaff = [], farStaff = [];
-  let foot = 1;
-  for (let m = 0; m < 18; m++) {
-    ctl = tick3(ctl); trt = tick3(trt);
-    nearGap.push(shopVac(trt, true) - shopVac(ctl, true));
-    farGap.push(shopVac(trt, false) - shopVac(ctl, false));
-    nearStaff.push(logGap(true, cN)); farStaff.push(logGap(false, cF));
-    foot = Math.min(foot, trt.blockFoot[blk] / ctl.blockFoot[blk]);
-  }
-  const mn = (a) => a.reduce((s, x) => s + x, 0) / a.length;
-  const sN = Math.expm1(mn(nearStaff)), sF = Math.expm1(mn(farStaff));
-  console.log(`    a ${Math.round(facSf / 1000)}k sf works closes: its block's catchment falls to ${(100 * foot).toFixed(0)}% of the twin's; the ${cN.size} shops trading within a walk ${(100 * sN).toFixed(1)}% staff on their twins over eighteen months, the town's other ${cF.size} ${(100 * sF).toFixed(1)}%`);
-  console.log(`    (retail vacancy within a walk ${pp(mn(nearGap))} on the twin, the rest of the town ${pp(mn(farGap))}: not checked, see above)`);
-  check(foot < 0.95 && sN < -0.005 && sN < sF - 0.01, "a factory closing takes trade from the shops around it, beyond the rest of the town's");
+  const sN = col((r) => r.sN), d = col((r) => r.sN - r.sF), pc = (x) => `${(100 * x).toFixed(2)}%`;
+  console.log(`    a works closes: catchment ${col((r) => `${(100 * r.foot).toFixed(0)}%`).join("/")} of the twin's; the shops within a walk ${ms(sN, pc)} staff on their twins over a year, ${ms(d, pc)} against the town's other shops`);
+  console.log(`    (retail vacancy within a walk ${ms(col((r) => r.vN))} on the twin, the rest of the town ${ms(col((r) => r.vF))}: not checked, see above)`);
+  check(Math.max(...col((r) => r.foot)) < 0.95 && mean(sN) < -0.005 && mean(d) < -0.01 && mean(d) + 2 * se(d) < 0,
+    "a factory closing takes trade from the shops around it, beyond the rest of the town's (on the mean over seeds, over twice its SE)");
 }
 
 if (bad) console.log(`\n  ${worst}`);

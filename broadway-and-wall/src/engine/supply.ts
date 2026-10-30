@@ -114,7 +114,13 @@ export function queueSupplyProject(
     status: "active",
   };
   if (existing) Object.assign(existing, row);
-  else q.push(row);
+  else {
+    q.push(row);
+    // A START: whoever decided it, this is the month its hole is dug. The
+    // town's construction starts are the sum of these (market.ts).
+    const b = (s.econ.brokeMonth ??= emptyByClass(() => 0));
+    for (const k of CLASSES) b[k] += Math.max(0, input.sfByUse[k] ?? 0);
+  }
   syncSupplyViews(s.econ);
 }
 

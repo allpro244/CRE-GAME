@@ -276,6 +276,7 @@ function addFirm(E: EconomyState, id: number, ind: number, sec: number, hc: numb
 /** Mend a state whose columns went through JSON (the household register's fault, the same repair). */
 export function reviveEconomy(E: EconomyState): void {
   reviveLedger(E.L);
+  reviveLinks(E);
   const cap = E.L.slot.cash.length;
   const c = E.f as unknown as Record<string, unknown>;
   if (COLS(E.f).every((a) => ArrayBuffer.isView(a))) return;

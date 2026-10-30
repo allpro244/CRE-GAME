@@ -559,12 +559,12 @@ function tickCapitalWave(s: GameState) {
   w.leftM -= 1;
   e.capitalWave = w.to + (w.from - w.to) * Math.max(0, w.leftM) / Math.max(1, w.len);
   if (w.leftM > 0) return;
-  const next = (phase: "hold" | "out" | "fade", len: number, to: number) => { e.capWave = { phase, leftM: len, len, from: e.capitalWave ?? 0, to }; };
+  const next = (phase: "hold" | "out" | "fade", len: number, to: number) => { e.capWave = { ...w, phase, leftM: len, len, from: e.capitalWave ?? 0, to }; };
   if (w.phase === "in") next("hold", Math.round(12 + 12 * rng(s, "shock")), w.to);
   else if (w.phase === "hold") {
     next("out", Math.round(12 + 12 * rng(s, "shock")), 0.3 + 0.3 * rng(s, "shock"));
-    const id = why(s, { k: "swan.wave.out", a: "nation", n: { capPts: e.capWave?.to ?? 0 }, t: "Foreign buyers left · cap rates back out" }, [whyNation(s)]);
-    pushNewsPublic(s, "warn", "The foreign buyers have gone home. The bids that set every price in town for five years are simply not there any more, and nobody local will pay what they paid.", id);
+    const id = why(s, { k: "swan.wave.out", a: "nation", n: { capPts: e.capWave?.to ?? 0 }, t: "Foreign buyers called home · their funds are selling" }, [whyNation(s)]);
+    pushNewsPublic(s, "warn", "The foreign buyers have been called home, and their funds are selling. The bids that set every price in town for five years are about to be offers, and nobody local will pay what they paid.", id);
   } else if (w.phase === "out") next("fade", 36, 0);
   else { e.capWave = undefined; e.capitalWave = 0; }
 }
@@ -572,13 +572,18 @@ function tickCapitalWave(s: GameState) {
 function startCapitalWave(s: GameState) {
   const e = s.econ;
   const depth = -(0.8 + 0.7 * rng(s, "shock"));
-  e.capWave = { phase: "in", leftM: 36, len: 36, from: e.capitalWave ?? 0, to: depth };
+  // HOW MUCH MONEY COMES, as a share of the street's book: Japanese investors
+  // held about 5-10% of US institutional commercial property at the 1989-91
+  // peak, a third of downtown Los Angeles offices (Farrell 1993). The swan's
+  // own draw, read as that share (rivals.ts tickForeignMoney raises it as
+  // named funds; it reaches prices only through what they bid).
+  e.capWave = { phase: "in", leftM: 36, len: 36, from: e.capitalWave ?? 0, to: depth, share: 0.03 + 0.07 * (-depth - 0.8) / 0.7 };
   (e.blackSwans ??= []).push({ m: s.month, kind: "wave", size: Math.round(-depth * 100), sf: 0, title: "foreign capital found the city" });
-  const id = why(s, { k: "swan.wave", a: "nation", n: { capPts: depth }, t: `Foreign capital arriving · cap rates ${depth.toFixed(1)} points over three years` }, [whyNation(s)]);
+  const id = why(s, { k: "swan.wave", a: "nation", n: { capPts: depth, share: +(e.capWave.share ?? 0).toFixed(3) }, t: `Foreign capital arriving · funds raised abroad to buy here, about ${Math.round((e.capWave.share ?? 0) * 100)}% of the street's book` }, [whyNation(s)]);
   raiseAlert(s, {
     kind: "swan", tone: "good", why: id,
     title: "Foreign capital has found the city",
-    body: `Buyers from abroad are paying yields nobody local will — trophy towers first, then everything. Over the next three years they will take about ${(-depth).toFixed(1)} points off every cap rate in town.`,
+    body: `Buyers from abroad are raising funds to buy here, and they will accept yields nobody local will — trophy towers first, then everything. Over the next three years their bids, not the town's, will set the price of whatever they want.`,
     detail: "It has happened before and it ended the same way every time: the money goes home at once, and the prices it set go with it. Selling into it is the trade; buying into it is the risk.",
   });
 }

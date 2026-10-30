@@ -39,6 +39,7 @@ import { ownerOf, gradeOf } from "./rivals";
 import { isCivicLand } from "./demand";
 import { assetValue, initialCondIdx, inPlace, marketAppraisal } from "./value";
 import { genRentRoll } from "./leasing";
+import { syncStreetRolls } from "./streetRolls";
 import { originate, quote, productById, stabViewFor } from "./debt";
 import { money } from "./money";
 
@@ -253,6 +254,11 @@ export function inheritPortfolio(s: GameState, parcels: ParcelTable): string[] {
   // The hometown bank: small cheques are its business (the regional desk has a
   // minimum loan these buildings sit under), and it is the family's bank.
   const prod = productById("harbor");
+  // THE STREET FIRST (FORMULA_LEDGER #20): the town's pre-history is grown
+  // before the family's deeds are written, so a family building carries the
+  // firms that pre-history put in it, on the leases they signed — not a roll
+  // drawn for it at the transfer.
+  if (!s.econ.streetRolls) syncStreetRolls(s, parcels, Object.keys(parcels));
   for (const { bbl } of ranked) {
     if (took.length >= n) break;
     const rec = parcels[bbl];
@@ -282,6 +288,8 @@ export function inheritPortfolio(s: GameState, parcels: ParcelTable): string[] {
     const equity = value - (h.loan?.balance ?? 0);
     (s.deedCf ??= {})[bbl] = { cf: [s.month, -equity], from: s.month };
     took.push(bbl);
+    // Its firms are the family's tenants now, not the street's.
+    if (s.econ.streetRolls) delete s.econ.streetRolls[bbl];
   }
   if (took.length) {
     const total = took.reduce((a, b) => a + (s.holdings[b].costBasis ?? 0), 0);

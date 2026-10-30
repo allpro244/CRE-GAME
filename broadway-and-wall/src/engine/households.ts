@@ -74,6 +74,7 @@ import { resolveRecBare, useRentableSf } from "./value";
 import { flatUnitSf } from "./streetRolls";
 import { HH_SIZE, INCOME_SIGMA, TAX_INS, DTI, COMMUTE, REF_HOME, medianIncome, mortgageRate, fundamentalHomePsf } from "./homeprice";
 import { why, whyOnce } from "./why";
+import { RE_ALLOC, SAVERS } from "./investors";
 import { whyIndustry, whyFirmLoss, firmNamesOf, whyTown } from "./economy";
 import { INDUSTRIES, INDUSTRY_IDS, N_IND, COMP_PER_WORKER_2023, PAY_SPLIT, type SpendCategory } from "./industries";
 
@@ -3099,6 +3100,68 @@ export function householdMoney(s: GameState): {
   return { wages, pensions, ui, tax, taxLocal, rent, mortgage, propertyTax: ownerCost * (1 / 1.5), homeInsurance: ownerCost * (0.5 / 1.5), spend: r.flow.spend, households: hh, persons, ownerValue,
     spendCat: r.flow.spendCat ?? zeroCat(), transfers: r.flow.transfers ?? 0 };
 }
+
+/**
+ * WHAT THE TOWN'S SAVERS HAVE TO INVEST (FORMULA_LEDGER #21): each
+ * household's savings over its goal — the buffer it keeps (bufferMonths of
+ * its income) and, for a renter that plans to buy, the down payment it is
+ * saving for (the same target its spending rule holds, above). What is over
+ * the goal is money the household does not need to keep liquid; it is what a
+ * saver can commit to a fund. Weighted dollars, and the households (weighted)
+ * that have any. Pure.
+ */
+export function investableSurplus(s: GameState): { dollars: number; savers: number } | null {
+  const r = s.households;
+  if (!r || !s.econ) return null;
+  if (!r.a) unpackHouseholds(r);
+  const a = r.a!, H = homeMarket(s.econ);
+  let dollars = 0, savers = 0;
+  for (let i = 0; i < r.n; i++) {
+    const over = a.sav[i] - goalOf(r, a, i, H);
+    if (over > 0) { dollars += a.wt[i] * over; savers += a.wt[i]; }
+  }
+  return { dollars, savers };
+}
+function goalOf(r: HouseholdRegister, a: HouseholdArrays, i: number, H: HomeMkt): number {
+  return bufferMonths(a.age[i]) * Math.max(0, a.yperm[i]) + (plansToBuy(r, a, i, H) ? (DOWN_SAVE + CLOSING) * H.starter : 0);
+}
+
+/**
+ * SAVERS COMMIT `amount` TO A FUND: each saver puts in up to its allocation
+ * (`alloc`, investors.ts reAllocation) of what it holds over its goal, the largest surpluses first — a
+ * private fund is sold to the people with money to spare, not a dollar from
+ * every account. The money leaves those households' savings, so what a firm
+ * raises locally is money that was in the town's accounts and is not there to
+ * spend or to raise twice. Returns the dollars taken and the households
+ * (weighted) that put money in. Mutates `s.households`.
+ */
+export function commitSavings(s: GameState, amount: number, alloc = RE_ALLOC): { taken: number; savers: number } {
+  const r = s.households;
+  if (!r || !s.econ || !(amount > 0)) return { taken: 0, savers: 0 };
+  if (!r.a) unpackHouseholds(r);
+  const a = r.a!, H = homeMarket(s.econ);
+  const over: [number, number][] = [];
+  for (let i = 0; i < r.n; i++) {
+    const x = a.sav[i] - goalOf(r, a, i, H);
+    if (x > 0) over.push([i, x]);
+  }
+  over.sort((p, q) => q[1] - p[1]);
+  let rest = amount, taken = 0, savers = 0;
+  for (const [i, x] of over) {
+    if (rest <= 0) break;
+    const w = a.wt[i];
+    const each = alloc * x;
+    if (!(each > 0)) continue;
+    const put = Math.min(each, rest / w);
+    a.sav[i] -= put;
+    taken += w * put; rest -= w * put;
+    savers += w * (put / each);
+  }
+  return { taken, savers };
+}
+
+SAVERS.surplus = investableSurplus;
+SAVERS.commit = commitSavings;
 
 /**
  * EACH INDUSTRY'S PAYROLL, AS ITS EARNERS ARE PAID: the register's working

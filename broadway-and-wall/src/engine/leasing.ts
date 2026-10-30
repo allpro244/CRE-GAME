@@ -26,17 +26,17 @@ import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locO
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
 import { overallScore, scoreRentMult, N_BANDS } from "./value";
-import { recordLease, creditOfSize, compsPackage } from "./tenantMarket";
-import { drawTenantQuality, tenantQualityTerms } from "./bands";
+import { recordLease, compsPackage } from "./tenantMarket";
+import { tenantQualityTerms } from "./bands";
 import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook, operatingReserve, drawLineInPlace, parkedOnLine } from "./credit";
 import { drawLeaseUpReserve, leaseUpRoom } from "./debt";
 import { fundReserve } from "./fund";
 import { partnerFunds } from "./jv";
 import { recordPropertyEvent, noteTenantMove } from "./history";
-import { pullSeeker, seekerSigned, playerTenantLeft, offerForPlayer, stayOdds } from "./streetRolls";
+import { pullSeeker, pullSeekerIn, releaseSeeker, seekerSigned, playerTenantLeft, offerForPlayer, stayOdds } from "./streetRolls";
 
-import { leasingOdds, drawRequirementSf, supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
-import { stacksOf, assignTenantFloors, blocksOf, blockIdForSf, drawTenantSf, sizeScale, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
+import { leasingOdds, supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
+import { assignTenantFloors, blocksOf, blockIdForSf, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
 import { money } from "./money";
 import { purseOf } from "./vehicles";
 import { tenantFin, tickTenantFin, tenantFailOdds, tenantSqueeze } from "./tenantBooks";
@@ -181,12 +181,6 @@ export function pickName(s: GameState, sector: Sector): string {
   }
   return arr[i0];   // every name of the trade taken (thousands of firms in one trade): share one
 }
-// THE TENANT POOL FOLLOWS THE BUILDING, through size. Credit tenants gather in
-// good space because they are big firms and big firms take better buildings
-// (plates.ts sizeScale: requirements scale with the building's score); a
-// firm's covenant is its size (tenantMarket.ts creditOfSize). This was a draw
-// on the building's demand and score, independent of the firm.
-const isCommercialUse = (u: BuiltClass): u is "office" | "retail" | "industrial" => u === "office" || u === "retail" || u === "industrial";
 
 /**
  * THE SHARE OF RENTERS WHO MOVE OUT IN A YEAR IS WHAT THE HOUSEHOLDS DID
@@ -805,103 +799,12 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
     blocksOf(rec, holding);
     return;
   }
-  // A building in place has a rent roll per component: the shops at grade were
-  // let to shopkeepers at retail rents on retail terms, and the floors above
-  // to firms at office rents. One blended roll described neither.
-  const anchors = [
-    s.month + Math.round(rrange(s, 9, 36, "leasing")),
-    s.month + Math.round(rrange(s, 39, 90, "leasing")),
-  ];
-  for (const stack of stacksOf(rec)) {
-    const use = stack.use;
-    // RENTABLE feet: the target a roll fills toward is the area a tenant can
-    // sign for, so a roll can never exceed the building it sits in.
-    const legSf = useRentableSf(rec, use);
-    if (legSf < 400) continue;
-    const targetOcc = Math.max(0, Math.min(0.98,
-      useOccupancy(rec, s.econ, use) + (distressed ? rrange(s, -0.52, -0.24, "leasing") : rrange(s, -0.14, 0.05, "leasing"))));
-    const market = useRentPsfYr(rec, s.econ, holding.condition, use, holding.condIdx);
-    // A ONE-FLOOR LEG IS LET OR IT IS NOT. Same binary a single shop has always
-    // had. Multi-floor legs fill toward the occupancy target with log-normal
-    // sizes (plates.SIZE_DIST — CompStak / JLL median, p95 one large plate).
-    // Private stream: genRentRoll snapshots s.streams and restores it.
-    let target: number;
-    if (stack.floors === 1) {
-      target = rng(s, "leasing") < targetOcc ? legSf : 0;
-    } else {
-      target = legSf * targetOcc;
-    }
-    let leased = 0;
-    let guard = 0;
-    const floorSf = minLettableSf(rec, use);
-    while (leased < target - 0.5 && guard++ < 40) {
-      const free = Math.min(target - leased, legSf - leased);
-      if (free < 1) break;
-      // A remnant of a bigger leg is vacant, not a closet tenancy. A whole
-      // leg under the city norm is the shop — that is what minLettableSf is for.
-      let sf: number;
-      if (free < floorSf) {
-        if (leased > 0) break;
-        // THE TARGET BINDS UNDER A SUITE. A two-plate shop leg of 4,110 ft at
-        // a 47% occupancy target asked for 1,953 ft of tenant, and the roll
-        // wrote a 1,953 ft tenancy — under the 2,000 ft floor nothing else in
-        // the engine will let. Nobody demises the market's vacancy fraction;
-        // they let a suite. So the roll runs one suite full — a shade over
-        // the target — rather than a closet. The floor never exceeds the
-        // plate (typicalSuiteSf), so the min is the whole leg only when the
-        // leg IS the suite.
-        sf = Math.round(Math.min(legSf, floorSf));
-      } else {
-        sf = drawTenantSf(s, use, stack.plateSf, free, sizeScale(overallScore(rec, s.econ, use)));
-        if (sf > free + 0.5) {
-          if (rng(s, "leasing") < free / sf) sf = Math.round(free);
-          else break;
-        }
-      }
-      // NOBODY LEAVES A SLIVER. A standing roll is the work of a landlord who
-      // demised to fit: when what a draw would leave of the space cannot be
-      // let on its own, the tenant took it. Without this a 3,000 ft shop was
-      // generated as a 2,500 ft tenancy and a 500 ft remnant, a five-floor
-      // office as four floors and an unlettable strip — and `pnpm playtest` §B
-      // read the city's retail rolls 17pp emptier than the market model that
-      // priced them, industrial 10pp, office 3pp: the gap was these slivers.
-      if (free - sf > 0.5 && free - sf < floorSf) sf = Math.round(free);
-      if (sf < 1) break;
-      if (leased > 0 && sf < floorSf) break;
-      const sector = pickSector(s, use);
-      const endM = rng(s, "leasing") < 0.6
-        ? anchors[Math.floor(rng(s, "leasing") * anchors.length) % anchors.length] + Math.round(rrange(s, -3, 3, "leasing"))
-        : s.month + Math.round(rrange(s, 6, 96, "leasing"));
-      // One covenant per tenant, and it is the firm's size (tenantMarket.ts
-      // creditOfSize): the deposit used to be sized on a second, independent
-      // draw, and the covenant itself was a draw on the building's score.
-      const credit = isCommercialUse(use) ? creditOfSize(use, sf) : 1;
-      // SIGNED WHEN IT STARTED, AT THAT MONTH'S MARKET, AND BUMPED SINCE. The
-      // rent in place was a draw of 82-104% of today's market, and the expense
-      // stop 72-98% of today's; both are what the lease was struck at when it
-      // started — today's market and today's operating cost taken back by the
-      // inflation the town expects over the lease's age — with the
-      // contractual bump on every anniversary since.
-      const ageM = Math.round(rrange(s, 0, 48, "leasing"));
-      const deflate = Math.pow(1 + (s.econ.inflExp ?? 0.02), -ageM / 12);
-      holding.tenants.push({
-        name: pickName(s, sector),
-        use,
-        sector,
-        credit,
-        sf,
-        rentPsf: +(market * deflate * Math.pow(1 + DEFAULT_BUMP_PCT / 100, Math.floor(ageM / 12))).toFixed(2),
-        net: use === "office" ? rng(s, "leasing") < 0.75 : rng(s, "leasing") < 0.4,
-        recovery: rollRecovery(s, use),
-        baseStopPsf: +(stopPsfNow(rec, s.econ, holding, use) * deflate).toFixed(2),
-        startM: s.month - ageM,
-        endM: Math.max(s.month + 1, endM),
-        deposit: depositFor(s, market, sf, credit),
-      });
-      if (settle) moveDeposit(s, holding, holding.tenants[holding.tenants.length - 1].deposit ?? 0);
-      leased += sf;
-    }
-  }
+  // NO RECORD, NO TENANTS (FORMULA_LEDGER #20). Every standing commercial
+  // building the player does not own is on the street from the town's
+  // pre-history (streetRolls.ts), so its roll is the firms in it. A building
+  // with no street record has no tenants on record: it is empty, and lets
+  // through the leasing desk like any empty floor. (This drew a roll — each
+  // tenant's size, sector, age and expiry, around the market's occupancy.)
   assignTenantFloors(rec, holding.tenants);
   blocksOf(rec, holding);
 }
@@ -2266,24 +2169,27 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           if (!(poolSf > 0) || rng(s, "leasing") >= poolSf / floorSf) continue;
           poolSf = floorSf;
         }
-        // Consume the city's requirement draw so the world stream does not
-        // re-roll (Phase 1 was the sanctioned extra draw). The letter's SIZE
-        // is the class log-normal on the leasing channel — same SIZE_DIST
-        // inherited rolls use (office median 5k / p95 one large plate).
-        drawRequirementSf(s, use);
-        const plate = stackForUse(rec, use)?.plateSf ?? legVac;
-        const want = Math.min(legVac, poolSf, drawTenantSf(s, use, plate, Math.min(legVac, poolSf), sizeScale(overallScore(rec, s.econ, use, h.condIdx ?? initialCondIdx(rec, s.month)))));
-        if (want < minLettableSf(rec, use)) continue;
+        // WHO TURNS UP IS A FIRM THAT IS LOOKING (FORMULA_LEDGER #20). The
+        // party at the door is a firm from the town's looking pool — a new
+        // firm, an arrival, a firm in town that has outgrown its floor or
+        // wants out of it (streetRolls.ts) — whose own need fits what this
+        // leg has to let; the size it asks for is that need. It used to be a
+        // size drawn from the class's distribution, and when nobody in the
+        // pool fitted, a firm made up on the spot. Nobody looking, nobody
+        // tours.
+        const first = pullSeekerIn(s, use, floorSf * 0.5, Math.min(legVac, poolSf), overallScore(rec, s.econ, use, h.condIdx ?? initialCondIdx(rec, s.month)));
+        if (!first) continue;
+        const want = Math.min(legVac, poolSf, Math.max(floorSf, Math.round(first.want)));
         const fit = matchBlock(rec, h, use, want);
-        if (!fit) continue;
+        if (!fit) { releaseSeeker(s, first.firm.fid); continue; }
         const sf = fit.sf;
         // THE LANDLORD'S OWN FLOOR. Below it, the tour ends at the door —
         // after every draw above, so the rest of the city's stream is the
         // same whatever you choose. A tenant taking the whole remainder is
         // let in even when the remainder is smaller than the floor.
-        if (h.minLeaseSf && sf < Math.min(h.minLeaseSf, legVac - 1)) continue;
+        if (h.minLeaseSf && sf < Math.min(h.minLeaseSf, legVac - 1)) { releaseSeeker(s, first.firm.fid); continue; }
         const lastBlock = fit.block.sf >= legVac - 1;
-        if (!lastBlock && sf > poolSf + minLettableSf(rec, use) * 0.15) continue;
+        if (!lastBlock && sf > poolSf + minLettableSf(rec, use) * 0.15) { releaseSeeker(s, first.firm.fid); continue; }
         const demiseCost = fit.demiseSf > 0
           ? Math.round(DEMISE_PSF * fit.demiseSf * s.econ.costIdx)
           : 0;
@@ -2313,40 +2219,34 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // this particular building drew.
         const marketPull = vacancyPull(s.econ, use);
         const pTwo = Math.max(0.05, Math.min(0.72, (marketPull - 0.55) * 0.62));
-        const nTour = 1 + (rng(s, "leasing") < pTwo ? 1 : 0) + (rng(s, "leasing") < pTwo * 0.45 ? 1 : 0);
-        const tourId = s.nextTourId ?? 1;
-        s.nextTourId = tourId + 1;
+        const nWant = 1 + (rng(s, "leasing") < pTwo ? 1 : 0) + (rng(s, "leasing") < pTwo * 0.45 ? 1 : 0);
         const bCond = h.condIdx ?? initialCondIdx(rec, s.month);
         const bScore = overallScore(rec, s.econ, use, bCond);
+        // The other parties on the tour are other firms from the pool whose
+        // need is near the same suite; when the pool has nobody else, the
+        // first party tours alone.
+        const party: Tenant[] = [first.firm];
+        while (party.length < nWant) {
+          const more = pullSeeker(s, use, sf, bScore);
+          if (!more) break;
+          party.push(more);
+        }
+        const nTour = party.length;
+        const tourId = s.nextTourId ?? 1;
+        s.nextTourId = tourId + 1;
         for (let k = 0; k < nTour; k++) {
-        // THREE SHAPES, and the whole trade-off lives in the difference between
-        // them. k=0 is what the market sent. k=1 is THE COVENANT: better
-        // credit, long paper, a rent under the others, and it wants a fit-out —
-        // it tightens waltSpread and creditSpread and it is 11x less likely to
-        // go dark (see pFail: grade 0.14 against 1.6). k=2 is THE GROWTH STORY:
-        // unrated, short, and it will pay over the odds — income today against
-        // a mark on the building tomorrow. Both of those are already priced by
-        // rollQualitySpread. The choice was simply never offered.
-        // ONE POOL OF FIRMS (streetRolls.ts). The party touring is a firm
-        // from the town's looking pool — a new firm, an arrival, or a firm
-        // already in town that wants to move — the same firms the street's
-        // buildings are showing to; if you do not sign it, it may sign down
-        // the street. When nobody in the pool fits, the party is a firm
-        // arriving from outside the town, drawn as before.
-        const seeker = pullSeeker(s, use, sf, bScore);
-        const sector = seeker?.sector ?? pickSector(s, use);
-        // WHO IS TOURING (TENANT_TIERS_PLAN.md): the quality this tenant is
-        // shopping for, drawn from the movers this building draws at its
-        // price — tenants stretching up to it when it is cheap for what it is,
-        // tenants settling for it when better space is dear.
-        const tQ = seeker?.quality ?? drawTenantQuality(s.econ, use, bScore, rng(s, "leasing"), rng(s, "leasing"));
+        // EACH PARTY IS ITS OWN FIRM (FORMULA_LEDGER #20): its trade, the
+        // quality it shops for, and its covenant — its size (tenantMarket.ts
+        // creditOfSize), carried from when it formed. The parties used to be
+        // three shapes struck off one draw: a covenant tenant one grade up on
+        // 1.35x the term, a growth story unrated on 0.6x. Whatever trade-off
+        // the tour offers now is between the firms that are actually looking.
+        const seeker = party[k];
+        const sector = seeker.sector;
+        const tQ = seeker.quality ?? bScore;
         const tt = tenantQualityTerms(tQ, bScore);
-        // An arriving firm's covenant is its size (tenantMarket.ts creditOfSize), shaped as above.
-        const sizeCredit = isCommercialUse(use) ? creditOfSize(use, sf) : 1;
-        const credit0: Credit = k === 1 ? (Math.min(2, sizeCredit + 1) as Credit)
-          : k === 2 ? 0 : sizeCredit;
-        const credit = seeker ? seeker.credit : Math.max(0, Math.min(2, credit0 + tt.credit)) as Credit;
-        const termBias = (k === 1 ? 1.35 : k === 2 ? 0.6 : 1) * tt.term;
+        const credit = seeker.credit;
+        const termBias = tt.term;
         // term first: the free-rent ask is a function of how long they sign for
         const band = termBandM(credit);
         const termM = Math.round(
@@ -2365,7 +2265,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // the street has better. This was a coin flip: three letters in ten at
         // 68-86% of the ask and the rest at 90-110%, whoever the tenant was.
         const postFace = market * (specLive ? 1.05 : 1) * staleDiscount(h.darkMs);
-        const firmNow: Tenant = seeker ?? { name: "", use, sector, credit, quality: Math.round(tQ), sf, rentPsf: 0, net: false, startM: s.month, endM: s.month } as Tenant;
+        const firmNow: Tenant = seeker;
         const { bid } = offerForPlayer(s, parcels, firmNow, use, sf, rec, bScore,
           useRentPsfYr(rec, s.econ, h.condition, use, h.condIdx), postFace * (1 - compsPackage(s.econ, use as "office")), termM);
         s.lois.push({
@@ -2376,8 +2276,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           use,
           kind: "new",
           quality: Math.round(tQ),
-          name: seeker?.name ?? pickName(s, sector),
-          ...(seeker?.fid !== undefined ? { fid: seeker.fid } : {}),
+          name: seeker.name,
+          ...(seeker.fid !== undefined ? { fid: seeker.fid } : {}),
           sector,
           credit,
           sf,

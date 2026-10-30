@@ -4250,10 +4250,18 @@ export function tickEcon(s: GameState) {
     // foot the town's named firms demand is theirs (streetRolls.ts); what the
     // aggregate below still carries is the floor of the firms off the map —
     // the region's sheds — and, in a town with no mapped commercial stock,
-    // the whole class. It is those firms' own need: each industry's on-floor
-    // heads the named firms do not hold, at its feet a worker (economy.ts
-    // `offFloorSf`), moved one for one from the floor they held when their
-    // books opened (an initial condition: the opening's occupancy). No
+    // the whole class. It is those firms' own need: every industry's heads on
+    // a floor of this class at its feet a worker (economy.ts `floorSf`, the
+    // same heads × feet a named firm's need is), moved one for one from the
+    // floor the off-map stock held at the opening (an initial condition:
+    // OPENING_VAC on the off-map share). Why all the heads and not only the
+    // ones the named firms do not hold: the books do not keep the region's
+    // shed tenants apart from the island's — measured on map 1, the
+    // industrial industries' on-floor heads beyond the named firms' were
+    // 0-170k sf of need against 540k sf of occupied sheds off the map, and a
+    // driver read off that sliver swung the region's shed demand twentyfold
+    // month to month. So the off-map sheds move with the class's industries
+    // as a whole, which is what the region's distributors and makers are. No
     // affordability, income or Cobb-Douglas term: rent reaches the off-map
     // firms through their own books (economy.ts: their rent is a cost, and a
     // dear region employs fewer of them), and the street's through its firms'
@@ -4265,13 +4273,8 @@ export function tickEcon(s: GameState) {
     if (k === "multifamily") targetRaw = base * driver * swanLvl;
     else {
       const f = firms ? Math.max(0.02, offShare) : 1;
-      const offNow = eco?.offFloorSf?.[k];
-      let want: number;
-      if (offNow !== undefined && offNow > 0) {
-        const f0 = ((e.offFloor0 ??= {})[k] ??= offNow);
-        const ref = ((e.offRef ??= {})[k] ??= (firms ? (e.aggOcc?.[k] ?? e.occupied[k]) : e.occupied[k]) * f);
-        want = ref * (offNow / f0) * swanLvl;
-      } else want = base * f * swanLvl;
+      const ref = ((e.offRef ??= {})[k] ??= base * f);
+      const want = ref * driver * swanLvl;
       (e.offWant ??= {})[k] = want;
       targetRaw = want / f;
     }

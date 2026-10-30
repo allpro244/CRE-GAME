@@ -1112,14 +1112,14 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       : fill;
     if (!(form > 0)) continue;
     // A shed firm moving onto the map from the region is one of the region's
-    // off-map shed firms: its industry is drawn by their heads (economy.ts
-    // `offHeads`), not by the nation's mix of the trade — a region with a
-    // few hundred textile workers off the map does not send a 400-head
-    // textile mill.
+    // shed firms: its industry is drawn by the heads each industry has on a
+    // shed floor (economy.ts `floorHeads`), not by the nation's mix of the
+    // trade — a region with two hundred textile workers does not send a
+    // 400-head textile mill.
     let pickW = gap[k];
-    if (k === "industrial" && !opening && eco?.offHeads?.length === N_IND) {
+    if (k === "industrial" && !opening && eco?.floorHeads?.length === N_IND) {
       pickW = new Float64Array(N_IND);
-      for (let i = 0; i < N_IND; i++) if (floorOf(INDUSTRY_IDS[i]) === k) pickW[i] = eco.offHeads[i];
+      for (let i = 0; i < N_IND; i++) if (floorOf(INDUSTRY_IDS[i]) === k) pickW[i] = eco.floorHeads[i];
     }
     // New firms, sized off the city's distribution of requirements, shopping
     // for space across the quality the town has.

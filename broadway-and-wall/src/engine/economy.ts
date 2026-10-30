@@ -73,7 +73,7 @@ import {
   FINANCE_LIKE, SPEND_SHARE, SPEND_BRIDGE, PAY_SPLIT, PROD_TAX_LOCAL, CORP_TAX, LOCAL_OWNER_SHARE,
   COMP_PER_WORKER_2023, BUYER_TYPES, REPAIR_PER_COMMERCIAL_RENT, REPAIR_PER_FLAT_RENT, REPAIR_OWNER_PER_VALUE_YR,
   OIL_PRICE_2000,
-  OFF_FLOOR, REMOTE, floorOf, sfMix, NAT_TREND, CYCLE_BETA, FED_HEALTH_PER_PERSON_2023, MLR,
+  OFF_FLOOR, REMOTE, floorOf, NAT_TREND, CYCLE_BETA, FED_HEALTH_PER_PERSON_2023, MLR,
   IND_ID_GOV, IND_ID_CON, IND_ID_INS, IND_ID_ONLINE, RETAIL_IDS, HEALTH_SPLIT, OLD24_TO_68,
   type IndustryId, type Floor, type BuyerType, type SpendCategory,
 } from "./industries";
@@ -82,7 +82,7 @@ import {
   cashOf, debtOf, addSlot, compactSlots, reviveF64, reviveLedger,
 } from "./sfc";
 import {
-  SF_PER_JOB, FIRM_PROFILE, LENDER_COVER, shortIndexOf, BUILD_MONTHS, SECTORS,
+  FIRM_PROFILE, LENDER_COVER, shortIndexOf, BUILD_MONTHS, SECTORS,
   LABOUR_FORCE_SLOWDOWN, FORTUNE_SD, FORTUNE_TAU_M, NAT_TREND_SD, NAT_TREND_TAU_M, NAT_SALES_PER_GAP, LOCATION_PULL, locationCost,
   WAGE_CURVE, WAGE_GAP_HALF_M,
 } from "./market";
@@ -1345,23 +1345,9 @@ export function economyToEngine(s: GameState): void {
       floorSf[floorOf(id)] += heads[i] * (1 - OFF_FLOOR[id]) * (1 - REMOTE[id]) * INDUSTRIES[id].sfPerWorker;
     }
     d.floorSf = floorSf;
-    // THE FLOOR THE OFF-MAP FIRMS NEED (FORMULA_LEDGER #10): each industry's
-    // on-floor heads the island's named firms do not hold, at its feet a
-    // worker on its class's floor — the same heads × sf a named firm's need
-    // is (tenantMarket.ts `tenantHeads`). The region's sheds off the map are
-    // sized from it (market.ts).
-    const offFloorSf: Record<Floor, number> = { office: 0, retail: 0, industrial: 0 };
-    const offHeads: number[] = [];
-    for (let i = 0; i < N_IND; i++) {
-      const id = INDUSTRY_IDS[i], fl = floorOf(id);
-      const off = Math.max(0, heads[i] * (1 - OFF_FLOOR[id]) - (E.cur.named[i] ?? 0));
-      offHeads.push(off);
-      offFloorSf[fl] += off * SF_PER_JOB[fl] * sfMix(i, fl);
-    }
-    d.offFloorSf = offFloorSf;
-    // ...and by industry, in heads: a shed firm moving onto the map from the
-    // region is one of these (streetRolls.ts shed movers)
-    d.offHeads = offHeads;
+    // ...and by industry, in heads on the floor: a shed firm moving onto the
+    // map from the region is drawn by these (streetRolls.ts shed movers)
+    d.floorHeads = heads.map((h, i) => h * (1 - OFF_FLOOR[INDUSTRY_IDS[i]]));
     d.emp = E.emp.slice(); d.empPrev = (E.empPrev ?? E.emp).slice();
     d.target = E.emp.map((v, i) => v * (E.sigma?.[i] ?? 0));
     // each trade, by the heads it had in each industry at the opening (its own
@@ -1435,9 +1421,7 @@ export function migrateEconomy(s: GameState): void {
     for (const k of FLOORS) { const a = e.eco.floorSf[k], b = e.eco0.floorSf[k]; if (a && b) mig[k] = a / b; }
     e.eco0 = { ...e.eco0, floorSf: undefined, mig };
   }
-  if (e.eco) { delete e.eco.emp; delete e.eco.empPrev; delete e.eco.target; delete e.eco.offFloorSf; delete e.eco.offHeads; }
-  // the off-map sheds re-anchor on the floor they hold (market.ts `offRef`)
-  delete e.offRef; delete e.offFloor0;
+  if (e.eco) { delete e.eco.emp; delete e.eco.empPrev; delete e.eco.target; delete e.eco.floorHeads; }
   delete e.islandFill;
   delete s.economy;
 }

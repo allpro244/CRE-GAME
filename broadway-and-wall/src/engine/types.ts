@@ -95,10 +95,8 @@ export interface EcoDrive {
   heads: number;
   /** Floor the firms' heads take, by class (sf): on the floor, not at home, not in a building of their own. */
   floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>;
-  /** ...of which the off-map firms' (heads the named firms do not hold, at their industries' feet a worker), by class (sf). */
-  offFloorSf?: Partial<Record<"office" | "retail" | "industrial", number>>;
-  /** ...and each industry's on-floor heads off the map. */
-  offHeads?: number[];
+  /** Each industry's heads on a rented floor (not in a building of its own). */
+  floorHeads?: number[];
   /** Each industry's employment now and a month ago, and the heads the island's named firms are formed toward (its share at the opening). */
   emp?: number[]; empPrev?: number[]; target?: number[];
   /** Each trade's employment and real sales against the opening: its industries', by the heads it had in each. */
@@ -2395,9 +2393,8 @@ export interface Econ {
   /** The space a worker takes, by class: its structural level after a swan (remote work; market.ts, swans.ts), and that level at the opening. Every firm's need moves with their ratio. */
   spaceLvl?: Partial<Record<BuiltClass, number>>;
   spaceLvl0?: Partial<Record<BuiltClass, number>>;
-  /** The off-map firms' floor (FORMULA_LEDGER #10): the occupied sf off the map, and the off-map firms' need (`eco.offFloorSf`), when their books first opened; and what they want now (sf), by class (market.ts). */
+  /** The off-map firms' floor (FORMULA_LEDGER #10): the occupied sf off the map at the opening, and what they want now (that, moved by the class's heads × feet a worker), by class (market.ts). */
   offRef?: Partial<Record<BuiltClass, number>>;
-  offFloor0?: Partial<Record<BuiltClass, number>>;
   offWant?: Partial<Record<BuiltClass, number>>;
   /** Where each class's demand stood when its last move was written (why.ts): the feet, and the heads by industry (streetRolls.ts). */
   demandNote?: Partial<Record<BuiltClass, { m: number; sf: number; ind: number[] }>>;

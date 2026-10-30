@@ -176,11 +176,23 @@ const STEP_PROP = 0.12, STEP_WAGE = 0.005, STEP_SERVICE = 0.06;
  * (Haughwout, Inman, Craig & Luce 2004, Philadelphia's wage tax; Bartik's 1991
  * survey of business-tax elasticities) — a shape parameter. The city's own
  * workforce is jobs, and each carries about half a job more in the shops and
- * services it buys from (Moretti 2010's local multiplier, ~1.6). Residents
- * answer services modestly: a tenth of a per cent of population per per cent
- * of service level, over five years (Tiebout sorting; a shape parameter).
+ * services it buys from (Moretti 2010's local multiplier, ~1.6).
  */
-const WAGE_SEMI = 1.0, LOCAL_MULT = 1.5, SERVICE_MIG = 0.10, JOB_ADJ_M = 24, MIG_ADJ_M = 60;
+const WAGE_SEMI = 1.0, LOCAL_MULT = 1.5, JOB_ADJ_M = 24;
+/**
+ * RESIDENTS WEIGH WHAT THE CITY GIVES AND TAKES (Tiebout 1956): a household
+ * values a dollar of local services against a dollar of its own pay one for
+ * one — house prices capitalise local spending and local taxes about fully
+ * (Oates 1969, JPE: a dollar more per pupil and a dollar less of tax moved
+ * values by about the same; Lang & Jian 2004, J. Urban Econ., Massachusetts
+ * towns, near-full capitalisation of tax and spending changes) [S~]. So the
+ * services and schools the council provides above or below the opening's
+ * level, per household, over the household's income, less the payroll tax
+ * above the opening's rate, is a change in what living here pays —
+ * `e.fiscalRel`, read by households.ts beside real pay (`hereRel`), where it
+ * moves who stays and who comes like any other part of pay.
+ */
+const SERVICE_WTP = 1;
 /**
  * ABATEMENT: 421-a and ICAP forgave the tax on the new building's value for
  * ten to twenty-five years with a phase-out; seventy per cent for fifteen
@@ -254,7 +266,6 @@ export interface CityGov {
   /** Months a maturity could not be paid or refinanced in the market — every crisis is one of these. */
   failedRolls: number[];
   jApplied: number;
-  mApplied: number;
   burden0: number;
   rentBurden0: number;
   /** The city's own record: elections, crises, the board — kept past the news wire's 120 lines. */
@@ -478,7 +489,7 @@ export function openCityGov(s: GameState): CityGov {
     mo: zeroLines(), fy: zeroLines(), rev12: 0, op12: 0, defShare: 0, spread: SPREAD.base, open: true, shut: false,
     capUnfunded: 0, works: [],
     mayor: { name: drawName(s), platform, sinceM: m, nextElectionM: nextNovember(m) + 12 * Math.floor(rng(s, "citygov") * 4), share: 0, terms: 1, uAt: e.unemployment ?? U_NORM },
-    control: null, crises: [], failedRolls: [], jApplied: 0, mApplied: 0, burden0: 0, rentBurden0: rentBurden(e), hist: [], log: [],
+    control: null, crises: [], failedRolls: [], jApplied: 0, burden0: 0, rentBurden0: rentBurden(e), hist: [], log: [],
   };
   // THE DEBT THE CITY OPENS WITH is the steady state of its own capital
   // programme: twenty years of serial issues, each with its unmatured slices.
@@ -601,18 +612,17 @@ export function tickCityGov(s: GameState) {
   addLines(g.fy, g.mo);
 
   // THE ECONOMY ANSWERS (see WAGE_SEMI): the city's own payroll and the
-  // payroll tax move jobs, services move residents — as level effects
-  // delivered over years, read beside the swans' pulls in tickEcon.
+  // payroll tax move jobs, as a level effect delivered over years, read beside
+  // the swans' pulls in tickEcon; services and the payroll tax per household
+  // are what residents weigh in staying or coming (SERVICE_WTP).
   const wRef = payroll / Math.max(1e-9, P.service) / (AVG_PAY * (e.wageIdx ?? 1));
   const dW = wRef * (P.service - 1);
   const jStar = Math.log(Math.max(0.5, 1 + LOCAL_MULT * dW / Math.max(1, e.jobs ?? 1))) - WAGE_SEMI * (P.wageRate - g.policy0.wageRate);
   const pull = (jStar - g.jApplied) / JOB_ADJ_M;
   g.jApplied += pull;
   e.bsJobPull = (e.bsJobPull ?? 0) + pull;
-  const mStar = SERVICE_MIG * Math.log(Math.max(0.1, P.service));
-  const mPull = (mStar - g.mApplied) / MIG_ADJ_M;
-  g.mApplied += mPull;
-  e.bsMigPull = (e.bsMigPull ?? 0) + mPull;
+  const svcGain = (L.spend.services + L.spend.schools) * 12 * (1 - 1 / Math.max(0.1, P.service)) / Math.max(1, cityPeople(e).households);
+  e.fiscalRel = Math.max(0.01, 1 + SERVICE_WTP * svcGain / Math.max(1, medianIncome(e)) - (P.wageRate - g.policy0.wageRate));
 
   publish(e, g);
 }

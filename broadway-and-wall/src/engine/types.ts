@@ -2508,6 +2508,8 @@ export interface Econ {
   arrivals?: { leftM: number; monthly: number };
   /** Monthly in-migration from the arrivals, read beside migration in tickEcon. */
   bsMigPull?: number;
+  /** What the city's services and payroll tax are worth to a household against the opening's, as a ratio of its pay (citygov.ts SERVICE_WTP; households.ts `hereRel`). */
+  fiscalRel?: number;
   /** The arrivals swan's part of `bsMigPull` this month, and the share of its households that want an island flat (households.ts, the wave). */
   bsArrivals?: { monthly: number; island: number };
   /** Anonymous merchants' schemes settled at delivery, cumulative (see `settleMerchant` in dev.ts). Display and probes only. */

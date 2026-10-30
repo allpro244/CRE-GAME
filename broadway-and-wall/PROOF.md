@@ -10,319 +10,228 @@ never tune to pass). The bands are readings of history; a FAIL is a question
 about a mechanism, not a target for a coefficient.
 
     pnpm engine
-    SEEDS=11,22,33,44,55,66 YEARS=100 OUT=<dir> node tools/proof.mjs   # ~90 min on a shared box
+    SEEDS=11,22,33,44,55,66 YEARS=100 OUT=<dir> node tools/proof.mjs   # ~2.5 h on a shared box
     node tools/proof.mjs --report <dir>                                 # re-grade saved runs
 
 Probe rules kept: fresh bundle asserted; the world is resurrected on
 `gameOver` (and every seed-year is checked for a frozen world — none); the
 same six cities are read every year, no seed dropped; the opening five years
-are discarded as settling. Run on main at `625271e3` (#535), 2026-10-29,
-6 seeds × 100 years in 90 minutes.
+are discarded as settling. First run on main at `625271e3` (#535),
+2026-10-29, 6 seeds × 100 years in 90 minutes; run 2 (below) on main at
+`c6469ed5` (#548), 2026-10-30, 156 minutes.
 
-## Results
+## Results — run 2 (main `c6469ed5`, #548, 2026-10-30)
 
-PASS 15 · WATCH 16 · FAIL 13. "Typical" is the median across seeds of each
-seed's statistic (for yearly levels, of each seed's median year). "In band" is
-the share of seed-years (levels) or seeds (statistics) inside the band.
+**PASS 24 · WATCH 14 · FAIL 6**, against the first run's PASS 15 · WATCH 16 ·
+FAIL 13 (main `625271e3`, #535). Between the two: the bands.ts overflow fix
+(#541), ledger rows #4-#10, #14, #20-#22, #25, #26 closed (#539-#543 — the
+formula ledger is now empty), growth bounded (#544), construction starts read
+off named builders (#547), recessions and the city's unemployment (#548).
+Same six seeds, 100 years, 156 minutes of run (seeds 11-44 in one process,
+55 and 66 in a second after the first was stopped at a two-hour limit; each
+seed is its own deterministic run, so the split changes nothing). No frozen
+year, no non-finite field in 600 seed-years.
 
-| | Check | Typical | Spread (p10-p90 of years, or min-max of seeds) | In band | Band | Grade | Source of band |
+"Typical" is the median across seeds of each seed's statistic (for yearly
+levels, of each seed's median year). "In band" is the share of seed-years
+(levels) or seeds (statistics) inside the band. Band sources sit beside each
+check in `tools/proof.mjs` (and print with `--report`).
+
+| | Check | First run | Now | Spread now | In band | Band | Grade now (was) |
 |---|---|---|---|---|---|---|---|
-| Labour | Unemployment rate (yearly) | 5.1% | 4.7% – 5.6% | 100% | 3.0% – 11.0% | **PASS** | BLS CPS 1948-2024: 2.5-10.8%; metro rates rarely outside 3-11% |
-| Labour | Unemployment, century mean | 5.2% | 5.1% – 5.2% | 100% | 4.5% – 7.0% | **PASS** | BLS 1948-2024 mean 5.7% |
-| Labour | Job growth, trend %/yr | 2.9% | 1.8% – 3.8% | 17% | 0.0% – 2.0% | **FAIL** | BLS CES metro payrolls 1990-2024: most large metros 0-2%/yr (plan gate: 0.5-1.5%) |
-| Labour | Job growth acceleration (last 30 yrs minus first 30, pp/yr) | 1.6% | 0.6% – 3.9% | 33% | -1.0% – 1.0% | **FAIL** | metros mature: growth slows as a place fills and grows dear (Glaeser-Gyourko 2005) |
-| Labour | Population growth, trend %/yr | 2.9% | 1.8% – 3.7% | 17% | -0.5% – 2.0% | **FAIL** | Census metro population 1950-2020: -0.5 to +2%/yr for established cities |
-| Labour | Real pay vs nation (local/national, CPI-adjusted) | 0.85 | 0.79 – 0.96 | 52% | 0.85 – 1.30 | **WATCH** | BEA RPP-adjusted per-capita income, MSAs 2008-2022: ~0.85-1.3 of US |
-| Labour | Real pay vs nation, drift %/yr | -0.2% | -0.3% – -0.2% | 100% | -0.5% – 0.5% | **PASS** | metro pay premia persist for decades (Moretti 2012) |
-| Prices | CPI inflation, century mean %/yr | 2.9% | 2.6% – 3.7% | 100% | 1.5% – 4.0% | **PASS** | BLS CPI-U 1925-2024 ~3.0%/yr; post-1983 2.8% |
-| Prices | CPI inflation, yearly range | 2.6% | 0.5% – 6.3% | 96% | -2.0% – 10.0% | **PASS** | BLS CPI-U Dec/Dec 1948-2024: -1% (1949) to 13.3% (1979) |
-| Prices | Local CPI vs national, drift %/yr | 0.2% | 0.1% – 0.3% | 100% | -0.5% – 0.5% | **PASS** | BLS metro CPI vs US 1984-2024 |
-| Space | Vacancy, office | 7.8% | 4.1% – 14.0% | 79% | 5.0% – 20.0% | **PASS** | CBRE/REIS US office 1980-2024: 8-19%; metro 5-25% |
-| Space | Vacancy, retail | 9.1% | 2.2% – 15.3% | 41% | 4.0% – 13.0% | **WATCH** | REIS/CoStar US retail 1990-2024: 4-13% |
-| Space | Vacancy, industrial | 5.4% | 2.0% – 18.6% | 60% | 3.0% – 14.0% | **WATCH** | CBRE US industrial 1989-2024: 3-14% |
-| Space | Vacancy, multifamily | 14.5% | 8.2% – 34.8% | 25% | 3.0% – 10.0% | **FAIL** | Census HVS rental vacancy 1965-2024: 5-11%; managed (NMHC) 3-8% |
-| Space | Real rent growth, office, %/yr | 3.0% | 2.2% – 3.6% | 0% | -1.0% – 1.5% | **FAIL** | NCREIF/CBRE real rents 1978-2024 ~-1 to +1.5%/yr; Eichholtz et al.: near flat over centuries |
-| Space | Real rent growth, retail, %/yr | 1.6% | 1.0% – 2.5% | 33% | -1.0% – 1.5% | **WATCH** | as above |
-| Space | Real rent growth, industrial, %/yr | 1.8% | -0.9% – 2.9% | 33% | -1.0% – 1.5% | **WATCH** | as above |
-| Space | Real rent growth, multifamily, %/yr | 0.7% | 0.3% – 1.0% | 100% | -1.0% – 1.5% | **PASS** | as above |
-| Space | Occupied office sf per job, end over start | 0.21 | 0.09 – 0.33 | 0% | 0.70 – 1.30 | **FAIL** | office sf per worker ~250→~190 over 1990-2020 (CBRE/NAIOP) |
-| Space | Real rent, yearly swing sd | 10.7% | 5.8% – 13.5% | 50% | 2.0% – 10.0% | **WATCH** | NCREIF/CBRE market rent growth sd ~3-8%/yr |
-| Space | Rent and vacancy move opposite (corr of Δlog rent, vacancy) | -0.10 | -0.22 – -0.01 | 33% | -0.90 – -0.15 | **WATCH** | Wheaton-Torto rent adjustment (r ~ -0.3 to -0.7) |
-| Capital | Cap rate level (all classes, yearly) | 8.24% | 5.50% – 11.73% | 83% | 4.00% – 11.00% | **PASS** | NCREIF/RCA 1980-2024: 4-11% |
-| Capital | Cap spread over 10Y (all classes, yearly) | 3.0pp | -0.8pp – 6.1pp | 67% | 1.0pp – 6.0pp | **WATCH** | NCREIF/RCA cap rate minus UST10 1990-2024: ~1.5-5.5pp |
-| Capital | Cap rates lag the 10Y (best lag, years) | 2.00 | 1.00 – 2.00 | 100% | 0.00 – 3.00 | **PASS** | Chervachidze-Wheaton 2013: 0-3 yr lag, partial pass-through |
-| Capital | Cap rate yearly move, mean abs change (median of classes) | 1.1pp | 1.0pp – 1.5pp | 0% | 0.1pp – 0.6pp | **FAIL** | NCREIF/ACLI 1985-2024: typical 0.2-0.5pp; 2009's +1.5pp the extreme |
-| Capital | Deal-read share (years a sale priced the cap) | 100.0% | 98.9% – 100.0% | 100% | 60.0% – 100.0% | **PASS** | RCA tracks trades in every class in every major metro each year |
-| Capital | Real land price growth, trend %/yr | 4.6% | 1.7% – 6.4% | 17% | -1.0% – 3.0% | **FAIL** | Davis-Heathcote; Knoll et al. (2017): ~0-3%/yr real long-run |
-| Capital | Bank charge-offs %/yr of book | 0.0% | 0.0% – 0.3% | 95% | 0.0% – 3.0% | **PASS** | FDIC QBP CRE net charge-offs 1991-2024: ~0-3%/yr |
-| Capital | Bank failures per century (9 lenders) | 4.21 | 0.00 – 8.42 | 83% | 0.50 – 10.00 | **PASS** | FDIC 1934-2024: failures cluster in crises |
-| Capital | Peak yearly charge-off rate | 45.6% | 0.7% – 2.5e18% (seed 55 overflow, #5) | 17% | 1.0% – 8.0% | **FAIL** | FDIC CRE charge-offs peak 2-4% (1991, 2010); C&D ~8% |
-| Cycle | National recessions per decade | 2.21 | 1.58 – 2.32 | 17% | 1.00 – 1.70 | **FAIL** | NBER 1945-2020: 1 per 6.3 yrs; post-1982 1 per 8-10 |
-| Cycle | Share of months in national recession | 30.1% | 18.4% – 32.3% | 17% | 8.0% – 20.0% | **FAIL** | NBER 1945-2020: ~14% of months |
-| Cycle | City job-loss years per decade | 0.21 | 0.00 – 0.74 | 0% | 1.00 – 3.50 | **FAIL** | BLS CES metros 1990-2024: ~1-3 years a decade |
-| Cycle | Construction follows demand (lag, yrs: starts after jobs growth) | 2.00 | -3.00 – 5.00 | 50% | 0.00 – 3.00 | **WATCH** | Wheaton (1987, 1999): starts peak 1-3 yrs after demand |
-| Cycle | Vacancy rises after starts (lag, yrs) | 3.00 | -5.00 – 5.00 | 33% | 1.00 – 4.00 | **WATCH** | Wheaton-Torto: completions 2-3 yrs after starts push vacancy up |
-| Cycle | Construction starts %/yr of stock | 1.5% | 0.0% – 3.0% | 72% | 0.5% – 4.0% | **WATCH** | Census/Dodge: ~1-3% of stock a year |
-| Households | Home ownership (owners / households) | 51.9% | 38.4% – 58.5% | 73% | 45.0% – 70.0% | **WATCH** | Census HVS 1965-2024: 62-69% US; large metros 45-65% |
-| Households | Doubled-up share | 3.0% | 2.0% – 3.5% | 91% | 2.0% – 12.0% | **PASS** | Census CPS / Harvard JCHS: ~5-10% |
-| Firms | Firm entry rate %/yr (firms with space) | 8.9% | 4.2% – 23.4% | 53% | 5.0% – 15.0% | **WATCH** | Census BDS 1978-2020: entry 8-13%/yr |
-| Firms | Firm exit rate %/yr (firms with space) | 8.5% | 4.3% – 22.2% | 53% | 5.0% – 15.0% | **WATCH** | Census BDS 1978-2020: exit 7-11%/yr |
-| Firms | Tenant failures (went dark) %/yr of firms | 4.7% | 2.8% – 10.7% | 74% | 1.0% – 8.0% | **WATCH** | BDS firm deaths ~8%/yr, mostly small |
-| Integrity | Formula ledger: aggregates still set from the top | 13 | — | — | 0 | **WATCH** | FORMULA_LEDGER.md open rows #4-#10, #14, #20-#22, #25, #26 |
-| Integrity | Non-finite econ fields (seed-years) | 16 | — | — | 0 | **FAIL** | `econ.constructionAppetite`, seed 55 years 85-100 (#5, fixed) |
-| Integrity | Frozen years | 0 | — | — | 0 | **PASS** | resurrected on gameOver; none frozen |
+| Labour | Unemployment rate (yearly) | 5.1% | 4.3% | 3.4% – 5.7% | 98% | 3.0% – 11.0% | **PASS** |
+| Labour | Unemployment, century mean | 5.2% | 4.5% | 4.3% – 4.9% | 50% | 4.5% – 7.0% | **WATCH** (PASS) |
+| Labour | Job growth, trend %/yr | 2.9% | 1.5% | 1.3% – 1.6% | 100% | 0.0% – 2.0% | **PASS** (FAIL) |
+| Labour | Job growth acceleration (last 30 yrs minus first 30, pp/yr) | 1.6% | 0.1% | -1.0% – 1.0% | 67% | -1.0% – 1.0% | **WATCH** (FAIL) |
+| Labour | Population growth, trend %/yr | 2.9% | 1.6% | 1.4% – 1.7% | 100% | -0.5% – 2.0% | **PASS** (FAIL) |
+| Labour | Real pay vs nation (local/national, CPI-adjusted) | 0.85 | 0.92 | 0.88 – 0.96 | 99% | 0.85 – 1.30 | **PASS** (WATCH) |
+| Labour | Real pay vs nation, drift %/yr | -0.2% | -0.0% | -0.1% – -0.0% | 100% | -0.5% – 0.5% | **PASS** |
+| Prices | CPI inflation, century mean %/yr | 2.9% | 2.8% | 2.3% – 3.4% | 100% | 1.5% – 4.0% | **PASS** |
+| Prices | CPI inflation, yearly range | 2.6% | 2.4% | 0.5% – 5.7% | 96% | -2.0% – 10.0% | **PASS** |
+| Prices | Local CPI vs national, drift %/yr | 0.2% | 0.2% | 0.1% – 0.3% | 100% | -0.5% – 0.5% | **PASS** |
+| Space | Vacancy, office | 7.8% | 8.1% | 4.8% – 14.9% | 84% | 5.0% – 20.0% | **PASS** |
+| Space | Vacancy, retail | 9.1% | 10.4% | 4.6% – 21.3% | 58% | 4.0% – 13.0% | **WATCH** |
+| Space | Vacancy, industrial | 5.4% | 15.0% | 3.4% – 24.3% | 46% | 3.0% – 14.0% | **WATCH** |
+| Space | Vacancy, multifamily | 14.5% | 0.0% | 0.0% – 7.9% | 49% | 3.0% – 10.0% | **FAIL** |
+| Space | Real rent growth, office, %/yr | 3.0% | 1.9% | 1.4% – 2.1% | 17% | -1.0% – 1.5% | **WATCH** (FAIL) |
+| Space | Real rent growth, retail, %/yr | 1.6% | 0.7% | 0.6% – 0.8% | 100% | -1.0% – 1.5% | **PASS** (WATCH) |
+| Space | Real rent growth, industrial, %/yr | 1.8% | -0.7% | -1.3% – 1.6% | 67% | -1.0% – 1.5% | **WATCH** |
+| Space | Real rent growth, multifamily, %/yr | 0.7% | -0.8% | -1.2% – -0.3% | 67% | -1.0% – 1.5% | **WATCH** (PASS) |
+| Space | Occupied office sf per job, end over start | 0.21 | 0.61 | 0.45 – 0.83 | 17% | 0.70 – 1.30 | **WATCH** (FAIL) |
+| Space | Real rent, yearly swing sd | 10.7% | 7.9% | 5.6% – 8.3% | 100% | 2.0% – 10.0% | **PASS** (WATCH) |
+| Space | Rent and vacancy move opposite (corr of Δlog rent, vacancy) | -0.10 | -0.20 | -0.29 – -0.19 | 100% | -0.90 – -0.15 | **PASS** (WATCH) |
+| Capital | Cap rate level (all classes, yearly) | 8.24% | 7.97% | 3.09% – 11.20% | 76% | 4.00% – 11.00% | **PASS** |
+| Capital | Cap spread over 10Y (all classes, yearly) | 3.0pp | 3.2pp | -2.3pp – 6.1pp | 64% | 1.0pp – 6.0pp | **WATCH** |
+| Capital | Cap rates lag the 10Y (best lag, years) | 2.00 | 1.00 | -2.00 – 3.00 | 67% | 0.00 – 3.00 | **WATCH** (PASS) |
+| Capital | Cap rate yearly move, mean abs change (median of classes) | 1.1pp | 1.0pp | 0.8pp – 1.2pp | 0% | 0.1pp – 0.6pp | **FAIL** |
+| Capital | Deal-read share (years a sale priced the cap) | 100.0% | 96.3% | 84.2% – 100.0% | 100% | 60.0% – 100.0% | **PASS** |
+| Capital | Real land price growth, trend %/yr | 4.6% | 4.5% | 2.9% – 6.6% | 17% | -1.0% – 3.0% | **FAIL** |
+| Capital | Bank charge-offs %/yr of book | 0.0% | 0.0% | 0.0% – 0.2% | 99% | 0.0% – 3.0% | **PASS** |
+| Capital | Bank failures per century (9 lenders) | 4.21 | 1.05 | 0.00 – 2.11 | 67% | 0.50 – 10.00 | **WATCH** (PASS) |
+| Capital | Peak yearly charge-off rate | 45.6% (seed 55 overflow) | 3.2% | 1.0% – 10.1% | 83% | 1.0% – 8.0% | **PASS** (FAIL) |
+| Cycle | National recessions per decade | 2.21 | 1.79 | 1.47 – 2.42 | 50% | 1.00 – 1.70 | **WATCH** (FAIL) |
+| Cycle | Share of months in national recession | 30.1% | 18.9% | 15.8% – 21.8% | 83% | 8.0% – 20.0% | **PASS** (FAIL) |
+| Cycle | City job-loss years per decade | 0.21 | 0.32 | 0.11 – 0.43 | 0% | 1.00 – 3.50 | **FAIL** |
+| Cycle | Construction follows demand (lag, years: starts after jobs growth) | 2.00 | 4.00 | -5.00 – 5.00 | 17% | 0.00 – 3.00 | **FAIL** (WATCH) |
+| Cycle | Vacancy rises after starts (lag, years: vacancy after starts) | 3.00 | 5.00 | -3.00 – 5.00 | 17% | 1.00 – 4.00 | **FAIL** (WATCH) |
+| Cycle | Construction starts %/yr of stock | 1.5% | 0.6% | 0.0% – 2.3% | 48% | 0.5% – 4.0% | **WATCH** |
+| Households | Home ownership (owners / households) | 51.9% | 62.8% | 54.2% – 65.5% | 100% | 45.0% – 70.0% | **PASS** (WATCH) |
+| Households | Doubled-up share | 3.0% | 3.4% | 2.7% – 4.1% | 98% | 2.0% – 12.0% | **PASS** |
+| Firms | Firm entry rate %/yr (firms with space) | 8.9% | 8.1% | 5.1% – 13.1% | 86% | 5.0% – 15.0% | **PASS** (WATCH) |
+| Firms | Firm exit rate %/yr (firms with space) | 8.5% | 7.9% | 5.5% – 12.1% | 95% | 5.0% – 15.0% | **PASS** (WATCH) |
+| Firms | Tenant failures (went dark) %/yr of firms | 4.7% | 6.3% | 4.2% – 10.9% | 67% | 1.0% – 8.0% | **WATCH** |
+| Integrity | Formula ledger: aggregates still set from the top | 13 | 0 | — | — | 0 | **PASS** (WATCH) |
+| Integrity | Non-finite econ fields (seed-years) | 16 | 0 | — | — | 0 | **PASS** (FAIL) |
+| Integrity | Frozen years | 0 | 0 | — | — | 0 | **PASS** |
 
-The century in one line per seed (year 5 → year 100; office rent and land
-are real, CPI-deflated):
+The century in one line per seed (year 5 → year 100; rents real, CPI-deflated;
+sf per job from year 1, as the check reads it):
 
-| seed | jobs | population | real office rent | occupied office sf per job | office stock | flats stock | flats vacancy (median yr) | months in nat. recession | bank failures | home ownership | real pay vs nation |
-|---|---|---|---|---|---|---|---|---|---|---|---|
-| 11 | ×5.7 | ×6.2 | ×8.6 | ×0.33 | ×1.97 | ×1.19 | 24% | 32% | 0 | 62→30% | 0.95→0.81 |
-| 22 | ×14.2 | ×14.9 | ×7.5 | ×0.18 | ×3.14 | ×1.65 | 16% | 32% | 6 | 63→42% | 0.95→0.81 |
-| 33 | ×9.0 | ×9.3 | ×11.0 | ×0.28 | ×2.39 | ×1.24 | 12% | 18% | 2 | 66→38% | 0.96→0.87 |
-| 44 | ×30.9 | ×29.7 | ×16.1 | ×0.09 | ×2.58 | ×1.28 | 12% | 30% | 4 | 62→39% | 0.94→0.78 |
-| 55 | ×16.0 | ×16.3 | ×10.8 | ×0.18 | ×2.67 | ×1.00 | 15% | 30% | 8 | 64→49% | 0.98→0.83 |
-| 66 | ×10.8 | ×11.6 | ×7.4 | ×0.21 | ×2.03 | ×1.14 | 13% | 30% | 2 | 60→30% | 1.00→0.79 |
+| seed | jobs | population | real office rent | occupied office sf per job | office stock | flats stock | flats vacancy, median yr (years at 0%) | real flat rent | months in nat. recession | bank failures | home ownership | real pay vs nation |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 11 | ×4.4 | ×4.7 | ×3.8 | ×0.58 | ×2.73 | ×0.42 | 0% (63) | ×0.55 | 15% | 2 | 61→62% | 0.98→0.90 |
+| 22 | ×4.0 | ×4.3 | ×3.5 | ×0.55 | ×2.57 | ×0.46 | 0% (56) | ×0.46 | 18% | 1 | 64→62% | 0.98→0.93 |
+| 33 | ×4.2 | ×4.2 | ×3.8 | ×0.42 | ×2.02 | ×0.56 | 5% (20) | ×1.01 | 19% | 0 | 63→51% | 0.96→0.96 |
+| 44 | ×3.6 | ×3.8 | ×3.5 | ×0.52 | ×2.07 | ×0.81 | 7% (0) | ×0.83 | 21% | 0 | 67→65% | 0.95→0.93 |
+| 55 | ×4.2 | ×4.4 | ×3.6 | ×0.57 | ×2.75 | ×0.43 | 0% (51) | ×0.66 | 21% | 1 | 67→65% | 0.98→0.90 |
+| 66 | ×3.2 | ×3.6 | ×4.2 | ×0.78 | ×2.75 | ×0.41 | 0% (70) | ×0.44 | 17% | 2 | 64→68% | 0.96→0.87 |
 
-What is right, and worth saying first: unemployment, CPI (2.9%/yr over the
-century, local within ±0.3%/yr of the nation), office vacancy, the cap-rate
-level and its lag behind the ten-year, the doubled-up share, the deal-read
-share (every class has closed deals every year), bank charge-offs in an
-ordinary year, and the integrity checks other than one seed's overflow. No
-frozen year anywhere.
+What moved, and worth saying first: the town no longer compounds (jobs ×3-4
+a century, not ×6-31, and no faster at the end than the start); population,
+pay against the nation, home ownership, firm entry and exit, national
+recession months, the peak charge-off year and rent-vacancy co-movement all
+came into band; the formula ledger is empty and the integrity rows are clean.
+What is left is mostly the property side: the flats, the land read, cap-rate
+noise, and construction that does not answer demand.
 
-## What is wrong, ranked
+## What is wrong, ranked (run 2)
 
-### 1. The town compounds without limit — jobs ×6 to ×31 a century, and speeding up
+### 1. Flats: full for 50-70 years, their real rent halves, and they are torn down
 
-Job growth trends at 2.9%/yr (band 0-2) and the last thirty years run 1.6
-points a year faster than the first thirty: seed 44 ends at 1.44 million jobs
-from 51 thousand. Everything downstream of it is distorted: office rent ×7-16
-real, land 4.6%/yr real, office space per job falls to a fifth, home
-ownership halves.
+Four seeds of six run the island's flats at **0% vacancy for 51-70 of 100
+years**, and in exactly those seeds the real flat rent falls to ×0.44-0.66
+and the flat stock to ×0.41-0.46 while population goes ×4. (Seed 44, the one
+seed whose flats never fill, keeps ×0.81 of its flats and 7% vacancy.) The
+first run had the opposite failure (15-35% vacancy with rising rents). Why
+chain, seed 66 year 80: *"Apartments availability 0.0% (normal 4.8%)"* beside
+*"Apartment rent $77.31/sf a year, +1.0% since Apr 2075"* — one per cent
+nominal in four and a half years with CPI running ~5%/yr; seed 11 year 60 is the same
+(*"availability 0.0% … 11k sf being built"*).
 
-**Cause (traced).** The Why ledger's `town.month` / `industry.exports` chain
-names the driver every decade: *"Securities, funds and trusts · sold out of
-town +9% on its year · the town's share +1%"*. Two compounding terms in
-`economy.ts tickExports`:
+**Likely cause (traced to the rule).** `streetRolls.ts markFlatAsk` (#540,
+FORMULA_LEDGER #4/#5): a landlord moves its ask by `REV_MGMT × (nv − ve)`,
+where `nv` is *the vacancy it has learned to expect* of its block,
+remembering with a five-year half-life (`OWN_MEMORY_M`). A block that stays
+full teaches its landlord that full is normal: `nv` follows `ve` to zero and
+the pressure term vanishes, leaving only `esc = priceLevel12 / 12`, which reads
+CPI **ex-shelter** (`cpiXS`). Shelter is the part of the CPI that is rising
+(#544 puts the region's rent, which grows with its size, into it), so the
+flats' ask trails the CPI every year a shortage lasts. Downstream, a block
+whose rent falls behind office's is the cheapest thing to replace on an
+island with no vacant lots — the redevelopers take the flats for office
+(office stock ×2-2.75) and the shortage deepens without a price signal.
+Follow-up: anchor the landlord's normal on the town's (`normalVac`, 20-year
+memory) or bound how far its own record can pull it; test passing the full
+CPI or the region's rent rather than ex-shelter.
 
-- **The nation's industries each run their 1990-2019 CES rate forever**
-  (`NAT_TREND`, mean-reverting to that centre, `NAT_TREND_TAU_M` 360). At those
-  centres computer design grows 5.5%/yr, social assistance 4.3%, warehousing
-  3.1% for a hundred years. Summed at the nation's own mix, total employment
-  goes **×10.7 in a century** (measured from the engine's `NAT_TREND` and
-  `NAT_EMP_SHARE`), against ×2.7 for the weighted mean rate and roughly ×3.5
-  for actual US payrolls 1925-2024. A sum of exponentials is dominated by its
-  fastest term; the trends need to be a *mix* that sums to the labour force,
-  not independent levels.
-- **The town's export share is an integrated random walk with no Itô
-  correction.** `lnShare += (fort - LOCATION_PULL·cost)/12`, `fort` an OU
-  process (sd 2%/yr, τ 20 yr). Its variance after a century is ~1.3 log
-  points per industry, so E[exp(lnShare)] drifts up ×~1.9 even with a
-  zero-mean `fort` — the town gains share on average when the shares of all
-  towns must average out. The cost brake (`locationCost`, 85% pay, 15% rent)
-  cannot catch it because pay does not rise: migration supplies every worker
-  at ~5% unemployment (see #4), so real pay *falls* to 0.8 of the nation and
-  the town gets *cheaper* as it booms; and the agglomeration term adds a
-  small positive feedback.
+### 2. Real land +4.5%/yr, and the yearly read swings ×3-10
 
-**Follow-up (not small; moves every number):** make the national industry
-trends shares of a labour-force total (or decay each industry's trend toward
-the aggregate over a few decades), and give the town's share the −σ²/2 drift
-so its expectation is flat. Then re-run this suite before touching anything
-in the space markets — most of #2 and #3 may be this.
+Real land grows 2.9-6.6%/yr (band −1 to 3) and ends at $290-5,970/sf real
+across seeds. Year to year it is noise: seed 33 reads 790 → 79 → 172 → 814
+$/sf at five-year steps, seed 11 1,758 → 3,446 → 3,746 → 2,884 → 1,508 →
+9,598. The Why chain names office rent as the driver (*"Land +0.0% since Jan
+2059 · office rent +9.3%, build cost −4.2% · builders bidding 0.9x"*), and
+office real rent is ×3.5-4.2 — so the level is partly #6 (office space short
+of jobs). The swings are the yearly survey's handful of fixed lots and the
+cap read's spikes (#3) feeding builders' residuals (see the first run's note
+under "Since" in git history: `landIdx` 1.47 → 0.03 → 28 in fifteen years on
+seed 4242). Follow-up: read land off a broader set of lots/sales, and re-run
+after #3.
 
-### 2. Space does not follow jobs: office sf per job falls to 0.09-0.33 of the opening; real office rent +3%/yr
+### 3. Cap rates still move ~1 point a year (band 0.1-0.6); industrial reads ~1%
 
-Jobs ×6-31, office stock ×2-3. Rent clears the gap: real office rent grows
-2.2-3.6%/yr (band −1 to +1.5) with vacancy *normal* (7.8% median — the market
-is not tight by its own measure, it is just priced higher every year).
-Firms economise on dear space (`affordEff`) until a worker has a fifth of the
-floor he had.
+Unchanged from the first run (1.1 → 1.0pp). The worst class is industrial:
+seeds 11, 22, 55, 66 read industrial caps of 0.8-1.3% for decades (seed 55:
+0.9% at year 20, 0.8% at year 40, 1.0% at year 60), the same years its real
+rent sits at $1.3-2/sf and vacancy at 20-27%. A cap of 1% on a rent that has
+fallen two-thirds is a price held up by something other than its income —
+likely the lot's land/redevelopment value (#2) — set against a thin tape of
+industrial trades (`propmarket.ts tickCapReadInner` → `fitGrid`/`toRef`).
+**Being worked in parallel (cap/land read stability in `propmarket.ts`);
+re-run this row after it lands.**
 
-**Cause.** Construction starts are an aggregate set from the top:
-`market.ts` ~L4183, `start = stock × 0.0016 × appetite × catchUp × jitter` —
-proportional to the *existing stock*, so the build rate cannot exceed ~2-4% of
-stock a year however far demand runs ahead. It is **not on
-FORMULA_LEDGER.md** and should be (it is an aggregate quantity of new
-supply set by an equation, not the sum of developers' decisions). The street
-firms' own builds sit beside it but do not replace it. Starts do follow
-demand (median lag 2 years, inside the band) but the vacancy-after-starts lag
-hits the ±5-year search boundary on half the seeds — i.e. unidentified.
+### 4. City payrolls almost never fall: 0.32 job-loss years a decade (band 1-3.5)
 
-**Follow-up:** list the starts formula on the ledger; let the developers'
-pencils set the amount, not the stock. Measure after #1.
+#548 tied the city's unemployment to the national cycle and national
+recessions came into band (19% of months), but the town's payroll still
+does not shrink: in a national recession year the Why chain reads *"The
+town · 183,635 jobs, +0% on its year … output gap −1.1%"* (seed 66 year 80).
+The town's trend is +1.5%/yr (its mix is heavy in IT and finance, whose
+national shares keep rising, #544), and the export cycle is
+`CYCLE_BETA × NAT_SALES_PER_GAP × gap` — at a −1% gap a percent or two,
+which the trend absorbs. A metro at 1.5%/yr does fall in 1-3 years a decade
+historically, so the cyclical swing on the town's exports and its local
+spending looks too small (or recessions too shallow: gaps of about −1%).
+Follow-up: measure the town's payroll elasticity to the gap on the record
+(MSA payroll vs output gap) before touching it.
 
-### 3. Flats: 15-35% vacancy for decades while their rents rise
+### 5. Construction does not answer demand: both lags at the ±5-year edge; starts dying late in the century
 
-Multifamily vacancy median 14.5% (band 3-10), 25-45% for decades in seeds 11
-and 22, while real flat rents still rise 0.3-1.0%/yr. The Why chain at seed
-11 year 100: *"Apartments availability 40.8% (normal 4.5%)"* beside *"Apartment
-rent … −1.2%"*, and at year 90 *"Apartment rent $317.67/sf … +1.0% · availability
-34.9%"*.
+Both lag checks went from WATCH to FAIL: the best lag sits at the search
+window's edge (±5 years) on most seeds — no relation, not a long one. Starts
+are 0.6% of stock a year (band 0.5-4) and in seeds 11, 22 and 44 run
+0.0-0.4% for the last 20-30 years while office real rent rises and the flats
+are full. Since #547 starts are ground broken by named builders on their own
+pro formas, so a dry spell is builders' residuals not clearing: land at
+$1,000-6,000/sf real (#2) and the volatile cap read (#3) are the two inputs
+that can close a pencil; nothing points at the builders' own rule yet.
+Follow-up: log the builders' best-residual distribution per year in the
+proof tool so the next run can say which term shuts them out.
 
-**Cause (two answers to one quantity — fake number type 3).** The flats' rent
-rule (`market.ts` rent block, multifamily) prices off `effGap = gap −
-structTight`, and for flats `structTight` is the *aggregate* demand equation's
-`wantedNow` against housable space (`market.ts` ~L5019) — the old formula's
-wish list. The households who actually choose (households stage 2) leave the
-flats empty at the same time. The aggregate says "shortage", the agents say
-"glut", and the rent listens to the aggregate. FORMULA_LEDGER rows #4 and #5
-already name the flats' natural vacancy and vacancy drift; `structTight` for
-flats belongs with them. Meanwhile the island's flat stock barely grows (×1.0-1.65)
-while the region's population grows ×6-30 — the population lives off the map.
+### 6. Office space trails jobs: sf per job 0.42-0.78 of the opening; real office rent +1.9%/yr
 
-**Follow-up:** for flats, compute `structTight` from the register's renters
-who wanted an island flat and could not get one (the `islandWant` minus those
-housed), not from `wantedNow`.
+Much better than the first run (0.09-0.33, +3%/yr) but still out of band on
+five seeds of six: jobs ×3-4 on an island whose lots are taken, office
+stock ×2-2.75, the extra stock coming from replacing flats (#1). Rent clears
+the gap with vacancy normal (8.1% median). Most of what is left is #5 (no
+new building answers the rents) and #2 (land priced off those rents).
 
-### 4. The city is decoupled from the national cycle; the national cycle is too frequent
+### 7. Industrial: 15-27% vacancy for decades, real rent −0.7%/yr
 
-- **National recessions: 2.2 per decade, 30% of months in recession** (NBER
-  ~1 per 6-8 years, ~14% of months). ECONOMY.md measured 1.05-1.7 per decade
-  and 15-19% of months before #513/#529; this is a regression. National
-  unemployment swings 3% → 10% inside two years (seed 7 smoke run: 3.2%,
-  8.9%, 10.4%, 5.7%, 3.7% in successive years). Likely cause: the national
-  swans split out in #529 (`blackswans.ts` natSw into `spendNation`) on top of
-  the wider rate swings of #513, against a dating rule (`REC_DROP` 0.6% off
-  the output peak) that fires on noise. Needs a run with the swans off to
-  split the two.
-- **City unemployment barely moves:** sd 0.3-0.7pp a year against the
-  nation's 1.9-3.0pp, correlation 0.27; payrolls fall in 0.2 years per
-  decade (band 1-3.5). In a 2-3%/yr growth trend a national recession is a
-  pause, and the household register's migration absorbs the rest — workers
-  arrive and leave so fast the town's rate sits at ~5% whatever happens.
-  Partly #1 (a town growing 3%/yr cannot shrink); partly that migration is
-  the only margin.
+Industrial vacancy median 15% (band 3-14), 20-29% for 20-40 years in seeds
+11, 22, 55 and 66, with real rent $4.6 → $1.3-2.4/sf. Why chain, seed 55
+year 40: *"Industrial availability 27.2% (normal 18.7%)"* beside *"16 leases
+in six months"* while the town's exports are led by IT (*"sold out of town
++9% … the town's share +1%"*). The town's industrial tenants are its making
+and logistics firms, whose national shares fall (#544) — the stock does not
+leave as they do (it is not converted, and #5's builders do not take it).
+The rent's slide is the right answer to that; the vacancy's persistence is
+what is missing (conversion or teardown of industrial). Seed 44 stays mostly
+inside the band (3-14%).
 
-### 5. A land read blows up and takes the banks with it (seed 55, year 79)
+### 8. Smaller watches
 
-Seed 55's bank books read $1e15 at year 80 and charge-offs $5e68 at year 84,
-and `econ.constructionAppetite` is NaN for the last sixteen years — the only
-non-finite reading in 600 seed-years. Traced month by month: in month 948 (a
-January land-queue refresh) nine street firms' lines jump from $1-70M to
-$1e17-1e20, every bank's named book goes to 1e20 the month after, and the
-overflow reaches the econ a few years later.
+- **Unemployment, century mean 4.5%** (band 4.5-7; was 5.2%): arrivals
+  became a flow (#544) and firms now bid pay to fill openings, so the town
+  runs a little tight. Yearly levels are fine (3.4-5.7%).
+- **National recessions 1.79 a decade** (band 1-1.7; was 2.2): the share of
+  months is now in band (19%); recessions are short and frequent rather than
+  long — 1.5-2.4 a decade across seeds.
+- **Bank failures 1.05 a century** (band 0.5-10; two seeds none): the
+  first run's 4.2 was inflated by #5's overflow.
+- **Retail vacancy** 29-33% late in seeds 22 and 66; **tenant failures**
+  6.3%/yr of firms (band 1-8, the tail to 11%).
+- **Cap spread over the 10Y** reads negative in the p10 year (−2.3pp): #3.
 
-**Cause (traced to the line):** `bands.ts` re-centres the quality bands'
-rent swings so their occupied-weighted mean is one — and it divided EVERY
-band by that mean every month, including a band with no lease in the window
-(which "keeps its swing") and a band with no stock. A band never re-read is
-divided again and again: by year 79 the two lowest office bands' swing stood
-at 7e13 and the lowest shop band's at 3e16. The first month a lot's best
-scheme scored into one of those bands (`residualScheme` → shop use, value
-$7e15/sf), its land read was 1e16 $/sf; every firm holding such a lot marked
-its book at 1e20, `lineRoom` advanced against the mark, and the firms drew.
-Seed 55's eight bank failures and the peak charge-off row are partly this;
-seeds 22 and 44 also show 25-140% charge-off years that should be re-read
-after the fix.
+## Earlier
 
-**Fixed here** (small, clear): only the swings set this month are
-re-centred; a stale band stays where it was set (`bands.ts`, step 4).
-
-### 6. Cap rates jump ~1.1 points a year (band 0.1-0.6)
-
-Levels are right (8.2% median, 2-year lag behind the ten-year) but every
-class moves ~1 point a year and spikes to 16-22% (office, seed 22 year 10 and
-90) or 1.8% (retail, seed 11 year 95). The read is a weighted median of
-deals adjusted to a reference building by a regression fitted on the same
-thin tape (`propmarket.ts tickCapReadInner`, `fitGrid` → `toRef`), which
-extrapolates when few prints fall in the window. Land read off sales has the
-same thinness: real land swings ×3 year to year in seed 55 (462 → 1,420 →
-359 → 937 → 228 $/sf real). Follow-up: report the fit's standard error and
-fall back to the raw median when the reference adjustment exceeds the
-spread of the prints.
-
-**Done (claude/cap-reads):** the read is now a time-dummy hedonic grid
-(whole record, priced kinds of evidence incl. compelled sellers) read by
-the appraisers' own updating (Quan-Quigley / Geltner, Huber-robust;
-volatility learned from their record). `tools/mdga/capreads.mjs`, seeds
-22 and 55 x 50 years, mean |year-on-year change| (pp) before -> after:
-office 0.87/1.92 -> 0.33/1.07, retail 0.72/1.29 -> 0.55/1.35, flats
-1.06/1.74 -> 0.50/1.05, industrial 0.94/0.81 -> 1.00/0.86; land |dlog|
-0.23/0.33 -> 0.17/0.06, worst year x63/x40 -> x2.3/x1.7. What is left in
-seed 55 is the market itself, not the read: the deals-alone median and
-the read track together through caps of 6 -> 21 -> 6% (a cycle amplitude
-problem, #4), and industrial prints scatter 0.46-0.50 in log. The
-condition slope is near zero for office, retail and flats in the prints
-themselves (year-demeaned bins flat within +/-0.05): bidders price
-condition only through the income the appraiser already capitalises —
-`dealView`'s capital plan reads age and spec, not condition, so a worn
-building carries no catch-up capex. The fit cannot find a premium nobody
-pays. Land: the read no longer swings, but 50 years hold 8-10 lot sales
-(the rest broker indications) and its level falls to 0.15-0.2 of the
-opening (land level — separate work).
-
-### 7. Smaller watches
-
-- **Home ownership falls from ~63% to 30-49%** over the century (band
-  45-70). Likely #1: prices rise with a town that compounds while pay falls
-  against the nation.
-- **Firm entry and exit** sit at 4-6%/yr for half a century (band 5-15;
-  BDS 8-13) and then jump to 17-29% once the town is huge — churn scales with
-  growth rather than being a steady hazard. Measured on firms holding space
-  in the street's rolls (fids present one year and not the next).
-- **Rent and vacancy barely co-move** (corr of Δlog rent and vacancy −0.10;
-  band −0.15 to −0.9): rent is mostly following the trend of #2, not the
-  cycle.
-- **Real rent swings 10.7% a year** (band 2-10): the same thin comps.
-- **Formula ledger: 13 open** (#4-#10, #14, #20-#22, #25, #26), plus the
-  construction-starts equation of #2 that is not yet on it.
-
-## Fixed here
-
-- `bands.ts`: only the quality-band rent swings set this month are
-  re-centred (#5). `pnpm conserve` passes with it (4,171 months reconciled).
-  Not yet re-run through the century: the next proof run on combined main
-  should show seed 55 with no overflow and the peak charge-off row sane.
-  Test state, compared with and without the fix on main 748e2de3 (#539):
-  `rival-assembly`, `sale-instructions` and `rival-husks` pass both ways
-  (the two that failed earlier did so only on the older base 625271e3, so the
-  tests did not depend on the compounding swings). `fund-plumbing`,
-  `take-private`, `floating` and `visible-buyers` fail identically both ways,
-  and so do `advance`, `appraisal`, `refi-strong`, `buybox`, `quiet-clock` and
-  `fund-builds` (checked on 625271e3). Main was already red on those, and this
-  fix does not change any of them.
-
-Since this run, main closed ledger rows #6-#8, #20-#22, #25 and #26 (#536-#539):
-`--report` now counts **5 open** (#4, #5, #9, #10, #14). The run itself was
-on 625271e3, so every other number above is from before those PRs.
-
-## Since: construction starts and the land median (`claude/supply-land`, 2026-10-30)
-
-**#2, the starts equation, is gone** (FORMULA_LEDGER #27, Removed).
-`econ.starts` is now ground broken — every start, whoever decided it, the
-month its hole is dug (`supply.ts queueSupplyProject`); the order book
-(`startOwed`) is the schemes developers have committed to and not started
-(`cityPlans`), and `econ.decided` the square feet committed each month. The
-aggregate never placed a building — `developerLook`, the teardown desk, the
-street firms and the player did, on their own pro formas — but it sized the
-crews' order book, picked the use a redeveloper probed, and was the "starts"
-every report read. Re-run on seeds 11 and 22 (100 years, not paired with the
-table above, which was on 625271e3): office sf per job still ends at
-0.19 / 0.06 of its start, real office rent +2.3%/yr, starts 0.7% of stock a
-year. Nothing ordered the supply that was missing: office stock ×2.6 / ×3.1
-while jobs ran ×9.7 / ×31 on an island whose lots are taken, so new office
-comes from replacing what stands (the flats went ×0.65 / ×0.30 to make room)
-at a teardown basis that rises with the rents. The space gap is #1's
-compounding meeting a fixed island; re-read this row once #1 lands.
-
-**The land median "collapse" ($54 → $8, BASELINE.json) was #5, not #539/#540.**
-The baseline was regenerated at `af1da7b6`, which differs from main
-(`29a4facd`) only in `bands.ts` — the stale quality-band swings compounding,
-fixed in #541. On main, the baseline's six seeds read 106, 714, 159, 44, 41
-and 6 $/sf (median ~75; `pnpm baseline` not regenerated here). Paired on seed
-550991, before #539 (`2c46a304`) against main at year 25: $69 vs $176, with
-12 vs 39 of ~350 vacant lots carrying a positive builder residual. Residuals
-are zero on most vacant lots in both builds and always were: at the opening a
-middling lot's best scheme is worth 0.3-0.5 of its non-land cost (rent falls
-off steeply away from the core, cost does not), so dirt there prices off the
-land funds' option and the map's texture. What is still wrong is the level's
-spread — ×130 across seeds, and within seed 4242 `landIdx` 1.47 → 0.03 → 28
-in fifteen years: the yearly survey's six fixed lots print 0.03-1.3 of the
-texture (bankers' options on lots that need rent ×2, against builders'
-residuals near the core), and the cap-rate read's spikes (#6, industrial cap
-0.7% on seed 12007) push the residuals, and the prints, up ×10.
+The first run's ranked list (625271e3, #535) — the compounding town, space not
+following jobs, flats empty with rising rents, the decoupled city and
+too-frequent recessions, the seed-55 land overflow, cap-rate noise — is in
+git history (`git log -p -- broadway-and-wall/PROOF.md`). Of those, the
+compounding (#544), the overflow (#541), the starts equation (#547) and the
+recession frequency (#548) were addressed; cap-rate noise remains (#3 above);
+the flats flipped from glut to shortage (#1 above).
 
 ## How to read the tool
 
@@ -333,3 +242,5 @@ Monthly-sampled where a yearly sample misses the event: construction starts,
 national recession starts and months, bank failures, charge-offs (from each
 lender's `chargeOffsTotal`), tenants going dark. Bands and their sources are
 in the code beside each check.
+
+> Note: #549 (quality-adjusted cap/land reads) landed after this run; it roughly halves year-to-year cap moves on a 2-seed probe. Problems #2 and #3 above predate it.

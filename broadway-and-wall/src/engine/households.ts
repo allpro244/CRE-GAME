@@ -69,7 +69,7 @@
 // they are a shape parameter, stated as such (CLAUDE.md).
 import type { ParcelTable } from "@/data/types";
 import type { Econ, GameState } from "./types";
-import { HH_RENT_SHARE0, shortIndexOf, recordDeal } from "./market";
+import { HH_RENT_SHARE0, shortIndexOf, recordDeal, NATVAC_RATE } from "./market";
 import { resolveRecBare, useRentableSf } from "./value";
 import { flatUnitSf } from "./streetRolls";
 import { HH_SIZE, INCOME_SIGMA, TAX_INS, DTI, COMMUTE, REF_HOME, medianIncome, mortgageRate, fundamentalHomePsf } from "./homeprice";
@@ -323,6 +323,21 @@ const FORM_M = 0.138 / 12;
 const SEP_RATE = 0.014;
 /** Monthly unemployed-to-employed flow, about a quarter of the jobless a month (BLS CPS labour-force flows, 2015-19 average) — when there is a vacancy to take. [S] */
 const UE_RATE = 0.25;
+/**
+ * ...AND THE RATE FALLS WHEN THE OPENINGS DO (2026-10-30). A jobless worker's
+ * odds of a job in a month follow the openings per jobless worker, θ = V/U,
+ * through a matching function: f = UE_RATE x (θ / θ_ref)^MATCH_ETA, with
+ * MATCH_ETA about 0.3 (Shimer 2005, AER: 0.28 on CPS flows and the help-
+ * wanted index; Petrongolo & Pissarides 2001, JEL, survey 0.3-0.5) [S], and
+ * θ_ref the town's own normal tightness, learned over twenty years
+ * (market.ts NATVAC_RATE's clock) — the long-run mean the finding rate is
+ * calibrated at, as Shimer calibrates his. Before this the rate was 0.25
+ * whenever there was an opening at all, so a town whose firms cut their heads
+ * only took the openings away from the households that would have moved in:
+ * measured (seed 550991, 30 years), the labour force fell 0.7% per point of
+ * the nation's unemployment rise and the town's own rate rose 0.12 points.
+ */
+const MATCH_ETA = 0.3;
 /**
  * A household whose earners are all out of work, past their insurance, leaves
  * the region at about 5% a year: interstate migration ran about 2.5% a year
@@ -745,6 +760,10 @@ export interface HouseholdRegister {
   firmHc?: Record<number, number>; layoffWhy?: Record<number, number>;
   /** Each industry's openings still unfilled at the end of last month's matching: what a household may move to the region for. */
   vacLeft?: number[];
+  /** The town's normal labour-market tightness (openings per jobless at the month's matching), learned over twenty years (MATCH_ETA). */
+  thetaRef?: number;
+  /** The nation's consumption mood (market.ts dem.cMood) the register opened in: its households' spending moves with the mood against it. */
+  mood0?: number;
   /** The region's households (weighted) last month, what the mainland's rent moves with (HOUSING_SUPPLY_ELAST). */
   hhRef?: number;
   /** The region's renters' shelter index, chained, the last thirteen months (`shelterRead`), and the island flats' rent index last month. */
@@ -2197,14 +2216,27 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // 3b. the jobless, at the finding rate, where there is a vacancy; the rest a month longer out
   const jobless: number[] = [];
   for (let i = 0; i < r.n; i++) for (let k = 0; k < 3; k++) if (EMP()[k][i] === EMP_UNEMP) jobless.push(3 * i + k);
+  // the finding rate at this month's openings per jobless worker (MATCH_ETA)
+  let uW = 0, vW = 0;
+  for (const sl of jobless) uW += a.wt[(sl / 3) | 0];
+  for (let ind = 0; ind < N_IND; ind++) vW += Math.max(0, V[ind]);
+  let find = UE_RATE;
+  if (uW > 0 && vW > 0) {
+    const theta = vW / uW;
+    r.thetaRef = r.thetaRef === undefined ? theta : r.thetaRef + (theta - r.thetaRef) * NATVAC_RATE;
+    find = Math.min(1, UE_RATE * Math.pow(theta / r.thetaRef, MATCH_ETA));
+  }
   for (const sl of shuffle(jobless)) {
     const i = (sl / 3) | 0, k = sl % 3;
-    const hire = R.u() < UE_RATE, scar = R.n();
+    const hire = R.u() < find, scar = R.n();
     const job = hire ? bestJob(i, k) : null;
     // a returning worker takes a small cut in pay (job-loss scarring, Jacobson-LaLonde-Sullivan 1993) [S]
     if (job) { place(i, k, job); WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * scar); }
     else if (UN()[k][i] < 65535) UN()[k][i]++;
   }
+  // the town's jobless still looking, in the order they searched: step 4's first claim
+  const still = jobless.filter((sl) => EMP()[sl % 3][(sl / 3) | 0] === EMP_UNEMP);
+  let stillAt = 0;
   // 4. households arriving for the work the town's own people did not take
   const wR = r.wRegion, H = homeMarket(e);
   const ageWork = AGE_RENT.slice(0, 5), ageTot = ageWork.reduce((t, x) => t + x, 0);
@@ -2216,6 +2248,20 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // from outside made each quit a household arriving: measured, the region
   // grew 17% more people and 23% more jobs in 25 years with quits on than off.
   const open = Float64Array.from(V, (v, i) => Math.min(v, r.vacLeft?.[i] ?? v));
+  // ...WHO GETS AN OPENING STILL OPEN A MONTH ON (2026-10-30): whoever
+  // applies — the town's own jobless and the searchers elsewhere who would
+  // move for it, each in proportion to their numbers, so the outsiders' share
+  // of the applications is the nation's unemployment rate against the sum of
+  // the two (each pool read as a rate, the town's and the nation's). At parity
+  // the leftover openings go to the movers below as they did before this
+  // (2 uN / (uN + uL) = 1, held at most 1); where the town's jobless rate runs
+  // over the nation's, the town's own people take a growing share of them
+  // and fewer households move in. Before this, an opening the jobless here
+  // had not drawn in step 3b went to a mover whenever one was coming. The
+  // relative-unemployment pull on in-migration is the Blanchard-Katz (1992)
+  // channel; the applicant-share form is [K].
+  const uN = Math.max(1e-3, e.nat?.unemp ?? 0.05), uL = Math.max(1e-3, e.unemployment ?? uN);
+  const outsiders = Math.min(1, 2 * uN / (uN + uL));
   // ...AND ONLY AS MANY AS ARE MOVING. The households that take a job across
   // the country are the interstate movers (MOVE_M, 2.5% of households a year,
   // Census CPS), and this region gets them in proportion to its households, at
@@ -2237,7 +2283,17 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   for (let ind = 0; ind < N_IND; ind++) for (let v = open[ind]; v >= wR / 2; v -= wR) slots.push(ind);
   for (const ind of shuffle(slots)) {
     {
+      // (a partner placed below may already have taken this industry's opening)
+      if (V[ind] < wR / 2) continue;
       if (r.arriveAcc < wR / 2) break;
+      // a local's application wins (`outsiders`, above): the opening goes to the town's own jobless
+      if (stillAt < still.length && !(R.u() < outsiders)) {
+        const sl = still[stillAt++], i = (sl / 3) | 0, k = sl % 3, w = r.a!.wt[i];
+        if (V[ind] >= w / 2) {
+          const job = bestJob(i, k, ind);
+          if (job) { place(i, k, job); WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * R.n()); continue; }
+        }
+      }
       r.arriveAcc -= wR;
       const i = addAgent(r), b = r.a!;
       b.wt[i] = wR;
@@ -2448,6 +2504,12 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   }
 
   const persons = (i: number) => a.adults[i] + a.kids[i];
+  // against the mood the register opened in, as the town's exports read the
+  // nation's gap against the opening's (economy.ts exportHeads, gap0): the
+  // opening's spending is what the town's books were calibrated on
+  const mood = e.nat?.dem?.cMood ?? 0;
+  r.mood0 ??= mood;
+  const moodX = Math.exp(mood - r.mood0);
   const enterLf = (i: number) => enterLabourForce(a, i, e);
   const H = homeMarket(e);
   const atStart = new Map<number, number>();
@@ -2502,7 +2564,15 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     const room0 = Math.max(0, CARD_LIMIT[a.credit[i]] * 12 * Math.max(0, a.yperm[i]) - Math.max(0, a.debt[i] - minPay));
     const can = a.sav[i] + net - minPay - housing + room0;
     const sub = subsistence(e, persons(i));
-    const want = Math.max(sub, a.yperm[i] - housing - minPay + KAPPA * (a.sav[i] - target));
+    // ...AT THE NATION'S MOOD (2026-10-30): what households everywhere spend
+    // of their income moves with confidence, the real rate, a panic and a
+    // national swan (market.ts spendNation, `cMood`), and the town's
+    // households are the nation's. On what is left after the rent and the
+    // card, which are owed whatever the mood. Before this the town's spending
+    // followed only its own pay, so the national cycle reached the town
+    // through its exports alone.
+    const free = a.yperm[i] - housing - minPay;
+    const want = Math.max(sub, free + Math.max(0, free) * (moodX - 1) + KAPPA * (a.sav[i] - target));
     const spend = can < 0 ? sub : Math.min(want, can);
     let cash = a.sav[i] + net - spend - minPay - housing;
     a.debt[i] = Math.max(0, a.debt[i] - minPay);

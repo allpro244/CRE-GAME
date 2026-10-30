@@ -264,6 +264,9 @@ function natSwanAt(x: NatSwan, a: number, h: NatSwanHooks, sec: Partial<Record<S
       // The deficit-financed part is what reaches demand: Korea was paid for
       // largely by tax rises (the 1950-51 Revenue Acts) and rationing, so
       // the stimulus at the top of the scale is about two points, not eight.
+      // THIS IS THE NATION'S ONLY WAR FINANCE (2026-10-30): the nation no
+      // longer draws a bond-financed fiscal expansion of its own off the
+      // same record (market.ts SUPPLY_SHARE), so a war is financed once.
       h.g += (0.006 + 0.016 * v * v) * env(a, 9, x.len, 18);
       // Oil: the Gulf took WTI from $17 to $41 in three months (+0.9 log)
       // and back within six; 2003 +0.3; 2022 +0.5.
@@ -276,7 +279,16 @@ function natSwanAt(x: NatSwan, a: number, h: NatSwanHooks, sec: Partial<Record<S
       // 1997-98: world growth 4.0% -> 2.5%, the trade-weighted dollar +15%
       // against Asia, high-yield spreads +300bp and investment-grade +80bp
       // (the CMBS market shut that autumn); 2014-15 the dollar +20%.
-      h.f -= (0.01 + 0.03 * v) * env(a, 3, 6, 12);
+      // THE WORLD'S SLUMP IS NOT ADDED HERE (2026-10-30). The rest of the
+      // world is already an economy with its own drawn shocks (market.ts
+      // tickDemand, ROW: a gap of about 2% sd), and that draw is the whole of
+      // the world's cycle, its crises included — 1982, 1998 and 2009 are in
+      // the variance it stands for. A crisis that also pushed the world's gap
+      // down 1-4% counted the slump twice: measured on the national block
+      // with the swans on (20 seeds x 100 years), this one line was 2 of the
+      // swans' 3 points of extra recession months. What the world's gap
+      // cannot make is the rest of a crisis abroad — the run to the dollar
+      // and the spreads — and that is what the swan carries.
       h.q += (0.04 + 0.12 * v) * env(a, 3, 9, 18);
       h.sp += (0.004 + 0.016 * v) * env(a, 1, 3, 6);
       const e2 = env(a, 2, 6, 12);
@@ -428,7 +440,6 @@ function startNatSwan(s: GameState, kind: NatSwanKind, sevAt?: number) {
     head = `A crisis abroad, ${yr}`;
     body = "Banks and currencies are failing overseas. Money is running to the dollar, the world is buying less of what this country makes, and credit spreads have blown out overnight.";
     detail = "Exporters lose twice, to the slump abroad and to the dearer dollar. Lenders tighten while the spreads are wide, and anything that needs refinancing this year will cost more.";
-    nums.world = -(0.01 + 0.03 * v);
     nums.dollar = 0.04 + 0.12 * v;
     nums.spread = 0.004 + 0.016 * v;
   } else if (kind === "techboom") {

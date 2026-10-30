@@ -354,6 +354,35 @@ export function floorOf(i: IndustryId): Floor {
   return sp === "retail" ? "retail" : sp.startsWith("industrial") ? "industrial" : "office";
 }
 /**
+ * THE FLOOR A HEAD TAKES, BY INDUSTRY, against its class's (FORMULA_LEDGER
+ * #10). A firm's space is its heads times its industry's feet a worker —
+ * `sfPerWorker` less the share who work from home (`REMOTE`) — a law firm's
+ * 250 sf against a call centre's 200, a restaurant's 250 against a car
+ * dealer's 1,000. The engine's class constant (market.ts SF_PER_JOB) carries
+ * the level and this the industry's place against the class's mean, weighted
+ * by the nation's on-floor workers in each (CES 2023 × (1 - offFloor)): the
+ * header's own rule — sfPerWorker is rounded, so its level error must cancel
+ * and its mix must not. An industry on another class's floor (a wholesaler's
+ * office), or one with no figure, takes the class's mean.
+ */
+const FLOOR_MEAN: Record<Floor, number> = (() => {
+  const acc: Record<Floor, [number, number]> = { office: [0, 0], retail: [0, 0], industrial: [0, 0] };
+  for (const k of INDUSTRY_IDS) {
+    const I = INDUSTRIES[k];
+    if (!(I.sfPerWorker > 0)) continue;
+    const w = I.empK * (1 - OFF_FLOOR[k]);
+    const a = acc[floorOf(k)];
+    a[0] += w * I.sfPerWorker * (1 - REMOTE[k]); a[1] += w;
+  }
+  return { office: acc.office[0] / acc.office[1], retail: acc.retail[0] / acc.retail[1], industrial: acc.industrial[0] / acc.industrial[1] };
+})();
+export function sfMix(ind: number | undefined, k: Floor): number {
+  if (ind === undefined || ind < 0 || ind >= N_IND) return 1;
+  const id = INDUSTRY_IDS[ind], I = INDUSTRIES[id];
+  if (!(I.sfPerWorker > 0) || floorOf(id) !== k) return 1;
+  return I.sfPerWorker * (1 - REMOTE[id]) / FLOOR_MEAN[k];
+}
+/**
  * THE TOWN'S JOBS OFF THE COMMERCIAL FLOORS, as a share of all its jobs: the
  * national share of the industries that work from buildings of their own —
  * hospitals, schools, City Hall, depots, the region's airport and yards —

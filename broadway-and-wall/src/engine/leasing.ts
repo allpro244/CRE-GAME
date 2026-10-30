@@ -22,7 +22,7 @@ function vacancyTight(s: GameState, use?: BuiltClass): number {
 }
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locOpexMult, taxRate, recoveryOf,
   condGrade, initialCondIdx, condCeiling, condWear, capPlanBillMo, CONDITION_RENT_MULT, ownedHoldingValue,
-  physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr, registerRolloverReader, flatsMarkPsf, flatsRollPsf, faceGrossUp, abatedShare } from "./value";
+  physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, registerRolloverReader, flatsMarkPsf, flatsRollPsf, faceGrossUp, abatedShare } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
 import { overallScore, scoreRentMult, N_BANDS } from "./value";
@@ -779,8 +779,14 @@ function buildRentRoll(s: GameState, rec: ParcelRecord, holding: Holding, distre
     const flats = s.econ.flatRolls?.[rec.bbl] ? useOccupancy(rec, s.econ, "multifamily") : undefined;
     holding.occ = flats !== undefined ? flats : Math.min(0.99, Math.max(0.12,
       useOccupancy(rec, s.econ, "multifamily") + (distressed ? rrange(s, -0.38, -0.16, "leasing") : rrange(s, -0.05, 0.04, "leasing"))));
-    // the roll in place opens at today's market; it walks from here — see Holding.resRentPsf
-    holding.resRentPsf = marketRentPsfYr(rec, s.econ, holding.condition, holding.condIdx);
+    // the roll in place opens at today's market; it walks from here — see Holding.resRentPsf.
+    // The SAME mark the roll walks toward each month (flatsMarkPsf: what a flat
+    // collects, net of the concession gross-up). It opened at the FACE rent
+    // (marketRentPsfYr), so since the flats carry concessions (households
+    // rewrite, effRentIdx < rentIdx) every block of flats conveyed with a roll
+    // ~10% over its own market and lost it over the first year — one
+    // quantity, two answers.
+    holding.resRentPsf = flatsMarkPsf(rec, s.econ, holding);
   }
   if (!isCommercial(rec)) return;
   // THE STREET KEEPS REAL ROLLS NOW (2026-10-15, streetRolls.ts). A standing

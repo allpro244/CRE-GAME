@@ -41,11 +41,25 @@ const harbor = E.productById("harbor"), hf = E.productById("harborFloat"), arm =
 const price = 4_000_000, noi = 300_000;
 const qFix = E.quote(g, harbor, price, noi, "office", false, undefined, "standard");
 const qFlt = E.quote(g, hf, price, noi, "office", false, undefined, "standard");
-// the desk widens every spread by the same factor in a tight market, so the
-// floater's wider spread widens proportionally more
-const tightness = Math.max(0, 1 - e.creditIdx);
-ok(Math.abs((qFlt.ratePct - E.shortIndexOf(e)) - (qFix.ratePct - e.indexRate) - (hf.spread - harbor.spread) * (1 + 1.1 * tightness)) < 0.05,
-  `floater ${qFlt.ratePct}% over the short index, fixed ${qFix.ratePct}% over the loan index — same desk adjustments`);
+// SAME DESK ADJUSTMENTS. Since the banks rewrite the desk no longer scales
+// every sheet spread by a tightness factor; it ADDS its own live price
+// (pricing.ts liveSpread: funding, loss experience, rationing pull, chase) to
+// each sheet, floored at its cost of funding against that loan's benchmark.
+// So, where no floor binds, the floater sits over the short index by exactly
+// the fixed loan's margin over the loan index plus the sheet gap. Read a
+// month in, once the desks have priced (the opening month has no deskPx), so
+// the adjustments are live and non-zero.
+{
+  const g1 = E.advanceMonth(structuredClone(g), parcels, bbls, adjacency);
+  const e1 = g1.econ, px = e1.deskPx?.[harbor.lender];
+  const f1 = E.quote(g1, harbor, price, noi, "office", false, undefined, "standard");
+  const v1 = E.quote(g1, hf, price, noi, "office", false, undefined, "standard");
+  const cls = E.lossClassOf(harbor);
+  const floored = !px || E.costFloor(px, cls, "short") >= hf.spread || E.costFloor(px, cls, "long") >= harbor.spread;
+  const adj = px ? px.dFund + (px.dEl[cls] ?? 0) + px.pull + px.chase : 0;
+  ok(!floored && Math.abs(adj) > 0.01 && Math.abs((v1.ratePct - E.shortIndexOf(e1)) - (f1.ratePct - e1.indexRate) - (hf.spread - harbor.spread)) < 0.02,
+    `floater ${v1.ratePct}% over the short index, fixed ${f1.ratePct}% over the loan index — same desk adjustment (${adj.toFixed(2)}), sheet gap ${(hf.spread - harbor.spread).toFixed(2)}`);
+}
 // a building where coverage binds both: the floater is sized at the cap strike
 const tightNoi = 220_000;
 const fixT = E.quote(g, harbor, price, tightNoi, "office", false, undefined, "standard");

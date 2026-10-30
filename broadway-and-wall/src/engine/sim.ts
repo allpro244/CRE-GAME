@@ -364,6 +364,13 @@ function listHolderExit(s: GameState, parcels: ParcelTable) {
     };
     if (rec.class !== "land" && rec.bldgArea > 0) stampListing(s, rec, listing);
     s.listings.push(listing);
+    // An estate or a partnership selling out hires a shop like any other
+    // owner, so its mandate lands on a broker's desk and a buyer the shop
+    // knows hears first — the same as the tape's other anonymous listings
+    // (refreshListings). Without it, once holder exits filled most of the tape
+    // the refill below rarely ran and first looks all but vanished (buybox:
+    // none in twenty years for a firm three fees deep with every shop).
+    maybeEarlyLook(s, listing, rec.address);
   }
 }
 

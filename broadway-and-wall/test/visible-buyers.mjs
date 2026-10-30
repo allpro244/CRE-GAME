@@ -91,8 +91,18 @@ for (const seed of [4242, 1717, 9001, 31337, 777]) {
   }
 
   // ---- 1. the whole book as one portfolio -----------------------------------
-  const bundle = owned.slice(0, Math.max(4, owned.length - 1));
-  const q = E.portfolioQuote(g, parcels, bundle);
+  // THE BOOK THE STREET CAN WRITE A CHEQUE FOR. Since the firms'-books
+  // rewrite every bidder pays from its own cash, and this town's firms are
+  // small (largest ~$6M cash, ~$20M AUM at month 9 on seed 4242) while a
+  // $400M player can buy the whole opening tape — so the full ~$40M book
+  // honestly has no buyer. Offer the largest bundle of the smallest deeds
+  // (at least four) that some firm can close; the $10T check below still
+  // asserts that an unfundable book draws nobody.
+  const byValue = [...owned].sort((a, b) => E.ownedHoldingValue(g, parcels, g.holdings[a]) - E.ownedHoldingValue(g, parcels, g.holdings[b]));
+  let bundle = byValue.slice(0, owned.length - 1), q = E.portfolioQuote(g, parcels, bundle);
+  for (let n = owned.length - 2; n >= 4 && q.depth <= 0; n--) {
+    bundle = byValue.slice(0, n); q = E.portfolioQuote(g, parcels, bundle);
+  }
   // 3. a cheque bigger than every firm in town together has no buyer at all
   check(E.portfolioBuyerDepth(g, parcels, bundle, 1e13) === 0, `seed ${seed}: a $10T book has no buyer — not a phantom one`);
   check(q.depth <= E.livingRivals(g).length, `seed ${seed}: quote depth (${q.depth}) is a count of roster firms, never more`);

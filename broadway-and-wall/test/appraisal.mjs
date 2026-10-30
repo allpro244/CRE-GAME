@@ -68,8 +68,16 @@ const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.mi
       spread.push(v(0.865) / v(0.43));
     }
   }
+  // Since the property-market rewrite (#527) condition no longer carries an
+  // ASSERTED cap-rate spread: the cap grid is fitted to closed prints
+  // (propmarket.ts fitGrid) and is flat at the opening, before any print. So
+  // at the bell the grades price apart through rent alone (good/worn market
+  // rent ~1.46×, value ~1.25× at the median — the in-place roll is the same
+  // paper either way). The 1.25× bar was set when the cap spread stacked on
+  // top (plan 11 1.44×, plan 12 1.36×); the claim is that condition is priced,
+  // so the bar is now a clear gap on the stock's median and none inverted.
   const med = pct(spread, 0.5);
-  ok(spread.length >= 10 && med > 1.25, `and the grades still price apart: good over worn ${med.toFixed(2)}× at the median of ${spread.length} let listings (need > 1.25×)`);
+  ok(spread.length >= 10 && med > 1.15 && Math.min(...spread) > 1, `and the grades still price apart: good over worn ${med.toFixed(2)}× at the median of ${spread.length} let listings, min ${Math.min(...spread).toFixed(2)}× (need > 1.15×, none ≤ 1)`);
 }
 
 // --- 2. the tape, the desk, the lender and the deed read one number ----------
@@ -149,9 +157,20 @@ const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.mi
   const next = E.advanceMonth(shocked, parcels, bbls, adjacency);
   const noi1 = E.holdingNOIYr(pick.rec, next.econ, next.holdings[pick.li.bbl], next.month);
   const h1 = next.holdings[pick.li.bbl];
-  const mkt = E.marketRentPsfYr(pick.rec, next.econ, h1.condition, h1.condIdx);
+  // The roll walks toward the flats' own mark (flatsMarkPsf: net of the
+  // concession gross-up), not the face rent marketRentPsfYr prints. And since
+  // the households rewrite the flats' index is READ OFF the blocks' asks and
+  // six months of signed leases (streetRolls.ts), so a hand-cut to rentIdx is
+  // mostly undone by the comps within the month — the old "still 4% over the
+  // market" claim measured how much of an edit survived, not the roll. The
+  // claim is the roll's speed: a month closes about a twelfth of the gap to
+  // the mark it walked toward, which is the gap that survived.
+  const res0 = g.holdings[pick.li.bbl].resRentPsf, res1 = h1.resRentPsf;
+  const mark1 = E.flatsMarkPsf(pick.rec, next.econ, h1);
+  const gap = mark1 - res0, moved = (res1 ?? res0) - res0;
   ok(Math.abs(noiSpot / noi0 - 1) < 0.005, `${pick.rec.address}: the shock month itself changes in-place NOI ${pc(noiSpot / noi0 - 1)} — the roll is the roll`);
-  ok(h1.resRentPsf !== undefined && h1.resRentPsf > mkt * 1.04, `a month on, in-place rent $${h1.resRentPsf?.toFixed(2)} is still over the $${mkt.toFixed(2)} market — a twelfth turned (NOI ${pc(noi1 / noi0 - 1)})`);
+  ok(res0 !== undefined && res1 !== undefined && Math.abs(gap) > 0.01 * res0 && moved / gap > 0.04 && moved / gap < 0.15,
+    `a month on, in-place rent $${res0?.toFixed(2)} → $${res1?.toFixed(2)} against a $${mark1.toFixed(2)} mark — ${(100 * moved / gap).toFixed(1)}% of the gap turned, about a twelfth (NOI ${pc(noi1 / noi0 - 1)})`);
 }
 
 console.log(fails ? `\n${fails} FAILED` : "\nALL PASS");

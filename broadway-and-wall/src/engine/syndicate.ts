@@ -39,7 +39,7 @@ import { logBooks, pnlAdd } from "./types";
 import { accrueMonth, contribute, settlePeriod, seriesIrr, sponsorPosition, lpCapShare } from "./waterfall";
 import { resolveRec, ownedHoldingValue, cipEquity, ownedHoldingNoiYr } from "./value";
 import { playerTerms } from "./reputation";
-import { openSources, investorPool, SOURCE_LABEL, type InvestorSource } from "./investors";
+import { openSources, investorPool, commitLocal, SOURCE_LABEL, type InvestorSource } from "./investors";
 
 /** The investors a first-time sponsor can call. */
 export const FF_INVESTOR = "Friends and family";
@@ -143,6 +143,8 @@ export function formSyndication(s: GameState, bbl: string, lpCommit: number, cas
   const src = sources ?? allocateSources(s, lpCommit);
   const pool = investorPool(s);
   for (const [id, v] of Object.entries(src)) if (id !== "ff" && v) pool.used[id] = (pool.used[id] ?? 0) + v;
+  // ...and the local cheques are the town's savers' money (investors.ts commitLocal).
+  commitLocal(s, src.local ?? 0);
   const lead = (Object.entries(src) as [InvestorSource, number][]).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "ff";
   // The terms are the sponsor's band's on the day the deal closes, and they
   // stay with the deal: investors do not reprice a signed agreement.

@@ -16,7 +16,7 @@ import { cloneState, logBooks, monthLabel, moveFundCash, pnlAdd } from "./types"
 import { markSponsor } from "./sponsor";
 import { money } from "./money";
 import { bandIdx, playerTerms } from "./reputation";
-import { INVESTOR_TYPES, poolLeft, investorPool } from "./investors";
+import { INVESTOR_TYPES, poolLeft, investorPool, commitLocal } from "./investors";
 
 /**
  * THE MANAGEMENT FEE (CAPITAL_RAISING_PLAN.md §5.3): 1–1.5% a year of
@@ -274,6 +274,7 @@ export function raiseFund(s: GameState): { s: GameState; err?: string } {
       if (bandIdx(band) < bandIdx(t.band) || rest <= 0) continue;
       const take = Math.min(rest, poolLeft(next, t.id));
       pool.used[t.id] = (pool.used[t.id] ?? 0) + take;
+      if (t.id === "local") commitLocal(next, take);
       rest -= take;
     }
   }

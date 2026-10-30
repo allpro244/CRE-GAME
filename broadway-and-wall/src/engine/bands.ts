@@ -321,19 +321,6 @@ export function scoreDraw(e: Econ, k: BuiltClass, score: number, askRel = 1): nu
   return avg > 0 ? here / avg : 1;
 }
 
-/** WHO WALKS IN: the quality a touring tenant is shopping for, drawn from the bands by how many of each band's movers this building draws. */
-export function drawTenantQuality(e: Econ, k: BuiltClass, score: number, u: number, u2: number): number {
-  const bk = e.bands?.[k];
-  if (!bk) return score;
-  const dHere = dearnessOf(e, k, score);
-  const w = bk.occ.map((o, j) => o * moveOdds(bandCenter(j), bk.rent[j], score, dHere));
-  const tot = w.reduce((a, v) => a + v, 0);
-  if (!(tot > 0)) return score;
-  let x = u * tot, j = 0;
-  for (; j < N_BANDS - 1; j++) { x -= w[j]; if (x <= 0) break; }
-  return Math.max(1, Math.min(100, bandCenter(j) + (u2 - 0.5) * 10));
-}
-
 /**
  * WHAT A TENANT'S QUALITY DOES TO ITS LETTER, on a scale. Better tenants (the
  * law firm, the headquarters) sign longer, fit out heavier and carry better

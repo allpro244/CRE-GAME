@@ -41,10 +41,10 @@
  */
 import { renewalAsk } from "./citygov";
 import type { ParcelTable, ParcelRecord } from "@/data/types";
-import type { BuiltClass, Condition, Credit, GameState, Holding, Tenant } from "./types";
+import type { BuiltClass, Condition, Credit, GameState, Tenant } from "./types";
 import { START_YEAR } from "./types";
-import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, assetValue, useOccupancy, N_BANDS, scoreRentMult, locationRentMult } from "./value";
-import { genRentRoll, isCommercial, bumpOf, minLettableSf, streetLease, pickSector, pickName, termBandM, depositFor } from "./leasing";
+import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, useOccupancy, N_BANDS, scoreRentMult, locationRentMult } from "./value";
+import { isCommercial, bumpOf, minLettableSf, streetLease, pickSector, pickName, termBandM, depositFor } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
 import { tickTenantFin, tenantFailOdds, entrantMargin } from "./tenantBooks";
 import { rng, rrange, reletMonths, dealSlack, recordDeal, FIRM_PROFILE, turnoverYr } from "./market";
@@ -235,14 +235,16 @@ export function syncStreetRolls(s: GameState, parcels: ParcelTable, bbls: string
   lastParcels = parcels;
   const opening = !e.streetRolls;
   e.streetRolls ??= {};
-  const year = START_YEAR + Math.floor(s.month / 12);
   for (const bbl of bbls) {
     const rec = eligible(s, parcels, bbl);
     const has = e.streetRolls[bbl];
     if (!rec) {
       if (has) {
         // Its firms are not demolished with it: the ones mid-lease go looking.
-        for (const t of has.t) if (t.endM > s.month) toSeekers(s, t, "move", undefined);
+        // A building the player has bought is not demolished: its tenants
+        // came with the deed (leasing.ts genRentRoll copies them), and sending
+        // the street's copies looking put every one of them in town twice.
+        if (!s.holdings[bbl]) for (const t of has.t) if (t.endM > s.month) toSeekers(s, t, "move", undefined);
         delete e.streetRolls[bbl];
       }
       continue;
@@ -251,31 +253,16 @@ export function syncStreetRolls(s: GameState, parcels: ParcelTable, bbls: string
     // A building the player has just sold keeps the tenants it had, books and all.
     const sold = e.heldTenants?.[bbl];
     if (sold) { e.streetRolls[bbl] = { t: structuredClone(sold).filter((t) => t.use !== "multifamily") }; continue; }
-    // A delivery opens empty and leases up through the street's search below.
-    if (!opening && year - (rec.yearBuilt || 1900) <= 1) { e.streetRolls[bbl] = { t: [] }; continue; }
-    // Otherwise the standing roll: the same draw a listing of it would show.
-    const cond: Condition = gradeOf(s, rec);
-    const vessel = { bbl, boughtM: s.month, costBasis: 0, assessed: assetValue(rec, s.econ, cond), loan: null, condition: cond,
-      condIdx: initialCondIdx(rec, s.month, cond), tenants: [], cfHistory: [] } as unknown as Holding;
-    genRentRoll(s, rec, vessel, false, false);
-    const t = vessel.tenants.filter((x) => x.use !== "multifamily");
-    for (const x of t) x.quality ??= overallScore(rec, s.econ, useOf(x));
-    // THE LEG IS DEMISED INTO SUITES, AND A PIECE TOO SMALL TO LET ON ITS OWN
-    // IS PART OF ONE (`premises`). A generated roll draws its tenants' sizes
-    // and leaves what they do not fill; where that is less than a suite, it was
-    // a remnant no firm could ever sign for — measured at the opening, 8.4% of
-    // the street's shop space and 4.7% of its offices, dark for good. It is in
-    // the premises of the largest tenant of the use, at that tenant's rent.
-    for (const k of COMM) {
-      const ofK = t.filter((x) => useOf(x) === k);
-      if (!ofK.length) continue;
-      const rest = useRentableSf(rec, k) - ofK.reduce((a, x) => a + x.sf, 0);
-      if (rest > 0 && rest < minLettableSf(rec, k) - 0.5) {
-        const big = ofK.reduce((a, x) => (x.sf > a.sf ? x : a));
-        big.sf = Math.round(big.sf + rest);
-      }
-    }
-    e.streetRolls[bbl] = { t };
+    // A delivery opens empty and leases up through the street's search below
+    // — AND SO DOES EVERY BUILDING AT THE START OF THE TOWN'S PRE-HISTORY
+    // (FORMULA_LEDGER #20). The opening street was a drawn roll per building
+    // (each lease's age and expiry rolled, its rent today's taken back over
+    // the age) that four years of pre-history then shuffled. Now the town's
+    // firms form and sign through the street's own search from an empty
+    // street, OPENING_YEARS before the game: every lease a player meets on
+    // the first day — when it started, how long it runs, what it pays — is
+    // one a firm signed at the market of the month it signed.
+    e.streetRolls[bbl] = { t: [] };
   }
   // A seeker holding over in a building that has left the street goes with it (it was looking anyway).
   if (e.seekers) e.seekers = e.seekers.filter((k) => !k.from || !!e.streetRolls![k.from]);
@@ -871,7 +858,6 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   const space: NonNullable<GameState["econ"]["streetSpace"]> = {};
   const scores: Record<Comm, { sc: number; cap: number }[]> = { office: [], retail: [], industrial: [] };
   for (const k of COMM) space[k] = { let: 0, cap: 0, seek: 0, byBand: { stock: new Array(N_BANDS).fill(0), occ: new Array(N_BANDS).fill(0) } };
-  const hc: Record<Comm, number> = { office: 0, retail: 0, industrial: 0 };
   for (const [bbl, roll] of Object.entries(R)) {
     const b = bld(bbl);
     if (!b) continue;
@@ -885,15 +871,9 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       sp.byBand!.stock[band] += c; sp.byBand!.occ[band] += Math.min(c, l);
       scores[k].push({ sc: b.sc[k] ?? 50, cap: c });
     }
-    for (const t of roll.t) { const k = useOf(t); if (k in hc) hc[k] += firmHc(t); }
   }
-  for (const h of Object.values(s.holdings)) for (const t of h.tenants ?? []) {
-    const k = useOf(t);
-    if (!(k in hc)) continue;
-    ensureFirm(s, t);
-    hc[k] += firmHc(t);
-  }
-  for (const sk of e.seekers) if (sk.t) { hc[sk.use] += firmHc(sk.t); space[sk.use]!.seek += sk.want; }
+  for (const h of Object.values(s.holdings)) for (const t of h.tenants ?? []) if (COMM.includes(useOf(t))) ensureFirm(s, t);
+  for (const sk of e.seekers) if (sk.t) space[sk.use]!.seek += sk.want;
   e.dzBar = Object.fromEntries(Object.entries(dzAcc).map(([sec, [a, w]]) => [sec, w > 0 ? a / w : 0]));
   // each trade's payroll this month against last (its industries', economy.ts): the term a signing firm chooses reads it
   const tradeR: Record<string, number> = {};
@@ -969,14 +949,17 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     sp.ratio = tgt && want[k] > 0 ? have / want[k] : 1;
     if (!scores[k].length) continue;
     // THE OPENING ONLY (growOpeningStreet): before the game the town is grown
-    // to the size its opening space market says it is.
-    // THE OPENING: before the game the town is grown to the size its opening
-    // space market says it is.
+    // to the size its opening space market says it is — the feet its firms
+    // hold and are looking for, against the feet the opening's market says
+    // are held. (It read the firms' headcount in reference feet, which is
+    // what they NEED: a firm that formed wanting 40,000 ft and signed the
+    // 25,000 ft suite there was counted at 40,000, and the street grown from
+    // empty stopped filling at 87% of its offices and 59% of its sheds.)
     let fill = 0;
     if (opening && d) {
       const pCap = e.playerNow?.sf?.[k] ?? 0;
       const share = Math.min(1, (sp.cap + pCap) / Math.max(1, e.stock[k]));
-      fill = Math.max(0, d.ref * share - hc[k]) / FORM_M[k];
+      fill = Math.max(0, d.ref * share - sp.let - sp.seek) / FORM_M[k];
     }
     // SHEDS ARE A REGIONAL MARKET, AND ITS FIRMS CHOOSE WHERE TO BE
     // (2026-10-16). Most of the class's floor is off the map; its tenants are
@@ -1252,14 +1235,24 @@ function renewInPlace(s: GameState, b: Bld, roll: StreetRoll, t: Tenant, need: n
  * talks for three months. Null when nobody suitable is looking.
  */
 export function pullSeeker(s: GameState, use: BuiltClass, sf: number, score: number): Tenant | null {
+  return pullSeekerIn(s, use, sf * 0.5, sf * 2.2, score)?.firm ?? null;
+}
+
+/**
+ * A firm from the looking pool whose need is between `lo` and `hi` feet, to
+ * tour one of the player's buildings — weighted by how close the quality it
+ * shops for is to this building's `score`. Marks it in talks for three
+ * months. Null when nobody suitable is looking.
+ */
+export function pullSeekerIn(s: GameState, use: BuiltClass, lo: number, hi: number, score: number): { firm: Tenant; want: number } | null {
   const e = s.econ;
-  if (!e.seekers?.length || !COMM.includes(use as Comm)) return null;
+  if (!e.seekers?.length || !COMM.includes(use as Comm) || !(hi >= lo)) return null;
   const m = s.month;
   let tot = 0;
   const ws: [Seeker, number][] = [];
   for (const k of e.seekers) {
     if (k.use !== use || (k.tourM !== undefined && m - k.tourM < 3)) continue;
-    if (k.want < sf * 0.5 || k.want > sf * 2.2) continue;
+    if (k.want < lo || k.want > hi) continue;
     const firm = firmOf(s, k);
     if (!firm) continue;
     const w = Math.exp(-Math.abs((firm.quality ?? score) - score) / FIT_W);
@@ -1270,7 +1263,14 @@ export function pullSeeker(s: GameState, use: BuiltClass, sf: number, score: num
   let pick = ws[0][0];
   for (const [k, w] of ws) { u -= w; if (u <= 0) { pick = k; break; } }
   pick.tourM = m;
-  return firmOf(s, pick);
+  const firm = firmOf(s, pick);
+  return firm ? { firm, want: pick.want } : null;
+}
+
+/** A firm pulled for a tour that never happened (the suite would not demise for it) is free to look again. */
+export function releaseSeeker(s: GameState, fid: number | undefined) {
+  const k = fid === undefined ? undefined : s.econ.seekers?.find((x) => x.fid === fid);
+  if (k) k.tourM = undefined;
 }
 
 function firmOf(s: GameState, k: Seeker): Tenant | null {
@@ -1568,7 +1568,12 @@ export function flatUnitSf(rec: ParcelRecord, cap: number): number {
 // opening economy, held still — so the street a player opens on is the result
 // of moves, renewals, failures and new firms: which buildings are full and
 // which are struggling is something that happened.
-const OPENING_YEARS = 4;
+/**
+ * The town's pre-history, in years: the longest lease a firm signs
+ * (leasing.ts termBandM, 144 months for the best covenant), so every lease in
+ * place on the first day was signed in it.
+ */
+const OPENING_YEARS = 12;
 
 function growOpeningStreet(s: GameState, parcels: ParcelTable) {
   const e = s.econ;

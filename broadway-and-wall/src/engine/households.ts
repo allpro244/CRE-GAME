@@ -2281,6 +2281,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   r.arriveAcc = (r.arriveAcc ?? 0) + MOVE_M * Math.min(1, pull) * hhW;
   const slots: number[] = [];
   for (let ind = 0; ind < N_IND; ind++) for (let v = open[ind]; v >= wR / 2; v -= wR) slots.push(ind);
+  const V4 = V.slice();
   for (const ind of shuffle(slots)) {
     {
       // (a partner placed below may already have taken this industry's opening)
@@ -2332,6 +2333,43 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
         if (c !== null && r.ownMu + OWN_SIGMA * R.n() >= c) { buyHome(r, b, i, H, s.month); r.flow.bought = (r.flow.bought ?? 0) + wR; }
       }
     }
+  }
+  // ...AND WHAT NO MOVER CAME FOR GOES TO THE TOWN'S OWN JOBLESS (PROOF.md
+  // #4). An opening a month old that this month's movers did not fill is
+  // still posted, and the town's jobless still looking apply for it: the
+  // ones step 3b passed over take the openings left, an industry's in
+  // proportion to what it has left (each worker the best of its shortlist
+  // among them). Before this a local reached a month-old opening only beside
+  // a mover (the loop above stops when the movers run out), so once the
+  // movers were spent the openings sat with thousands of the town's jobless
+  // beside them. Measured (seed 550991, year 20): 2,850 jobless left after
+  // the month's search and 310 openings still open, 85% of them in
+  // restaurants — the bottom rung of every vacancy chain (a quit up from it
+  // leaves its opening behind; QUIT_GAIN) — so restaurants ran 13-51% short
+  // at full employment and soaked up every layoff in a slump. A trade stays
+  // short only when the town has nobody left looking.
+  const left = Float64Array.from(open, (o, ind) => Math.min(V[ind], o - (V4[ind] - V[ind])));
+  const pickLeft = (w: number) => {
+    let t = 0;
+    for (let ind = 0; ind < N_IND; ind++) if (left[ind] >= w / 2 && V[ind] >= w / 2) t += left[ind];
+    if (!(t > 0)) return -1;
+    let x = R.u() * t;
+    for (let ind = 0; ind < N_IND; ind++) if (left[ind] >= w / 2 && V[ind] >= w / 2) { x -= left[ind]; if (x < 0) return ind; }
+    return -1;
+  };
+  for (; stillAt < still.length; stillAt++) {
+    const sl = still[stillAt], i = (sl / 3) | 0, k = sl % 3, w = r.a!.wt[i];
+    if (EMP()[k][i] !== EMP_UNEMP) continue;
+    let job: ReturnType<typeof bestJob> = null;
+    for (let t = 0; t < JOB_SHORTLIST; t++) {
+      const ind = pickLeft(w);
+      if (ind < 0) break;
+      const c = bestJob(i, k, ind);
+      if (c && (!job || c.value > job.value)) job = c;
+    }
+    if (!job) { let any = false; for (let ind = 0; ind < N_IND; ind++) if (left[ind] >= 0.5) { any = true; break; } if (!any) break; continue; }
+    place(i, k, job); left[job.ind] -= w;
+    WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * R.n());
   }
   r.arriveAcc = Math.max(0, Math.min(wR, r.arriveAcc));
   r.vacLeft = Array.from(V, (v) => +Math.max(0, v).toFixed(2));

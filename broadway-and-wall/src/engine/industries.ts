@@ -476,6 +476,55 @@ export const NAT_TREND: Record<IndustryId, number> = Object.fromEntries(INDUSTRY
 export const CYCLE_BETA: Record<IndustryId, number> = Object.fromEntries(INDUSTRY_IDS.map((k) => [k, RAW[k].cycleBeta])) as Record<IndustryId, number>;
 
 /**
+ * HOW LONG A TRADE'S LEAD OVER THE NATION LASTS (PROOF.md #4). NAT_TREND is
+ * what each trade grew at over 1990-2019; held as the centre of its trend for
+ * a century, IT services gain ~5% a year on the nation's mix for ever and a
+ * town heavy in them outgrows any recession. The record says a lead fades:
+ * the 1990s' fast growers grew a fraction as fast against the nation in the
+ * next two decades. BLS CES annual averages (thousands) [S~], 1990 / 2000 /
+ * 2019, each window's growth less total nonfarm's (109,530 / 132,020 /
+ * 150,900):
+ *   computer systems design      410 /  1,250 /  2,250
+ *   employment services        1,510 /  3,850 /  3,750
+ *   securities and funds         460 /    805 /    970
+ *   health care                7,810 / 10,860 / 16,370
+ *   manufacturing             17,700 / 17,260 / 12,810
+ *   restaurants and bars       6,570 /  8,110 / 12,200
+ *   construction               5,260 /  6,790 /  7,490
+ *   retail                    13,180 / 15,280 / 15,600
+ *   federal government         3,200 /  2,870 /  2,800
+ *   information                2,690 /  3,630 /  2,860
+ * The least-squares slope of the 2000-19 lead on the 1990s' lead (through the
+ * origin: the nation's own growth carries no lead) is what of a lead is left
+ * 14.5 years on, midpoint to midpoint; its half-life is NAT_TREND_HALF_Y.
+ * Each trade's centre over the nation's (the opening mix's mean trend) fades
+ * at that half-life from the opening (economy.ts `tickExports`); the wander
+ * about it (market.ts NAT_TREND_SD, NAT_TREND_TAU_M) is untouched, so trades
+ * still drift apart — no lead is promised for ever.
+ */
+const LEAD_RECORD: readonly (readonly [number, number, number])[] = [
+  [410, 1250, 2250], [1510, 3850, 3750], [460, 805, 970], [7810, 10860, 16370], [17700, 17260, 12810],
+  [6570, 8110, 12200], [5260, 6790, 7490], [13180, 15280, 15600], [3200, 2870, 2800], [2690, 3630, 2860],
+];
+export const NAT_TREND_HALF_Y = (() => {
+  const nf = [109530, 132020, 150900];
+  const g = (a: number, b: number, y: number) => Math.log(b / a) / y;
+  let xy = 0, xx = 0;
+  for (const [a, b, c] of LEAD_RECORD) {
+    const x = g(a, b, 10) - g(nf[0], nf[1], 10), y = g(b, c, 19) - g(nf[1], nf[2], 19);
+    xy += x * y; xx += x * x;
+  }
+  const kept = Math.min(0.99, Math.max(0.01, xy / xx));
+  return 14.5 * Math.LN2 / -Math.log(kept);
+})();
+/** The opening mix's mean trend: the part of every trade's trend that is the nation's, not a lead over it. */
+export const NAT_TREND_MEAN = (() => {
+  let s = 0, w = 0;
+  for (const k of INDUSTRY_IDS) { s += NAT_EMP_SHARE[k] * NAT_TREND[k]; w += NAT_EMP_SHARE[k]; }
+  return w > 0 ? s / w : 0;
+})();
+
+/**
  * HOW A BUYER WEIGHS PRICE AGAINST QUALITY, ONE NUMBER AN INDUSTRY: the
  * elasticity of substitution between its suppliers, by Rauch's (1999, JIE)
  * classification of what it sells — goods traded on an organised exchange

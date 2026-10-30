@@ -623,7 +623,11 @@ function wMedian(xs: { v: number; w: number }[], q = 0.5): number {
  * life, a merchant builder's exit, a non-core trim, an estate, a receiver —
  * sellerTerms "forced") — so a year rich in failed rounds or forced sellers
  * does not read as a market that moved, and a slope is not a seller's
- * situation (the selection the median could not see).
+ * situation (the selection the median could not see). Measured on that grid
+ * (2 seeds x 50 years): condition's slope is near zero for office, retail
+ * and flats in the prints themselves — bidders price condition only through
+ * the income the appraiser already capitalises (dealView's capital plan
+ * reads age and spec, not condition) — and clearly negative for industrial.
  * The ridge (RIDGE, a shape parameter: about ten prints spread across the town
  * to trust a slope halfway) is the prior that there is no adjustment until
  * the prints show one; +/-2 is a guard only.

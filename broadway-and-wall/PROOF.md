@@ -247,6 +247,31 @@ The rent's slide is the right answer to that; the vacancy's persistence is
 what is missing (conversion or teardown of industrial). Seed 44 stays mostly
 inside the band (3-14%).
 
+### #5-#7 traced (claude/supply-response, 2026-10-30)
+
+One cause under all three. A probe on seed 11 (80 years) counted every
+builder's rejections: vacant lots run out (312 buildable at year 10, 43 at
+year 80), and by year 50 named firms own 12.3M of 14.0M sf of office, every
+shed and 3.0M of 3.4M sf of flats. The street's teardown desk skips owned
+deeds, so a built-out town renewed itself only through `startOwnJob`, which
+kept the rules the desk had retired — a 35-year birthday, a worn grade, a
+use drawn off the zoning table, the residual charged for a site the owner
+holds, a 12% monthly die on top of a yes. Owners started 0-5 replacements a
+decade, and empty sheds stood on dirt that paid for offices. Land price,
+financing and beliefs were not the binding terms. Now an owner runs the
+desk's own test on its buildings (dev.ts `ownerRedevelopment`): every use,
+every height, against the building's value standing, at its own margin.
+
+Re-measured, seeds 11 and 22 × 100 years (2-seed report, not the 6-seed
+table): office real rent +1.3%/yr (PASS; was 1.9%), industrial real rent
++0.8%/yr (PASS; was −0.7%) and vacancy median 9.9% (WATCH, 60% of years in
+band; was 15%, 46%), starts 1.5% of stock (PASS; was 0.6%), office sf per job
+0.94-1.31 of the opening (WATCH; was 0.42-0.78). The lags still FAIL (starts
+after jobs 3-4 years, band 0-3; vacancy after starts 5) — closer than the ±5
+edge, not yet the Wheaton shape. Side effect to watch with #1: owners also
+replace flats with offices where flats' rent pays less, so the flats
+shortage feeds on its own price signal until #1's rent is right.
+
 ### 8. Smaller watches
 
 - **Unemployment, century mean 4.5%** (band 4.5-7; was 5.2%): arrivals

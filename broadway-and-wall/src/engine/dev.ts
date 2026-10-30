@@ -27,7 +27,7 @@ export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from 
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
 import { depositFor, depositsOn, genAnchorTenant, leasableUses, minLettableSf, pickName, pickSector, useVacantSf } from "./leasing";
-import { claimJob, jobDelivered, ownerOf, gradeOf, streetHurdle, streetHasOwnMoney, anonHurdle, hurdleAt, freeCash, transferDeed } from "./rivals";
+import { claimJob, jobDelivered, ownerOf, gradeOf, firmMargin, streetHurdle, streetHasOwnMoney, anonHurdle, hurdleAt, freeCash, transferDeed } from "./rivals";
 import { logFirm } from "./firmLog";
 import { spendable, fundableNow, fundAndBook } from "./credit";
 import { mixOf, districtLabel } from "./mix";
@@ -3956,6 +3956,101 @@ function teardownScope(parcels: ParcelTable, bbls: string[]): string[] {
   return SCOPE.list;
 }
 
+/**
+ * THE BEST BUILDING THIS SITE WILL TAKE, AGAINST WHAT STANDS ON IT (2026-10-30).
+ *
+ * One search for every redeveloper: each use the site may host (no zoning,
+ * zonePermits), each height on the shared ladder that adds at least 8% to what
+ * stands, on one shop's spec, leverage, outlook and bar, with what the standing
+ * building is worth as a building (`oc`) as the price of the site. Returns the
+ * best that clears, and the best return seen whether or not it cleared (the
+ * assembly test reads it). Read by the street's teardown desk (`tickTeardowns`)
+ * and by an owner weighing its own building (`ownerRedevelopment`), so a
+ * building held by a firm and one held by nobody in particular face the same
+ * redevelopment test.
+ */
+function replacementSearch(
+  s: GameState, parcels: ParcelTable, bbl: string,
+  rec: NonNullable<ReturnType<typeof resolveRec>>, site: NonNullable<ReturnType<typeof resolveRec>>,
+  cls: string, oldAll: number, oc: number, rdev: DeveloperProfile, who: { id: string } | null,
+): { best: { u: NonNullable<ReturnType<typeof underwriteDevelopment>>; use: BuiltClass; h: number } | null; maxH: number } {
+  const e = s.econ;
+  let best: { u: NonNullable<ReturnType<typeof underwriteDevelopment>>; use: BuiltClass; h: number } | null = null;
+  let maxH = 0;
+  for (const k of BUILT_CLASSES) {
+    if (!zonePermits(rec.zoneDist, k, rec.demandScore, e)) continue;
+    const plate = cityCoverage(k);
+    const env = Math.max(1, Math.min(cityInfillCap(s, parcels, site, k), maxFloorsFor(site, plate, k)));
+    // THE MARKET ORDERED SO MANY FEET, HERE TOO (2026-10-10). The start path
+    // caps a building at what is owed for its use; this path took the
+    // best-clearing height whatever the book said and netted it off after.
+    // Measured on a 100-year Frontier town: one replacement put 1.65M sf of
+    // flats in the pipeline in a three-year window when the book had
+    // ordered 92k and owed none, and flats vacancy went to 44%. The space a
+    // replacement ADDS — less what stood, when it stood in the same use — is
+    // held to the order, one storey always allowed.
+    const owedK = Number.POSITIVE_INFINITY;   // no order cap: the pro forma's delivery vacancy sizes it
+    const standsAsK = cls === k ? oldAll : 0;
+    for (const fl of schemeFloorLadder(k, env)) {
+      if (site.lotArea * plate * fl < oldAll * 1.08) continue;
+      if (fl > 1 && site.lotArea * plate * fl - standsAsK > Math.max(owedK, site.lotArea * plate)) continue;
+      if (fl > rdev.maxFloors) continue;
+      const u = underwriteDevelopment(s, parcels, bbl, k, fl, plate, oc, rdev.spec, rdev.ltc);
+      if (!u || (!u.financeable && rdev.ltc > CASH_BUILDER_LTC)) continue;
+      // Same size discipline as on vacant dirt: no bigger than this shop's
+      // share of the class's standing stock.
+      if (fl > 1 && u.plan.sf * (u.plan.mix?.[k] ?? 1) > rdev.maxShare * Math.max(1, e.stock?.[k] ?? 0)) continue;
+      if (forwardVacancy(e, k, u.plan.sf * (u.plan.mix?.[k] ?? 1), u.plan.months, beliefOf(s, who, k)) > normalVac(e, k) + rdev.vacTol) continue;
+      const h = hurdleAt(u.plan, DEV_MARGIN) * rdev.outlook * momentumRead(s, k, rdev.momentum, who) * exitRead(s, who, k) / rdev.bar;
+      maxH = Math.max(maxH, h);
+      if (h < 1) continue;
+      if (!best || h > best.h) best = { u, use: k, h };
+    }
+  }
+  return { best, maxH };
+}
+
+/**
+ * AN OWNER WEIGHING ITS OWN BUILDING (2026-10-30): hold it, or knock it down
+ * for the building its site now pays for — whatever use that is.
+ *
+ * Once the town's firms owned most of it, its redevelopment ran through
+ * `startOwnJob` (rivals.ts) on rules `tickTeardowns` had retired for the
+ * buildings nobody in particular owns: a 35-year birthday, a worn-or-worse
+ * grade, a use drawn off the zoning table's programme mix, and the dirt's
+ * builder residual charged as the price of a site the owner already holds.
+ * Measured on seed 11 over 80 years: by year 50 firms held 12.3M of the 14.0M
+ * sf of office, every shed and 3.0M of 3.4M sf of flats, so the street's desk
+ * (which skips owned deeds) was sampling a remnant, while the owners' path
+ * started 0-5 redevelopments a decade. Vacant lots ran out (312 buildable at
+ * year 10, 43 at year 80), office starts fell to ~0.3% of stock a year with
+ * real office rent rising 2.3%/yr, and sheds sat 16-21% empty on land that
+ * paid for offices, owned by firms whose rule never asked. With this test,
+ * same seed: owners started 55-176 replacements a decade from year 50, 59 of
+ * them sheds to offices in years 70-80; office stock at year 80 23.8M sf
+ * (was 13.9M), shed vacancy 0.7-9% (was 16-21%).
+ *
+ * The test is the one `tickTeardowns` applies: the best replacement the site
+ * takes, every use and every height on the ladder, against what the standing
+ * building is worth as a building (`redevelopmentBasis`). A builder firm uses
+ * its own habits; any other owner the middle of the developer population
+ * (`drawDeveloper`: spec 0.5, 60% loan-to-cost, no tilt in outlook or
+ * momentum, 6 points of vacancy tolerance, 2% of the class's stock in one
+ * building — the medians of the stated spreads there), at its own margin.
+ */
+export function ownerRedevelopment(
+  s: GameState, parcels: ParcelTable, r: Rival, bbl: string, rec: NonNullable<ReturnType<typeof resolveRec>>,
+): { use: BuiltClass; plan: DevPlan; h: number } | null {
+  if (rec.class === "land" || !(rec.bldgArea > 0)) return null;
+  const prof: DeveloperProfile = r.builderProf
+    ? { ...r.builderProf, minDemand: 0 }
+    : { bar: (1 + firmMargin(r, s.month)) / (1 + DEV_MARGIN), minDemand: 0, spec: 0.5, maxFloors: Infinity, ltc: 0.6,
+        uses: ["office", "multifamily", "industrial", "retail"], outlook: 1, momentum: 0, vacTol: 0.06, maxShare: 0.02 };
+  const oc = redevelopmentBasis(rec, s.econ, gradeOf(s, rec));
+  const found = replacementSearch(s, parcels, bbl, rec, rec, rec.class, rec.bldgArea, oc, prof, r);
+  return found.best ? { use: found.best.use, plan: found.best.u.plan, h: found.best.h } : null;
+}
+
 function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null = null) {
   // A slow clock. Roughly one candidate examined a month, and only the worst
   // offender in a sample gets the notice — a city does not clear a block a
@@ -4232,36 +4327,9 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
       mergedTouched();
     }
     const site = kids.length ? resolveRec(parcels, s, bbl)! : rec;
-    for (const k of BUILT_CLASSES) {
-      if (!zonePermits(rec.zoneDist, k, rec.demandScore, e)) continue;
-      const plate = cityCoverage(k);
-      const env = Math.max(1, Math.min(cityInfillCap(s, parcels, site, k), maxFloorsFor(site, plate, k)));
-      // THE MARKET ORDERED SO MANY FEET, HERE TOO (2026-10-10). The start path
-      // caps a building at what is owed for its use; this path took the
-      // best-clearing height whatever the book said and netted it off after.
-      // Measured on a 100-year Frontier town: one replacement put 1.65M sf of
-      // flats in the pipeline in a three-year window when the book had
-      // ordered 92k and owed none, and flats vacancy went to 44%. The space a
-      // replacement ADDS — less what stood, when it stood in the same use — is
-      // held to the order, one storey always allowed.
-      const owedK = Number.POSITIVE_INFINITY;   // no order cap: the pro forma's delivery vacancy sizes it
-      const standsAsK = cls === k ? oldAll : 0;
-      for (const fl of schemeFloorLadder(k, env)) {
-        if (site.lotArea * plate * fl < oldAll * 1.08) continue;
-        if (fl > 1 && site.lotArea * plate * fl - standsAsK > Math.max(owedK, site.lotArea * plate)) continue;
-        if (fl > rdev.maxFloors) continue;
-        const u = underwriteDevelopment(s, parcels, bbl, k, fl, plate, oc, rdev.spec, rdev.ltc);
-        if (!u || (!u.financeable && rdev.ltc > CASH_BUILDER_LTC)) continue;
-        // Same size discipline as on vacant dirt: no bigger than this shop's
-        // share of the class's standing stock.
-        if (fl > 1 && u.plan.sf * (u.plan.mix?.[k] ?? 1) > rdev.maxShare * Math.max(1, e.stock?.[k] ?? 0)) continue;
-        if (forwardVacancy(e, k, u.plan.sf * (u.plan.mix?.[k] ?? 1), u.plan.months, beliefOf(s, null, k)) > normalVac(e, k) + rdev.vacTol) continue;
-        const h = hurdleAt(u.plan, DEV_MARGIN) * rdev.outlook * momentumRead(s, k, rdev.momentum, null) * exitRead(s, null, k) / rdev.bar;
-        if (!kids.length) nearH = Math.max(nearH, h);
-        if (h < 1) continue;
-        if (!bestU || h > bestH) { bestU = u; bestH = h; nextUse = k; lead = k; bestKids = kids; bestOc = oc; }
-      }
-    }
+    const found = replacementSearch(s, parcels, bbl, rec, site, cls, oldAll, oc, rdev, null);
+    if (!kids.length) nearH = Math.max(nearH, found.maxH);
+    if (found.best && (!bestU || found.best.h > bestH)) { bestU = found.best.u; bestH = found.best.h; nextUse = found.best.use; lead = found.best.use; bestKids = kids; bestOc = oc; }
     s.merged = before;
     }
     if (!bestU) continue;
@@ -5074,7 +5142,8 @@ function developerLook(
     }
   }
   // Built only if the deal clears THIS developer's bar.
-  if (!best || best.h < dev.bar) return false;
+  if (!best) return false;
+  if (best.h < dev.bar) return false;
   // WHAT IT BELIEVED WHEN IT DECIDED, on the cause ledger, so a glut can be
   // traced back to the forecasts that built it (beliefs.ts).
   if (firm && !opts?.backdate && !opts?.quiet) {

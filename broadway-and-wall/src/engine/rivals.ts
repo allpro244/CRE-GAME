@@ -41,7 +41,7 @@ import { mergedTouched, DEV_MARGIN, holdingValue, assetValue, demandLinear, init
 import type { DevPlan } from "./dev";
 import { lpNetIrr } from "./waterfall";
 import { BAND_TERMS, bandIdx, floorBand, inheritRecord, rivalBand, scoreOf, type Band } from "./reputation";
-import { cityCoverage, cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, openConstructionDesks, planReuseAt, reuseZoneBar, projectedDevIrr } from "./dev";
+import { cityCoverage, cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, ownerRedevelopment, openConstructionDesks, planReuseAt, reuseZoneBar, projectedDevIrr } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
 import { streetRefiProceeds, stabViewFor } from "./debt";
 import { stampApproach, conveyedValue, conveyedDeed } from "./leasing";
@@ -3448,13 +3448,24 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   if (paramsOf(r).build <= 0) return;
   if (!canCarryAnother(s, r)) return;
   if (r.sheet && (s.cityJobs ?? []).filter((j) => j.firmId === r.id && !j.orphaned).length >= paramsOf(r).jobs) return;
-  // Vacant land first; when housable floor lags employment, densify worn or
-  // obsolete stock they already own — same underwrite and order book as the
-  // city's teardown desk (ECONOMY.md §F #2 / CENTURY OPEN #6).
-  type Site = { bbl: string; rec: ParcelRecord; redev: boolean; score: number };
+  // Vacant land first; then the firm's own buildings, each weighed the way
+  // the street's teardown desk weighs the ones nobody in particular owns
+  // (dev.ts ownerRedevelopment).
+  type Site = { bbl: string; rec: ParcelRecord; score: number };
   let best: Site | null = null;
-  // the scan below builds and demolishes nothing, so each block's cornice is asked once
-  const yrNow = START_YEAR + Math.floor(s.month / 12);
+  let bestFirst = false;
+  // THE BUILDINGS WORTH ASKING ABOUT: those whose envelope holds at least 15%
+  // more than stands (a replacement must add 8% to be worth the wrecking ball,
+  // dev.ts replacementSearch). NO BIRTHDAY AND NO GRADE (2026-10-30): `age <
+  // 35` and "worn or obsolete" stood where the price belongs, as they did on
+  // the street's desk until 2026-10-09 — a sound young building is kept
+  // because it is worth more standing than any replacement earns over it, and
+  // an empty shed on dirt that now pays for offices is not kept for being
+  // young. One a month goes in front of the committee, drawn in proportion to
+  // its room to grow, so the most promising site is not the only one ever
+  // asked about (it was: the best score won every month).
+  const redevs: { bbl: string; rec: ParcelRecord; w: number }[] = [];
+  let redevW = 0;
   for (const bbl of r.bbls) {
     if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
     if (s.developments[bbl] || s.holdings[bbl]) continue;
@@ -3481,100 +3492,85 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
       // AN ASSEMBLER BUILDS ON THE BLOCK IT ASSEMBLED, first (strategy.ts).
       const onBlock = assembled && rec.block === assembled ? 2e6 : 0;
       const score = onBlock + (pencils ? 1e6 : 0) + rec.demandScore + rng(s, "rivals") * 20;
-      if (!best || score > best.score) best = { bbl, rec, redev: false, score };
+      if (!best || score > best.score) { best = { bbl, rec, score }; bestFirst = pencils || onBlock > 0; }
       continue;
     }
     if (!rec.bldgArea) continue;
-    const age = yrNow - (rec.yearBuilt || 1900);
-    // 35 not 45 — century runs showed near-zero rival redevelopment; worn stock
-    // at mid-life is exactly what densifies in a real city.
-    if (age < 35) continue;
-    const cond = assetGrade(r, rec);
-    if (cond !== "obsolete" && cond !== "worn") continue;
-    let useProbe = useForZone(rec.zoneDist, rec.demandScore, rng(s, "rivals"), s.econ);
-    if (useProbe === "retail" && retailWantsMixed(rec)) useProbe = "mixed";
-    const leadProbe = dominantOf(devMix(useProbe));
-    const st = s.econ.structTight?.[leadProbe] ?? 0;
-    // (2026-10-13) A shortage gate stood here: no redevelopment unless the
-    // class was already short (structTight over 5%, or vacancy on its floor).
-    // The pro forma below prices delivery vacancy, rent and lease-up, so the
-    // gate decided nothing it does not — except that a firm could never
-    // build ahead of a shortage, only into one, so no firm ever overbuilt.
-    const infillProbe = cityInfillCap(s, parcels, rec, leadProbe);
-    const targetSf = rec.lotArea * cityCoverage(useProbe) * infillProbe;
-    if (targetSf < rec.bldgArea * 1.15) continue;
-    const densify = targetSf / rec.bldgArea;
-    const score = densify * (1 + 3 * st) * rec.demandScore + rng(s, "rivals") * 10;
-    if (!best || score > best.score) best = { bbl, rec, redev: true, score };
+    if (s.landmarks?.[bbl] !== undefined || s.cityGroundLeases?.[bbl]) continue;
+    const room = rec.lotArea * farMaxFor(rec) / rec.bldgArea;
+    if (room < 1.15) continue;
+    redevs.push({ bbl, rec, w: room - 1 });
+    redevW += room - 1;
   }
-  if (!best) return;
-  const { bbl, rec, redev } = best;
-  let use: DevUse = useForZone(rec.zoneDist, rec.demandScore, rng(s, "rivals"), s.econ);
-  // Shops do not stack, and a corner that carries twenty floors does not get a
-  // two-storey shop on it — it gets shops at grade with something above.
-  if (use === "retail" && retailWantsMixed(rec)) use = "mixed";
-  // DIRT BOUGHT ON THE RESIDUAL IS BUILT ON THE RESIDUAL'S SCHEME. A firm that
-  // paid for a lot on its highest and best use (rivalBuys) and then drew a use
-  // out of a hat at groundbreak was pricing one building and building
-  // another — the same quantity with two answers. On vacant dirt the firm
-  // builds the scheme the land market prices it on: use, floors and plate
-  // from `landRead`, inside the zoning, the coverage limit and the lot's
-  // height cap. Where nothing pencils any more it falls back to the draw
-  // above, which the shared underwriting below then refuses or passes.
-  const hbu = !redev ? landRead(rec, s.econ).scheme : null;
-  if (hbu && hbu.psf > 0) use = hbu.use;
-  const lead = dominantOf(devMix(use));
-  // Demand is in the pro forma below: rent and lease-up at delivery
-  // vacancy, the pipeline and this building included (`forwardVacancy`).
-  // Preserve the draw order; apply it after this actual site has gone through
-  // the shared parcel pro forma.
+  // THE OWNER'S QUESTION about one of its buildings: hold it, or build what
+  // the site now pays for. Asked when none of its dirt pencils first.
+  let redev: { bbl: string; rec: ParcelRecord; use: DevUse; plan: DevPlan; appetite: number } | null = null;
+  if (!bestFirst && redevs.length) {
+    let roll = rng(s, "rivals") * redevW;
+    let pick = redevs[redevs.length - 1];
+    for (const c of redevs) { roll -= c.w; if (roll <= 0) { pick = c; break; } }
+    const o = ownerRedevelopment(s, parcels, r, pick.bbl, pick.rec);
+    // the same appetite the shared underwriting reads off a clearing plan
+    if (o) redev = { bbl: pick.bbl, rec: pick.rec, use: o.use, plan: o.plan, appetite: Math.min(3, Math.pow(o.h, 1.2)) };
+  }
+  if (!redev && !best) return;
+  const redevB = !!redev;
+  const bbl = redev ? redev.bbl : best!.bbl;
+  const rec = redev ? redev.rec : best!.rec;
+  let use: DevUse;
+  let underwriting: { plan: DevPlan; appetite: number } | null;
+  if (redev) {
+    use = redev.use;
+    underwriting = { plan: redev.plan, appetite: redev.appetite };
+  } else {
+    use = useForZone(rec.zoneDist, rec.demandScore, rng(s, "rivals"), s.econ);
+    // Shops do not stack, and a corner that carries twenty floors does not get a
+    // two-storey shop on it — it gets shops at grade with something above.
+    if (use === "retail" && retailWantsMixed(rec)) use = "mixed";
+    // DIRT BOUGHT ON THE RESIDUAL IS BUILT ON THE RESIDUAL'S SCHEME. A firm that
+    // paid for a lot on its highest and best use (rivalBuys) and then drew a use
+    // out of a hat at groundbreak was pricing one building and building
+    // another — the same quantity with two answers. On vacant dirt the firm
+    // builds the scheme the land market prices it on: use, floors and plate
+    // from `landRead`, inside the zoning, the coverage limit and the lot's
+    // height cap. Where nothing pencils any more it falls back to the draw
+    // above, which the shared underwriting below then refuses or passes.
+    const hbu = landRead(rec, s.econ).scheme;
+    if (hbu && hbu.psf > 0) use = hbu.use;
+    const lead0 = dominantOf(devMix(use));
+    const farMax = farMaxFor(rec);
+    const frac = Math.min(0.95, 0.4 + rng(s, "rivals") * 0.45);
+    const sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
+    const plate = hbu && hbu.psf > 0 ? hbu.coverage : cityCoverage(use);
+    let floors = Math.max(1, Math.round(sf / (rec.lotArea * plate)));
+    if (hbu && hbu.psf > 0) floors = hbu.floors;
+    // What the plate can physically stand up (`cityInfillCap` is the
+    // engineering limit since the cornice rule went, 2026-10-10).
+    const infill = cityInfillCap(s, parcels, rec, lead0);
+    if (floors > infill) floors = infill;
+    const cap = MAX_FLOORS_BY_USE[use];
+    if (cap !== undefined && floors > cap) floors = cap;
+    // NO PERMISSION TO BUY (2026-10-13). A firm could pay an "entitlement
+    // premium" to build past `infill` — which since the cornice rule went is the
+    // engineering limit, so it was buying floors the plate cannot carry. This
+    // game has no discretionary approvals; the envelope is the FAR and the
+    // physics, and the pro forma decides within them.
+    // A lot the land market priced as a product (a pad, a centre, a box) is
+    // built as that product: the scheme the firm paid for is the one it builds.
+    const uw = underwriteDevelopment(s, parcels, bbl, use, floors, plate, undefined, 0.5, undefined,
+      hbu && hbu.psf > 0 ? hbu.product : undefined);
+    underwriting = uw?.clears ? uw : null;
+  }
+  if (!underwriting) return;
+  // Demand is in the pro forma: rent and lease-up at delivery vacancy, the
+  // pipeline and this building included (`forwardVacancy`).
   const startsRoll = rng(s, "rivals");
-  const farMax = farMaxFor(rec);
-  const frac = Math.min(0.95, (redev ? 0.55 : 0.4) + rng(s, "rivals") * 0.45);
-  let sf = Math.max(3000, Math.round((rec.lotArea * farMax * frac) / 100) * 100);
-  const plate = hbu && hbu.psf > 0 ? hbu.coverage : cityCoverage(use);
-  let floors = Math.max(1, Math.round(sf / (rec.lotArea * plate)));
-  if (hbu && hbu.psf > 0) {
-    floors = hbu.floors;
-    sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
-  }
-  // What the plate can physically stand up (`cityInfillCap` is the
-  // engineering limit since the cornice rule went, 2026-10-10).
-  const infill = cityInfillCap(s, parcels, rec, lead);
-  if (floors > infill) {
-    floors = infill;
-    sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
-  }
-  const cap = MAX_FLOORS_BY_USE[use];
-  if (cap !== undefined && floors > cap) {
-    floors = cap;
-    sf = Math.max(3000, Math.round((rec.lotArea * plate * floors) / 100) * 100);
-  }
-  if (redev && sf < rec.bldgArea * 1.12) return;
-  const opp = redev
-    ? (() => {
-      const cond = assetGrade(r, rec);
-      const hair = cond === "obsolete" ? 0.78 : cond === "worn" ? 0.86 : 0.93;
-      return Math.max(landValue(rec, s.econ), assetValue(rec, s.econ, cond) * hair);
-    })()
-    : undefined;
-  // NO PERMISSION TO BUY (2026-10-13). A firm could pay an "entitlement
-  // premium" to build past `infill` — which since the cornice rule went is the
-  // engineering limit, so it was buying floors the plate cannot carry. This
-  // game has no discretionary approvals; the envelope is the FAR and the
-  // physics, and the pro forma decides within them.
-  const basisOverride = opp;
-  // A lot the land market priced as a product (a pad, a centre, a box) is
-  // built as that product: the scheme the firm paid for is the one it builds.
-  const underwriting = underwriteDevelopment(s, parcels, bbl, use, floors, plate, basisOverride, 0.5, undefined,
-    hbu && hbu.psf > 0 ? hbu.product : undefined);
-  if (!underwriting?.clears) return;
   // Land-bank starts were ~1%/month even for a full-appetite developer — so a
   // firm sitting on dirt still almost never broke ground. Raise the monthly
   // hazard so a funded land bank becomes buildings, not a slow bleed.
   // Redevelopment was rarer than land-bank starts; push densify harder so the
   // city renews itself (same roll count — higher gate pass rate only).
-  const startGate = redev ? 0.12 : 0.055;
+  const startGate = redevB ? 0.12 : 0.055;
   // ONE BUILDER DOES NOT BUILD THE WHOLE TOWN EITHER. The street's mandate
   // limit (rivalBuys: appetite halved at 15% of the street's book) was only
   // ever applied to buying, so a builder that got ahead compounded on its own
@@ -3585,14 +3581,22 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   const streetAum = livingRivals(s).reduce((a, x) => a + Math.max(0, x.aum ?? 0), 0);
   const share = streetAum > 0 ? Math.max(0, r.aum ?? 0) / streetAum : 0;
   const mandate = 1 / (1 + (share / 0.15) ** 2);
-  if (startsRoll >= startGate * paramsOf(r).build * ci * underwriting.appetite * mandate) return;
+  // AN OWNER THAT HAS DECIDED DOES NOT WAIT ON A DIE (2026-10-30). The land
+  // bank's monthly hazard stays (its plan is the land market's scheme at
+  // hurdle 1, not the firm's own pass). A redevelopment has been through the
+  // firm's own test at its own margin, against what the building is worth
+  // standing, with delivery vacancy priced (dev.ts replacementSearch) — as a
+  // vacant-lot developer commits the month its scheme clears its bar. The
+  // 12% hazard discarded about nine in ten of those decisions (seed 11,
+  // years 20-30: 329 yes, 22 starts) on a clock. What is left is the firm's
+  // style (how much of its business is building) and the concentration fade.
+  const gate = redevB ? paramsOf(r).build * mandate : startGate * paramsOf(r).build * ci * underwriting.appetite * mandate;
+  if (startsRoll >= gate) return;
   const plan = underwriting.plan;
   // ...and its construction lender has a house limit on one name, like every
   // acquisition desk (deskWithRoom): no desk with room, no start.
   if (plan.commitment > 0 && !deskWithRoom(s, r.id, plan.commitment)) return;
-  sf = plan.sf;
-  floors = plan.floors;
-  if (redev && sf < rec.bldgArea * 1.08) return;
+  if (redevB && plan.sf < rec.bldgArea * 1.08) return;
   const cost = plan.costTotal;
   if (cost > (r.aum ?? 0) * 0.9 + r.cash * 5) return;
   // Dirt is already theirs — first equity draw only (loan follows over the job).
@@ -3603,7 +3607,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   const formerDurationRoll = rng(s, "rivals");
   void formerDurationRoll;
   drawLine(s, r, draw);
-  breakGround(s, parcels, r, bbl, rec, use, plan, redev);
+  breakGround(s, parcels, r, bbl, rec, use, plan, redevB);
 }
 
 /**

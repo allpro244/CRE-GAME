@@ -308,7 +308,7 @@ for (let m = 0; m < 24; m++) base24 = tick(base24);
   base.economy.XJ0[iM] += 0.25 * base.econ.stock.industrial / E.INDUSTRIES.machinery.sfPerWorker;
   for (let m = 0; m < 36; m++) base = tick(base);
   const trt = structuredClone(base);
-  trt.economy.lnShare[iM] -= Math.log(10);
+  trt.economy.lnNat[iM] -= Math.log(10);   // the nation stops buying the plant's product (an input; the town's share is its firms' orders)
   const { ma } = twin(structuredClone(base), trt, 36);
   const f = Object.fromEntries(CLS.map((k) => [k, firstOver(ma[k], 0.01)]));
   console.log(`    a plant's market collapses: the twelve-month vacancy gap first stands a point over the twin at month ${CLS.map((k) => `${k} ${f[k]}`).join(", ")}; industrial ${pp(Math.max(...ma.industrial))} at most`);
@@ -330,7 +330,7 @@ for (let m = 0; m < 24; m++) base24 = tick(base24);
 }
 {
   const trt = structuredClone(base24);
-  for (let i = 0; i < trt.economy.lnShare.length; i++) trt.economy.lnShare[i] += Math.log(0.7);
+  for (let i = 0; i < trt.economy.lnNat.length; i++) trt.economy.lnNat[i] += Math.log(0.7);
   const r = twin(structuredClone(base24), trt, 60);
   const ma = r.ma, last = Object.fromEntries(CLS.map((k) => [k, ma[k].at(-1)]));
   const third = Object.fromEntries(CLS.map((k) => { const pk = Math.max(...ma[k]); return [k, pk > 0 ? firstOver(ma[k], pk / 3) : Infinity]; }));

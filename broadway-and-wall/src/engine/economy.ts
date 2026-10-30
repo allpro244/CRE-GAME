@@ -53,9 +53,9 @@
 //                 school, depot or yard (industries.ts OFF_FLOOR, REMOTE) — and
 //                 flats' is the register's renter households (market.ts).
 // What the town sells the nation follows the nation's demand for each
-// industry (its CES trend, its cycle) and the town's share of it, which moves
-// with what the town costs an employer and with its firms' own fortunes; the
-// rest of the town's work is what that export base and its people buy, through
+// industry (its CES trend, its cycle) and the town's share of it, which is
+// the orders its firms win on their own unit cost against the nation's
+// (`tickExports`); the rest of the town's work is what that export base and its people buy, through
 // the input-output table and the register's spending, net of every leak.
 // `tools/economy.mjs` reports it; `test/economy.mjs` holds its identities.
 //
@@ -83,7 +83,7 @@ import {
 } from "./sfc";
 import {
   SF_PER_JOB, FIRM_PROFILE, LENDER_COVER, shortIndexOf, BUILD_MONTHS, SECTORS,
-  LABOUR_FORCE_SLOWDOWN, FORTUNE_SD, FORTUNE_TAU_M, NAT_TREND_SD, NAT_TREND_TAU_M, NAT_SALES_PER_GAP, LOCATION_PULL, locationCost,
+  LABOUR_FORCE_SLOWDOWN, NAT_TREND_SD, NAT_TREND_TAU_M, NAT_SALES_PER_GAP, RENT_BASE,
   WAGE_CURVE, WAGE_GAP_HALF_M,
 } from "./market";
 import { HARD_COST_PSF, SOFT_COST, CONTINGENCY, constructionTypeMult } from "./value";
@@ -125,7 +125,10 @@ const F64 = ["hc", "z", "eq", "rev", "wages", "inputs", "rent", "prodTax", "inte
   "h0", "h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "h9", "h10", "h11",
   // what the firm pays a head (posted, nominal, in the engine's wage-index units), the raises it owes
   // itself from months it could not cut, and its price against the nation's for its industry (§6c-D)
-  "pay", "owe", "price"] as const;
+  "pay", "owe", "price",
+  // its unit cost against the nation's for its industry (pay, rent, inputs); its national orders
+  // (`tickExports`: a share of its industry's opening exports) and what they were a year ago
+  "uc", "xo", "xo12"] as const;
 /** Revenue history columns, indexed by month mod 12. */
 export const REV_RING = ["h0", "h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "h9", "h10", "h11"] as const;
 type F64Name = typeof F64[number];
@@ -202,11 +205,13 @@ export interface EconomyState {
   /**
    * What the nation buys (`tickExports`): its employment in each industry, log
    * against the opening, and that industry's national trend now; the town's
-   * share of it, log against the opening, and the local fortune moving it; the
+   * share of it, log against the opening — the sum of its firms' orders; the
    * national output gap at the opening; the level the black swans have moved
    * the town's employers by (log).
    */
-  lnNat?: number[]; natTr?: number[]; lnShare?: number[]; fort?: number[]; gap0?: number; swanLn?: number;
+  lnNat?: number[]; natTr?: number[]; lnShare?: number[]; gap0?: number; swanLn?: number;
+  /** The town's firms' price index in each industry when their orders were first booked (`tickExports`), and the orders they held after last month's tender. */
+  xp0?: number[]; xoTot?: number[];
   /** The island's share of each industry at the opening: its named firms' heads over its heads. */
   sigma?: number[];
   /** Output at the opening (the trades' sales read-out). */
@@ -562,6 +567,13 @@ function rentPerHead(s: GameState, i: number, opw: Float64Array): number {
   const id = INDUSTRY_IDS[i], I = INDUSTRIES[id], off = OFF_FLOOR[id];
   return (1 - off) * I.sfPerWorker * marketRent(s, i) / 12 + off * opw[i] * I.rent;
 }
+/** The same head's rent at the nation's rents (market.ts RENT_BASE at the nation's prices), against output per head at the nation's pay. */
+function natRentPerHead(s: GameState, i: number, opwNat: Float64Array): number {
+  const id = INDUSTRY_IDS[i], I = INDUSTRIES[id], off = OFF_FLOOR[id], sp = I.space;
+  const k: BuiltClass = sp === "retail" ? "retail" : sp.startsWith("industrial") ? "industrial" : "office";
+  const natP = Math.max(0.1, s.econ.natCpi ?? s.econ.cpi ?? 1);
+  return (1 - off) * I.sfPerWorker * RENT_BASE[k] * natP / 12 + off * opwNat[i] * I.rent;
+}
 
 // ---------------------------------------------------------------- what the nation buys
 /**
@@ -570,34 +582,50 @@ function rentPerHead(s: GameState, i: number, opw: Float64Array): number {
  * its 1990-2019 CES rate less the labour force that has stopped arriving
  * (industries.ts NAT_TREND, market.ts LABOUR_FORCE_SLOWDOWN) and wanders round
  * it with a generation's memory (market.ts NAT_TREND_SD, NAT_TREND_TAU_M —
- * manufacturing grew for a century and shrank for half of one). The town's
- * share of it moves with what the town costs an employer against the nation
- * (market.ts `locationCost`, at LOCATION_PULL: Bartik 1991) and with its own
- * firms' fortunes in that industry, a persistent process (market.ts
- * FORTUNE_SD, FORTUNE_TAU_M: Blanchard & Katz 1992) — which is how a town
- * whose plants lose out declines for decades while the nation grows. The
- * black swans' level events (an anchor's campus, a broke city's layoffs) move
- * it too. Opens part-way through each process's story, as the trades did.
- * Draws on the economy's stream only.
+ * manufacturing grew for a century and shrank for half of one). That is the
+ * rest of the world, an input. The black swans' level events (an anchor's
+ * campus, a broke city's layoffs) move it too. Draws on the economy's stream
+ * only.
+ *
+ * THE TOWN'S SHARE OF IT IS THE ORDERS ITS FIRMS WIN (FORMULA_LEDGER #9).
+ * This was an equation: a random walk of "fortune" per industry plus a pull
+ * of 4% a year of the town's log cost gap (LOCATION_PULL). Now each firm holds
+ * its own national orders (`xo`, a share of its industry's opening exports)
+ * and wins or loses them on its own price against the nation's — the price it
+ * posts from its unit cost: its pay, the rent on its lease and its inputs
+ * (`postPayAndPrices`). National buyers re-tender a contract when it ends, a
+ * 1/TENDER_M share of their orders a month (the contracts' own terms, 24-48
+ * months, `tickLinks`); a firm wins its capacity's share of what is tendered
+ * at its price against its industry's opening price index, to the power
+ * -ARMINGTON (a CES demand among suppliers of one product, Armington 1969).
+ * When a firm closes, its customers re-tender the whole of its orders at
+ * once. The town's share is the sum of its firms' orders.
  */
+/** Contracts between firms run 24-48 months (`tickLinks`, TERM): the first month and the span of the draw. */
+const TERM_LO = 24, TERM_SPAN = 25;
+const TENDER_M = TERM_LO + (TERM_SPAN - 1) / 2;
+/**
+ * The elasticity of substitution between suppliers of one product: 1 + the
+ * trade elasticity, about 4 (Simonovska & Waugh 2014, "The elasticity of
+ * trade", JIE: 4.1), so a firm 1% dearer than at its opening wins about 5%
+ * fewer of the orders tendered. [S~]
+ */
+const ARMINGTON = 5;
 function tickExports(s: GameState, E: EconomyState, R: Rand): void {
   const e = s.econ;
   const centre = (i: number) => NAT_TREND[INDUSTRY_IDS[i]] - LABOUR_FORCE_SLOWDOWN;
-  if (!E.lnNat || !E.natTr || !E.lnShare || !E.fort) {
+  if (!E.lnNat || !E.natTr || !E.lnShare) {
     E.lnNat = new Array(N_IND).fill(0); E.lnShare = new Array(N_IND).fill(0);
     E.natTr = Array.from({ length: N_IND }, (_, i) => centre(i) + NAT_TREND_SD * R.n());
-    E.fort = Array.from({ length: N_IND }, () => FORTUNE_SD * R.n());
     E.gap0 = e.nat?.gap ?? 0; E.swanLn = 0;
     return;
   }
-  const cost = locationCost(e);
   const uni = () => Math.sqrt(3) * (2 * R.u() - 1);
   for (let i = 0; i < N_IND; i++) {
     E.natTr[i] += (centre(i) - E.natTr[i]) / NAT_TREND_TAU_M + NAT_TREND_SD * Math.sqrt(2 / NAT_TREND_TAU_M) * uni();
     E.lnNat[i] += E.natTr[i] / 12;
-    E.fort[i] += -E.fort[i] / FORTUNE_TAU_M + FORTUNE_SD * Math.sqrt(2 / FORTUNE_TAU_M) * uni();
-    E.lnShare[i] += (E.fort[i] - LOCATION_PULL * cost) / 12;
   }
+  tenderOrders(E);
   E.swanLn = (E.swanLn ?? 0) + Math.log(Math.max(0.5, 1 + (e.bsJobPull ?? 0)));
   // ...and a national swan's orders for a trade (blackswans.ts swanSec: a
   // pandemic's restaurants, a war's defense electronics, a trade war's
@@ -612,6 +640,45 @@ function tickExports(s: GameState, E: EconomyState, R: Rand): void {
       for (const [id, w] of rows) lvl[INDUSTRY_INDEX[id]] += g * w / Math.max(1e-9, tot);
     }
   }
+}
+
+/**
+ * THE MONTH'S TENDER (`tickExports`). Each industry's firms keep what is not
+ * up for renewal and win their share of what is: the nation's re-tendered
+ * 1/TENDER_M of its orders, and the whole of the orders of the town's firms
+ * that closed since last month. The first month the firms have posted prices,
+ * their orders are booked at the town's share and their price index then is
+ * the one they compete against from here (an old save's share carries over).
+ */
+function tenderOrders(E: EconomyState): void {
+  const F = E.f, nF = E.L.slot.n, sh = E.lnShare!;
+  if (!nF) return;
+  const H = new Float64Array(N_IND), S = new Float64Array(N_IND);
+  for (let n = 0; n < nF; n++) { H[F.ind[n]] += F.hc[n]; S[F.ind[n]] += F.xo[n]; }
+  const pOf = (n: number, p0: number) => (F.price[n] > 0 ? F.price[n] : p0);
+  if (!E.xp0) {
+    let priced = false;
+    for (let n = 0; n < nF; n++) if (F.price[n] > 0) { priced = true; break; }
+    if (!priced) return;
+    const z = new Float64Array(N_IND);
+    for (let n = 0; n < nF; n++) { const i = F.ind[n]; if (H[i] > 0) z[i] += F.hc[n] / H[i] * Math.pow(pOf(n, 1), -ARMINGTON); }
+    E.xp0 = Array.from(z, (v) => (v > 0 ? Math.pow(v, -1 / ARMINGTON) : 1));
+    for (let n = 0; n < nF; n++) { const i = F.ind[n]; F.xo[n] = H[i] > 0 ? F.hc[n] / H[i] * Math.exp(sh[i]) : 0; F.xo12[n] = F.xo[n]; }
+    E.xoTot = Array.from(H, (h, i) => (h > 0 ? Math.exp(sh[i]) : 0));
+    return;
+  }
+  const p0 = E.xp0, tot = (E.xoTot ??= Array.from(S));
+  const r = 1 / TENDER_M;
+  // the orders of the firms that closed since last month: re-tendered whole
+  const pool = Float64Array.from(S, (v, i) => r + Math.max(0, (tot[i] ?? 0) - v));
+  S.fill(0);
+  for (let n = 0; n < nF; n++) {
+    const i = F.ind[n];
+    if (!(H[i] > 0)) continue;
+    F.xo[n] = (1 - r) * F.xo[n] + pool[i] * F.hc[n] / H[i] * Math.pow(pOf(n, p0[i]) / p0[i], -ARMINGTON);
+    S[F.ind[n]] += F.xo[n];
+  }
+  for (let i = 0; i < N_IND; i++) if (H[i] > 0) { sh[i] = Math.log(Math.max(1e-6, S[i])); tot[i] = S[i]; }
 }
 
 /**
@@ -903,7 +970,6 @@ function firmNames(s: GameState): Map<number, string> {
  * Works lost Ridgeway Machinery (14% of sales)".
  */
 const LINKS_PER_FIRM = 3, LINK_SHARE = 0.5, CUSTOMER_CAP = 0.25, SWITCH_P = 0.15, SWITCH_DISTRESS = 0.35;
-const TERM_LO = 24, TERM_SPAN = 25;
 function tickLinks(s: GameState, E: EconomyState, R: Rand, opening: boolean): void {
   const F = E.f, nF = E.L.slot.n, m = s.month;
   reviveLinks(E);
@@ -1068,7 +1134,7 @@ export function tickEconomy(s: GameState): void {
   // who they are; the industry's BEA pay is what they are hired at.
   const pr = registerPayroll(s);
   // ...and within an industry, by what each firm posts (`postPay`): a firm that pays more takes more of it
-  for (let n = 0; n < nF; n++) { if (!(F.pay[n] > 0)) F.pay[n] = w; if (!(F.price[n] > 0)) F.price[n] = 1; }
+  for (let n = 0; n < nF; n++) if (!(F.pay[n] > 0)) F.pay[n] = w;
   const hp = new Float64Array(N_IND);
   for (let n = 0; n < nF; n++) hp[F.ind[n]] += F.hc[n] * F.pay[n];
   const wagesOf = (n: number) => {
@@ -1369,6 +1435,7 @@ export function economyToEngine(s: GameState): void {
     d.wage = E.posted.wage; d.payIdx = E.posted.payIdx.slice(); d.priceRel = E.posted.priceRel; d.localShare = E.posted.localShare;
     whyPay(s, E.posted);
   }
+  if (E) whyOrders(s, E);
   e.eco = d;
   if (d.floorSf && !e.eco0?.floorSf) {
     // (a save reopened on the 68 industries keeps each class's driver where it stood: `migrateEconomy`)
@@ -1452,13 +1519,17 @@ export function migrateEconomy(s: GameState): void {
  * are easier to hire) and the size term.
  *
  * PRICES. A firm's price against the nation's for its industry follows its
- * unit cost — its pay against the nation's, at its industry's labour share
- * (BEA compensation per $ of output); its inputs are bought at national
- * prices — and the demand it faces, its industry's orders against the heads
+ * unit cost (`uc`) — its pay against the nation's, at its industry's labour
+ * share (BEA compensation per $ of output); the rent on its lease per head
+ * against what the nation's rents would charge it, at the share of output
+ * that rent is at the nation's rents; its inputs, bought at national prices,
+ * cost what they cost the nation — and the demand it faces, its industry's orders against the heads
  * it has (PRICE_DEMAND [K]: a tenth of a log point per log point of excess
  * demand). Sticky: a firm reprices in a given month with odds 1/PRICE_DUR_M,
  * nine months on average (Nakamura & Steinsson 2008: median 8-11 months
- * between regular price changes) [S]. The town's local prices are the
+ * between regular price changes) [S]; a new firm posts its first price at
+ * once. What it posts is what it wins national orders on (`tickExports`).
+ * The town's local prices are the
  * household-spending-weighted average of its industries'; market.ts reads
  * them into the CPI at the share of the household basket bought in town.
  */
@@ -1482,6 +1553,9 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
   const close = 1 - Math.exp(-Math.LN2 / WAGE_GAP_HALF_M);
   const slack = WAGE_CURVE * Math.log(Math.max(0.01, uLoc) / Math.max(0.01, uNat));
   const prevNat = E.posted?.natW ?? natW;
+  // what a head's rent and output would be at the nation's rents and pay
+  const opwNat = perHead(natW).opw, rentNat = new Float64Array(N_IND), rentMkt = new Float64Array(N_IND);
+  for (let i = 0; i < N_IND; i++) { rentNat[i] = natRentPerHead(s, i, opwNat); rentMkt[i] = rentPerHead(s, i, perHead(e.wageIdx ?? 1).opw); }
   for (let n = 0; n < nF; n++) {
     const i = F.ind[n], I = INDUSTRIES[INDUSTRY_IDS[i]];
     // ---- pay
@@ -1496,11 +1570,12 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
     }
     F.owe[n] = Math.min(0.25, Math.max(0, F.owe[n]));
     F.pay[n] = next;
-    // ---- price, when this firm reprices this month
-    if (hashU01(F.id[n], m) < 1 / PRICE_DUR_M) {
-      const costRel = 1 + I.comp * (F.pay[n] / natW - 1);
+    // ---- unit cost against the nation's, and the price, when this firm reprices this month
+    const rentHead = F.id[n] >= 0 && F.hc[n] > 0 ? F.rent[n] / F.hc[n] : rentMkt[i];
+    F.uc[n] = 1 + I.comp * (F.pay[n] / natW - 1) + (rentHead - rentNat[i]) / Math.max(1e-6, opwNat[i]);
+    if (!(F.price[n] > 0) || hashU01(F.id[n], m) < 1 / PRICE_DUR_M) {
       const press = emp[i] > 0 && implied[i] > 0 ? Math.log(implied[i] / emp[i]) : 0;
-      F.price[n] = Math.max(0.5, costRel * Math.exp(PRICE_DEMAND * press));
+      F.price[n] = Math.max(0.5, F.uc[n] * Math.exp(PRICE_DEMAND * press));
     }
   }
   // ---- what the town's firms post, summed
@@ -1528,6 +1603,39 @@ function hashU01(id: number, m: number): number {
   h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b); h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35); h ^= h >>> 16;
   return (h >>> 0) / 4294967296;
 }
+/**
+ * Once a year, the firms whose national orders moved most (`tickExports`):
+ * what they won or lost of their orders over the year, and their unit cost
+ * against the nation's. Only firms selling a tenth of their output out of
+ * town or more, and a move of 3% or more, the twelve largest by dollars.
+ */
+function whyOrders(s: GameState, E: EconomyState): void {
+  const l = E.last, F = E.f, nF = E.L.slot.n;
+  if (s.month % 12 !== 0 || !l || !E.xp0) return;
+  const S = new Float64Array(N_IND);
+  for (let n = 0; n < nF; n++) S[F.ind[n]] += F.xo[n];
+  const names = firmNames(s);
+  const moves: { n: number; ch: number; usd: number }[] = [];
+  for (let n = 0; n < nF; n++) {
+    const i = F.ind[n], was = F.xo12[n];
+    if (F.id[n] >= 0 && was > 0 && S[i] > 0 && F.rev[n] > 0) {
+      const usd = (l.buy[i]?.[4] ?? 0) * F.xo[n] / S[i], ch = F.xo[n] / was - 1;
+      if (usd >= 0.1 * F.rev[n] && Math.abs(ch) >= 0.03 && names.has(F.id[n])) moves.push({ n, ch, usd });
+    }
+    F.xo12[n] = F.xo[n];
+  }
+  moves.sort((a, b) => Math.abs(b.ch) * b.usd - Math.abs(a.ch) * a.usd);
+  for (const { n, ch, usd } of moves.slice(0, 12)) {
+    const name = names.get(F.id[n])!, uc = F.uc[n] - 1, i = F.ind[n];
+    const cost = `unit cost ${uc < 0 ? "−" : "+"}${Math.abs(uc * 100).toFixed(0)}% vs nation`;
+    why(s, {
+      k: "firm.orders", a: "firm", aid: String(F.id[n]), name,
+      n: { orders: ch, unitCost: uc, exportsYr: Math.round(usd * 12) },
+      t: ch >= 0 ? `${name} won ${(ch * 100).toFixed(0)}% more of national orders: ${cost}`
+        : `${name} lost ${(-ch * 100).toFixed(0)}% of its national orders: ${cost}`,
+    }, [whyExports(s, i)]);
+  }
+}
 /** Once a year, why the town's pay moved: what its firms posted, its openings and its jobless. */
 function whyPay(s: GameState, p: Posted): void {
   if (s.month % 12 !== 0 || p.wage12 === undefined) return;
@@ -1548,8 +1656,9 @@ const vsYear = (now: number, yr: number) => (yr > 0 ? now / yr - 1 : 0);
 
 /**
  * WHAT THE NATION BOUGHT OF AN INDUSTRY this month against its past year:
- * the exports, the town's share of the nation's demand for it (what the town
- * costs an employer and its firms' fortunes), the industry's national trend.
+ * the exports, the town's share of the nation's demand for it (the orders its
+ * firms won and lost on their unit cost, `tickExports`), the industry's
+ * national trend.
  * Caused by the nation's month.
  */
 export function whyExports(s: GameState, i: number): number | undefined {

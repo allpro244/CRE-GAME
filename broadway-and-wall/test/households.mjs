@@ -126,7 +126,7 @@ check(Math.round(E.registerLabour(a).persons) > 0 && a.econ.population > 0, `the
 {
   // (since households stage 2 it also lets the street's flats: the rolls, the space it reports, the deals and the turnover are its to write)
   const strip = (g) => { const { households, streams, why, econ, ...rest } = g; void households; void why; const { households: _h, ...st } = streams ?? {}; void _h;
-    const { flatRolls, flatSpace, deals, dealPress, turnMeas, ...ec } = econ; void flatRolls; void flatSpace; void deals; void dealPress; void turnMeas;
+    const { flatRolls, flatSpace, deals, turnMeas, ...ec } = econ; void flatRolls; void flatSpace; void deals; void turnMeas;
     return JSON.stringify({ ...rest, econ: ec, streams: st }); };
   const copy = structuredClone(a);
   const before = strip(copy);

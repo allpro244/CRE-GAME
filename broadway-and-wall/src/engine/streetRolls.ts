@@ -47,7 +47,7 @@ import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, 
 import { genRentRoll, isCommercial, bumpOf, minLettableSf, streetLease, pickSector, pickName, termBandM, depositFor } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
 import { tickTenantFin, tenantFailOdds, entrantMargin } from "./tenantBooks";
-import { rng, rrange, reletMonths, recordDeal, FIRM_PROFILE, turnoverYr, normalVac, priceLevel12, NATVAC_RATE, CONC_DEPTH, SECTOR_LABEL } from "./market";
+import { rng, rrange, reletMonths, recordDeal, FIRM_PROFILE, turnoverYr, normalVac, priceLevel12, CONC_DEPTH, SECTOR_LABEL } from "./market";
 import { staleDiscount } from "./absorption";
 import { tenantQualityTerms } from "./bands";
 import { drawTenantSf, sizeScale } from "./plates";
@@ -1330,17 +1330,19 @@ export function playerTenantLeft(s: GameState, t: Tenant, bbl: string, whyId?: n
 export interface FlatRoll { occ: number; vac?: number; l?: { sf: number; rent: number; endM: number }[]; mkt?: number;
   /** the block's draw on movers (score, staleness, its owner's care) and its month's letting limit, sf (households.ts reads them) */
   w?: number; lim?: number; ask?: number;
-  /** its landlord's ask over the flats' market rent for the block (log), and the vacancy the landlord has learned to expect of it (`markFlatAsk`) */
-  px?: number; nv?: number }
+  /** its landlord's ask over the flats' market rent for the block (log), its vacancy over the last year (a twelve-month average), and the vacancy the landlord has learned to expect of it (`markFlatAsk`) */
+  px?: number; ve?: number; nv?: number }
 
 /**
  * A BLOCK'S LANDLORD RE-MARKS ITS ASK, every month, from its own lettings
  * (FORMULA_LEDGER #4/#5: this was the town's flats' rent drifting on their
  * vacancy against a fixed 4.5% "natural" rate). It passes on the price level
  * (`priceLevel12`, as a lease's CPI clause reads it) and moves its ask on its
- * block's vacancy against the vacancy it has learned to expect of the block —
- * the block's own record over a twenty-year memory (market.ts NATVAC_RATE),
- * from what the town's flats usually run at (`normalVac`) — at REV_MGMT:
+ * block's vacancy over the last year (a block of a dozen flats is full one
+ * month and a twelfth empty the next: a landlord reads its year, not its
+ * month) against the vacancy it has learned to expect of the block — the
+ * block's own record, with a memory of OWN_MEMORY_M, from what the town's
+ * flats usually run at (`normalVac`) — at REV_MGMT:
  * apartment rents grow about 2.5%/yr per point of occupancy round its neutral
  * level under revenue management (RealPage / Axiometrics, 2010-2023) [S~],
  * read within the range those years measured: a block more than OCC_RANGE
@@ -1354,11 +1356,20 @@ export interface FlatRoll { occ: number; vac?: number; l?: { sf: number; rent: n
 const REV_MGMT = 2.5;
 /** The national apartment occupancy RealPage measured over 2010-2023 moved about five points either side of its neutral level [S~]. */
 const OCC_RANGE = 0.05;
+/**
+ * How long a landlord's sense of its own block's normal vacancy remembers:
+ * a half-life of five years [K: about five turns of a year's lease, the
+ * record a revenue-management system is set on]. The town's normal
+ * (`normalVac`) keeps its twenty-year memory.
+ */
+const OWN_MEMORY_M = 60;
 function markFlatAsk(roll: FlatRoll, cap: number, usual: number, esc: number): void {
   const vac = Math.max(0, 1 - roll.occ / Math.max(1, cap));
+  const ve = (roll.ve ?? usual) + (vac - (roll.ve ?? usual)) / 12;
   const nv = roll.nv ?? usual;
-  roll.px = +((roll.px ?? 0) + esc + REV_MGMT / 12 * Math.max(-OCC_RANGE, Math.min(OCC_RANGE, nv - vac))).toFixed(5);
-  roll.nv = +(nv + (vac - nv) * NATVAC_RATE).toFixed(5);
+  roll.px = +((roll.px ?? 0) + esc + REV_MGMT / 12 * Math.max(-OCC_RANGE, Math.min(OCC_RANGE, nv - ve))).toFixed(5);
+  roll.ve = +ve.toFixed(5);
+  roll.nv = +(nv + (ve - nv) * (1 - Math.exp(-Math.LN2 / OWN_MEMORY_M))).toFixed(5);
 }
 /**
  * THE FLATS' RENTS, READ OFF THE BLOCKS (FORMULA_LEDGER #4/#5). The asking

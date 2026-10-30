@@ -2143,6 +2143,13 @@ function spendNation(
   // Households answer the real rate over the year or two it takes to show up
   // in what they borrow and save — car loans, card balances, deposits.
   d.rr = (d.rr ?? 0) + ((x.rAvg - x.rStar) - (d.rr ?? 0)) / P.RR_M;
+  // THE PART OF THIS EQUATION EVERY HOUSEHOLD IN THE COUNTRY SHARES
+  // (2026-10-30): the mood, the real rate, a panic and a national swan —
+  // not income, home prices or the jobless rate, which the town's households
+  // read off their own (households.ts, the buffer-stock rule). The town's
+  // households spend by it too, so the nation's consumption cycle reaches
+  // the town's shops and not only its exporters.
+  d.cMood = d.cc - P.C_RATE * d.rr - 0.03 * panic + (sw?.c ?? 0);
   const cT = P.C0 / (1 - P.TAX) * ((1 - P.C_NOW) * d.Yp + P.C_NOW * Yd)
     * Math.exp(d.cc - P.C_RATE * d.rr + 0.088 * lnH + 0.6 * refi - P.PREC * Math.max(0, du6) - 0.03 * panic + (sw?.c ?? 0))
     + P.CRED_C * credFlow;
@@ -2231,6 +2238,9 @@ export function priceLevel12(e: Econ): number {
   return h?.cpiXS ? (e.cpiXS ?? 1) / h.cpiXS - 1 : h?.cpi ? (e.cpi ?? 1) / h.cpi - 1 : (e.inflExp ?? 0.02);
 }
 
+/** Of the nation's drawn shocks, the share that are supply shocks; the other 0.30 were the wars' finance, now drawn as THE WAR (blackswans.ts). */
+const SUPPLY_SHARE = 0.70;
+
 export function tickNation(s: GameState) {
   const e = s.econ;
   if (!e.nat) {
@@ -2301,7 +2311,7 @@ export function tickNation(s: GameState) {
   // rate alone is one per fourteen years, and clustering carries the rest of
   // the way to the record's cadence — the seventies stay a cluster, not a
   // constant.
-  const shockHaz = 0.006 + (n.shockClusterM > 0 ? 0.0050 : 0);
+  const shockHaz = SUPPLY_SHARE * (0.006 + (n.shockClusterM > 0 ? 0.0050 : 0));
   if (n.shockM > 0) { n.shockM--; } else if (rng(s, "nation") < shockHaz) {
     n.shockM = Math.round(rrange(s, 10, 26, "nation"));
     n.shockClusterM = Math.round(rrange(s, 60, 130, "nation"));
@@ -2321,23 +2331,26 @@ export function tickNation(s: GameState) {
     // central bank that was not free to act. A model with no politics in it
     // can only ever produce a bank that does the right thing on time, and
     // such a bank never has an inflation to disinflate from.
-    const roll = rng(s, "nation");
-    if (roll < 0.30) {
-      n.shockSev = rrange(s, 0.010, 0.038, "nation");
-      n.pressureM = Math.round(rrange(s, 30, 96, "nation"));
-      pushNews(s, "warn",
-        "Fiscal expansion financed with bonds; the central bank is under pressure "
-        + "to keep rates low "
-        + "meanwhile.");
-    } else {
-      const adverse = roll < 0.30 + 0.42;
-      n.shockSev = (adverse ? 1 : -0.7) * rrange(s, 0.012, 0.055, "nation");
-      pushNews(s, adverse ? "warn" : "event", adverse
-        ? "National supply shock: prices rising without demand; "
-          + "rate cuts will not help."
-        : "Favourable supply shock: input costs falling nationally; "
-          + "room for rate cuts.");
-    }
+    // ...AND SINCE THE SWANS SPLIT, THAT THIRD KIND IS THE WAR (2026-10-30).
+    // Three in ten of these draws were the bond-financed fiscal expansion —
+    // the record above, 1951 and the Vietnam build-out — and THE WAR
+    // (blackswans.ts, #529) is drawn there off the same record (Korea,
+    // Vietnam, the Gulf, Iraq, Ukraine) with its own defense spending and its
+    // own pressure on the bank. The same episodes came twice. So the nation
+    // now draws only the supply shocks, at their own rate (seven tenths of
+    // the 0.006 and the cluster's 0.005, of which 0.42 adverse), and the war
+    // brings its own finance and its own pressure on the bank, once.
+    // MEASURED (national block with the swans on, 20 seeds x 100 years, with
+    // the rule at 1.5 below): recession months 22.6% -> 19.2%; inflation's
+    // p90 6.6% -> 4.6% — the nation's fiscal draw held the bank 30-96 months,
+    // the war's record says 9-18 and only for the largest (blackswans.ts).
+    const adverse = rng(s, "nation") < 0.42 / SUPPLY_SHARE;
+    n.shockSev = (adverse ? 1 : -0.7) * rrange(s, 0.012, 0.055, "nation");
+    pushNews(s, adverse ? "warn" : "event", adverse
+      ? "National supply shock: prices rising without demand; "
+        + "rate cuts will not help."
+      : "Favourable supply shock: input costs falling nationally; "
+        + "room for rate cuts.");
   }
   const shock = n.shockM > 0 ? n.shockSev : 0;
 
@@ -2711,7 +2724,21 @@ export function tickNation(s: GameState) {
   // slump and hikes into a boom (policy under 1% in 6-9% of months; US
   // 1954-2024 ~15%), with inflation no higher on average and its worst
   // centuries lower.
-  const want = 100 * (n.neutralReal + seen + 1.0 * (seen - tgt) + 0.5 * okunGap) + restore;
+  // BUT 2.15 IS THE RESPONSE TO A FORECAST, AND THIS RULE READS THE PAST
+  // (2026-10-30). Clarida, Gali & Gertler's rule is forward-looking: the rate
+  // answers expected inflation a year AHEAD. `seen` is a smoothed trailing
+  // reading (inflSm, a monthly weight of 0.085: about a year behind), which is
+  // Taylor's (1993) input — inflation over the previous four quarters — and
+  // 1.5 is the coefficient estimated on that input. Two points on a reading a
+  // year late, with policy reaching output 18-20 months after that, is a bank
+  // steering by the wake: measured on the national block alone (20 seeds x
+  // 100 years), 2.0 here put 27% of months in recession (US post-war ~14%)
+  // against 20% at 1.5, recessions 16 months long against 13.6 (US ~11), and
+  // applying CGG's output weight as well (0.93) made it worse still (40%) —
+  // the overshoot of a rule fed late data, not a hawk. The wider swings the
+  // 2.0 was reaching for come from the wandering neutral rate above (policy
+  // under 1% in 3-6% of months, against 1.6% before that walk widened).
+  const want = 100 * (n.neutralReal + seen + 0.5 * (seen - tgt) + 0.5 * okunGap) + restore;
   n.ruleRate = +want.toFixed(3);
   // Gradualism, except when it is not: a bank moves in quarter points at
   // eight meetings a year, and in three-quarter points when it is frightened.
@@ -3968,144 +3995,36 @@ export function tickEcon(s: GameState) {
     // value.ts. If it is still unread next time somebody passes through, delete it.
     e.rateEma = (e.rateEma ?? e.indexRate) + 0.085 * (e.indexRate - (e.rateEma ?? e.indexRate));
 
-    // ONE ORDER HURDLE. The class-level pro forma reads effective rent (and
-    // therefore vacancy/concessions), operating cost, recoveries, hard and
-    // soft cost, management, exit cap and the same developer margin as the
-    // land residual and parcel desk. Credit availability remains a separate
-    // real constraint on how much of a clearing pipeline gets financed.
+    // STARTS ARE THE SUM OF THE BUILDERS' DECISIONS (FORMULA_LEDGER #27,
+    // 2026-10-30). This was an order sized from the top —
+    //   start = stock x 0.0016 x credit x sitePencil x (1 + 4.5 structTight) x jitter
+    // — proportional to the EXISTING stock, so however far demand ran ahead
+    // of the town the order could not pass ~2-4% of stock a year, and it fed
+    // an entitlement queue and an order book (`startOwed`) that sized the
+    // crews, chose the use a redeveloper probed and counted as "starts" in
+    // every report. Measured over 6 seeds x 100 years (PROOF.md #2): jobs
+    // x6-31, office stock x2-3, occupied office sf a job down to 0.09-0.33 of
+    // its opening, real office rent +3%/yr.
     //
-    // `vacGate` and the `cycleDev` start nudge are gone. They were duplicate
-    // verdicts layered on top of economics: one said "do not build because
-    // vacancy is high" after effective rent and exit cap had already priced
-    // that vacancy; the other ordered cranes because a phase label said boom
-    // even when the common pro forma said the project destroyed value.
-    const credit = clamp(e.creditIdx ?? 1, 0.25, 1.25);
-    // sitePencil is the P97 parcel pro forma — greenfield AND densify, sampled
-    // separately so worn buildings cannot zero a class that still has dirt.
-    // A zero pencil is a shut class. The old structFloor (0.35 / 0.55 of
-    // appetite when no sampled site cleared) was the city ordering buildings
-    // the desk said did not pencil, which is how office stock grew 0.11%/yr
-    // while `pnpm devyield` reported 0 office sites of 1,291. Densify is in
-    // the sample now; if neither greenfield nor redevelopment clears, the
-    // honest response is that rents have to rise, not that supply appears
-    // anyway. `rawSites === undefined` is the first year before the annual
-    // refresh has run — treat as unconstrained so the book can form.
-    const rawSites = e.sitePencil?.[k];
-    // A RAMP, NOT A SWITCH (2026-10-15). `sitePencil` is zero unless the best
-    // sampled site clears the full hurdle, so construction flipped on and off
-    // from one annual refresh to the next (measured: apartment starts 0, 9,650,
-    // 0, 3,430 in alternate years on one seed). Builders do not share one
-    // hurdle — a merchant builder holding land, a family office, a pension fund
-    // with a lower cost of capital will each go a little under the street's
-    // line — so when the best sites stand within a tenth of clearing
-    // (`siteHurdle`, the same P97 including the ones that fail), some still
-    // start, in proportion to how close they are. Continuous at the hurdle.
-    const nearH = e.siteHurdle?.[k];
-    const ramp = nearH !== undefined && nearH < 1 ? Math.max(0, (nearH - 0.9) / 0.1) : 0;
-    const sites = rawSites === undefined ? 1 : Math.max(0, rawSites > 0 ? rawSites : ramp);
-    // ONE ANSWER TO "DOES IT PAY" (2026-10-13). This multiplied two of them:
-    // `devPencils` (a generic scheme on a top-decile corner, no land, ~0.66 in
-    // an ordinary month) times `sites` (the best real sites' own
-    // hurdleRatio^1.2, already zero when none clears). The site read is the
-    // honest one — real lots, real basis — and the generic one cut every
-    // month's order by about a third on top of it. Measured over 75 years:
-    // sites cleared in 71-93% of months while office sat 3 points under
-    // natural vacancy and real rents outran real build cost by 0.4-0.8%/yr.
-    const appetite = credit * sites;
-    // ONE DRAW, TWO JOBS. This month's noise sizes the order AND sets how long
-    // it will take to entitle, below. Capturing it rather than calling `rng`
-    // twice keeps the random stream byte-identical to before the entitlement
-    // queue existed, so an A/B on the same seed is a clean partial rather than
-    // a different world — and it carries a fact besides: a bigger programme
-    // takes longer to get through planning than a smaller one.
-    const jitter = rng(s);
-    // SUPPLY ANSWERS EMPLOYMENT (ECONOMY.md §F #2). Sticky startOwed shelves
-    // when pinned were tried and rejected — they raised phantom crane demand
-    // without buildable envelopes. This is different: when desired demand
-    // already exceeds housable (`structTight`), the MONTHLY ORDER itself must
-    // rise so densify/teardown/infill have a book to fill. Not a vac-floor
-    // hike and not minting tenants — more floor ordered against a measured
-    // capacity shortfall.
-    const catchUp = 1 + Math.max(0, e.structTight?.[k] ?? 0) * 4.5;
-    const start = stk * 0.0016 * appetite * catchUp * (0.7 + 0.6 * jitter);
-    e.starts[k] = Math.round(start);
-
-    // THE QUEUE. A start becomes a dated cohort; it delivers when its month
-    // arrives and not before. Everything downstream — the delivery schedule,
-    // the forward vacancy projection, the "what is coming" chart — falls out
-    // of this one change, because the pipeline now knows WHEN as well as HOW
-    // MUCH.
+    // Nothing orders space now. A start is a building somebody decided to put
+    // up — a developer or builder firm that looked at a site, priced the dirt,
+    // read rent and vacancy through its own beliefs and found it pencilled
+    // (dev.ts developerLook), a redeveloper whose replacement beat what stood
+    // (tickTeardowns), a street firm (rivals.ts), the player — counted the
+    // month its hole is dug (supply.ts queueSupplyProject). The book a crane
+    // can be pointed at is the schemes decided and not yet started
+    // (`cityPlans`), counted the same way. Supply answers rent only through
+    // those pro formas: dearer rent clears more of them.
+    e.starts[k] = Math.round(e.brokeMonth?.[k] ?? 0);
+    if (e.brokeMonth) e.brokeMonth[k] = 0;
+    e.decided = e.decided ?? { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+    e.decided[k] = Math.round(e.decidedMonth?.[k] ?? 0);
+    if (e.decidedMonth) e.decidedMonth[k] = 0;
+    e.startOwed = e.startOwed ?? { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+    e.startOwed[k] = 0;
+    for (const p of s.cityPlans ?? []) if (p.lead === k) e.startOwed[k] += Math.max(0, p.sf ?? 0);
     if (!e.cohorts) e.cohorts = { office: [], retail: [], multifamily: [], industrial: [] };
     if (!e.completions12) e.completions12 = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
-    // TWO SUPPLY UNIVERSES THAT NEVER MET, and this was the seam.
-    //
-    // This line pushed the month's construction into an anonymous cohort
-    // queue. That queue is what moves vacancy, rents and cap rates — and it is
-    // the ONLY thing that did. Meanwhile tickCityGrowth separately placed real
-    // buildings on real parcels, and the two numbers had nothing to do with
-    // each other.
-    //
-    // Measured over fifty years: the space market grew the city from 13.34M to
-    // 21.32M square feet, SIXTY PER CENT, while the map gained four buildings.
-    // The economy built twenty-eight times more floor area than the city ever
-    // showed — seven hundred buildings' worth of supply that moved the
-    // player's rents and appeared nowhere. You watched a chart climb sixty per
-    // cent while looking at a skyline that was pixel-identical to the one you
-    // started with. It is also why the demand model never moved: it is fed by
-    // changes in occupied stock per block, and the map placed four buildings
-    // in half a century.
-    //
-    // So the number stops being a cohort and becomes a BUDGET. tickCityGrowth
-    // spends it on actual lots, and pushes the cohort when a crane actually
-    // goes up. The total square footage the city builds does not change by one
-    // foot — every calibration downstream is untouched. The supply just has an
-    // address now.
-    e.startOwed = e.startOwed ?? { office: 0, retail: 0, multifamily: 0, industrial: 0 };
-    // A DECISION TO BUILD IS NOT A GROUNDBREAK, and until now it was.
-    //
-    // This line used to put the month's order straight into the book, and
-    // `tickCityGrowth` spent the book the same month — so the distance between
-    // the space market wanting four hundred thousand feet of office and a hole
-    // in the ground was zero. `pnpm leadlag` read the leg as contemporaneous,
-    // and negative once the draining of the book was allowed for, against a
-    // band of 0-18 months.
-    //
-    // ENTITLE_MONTHS is a fact about the business, not a shape parameter. Site
-    // control, design, entitlement and a construction lender run six to
-    // eighteen months on a by-right commercial project in the United States,
-    // and longer wherever the approval is discretionary. The harness's 0-18
-    // band was written from the same fact, so agreement with it is not an
-    // independent confirmation and is not claimed as one. The independent
-    // prediction is the TOTAL LOOP, which nothing in the engine sets: it read
-    // 5.3 years against real property cycles of 7-12, and a real
-    // pre-development lag should push it up.
-    e.entitling = e.entitling ?? { office: [], retail: [], multifamily: [], industrial: [] };
-    e.entitling[k] = e.entitling[k] ?? [];
-    if (start > 1) {
-      const [eLo, eHi] = ENTITLE_MONTHS;
-      const lag = Math.round(eLo + jitter * (eHi - eLo));
-      e.entitling[k].push({ m: s.month + lag + CONSTRUCTION_CLOSE_M, sf: Math.round(start) });
-    }
-    // An entitled order has an eighteen-month expected shelf life. Decay the
-    // existing book by 1/18 each month before newly-ready work joins it. The
-    // old `min(book, thisMonthOrder * 18)` was not expiry: one weak month could
-    // erase years of already-entitled projects instantly, which made observed
-    // groundbreaks lead the orders that supposedly created them.
-    //
-    // Lengthening the shelf while the frictional floor binds was tried and
-    // REJECTED on measurement: a sticky book raised `wanted` cranes that then
-    // burned crew slots on sites that would not underwrite, and median office
-    // stock CAGR fell (0.52% → 0.37% over six century seeds) — the opposite of
-    // ECONOMY.md §F #2. The pool-service fix in rivals.ts is the supply answer
-    // that measured forward; the shelf stays an eighteen-month fact.
-    e.startOwed[k] *= 17 / 18;
-    // …and what finished its entitlement this month joins the book a crane can
-    // be pointed at.
-    const ready = e.entitling[k];
-    e.entitling[k] = [];
-    for (const p of ready) {
-      if (p.m <= s.month) e.startOwed[k] += p.sf; else e.entitling[k].push(p);
-    }
     const delivered = monthDeliveries[k];
     e.completions12[k] = e.completions12[k] * (11 / 12) + delivered;
     e.supplyPress = e.supplyPress ?? {};

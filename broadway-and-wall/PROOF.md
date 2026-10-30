@@ -288,6 +288,42 @@ Since this run, main closed ledger rows #6-#8, #20-#22, #25 and #26 (#536-#539):
 `--report` now counts **5 open** (#4, #5, #9, #10, #14). The run itself was
 on 625271e3, so every other number above is from before those PRs.
 
+## Since: construction starts and the land median (`claude/supply-land`, 2026-10-30)
+
+**#2, the starts equation, is gone** (FORMULA_LEDGER #27, Removed).
+`econ.starts` is now ground broken — every start, whoever decided it, the
+month its hole is dug (`supply.ts queueSupplyProject`); the order book
+(`startOwed`) is the schemes developers have committed to and not started
+(`cityPlans`), and `econ.decided` the square feet committed each month. The
+aggregate never placed a building — `developerLook`, the teardown desk, the
+street firms and the player did, on their own pro formas — but it sized the
+crews' order book, picked the use a redeveloper probed, and was the "starts"
+every report read. Re-run on seeds 11 and 22 (100 years, not paired with the
+table above, which was on 625271e3): office sf per job still ends at
+0.19 / 0.06 of its start, real office rent +2.3%/yr, starts 0.7% of stock a
+year. Nothing ordered the supply that was missing: office stock ×2.6 / ×3.1
+while jobs ran ×9.7 / ×31 on an island whose lots are taken, so new office
+comes from replacing what stands (the flats went ×0.65 / ×0.30 to make room)
+at a teardown basis that rises with the rents. The space gap is #1's
+compounding meeting a fixed island; re-read this row once #1 lands.
+
+**The land median "collapse" ($54 → $8, BASELINE.json) was #5, not #539/#540.**
+The baseline was regenerated at `af1da7b6`, which differs from main
+(`29a4facd`) only in `bands.ts` — the stale quality-band swings compounding,
+fixed in #541. On main, the baseline's six seeds read 106, 714, 159, 44, 41
+and 6 $/sf (median ~75; `pnpm baseline` not regenerated here). Paired on seed
+550991, before #539 (`2c46a304`) against main at year 25: $69 vs $176, with
+12 vs 39 of ~350 vacant lots carrying a positive builder residual. Residuals
+are zero on most vacant lots in both builds and always were: at the opening a
+middling lot's best scheme is worth 0.3-0.5 of its non-land cost (rent falls
+off steeply away from the core, cost does not), so dirt there prices off the
+land funds' option and the map's texture. What is still wrong is the level's
+spread — ×130 across seeds, and within seed 4242 `landIdx` 1.47 → 0.03 → 28
+in fifteen years: the yearly survey's six fixed lots print 0.03-1.3 of the
+texture (bankers' options on lots that need rent ×2, against builders'
+residuals near the core), and the cap-rate read's spikes (#6, industrial cap
+0.7% on seed 12007) push the residuals, and the prints, up ×10.
+
 ## How to read the tool
 
 `tools/proof.mjs` writes one JSON per seed (yearly readings, the Why chains

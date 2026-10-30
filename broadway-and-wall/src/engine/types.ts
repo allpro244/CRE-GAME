@@ -2156,7 +2156,7 @@ export interface Econ {
     tfpG?: number; kSeen?: number;
     /** the technology level, log points since the opening */
     techLn?: number;
-    dem?: { C: number; K: number; I: number; Ih: number; N: number; Yp: number; Ye: number; Se: number; f: number; Y: number; sup: number; uH: number[]; rr?: number; ws?: number; cc?: number; kc?: number; wr?: number; q?: number };
+    dem?: { C: number; K: number; I: number; Ih: number; N: number; Yp: number; Ye: number; Se: number; f: number; Y: number; sup: number; uH: number[]; rr?: number; ws?: number; cc?: number; kc?: number; cMood?: number; wr?: number; q?: number };
     /** national inflation, annualised */
     infl: number;
     /** what the nation EXPECTS — the anchor, and what a credible bank defends */
@@ -2897,6 +2897,18 @@ export interface Econ {
    * `cohorts`, one stage earlier in the pipeline.
    */
   entitling?: Record<BuiltClass, { m: number; sf: number }[]>;
+  /**
+   * GROUND BROKEN SINCE THE LAST MONTHLY TICK, by class: every start, whoever
+   * decided it, added the day its hole is dug (supply.ts queueSupplyProject).
+   * `starts` is this, read and zeroed once a month (market.ts). The
+   * `entitling` queue above is no longer written: nothing orders space from
+   * the top any more (FORMULA_LEDGER #27).
+   */
+  brokeMonth?: Record<BuiltClass, number>;
+  /** Square feet the town's developers committed to since the last tick (dev.ts developerLook). */
+  decidedMonth?: Record<BuiltClass, number>;
+  /** Last month's committed square feet by class — the order series a report reads. */
+  decided?: Record<BuiltClass, number>;
   completions12?: Record<BuiltClass, number>;   // trailing 12-month deliveries
   // THE MONETARY ERA. The loan index used to mean-revert at 0.03/month toward
   // a phase target between 5.0 and 7.0, clamped to 4.2-9.2 — so over a whole
@@ -4087,6 +4099,8 @@ export interface GameState {
   nextBuilderId?: number;
   cityPlans?: {
     bbl: string; use: string; floors: number; plate: number; spec: number; ltc: number; decidedM: number; breakM: number;
+    /** The scheme's lead class and its square feet in that class, as decided (the order book counts them). */
+    lead?: BuiltClass; sf?: number;
     /** The named developer who committed to it (see Builder). */
     builderId?: string;
     /** ...or the builder firm, when the town's builders are firms (GameState.builderFirms). */

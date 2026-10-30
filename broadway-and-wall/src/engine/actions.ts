@@ -13,6 +13,7 @@ import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, f
 import { hash01 } from "./competitorTraits";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, rivalCanClose, rivalsWhoCanClose, gradeOf, tie, forgetDeed, jvLpTake, noteRealised, streetSaleCost, gainsTax } from "./rivals";
 import { bidRound, listingReserve, noteRoundFailed, noteRoundClosed, impliedCap, landBidRound, noteLandRoundFailed } from "./propmarket";
+import { PREMARKET_M } from "./beliefs";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg, holderSheet } from "./owners";
@@ -3949,6 +3950,11 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
         const reserve = Math.max(listingReserve(li), talk ? talk.yourPrice + 1 : 0);
         const top = round.bids[0];
         if (!top || top.bid < reserve) {
+          // A building still being shown to its broker's own clients
+          // (beliefs.ts PREMARKET_M) has not been to market: a thin first
+          // look is not evidence of what the street pays, and the seller
+          // does not cut its ask on it.
+          if (li.listedM !== undefined && s.month - li.listedM < PREMARKET_M) { survivors.push(li); continue; }
           noteRoundFailed(s, rec, li, round);
           survivors.push(top && !talk
             ? { ...li, ask: Math.round(Math.max(listingReserve(li), li.ask * 0.95, top.bid * 1.04) / 1000) * 1000 }

@@ -57,7 +57,7 @@ const bidYield = (r) => {
   const f = { ...r, bbl: "fixture" };   // nothing disclosed on a made-up deed; one key for the committee's misread
   const v = E.dealView(g, f, f.bbl, E.assetValue(f, g.econ, "good"), "good");
   // stabilised, so the made-up deed's in-place roll does not enter
-  const uw = E.valueTo(g.econ, { ...v, noiPre: v.stabPre }, E.bidderOf(g, firm, f), E.rentSignals(g));
+  const uw = E.valueTo(g.econ, { ...v, noiPre: v.stabPre }, E.bidderOf(g, firm, f), E.beliefSignals(g, firm));
   return ((v.stabPre - v.leaseCap) / uw.V) * 100;
 };
 const capCheap = bidYield(cheap);

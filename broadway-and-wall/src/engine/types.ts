@@ -2503,7 +2503,9 @@ export interface Econ {
   /** Monthly job pull from the black swans, read beside swanJobDrift in tickEcon. */
   bsJobPull?: number;
   /** A capital wave in progress and its cap-rate effect, points (negative while money floods in). */
-  capWave?: { phase: "in" | "hold" | "out" | "fade"; leftM: number; len: number; from: number; to: number };
+  capWave?: { phase: "in" | "hold" | "out" | "fade"; leftM: number; len: number; from: number; to: number;
+    /** the share of the street's book the foreign money brings (the swan's draw), the dollars that is, what has been raised, and whether it has been called home */
+    share?: number; money?: number; raised?: number; home?: boolean };
   capitalWave?: number;
   /** The yield premium buyers demand for anything a storm surge can reach, after one has, and how far from the shore the worst one reached (m). */
   /** The embargo (blackswans.ts): the materials premium still landing. */
@@ -2919,15 +2921,6 @@ export interface Econ {
   baseStock?: Record<BuiltClass, number>;
   /** The regional stock beyond the island's mapped buildings, by class (rentable sf). */
   offMapSf?: Record<BuiltClass, number>;
-  // ...and the same thing FROZEN, because baseStock is not frozen: the
-  // sector-exit ratchet in market.ts writes it down as tenants are priced out
-  // and never return. The difference between the two IS how much of a sector
-  // has left the city, and the city's zoning has to be able to read it — land
-  // zoned for an industry that is half gone does not stay zoned for it.
-  // Optional so a save written before this existed still loads; absent, no
-  // sector has left as far as the zoning is concerned, which is the old
-  // behaviour exactly.
-  baseStock0?: Record<BuiltClass, number>;
   occupied: Record<BuiltClass, number>;
   /** The player's own occupied sf by class, as last reconciled into `occupied` — see playerSpace in sim.ts. */
   playerOcc?: Record<BuiltClass, number>;
@@ -3254,6 +3247,9 @@ export interface Rival {
    * vehicle, which is what the old model assumed for everybody.
    */
   uncalled?: number;
+  /** Raised abroad in a capital wave (blackswans.ts); `homeBy` is when its investors called it home and its book goes to the tape. */
+  wave?: boolean;
+  homeBy?: number;
   /**
    * When each deed arrived, by BBL. The hold clock: a private-equity fund on
    * an IRR mandate and a family office holding for a generation both own
@@ -4590,6 +4586,13 @@ export interface GameState {
    */
   brokerRel?: Record<string, { name: string; fees: number; lastFeeM: number; ignores: number }>;
   /**
+   * WHAT EACH FIRM BELIEVES (beliefs.ts, ONE_ECONOMY_PLAN.md §6c-C): its own
+   * forecast of rent growth, vacancy, demand and cap rates per class, formed
+   * from what it has seen — its broker's comps, its own buildings and the
+   * lagged survey. Keyed by rival id, plus "street" for the anonymous trade.
+   */
+  beliefs?: Record<string, AgentBelief>;
+  /**
    * The player does not want the July docket thrown in their face. The auction
    * still happens, on the same day, with the same lots — this only stops the
    * card. The docket is on Marketplace either way, and so is the switch.
@@ -5759,6 +5762,31 @@ export function autoLeaseOnClose(s: GameState): boolean {
 }
 
 /** One print on the cap tape (propmarket.ts). */
+/** One class as one firm sees it (beliefs.ts). */
+export interface ClassBelief {
+  /** real effective rent as the firm has seen it, one point a quarter, oldest first (ten years) */
+  seen: number[];
+  /** the real rent growth it expects, a share a year (extrapolated from `seen`) */
+  g: number;
+  /** today's rent as it sees it against its own ten-year memory */
+  dev: number;
+  /** the vacancy it believes the class runs at */
+  vac: number;
+  /** the growth in occupied space it believes, a share a month */
+  dg: number;
+  /** the cap rate its broker quotes, % (the class read as of the shop's last trade) */
+  cap: number;
+  /** what this quarter's read was built from: leases its broker showed it, its own feet, the survey's age in months */
+  nC: number; ownSf: number; lagM: number;
+}
+export interface AgentBelief {
+  /** month of the last update */
+  m: number;
+  /** its brokerage (broker.ts house shops: "b0".."b2") */
+  shop: string;
+  c: Record<BuiltClass, ClassBelief>;
+}
+
 export interface CapPrint {
   m: number;
   k: BuiltClass;

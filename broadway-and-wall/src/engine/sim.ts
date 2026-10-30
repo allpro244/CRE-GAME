@@ -38,9 +38,10 @@ import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind
 import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
+import { tickBeliefs } from "./beliefs";
 import { tickCorporate } from "./corporate";
-import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose } from "./rivals";
-import { openingCapSurvey, tickBrokerSurvey, anchoredAsk, forcedSalePrice } from "./propmarket";
+import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose, landFundBid } from "./rivals";
+import { openingCapSurvey, tickBrokerSurvey, tickLandSurvey, anchoredAsk, forcedSalePrice, BUY_CLOSING } from "./propmarket";
 import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { tickStreetLoans } from "./streetLoans";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
@@ -666,7 +667,17 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
     if (rng(s, "land") >= RIPE_CHECK_SHARE) continue;
     const rec = full(v);
     const read = landRead(rec, s.econ);
-    if (!(read.builder > 0) || read.winner !== "builder") continue;
+    // ...OR A LAND FUND WANTS IT. Dirt nobody can build on today has buyers
+    // too: the funds that hold lots for the builders who come later
+    // (rivals.ts landFundBid — their own discounted residuals). An owner whose
+    // reservation such a fund would clear gets the same call a ripe lot's
+    // owner does, and the lot goes to market where every fund and builder can
+    // bid it — which is what puts a sale of unripe dirt on the land tape.
+    const ripe = read.builder > 0 && read.winner === "builder";
+    if (!ripe) {
+      const reservation = Math.max(landValue(rec, s.econ), ownerAskPsf(rec, s.econ) * rec.lotArea);
+      if (!(reservation > 0) || landFundBid(s, rec) < reservation * (1 + BUY_CLOSING)) continue;
+    }
     if (rng(s, "land") < RIPE_LIST_P) put(v.bbl, rec, false);
   }
   // forced sellers clear land through a slump
@@ -766,6 +777,8 @@ function tickMonth(
   // deliveries and lettings are now standing, so the city, the tenants and
   // the appraisers all read the same block this month.
   tickDemand(s, parcels);
+  // ...and every firm revises what it believes from what it has seen this quarter (beliefs.ts).
+  tickBeliefs(s, parcels);
   tickFund(s);
   windDownFund(s, parcels);
   tickTrustNote(s);
@@ -857,6 +870,7 @@ function tickMonth(
   tickBrokerCalls(s, parcels, bbls);
   tickListingAbsorption(s, parcels); // other buyers work the tape too
   tickBrokerSurvey(s, parcels);     // a class with no print in a year gets the brokers' indications
+  tickLandSurvey(s, parcels);       // ...and so does dirt
   tickPortfolios(s, parcels);        // and the package market, where books trade whole
   tickTakePrivateApproach(s, parcels); // and a board that wants out rings the buyers who could close
   tickTalks(s, parcels);             // a negotiation left open goes stale

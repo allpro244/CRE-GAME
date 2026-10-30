@@ -42,19 +42,20 @@ import { underwrittenGrowthPct, dollarLevel, RENT_BASE, CAP_BASE } from "./marke
 import {
   assetValue, capRateFor, initialCondIdx, demandLinear, incomeValueAsIs, initialCondition, inPlace, landValue,
   marketAppraisal, noiYr, resolveRec, specWearMult, taxBorneShare, taxRate, useOccupancy, useRentableSf,
-  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, queueFactor,
+  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, queueFactor, residualScheme,
 } from "./value";
 import { uses } from "./mix";
 import { productOf } from "./products";
 import { stabViewFor, streetRefiProceeds } from "./debt";
 import { TI_ASK, renewalRefreshShare } from "./leasing";
 import {
-  livingRivals, paramsOf, fitOf, ownerOf, firmOutlook, rentSignals, deployPressure, contractedEquity, lineRoom,
+  livingRivals, paramsOf, fitOf, ownerOf, firmOutlook, deployPressure, contractedEquity, lineRoom,
   minTicket, boughtLastYear, gainsTax, streetSaleCost, spreadAdj, firmMaxPrice, firmMargin, landBanker,
 } from "./rivals";
 import { dealsPerYear, misreadPp } from "./competitorTraits";
 import { rowOn, deskWithRoom } from "./rivalDebt";
 import { why, whyGet, whyNation } from "./why";
+import { beliefSignals, whyBelief, hearsOfListing } from "./beliefs";
 import { money } from "./money";
 import { START_YEAR } from "./types";
 
@@ -90,7 +91,7 @@ export const EQUITY_PREMIUM: Record<RivalStyle, number> = {
 const BEND = 2, BEND_REF = 5.4;
 const bentIndex = (i: number) => i + BEND * (Math.exp(-i / BEND) - Math.exp(-BEND_REF / BEND));
 /** Closing costs a buyer carries on top of the price: legal, title, diligence (closingFinance). */
-const BUY_CLOSING = 0.02;
+export const BUY_CLOSING = 0.02;
 /** Points on the acquisition loan (streetLoanCost charges about one). */
 const LOAN_POINTS = 0.01;
 /**
@@ -277,14 +278,17 @@ export interface Underwriting {
  * — and no more growth than the rent at which a rival would build next door
  * allows (siteHurdle; DiPasquale & Wheaton ch. 10).
  */
-export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<typeof rentSignals>): Underwriting {
+export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<typeof beliefSignals>): Underwriting {
   const i = e.indexRate ?? 5;
-  const rE = (bentIndex(i) + b.eqPrem + (e.capitalWave ?? 0)) / 100;
+  const rE = (bentIndex(i) + b.eqPrem) / 100;
   const rd = v.debtA > 0 ? (v.rd + b.fileSpread) / 100 : rE;
   const a = Math.min(v.debtA, b.ltvCap);
   const gBase = underwrittenGrowthPct(e) / 100;
   // the class's record, and this submarket's own record against it (tickLocBeliefs)
   let belief = (e.growthExp?.[v.k] ?? 0) + v.locG;
+  // ...and its own forecast, from what IT has seen (beliefs.ts): its broker's
+  // comps, its own rolls and a survey two quarters old — not the town's true
+  // rent history, which no buyer has.
   if (rentSig && b.lean !== 0) {
     const sig = rentSig[v.k];
     belief += b.lean > 0 ? b.lean * sig.g : -b.lean * (1 / (1 + sig.dev) - 1) * GAP_CLOSE_YR;
@@ -316,7 +320,7 @@ export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<ty
 }
 
 /** The most this bidder pays: its value less the closing and the loan's points. */
-export function maxPrice(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<typeof rentSignals>): { max: number; uw: Underwriting } {
+export function maxPrice(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<typeof beliefSignals>): { max: number; uw: Underwriting } {
   const uw = valueTo(e, v, b, rentSig);
   return { max: uw.V / (1 + BUY_CLOSING + LOAN_POINTS * uw.w), uw };
 }
@@ -343,14 +347,16 @@ export interface Bid { r: Rival; max: number; bid: number; uw: Underwriting }
  * underwriting it on its own books. Sorted best first. `n` is how many were
  * in the room — the broker's read the bidders shade against.
  */
-export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress">): { bids: Bid[]; n: number; view: DealView | null } {
+export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress"> & { listedM?: number }): { bids: Bid[]; n: number; view: DealView | null } {
   const view = dealView(s, rec, li.bbl, li.ask);
   if (!view) return { bids: [], n: 0, view };
   const seller = ownerOf(s, rec.bbl);
   const distress = !!li.distress;
   const room: Rival[] = [];
   for (const r of livingRivals(s)) {
-    if (r === seller || r.stressMs || r.failedM !== undefined) continue;
+    if (r === seller || r.stressMs || r.failedM !== undefined || r.homeBy !== undefined) continue;
+    // THE LISTING BROKER CALLS ITS OWN BUYERS FIRST (beliefs.ts hearsOfListing).
+    if (!hearsOfListing(s, r, li)) continue;
     const st = paramsOf(r);
     if (st.classes && !st.classes.includes(rec.class)) continue;
     if (r.sheet && boughtLastYear(r, s.month) >= dealsPerYear(r.sheet)) continue;
@@ -360,11 +366,10 @@ export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
     room.push(r);
   }
   const n = room.length;
-  const sig = rentSignals(s);
   const bids: Bid[] = [];
   for (const r of room) {
     const b = bidderOf(s, r, rec);
-    const { max, uw } = maxPrice(s.econ, view, b, sig);
+    const { max, uw } = maxPrice(s.econ, view, b, beliefSignals(s, r));
     if (!(max > 0)) continue;
     let bid = Math.min(max * (1 - SHADE / Math.max(1, n)), affordable(s, r, view, b));
     bid = Math.round(bid / 1000) * 1000;
@@ -423,7 +428,7 @@ export function sellerTerms(
   s: GameState, r: Rival, rec: ParcelRecord, bbl: string, mark: number, why: SaleWhy, grade?: Condition,
 ): { reserve: number; ask: number; inUse: number } {
   const view = dealView(s, rec, bbl, Math.max(1, mark), grade);
-  const inUse = view ? valueTo(s.econ, view, bidderOf(s, r, rec), rentSignals(s)).V : mark;
+  const inUse = view ? valueTo(s.econ, view, bidderOf(s, r, rec), beliefSignals(s, r)).V : mark;
   const payoff = rowOn(s, r, bbl)?.balance ?? 0;
   const sellCost = streetSaleCost(1_000_000, s) / 1_000_000;
   const clear = payoff / Math.max(0.5, 1 - sellCost);
@@ -547,6 +552,8 @@ export function noteRoundClosed(s: GameState, bbl: string, round: { bids: Bid[];
     ev.n = { ...(ev.n ?? {}), bidders: round.bids.length, debtRate: p.rd ?? 0, ltv: +top.uw.w.toFixed(2) };
     const second = round.bids[1];
     ev.t += ` · ${round.bids.length} bid${round.bids.length === 1 ? "" : "s"}${second ? `, next ${money(second.bid)}` : ""} · debt ${(top.uw.rd * 100).toFixed(1)}% on ${Math.round(top.uw.w * 100)}%`;
+    // what the winner believed when it priced the building
+    (ev.c ??= []).push(whyBelief(s, top.r, p.k));
   }
 }
 
@@ -810,7 +817,6 @@ function surveyClass(s: GameState, parcels: ParcelTable, k: BuiltClass, want: nu
   recs.sort((a, b) => a.demandScore - b.demandScore || (a.bbl < b.bbl ? -1 : 1));
   if (!recs.length) return [];
   const step = Math.max(1, Math.floor(recs.length / want));
-  const sig = rentSignals(s);
   const out: { c: number; x: [number, number, number]; bbl: string }[] = [];
   for (let i = Math.floor(step / 2); i < recs.length; i += step) {
     const rec = recs[i];
@@ -818,7 +824,7 @@ function surveyClass(s: GameState, parcels: ParcelTable, k: BuiltClass, want: nu
     const mark = assetValue(rec, e, cond);
     const view = dealView(s, rec, rec.bbl, mark, cond);
     if (!view) continue;
-    const maxes = firms.map((r) => maxPrice(e, view, bidderOf(s, r, rec), sig).max).filter((m) => m > 0).sort((a, b) => b - a);
+    const maxes = firms.map((r) => maxPrice(e, view, bidderOf(s, r, rec), beliefSignals(s, r)).max).filter((m) => m > 0).sort((a, b) => b - a);
     const px = maxes[1] ?? maxes[0];
     if (!px) continue;
     const c = impliedCap(s, rec, rec.bbl, px, cond, view.condIdx);
@@ -904,7 +910,6 @@ export function packageBids(s: GameState, parcels: ParcelTable, bbls: string[], 
   if (recs.length < 2) return [];
   const views = recs.map((rec) => rec.class === "land" || !(rec.bldgArea > 0)
     ? null : dealView(s, rec, rec.bbl, Math.max(1, assetValue(rec, s.econ, initialCondition(rec)))));
-  const sig = rentSignals(s);
   const firms = livingRivals(s).filter((r) => r.id !== sellerId && !r.stressMs && r.failedM === undefined
     && s.month - (r.bornM ?? 0) >= PACKAGE_TRACK_M
     && !bbls.some((b) => ownerOf(s, b) === r)
@@ -919,7 +924,7 @@ export function packageBids(s: GameState, parcels: ParcelTable, bbls: string[], 
     for (let i = 0; i < recs.length; i++) {
       const v = views[i];
       const b = v ? bidderOf(s, r, recs[i]) : null;
-      const m = v && b ? maxPrice(s.econ, v, b, sig).max : landMaxPrice(s, r, recs[i]);
+      const m = v && b ? maxPrice(s.econ, v, b, beliefSignals(s, r)).max : landMaxPrice(s, r, recs[i]);
       if (!(m > 0)) { ok = false; break; }
       max += m;
       if (v && b) debtShare += Math.min(v.debtA, b.ltvCap) * m;
@@ -981,7 +986,154 @@ export function landMaxPrice(s: GameState, r: Rival, rec: ParcelRecord): number 
       own = Math.max(0, f * (value / (1 + (builds ? firmMargin(r, s.month) : DEV_MARGIN)) - nonLand));
     }
   }
-  return builds ? own : Math.max(own, lr.holder * rec.lotArea);
+  return builds ? own : Math.max(own, bankerHoldValue(s, r, rec));
+}
+
+// ---------------------------------------------------------------- the land banker's number
+
+/**
+ * THE YEARS A LAND BANKER LOOKS AHEAD. Land funds run seven-to-ten-year lives
+ * with extensions (closed-end real estate vehicles; NCREIF / Preqin fund
+ * terms); a lot that only pencils past fifteen years is not in any fund's
+ * plan. The banker takes the best year inside that to sell to a builder.
+ */
+const BANK_HORIZONS = [0, 1, 2, 3, 5, 7, 10, 15];
+
+/** What a land fund prices off: its rent view, its equity target, its leverage, its file. */
+export interface BankerView { id: string; lean: number; eqPrem: number; ltvCap: number; fileSpread: number }
+
+export function bankerViewOf(s: GameState, r: Rival, rec: ParcelRecord): BankerView {
+  const b = bidderOf(s, r, rec);
+  return { id: r.id, lean: b.lean, eqPrem: b.eqPrem, ltvCap: b.ltvCap, fileSpread: b.fileSpread };
+}
+
+/** A fund being raised, before it has a sheet: the land banker's equity target, no lean, its leverage. */
+export function entrantBankerView(): BankerView {
+  return { id: "entrant", lean: 0, eqPrem: EQUITY_PREMIUM.pe, ltvCap: 0.15, fileSpread: 0 };
+}
+
+/** Five-point Gauss-Hermite nodes and weights for a standard normal. */
+const GH_Z = [0, -1.355626, 1.355626, -2.856970, 2.856970];
+const GH_W = [0.533333, 0.222076, 0.222076, 0.011257, 0.011257];
+/**
+ * WHAT A CLASS'S REAL RENT DOES IN A YEAR, sd of the twelve-month log change,
+ * off the town's own record once it has three years of it. Before that, the
+ * national record: CBRE-EA / NCREIF real rent growth 1990-2019 runs about 6%
+ * a year sd for office, 5% industrial, 4% retail, 3% apartments.
+ */
+const RENT_VOL_PRIOR: Record<BuiltClass, number> = { office: 0.06, industrial: 0.05, retail: 0.04, multifamily: 0.03 };
+function rentVol(e: Econ, k: BuiltClass): number {
+  const h = e.history ?? [];
+  const real = (p: (typeof h)[number] | undefined) => p?.rent?.[k] && (p.cpi ?? 1) > 0 ? p.rent[k] / (p.cpi ?? 1) : NaN;
+  const xs: number[] = [];
+  for (let i = Math.max(12, h.length - 240); i < h.length; i++) {
+    const a = real(h[i]), b = real(h[i - 12]);
+    if (a > 0 && b > 0) xs.push(Math.log(a / b));
+  }
+  if (xs.length < 36) return RENT_VOL_PRIOR[k];
+  const m = xs.reduce((a, x) => a + x, 0) / xs.length;
+  return Math.sqrt(xs.reduce((a, x) => a + (x - m) ** 2, 0) / xs.length);
+}
+
+let bankMemo: { e: Econ | null; m: number; scheme: Map<string, number>; val: Map<string, number>; vol: Map<BuiltClass, number> } = { e: null, m: -1, scheme: new Map(), val: new Map(), vol: new Map() };
+
+/**
+ * WHAT A LOT IS WORTH TO SOMEBODY WHO WILL HOLD IT FOR A BUILDER.
+ *
+ * A land banker does not build. It buys dirt today and sells it to the builder
+ * who will put a building on it — this year if one would pay more than it is
+ * worth held, or in some later year when rents have grown into it. So its
+ * number is the best, over the years it can wait, of:
+ *
+ *   the builder's residual in year T, at the rents the banker expects then
+ *   (the street's own residual scheme for the lot, residualScheme, at today's
+ *   costs and caps with rents grown by the banker's view), discounted at the
+ *   banker's own cost of capital in real terms,
+ *   less the property tax it pays on the lot while it waits.
+ *
+ * The rent view is the class's record as the street watched it (growthExp,
+ * real), tilted by the firm's own lean on the last three years' rents, as in
+ * valueTo, and decaying the way rent growth mean-reverts (GROWTH_DECAY): a
+ * growth surprise is not carried for fifteen years. The cost of capital is the
+ * firm's equity target over the bent index (EQUITY_PREMIUM: a land fund is
+ * private equity), with the land desk's half-advance at the firm's own
+ * leverage. Nothing here reads the land level: when builders' prospects rise,
+ * this number rises, and the dirt it buys prints it (tickLandRead).
+ */
+export function bankerHoldValue(s: GameState, r: Rival, rec: ParcelRecord, waitOnly = false): number {
+  return holdValueFor(s, bankerViewOf(s, r, rec), rec, waitOnly);
+}
+
+/** `waitOnly`: the lot's worth to a holder who does NOT sell this year — what a builder's bid has to beat for a banker to let it go. */
+export function holdValueFor(s: GameState, bv: BankerView, rec: ParcelRecord, waitOnly = false): number {
+  if (!(rec.lotArea > 0) || rec.ag || rec.homeLot || rec.tract) return 0;
+  const e = s.econ;
+  if (bankMemo.e !== e || bankMemo.m !== s.month) bankMemo = { e, m: s.month, scheme: new Map(), val: new Map(), vol: new Map() };
+  const vk = `${bv.id}|${rec.bbl}|${waitOnly ? 1 : 0}`;
+  const hit = bankMemo.val.get(vk);
+  if (hit !== undefined) return hit;
+  const schemeAt = (mult: number): { psf: number; use?: BuiltClass } => {
+    const sk = `${rec.bbl}|${mult.toFixed(3)}`;
+    const c = bankMemo.scheme.get(sk);
+    if (c !== undefined) return { psf: c };
+    const sc = residualScheme(rec, e, mult);
+    const psf = sc?.psf ?? 0;
+    bankMemo.scheme.set(sk, psf);
+    return { psf, use: sc?.use as BuiltClass | undefined };
+  };
+  // the lot's natural use: today's best scheme, or the use closest to covering its cost
+  const now = residualScheme(rec, e, 1);
+  let use: BuiltClass | undefined = now?.psf && now.psf > 0 ? now.use as BuiltClass : undefined;
+  if (!use && now?.all?.length) use = [...now.all].sort((a, b) => b.psf - a.psf)[0].use;
+  const k: BuiltClass = use && (K as string[]).includes(use) ? use : "multifamily";
+  let belief = e.growthExp?.[k] ?? 0;
+  if (bv.lean !== 0) {
+    const sig = beliefSignals(s, { id: bv.id })[k]; // the fund's own belief (beliefs.ts), not the town's true trend
+    belief += bv.lean > 0 ? bv.lean * sig.g : -bv.lean * (1 / (1 + sig.dev) - 1) * GAP_CLOSE_YR;
+  }
+  belief = clamp(belief, -0.06, 0.06);
+  // its cost of capital, real: the equity target and the land desk's loan at its leverage
+  const i = e.indexRate ?? 5;
+  const rE = (bentIndex(i) + bv.eqPrem) / 100;
+  const land = streetRefiProceeds(s, 1_000_000, 0, 0.95);
+  const w = Math.min(bv.ltvCap, land.principal / 1_000_000);
+  const rd = (land.ratePct + bv.fileSpread) / 100;
+  const k$ = w * rd + (1 - w) * rE;
+  const infl = e.nat?.inflExp ?? 0.02;
+  const kr = Math.max(0.01, (1 + k$) / (1 + infl) - 1);
+  const taxYr = taxRate(e) * landValue(rec, e);
+  // RENTS ARE UNCERTAIN, AND THAT IS WHAT DIRT NOBODY CAN BUILD ON IS WORTH.
+  // A lot that pencils only if rents rise a third is worth something even to a
+  // holder who expects them flat, because it is sold to the builder only in
+  // the years they did rise (Titman 1985; Capozza & Helsley 1990; Quigg 1993
+  // measured the option premium on Seattle land at ~6% of its value). The
+  // rent level in year T is lognormal about the banker's expectation, its
+  // spread the class's own year-on-year real rent volatility (rentVol),
+  // integrated through the growth persistence the street already assumes
+  // (rho 0.6, GROWTH_DECAY): sd(T) = sigma sqrt(T) / (1 - rho). Expected
+  // residual by five-point Gauss-Hermite quadrature.
+  let vol = bankMemo.vol.get(k);
+  if (vol === undefined) { vol = rentVol(e, k); bankMemo.vol.set(k, vol); }
+  const sig = vol / (1 - Math.exp(-GROWTH_DECAY));
+  let best = 0;
+  for (const T of BANK_HORIZONS) {
+    if (waitOnly && T === 0) continue;
+    const G = T === 0 ? 0 : belief * (1 - Math.exp(-GROWTH_DECAY * T)) / GROWTH_DECAY;
+    const sd = sig * Math.sqrt(T);
+    let ev = 0;
+    for (let q = 0; q < GH_Z.length; q++) {
+      if (T === 0 && q > 0) break;
+      const psf = schemeAt(Math.exp(G - 0.5 * sd * sd + sd * GH_Z[q])).psf;
+      if (psf > 0) ev += (T === 0 ? 1 : GH_W[q]) * psf;
+    }
+    if (!(ev > 0)) continue;
+    const carry = T === 0 ? 0 : taxYr * (1 - Math.pow(1 + kr, -T)) / kr;
+    const v = ev * rec.lotArea / Math.pow(1 + kr, T) - carry;
+    if (v > best) best = v;
+  }
+  best = Math.max(0, Math.round(best));
+  bankMemo.val.set(vk, best);
+  return best;
 }
 
 /** A land bid round: builders and land bankers, each on its own number, shaded by the room and capped by its cash. */
@@ -989,7 +1141,7 @@ export function landBidRound(s: GameState, parcels: ParcelTable, rec: ParcelReco
   const seller = ownerOf(s, rec.bbl);
   const room: Rival[] = [];
   for (const r of livingRivals(s)) {
-    if (r === seller || r.stressMs || r.failedM !== undefined) continue;
+    if (r === seller || r.stressMs || r.failedM !== undefined || r.homeBy !== undefined) continue;
     const p = paramsOf(r);
     if (!(p.build > 0) && !landBanker(r)) continue;
     if (p.classes && !p.classes.includes("land") && !(p.build > 0)) continue;
@@ -1133,17 +1285,70 @@ export function tickLandRead(s: GameState): void {
   const moved = Math.abs(Math.log(med / Math.max(1e-9, e.landIdx))) >= 0.02 || s.month % 12 === 0;
   e.landIdx = med;
   const trades = sel.filter((p) => p.kind === "t").length;
+  const bids = sel.filter((p) => p.kind === "b").length, surveyed = sel.filter((p) => p.kind === "s").length;
   const out = { n: +sel.reduce((a, p) => a + p.w, 0).toFixed(1), win, ageM: Math.round(wMedian(sel.map((p) => ({ v: s.month - p.m, w: 1 })))), why: prev?.why };
   if (moved) {
     out.why = why(s, {
       k: "market.land", a: "trade", aid: "land",
-      n: { level: +med.toFixed(4), n: out.n, win, trades },
+      n: { level: +med.toFixed(4), n: out.n, win, trades, bids, surveyed },
       t: `land: ${trades} lot sale${trades === 1 ? "" : "s"} in ${win} months`
-        + `${sel.length > trades ? `, ${sel.length - trades} unclosed bid${sel.length - trades === 1 ? "" : "s"} at half weight` : ""}`
+        + `${bids ? `, ${bids} unclosed bid${bids === 1 ? "" : "s"} at half weight` : ""}`
+        + `${surveyed ? `, ${surveyed} broker's indication${surveyed === 1 ? "" : "s"} of what land funds and builders would pay` : ""}`
         + ` — dirt sells at ${med.toFixed(2)}x the map's opening texture`,
     }, [whyNation(s)]);
   }
   e.landReadOut = out;
+}
+
+/**
+ * DIRT NOTHING HAS PRINTED ON FOR A YEAR gets the broker's survey once a year,
+ * the same rule a cap rate with no print gets (tickBrokerSurvey): six
+ * texture-priced lots across the town's range of locations, each priced at
+ * what the room would pay — the best of the land funds' and builders' own
+ * numbers (landMaxPrice), shaded for the room exactly as a land round bids —
+ * at half weight. Without it a land level nobody tests stands at the appraiser's
+ * opening number for decades: the lots it prices are the ones nobody can
+ * build on, their owners list only when somebody would pay their
+ * reservation, and the only other sales are forced. The prints are the
+ * bidders' own numbers; nothing here is a formula for land.
+ *
+ * The sample is every vacant town lot, not only the texture-priced ones, and
+ * that was measured: surveyed on texture-priced lots alone, each lower level
+ * moved the better lots out of the texture set (their builders' residuals now
+ * cleared the lower floor), the lots left were worse, and the next survey
+ * read lower again — 1.31 to 0.06 in nine years (seed 3). A fixed sample has
+ * no such selection: the funds' and builders' numbers do not read the level.
+ * It runs when nothing has printed in a year, and whenever the read is stale.
+ */
+export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
+  if (s.month % 12 !== 6) return;
+  const tape = s.landTape ?? [];
+  const stale = !(s.econ.landReadOut?.win);
+  if (!stale && tape.some((p) => p.kind !== "s" && p.m > s.month - 12)) return;
+  const firms = livingRivals(s).filter((r) => !r.stressMs && r.failedM === undefined && (paramsOf(r).build > 0 || landBanker(r)));
+  if (!firms.length) return;
+  const recs: ParcelRecord[] = [];
+  for (const bbl of Object.keys(parcels)) {
+    const rec = resolveRec(parcels, s, bbl);
+    if (rec && (rec.class === "land" || !(rec.bldgArea > 0)) && rec.lotArea > 0 && !rec.ag && !rec.homeLot && !rec.tract) recs.push(rec);
+  }
+  if (!recs.length) return;
+  recs.sort((a, b) => a.demandScore - b.demandScore || (a.bbl < b.bbl ? -1 : 1));
+  const want = 6;
+  const step = Math.max(1, Math.floor(recs.length / want));
+  let n = 0;
+  for (let i = Math.floor(step / 2); i < recs.length && n < want; i += step) {
+    const rec = recs[i];
+    const maxes = firms.map((r) => landMaxPrice(s, r, rec)).filter((m) => m > 0).sort((a, b) => b - a);
+    if (!maxes.length) continue;
+    // the best number, shaded for the room as a land round bids (landBidRound)
+    const px = maxes[0] * (1 - SHADE / maxes.length);
+    // per unit of the map's texture, whoever's number it is (a fixed sample,
+    // not the lots the level itself makes texture-priced: see below)
+    const mark = landRead(rec, s.econ).texture * rec.lotArea;
+    const L = mark > 0 ? s.econ.landIdx * px / mark : NaN;
+    if (Number.isFinite(L) && L > 0) { pushLandPrint(s, { m: s.month, L, w: 0.5, kind: "s" }); n++; }
+  }
 }
 
 /** For the UI: the read's line, numbers first. */

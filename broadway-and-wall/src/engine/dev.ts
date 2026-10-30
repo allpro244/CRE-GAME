@@ -12,7 +12,7 @@ import { BUILT_CLASSES, cloneState, raiseAlert } from "./types";
 import { abatementAtStart } from "./citygov";
 import { logBooks, moveDeposit, moveFundCash, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
-import { rng, rrange, normalVac, forwardVacancy, rentTrend12, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, housableStock, payrollGrowth12 } from "./market";
+import { rng, rrange, normalVac, forwardVacancy, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, housableStock, payrollGrowth12 } from "./market";
 import { firmShort } from "./firm";
 import { classValuePsf, resolveRec, marketRentPsfYr, landValue, landRead, assetValue, ownedHoldingValue, demandLinear, condGrade, condCeiling, openingCondIdx,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
@@ -99,6 +99,8 @@ import {
 } from "./proforma";
 import type { ConstructionQuote } from "./proforma";
 import { money } from "./money";
+import { beliefOf, whyBelief } from "./beliefs";
+import { why } from "./why";
 import { consentFor, purseOf } from "./vehicles";
 import { formSyndication, maxOutside, settleSyndications, syndicateBar, chargeDevFee } from "./syndicate";
 import { heldByRaises, PITCH_MULT } from "./investors";
@@ -4230,8 +4232,8 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
         // Same size discipline as on vacant dirt: no bigger than this shop's
         // share of the class's standing stock.
         if (fl > 1 && u.plan.sf * (u.plan.mix?.[k] ?? 1) > rdev.maxShare * Math.max(1, e.stock?.[k] ?? 0)) continue;
-        if (forwardVacancy(e, k, u.plan.sf * (u.plan.mix?.[k] ?? 1), u.plan.months) > normalVac(e, k) + rdev.vacTol) continue;
-        const h = hurdleAt(u.plan, DEV_MARGIN) * rdev.outlook * momentumRead(s, k, rdev.momentum) / rdev.bar;
+        if (forwardVacancy(e, k, u.plan.sf * (u.plan.mix?.[k] ?? 1), u.plan.months, beliefOf(s, null, k)) > normalVac(e, k) + rdev.vacTol) continue;
+        const h = hurdleAt(u.plan, DEV_MARGIN) * rdev.outlook * momentumRead(s, k, rdev.momentum, null) * exitRead(s, null, k) / rdev.bar;
         if (!kids.length) nearH = Math.max(nearH, h);
         if (h < 1) continue;
         if (!bestU || h > bestH) { bestU = u; bestH = h; nextUse = k; lead = k; bestKids = kids; bestOc = oc; }
@@ -5033,7 +5035,7 @@ function developerLook(
         // over the real horizon, is what fills a market faster than demand
         // turns out to grow (Wheaton 1999). Read over 18 months, every shop
         // was more cautious than any real one and no market overshot.
-        if (forwardVacancy(s.econ, lead, ownSf, u.plan.months + PLAN_LEAD_M[lead]) > normalVac(s.econ, lead) + dev.vacTol) continue;
+        if (forwardVacancy(s.econ, lead, ownSf, u.plan.months + PLAN_LEAD_M[lead], beliefOf(s, firm, lead)) > normalVac(s.econ, lead) + dev.vacTol) continue;
         // THEIR OWN READ: yield on cost over the exit cap at the trade margin,
         // through their rent outlook and how they read the market's direction.
         // ...but only on a scheme that already clears its spread on today's
@@ -5043,7 +5045,7 @@ function developerLook(
         // ...and only what its own money can carry its share of.
         const coInvest = builderCoInvest(u.plan.basisTotal, dev.ltc);
         if (coInvest > purse) continue;
-        const h = hurdleAt(u.plan, DEV_MARGIN) * dev.outlook * momentumRead(s, lead, dev.momentum);
+        const h = hurdleAt(u.plan, DEV_MARGIN) * dev.outlook * momentumRead(s, lead, dev.momentum, firm) * exitRead(s, firm, lead);
         if (!best || h > best.h) best = { bbl, rec, use, floors: fl, plate, h, coInvest, kids };
       }
     }
@@ -5052,6 +5054,17 @@ function developerLook(
   }
   // Built only if the deal clears THIS developer's bar.
   if (!best || best.h < dev.bar) return false;
+  // WHAT IT BELIEVED WHEN IT DECIDED, on the cause ledger, so a glut can be
+  // traced back to the forecasts that built it (beliefs.ts).
+  if (firm && !opts?.backdate && !opts?.quiet) {
+    const lead = dominantOf(devMix(best.use));
+    const b = beliefOf(s, firm, lead);
+    why(s, {
+      k: "dev.commit", a: "rival", aid: firm.id, name: firm.name, bbl: best.bbl,
+      n: { floors: best.floors, g: +(b.g * 100).toFixed(2), vacBelieved: +(b.vac * 100).toFixed(2), vacNow: +((s.econ.cityVac?.[lead] ?? 0) * 100).toFixed(2) },
+      t: `${firm.name} committed to ${best.floors} floor${best.floors === 1 ? "" : "s"} of ${best.use} at ${best.rec.address}, on ${(b.g * 100).toFixed(1)}% rent growth and ${(b.vac * 100).toFixed(1)}% vacancy as it read them`,
+    }, [whyBelief(s, firm, lead)]);
+  }
   // COMMITTED NOW, STARTED LATER (2026-10-13). The deal is decided here; the
   // hole is dug after the design, the permits and the construction loan —
   // months in which nobody else can see it. A pipeline report counts starts,
@@ -5191,16 +5204,31 @@ function drawDeveloper(s: GameState): DeveloperProfile {
 }
 
 /**
- * HOW A SHOP READS WHERE RENT IS HEADING: what the comps did over the last
- * year (market.ts rentTrend12), carried over the two years to delivery,
- * weighted by their momentum — a trend follower adds it, a contrarian leans
- * against it. Capped at +/-25% so a belief is never larger than a cycle.
- * (This read the city's rent equation at today's vacancy, `rentDriftAt`,
- * which no rent follows any more: ONE ECONOMY step 4.)
+ * HOW A SHOP READS WHERE RENT IS HEADING: the real rent growth it has SEEN
+ * (beliefs.ts: its broker's comps, its own rolls and a survey two quarters
+ * old, half the weight on the last year), carried over the two years to
+ * delivery, weighted by its momentum — a trend follower adds it, a contrarian
+ * leans against it. Capped at +/-25% so a belief is never larger than a
+ * cycle. (This read the town's TRUE twelve-month rent change, `rentTrend12`,
+ * which no developer could know this month; before that, the city's rent
+ * equation at today's vacancy.) `who` null is the anonymous trade: the survey.
  */
-function momentumRead(s: GameState, k: BuiltClass, momentum: number): number {
-  const drift = Math.max(-0.25, Math.min(0.25, rentTrend12(s.econ, k) * 2));
+function momentumRead(s: GameState, k: BuiltClass, momentum: number, who: { id: string } | null | undefined): number {
+  const drift = Math.max(-0.25, Math.min(0.25, beliefOf(s, who, k).g * 2));
   return Math.exp(momentum * drift);
+}
+
+/**
+ * THE EXIT A SHOP UNDERWRITES IS ITS BROKER'S CAP, not today's tape. The pro
+ * forma's exit cap is the town's current read; a developer takes its exit from
+ * the opinion of value its broker gives it, which is the class as of the last
+ * trade that shop closed (beliefs.ts) — stale in a fast market, as broker and
+ * appraiser opinions are. A value multiple on the hurdle: today's cap over the
+ * believed one.
+ */
+function exitRead(s: GameState, who: { id: string } | null | undefined, k: BuiltClass): number {
+  const now = s.econ.capRate?.[k], b = beliefOf(s, who, k).cap;
+  return now && now > 0 && b > 0 ? now / b : 1;
 }
 
 /** Developers SITES_PER_LOOK examines in one look — a broker's shortlist. */

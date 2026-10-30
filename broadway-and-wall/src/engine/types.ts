@@ -2369,13 +2369,20 @@ export interface Econ {
    */
   capRead?: Partial<Record<BuiltClass, CapRead>>;
   /** The land texture level's read-out (propmarket.ts tickLandRead): evidence, window (0 = stale), median age. */
-  landReadOut?: { n: number; win: number; ageM: number; why?: number };
+  landReadOut?: { n: number; win: number; ageM: number; why?: number; raw?: number };
   /**
    * THE APPRAISER'S ADJUSTMENT GRID, learned from the prints (propmarket.ts):
    * log-cap per unit of location (0-1), condition index (0-1) and build spec
    * (0-1), against the reference building the class read is quoted for.
    */
   capFit?: Partial<Record<BuiltClass, [number, number, number]>>;
+  /**
+   * THE APPRAISERS' INDICES (propmarket.ts): per class, and for dirt, the
+   * hedonic grid's running sums and the appraisers' own estimate of the level
+   * at the reference building (log), with its variance. See `ApprIndex`.
+   */
+  capIdx?: Partial<Record<BuiltClass, ApprIndex>>;
+  landIx?: ApprIndex;
   /**
    * WHAT BUYERS HAVE SEEN OF EACH SUBMARKET (propmarket.ts tickLocBeliefs):
    * per class and quality band (`bands` — address and building blended), the
@@ -4659,7 +4666,7 @@ export interface GameState {
    * or was surveyed, as the texture level it implies (`L`, in units of
    * econ.landIdx). The texture level is a statistic of this tape.
    */
-  landTape?: { m: number; L: number; w: number; kind: "t" | "b" | "s" }[];
+  landTape?: { m: number; L: number; w: number; kind: "t" | "b" | "s"; x?: [number, number] }[];
   /**
    * Lifetime closed-print count. The rolling `comps` buffer is capped for the
    * sheet UI; this counter is not, so a century report can tell cumulative
@@ -5809,12 +5816,32 @@ export interface CapPrint {
   why?: number;
 }
 
+/**
+ * A TIME-DUMMY HEDONIC GRID AND THE APPRAISER WHO READS IT (propmarket.ts).
+ * `S*` are the within-calendar-year (demeaned) weighted cross-products of
+ * the closed years — the sufficient statistics of a regression with a free
+ * level every year; `cur` is the open year's raw sums; `yrs` each closed
+ * year's totals (its mean, for the market's own volatility). `x`/`P` are the
+ * appraiser's current log level at the reference and its variance; `s0`/`n0`
+ * the opening survey's dispersion, a prior on the residual variance.
+ */
+export interface ApprIndex {
+  nYr: number; W: number; Szz: number[]; Szy: number[]; Syy: number;
+  cur?: { yr: number; W: number; sz: number[]; sy: number; szz: number[]; szy: number[]; syy: number };
+  yrs: { yr: number; W: number; sz: number[]; sy: number }[];
+  x: number; P: number; s0: number; n0: number;
+}
+
 /** A class's cap read-out (propmarket.ts tickCapRead). */
 export interface CapRead {
   /** weighted prints in the window, and the window in months (0 = none in three years: the read is stale) */
   n: number; win: number;
-  /** median and quartiles of the prints, restated to the reference building, % */
+  /** the appraisers' read at the reference building (the index), and the window's quartiles restated to it, % */
   med: number; p25: number; p75: number;
+  /** the window's own weighted median restated to the reference — what the deals alone say, before the appraisers weigh it against what they knew; and the index's standard error, % */
+  raw?: number; se?: number;
+  /** the grid the read restated its window through: location, condition, spec, and an unclosed bid, a broker's indication, a distress sale (log cap per unit) */
+  adj?: number[];
   /** median age of the evidence, months */
   ageM: number;
   /** median best-bid cap less ask cap on rounds bid on, points (wide = a thin market) */

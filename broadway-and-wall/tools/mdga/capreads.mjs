@@ -30,7 +30,8 @@ for (const seed of SEEDS) {
   const out = { seed };
   for (const k of K) {
     const d = yr.slice(2).map((y, i) => Math.abs(y.cap[k] - yr[i + 1].cap[k]));
-    out[k] = { dYr: +mean(d).toFixed(2), p90: +[...d].sort((a, b) => a - b)[Math.floor(d.length * 0.9)].toFixed(2), level: +med(yr.map((y) => y.cap[k])).toFixed(2), condB: +med(condB[k]).toFixed(2) };
+    const dlk = yr.slice(2).map((y, i) => Math.abs(Math.log(y.cap[k] / yr[i + 1].cap[k])));
+    out[k] = { dYr: +mean(d).toFixed(2), dLog: +mean(dlk).toFixed(3), p90: +[...d].sort((a, b) => a - b)[Math.floor(d.length * 0.9)].toFixed(2), level: +med(yr.map((y) => y.cap[k])).toFixed(2), condB: +med(condB[k]).toFixed(2) };
   }
   const dl = yr.slice(2).map((y, i) => Math.abs(Math.log(y.land / yr[i + 1].land)));
   out.land = { dLogYr: +mean(dl).toFixed(3), maxRatio: +Math.exp(Math.max(...dl)).toFixed(2), level: +med(yr.map((y) => y.land)).toFixed(3) };

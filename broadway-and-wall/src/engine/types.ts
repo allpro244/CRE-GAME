@@ -2968,6 +2968,15 @@ export interface Econ {
   darkSf?: Record<BuiltClass, number>;
   cityVac: Record<BuiltClass, number>;
   /**
+   * The pre-history's space market, month by month (regime.ts vacMultOf):
+   * vacancy as a multiple of natural on each month's trailing three years of
+   * unemployment, oldest first, the last entry month -1. Read once, by the
+   * opening pipeline (dev.ts seedOpeningPipeline), so a frame already
+   * standing was decided on the market of the month it was decided in; then
+   * dropped.
+   */
+  preVacMult?: number[];
+  /**
    * Month the "vacancy up 2pp YoY" broker tell last fired. Debounces the news
    * line so a long soft market does not spam the paper every month.
    */

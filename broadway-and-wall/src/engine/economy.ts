@@ -1554,8 +1554,8 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
   const slack = WAGE_CURVE * Math.log(Math.max(0.01, uLoc) / Math.max(0.01, uNat));
   const prevNat = E.posted?.natW ?? natW;
   // what a head's rent and output would be at the nation's rents and pay
-  const opwNat = perHead(natW).opw, rentNat = new Float64Array(N_IND), rentMkt = new Float64Array(N_IND);
-  for (let i = 0; i < N_IND; i++) { rentNat[i] = natRentPerHead(s, i, opwNat); rentMkt[i] = rentPerHead(s, i, perHead(e.wageIdx ?? 1).opw); }
+  const opwNat = perHead(natW).opw, opwHere = perHead(e.wageIdx ?? 1).opw, rentNat = new Float64Array(N_IND), rentMkt = new Float64Array(N_IND);
+  for (let i = 0; i < N_IND; i++) { rentNat[i] = natRentPerHead(s, i, opwNat); rentMkt[i] = rentPerHead(s, i, opwHere); }
   for (let n = 0; n < nF; n++) {
     const i = F.ind[n], I = INDUSTRIES[INDUSTRY_IDS[i]];
     // ---- pay

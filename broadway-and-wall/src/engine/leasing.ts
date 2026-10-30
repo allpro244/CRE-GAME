@@ -22,7 +22,7 @@ function vacancyTight(s: GameState, use?: BuiltClass): number {
 }
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locOpexMult, taxRate, recoveryOf,
   condGrade, initialCondIdx, condCeiling, condWear, capPlanBillMo, CONDITION_RENT_MULT, ownedHoldingValue,
-  physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, marketRentPsfYr, registerRolloverReader, flatsMarkPsf, flatsRollPsf, faceGrossUp, abatedShare } from "./value";
+  physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, registerRolloverReader, flatsMarkPsf, flatsRollPsf, faceGrossUp, abatedShare } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
 import { overallScore, scoreRentMult, N_BANDS } from "./value";

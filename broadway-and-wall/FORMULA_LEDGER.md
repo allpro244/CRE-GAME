@@ -12,9 +12,6 @@ When you remove one, move it to **Removed** with the PR. When you add a mechanis
 
 | # | What it sets | Where | Replaced by |
 |---|---|---|---|
-| 6 | Credit window (payroll growth, unemployment, noise) | `market.ts` / `lenders.ts` `creditIdx` | step 5: banks' appetite summed (in progress) |
-| 7 | Trade boom/bust clock and `industryMom` | `market.ts` | step 2: industries from firms' orders (in progress) |
-| 8 | Industry shock hazard (`IND_SHOCK_HAZ`) | `market.ts` | step 2 |
 | 10 | Space demand drivers per commercial class (affordability band, retail Cobb–Douglas), against the opening's occupied stock (`OPENING_VAC`, an initial condition). Office and shop firms form from industries' heads and sign from their own options (step 4); the aggregate still sizes off-map sheds, the rent response `demandAt.raw` and the sublet give-back | `market.ts` (`AFFORD_BAND`, `affordRaw`, `targetRaw`, `wantedNow`) | step 2 (firms' heads × sf/worker) |
 | 14 | Migration by city services: a level effect (`SERVICE_MIG` × log service, over `MIG_ADJ_M`) poured into the register as a wave of newcomers (`citygov.ts` → `bsMigPull`); a negative pull is dropped, so a cut in services sends nobody away. (The market.ts migration and participation formulas went with step 2; births, deaths, unions and splits are the register's since households 4.) | `citygov.ts` | households weighing the city's services in where they live and whether they stay |
 

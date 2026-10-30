@@ -783,7 +783,18 @@ export function tickFirms(s: GameState): void {
       const id = c.id[n];
       if (id < 0) { keep[n] = true; continue; }
       const sn = seen.get(id);
-      if (!sn) { closeBooks(L, n); keep[n] = false; continue; }
+      if (!sn) {
+        // A FIRM THAT CLOSES TAKES ITS JOBS WITH IT, THIS MONTH. Its earners
+        // are let go this month (the register parts them from an employer no
+        // longer live); its heads were handed to the off-map sample instead
+        // (`off` = employment less the named firms'), so the industry kept
+        // openings for people it had just laid off, filled only a month on —
+        // measured, a 24-head textile firm closing left textiles 19% short of
+        // earners for a month. The industry hires back toward the work its
+        // sales need at its own pace (`staff`).
+        if (E.emp && !opening) { const i = c.ind[n]; E.emp[i] = Math.max(0, E.emp[i] - c.hc[n]); }
+        closeBooks(L, n); keep[n] = false; continue;
+      }
       c.hc[n] = sn.hc; c.z[n] = sn.z; c.rent[n] = sn.rentMo; have.add(id); keep[n] = true;
     }
     if (keep.some((k) => !k)) {

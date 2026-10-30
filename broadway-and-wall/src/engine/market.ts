@@ -3449,7 +3449,10 @@ export function tickEcon(s: GameState) {
     const natCpiPrev = e.natCpi ?? e.cpi!;
     e.natCpi = natCpiPrev * (1 + natInfl / 12);
     const natCpi12 = h12?.natCpi ? e.natCpi / h12.natCpi - 1 : natInfl;
-    const shelter12 = h12?.rent?.multifamily ? e.rentIdx.multifamily / h12.rent.multifamily - 1 : natCpi12;
+    // the rent the region's renters pay, the island's flats and the mainland's
+    // at their shares (households.ts `shelterRead`); the island's flats alone
+    // before the register has a year of it
+    const shelter12 = e.shelter12 ?? (h12?.rent?.multifamily ? e.rentIdx.multifamily / h12.rent.multifamily - 1 : natCpi12);
     const wage12 = h12?.wageIdx ? (e.wageIdx ?? 1) / h12.wageIdx - 1 : 0;
     const natWage12 = h12?.natWageIdx ? (e.natWageIdx ?? 1) / h12.natWageIdx - 1 : wage12;
     // THE NATION'S RENT RISES WITH THE NATION'S PAY, NOT WITH ITS PRICES

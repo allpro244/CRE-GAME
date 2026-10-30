@@ -338,8 +338,6 @@ const UE_RATE = 0.25;
  * the nation's unemployment rise and the town's own rate rose 0.12 points.
  */
 const MATCH_ETA = 0.3;
-/** Months over which the region's recent arrivals for work are read (matchJobs step 4b): a five-year mean (Blanchard & Katz 1992's horizon). [S~] */
-const ARR_TAU_M = 60;
 /**
  * A household whose earners are all out of work, past their insurance, leaves
  * the region at about 5% a year: interstate migration ran about 2.5% a year
@@ -372,6 +370,45 @@ const LEAVE_JOBLESS_M = 0.05 / 12;
  * - 1, of the movers' rate in households that come looking for work.
  */
 const MOVE_M = 0.025 / 12, MOVE_ELAST = 3;
+/**
+ * THE REGION'S HOUSING SUPPLY ELASTICITY: how much more housing a metro builds
+ * per point its price rises. Saiz (2010, QJE, "The Geographic Determinants of
+ * Housing Supply"): about 1.75 for the population-weighted average US metro,
+ * from under 1 (Miami, Los Angeles, San Francisco) to over 4 (flat, open
+ * metros) [S]. The mainland — where most of the region's renters live — was
+ * let at what it costs to build, at any size: a region that grew fivefold
+ * housed its people at the opening's real rent, its prices fell against the
+ * nation's as the nation's rent rose with its pay, and its real pay rose for
+ * it (measured, tools/proof.mjs seed 11: prices 0.83 of the nation's, real pay
+ * 1.2, jobs x5.7 in a century and accelerating). Now the mainland's rent moves
+ * with the region's households to the power 1/1.75 as well as with the cost of
+ * building: what housing more people costs is in what a household pays to
+ * live here, and so in the town's prices and in where people choose to live.
+ */
+const HOUSING_SUPPLY_ELAST = 1.75;
+/**
+ * WHAT THE REGION'S RENTERS PAY FOR SHELTER (the CPI's shelter, market.ts): a
+ * chained index of the island's flats (the street's rent index) and the
+ * mainland's rent, at their shares of the rent the register's renters pay.
+ * Its change over the last year is set on the economy once it has a year.
+ */
+function shelterRead(r: HouseholdRegister, e: Econ): void {
+  const a = r.a!, mf = e.rentIdx?.multifamily ?? 1;
+  let isl = 0, main = 0;
+  for (let i = 0; i < r.n; i++) {
+    if (a.ten[i] === TEN_RENT) isl += a.wt[i] * a.rent[i];
+    else if (a.ten[i] === TEN_MAINLAND) main += a.wt[i] * a.rent[i];
+  }
+  const s = isl + main > 0 ? isl / (isl + main) : 1;
+  const h = (r.shelterIdx ??= [1]);
+  const last = h[h.length - 1];
+  const dMf = r.mfRef && r.mfRef > 0 && mf > 0 ? Math.log(mf / r.mfRef) : 0;
+  const dMain = r.mainRefS && r.mainRefS > 0 ? Math.log(r.mainRent / r.mainRefS) : 0;
+  r.mfRef = mf; r.mainRefS = r.mainRent;
+  h.push(last * Math.exp(s * dMf + (1 - s) * dMain));
+  if (h.length > 13) h.shift();
+  e.shelter12 = h.length === 13 ? h[12] / h[0] - 1 : undefined;
+}
 /** What pay buys here against elsewhere (MOVE_ELAST above), from the engine's own indices. */
 export function realPayRel(e: Econ): number {
   const pay = (e.wageIdx ?? 1) / Math.max(1e-9, e.natWageIdx ?? e.wageIdx ?? 1);
@@ -727,8 +764,12 @@ export interface HouseholdRegister {
   thetaRef?: number;
   /** The nation's consumption mood (market.ts dem.cMood) the register opened in: its households' spending moves with the mood against it. */
   mood0?: number;
-  /** Households of the region's weight arriving for work a month, recently (ARR_TAU_M); the movers owed that the openings did not take, carried until a whole household. */
-  arrRef?: number; chaseAcc?: number;
+  /** The region's households (weighted) last month, what the mainland's rent moves with (HOUSING_SUPPLY_ELAST). */
+  hhRef?: number;
+  /** The region's renters' shelter index, chained, the last thirteen months (`shelterRead`), and the island flats' rent index last month. */
+  shelterIdx?: number[]; mfRef?: number; mainRefS?: number;
+  /** Movers from elsewhere this month still to place, short of a whole household of the region's weight (`matchJobs` step 4). */
+  arriveAcc?: number;
   /** This month's move-outs from the player's blocks: the cause-ledger event per block (bbl -> why id). */
   flatWhy?: Record<string, number>;
   /** THE HOUSEHOLDS' YEAR (stage 5), rolled for the cause ledger: spending by category, net income, layoffs, the jobless rate and the wage index; the month each category's fall was last written. */
@@ -2212,33 +2253,48 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // move for it, each in proportion to their numbers, so the outsiders' share
   // of the applications is the nation's unemployment rate against the sum of
   // the two (each pool read as a rate, the town's and the nation's). At parity
-  // the leftover openings go to arrivals as they always did (calibrated
-  // there: 2 uN / (uN + uL) = 1, held at most 1); where the town's jobless
-  // rate runs over the nation's, the town's own people take a growing share
+  // the leftover openings go to the movers below as they did before this
+  // (2 uN / (uN + uL) = 1, held at most 1); where the town's jobless rate runs
+  // over the nation's, the town's own people take a growing share of them
   // and fewer households move in. Before this, an opening the jobless here
-  // had not drawn in step 3b went to a household from elsewhere every time,
-  // so a town whose firms cut heads in a national slump only had fewer
-  // movers: measured (seed 550991, 30 years), the labour force fell 0.57% a
-  // year per point of the nation's unemployment rise, most of it arrivals.
-  // The relative-unemployment pull on in-migration is the Blanchard-Katz
-  // (1992) channel; the applicant-share form is [K].
+  // had not drawn in step 3b went to a mover whenever one was coming. The
+  // relative-unemployment pull on in-migration is the Blanchard-Katz (1992)
+  // channel; the applicant-share form is [K].
   const uN = Math.max(1e-3, e.nat?.unemp ?? 0.05), uL = Math.max(1e-3, e.unemployment ?? uN);
   const outsiders = Math.min(1, 2 * uN / (uN + uL));
-  let jobArr = 0;
-  // ...and only if what the job pays buys as much here as elsewhere (MOVE_ELAST, `pull` above)
-  for (let ind = 0; ind < N_IND; ind++) {
-    // (V too: a partner placed below may have taken an opening of this industry)
-    while (open[ind] >= wR / 2 && V[ind] >= wR / 2) {
-      // a local's application wins
+  // ...AND ONLY AS MANY AS ARE MOVING. The households that take a job across
+  // the country are the interstate movers (MOVE_M, 2.5% of households a year,
+  // Census CPS), and this region gets them in proportion to its households, at
+  // the odds that what its pay buys here is as good as elsewhere (MOVE_ELAST,
+  // `pull` above). This was a draw at those odds on every opening, every month
+  // it stayed open: an opening a month old was offered to the country again,
+  // so the outside supply of workers was without limit at any real pay, the
+  // openings never stayed open long enough to raise pay (V_SLOPE, economy.ts
+  // `postPayAndPrices`), and a town whose rents had made it dear kept growing
+  // at 0.8 of the nation's real pay (measured, tools/proof.mjs: jobs x6-x31 a
+  // century). Now the movers are a flow: what they cannot fill stays open,
+  // the firms bid pay up for it, and a town that pays more than its prices
+  // draws more (`draw`, the job seekers, below). Movers this month who find
+  // no opening go elsewhere (the carry is under one household).
+  let hhW = 0;
+  for (let i = 0; i < r.n; i++) hhW += r.a!.wt[i];
+  r.arriveAcc = (r.arriveAcc ?? 0) + MOVE_M * Math.min(1, pull) * hhW;
+  const slots: number[] = [];
+  for (let ind = 0; ind < N_IND; ind++) for (let v = open[ind]; v >= wR / 2; v -= wR) slots.push(ind);
+  for (const ind of shuffle(slots)) {
+    {
+      // (a partner placed below may already have taken this industry's opening)
+      if (V[ind] < wR / 2) continue;
+      if (r.arriveAcc < wR / 2) break;
+      // a local's application wins (`outsiders`, above): the opening goes to the town's own jobless
       if (stillAt < still.length && !(R.u() < outsiders)) {
         const sl = still[stillAt++], i = (sl / 3) | 0, k = sl % 3, w = r.a!.wt[i];
         if (V[ind] >= w / 2) {
           const job = bestJob(i, k, ind);
-          if (job) { place(i, k, job); WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * R.n()); open[ind] -= w; continue; }
+          if (job) { place(i, k, job); WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * R.n()); continue; }
         }
       }
-      open[ind] -= wR;
-      if (pull < 1 && !(R.u() < pull)) continue;
+      r.arriveAcc -= wR;
       const i = addAgent(r), b = r.a!;
       b.wt[i] = wR;
       const band = pick(R, ageP);
@@ -2264,7 +2320,6 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       fillMoney(R, b, i, b.wage1[i] + b.wage2[i], false, e);
       b.ten[i] = TEN_MAINLAND; b.rent[i] = mainlandRent(R, r.mainRent, b, i);
       r.flow.arrived = (r.flow.arrived ?? 0) + wR;
-      jobArr += wR;
       // AN ARRIVAL MAY HAVE OWNED WHERE IT CAME FROM (households stage 2): at
       // the nation's ownership for its age (OWN_BY_AGE), it sold and brings the
       // equity, and decides here as any renter does (`buyCheck`, the taste for
@@ -2278,29 +2333,8 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       }
     }
   }
+  r.arriveAcc = Math.max(0, Math.min(wR, r.arriveAcc));
   r.vacLeft = Array.from(V, (v) => +Math.max(0, v).toFixed(2));
-  // 4b. ...AND THE MOVERS WHO COME ANYWAY (2026-10-30). The households that
-  // move to a region for work are a flow with its own momentum — people
-  // decide on where they have prospects AGAINST ELSEWHERE, and a national
-  // slump makes elsewhere no better. Tying every arrival to an opening here
-  // made the town's in-migration stop dead in a national recession: measured
-  // (seed 550991, 30 years), arrivals fell by about 60% of their mean for a
-  // three-point rise in the nation's unemployment, and the labour force with
-  // them, so the town's jobless rate rose 0.3 points per point of the
-  // nation's (BLS LAUS metro rates swing about as much as the nation's). The
-  // movers come at the region's recent rate (ARR_TAU_M), times the share of
-  // applications they would win (`outsiders`) and what pay buys here (`pull`);
-  // those the openings did not take arrive looking for work (`chaseAcc`,
-  // placed with the wave below). The recent rate learns from the arrivals
-  // that found openings, so a town that stays depressed loses its movers over
-  // years, not months: Blanchard & Katz (1992) find migration takes most of a
-  // local shock over five to seven years [S~: the five-year clock is read off
-  // that horizon].
-  {
-    const want = (r.arrRef ?? jobArr) * outsiders * Math.min(1, pull);
-    r.chaseAcc = (r.chaseAcc ?? 0) + Math.max(0, want - jobArr) / Math.max(0.01, wR);
-    r.arrRef = r.arrRef === undefined ? jobArr : r.arrRef + (jobArr - r.arrRef) / ARR_TAU_M;
-  }
   // 5. THE GOING RATE. An industry's pay bill is its going rate (BEA pay at
   // what its firms posted, D.pay) times its earners; who gets which share of
   // it is each earner's standing. Standing moves — a returning worker's
@@ -2418,7 +2452,15 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   const payIdx = e.eco?.payIdx;
   const gInd = payIdx && r.payRef?.length === payIdx.length ? payIdx.map((v, i) => v / Math.max(1e-9, r.payRef![i])) : null;
   if (payIdx) r.payRef = payIdx.slice();
-  r.mainRent *= gC;
+  // THE MAINLAND'S RENT MOVES WITH WHAT IT COSTS TO BUILD AND WITH HOW MANY
+  // LIVE THERE: a region that adds households builds out to dearer land and
+  // longer commutes (HOUSING_SUPPLY_ELAST)
+  let hhNow = 0;
+  for (let i = 0; i < r.n; i++) hhNow += r.a!.wt[i];
+  const gN = r.hhRef && r.hhRef > 0 && hhNow > 0 ? Math.pow(hhNow / r.hhRef, 1 / HOUSING_SUPPLY_ELAST) : 1;
+  r.hhRef = hhNow;
+  r.mainRent *= gC * gN;
+  shelterRead(r, e);
   const short = shortIndexOf(e) / 100;
   const n0 = r.n;
 
@@ -2438,7 +2480,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       a.wage2[i] *= gInd && a.ind2[i] !== IND_NONE ? gInd[a.ind2[i]] : gW;
       a.wage3[i] *= gInd && a.ind3[i] !== IND_NONE ? gInd[a.ind3[i]] : gW;
       a.yperm[i] *= gW;
-      if (a.ten[i] === TEN_MAINLAND) a.rent[i] *= gC;
+      if (a.ten[i] === TEN_MAINLAND) a.rent[i] *= gC * gN;
       if (a.ten[i] === TEN_OWN) a.hval[i] *= gH;
       lose(a.emp1, a.un1, i); lose(a.emp2, a.un2, i); lose(a.emp3, a.un3, i);
     }
@@ -2852,17 +2894,14 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   const draw = D ? MOVE_M * Math.max(0, Math.pow(Math.max(0.01, hereRel(e)), MOVE_ELAST) - 1) : 0;
   const wave = e.bsMigPull ?? 0;
   const bsIsland = wave > 0 && e.bsArrivals ? e.bsArrivals.island * Math.min(1, e.bsArrivals.monthly / wave) : 0;
-  // ...AND THE MOVERS THE OPENINGS DID NOT TAKE (matchJobs step 4b, `chaseAcc`), whole households of the region's weight
-  const chase = D ? Math.floor(r.chaseAcc ?? 0) : 0;
-  if (chase > 0) r.chaseAcc! -= chase;
-  if ((wave > 0 || draw > 0 || chase > 0) && D) {
+  if ((wave > 0 || draw > 0) && D) {
     let ppl = 0;
     for (let i = 0; i < r.n; i++) ppl += r.a!.wt[i] * (r.a!.adults[i] + r.a!.kids[i]);
     r.drawAcc = (r.drawAcc ?? 0) + (ppl * draw) / HH_SIZE / Math.max(0.01, r.wRegion);
     const drawn = Math.floor(r.drawAcc);
     r.drawAcc -= drawn;
     if ((e.fiscalRel ?? 1) > 1) whyFiscal(s, e, drawn * r.wRegion, "came");
-    const agents = Math.round((ppl * wave) / HH_SIZE / Math.max(0.01, r.wRegion)) + drawn + chase;
+    const agents = Math.round((ppl * wave) / HH_SIZE / Math.max(0.01, r.wRegion)) + drawn;
     for (let k = 0; k < agents; k++) {
       const i = addAgent(r), b = r.a!;
       const income = r.renterInc * medianIncome(e) * Math.exp(INCOME_SIGMA * R.n());

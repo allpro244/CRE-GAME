@@ -33,9 +33,22 @@ import type { BuiltClass, Credit, Econ, GameState, Tenant } from "./types";
 import { SIZE_DIST } from "./plates";
 import { tenantQualityTerms } from "./bands";
 import { FIRM_PROFILE, SF_PER_JOB, MAKE_READY_M, CONC_DEPTH } from "./market";
-import { IO_A, INDUSTRY_IDS, N_IND } from "./industries";
+import { IO_A, INDUSTRY_IDS, N_IND, sfMix } from "./industries";
 
 export type Comm = "office" | "retail" | "industrial";
+
+/**
+ * A FIRM'S HEADS (FORMULA_LEDGER #10): the floor it needs in reference feet
+ * (streetRolls.ts `firmHc`: what it took at signing, moved by its staff since)
+ * over the feet a worker of its industry takes on its class's floor
+ * (industries.ts `sfMix` on market.ts SF_PER_JOB). Its need is those heads
+ * times those feet — the same number read the other way. economy.ts and
+ * streetRolls.ts read these heads.
+ */
+export function tenantHeads(t: Tenant): number {
+  const k = (t.use ?? "office") as Comm;
+  return (t.hcRef ?? t.sf) * (t.staff ?? 1) / Math.max(0.2, t.staffSign ?? 1) / ((SF_PER_JOB[k] || 230) * sfMix(t.ind, k));
+}
 export const COMM_USES: Comm[] = ["office", "retail", "industrial"];
 
 // ---------------------------------------------------------------- the facts
@@ -360,8 +373,7 @@ export function locCtx(s: GameState, recOf: (bbl: string) => ParcelRecord | null
     const rec = recOf(bbl);
     const p = rec ? posOf(rec) : null;
     if (p) at.set(t.fid, p);
-    const k = (t.use ?? "office") as Comm;
-    heads.set(t.fid, (t.hcRef ?? t.sf) * (t.staff ?? 1) / Math.max(0.2, t.staffSign ?? 1) / (SF_PER_JOB[k] || 230));
+    heads.set(t.fid, tenantHeads(t));
   };
   for (const [bbl, roll] of Object.entries(s.econ.streetRolls ?? {})) for (const t of roll.t) place(t, bbl);
   for (const [bbl, h] of Object.entries(s.holdings)) for (const t of h.tenants ?? []) place(t, bbl);
@@ -445,8 +457,7 @@ export function locCtx(s: GameState, recOf: (bbl: string) => ParcelRecord | null
 
 /** A firm's cost of an hour of its people's time: its payroll over its heads (its own books), else its trade's share of sales at the town's reference. */
 export function hourCost(t: Tenant): number {
-  const k = (t.use ?? "office") as Comm;
-  const heads = Math.max(0.5, (t.hcRef ?? t.sf) * (t.staff ?? 1) / Math.max(0.2, t.staffSign ?? 1) / (SF_PER_JOB[k] || 230));
+  const heads = Math.max(0.5, tenantHeads(t));
   const rev = t.fin?.revRef ?? t.fin?.rev0 ?? 0;
   const w = FIRM_PROFILE[t.sector]?.wage ?? 0.35;
   return rev > 0 ? rev * w / heads / HOURS_YR : 0;

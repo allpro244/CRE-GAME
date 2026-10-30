@@ -2862,7 +2862,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   // it has stood empty, its owner's care: streetRolls) — and takes the first
   // it would pay for, up to each block's letting pace. A flat nobody chooses
   // stands empty, and its rent answers.
-  const rooms: { b: Block; room: number }[] = [];
+  const rooms: { b: Block; room: number; free: number }[] = [];
   for (const b of B.list) {
     if (!(byHH && b.street)) continue;
     const l = inBlock.get(b.idx) ?? [];
@@ -2875,7 +2875,8 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       toMainland(R, r, i, pool, gone, true); extra--;
     }
     const room = Math.max(0, Math.min(cap - (atStart.get(b.idx) ?? 0), cap - l.length, Math.floor((b.limU ?? 2) / r.wIsland)));
-    if (room > 0) rooms.push({ b, room });
+    // `room` is what the leasing office can sign this month (its pace); `free` is every flat standing empty, which is what its landlord prices against
+    if (room > 0) rooms.push({ b, room, free: Math.max(room, cap - l.length) });
   }
   // WHO IS LOOKING THIS MONTH, AND WHAT EACH LANDLORD SEES AT ITS DOOR
   // (2026-10-30). This was every household across the water that wanted an
@@ -2899,7 +2900,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     const wTot = rooms.reduce((t, x) => t + (x.b.w ?? 1), 0);
     const pickRoom = () => { let u = R.u() * wTot; for (const x of rooms) { u -= x.b.w ?? 1; if (u <= 0) return x; } return rooms[rooms.length - 1]; };
     const doors = (DOORS = new Map<number, { x: number[]; u: number }>());
-    for (const x of rooms) doors.set(x.b.idx, { x: [], u: x.room });
+    for (const x of rooms) doors.set(x.b.idx, { x: [], u: x.free });
     const seekers: { c: number; n: number }[] = [];
     for (const c of pool) {
       if (gone[c] || a.ten[c] !== TEN_MAINLAND) continue;

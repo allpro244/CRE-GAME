@@ -1455,8 +1455,9 @@ a monthly budget, a bond book, a pension plan, policies and a mayor — held in
   left); `transferTaxRate(s)` → `saleTaxQuote`, `streetSaleCost`, JV,
   leasehold, recap, take-private; rent stabilisation → `flatRollStep` (your
   flats) and `renewalAsk` (the street's); the service level and the payroll
-  tax → jobs and residents through `bsJobPull` / `bsMigPull`, as level effects
-  over two to five years. Civic works (demand.ts hearings) are refused under a
+  tax → jobs through `bsJobPull`, a level effect over two years, and residents
+  weigh services and the payroll tax per household in staying and coming
+  (`e.fiscalRel`, households.ts `hereRel`). Civic works (demand.ts hearings) are refused under a
   board or a closed market, and a funded one is charged to the capital budget.
 - **A citywide service level does not move `demandScore`**: that surface is
   relative and centred every month by design, so a uniform shift is removed.

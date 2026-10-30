@@ -77,7 +77,14 @@ function setup(seed, nFund, nOwn, product = "cash", lev = 1) {
   if (!l.err) {
     const g = l.s;
     const price = Math.round(q.indicative);
-    g.portfolioSale.bids = [{ name: "Test Buyer", price, expiresM: g.month + 3, limit: 1e12 }];
+    // The bidder has to be a living firm that can fund the book — an anonymous
+    // "Test Buyer" is refused at the table since the firms'-books rewrite (and
+    // the 1031 refusal below then passed on the wrong error). Fund the firm so
+    // the close tests the plumbing, not this firm's liquidity.
+    const live = g.portfolioSale.bbls.filter((b) => g.holdings[b]);
+    const firm = E.livingRivals(g).find((r) => E.packageCanClose(g, parcels, { ...r, cash: r.cash + 1e9 }, live, price));
+    if (firm) firm.cash += 1e9;
+    g.portfolioSale.bids = [{ name: firm?.name ?? "Test Buyer", firmId: firm?.id, price, expiresM: g.month + 3, limit: 1e12 }];
     const book = E.portfolioSettlement(g, parcels, g.portfolioSale.bbls, price);
     const ex = E.acceptPortfolioBid(g, parcels, true);
     ok("the fund's gain cannot roll into the sponsor's 1031", !!ex.err, ex.err ?? "closed into an exchange");
@@ -205,7 +212,14 @@ function setup(seed, nFund, nOwn, product = "cash", lev = 1) {
     const l = E.listForSale(g0, parcels, b, 1, "quiet");
     if (!l.err) {
       const t = l.s;
-      t.holdings[b].sale.offer = { price: 2_000_000, expiresM: t.month + 2, from: "X" };
+      // The buyer has to be a living firm that can fund the close today —
+      // acceptSaleOffer no longer lets an anonymous "X" take the deed (the
+      // firms'-books rewrite). Give the firm the cash so the close is about
+      // the deposits, not about whether this firm happens to be liquid.
+      const rec = E.resolveRec(parcels, t, b);
+      const firm = E.livingRivals(t).find((r) => !r.stressMs && E.rivalCanClose(t, parcels, { ...r, cash: r.cash + 1e8 }, rec, 2_000_000));
+      if (firm) firm.cash += 1e8;
+      t.holdings[b].sale.offer = { price: 2_000_000, expiresM: t.month + 2, from: firm?.name ?? "X" };
       const px = E.saleProceedsToSeller(t, parcels, t.holdings[b], 2_000_000);
       const dep = E.depositsOn(t.holdings[b]);
       const a = E.acceptSaleOffer(t, parcels, b);

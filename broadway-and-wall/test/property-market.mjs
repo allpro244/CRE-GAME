@@ -93,24 +93,32 @@ function crunch() {
   for (const c of g.comps ?? []) if (c.sf > 0 && named.has(c.buyer)) namedBuyers++;
   ok("buildings trade, and the tape's trades went through bid rounds", trades > 10 && closedRounds > 5, `${trades} trades, ${closedRounds} from rounds`);
   ok("buyers on the comps sheet are named firms", namedBuyers > 0);
-  // THE IDENTITY: each class's cap IS the weighted median of its own window,
-  // restated through the grid — recomputed here from the tape alone.
-  let checked = 0, off = 0;
+  // THE IDENTITIES: each class's raw read IS the weighted median of its own
+  // window restated through the grid it published (recomputed here from the
+  // tape alone), the grid's first three columns are econ.capFit, and the
+  // published cap is the appraisers' index — inside the range of the
+  // evidence, never a number from nowhere.
+  let checked = 0, off = 0, outside = 0;
   for (const k of K) {
     const rd = g.econ.capRead?.[k];
-    if (!rd?.win) continue;
-    const b = g.econ.capFit[k];
+    if (!rd?.win || rd.raw === undefined) continue;
+    const b = rd.adj;
+    if (b.slice(0, 3).some((v, i) => v !== g.econ.capFit[k][i])) off++;
     // read at the top of the month (tickEcon), before this month's deals printed
+    const z = (p) => [p.x[0] - 0.5, p.x[1] - 0.6, p.x[2] - 0.5, p.kind === "b" ? 1 : 0, p.kind === "s" ? 1 : 0, p.kind === "t" && p.w < 1 ? 1 : 0, p.f ? 1 : 0];
     const pts = g.capTape.filter((p) => p.k === k && p.m > g.month - rd.win && p.m < g.month)
-      .map((p) => ({ v: p.c * Math.exp(-(b[0] * (p.x[0] - 0.5) + b[1] * (p.x[1] - 0.6) + b[2] * (p.x[2] - 0.5))), w: p.w }))
+      .map((p) => ({ v: p.c * Math.exp(-z(p).reduce((a, v, i) => a + v * b[i], 0)), w: p.w }))
       .sort((x, y) => x.v - y.v);
     const tot = pts.reduce((a, p) => a + p.w, 0);
     let acc = 0, med = NaN;
     for (const p of pts) { acc += p.w; if (acc >= tot / 2) { med = p.v; break; } }
     checked++;
-    if (Math.abs(med - g.econ.capRate[k]) > 0.01) off++;
+    if (Math.abs(med - rd.raw) > 0.01) off++;
+    if (!(g.econ.capRate[k] >= pts[0].v - 0.01 && g.econ.capRate[k] <= pts[pts.length - 1].v + 0.01)) outside++;
+    if (Math.abs(E.capPrintAtRef(g.econ, g.capTape.find((p) => p.k === k)) - g.capTape.find((p) => p.k === k).c * Math.exp(-z(g.capTape.find((p) => p.k === k)).reduce((a, v, i) => a + v * b[i], 0))) > 1e-9) off++;
   }
-  ok("every class with evidence reads exactly the median of its prints", checked > 0 && off === 0, `${checked} classes checked`);
+  ok("every class's deals-alone read is exactly the median of its prints, restated through its published grid", checked > 0 && off === 0, `${checked} classes checked`);
+  ok("and the appraisers' read sits inside the range of that evidence", checked > 0 && outside === 0, `${outside} outside`);
   const ev = (g.why?.ev ?? []).filter((e) => e.k === "market.cap");
   ok("the read is on the cause ledger, numbers first", ev.length > 0 && /cap \d+\.\d+%: /.test(ev[ev.length - 1].t), ev[ev.length - 1]?.t);
   const tr = (g.why?.ev ?? []).filter((e) => e.k === "market.trade");

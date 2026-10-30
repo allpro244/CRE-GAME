@@ -242,3 +242,5 @@ Monthly-sampled where a yearly sample misses the event: construction starts,
 national recession starts and months, bank failures, charge-offs (from each
 lender's `chargeOffsTotal`), tenants going dark. Bands and their sources are
 in the code beside each check.
+
+> Note: #549 (quality-adjusted cap/land reads) landed after this run; it roughly halves year-to-year cap moves on a 2-seed probe. Problems #2 and #3 above predate it.

@@ -175,6 +175,44 @@ spending looks too small (or recessions too shallow: gaps of about −1%).
 Follow-up: measure the town's payroll elasticity to the gap on the record
 (MSA payroll vs output gap) before touching it.
 
+**Traced (2026-10-30, main `d81ac9e1`, seeds 22 and 66, 60 years).** The
+export side is not the weak link. Measured: job-loss years 0.51 and 0.17 a
+decade; city/nation unemployment sd 1.05 and 0.51, correlation 0.31 and 0.57;
+payroll growth rises only 0.44 and 0.22 points per point the gap moves.
+`exportHeads` does carry `CYCLE_BETA × NAT_SALES_PER_GAP × gap` (the town's
+export-weighted beta ~1.1 early, ~0.8 by year 50): in seed 66's year-9
+recession (gap −7.6%) the heads the town's output called for fell 5.1% and
+in years 55-56 (gap −4 to −5%) the cycle took 4 points off exports. Three
+things absorb that before it reaches a payroll:
+
+1. **Chronic unfilled openings in local services.** Seed 66 at year 26 holds
+   4,467 openings (6% of the heads wanted) at 2.7% unemployment, and they
+   sit almost entirely in low-pay local trades: restaurants 2,505 of 4,933
+   heads unfilled (51%), shops 18%, social assistance 30%, grocers 26%.
+   The export trades are full (computer design 34 of 24,373). Workers the
+   export trades lay off walk into those openings, so the town's filled jobs
+   barely move; by year 52 the gap between heads wanted and jobs filled is
+   8-10%. Whatever keeps restaurants half-empty at full employment (pay
+   posting, `V_SLOPE`, or the matching's shortlist) is the first thing to
+   fix; a restaurant that cannot staff cannot serve, so its sales should also
+   be capped by its heads (today its demand is booked as output made by
+   workers who do not exist).
+2. **The export base's national trend swamps the cycle.** Export-weighted
+   `lnNat` rises 2-5% a year late in the run (computer design's `natTrend`
+   6%/yr compounds into 32% of the town's heads by year 26). In years 55-56
+   that trend (+5%) outran the cycle (−4%). A 1990-2019 trend held for a
+   century is the "too steady" growth trend; fast trades' share gains should
+   fade (#544's shares).
+3. **Arrivals run at the movers' cap.** Arrivals sit at `MOVE_M × households`
+   (~1,050 a year in seed 66) in every non-recession year, so the payroll
+   path is the migration flow, not the orders.
+
+Tried and reverted: making an industry's export tender (and its held
+orders) follow its staffed share of heads. It cut seed 66's openings at
+year 30 from 7% to 3% in the weaker form, but job-loss years did not move
+(0.34 and 0.17; correlation 0.55 and 0.46) because the openings that absorb
+the cycle are in trades that do not export.
+
 ### 5. Construction does not answer demand: both lags at the ±5-year edge; starts dying late in the century
 
 Both lag checks went from WATCH to FAIL: the best lag sits at the search

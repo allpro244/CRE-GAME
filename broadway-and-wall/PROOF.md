@@ -255,12 +255,14 @@ spread of the prints.
   re-centred (#5). `pnpm conserve` passes with it (4,171 months reconciled).
   Not yet re-run through the century: the next proof run on combined main
   should show seed 55 with no overflow and the peak charge-off row sane.
-  Test state at 625271e3: `advance`, `appraisal`, `refi-strong`, `buybox`,
-  `quiet-clock`, `fund-builds` fail **without** this change too (main was
-  already red there); `rival-assembly` and `sale-instructions` pass on main
-  and fail with it. Both are single-scenario tests whose winning bidder or
-  sale price moves when the band swings move. Not diagnosed yet: check them
-  before merging.
+  Test state, compared with and without the fix on main 748e2de3 (#539):
+  `rival-assembly`, `sale-instructions` and `rival-husks` pass both ways
+  (the two that failed earlier did so only on the older base 625271e3, so the
+  tests did not depend on the compounding swings). `fund-plumbing`,
+  `take-private`, `floating` and `visible-buyers` fail identically both ways,
+  and so do `advance`, `appraisal`, `refi-strong`, `buybox`, `quiet-clock` and
+  `fund-builds` (checked on 625271e3). Main was already red on those, and this
+  fix does not change any of them.
 
 Since this run, main closed ledger rows #6-#8, #20-#22, #25 and #26 (#536-#539):
 `--report` now counts **5 open** (#4, #5, #9, #10, #14). The run itself was

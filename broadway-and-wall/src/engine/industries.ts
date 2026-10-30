@@ -429,8 +429,9 @@ export const OFF_FLOOR_SHARE_NAT = (() => {
  * -> 19,800; logging 85 -> 50; oil and gas 190 -> 160; other mining 270 ->
  * 200; mining support 150 -> 320. Farms are not in CES: hired farm employment
  * roughly flat (USDA ERS), 0. These carry the labour-force growth of their
- * years (0.9% a year, 1990-2019); market.ts LABOUR_FORCE_SLOWDOWN takes the
- * half point that has stopped arriving (CBO 2024), as before.
+ * years (0.9% a year, 1990-2019); since they move only each trade's share of
+ * the nation's labour force (NAT_LABOUR_FORCE_GROWTH, below), that common
+ * part cancels.
  *
  * CYCLE_BETA: each industry's payroll swing per unit of the nation's, BLS CES
  * December 2007 to its trough against total nonfarm (-6.3%) [S~]: motor
@@ -453,6 +454,24 @@ export const OFF_FLOOR_SHARE_NAT = (() => {
  * oil and gas held or rose (0). It moves what the nation buys of the town's
  * exports; what the town buys of itself moves with the town's own incomes.
  */
+/**
+ * THE NATION'S LABOUR FORCE, its growth a year [S~]. The trades' trends above
+ * are rates each trade grew at while the whole workforce grew 0.9% a year
+ * (BLS CPS 1990-2019, 125.8M to 163.5M); compounded trade by trade for a
+ * century they do not add up to a nation — at its own mix they multiply its
+ * payrolls about elevenfold, the fast trades (health, IT, staffing) carrying
+ * the sum, where US payrolls grew about 3.5x over the twentieth century (BLS
+ * nonfarm, 1919-2019, on a labour force that more than tripled). So the
+ * nation's employment in a trade is its labour force times the trade's share
+ * (economy.ts `tickExports`): the trends move the shares — each trade's against
+ * the rest, renormalised, so tech and care gain on apparel and print — and the
+ * labour force sets the total. Its growth is CBO's projection of the potential
+ * labour force, about 0.4% a year over 2024-34 and 0.3% over 2035-54 (CBO, The
+ * Demographic Outlook 2024-2054 and Long-Term Budget Outlook, 2024): the
+ * boomers retiring and fertility under replacement. Past 2054 nobody
+ * projects; it holds there.
+ */
+export const NAT_LABOUR_FORCE_GROWTH = 0.0035;
 export const NAT_TREND: Record<IndustryId, number> = Object.fromEntries(INDUSTRY_IDS.map((k) => [k, RAW[k].natTrend])) as Record<IndustryId, number>;
 export const CYCLE_BETA: Record<IndustryId, number> = Object.fromEntries(INDUSTRY_IDS.map((k) => [k, RAW[k].cycleBeta])) as Record<IndustryId, number>;
 

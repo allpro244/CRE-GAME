@@ -392,10 +392,16 @@ export function locCtx(s: GameState, recOf: (bbl: string) => ParcelRecord | null
   }
   const linkH = LINK_TRIPS_YR * 2 / SPEED_M_PER_H;
   const nLinks = new Map<number, number>();
-  const lk = E?.lk as unknown as { s?: ArrayLike<number>; c?: ArrayLike<number> } | undefined;
-  if (lk?.s && lk.c && ArrayBuffer.isView(lk.s)) {
-    for (let l = 0; l < lk.s.length; l++) {
-      const a = lk.s[l], b = lk.c[l];
+  // (a save that went through JSON holds its link columns as plain {"0": ...}
+  // objects until economy.ts reviveLinks mends them, which may be later in the
+  // month than this read: read either form, or a loaded game forgets its links
+  // for a month and parts from the running one — economy.mjs's JSON replay)
+  const lk = E?.lk as unknown as { s?: ArrayLike<number> | Record<string, number>; c?: ArrayLike<number> | Record<string, number> } | undefined;
+  const col = (v: ArrayLike<number> | Record<string, number>): ArrayLike<number> => ArrayBuffer.isView(v) || Array.isArray(v) ? v as ArrayLike<number> : Object.values(v);
+  if (lk?.s && lk.c) {
+    const S = col(lk.s), C = col(lk.c);
+    for (let l = 0; l < S.length; l++) {
+      const a = S[l], b = C[l];
       const pa = at.get(a), pb = at.get(b);
       if (pa && pb) {
         add(a, pb, linkH, 0); add(b, pa, linkH, 0);

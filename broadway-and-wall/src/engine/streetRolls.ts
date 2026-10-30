@@ -1342,16 +1342,22 @@ export interface FlatRoll { occ: number; vac?: number; l?: { sf: number; rent: n
  * the block's own record over a twenty-year memory (market.ts NATVAC_RATE),
  * from what the town's flats usually run at (`normalVac`) — at REV_MGMT:
  * apartment rents grow about 2.5%/yr per point of occupancy round its neutral
- * level under revenue management (RealPage / Axiometrics, 2010-2023) [S~].
+ * level under revenue management (RealPage / Axiometrics, 2010-2023) [S~],
+ * read within the range those years measured: a block more than OCC_RANGE
+ * off its normal is in lease-up or a glut, and its landlord's lever there is
+ * the concession for space that has stood (absorption.ts `staleDiscount`,
+ * in its ask), not a face rent cut without end.
  * A block that stays full raises its ask until a household it would have
  * kept chooses another; one that stands empty cuts until one chooses it
  * (households.ts: the households choose the blocks).
  */
 const REV_MGMT = 2.5;
+/** The national apartment occupancy RealPage measured over 2010-2023 moved about five points either side of its neutral level [S~]. */
+const OCC_RANGE = 0.05;
 function markFlatAsk(roll: FlatRoll, cap: number, usual: number, esc: number): void {
   const vac = Math.max(0, 1 - roll.occ / Math.max(1, cap));
   const nv = roll.nv ?? usual;
-  roll.px = +((roll.px ?? 0) + esc + REV_MGMT / 12 * (nv - vac)).toFixed(5);
+  roll.px = +((roll.px ?? 0) + esc + REV_MGMT / 12 * Math.max(-OCC_RANGE, Math.min(OCC_RANGE, nv - vac))).toFixed(5);
   roll.nv = +(nv + (vac - nv) * NATVAC_RATE).toFixed(5);
 }
 /**

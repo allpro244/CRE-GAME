@@ -1617,7 +1617,10 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
  * the depreciation rate of firm-specific intangibles, 40% a year (Corrado,
  * Hulten & Sichel 2009, organisational capital) [S]; a firm short of cash
  * does not, and its quality wears away at that rate. A new firm opens at its
- * target. Read by the national tender (`tenderOrders`) and the named links
+ * target. Quality is against its kind's, so each industry's is read about its
+ * heads-weighted mean: a firm that stops investing falls behind its rivals,
+ * and the town's share of the nation moves on its prices (the opening's
+ * spread of quality is in `xa0`). Read by the national tender (`tenderOrders`) and the named links
  * (`tickLinks`).
  */
 const Q_DEP = 1 - Math.pow(1 - 0.4, 1 / 12);
@@ -1636,6 +1639,9 @@ function tickQuality(E: EconomyState, isNew: Uint8Array): void {
     if (cashOf(E.L, n) >= costs) F.q[n] += Q_DEP * (target - F.q[n]);
     else F.q[n] += Math.log(1 - Q_DEP);
   }
+  const qs = new Float64Array(N_IND);
+  for (let n = 0; n < nF; n++) qs[F.ind[n]] += F.hc[n] * F.q[n];
+  for (let n = 0; n < nF; n++) if (ph[F.ind[n]] > 0) F.q[n] -= qs[F.ind[n]] / ph[F.ind[n]];
 }
 
 /**

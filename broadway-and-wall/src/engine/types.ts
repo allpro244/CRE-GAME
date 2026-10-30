@@ -95,6 +95,9 @@ export interface EcoDrive {
   heads: number;
   /** Floor the firms' heads take, by class (sf): on the floor, not at home, not in a building of their own. */
   floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>;
+  /** The floor each class's industries' employment needs (sf; employment, not heads: what their sales pay for), and each industry's employment on a rented floor. */
+  workSf?: Partial<Record<"office" | "retail" | "industrial", number>>;
+  floorHeads?: number[];
   /** Each industry's employment now and a month ago, and the heads the island's named firms are formed toward (its share at the opening). */
   emp?: number[]; empPrev?: number[]; target?: number[];
   /** Each trade's employment and real sales against the opening: its industries', by the heads it had in each. */
@@ -140,8 +143,10 @@ export interface Tenant {
    * and the city's books put it there (economy.ts). Unset: drawn from its trade.
    */
   ind?: number;
-  /** Space the firm wanted at signing, at reference rents, per unit of `staffSign` — its headcount in feet. */
+  /** Space the firm's people needed at signing, per unit of `staffSign` — its heads times its industry's feet a worker (tenantMarket.ts `tenantHeads`). */
   hcRef?: number;
+  /** Its heads when its class's demand was last written down (streetRolls.ts, why.ts). */
+  hdNote?: number;
   /** Headcount (`staff`) when it last signed — the space it took was sized for these people. */
   staffSign?: number;
   /** Its trade's payroll index last month — headcount moves with the trade. */
@@ -2060,11 +2065,6 @@ export interface Econ {
    * street prints.
    */
   districtHeat?: Record<string, number>;
-  /** Damped affordability multiplier (half-life ~6y). A three-year rent swing
-   *  cannot conjure or destroy a fifth of the tenant base. */
-  affordEff?: Record<BuiltClass, number>;
-  /** Damped income argument of space demand, per class. See INCOME_ELAST in market.ts. */
-  incomeEff?: Record<BuiltClass, number>;
   /** Opening REAL income per worker, frozen at newGame, so the income argument is 1.0 at t=0. */
   wage0?: number;
   /** Opening cost of living against the nation (1 = national), same weights as the local CPI. Display only. */
@@ -2389,10 +2389,14 @@ export interface Econ {
   flatBands?: { stock: number[]; occ: number[] };
   /** The player's flats' occupancy last month, so a block sold carries its households. */
   heldFlats?: Record<string, number>;
-  /** What the town's firms want of each class at reference rents, and the rent response now (market.ts). */
-  demandAt?: Partial<Record<BuiltClass, { ref: number; eff: number; raw: number; lvl?: number }>>;
-  /** The space per worker's structural level at the opening, by class — what `lvl` is read against. */
-  demandLvl0?: Partial<Record<BuiltClass, number>>;
+  /** The space a worker takes, by class: its structural level after a swan (remote work; market.ts, swans.ts), and that level at the opening. Every firm's need moves with their ratio. */
+  spaceLvl?: Partial<Record<BuiltClass, number>>;
+  spaceLvl0?: Partial<Record<BuiltClass, number>>;
+  /** The off-map firms' floor (FORMULA_LEDGER #10): the occupied sf off the map at the opening, and what they want now (that, moved by the class's heads × feet a worker), by class (market.ts). */
+  offRef?: Partial<Record<BuiltClass, number>>;
+  offWant?: Partial<Record<BuiltClass, number>>;
+  /** Where each class's demand stood when its last move was written (why.ts): the feet, and the heads by industry (streetRolls.ts). */
+  demandNote?: Partial<Record<BuiltClass, { m: number; sf: number; ind: number[] }>>;
   /** The town's firms' jobs (streetRolls.ts), at the first count, and the employment index then. */
   firmJobs?: number; firmJobs0?: number; firmEmp0?: number;
   /**
@@ -2404,7 +2408,7 @@ export interface Econ {
   /** Each industry's heads in the island's named firms over the heads they are formed toward (streetRolls.ts): over 1, its firms shed the excess. */
   islandFill?: number[];
   /** The first month's drivers, which the space market's indices are read against. */
-  eco0?: { floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>; renters?: number; jobs?: number; islandWant?: number;
+  eco0?: { floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>; workSf?: Partial<Record<"office" | "retail" | "industrial", number>>; renters?: number; jobs?: number; islandWant?: number;
     /** a save reopened on step 2b's industries: each class's driver as it stood (economy.ts `migrateEconomy`) */
     mig?: Partial<Record<"office" | "retail" | "industrial", number>> };
   /** Each trade's payroll last month, for the firms' month-on-month change. */
@@ -2421,14 +2425,14 @@ export interface Econ {
   migRate?: number; jobsPrevYr?: number;
   /** the share of let space handed back in a year, measured on the street, by class */
   turnMeas?: Partial<Record<string, number>>;
-  /** the street firms' rent as a share of what they pay for space and staff, by class (streetRolls) */
-  spaceShare?: Partial<Record<string, number>>;
   /** each market's normal availability, learned from its own history (market.ts rent gap) */
   natVac?: Record<BuiltClass, number>;
   /** the opening's rent per foot by class and price level: what sales per head are measured from (tenantBooks) */
   revAnchor?: { cpi: number; rent: Partial<Record<string, number>> };
   /** The street's let space, rentable space and unhoused seekers' wants by class, this month (streetRolls.ts). */
-  streetSpace?: Partial<Record<BuiltClass, { let: number; cap: number; seek: number; ratio?: number; byBand?: { stock: number[]; occ: number[] } }>>;
+  streetSpace?: Partial<Record<BuiltClass, { let: number; cap: number; seek: number; ratio?: number; byBand?: { stock: number[]; occ: number[] };
+    /** the feet the town's firms hold beyond what their heads need (FORMULA_LEDGER #10: the sublet market's source) */
+    excess?: number }>>;
   /** The street's flats as its households hold them (households.ts, stage 2): feet let, feet on the street, and the feet the households across the water who want a flat here are looking for. */
   flatSpace?: { let: number; cap: number; seek: number };
   /** The region's sheds off the map, occupied, on the city aggregate (market.ts). */
@@ -2913,15 +2917,6 @@ export interface Econ {
   baseStock?: Record<BuiltClass, number>;
   /** The regional stock beyond the island's mapped buildings, by class (rentable sf). */
   offMapSf?: Record<BuiltClass, number>;
-  // ...and the same thing FROZEN, because baseStock is not frozen: the
-  // sector-exit ratchet in market.ts writes it down as tenants are priced out
-  // and never return. The difference between the two IS how much of a sector
-  // has left the city, and the city's zoning has to be able to read it — land
-  // zoned for an industry that is half gone does not stay zoned for it.
-  // Optional so a save written before this existed still loads; absent, no
-  // sector has left as far as the zoning is concerned, which is the old
-  // behaviour exactly.
-  baseStock0?: Record<BuiltClass, number>;
   occupied: Record<BuiltClass, number>;
   /** The player's own occupied sf by class, as last reconciled into `occupied` — see playerSpace in sim.ts. */
   playerOcc?: Record<BuiltClass, number>;

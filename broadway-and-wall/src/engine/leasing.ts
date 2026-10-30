@@ -8,7 +8,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, AutoConcessions, AutoLeaseEntry, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, cloneState, CREDIT_LABEL } from "./types";
 import type { Econ, Tenant } from "./types";
-import { rng, rrange, recordDeal, normalVac, MF_NATURAL_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, RENT_BASE, turnoverYr } from "./market";
+import { rng, rrange, recordDeal, normalVac, OPENING_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, RENT_BASE, turnoverYr } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 /** Bare clamp so tools/rails.mjs can see the block-premium guards. */
@@ -1351,15 +1351,18 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const resSf = useRentableSf(rec, "multifamily");
       const stab = useOccupancy(rec, e, "multifamily", true);
       const now = h.occ ?? (h.deliveredM !== undefined && q - h.deliveredM < 1 ? 0 : target);
-      const occCity = e.occupied?.multifamily ?? (e.stock?.multifamily ?? 0) * (1 - MF_NATURAL_VAC);
+      // (what the flats usually run at is the market's own record, `normalVac`
+      // — the households' lettings — and the opening's only before there is one)
+      const usual = normalVac(e, "multifamily");
+      const occCity = e.occupied?.multifamily ?? (e.stock?.multifamily ?? 0) * (1 - OPENING_VAC.multifamily);
       const poolMF = e.pool?.multifamily ?? occCity;
-      const vacCity = e.cityVac?.multifamily ?? MF_NATURAL_VAC;
-      const match = (vacCity > MF_NATURAL_VAC && poolMF > occCity)
-        ? Math.max(0.55, Math.min(1, 1 - (vacCity - MF_NATURAL_VAC) * 2.2)) : 1;
+      const vacCity = e.cityVac?.multifamily ?? usual;
+      const match = (vacCity > usual && poolMF > occCity)
+        ? Math.max(0.55, Math.min(1, 1 - (vacCity - usual) * 2.2)) : 1;
       const movers = occCity * flatTurnover(e) / 12 + Math.max(0, (poolMF - occCity) * 0.055 * match);
       const vacantCity = Math.max(1, (e.stock?.multifamily ?? 0) - occCity);
       const mine = Math.max(0, resSf * (1 - now));
-      const quality = Math.max(0.3, stab / (1 - MF_NATURAL_VAC));
+      const quality = Math.max(0.3, stab / (1 - usual));
       const askRatio = managedRentPsfYr(rec, e, h, "multifamily")
         / Math.max(0.01, managedRentPsfYr(rec, e, { ...h, stance: 0 }, "multifamily"));
       const weight = quality * Math.pow(Math.max(0.5, askRatio), -3);

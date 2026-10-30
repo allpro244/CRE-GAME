@@ -2349,11 +2349,11 @@ export interface Econ {
   seekers?: import("./streetRolls").Seeker[];
   nextFid?: number;
   /**
-   * THE COMPS (market.ts recordDeal): every lease signed in the last six
-   * months, by class — its rent against the building's market rent (`c`, net
-   * of the market's slack it signed in) and that slack (`p`).
+   * THE FLATS' COMPS (market.ts recordDeal): every flat let or renewed in
+   * the last six months — its rent against the block's market rent (`c`,
+   * log), and whether it was a renewal (`r`).
    */
-  deals?: Partial<Record<BuiltClass, { m: number; c: number; p: number; sf: number; r?: number }[]>>;
+  deals?: Partial<Record<BuiltClass, { m: number; c: number; sf: number; r?: number }[]>>;
   /**
    * THE COMMERCIAL COMPS (tenantMarket.ts recordLease, ONE ECONOMY step 4):
    * every office, shop and shed lease signed in the last six months — face
@@ -2383,8 +2383,6 @@ export interface Econ {
    * own log income last month; `n` months watched.
    */
   locSeen?: Partial<Record<BuiltClass, { li: number[]; lc: number; g: number[]; v: number[]; n: number }>>;
-  /** The market's slack each new deal reads (the rent equation's monthly pressure). */
-  dealPress?: Partial<Record<BuiltClass, number>>;
   /** Every street block of flats and the flats let in it (streetRolls.ts). */
   flatRolls?: Record<string, import("./streetRolls").FlatRoll>;
   /** The street's flats by quality band, measured off the blocks each month (streetRolls.ts; bands.ts reads it). */
@@ -2458,9 +2456,7 @@ export interface Econ {
   cycPeak?: number;
   phaseAge?: number;
   exportIdx?: number;
-  /** This town's own persistent growth over the nation's, per year — the region it sits in. See `regionalPull`. */
-  regionTrend?: number;
-  /** Business rent against the nation's at this town's opening — the parity `regionalPull` measures cost against. */
+  /** Business rent against the nation's at this town's opening — the parity `locationCost` measures cost against. */
   regionRent0?: number;
   /** Black swans that have landed (blackswans.ts), for the paper and probes. */
   blackSwans?: { m: number; kind: "fire" | "surge" | "wave" | "panic" | "fiscal" | "campus" | "embargo" | "arrivals" | "anchor" | "pandemic" | "war" | "foreign" | "techboom" | "tradewar"; size: number; sf: number;

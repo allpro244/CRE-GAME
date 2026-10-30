@@ -457,6 +457,39 @@ export const NAT_TREND: Record<IndustryId, number> = Object.fromEntries(INDUSTRY
 export const CYCLE_BETA: Record<IndustryId, number> = Object.fromEntries(INDUSTRY_IDS.map((k) => [k, RAW[k].cycleBeta])) as Record<IndustryId, number>;
 
 /**
+ * HOW A BUYER WEIGHS PRICE AGAINST QUALITY, ONE NUMBER AN INDUSTRY: the
+ * elasticity of substitution between its suppliers, by Rauch's (1999, JIE)
+ * classification of what it sells — goods traded on an organised exchange
+ * (homogeneous), goods with a reference price in the trade press, and
+ * differentiated goods. Services are not in Rauch's goods; they sell on
+ * reputation and fit, and are classed differentiated here [K].
+ *
+ * Broda & Weinstein (2006, QJE, "Globalization and the gains from variety")
+ * estimate these elasticities product by product and find them highest for
+ * Rauch's commodities and lowest for differentiated goods, with medians round
+ * three for the disaggregated goods. The levels [S~]: differentiated 3 (their
+ * median); reference-priced 5 (1 + the trade elasticity of about 4,
+ * Simonovska & Waugh 2014 — economy.ts used it for every industry before);
+ * homogeneous 10 [K: a commodity's sellers are near-perfect substitutes, and
+ * past ten price is all that matters]. A buyer's choice among suppliers
+ * (economy.ts `tickExports`, `tickLinks`) weighs a supplier's quality (a
+ * demand shifter, Khandelwal 2010; Hallak & Schott 2011) once and its price
+ * against its kind's to the power -SUBST_ELAST: steel is bought on price, a
+ * lawyer on quality.
+ */
+export type Rauch = "homogeneous" | "reference" | "differentiated";
+const RAUCH_OF: Partial<Record<IndustryId, Rauch>> = {
+  farms: "homogeneous", forestry: "homogeneous", oilgas: "homogeneous", mining: "homogeneous",
+  primetals: "homogeneous", petroleum: "homogeneous", pipelines: "homogeneous", utilities: "homogeneous",
+  wood: "reference", minerals: "reference", fabmetal: "reference", food: "reference", textiles: "reference",
+  paper: "reference", chemicals: "reference", plastics: "reference", miningsup: "reference",
+  wholesale: "reference", trucking: "reference", rail: "reference", water: "reference", warehousing: "reference",
+};
+export const RAUCH: Record<IndustryId, Rauch> = Object.fromEntries(INDUSTRY_IDS.map((k) => [k, RAUCH_OF[k] ?? "differentiated"])) as Record<IndustryId, Rauch>;
+const SUBST_BY_RAUCH: Record<Rauch, number> = { homogeneous: 10, reference: 5, differentiated: 3 };
+export const SUBST_ELAST: Record<IndustryId, number> = Object.fromEntries(INDUSTRY_IDS.map((k) => [k, SUBST_BY_RAUCH[RAUCH[k]]])) as Record<IndustryId, number>;
+
+/**
  * A SAVE FROM BEFORE STEP 2b numbered its firms', earners' and tenants'
  * industries in the 24 of step 2. Each old industry's largest successor by US
  * employment (economy.ts reopens the books on the 68; households.ts and the

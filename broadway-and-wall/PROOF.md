@@ -233,6 +233,26 @@ same thinness: real land swings ×3 year to year in seed 55 (462 → 1,420 →
 fall back to the raw median when the reference adjustment exceeds the
 spread of the prints.
 
+**Done (claude/cap-reads):** the read is now a time-dummy hedonic grid
+(whole record, priced kinds of evidence incl. compelled sellers) read by
+the appraisers' own updating (Quan-Quigley / Geltner, Huber-robust;
+volatility learned from their record). `tools/mdga/capreads.mjs`, seeds
+22 and 55 x 50 years, mean |year-on-year change| (pp) before -> after:
+office 0.87/1.92 -> 0.33/1.07, retail 0.72/1.29 -> 0.55/1.35, flats
+1.06/1.74 -> 0.50/1.05, industrial 0.94/0.81 -> 1.00/0.86; land |dlog|
+0.23/0.33 -> 0.17/0.06, worst year x63/x40 -> x2.3/x1.7. What is left in
+seed 55 is the market itself, not the read: the deals-alone median and
+the read track together through caps of 6 -> 21 -> 6% (a cycle amplitude
+problem, #4), and industrial prints scatter 0.46-0.50 in log. The
+condition slope is near zero for office, retail and flats in the prints
+themselves (year-demeaned bins flat within +/-0.05): bidders price
+condition only through the income the appraiser already capitalises —
+`dealView`'s capital plan reads age and spec, not condition, so a worn
+building carries no catch-up capex. The fit cannot find a premium nobody
+pays. Land: the read no longer swings, but 50 years hold 8-10 lot sales
+(the rest broker indications) and its level falls to 0.15-0.2 of the
+opening (land level — separate work).
+
 ### 7. Smaller watches
 
 - **Home ownership falls from ~63% to 30-49%** over the century (band

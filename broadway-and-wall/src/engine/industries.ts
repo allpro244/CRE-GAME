@@ -400,8 +400,9 @@ export const OFF_FLOOR_SHARE_NAT = (() => {
  * -> 19,800; logging 85 -> 50; oil and gas 190 -> 160; other mining 270 ->
  * 200; mining support 150 -> 320. Farms are not in CES: hired farm employment
  * roughly flat (USDA ERS), 0. These carry the labour-force growth of their
- * years (0.9% a year, 1990-2019); market.ts LABOUR_FORCE_SLOWDOWN takes the
- * half point that has stopped arriving (CBO 2024), as before.
+ * years (0.9% a year, 1990-2019); since they move only each trade's share of
+ * the nation's labour force (NAT_LABOUR_FORCE_GROWTH, below), that common
+ * part cancels.
  *
  * CYCLE_BETA: each industry's payroll swing per unit of the nation's, BLS CES
  * December 2007 to its trough against total nonfarm (-6.3%) [S~]: motor

@@ -73,7 +73,7 @@ import {
   FINANCE_LIKE, SPEND_SHARE, SPEND_BRIDGE, PAY_SPLIT, PROD_TAX_LOCAL, CORP_TAX, LOCAL_OWNER_SHARE,
   COMP_PER_WORKER_2023, BUYER_TYPES, REPAIR_PER_COMMERCIAL_RENT, REPAIR_PER_FLAT_RENT, REPAIR_OWNER_PER_VALUE_YR,
   OIL_PRICE_2000,
-  OFF_FLOOR, REMOTE, floorOf, NAT_TREND, NAT_LABOUR_FORCE_GROWTH, CYCLE_BETA, SUBST_ELAST, FED_HEALTH_PER_PERSON_2023, MLR,
+  OFF_FLOOR, REMOTE, floorOf, NAT_TREND, NAT_TREND_HALF_Y, NAT_TREND_MEAN, NAT_LABOUR_FORCE_GROWTH, CYCLE_BETA, SUBST_ELAST, FED_HEALTH_PER_PERSON_2023, MLR,
   IND_ID_GOV, IND_ID_CON, IND_ID_INS, IND_ID_ONLINE, RETAIL_IDS, HEALTH_SPLIT, OLD24_TO_68,
   type IndustryId, type Floor, type BuyerType, type SpendCategory,
 } from "./industries";
@@ -159,6 +159,8 @@ export interface EconomyMonth {
   hhWagesRegister: number; hhWagesFirms: number;
   /** Output by industry, its buyers [households, firms, government, construction, exports], heads (engine) and the heads the output implies. */
   x: number[]; buy: number[][]; heads: number[]; namedHeads: number[]; impliedHeads: number[];
+  /** A local trade's sales over its orders this month: below 1 when its staff could not make them all (`tickEconomy`). */
+  served?: number[];
   /** The ledger's identity residual and the market clearing account after the month. */
   ledgerSum: number; ledgerGross: number; market: number;
   iters: number;
@@ -635,13 +637,15 @@ function tickExports(s: GameState, E: EconomyState, R: Rand): void {
   const X = (E.natX ??= new Array(N_IND).fill(0));
   const z0 = E.natZ ?? 0;
   let z = 0;
+  // ...each trade's lead over the nation fading from the opening (industries.ts NAT_TREND_HALF_Y)
+  const kept = Math.pow(0.5, Math.max(0, s.month - E.openM) / 12 / NAT_TREND_HALF_Y);
   for (let i = 0; i < N_IND; i++) {
     E.natTr[i] += (centre(i) - E.natTr[i]) / NAT_TREND_TAU_M + NAT_TREND_SD * Math.sqrt(2 / NAT_TREND_TAU_M) * uni();
-    X[i] += E.natTr[i] / 12;
+    X[i] += natTrendNow(E, i, kept) / 12;
     z += NAT_EMP_SHARE[INDUSTRY_IDS[i]] * Math.exp(X[i]);
   }
   E.natZ = Math.log(z);
-  for (let i = 0; i < N_IND; i++) E.lnNat[i] += NAT_LABOUR_FORCE_GROWTH / 12 + E.natTr[i] / 12 - (E.natZ - z0);
+  for (let i = 0; i < N_IND; i++) E.lnNat[i] += NAT_LABOUR_FORCE_GROWTH / 12 + natTrendNow(E, i, kept) / 12 - (E.natZ - z0);
   tenderOrders(E);
   E.swanLn = (E.swanLn ?? 0) + Math.log(Math.max(0.5, 1 + (e.bsJobPull ?? 0)));
   // ...and a national swan's orders for a trade (blackswans.ts swanSec: a
@@ -667,6 +671,10 @@ function tickExports(s: GameState, E: EconomyState, R: Rand): void {
  * their orders are booked at the town's share and their price index then is
  * the one they compete against from here (an old save's share carries over).
  */
+/** A trade's trend this month: its wander about its 1990-2019 centre, the centre's lead over the nation's mean cut to what is `kept` of it. */
+function natTrendNow(E: EconomyState, i: number, kept: number): number {
+  return (E.natTr?.[i] ?? 0) - (NAT_TREND[INDUSTRY_IDS[i]] - NAT_TREND_MEAN) * (1 - kept);
+}
 function tenderOrders(E: EconomyState): void {
   const F = E.f, nF = E.L.slot.n, sh = E.lnShare!;
   if (!nF) return;
@@ -1246,20 +1254,46 @@ export function tickEconomy(s: GameState): void {
   for (let j = 0; j < N_IND; j++) X[j] = exportHeads(s, E, j) * opw[j];
 
   // ---- 4. the output that demand calls for, and who bought it
-  const { x, iters } = solve(E.rpc, fd, X, opening ? null : E.last?.x ?? null);
+  const demand = solve(E.rpc, fd, X, opening ? null : E.last?.x ?? null);
+  // A LOCAL TRADE SELLS WHAT ITS STAFF CAN MAKE (PROOF.md #4). A restaurant,
+  // a barber, a shop serves the customer who walks in, with the hands it has
+  // on the floor: the town's orders for a local trade (industries.ts `where`
+  // "local") beyond what its staffed heads make — the register's earners in
+  // it times output per head — are not made here, and its buyers get them
+  // elsewhere (out of town, online: they become imports, the share of the
+  // town's purchases of it bought in town cut to what it could serve). Its
+  // firms still staff toward the orders (`impliedHeads` reads the demand,
+  // not the sales), so the openings stay posted and pay bids for them
+  // (`postPayAndPrices`). Before this, an industry's books sold the whole of
+  // its orders whether or not anyone was hired to make them.
+  const rpc = E.rpc.slice();
+  let { x, iters } = demand;
+  const served = new Float64Array(N_IND).fill(1);
+  if (!opening && pr) {
+    for (let pass = 0; pass < 4; pass++) {
+      let cut = false;
+      for (let j = 0; j < N_IND; j++) {
+        if (INDUSTRIES[INDUSTRY_IDS[j]].where !== "local" || !(rpc[j] > 0)) continue;
+        const cap = pr.earners[j] * opw[j];
+        if (x[j] > cap * (1 + 1e-6)) { const k = Math.max(0, cap - X[j]) / Math.max(1e-9, x[j] - X[j]); rpc[j] *= k; served[j] *= k; cut = true; }
+      }
+      if (!cut) break;
+      ({ x, iters } = solve(rpc, fd, X, Array.from(x)));
+    }
+  }
   const buy: number[][] = [];
   for (let j = 0; j < N_IND; j++) {
     let firms = 0, conB = 0;
     for (let i = 0; i < N_IND; i++) { const a = A_FLAT[i * N_IND + j] * x[i]; if (i === IND_CON) conB += a; else firms += a; }
-    const r = E.rpc[j];
+    const r = rpc[j];
     buy.push([r * (fH[j] + fIns[j] + fFed[j]), r * firms, r * fG[j], r * (fC[j] + conB), X[j]]);
   }
 
   // ---- 5. the buyers pay the market
   const M = ACCOUNTS.market;
-  const rCon = E.rpc[IND_CON];
+  const rCon = rpc[IND_CON];
   let cLocal = 0, gLocal = 0, xTot = 0;
-  for (let j = 0; j < N_IND; j++) { cLocal += E.rpc[j] * fH[j]; gLocal += buy[j][2]; xTot += X[j]; }
+  for (let j = 0; j < N_IND; j++) { cLocal += rpc[j] * fH[j]; gLocal += buy[j][2]; xTot += X[j]; }
   const landBuild = con.pipeline + con.homes + con.repairCommercial + con.repairFlats;
   transfer(L, ACCOUNTS.households, M, cLocal, "spend", "hh>mkt:spend");
   transfer(L, ACCOUNTS.households, ACCOUNTS.rest, C - cLocal, "imports", "hh>row:imports");
@@ -1274,14 +1308,14 @@ export function tickEconomy(s: GameState): void {
   transfer(L, ACCOUNTS.rest, M, xTot, "exports", "row>mkt:exports");
   // Washington pays for the care its programmes cover; what is treated out of town never touches it
   let fedLocal = 0;
-  for (const [h] of IND_HEALTH) fedLocal += E.rpc[h] * fFed[h];
+  for (const [h] of IND_HEALTH) fedLocal += rpc[h] * fFed[h];
   transfer(L, ACCOUNTS.rest, M, fedLocal, "health", "row>mkt:medicare and medicaid");
   // an employer's insurance dollar buys care and the insurer's service, here as far as the town supplies them
-  let insLocal = (1 - MLR) * E.rpc[IND_INS];
-  for (const [h, wt] of IND_HEALTH) insLocal += MLR * wt * E.rpc[h];
+  let insLocal = (1 - MLR) * rpc[IND_INS];
+  for (const [h, wt] of IND_HEALTH) insLocal += MLR * wt * rpc[h];
 
   // ---- 6. every firm's month (its payroll: `wagesOf`, above)
-  const { loc, imp } = inputSplit(E.rpc);
+  const { loc, imp } = inputSplit(rpc);
   // A FIRM'S SALES: its heads' share of its industry's output, by its fortune
   // AGAINST ITS OWN KIND'S. The named firms' fortunes are their tenant books'
   // (tenantBooks.ts: sales against their own reference, with the failures
@@ -1391,7 +1425,7 @@ export function tickEconomy(s: GameState): void {
   E.last = {
     m: s.month, C, G, P, X: xTot, hhWagesRegister: hm.wages, hhWagesFirms: wagesCash,
     x: Array.from(x), buy, heads: Array.from(heads), namedHeads: E.cur.named.slice(),
-    impliedHeads: Array.from(x, (v, i) => v / Math.max(1e-9, opw[i])),
+    impliedHeads: Array.from(demand.x, (v, i) => v / Math.max(1e-9, opw[i])), served: Array.from(served),
     engHeads: E.cur.eng.slice(), regEarners: pr ? Array.from(pr.earners) : [], jobsEngine: e.jobs ?? 0,
     con, oil: E.oil ?? OIL_PRICE_2000, oilReal: Math.exp(E.lnOil ?? 0), health: { employers: insEmp, federal: fedHealth },
     ledgerSum: ledgerSum(L), ledgerGross: ledgerGross(L), market: cashOf(L, M), iters,
@@ -1794,10 +1828,11 @@ export function whyExports(s: GameState, i: number): number | undefined {
   const id = INDUSTRY_IDS[i];
   return whyOnce(s, `exports:${id}:${s.month}`, () => {
     const dx = vsYear(l.buy[i][4], m.X[i]), dShare = (E.lnShare?.[i] ?? 0) - m.share[i];
+    const kept = Math.pow(0.5, Math.max(0, s.month - E.openM) / 12 / NAT_TREND_HALF_Y), tr = natTrendNow(E, i, kept);
     return {
       k: "industry.exports", a: "trade", aid: id, name: INDUSTRIES[id].label,
-      n: { exports: dx, share: dShare, natTrend: E.natTr?.[i] ?? 0 },
-      t: `${INDUSTRIES[id].label} · sold out of town ${sgn(dx)} on its year · the town's share ${sgn(dShare)}`,
+      n: { exports: dx, share: dShare, natTrend: tr, leadKept: kept },
+      t: `${INDUSTRIES[id].label} · sold out of town ${sgn(dx)} on its year · the town's share ${sgn(dShare)} · the nation's jobs in it ${(100 * tr).toFixed(1)}%/yr (${(100 * kept).toFixed(0)}% of its 1990-2019 lead over the nation left, half-life ${NAT_TREND_HALF_Y.toFixed(0)} yrs)`,
     };
   }, () => [whyNation(s)]);
 }
@@ -1843,8 +1878,8 @@ export function whyIndustry(s: GameState, i: number): number | undefined {
     const de = vsYear(E.emp![i], m.emp[i]);
     return {
       k: "industry.month", a: "trade", aid: id, name: INDUSTRIES[id].label,
-      n: { emp: E.emp![i], empYear: de, exports: vsYear(l.buy[i][4], m.X[i]), households: vsYear(l.buy[i][0], m.hh[i]), firms: vsYear(l.buy[i][1], m.firms[i]), share: (E.lnShare?.[i] ?? 0) - m.share[i] },
-      t: `${INDUSTRIES[id].label} · ${Math.round(E.emp![i]).toLocaleString("en-US")} jobs, ${sgn(de)} on its year · households ${sgn(vsYear(l.buy[i][0], m.hh[i]))} · firms ${sgn(vsYear(l.buy[i][1], m.firms[i]))} · exports ${sgn(vsYear(l.buy[i][4], m.X[i]))}`,
+      n: { emp: E.emp![i], empYear: de, served: l.served?.[i] ?? 1, exports: vsYear(l.buy[i][4], m.X[i]), households: vsYear(l.buy[i][0], m.hh[i]), firms: vsYear(l.buy[i][1], m.firms[i]), share: (E.lnShare?.[i] ?? 0) - m.share[i] },
+      t: `${INDUSTRIES[id].label} · ${Math.round(E.emp![i]).toLocaleString("en-US")} jobs, ${sgn(de)} on its year · households ${sgn(vsYear(l.buy[i][0], m.hh[i]))} · firms ${sgn(vsYear(l.buy[i][1], m.firms[i]))} · exports ${sgn(vsYear(l.buy[i][4], m.X[i]))}${(l.served?.[i] ?? 1) < 0.995 ? ` · short of hands: served ${Math.round(100 * l.served![i])}% of the town's orders it is asked for, ${Math.round(l.regEarners?.[i] ?? 0).toLocaleString("en-US")} staffed of ${Math.round(l.impliedHeads[i]).toLocaleString("en-US")} the orders need — the rest bought out of town` : ""}`,
     };
   }, () => {
     if (Math.abs(dX) > Math.abs(dLocal)) return [whyNation(s), whyTown(s)];

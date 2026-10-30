@@ -213,6 +213,23 @@ year 30 from 7% to 3% in the weaker form, but job-loss years did not move
 (0.34 and 0.17; correlation 0.55 and 0.46) because the openings that absorb
 the cycle are in trades that do not export.
 
+**Since (branch `claude/payroll-cycle-2`).** Three causes found and fixed:
+(1) a month-old opening reached the town's own jobless only beside a mover
+(`matchJobs` step 4 stopped when the movers ran out), so the bottom rung of
+every vacancy chain — restaurants — sat 13-49% short at full employment
+(seed 550991 years 20-50, with ~2,850 jobless left after the month's search)
+and soaked up every layoff; now the jobless still looking take what no mover
+came for, and a trade stays short only when nobody is left looking.
+(2) a local trade (`where: "local"`) sells only what its staffed heads make;
+orders beyond them are bought out of town (its in-town share cut for the
+month), while its firms still staff to the orders. (3) each trade's 1990-2019
+lead over the nation's mix fades with a half-life of ~5 years
+(`NAT_TREND_HALF_Y`, the least-squares carry of ten industries' 1990s CES
+lead into 2000-19); the wander about it stays. One seed (550991), 100 years:
+payroll fell in 23 years (2.3 a decade, was 0.5 over 60 years on main),
+-1% to -7% in the national recessions (-6.9% at a -10% gap, -6.4% twice at
+-15 to -17%); restaurants 0-5% short; jobs 45k → 81k (0.6%/yr).
+
 ### 5. Construction does not answer demand: both lags at the ±5-year edge; starts dying late in the century
 
 Both lag checks went from WATCH to FAIL: the best lag sits at the search

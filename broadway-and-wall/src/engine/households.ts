@@ -697,6 +697,8 @@ export interface HouseholdRegister {
   vacLeft?: number[];
   /** The town's normal labour-market tightness (openings per jobless at the month's matching), learned over twenty years (MATCH_ETA). */
   thetaRef?: number;
+  /** The nation's consumption mood (market.ts dem.cMood) the register opened in: its households' spending moves with the mood against it. */
+  mood0?: number;
   /** This month's move-outs from the player's blocks: the cause-ledger event per block (bbl -> why id). */
   flatWhy?: Record<string, number>;
   /** THE HOUSEHOLDS' YEAR (stage 5), rolled for the cause ledger: spending by category, net income, layoffs, the jobless rate and the wage index; the month each category's fall was last written. */
@@ -2373,7 +2375,12 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   }
 
   const persons = (i: number) => a.adults[i] + a.kids[i];
-  const moodX = Math.exp(e.nat?.dem?.cMood ?? 0);
+  // against the mood the register opened in, as the town's exports read the
+  // nation's gap against the opening's (economy.ts exportHeads, gap0): the
+  // opening's spending is what the town's books were calibrated on
+  const mood = e.nat?.dem?.cMood ?? 0;
+  r.mood0 ??= mood;
+  const moodX = Math.exp(mood - r.mood0);
   const enterLf = (i: number) => enterLabourForce(a, i, e);
   const H = homeMarket(e);
   const atStart = new Map<number, number>();

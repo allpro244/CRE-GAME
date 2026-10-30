@@ -73,7 +73,7 @@ import {
   FINANCE_LIKE, SPEND_SHARE, SPEND_BRIDGE, PAY_SPLIT, PROD_TAX_LOCAL, CORP_TAX, LOCAL_OWNER_SHARE,
   COMP_PER_WORKER_2023, BUYER_TYPES, REPAIR_PER_COMMERCIAL_RENT, REPAIR_PER_FLAT_RENT, REPAIR_OWNER_PER_VALUE_YR,
   OIL_PRICE_2000,
-  OFF_FLOOR, REMOTE, floorOf, NAT_TREND, CYCLE_BETA, SUBST_ELAST, FED_HEALTH_PER_PERSON_2023, MLR,
+  OFF_FLOOR, REMOTE, floorOf, NAT_TREND, NAT_LABOUR_FORCE_GROWTH, CYCLE_BETA, SUBST_ELAST, FED_HEALTH_PER_PERSON_2023, MLR,
   IND_ID_GOV, IND_ID_CON, IND_ID_INS, IND_ID_ONLINE, RETAIL_IDS, HEALTH_SPLIT, OLD24_TO_68,
   type IndustryId, type Floor, type BuyerType, type SpendCategory,
 } from "./industries";
@@ -83,7 +83,7 @@ import {
 } from "./sfc";
 import {
   FIRM_PROFILE, LENDER_COVER, shortIndexOf, BUILD_MONTHS, SECTORS,
-  LABOUR_FORCE_SLOWDOWN, NAT_TREND_SD, NAT_TREND_TAU_M, NAT_SALES_PER_GAP, RENT_BASE,
+  NAT_TREND_SD, NAT_TREND_TAU_M, NAT_SALES_PER_GAP, RENT_BASE,
   WAGE_CURVE, WAGE_GAP_HALF_M,
 } from "./market";
 import { HARD_COST_PSF, SOFT_COST, CONTINGENCY, constructionTypeMult } from "./value";
@@ -213,6 +213,8 @@ export interface EconomyState {
    * the town's employers by (log).
    */
   lnNat?: number[]; natTr?: number[]; lnShare?: number[]; gap0?: number; swanLn?: number;
+  /** Each industry's trend run so far (log, the sum of `natTr` a month), and the log of the nation's mix at those runs (sum over industries of its opening share times exp(run)): its shares of the labour force (`tickExports`). */
+  natX?: number[]; natZ?: number;
   /** What the town's firms in each industry would win of a tender, quality and price, when their orders were first booked (`tickExports`); the orders they held after last month's tender. */
   xa0?: number[]; xoTot?: number[];
   /** The island's share of each industry at the opening: its named firms' heads over its heads. */
@@ -582,12 +584,16 @@ function natRentPerHead(s: GameState, i: number, opwNat: Float64Array): number {
 // ---------------------------------------------------------------- what the nation buys
 /**
  * THE NATION'S DEMAND FOR THE TOWN'S EXPORTS, a month on (step 2). Each
- * industry's national employment runs at its national trend, which centres on
- * its 1990-2019 CES rate less the labour force that has stopped arriving
- * (industries.ts NAT_TREND, market.ts LABOUR_FORCE_SLOWDOWN) and wanders round
+ * industry's national employment is the nation's labour force (growing at
+ * industries.ts NAT_LABOUR_FORCE_GROWTH, CBO) times the industry's share of it.
+ * The shares move by the industries' trends against one another: each trend
+ * centres on its 1990-2019 CES rate (industries.ts NAT_TREND) and wanders round
  * it with a generation's memory (market.ts NAT_TREND_SD, NAT_TREND_TAU_M —
- * manufacturing grew for a century and shrank for half of one). That is the
- * rest of the world, an input. The black swans' level events (an anchor's
+ * manufacturing grew for a century and shrank for half of one); an industry's
+ * share is its opening share (NAT_EMP_SHARE) times exp of its trend run so far,
+ * over the same sum across industries, so care and tech gain on apparel while
+ * the nation's total stays what its people allow. That is the rest of the
+ * world, an input. The black swans' level events (an anchor's
  * campus, a broke city's layoffs) move it too. Draws on the economy's stream
  * only.
  *
@@ -614,7 +620,7 @@ const TERM_LO = 24, TERM_SPAN = 25;
 const TENDER_M = TERM_LO + (TERM_SPAN - 1) / 2;
 function tickExports(s: GameState, E: EconomyState, R: Rand): void {
   const e = s.econ;
-  const centre = (i: number) => NAT_TREND[INDUSTRY_IDS[i]] - LABOUR_FORCE_SLOWDOWN;
+  const centre = (i: number) => NAT_TREND[INDUSTRY_IDS[i]];
   if (!E.lnNat || !E.natTr || !E.lnShare) {
     E.lnNat = new Array(N_IND).fill(0); E.lnShare = new Array(N_IND).fill(0);
     E.natTr = Array.from({ length: N_IND }, (_, i) => centre(i) + NAT_TREND_SD * R.n());
@@ -622,10 +628,19 @@ function tickExports(s: GameState, E: EconomyState, R: Rand): void {
     return;
   }
   const uni = () => Math.sqrt(3) * (2 * R.u() - 1);
+  // the trends move each industry's share of the labour force (renormalised);
+  // the labour force moves the total. A level shift put on lnNat (a swan, a
+  // test) stays where it was put.
+  const X = (E.natX ??= new Array(N_IND).fill(0));
+  const z0 = E.natZ ?? 0;
+  let z = 0;
   for (let i = 0; i < N_IND; i++) {
     E.natTr[i] += (centre(i) - E.natTr[i]) / NAT_TREND_TAU_M + NAT_TREND_SD * Math.sqrt(2 / NAT_TREND_TAU_M) * uni();
-    E.lnNat[i] += E.natTr[i] / 12;
+    X[i] += E.natTr[i] / 12;
+    z += NAT_EMP_SHARE[INDUSTRY_IDS[i]] * Math.exp(X[i]);
   }
+  E.natZ = Math.log(z);
+  for (let i = 0; i < N_IND; i++) E.lnNat[i] += NAT_LABOUR_FORCE_GROWTH / 12 + E.natTr[i] / 12 - (E.natZ - z0);
   tenderOrders(E);
   E.swanLn = (E.swanLn ?? 0) + Math.log(Math.max(0.5, 1 + (e.bsJobPull ?? 0)));
   // ...and a national swan's orders for a trade (blackswans.ts swanSec: a

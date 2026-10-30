@@ -145,8 +145,16 @@ console.log("\n3. policies move the numbers they claim to");
   tax.econ.gov.policy.wageRate += 0.01;
   const pb = clone(parcels), pc = clone(parcels), pt = clone(parcels);
   const B = E.advanceQuarter(base, pb, c.bbls, c.adjacency), C = E.advanceQuarter(cut, pc, c.bbls, c.adjacency), T = E.advanceQuarter(tax, pt, c.bbls, c.adjacency);
-  ok(C.econ.gov.jApplied < B.econ.gov.jApplied && C.econ.gov.mApplied < B.econ.gov.mApplied, `services −20%: job pull ${(B.econ.gov.jApplied * 1e4).toFixed(2)} → ${(C.econ.gov.jApplied * 1e4).toFixed(2)} bp, residents ${(C.econ.gov.mApplied * 1e4).toFixed(2)} bp`);
+  ok(C.econ.gov.jApplied < B.econ.gov.jApplied, `services −20%: job pull ${(B.econ.gov.jApplied * 1e4).toFixed(2)} → ${(C.econ.gov.jApplied * 1e4).toFixed(2)} bp`);
   ok(T.econ.gov.jApplied < B.econ.gov.jApplied, `payroll tax +1pt: job pull ${(T.econ.gov.jApplied * 1e4).toFixed(2)} bp`);
+  // residents weigh services and the payroll tax (Tiebout, SERVICE_WTP): a cut or a tax pushes out, better services draw
+  // (a raise above wherever the council already has services: a populist mayor may already sit at 1.15; 1.2 is SERVICE_HI)
+  const up = clone(g0); up.econ.gov.policy.service = Math.min(1.2, g0.econ.gov.policy.service + 0.05);
+  ok(up.econ.gov.policy.service > g0.econ.gov.policy.service, `a raise to test: services ${g0.econ.gov.policy.service.toFixed(2)} → ${up.econ.gov.policy.service.toFixed(2)}`);
+  const U = E.advanceQuarter(up, clone(parcels), c.bbls, c.adjacency);
+  const fr = (x) => x.econ.fiscalRel ?? 1;
+  ok(fr(C) < fr(B) && fr(T) < fr(B) && fr(U) > fr(B), `what the city is worth to a household, as a share of pay: ${fr(B).toFixed(4)} · services −20% ${fr(C).toFixed(4)} · payroll tax +1pt ${fr(T).toFixed(4)} · services ${up.econ.gov.policy.service.toFixed(2)} ${fr(U).toFixed(4)}`);
+  ok(E.hereRel(C.econ) < E.hereRel(B.econ) && E.hereRel(U.econ) > E.hereRel(B.econ), `…and so the odds of staying and coming: ${E.hereRel(B.econ).toFixed(4)} → cut ${E.hereRel(C.econ).toFixed(4)}, raise ${E.hereRel(U.econ).toFixed(4)}`);
   ok(C.econ.gov.mo.spend.services < B.econ.gov.mo.spend.services * 0.85, `…and services spending ${M(B.econ.gov.mo.spend.services * 12)} → ${M(C.econ.gov.mo.spend.services * 12)} a year`);
 }
 

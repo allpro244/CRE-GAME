@@ -73,7 +73,7 @@ import { HH_RENT_SHARE0, shortIndexOf, recordDeal } from "./market";
 import { resolveRecBare, useRentableSf } from "./value";
 import { flatUnitSf } from "./streetRolls";
 import { HH_SIZE, INCOME_SIGMA, TAX_INS, DTI, COMMUTE, REF_HOME, medianIncome, mortgageRate, fundamentalHomePsf } from "./homeprice";
-import { why, whyOnce } from "./why";
+import { why, whyOnce, whyAt } from "./why";
 import { RE_ALLOC, SAVERS } from "./investors";
 import { whyIndustry, whyFirmLoss, firmNamesOf, whyTown } from "./economy";
 import { INDUSTRIES, INDUSTRY_IDS, N_IND, COMP_PER_WORKER_2023, PAY_SPLIT, type SpendCategory } from "./industries";
@@ -355,11 +355,76 @@ const LEAVE_JOBLESS_M = 0.05 / 12;
  * - 1, of the movers' rate in households that come looking for work.
  */
 const MOVE_M = 0.025 / 12, MOVE_ELAST = 3;
+/**
+ * THE REGION'S HOUSING SUPPLY ELASTICITY: how much more housing a metro builds
+ * per point its price rises. Saiz (2010, QJE, "The Geographic Determinants of
+ * Housing Supply"): about 1.75 for the population-weighted average US metro,
+ * from under 1 (Miami, Los Angeles, San Francisco) to over 4 (flat, open
+ * metros) [S]. The mainland — where most of the region's renters live — was
+ * let at what it costs to build, at any size: a region that grew fivefold
+ * housed its people at the opening's real rent, its prices fell against the
+ * nation's as the nation's rent rose with its pay, and its real pay rose for
+ * it (measured, tools/proof.mjs seed 11: prices 0.83 of the nation's, real pay
+ * 1.2, jobs x5.7 in a century and accelerating). Now the mainland's rent moves
+ * with the region's households to the power 1/1.75 as well as with the cost of
+ * building: what housing more people costs is in what a household pays to
+ * live here, and so in the town's prices and in where people choose to live.
+ */
+const HOUSING_SUPPLY_ELAST = 1.75;
+/**
+ * WHAT THE REGION'S RENTERS PAY FOR SHELTER (the CPI's shelter, market.ts): a
+ * chained index of the island's flats (the street's rent index) and the
+ * mainland's rent, at their shares of the rent the register's renters pay.
+ * Its change over the last year is set on the economy once it has a year.
+ */
+function shelterRead(r: HouseholdRegister, e: Econ): void {
+  const a = r.a!, mf = e.rentIdx?.multifamily ?? 1;
+  let isl = 0, main = 0;
+  for (let i = 0; i < r.n; i++) {
+    if (a.ten[i] === TEN_RENT) isl += a.wt[i] * a.rent[i];
+    else if (a.ten[i] === TEN_MAINLAND) main += a.wt[i] * a.rent[i];
+  }
+  const s = isl + main > 0 ? isl / (isl + main) : 1;
+  const h = (r.shelterIdx ??= [1]);
+  const last = h[h.length - 1];
+  const dMf = r.mfRef && r.mfRef > 0 && mf > 0 ? Math.log(mf / r.mfRef) : 0;
+  const dMain = r.mainRefS && r.mainRefS > 0 ? Math.log(r.mainRent / r.mainRefS) : 0;
+  r.mfRef = mf; r.mainRefS = r.mainRent;
+  h.push(last * Math.exp(s * dMf + (1 - s) * dMain));
+  if (h.length > 13) h.shift();
+  e.shelter12 = h.length === 13 ? h[12] / h[0] - 1 : undefined;
+}
 /** What pay buys here against elsewhere (MOVE_ELAST above), from the engine's own indices. */
 export function realPayRel(e: Econ): number {
   const pay = (e.wageIdx ?? 1) / Math.max(1e-9, e.natWageIdx ?? e.wageIdx ?? 1);
   const px = (e.cpi ?? 1) / Math.max(1e-9, e.natCpi ?? e.cpi ?? 1);
   return pay / Math.max(1e-9, px);
+}
+/**
+ * What living here pays against elsewhere: real pay, times what the city's
+ * services and payroll tax are worth to a household against the opening's
+ * (citygov.ts SERVICE_WTP, `e.fiscalRel` — Tiebout: better services draw,
+ * cuts and higher taxes push out). The odds of staying and of coming
+ * (MOVE_ELAST) are read off this.
+ */
+export function hereRel(e: Econ): number {
+  return realPayRel(e) * (e.fiscalRel ?? 1);
+}
+/**
+ * A month in which the city's services and taxes, not pay, tipped who came or
+ * went: the movers they account for, cited to the council's last budget —
+ * one event a year.
+ */
+function whyFiscal(s: GameState, e: Econ, moved: number, dir: "left" | "came") {
+  const f = e.fiscalRel ?? 1;
+  if (!(moved > 0) || Math.abs(f - 1) < 0.005) return;
+  whyOnce(s, `hhfiscal:${dir}:${Math.floor(s.month / 12)}`, () => ({
+    k: "households.fiscal", a: "household",
+    n: { fiscalRel: +f.toFixed(4), realPay: +realPayRel(e).toFixed(4), moved },
+    t: dir === "left"
+      ? `Households left town: the city's services and taxes are worth ${((1 - f) * 100).toFixed(1)}% of pay less to a household than at the opening`
+      : `Households moved to town: the city's services and taxes are worth ${((f - 1) * 100).toFixed(1)}% of pay more to a household than at the opening`,
+  }), () => [whyAt(s, "tax"), whyAt(s, "city:mayor")]);
 }
 /**
  * The spread of pay round an industry's average: lognormal, sigma from the
@@ -680,6 +745,12 @@ export interface HouseholdRegister {
   firmHc?: Record<number, number>; layoffWhy?: Record<number, number>;
   /** Each industry's openings still unfilled at the end of last month's matching: what a household may move to the region for. */
   vacLeft?: number[];
+  /** The region's households (weighted) last month, what the mainland's rent moves with (HOUSING_SUPPLY_ELAST). */
+  hhRef?: number;
+  /** The region's renters' shelter index, chained, the last thirteen months (`shelterRead`), and the island flats' rent index last month. */
+  shelterIdx?: number[]; mfRef?: number; mainRefS?: number;
+  /** Movers from elsewhere this month still to place, short of a whole household of the region's weight (`matchJobs` step 4). */
+  arriveAcc?: number;
   /** This month's move-outs from the player's blocks: the cause-ledger event per block (bbl -> why id). */
   flatWhy?: Record<string, number>;
   /** THE HOUSEHOLDS' YEAR (stage 5), rolled for the cause ledger: spending by category, net income, layoffs, the jobless rate and the wage index; the month each category's fall was last written. */
@@ -1992,7 +2063,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // other. Deciding it after the market (as the jobless leavers in step 6 are
   // decided: they hold no job) took earners out of an industry already filled
   // to its heads, a regional household's weight short every time.
-  const pull = Math.pow(Math.max(0.01, realPayRel(e)), MOVE_ELAST);
+  const pull = Math.pow(Math.max(0.01, hereRel(e)), MOVE_ELAST);
   const leave: number[] = [];
   if (pull < 1) {
     for (let i = 0; i < n0; i++) {
@@ -2003,11 +2074,15 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       if (a.ten[i] === TEN_RENT) {
         r.flow.movedOut += a.wt[i];
         noteOut(r, i, "other", () => ({
-          n: { realPay: +pull.toFixed(3) },
-          t: `A household left town for work elsewhere: pay here buys ${((1 - Math.pow(pull, 1 / MOVE_ELAST)) * 100).toFixed(0)}% less than in the nation`,
+          n: { here: +pull.toFixed(3), realPay: +realPayRel(e).toFixed(3), fiscalRel: +(e.fiscalRel ?? 1).toFixed(3) },
+          t: `A household left town for elsewhere: ${[
+            realPayRel(e) < 1 ? `pay here buys ${((1 - realPayRel(e)) * 100).toFixed(0)}% less than in the nation` : "",
+            (e.fiscalRel ?? 1) < 1 ? `the city's services and taxes are worth ${((1 - (e.fiscalRel ?? 1)) * 100).toFixed(1)}% of pay less than at the opening` : "",
+          ].filter(Boolean).join("; ")}`,
         }));
       }
     }
+    if ((e.fiscalRel ?? 1) < 1) whyFiscal(s, e, leave.reduce((t, i) => t + a.wt[i], 0), "left");
   }
   const leaving = new Uint8Array(n0);
   for (const i of leave) leaving[i] = 1;
@@ -2141,11 +2216,29 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // from outside made each quit a household arriving: measured, the region
   // grew 17% more people and 23% more jobs in 25 years with quits on than off.
   const open = Float64Array.from(V, (v, i) => Math.min(v, r.vacLeft?.[i] ?? v));
-  // ...and only if what the job pays buys as much here as elsewhere (MOVE_ELAST, `pull` above)
-  for (let ind = 0; ind < N_IND; ind++) {
-    while (open[ind] >= wR / 2) {
-      open[ind] -= wR;
-      if (pull < 1 && !(R.u() < pull)) continue;
+  // ...AND ONLY AS MANY AS ARE MOVING. The households that take a job across
+  // the country are the interstate movers (MOVE_M, 2.5% of households a year,
+  // Census CPS), and this region gets them in proportion to its households, at
+  // the odds that what its pay buys here is as good as elsewhere (MOVE_ELAST,
+  // `pull` above). This was a draw at those odds on every opening, every month
+  // it stayed open: an opening a month old was offered to the country again,
+  // so the outside supply of workers was without limit at any real pay, the
+  // openings never stayed open long enough to raise pay (V_SLOPE, economy.ts
+  // `postPayAndPrices`), and a town whose rents had made it dear kept growing
+  // at 0.8 of the nation's real pay (measured, tools/proof.mjs: jobs x6-x31 a
+  // century). Now the movers are a flow: what they cannot fill stays open,
+  // the firms bid pay up for it, and a town that pays more than its prices
+  // draws more (`draw`, the job seekers, below). Movers this month who find
+  // no opening go elsewhere (the carry is under one household).
+  let hhW = 0;
+  for (let i = 0; i < r.n; i++) hhW += r.a!.wt[i];
+  r.arriveAcc = (r.arriveAcc ?? 0) + MOVE_M * Math.min(1, pull) * hhW;
+  const slots: number[] = [];
+  for (let ind = 0; ind < N_IND; ind++) for (let v = open[ind]; v >= wR / 2; v -= wR) slots.push(ind);
+  for (const ind of shuffle(slots)) {
+    {
+      if (r.arriveAcc < wR / 2) break;
+      r.arriveAcc -= wR;
       const i = addAgent(r), b = r.a!;
       b.wt[i] = wR;
       const band = pick(R, ageP);
@@ -2184,6 +2277,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       }
     }
   }
+  r.arriveAcc = Math.max(0, Math.min(wR, r.arriveAcc));
   r.vacLeft = Array.from(V, (v) => +Math.max(0, v).toFixed(2));
   // 5. THE GOING RATE. An industry's pay bill is its going rate (BEA pay at
   // what its firms posted, D.pay) times its earners; who gets which share of
@@ -2302,7 +2396,15 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   const payIdx = e.eco?.payIdx;
   const gInd = payIdx && r.payRef?.length === payIdx.length ? payIdx.map((v, i) => v / Math.max(1e-9, r.payRef![i])) : null;
   if (payIdx) r.payRef = payIdx.slice();
-  r.mainRent *= gC;
+  // THE MAINLAND'S RENT MOVES WITH WHAT IT COSTS TO BUILD AND WITH HOW MANY
+  // LIVE THERE: a region that adds households builds out to dearer land and
+  // longer commutes (HOUSING_SUPPLY_ELAST)
+  let hhNow = 0;
+  for (let i = 0; i < r.n; i++) hhNow += r.a!.wt[i];
+  const gN = r.hhRef && r.hhRef > 0 && hhNow > 0 ? Math.pow(hhNow / r.hhRef, 1 / HOUSING_SUPPLY_ELAST) : 1;
+  r.hhRef = hhNow;
+  r.mainRent *= gC * gN;
+  shelterRead(r, e);
   const short = shortIndexOf(e) / 100;
   const n0 = r.n;
 
@@ -2322,7 +2424,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       a.wage2[i] *= gInd && a.ind2[i] !== IND_NONE ? gInd[a.ind2[i]] : gW;
       a.wage3[i] *= gInd && a.ind3[i] !== IND_NONE ? gInd[a.ind3[i]] : gW;
       a.yperm[i] *= gW;
-      if (a.ten[i] === TEN_MAINLAND) a.rent[i] *= gC;
+      if (a.ten[i] === TEN_MAINLAND) a.rent[i] *= gC * gN;
       if (a.ten[i] === TEN_OWN) a.hval[i] *= gH;
       lose(a.emp1, a.un1, i); lose(a.emp2, a.un2, i); lose(a.emp3, a.un3, i);
     }
@@ -2719,7 +2821,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   // A TOWN WHOSE PAY BUYS MORE THAN ELSEWHERE draws movers the same way, at
   // the excess of its pull over the movers' rate (MOVE_ELAST), carried month
   // to month until it makes a whole household of the region's weight.
-  const draw = D ? MOVE_M * Math.max(0, Math.pow(Math.max(0.01, realPayRel(e)), MOVE_ELAST) - 1) : 0;
+  const draw = D ? MOVE_M * Math.max(0, Math.pow(Math.max(0.01, hereRel(e)), MOVE_ELAST) - 1) : 0;
   const wave = e.bsMigPull ?? 0;
   const bsIsland = wave > 0 && e.bsArrivals ? e.bsArrivals.island * Math.min(1, e.bsArrivals.monthly / wave) : 0;
   if ((wave > 0 || draw > 0) && D) {
@@ -2728,6 +2830,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     r.drawAcc = (r.drawAcc ?? 0) + (ppl * draw) / HH_SIZE / Math.max(0.01, r.wRegion);
     const drawn = Math.floor(r.drawAcc);
     r.drawAcc -= drawn;
+    if ((e.fiscalRel ?? 1) > 1) whyFiscal(s, e, drawn * r.wRegion, "came");
     const agents = Math.round((ppl * wave) / HH_SIZE / Math.max(0.01, r.wRegion)) + drawn;
     for (let k = 0; k < agents; k++) {
       const i = addAgent(r), b = r.a!;

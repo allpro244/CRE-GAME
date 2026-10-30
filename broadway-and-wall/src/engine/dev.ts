@@ -2180,8 +2180,7 @@ export function startDevelopment(
   // projected vacancy, and then landed on the market as a surprise the month
   // it opened. Same queue as everyone now, tagged with the parcel so a
   // schedule slip can move it and an abandoned job can pull it back out; and
-  // it fills part of the order the space market has already placed
-  // (startOwed), exactly as an anonymous start on the same corner would have.
+  // it counts among the town's starts like every other (FORMULA_LEDGER #27).
   const playerProgramme = programmeSf(rentableFromSpec(plan.sf, plan.floors), plan.mix);
   queueSupplyProject(next, {
     bbl,
@@ -2189,11 +2188,6 @@ export function startDevelopment(
     deliverM: next.month + plan.months,
     sfByUse: playerProgramme,
   });
-  for (const [u, usf] of Object.entries(playerProgramme)) {
-    if (next.econ.startOwed) {
-      next.econ.startOwed[u as BuiltClass] = Math.max(0, (next.econ.startOwed[u as BuiltClass] ?? 0) - usf);
-    }
-  }
   next.developments[bbl] = {
     landMark: Math.round(ownedHoldingValue(s, parcels, s.holdings[bbl])),
     spec: plan.spec,
@@ -3503,16 +3497,21 @@ export function useForZone(zone: string, demand: number, r: number, e?: Econ): D
    *     at -17 months, which is two copies of one series arguing about phase.
    *     That is the exact fault this whole line of work exists to find.
    */
+  //
+  // NO BOOK SINCE FORMULA_LEDGER #27 (2026-10-30). The book this read was an
+  // order sized from the top in proportion to the standing stock; it is gone.
+  // What a redeveloper reads instead is what the street's own pencils say:
+  // `siteHurdle`, the value/cost of each class's best sampled real sites at
+  // their owners' asks (dev.ts refreshDevelopmentFeasibility). A class whose
+  // sites come nearer to paying gets probed more often; the pro forma still
+  // decides every deal.
   const owed = (u: DevUse): number =>
-    Math.max(0, e?.startOwed?.[dominantOf(devMix(u))] ?? 0);
+    Math.max(0, e?.siteHurdle?.[dominantOf(devMix(u))] ?? 0);
   // Weighted pick over [0,1), so a class's mass shrinks by exactly what has
   // left and the remainder falls to housing. One draw, same as before.
   //
-  // If the book is empty of everything this zone permits there is nothing to
-  // normalise, and the programme weights stand alone. That is a guard rather
-  // than a rail — an empty book means the market has not asked for anything,
-  // and the appetite gate in the caller rejects the site a line later anyway,
-  // so what this returns in that case rarely reaches a shovel.
+  // Before the first annual refresh there is no read, and the programme
+  // weights stand alone.
   const pick = (w0: [DevUse, number][]): DevUse => {
     const wo = w0.map(([u, x]) => [u, x * owed(u)] as [DevUse, number]);
     const w = wo.reduce((t, [, x]) => t + x, 0) > 0 ? wo : w0;
@@ -4341,19 +4340,6 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
   });
   // Public the day the wrecking ball swings: the next look this month sees it.
   syncSupplyViews(e, true);
-  for (const [u, usf] of Object.entries(teardownProgramme)) {
-    // ...AND THE ORDER BOOK IS TOLD. `startOwed` is the square footage the space
-    // market has asked for and not yet seen broken ground on, and the quota
-    // block downstream spends it. A replacement that goes up on this path fills
-    // exactly the same order — it is the same crews, the same class, the same
-    // month — and it was never netted off, so the city carried a permanent
-    // phantom backlog and kept ordering cranes against demand it had already
-    // met. Every other start path in this file already does this; this one did
-    // not, and it is the biggest of them.
-    if (s.econ.startOwed) {
-      s.econ.startOwed[u as BuiltClass] = Math.max(0, (s.econ.startOwed[u as BuiltClass] ?? 0) - usf);
-    }
-  }
 
   {
     // A COIN FLIP IS NOT A RELEVANCE TEST, AND IT WAS STANDING IN FOR ONE.
@@ -4966,7 +4952,7 @@ function developerLook(
   const dev: DeveloperProfile = habits ? { ...habits, outlook: habits.outlook * Math.exp(0.03 * (2 * rng(s, "dev") - 1)) } : drawDeveloper(s);
   // A firm's purse is its free cash: what it holds less what its live jobs still need.
   const purse = firm ? Math.max(0, freeCash(s, firm)) : who ? Math.max(0, who.capital - who.committed) : Infinity;
-  let best: { bbl: string; rec: (typeof parcels)[string]; use: DevUse; floors: number; plate: number; h: number; coInvest: number; kids: string[] } | null = null;
+  let best: { bbl: string; rec: (typeof parcels)[string]; use: DevUse; floors: number; plate: number; h: number; coInvest: number; kids: string[]; sf: number } | null = null;
   let examined = 0;
   // the lots tied up by a job or another developer's plan, once a look (the draws below start neither)
   const jobAt = new Set(s.cityJobs.map((j) => j.bbl)), planAt = new Set((s.cityPlans ?? []).map((p) => p.bbl));
@@ -5046,7 +5032,7 @@ function developerLook(
         const coInvest = builderCoInvest(u.plan.basisTotal, dev.ltc);
         if (coInvest > purse) continue;
         const h = hurdleAt(u.plan, DEV_MARGIN) * dev.outlook * momentumRead(s, lead, dev.momentum, firm) * exitRead(s, firm, lead);
-        if (!best || h > best.h) best = { bbl, rec, use, floors: fl, plate, h, coInvest, kids };
+        if (!best || h > best.h) best = { bbl, rec, use, floors: fl, plate, h, coInvest, kids, sf: ownSf };
       }
     }
     s.merged = before;
@@ -5085,7 +5071,11 @@ function developerLook(
       bbl: best.bbl, use: best.use, floors: best.floors, plate: best.plate, spec: dev.spec, ltc: dev.ltc,
       decidedM: s.month, breakM: s.month + PLAN_LEAD_M[lead], ...(who ? { builderId: who.id } : {}), ...(firm ? { firmId: firm.id } : {}),
       ...(best.kids.length ? { assemble: best.kids } : {}),
+      lead, sf: Math.round(best.sf),
     });
+    // ...and the order is this decision: the town's orders are the sum of them.
+    const dm = (s.econ.decidedMonth ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 });
+    dm[lead] += Math.round(best.sf);
     if (who) who.committed += best.coInvest;
     return true;
   }

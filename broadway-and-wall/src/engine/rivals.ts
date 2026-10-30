@@ -3678,23 +3678,6 @@ export function breakGround(
     deliverM,
     sfByUse: rivalProgramme,
   });
-  for (const [u, usf] of Object.entries(rivalProgramme)) {
-    // ...AND OFF THE ORDER BOOK, WHICH THIS PATH ALONE WAS NOT DOING.
-    // Four paths break ground in this city. Three of them net the delivered
-    // square footage off `startOwed` so the space market stops asking for
-    // space it is about to get — the anonymous starts (dev.ts:2646), the
-    // teardown replacements (dev.ts:2393) and the player (dev.ts:978). A named
-    // firm building on its own land pushed the cohort and skipped this line,
-    // so the town carried a permanent phantom backlog for every tower the
-    // street put up. The leak is one-sided downstream and it compounds:
-    // `wanted = owed / TYPICAL_SF` orders an extra crane, and the same `owed`
-    // feeds crew utilisation, which hires extra trades and raises the
-    // construction cost index for everybody. dev.ts:2385 diagnosed this exact
-    // fault on the teardown path and called it "the biggest of them".
-    if (s.econ.startOwed) {
-      s.econ.startOwed[u as BuiltClass] = Math.max(0, (s.econ.startOwed[u as BuiltClass] ?? 0) - usf);
-    }
-  }
   poachForBuildToSuit(s, parcels, r, rec, lead, sf, deliverM);
   s.news.unshift({
     q: s.month, kind: "event",

@@ -99,6 +99,17 @@ export function nationPhase(n: NonNullable<Econ["nat"]>): MarketPhase {
   return "expansion";
 }
 
+/** Vacancy as a multiple of each class's natural rate, on three years' mean national unemployment (calibration in simulateHistory). */
+export function vacMultOf(uTrail: number): number {
+  return Math.max(0.65, Math.min(1.8, 0.835 + 15 * (uTrail - 0.0475)));
+}
+/** Rent against the long-run base at that vacancy multiple (the same five openings: ~0.55 of rent per unit of multiple). */
+export function rentMultOf(vacMult: number): number {
+  return 1.09 - 0.55 * (vacMult - 0.835);
+}
+/** How many of the pre-history's months the opening pipeline can look back into: the longest build backdated (~48 months) plus the longest lead to a start (15). */
+const PRE_VAC_KEEP = 72;
+
 export interface History {
   months: number;
   /** national unemployment, mean over the last 36 months */
@@ -171,6 +182,15 @@ export function simulateHistory(econ: Econ, seed: number, natural: Record<string
   econ.rateEma = econ.indexRate;
   const tail = uHist.slice(-36);
   const uTrail = tail.reduce((a, x) => a + x, 0) / Math.max(1, tail.length);
+  // ...and the same reading for each of the history's last PRE_VAC_KEEP
+  // months, for the frames that were decided in them (dev.ts
+  // seedOpeningPipeline). No draws: the sequence below is unchanged.
+  const pre: number[] = [];
+  for (let end = Math.max(1, uHist.length - PRE_VAC_KEEP + 1); end <= uHist.length; end++) {
+    const w = uHist.slice(Math.max(0, end - 36), end);
+    pre.push(+vacMultOf(w.reduce((a, x) => a + x, 0) / Math.max(1, w.length)).toFixed(4));
+  }
+  econ.preVacMult = pre;
 
   // THE SPACE MARKET, ON THE LABOUR MARKET IT HAS BEEN LIVING THROUGH.
   // Vacancy lags employment by a year or two — tenants give space back at
@@ -183,7 +203,7 @@ export function simulateHistory(econ: Econ, seed: number, natural: Record<string
   // points of vacancy multiple per point of unemployment. The 1990s sit
   // furthest off it (vacancy left over from the overbuilt eighties), which is
   // a stock story the map supplies from month one.
-  const vacMult = Math.max(0.65, Math.min(1.8, 0.835 + 15 * (uTrail - 0.0475)));
+  const vacMult = vacMultOf(uTrail);
   for (const cls of Object.keys(econ.cityVac) as (keyof typeof econ.cityVac)[]) {
     const jitter = d(0.88, 1.12);
     econ.cityVac[cls] = Math.max(0.02, Math.min(0.40, (natural[cls] ?? 0.11) * vacMult * jitter));
@@ -191,7 +211,7 @@ export function simulateHistory(econ: Econ, seed: number, natural: Record<string
   // Rents follow the vacancy — the same five openings: a long expansion at
   // 0.84x natural vacancy ran rents ~9% over the long-run base, 1982 at 1.5x
   // ran them ~28% under, about 0.55 of rent per unit of vacancy multiple.
-  const rentMult = 1.09 - 0.55 * (vacMult - 0.835);
+  const rentMult = rentMultOf(vacMult);
   for (const cls of Object.keys(econ.rentIdx) as (keyof typeof econ.rentIdx)[]) {
     econ.rentIdx[cls] = +(econ.rentIdx[cls] * rentMult * d(0.95, 1.05)).toFixed(2);
   }

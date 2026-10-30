@@ -73,7 +73,7 @@ import {
   FINANCE_LIKE, SPEND_SHARE, SPEND_BRIDGE, PAY_SPLIT, PROD_TAX_LOCAL, CORP_TAX, LOCAL_OWNER_SHARE,
   COMP_PER_WORKER_2023, BUYER_TYPES, REPAIR_PER_COMMERCIAL_RENT, REPAIR_PER_FLAT_RENT, REPAIR_OWNER_PER_VALUE_YR,
   OIL_PRICE_2000,
-  OFF_FLOOR, REMOTE, floorOf, NAT_TREND, CYCLE_BETA, FED_HEALTH_PER_PERSON_2023, MLR,
+  OFF_FLOOR, REMOTE, floorOf, NAT_TREND, CYCLE_BETA, SUBST_ELAST, FED_HEALTH_PER_PERSON_2023, MLR,
   IND_ID_GOV, IND_ID_CON, IND_ID_INS, IND_ID_ONLINE, RETAIL_IDS, HEALTH_SPLIT, OLD24_TO_68,
   type IndustryId, type Floor, type BuyerType, type SpendCategory,
 } from "./industries";
@@ -128,7 +128,9 @@ const F64 = ["hc", "z", "eq", "rev", "wages", "inputs", "rent", "prodTax", "inte
   "pay", "owe", "price",
   // its national orders
   // (`tickExports`: a share of its industry's opening exports) and what they were a year ago
-  "xo", "xo12"] as const;
+  "xo", "xo12",
+  // its quality against its kind's (log; `tickQuality`)
+  "q"] as const;
 /** Revenue history columns, indexed by month mod 12. */
 export const REV_RING = ["h0", "h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "h9", "h10", "h11"] as const;
 type F64Name = typeof F64[number];
@@ -210,8 +212,8 @@ export interface EconomyState {
    * the town's employers by (log).
    */
   lnNat?: number[]; natTr?: number[]; lnShare?: number[]; gap0?: number; swanLn?: number;
-  /** The town's firms' price index in each industry when their orders were first booked (`tickExports`), and the orders they held after last month's tender. */
-  xp0?: number[]; xoTot?: number[];
+  /** What the town's firms in each industry would win of a tender, quality and price, when their orders were first booked (`tickExports`); the orders they held after last month's tender. */
+  xa0?: number[]; xoTot?: number[];
   /** The island's share of each industry at the opening: its named firms' heads over its heads. */
   sigma?: number[];
   /** Output at the opening (the trades' sales read-out). */
@@ -591,26 +593,23 @@ function natRentPerHead(s: GameState, i: number, opwNat: Float64Array): number {
  * This was an equation: a random walk of "fortune" per industry plus a pull
  * of 4% a year of the town's log cost gap (LOCATION_PULL). Now each firm holds
  * its own national orders (`xo`, a share of its industry's opening exports)
- * and wins or loses them on its own price against the nation's — the price it
- * posts from its unit cost: its pay, the rent on its lease and its inputs
- * (`postPayAndPrices`). National buyers re-tender a contract when it ends, a
- * 1/TENDER_M share of their orders a month (the contracts' own terms, 24-48
- * months, `tickLinks`); a firm wins its capacity's share of what is tendered
- * at its price against its industry's opening price index, to the power
- * -ARMINGTON (a CES demand among suppliers of one product, Armington 1969).
- * When a firm closes, its customers re-tender the whole of its orders at
- * once. The town's share is the sum of its firms' orders.
+ * and wins or loses them on its quality-adjusted price — the price it posts
+ * from its unit cost (its pay, the rent on its lease and its inputs,
+ * `postPayAndPrices`) and its quality (`q`, `tickQuality`). National buyers
+ * re-tender a contract when it ends, a 1/TENDER_M share of their orders a
+ * month (the contracts' own terms, 24-48 months, `tickLinks`); a firm wins
+ * its capacity's share of what is tendered times its quality, times its price
+ * to the power -SUBST_ELAST of its industry (industries.ts: steel is bought on
+ * price, a lawyer on quality) — a CES demand among suppliers of one product
+ * with quality as the demand shifter (Armington 1969; Khandelwal 2010; Hallak
+ * & Schott 2011) — over what the same sum was when the books opened (`xa0`),
+ * so the town opens on its own share. When a firm closes, its customers
+ * re-tender the whole of its orders at once. The town's share is the sum of
+ * its firms' orders.
  */
 /** Contracts between firms run 24-48 months (`tickLinks`, TERM): the first month and the span of the draw. */
 const TERM_LO = 24, TERM_SPAN = 25;
 const TENDER_M = TERM_LO + (TERM_SPAN - 1) / 2;
-/**
- * The elasticity of substitution between suppliers of one product: 1 + the
- * trade elasticity, about 4 (Simonovska & Waugh 2014, "The elasticity of
- * trade", JIE: 4.1), so a firm 1% dearer than at its opening wins about 5%
- * fewer of the orders tendered. [S~]
- */
-const ARMINGTON = 5;
 function tickExports(s: GameState, E: EconomyState, R: Rand): void {
   const e = s.econ;
   const centre = (i: number) => NAT_TREND[INDUSTRY_IDS[i]] - LABOUR_FORCE_SLOWDOWN;
@@ -655,19 +654,20 @@ function tenderOrders(E: EconomyState): void {
   if (!nF) return;
   const H = new Float64Array(N_IND), S = new Float64Array(N_IND);
   for (let n = 0; n < nF; n++) { H[F.ind[n]] += F.hc[n]; S[F.ind[n]] += F.xo[n]; }
-  const pOf = (n: number, p0: number) => (F.price[n] > 0 ? F.price[n] : p0);
-  if (!E.xp0) {
+  // what a firm's capacity wins of a tender: its quality, and its price to its industry's elasticity
+  const pull = (n: number) => Math.exp(F.q[n]) * Math.pow(F.price[n] > 0 ? F.price[n] : 1, -SUBST_ELAST[INDUSTRY_IDS[F.ind[n]]]);
+  if (!E.xa0) {
     let priced = false;
     for (let n = 0; n < nF; n++) if (F.price[n] > 0) { priced = true; break; }
     if (!priced) return;
-    const z = new Float64Array(N_IND);
-    for (let n = 0; n < nF; n++) { const i = F.ind[n]; if (H[i] > 0) z[i] += F.hc[n] / H[i] * Math.pow(pOf(n, 1), -ARMINGTON); }
-    E.xp0 = Array.from(z, (v) => (v > 0 ? Math.pow(v, -1 / ARMINGTON) : 1));
+    const a0 = new Float64Array(N_IND);
+    for (let n = 0; n < nF; n++) { const i = F.ind[n]; if (H[i] > 0) a0[i] += F.hc[n] / H[i] * pull(n); }
+    E.xa0 = Array.from(a0, (v) => (v > 0 ? v : 1));
     for (let n = 0; n < nF; n++) { const i = F.ind[n]; F.xo[n] = H[i] > 0 ? F.hc[n] / H[i] * Math.exp(sh[i]) : 0; F.xo12[n] = F.xo[n]; }
     E.xoTot = Array.from(H, (h, i) => (h > 0 ? Math.exp(sh[i]) : 0));
     return;
   }
-  const p0 = E.xp0, tot = (E.xoTot ??= Array.from(S));
+  const a0 = E.xa0, tot = (E.xoTot ??= Array.from(S));
   const r = 1 / TENDER_M;
   // the orders of the firms that closed since last month: re-tendered whole
   const pool = Float64Array.from(S, (v, i) => r + Math.max(0, (tot[i] ?? 0) - v));
@@ -675,8 +675,8 @@ function tenderOrders(E: EconomyState): void {
   for (let n = 0; n < nF; n++) {
     const i = F.ind[n];
     if (!(H[i] > 0)) continue;
-    F.xo[n] = (1 - r) * F.xo[n] + pool[i] * F.hc[n] / H[i] * Math.pow(pOf(n, p0[i]) / p0[i], -ARMINGTON);
-    S[F.ind[n]] += F.xo[n];
+    F.xo[n] = (1 - r) * F.xo[n] + pool[i] * F.hc[n] / H[i] * pull(n) / a0[i];
+    S[i] += F.xo[n];
   }
   for (let i = 0; i < N_IND; i++) if (H[i] > 0) { sh[i] = Math.log(Math.max(1e-6, S[i])); tot[i] = S[i]; }
 }
@@ -957,8 +957,9 @@ function firmNames(s: GameState): Map<number, string> {
  * A supplier is chosen among the island's named firms in the industry the
  * customer buys from, in proportion to what the customer buys of each
  * industry from town (IO_A x the local purchase coefficient), then to the
- * supplier's size and its cash (reliability). Not yet read: distance (the
- * books do not hold where a firm is) and price (one price an industry).
+ * supplier's size, its cash (reliability), its quality and its price against
+ * its industry's average to the power -SUBST_ELAST (industries.ts). Not yet
+ * read: distance (the books do not hold where a firm is).
  *
  * WHAT A LINK DOES. Winning or losing a named customer moves the supplier's
  * own fortune (its tenant books' z, tenantBooks.ts) by the share of its sales
@@ -1028,6 +1029,13 @@ function tickLinks(s: GameState, E: EconomyState, R: Rand, opening: boolean): vo
   for (const [, n] of slot) byInd[F.ind[n]].push(n);
   const rpc = E.rpc;
   const wJ = new Float64Array(N_IND);
+  // each industry's average price among its named firms (heads-weighted)
+  const pBar = new Float64Array(N_IND).fill(1);
+  for (let j = 0; j < N_IND; j++) {
+    let h = 0, p = 0;
+    for (const n of byInd[j]) if (F.price[n] > 0) { h += F.hc[n]; p += F.hc[n] * F.price[n]; }
+    if (h > 0) pBar[j] = p / h;
+  }
   for (const [fid, nc] of slot) {
     if ((have.get(fid) ?? 0) >= LINKS_PER_FIRM) continue;
     const u1 = R.u(), u2 = R.u();
@@ -1042,7 +1050,8 @@ function tickLinks(s: GameState, E: EconomyState, R: Rand, opening: boolean): vo
     const wt = cand.map((n) => {
       if (n === nc || pair.has(`${F.id[n]}:${fid}`)) return 0;
       const cashM = cashOf(E.L, n) / costM(n);
-      const w = F.hc[n] * (0.25 + Math.min(1, cashM / 3));
+      // ...and on its quality-adjusted price against its kind's (industries.ts SUBST_ELAST)
+      const w = F.hc[n] * (0.25 + Math.min(1, cashM / 3)) * Math.exp(F.q[n]) * Math.pow((F.price[n] > 0 ? F.price[n] : 1) / pBar[j], -SUBST_ELAST[INDUSTRY_IDS[j]]);
       ct += w; return w;
     });
     if (!(ct > 0)) continue;
@@ -1554,6 +1563,8 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
   const slack = WAGE_CURVE * Math.log(Math.max(0.01, uLoc) / Math.max(0.01, uNat));
   const prevNat = E.posted?.natW ?? natW;
   const unitCost = unitCoster(s, E, natW);
+  const isNew = new Uint8Array(nF);
+  for (let n = 0; n < nF; n++) if (!(F.price[n] > 0)) isNew[n] = 1;
   for (let n = 0; n < nF; n++) {
     const i = F.ind[n], I = INDUSTRIES[INDUSTRY_IDS[i]];
     // ---- pay
@@ -1574,6 +1585,7 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
       F.price[n] = Math.max(0.5, unitCost(n) * Math.exp(PRICE_DEMAND * press));
     }
   }
+  tickQuality(E, isNew);
   // ---- what the town's firms post, summed
   const hp = new Float64Array(N_IND), hh = new Float64Array(N_IND), hpr = new Float64Array(N_IND);
   let tp = 0, th = 0;
@@ -1593,6 +1605,39 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
     openings, unemp: uLoc, natW, wage12: hist.length === 13 ? wage / hist[0] - 1 : undefined,
   };
 }
+/**
+ * A FIRM'S QUALITY (`q`, log, against its kind's): one attribute, made of what
+ * the firm has, not drawn. Its target is the firm's own productivity — its
+ * fortune (tenant books' z; an off-map firm's draw) against its group's mean,
+ * as luck is relative in the sales (`tickEconomy`) — plus the skill of its
+ * staff, read off what it pays against its industry's average posted pay
+ * (pay premia track worker skill: Abowd, Kramarz & Margolis 1999) [K: the
+ * two log terms added one for one]. Quality is a stock kept up by spending:
+ * a firm with a month's costs in cash invests and closes on its target at
+ * the depreciation rate of firm-specific intangibles, 40% a year (Corrado,
+ * Hulten & Sichel 2009, organisational capital) [S]; a firm short of cash
+ * does not, and its quality wears away at that rate. A new firm opens at its
+ * target. Read by the national tender (`tenderOrders`) and the named links
+ * (`tickLinks`).
+ */
+const Q_DEP = 1 - Math.pow(1 - 0.4, 1 / 12);
+function tickQuality(E: EconomyState, isNew: Uint8Array): void {
+  const F = E.f, nF = E.L.slot.n;
+  const zh = new Float64Array(2 * N_IND), zs = new Float64Array(2 * N_IND), ph = new Float64Array(N_IND), ps = new Float64Array(N_IND);
+  for (let n = 0; n < nF; n++) {
+    const g = 2 * F.ind[n] + (F.id[n] >= 0 ? 1 : 0);
+    zh[g] += F.hc[n]; zs[g] += F.hc[n] * F.z[n]; ph[F.ind[n]] += F.hc[n]; ps[F.ind[n]] += F.hc[n] * Math.log(Math.max(1e-6, F.pay[n]));
+  }
+  for (let n = 0; n < nF; n++) {
+    const i = F.ind[n], g = 2 * i + (F.id[n] >= 0 ? 1 : 0);
+    const target = F.z[n] - (zh[g] > 0 ? zs[g] / zh[g] : 0) + Math.log(Math.max(1e-6, F.pay[n])) - (ph[i] > 0 ? ps[i] / ph[i] : 0);
+    if (isNew[n]) { F.q[n] = target; continue; }
+    const costs = F.wages[n] + F.inputs[n] + F.rent[n];
+    if (cashOf(E.L, n) >= costs) F.q[n] += Q_DEP * (target - F.q[n]);
+    else F.q[n] += Math.log(1 - Q_DEP);
+  }
+}
+
 /**
  * A FIRM'S UNIT COST AGAINST THE NATION'S FOR ITS INDUSTRY (`postPayAndPrices`):
  * its pay against the nation's at its industry's labour share; the rent on its
@@ -1624,7 +1669,7 @@ function hashU01(id: number, m: number): number {
  */
 function whyOrders(s: GameState, E: EconomyState): void {
   const l = E.last, F = E.f, nF = E.L.slot.n;
-  if (s.month % 12 !== 0 || !l || !E.xp0) return;
+  if (s.month % 12 !== 0 || !l || !E.xa0) return;
   const S = new Float64Array(N_IND);
   for (let n = 0; n < nF; n++) S[F.ind[n]] += F.xo[n];
   const names = firmNames(s);
@@ -1641,10 +1686,11 @@ function whyOrders(s: GameState, E: EconomyState): void {
   const unitCost = unitCoster(s, E, E.posted?.natW ?? s.econ.natWageIdx ?? 1);
   for (const { n, ch, usd } of moves.slice(0, 12)) {
     const name = names.get(F.id[n])!, uc = unitCost(n) - 1, i = F.ind[n];
-    const cost = `unit cost ${uc < 0 ? "−" : "+"}${Math.abs(uc * 100).toFixed(0)}% vs nation`;
+    const pc = (x: number) => `${x < 0 ? "−" : "+"}${Math.abs(x * 100).toFixed(0)}%`;
+    const cost = `unit cost ${pc(uc)} vs nation, quality ${pc(Math.exp(F.q[n]) - 1)} vs its trade`;
     why(s, {
       k: "firm.orders", a: "firm", aid: String(F.id[n]), name,
-      n: { orders: ch, unitCost: uc, exportsYr: Math.round(usd * 12) },
+      n: { orders: ch, unitCost: uc, quality: F.q[n], exportsYr: Math.round(usd * 12) },
       t: ch >= 0 ? `${name} won ${(ch * 100).toFixed(0)}% more of national orders: ${cost}`
         : `${name} lost ${(-ch * 100).toFixed(0)}% of its national orders: ${cost}`,
     }, [whyExports(s, i)]);

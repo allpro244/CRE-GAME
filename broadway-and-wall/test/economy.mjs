@@ -210,8 +210,8 @@ check(fillOk, `the register's earners in each industry never exceed its heads, a
   check(ok, "the loaded game and the running one stay identical for a year");
   check(okJ, "and books that went through JSON play on identically too");
   const kb = v8.serialize(a.economy).length / 1024;
-  // (1250: each firm's national orders and what they were a year ago, two columns, since FORMULA_LEDGER #9)
-  check(kb < 1250, `the books save in ${kb.toFixed(0)} KB (${a.economy.L.slot.n} firms)`);
+  // (1300: each firm's national orders, what they were a year ago and its quality, three columns, since FORMULA_LEDGER #9)
+  check(kb < 1300, `the books save in ${kb.toFixed(0)} KB (${a.economy.L.slot.n} firms)`);
 }
 
 // ---------------------------------------------------------------- named links (step 2d)

@@ -1419,7 +1419,9 @@ export interface FlatRoll { occ: number; vac?: number; l?: { sf: number; rent: n
   /** the block's draw on movers (score, staleness, its owner's care) and its month's letting limit, sf (households.ts reads them) */
   w?: number; lim?: number; ask?: number;
   /** its landlord's ask over the flats' market rent for the block (log), its vacancy over the last year (a twelve-month average), and the vacancy the landlord has learned to expect of it (`markFlatAsk`) */
-  px?: number; ve?: number; nv?: number }
+  px?: number; ve?: number; nv?: number;
+  /** the households that asked for a flat here last month and found the street full, sf (households.ts `writeRolls`), and that waiting list over the last year as a share of the block (a twelve-month average) */
+  q?: number; qe?: number }
 
 /**
  * A BLOCK'S LANDLORD RE-MARKS ITS ASK, every month, from its own lettings
@@ -1451,12 +1453,32 @@ const OCC_RANGE = 0.05;
  * (`normalVac`) keeps its twenty-year memory.
  */
 const OWN_MEMORY_M = 60;
+/*
+ * A FULL BLOCK STILL SEES ITS DEMAND (2026-10-30, PROOF run 2 #1). The
+ * learned normal alone taught a block that stayed full that full was normal:
+ * its pressure term went to zero and the ask passed on only the price level
+ * ex-shelter, so the island's flats sat full for 50-70 years while their real
+ * rent halved. Vacancy is only half of what a revenue-management system
+ * reads; the other half is the leads it cannot house (RealPage YieldStar and
+ * its peers price on demand against "exposure", the units available or on
+ * notice). Here that is the waiting list: the households that asked for a
+ * flat here and found the street full (`q`, households.ts — a household that
+ * saw an empty flat and would not pay its rent is not on it). Averaged over
+ * the year as a share of the block, it reads as occupancy past full: a block
+ * with a twentieth of its flats' worth of households turned away is pressed
+ * as one five points under its normal vacancy. The landlord's normal learns
+ * from the vacancy it has, never from the list, so a shortage is not learned
+ * away; it ends when the ask has risen until the households turned away
+ * choose the mainland instead.
+ */
 function markFlatAsk(roll: FlatRoll, cap: number, usual: number, esc: number): void {
   const vac = Math.max(0, 1 - roll.occ / Math.max(1, cap));
   const ve = (roll.ve ?? usual) + (vac - (roll.ve ?? usual)) / 12;
+  const qe = (roll.qe ?? 0) + (Math.max(0, roll.q ?? 0) / Math.max(1, cap) - (roll.qe ?? 0)) / 12;
   const nv = roll.nv ?? usual;
-  roll.px = +((roll.px ?? 0) + esc + REV_MGMT / 12 * Math.max(-OCC_RANGE, Math.min(OCC_RANGE, nv - ve))).toFixed(5);
+  roll.px = +((roll.px ?? 0) + esc + REV_MGMT / 12 * Math.max(-OCC_RANGE, Math.min(OCC_RANGE, nv - ve + qe))).toFixed(5);
   roll.ve = +ve.toFixed(5);
+  roll.qe = +qe.toFixed(5);
   roll.nv = +(nv + (ve - nv) * (1 - Math.exp(-Math.LN2 / OWN_MEMORY_M))).toFixed(5);
 }
 /**

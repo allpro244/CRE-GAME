@@ -47,6 +47,7 @@ import {
   useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, queueFactor, residualScheme,
 } from "./value";
 import { uses } from "./mix";
+import { catchUpCapex } from "./dev";
 import { productOf } from "./products";
 import { stabViewFor, streetRefiProceeds } from "./debt";
 import { TI_ASK, renewalRefreshShare } from "./leasing";
@@ -145,6 +146,8 @@ export interface DealView {
   leaseCap: number;
   /** the capital plan the plant needs, as a share of value a year */
   cx: number;
+  /** deferred maintenance the buyer pays to bring the plant back to standard, $ once (dev.ts catchUpCapex) */
+  catchUp: number;
   /** the street's loan: min(a x price, cap); the desk's rate, % */
   debtA: number; debtCap: number; rd: number;
   /** a special product's thinner buyer pool, points (products.ts capSpread) */
@@ -203,6 +206,10 @@ export function dealView(
   const age = Math.max(0, START_YEAR + Math.floor((e.m ?? s.month) / 12) - (rec.yearBuilt || START_YEAR));
   const wear = (COND_DECAY[k] ?? 0.0024) * (1 + Math.min(0.5, age / 220)) * specWearMult(rec.buildSpec);
   const cx = CAP_PLAN_RATE * wear / COND_WEAR_REF;
+  // ...and the plan holds a line, it does not restore one: a building that
+  // has slipped below standard carries its deferred maintenance into the bid
+  // (catchUpCapex — the programmes' own prices, the cheque the player writes).
+  const catchUp = catchUpCapex(rec, q, e.costIdx ?? 1, e.m ?? s.month);
   // THE LOAN, from the desks, for this building. Sized twice to learn its
   // shape: on the advance it grows with the price, on coverage or debt yield
   // it does not.
@@ -217,7 +224,7 @@ export function dealView(
   }
   const prod = rec.product ? (productOf(rec.product)?.capSpread ?? 0) : 0;
   const loc = locBelief(e, rec, k, q);
-  return { rec, bbl, k, cond: c, condIdx: q, noiPre, stabPre, tau, leaseCap, cx, debtA, debtCap, rd: q1.ratePct, prod, land: landValue(rec, e), locPrem: loc.prem, locG: loc.g };
+  return { rec, bbl, k, cond: c, condIdx: q, noiPre, stabPre, tau, leaseCap, cx, catchUp, debtA, debtCap, rd: q1.ratePct, prod, land: landValue(rec, e), locPrem: loc.prem, locG: loc.g };
 }
 
 /** One bidder's temperament, as the underwriting reads it. */
@@ -317,6 +324,7 @@ export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<ty
   const kappa = GAP_CLOSE_YR * (v.noiPre < v.stabPre ? b.lease : 1);
   const dur = 1 / Math.max(0.05, 1 - (1 - kappa) / (1 + r));
   V += (v.noiPre - v.stabPre) * dur;
+  V -= v.catchUp;
   if (b.builds) V = Math.max(V, v.land);
   return { V: Math.max(0, V), r, rE, rd, w, g };
 }
@@ -625,9 +633,11 @@ function wMedian(xs: { v: number; w: number }[], q = 0.5): number {
  * does not read as a market that moved, and a slope is not a seller's
  * situation (the selection the median could not see). Measured on that grid
  * (2 seeds x 50 years): condition's slope is near zero for office, retail
- * and flats in the prints themselves — bidders price condition only through
- * the income the appraiser already capitalises (dealView's capital plan
- * reads age and spec, not condition) — and clearly negative for industrial.
+ * and flats in the prints themselves — bidders priced condition only through
+ * the income the appraiser already capitalises (dealView's capital plan read
+ * age and spec, not condition; it now also deducts the deferred maintenance a
+ * building below standard carries, dev.ts catchUpCapex) — and clearly
+ * negative for industrial.
  * The ridge (RIDGE, a shape parameter: about ten prints spread across the town
  * to trust a slope halfway) is the prior that there is no adjustment until
  * the prints show one; +/-2 is a guard only.

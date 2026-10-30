@@ -6,6 +6,7 @@
 // loan, wait 4-6 quarters while the building rises on the map, then lease up
 // from empty. A modest random cost/schedule overrun keeps it honest.
 import type { ParcelTable } from "@/data/types";
+import { rentMultOf } from "./regime";
 import type { BtsCommitment, Builder, BuildingDesign, BuiltClass, Contract, DevUse, Development, Econ, GameState, MerchantBook, Rival, RivalStyle, UseMix } from "./types";
 import { hash01 } from "./competitorTraits";
 import { BUILT_CLASSES, cloneState, raiseAlert } from "./types";
@@ -3217,6 +3218,29 @@ export function programCost(rec: { bldgArea: number }, s: GameState, p: CapProgr
   return Math.round(rec.bldgArea * p.costPsf * s.econ.costIdx);
 }
 
+/**
+ * DEFERRED MAINTENANCE: what it costs to bring a building that has slipped
+ * below the standard grade back to its floor (COND_BANDS "standard", 0.52) —
+ * the "immediate and short-term needs" line of a property condition
+ * assessment (ASTM E2018), which every buyer's lender orders and every bid
+ * deducts. Priced on the programmes above, the same cheques the player
+ * writes: the cheapest programme per point of condIdx it lifts (systems,
+ * $22/sf for 0.17, ~$130/sf per whole point), at today's cost index. So a
+ * worn building at 0.45 carries ~$9/sf and an obsolete one at 0.25 ~$35/sf —
+ * the range PCA immediate-plus-short-term reserves run on tired Class B/C
+ * stock (BOMA/ULI capital-expenditure surveys: $5-40/sf). A building above
+ * the standard floor owes nothing: holding the line is the capital plan's job.
+ */
+export const CATCHUP_TO = 0.52;
+export function catchUpCapex(rec: { bldgArea: number; yearBuilt: number; buildSpec?: number }, condIdx: number, costIdx: number, month: number): number {
+  const to = Math.min(CATCHUP_TO, condCeiling(rec, month));
+  const short = to - condIdx;
+  if (!(short > 0) || !(rec.bldgArea > 0)) return 0;
+  let perPt = Infinity;
+  for (const p of PROGRAMS) { const l = PROGRAM_LIFT[p.id] ?? 0; if (l > 0) perPt = Math.min(perPt, p.costPsf / l); }
+  return Number.isFinite(perPt) ? rec.bldgArea * perPt * short * costIdx : 0;
+}
+
 export function startProgram(s: GameState, parcels: ParcelTable, bbl: string, programId: string): { s: GameState; err?: string } {
   const h = s.holdings[bbl];
   const rec = resolveRec(parcels, s, bbl);
@@ -5063,7 +5087,17 @@ function developerLook(
       const env = Math.max(1, Math.min(cityInfillCap(s, parcels, site, lead), maxFloorsFor(site, plate, use)));
       const top = Math.max(1, Math.min(env, dev.maxFloors));
       for (const fl of schemeFloorLadder(lead, top)) {
-        const u = underwriteDevelopment(s, parcels, bbl, use, fl, plate, landOv, dev.spec, dev.ltc);
+        // A FRAME ALREADY STANDING WAS DECIDED ON THE MARKET OF ITS DAY: the
+        // months it is into its build (as breakCityGround stamps them) plus
+        // the lead to its start. The build's length is the scheme's own, so
+        // it is read off today's underwriting and the deal is then
+        // underwritten again on the space market of that month.
+        let u = underwriteDevelopment(s, parcels, bbl, use, fl, plate, landOv, dev.spec, dev.ltc);
+        const undo = u && opts?.backdate !== undefined
+          ? pastSpaceMarket(s.econ, Math.floor(opts.backdate * Math.max(0, u.plan.months - 1)) + PLAN_LEAD_M[lead])
+          : null;
+        try {
+        if (undo) u = underwriteDevelopment(s, parcels, bbl, use, fl, plate, landOv, dev.spec, dev.ltc);
         // A developer writing most of the cheque from its own money does not
         // need the construction desk open: when the banks will not lend, the
         // cash-heavy ones still build what pencils.
@@ -5101,6 +5135,7 @@ function developerLook(
         if (coInvest > purse) continue;
         const h = hurdleAt(u.plan, DEV_MARGIN) * dev.outlook * momentumRead(s, lead, dev.momentum, firm) * exitRead(s, firm, lead);
         if (!best || h > best.h) best = { bbl, rec, use, floors: fl, plate, h, coInvest, kids, sf: ownSf };
+        } finally { undo?.(); }
       }
     }
     s.merged = before;
@@ -5574,6 +5609,29 @@ export function startTradeAreaBuilding(
  * month, so the first deliveries land in the opening year or two the way
  * somebody else's decisions always do.
  */
+/**
+ * THE SPACE MARKET `lag` MONTHS BEFORE THE OPENING, from the pre-history
+ * (regime.ts preVacMult): each class's vacancy and rent moved by that month's
+ * vacancy multiple against the opening's, on the same calibrated lines the
+ * opening itself was positioned on (vacMultOf, rentMultOf). Applied to the
+ * live econ in place; returns the undo. Null when there is no history to read.
+ */
+function pastSpaceMarket(e: Econ, lag: number): (() => void) | null {
+  const pre = e.preVacMult;
+  if (!pre?.length || !(lag > 0)) return null;
+  const now = pre[pre.length - 1];
+  const then = pre[Math.max(0, pre.length - lag)];
+  if (!(now > 0) || then === now) return null;
+  const vac = { ...e.cityVac }, rent = { ...e.rentIdx }, eff = e.effRentIdx ? { ...e.effRentIdx } : undefined;
+  const rr = rentMultOf(then) / rentMultOf(now);
+  for (const k of BUILT_CLASSES) {
+    e.cityVac[k] = clamp(vac[k] * then / now, 0.02, 0.40);
+    e.rentIdx[k] = rent[k] * rr;
+    if (e.effRentIdx && eff) e.effRentIdx[k] = eff[k] * rr;
+  }
+  return () => { Object.assign(e.cityVac, vac); Object.assign(e.rentIdx, rent); if (eff && e.effRentIdx) Object.assign(e.effRentIdx, eff); };
+}
+
 export function seedOpeningPipeline(s: GameState, parcels: ParcelTable, bbls: string[]): void {
   if (s.month !== 0 || (s.cityJobs?.length ?? 0) > 0 || s.openingPipelineSeeded) return;
   s.openingPipelineSeeded = true;
@@ -5598,6 +5656,7 @@ export function seedOpeningPipeline(s: GameState, parcels: ParcelTable, bbls: st
   // an opening screen that says "0 sf under construction" over nine live
   // frames is the fault this function exists to fix.
   syncSupplyViews(e, true);
+  delete e.preVacMult;
 }
 
 export function bumpLand(s: GameState, bbl: string, mult: number) {

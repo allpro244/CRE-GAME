@@ -1,7 +1,8 @@
 name: check
 
 # THE GATE IS A SMOKE TEST, minutes not hours: the bundle builds, the types
-# check, nothing draws randomness it should not, the playable is current.
+# check, nothing draws randomness it should not, the playable is current and
+# opens in a browser.
 # The whole suite (`pnpm check`, 1-2 h) is a report, not a gate (owner's
 # decision, Oct 2026): it runs nightly and on demand in full.yml, and its
 # failures are fixed as they surface rather than holding every merge.
@@ -35,6 +36,9 @@ jobs:
       - name: fresh bundle, rng discipline, playable current
         working-directory: broadway-and-wall
         run: node test/fresh.mjs && node test/rng-discipline.mjs && node test/playable-fresh.mjs
+      - name: the playable opens (headless Chrome, ~25 s)
+        working-directory: broadway-and-wall
+        run: node test/playable-loads.mjs
       - name: rng audit
         working-directory: broadway-and-wall
         run: node tools/rng-audit.mjs

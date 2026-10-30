@@ -175,6 +175,44 @@ spending looks too small (or recessions too shallow: gaps of about −1%).
 Follow-up: measure the town's payroll elasticity to the gap on the record
 (MSA payroll vs output gap) before touching it.
 
+**Traced (2026-10-30, main `d81ac9e1`, seeds 22 and 66, 60 years).** The
+export side is not the weak link. Measured: job-loss years 0.51 and 0.17 a
+decade; city/nation unemployment sd 1.05 and 0.51, correlation 0.31 and 0.57;
+payroll growth rises only 0.44 and 0.22 points per point the gap moves.
+`exportHeads` does carry `CYCLE_BETA × NAT_SALES_PER_GAP × gap` (the town's
+export-weighted beta ~1.1 early, ~0.8 by year 50): in seed 66's year-9
+recession (gap −7.6%) the heads the town's output called for fell 5.1% and
+in years 55-56 (gap −4 to −5%) the cycle took 4 points off exports. Three
+things absorb that before it reaches a payroll:
+
+1. **Chronic unfilled openings in local services.** Seed 66 at year 26 holds
+   4,467 openings (6% of the heads wanted) at 2.7% unemployment, and they
+   sit almost entirely in low-pay local trades: restaurants 2,505 of 4,933
+   heads unfilled (51%), shops 18%, social assistance 30%, grocers 26%.
+   The export trades are full (computer design 34 of 24,373). Workers the
+   export trades lay off walk into those openings, so the town's filled jobs
+   barely move; by year 52 the gap between heads wanted and jobs filled is
+   8-10%. Whatever keeps restaurants half-empty at full employment (pay
+   posting, `V_SLOPE`, or the matching's shortlist) is the first thing to
+   fix; a restaurant that cannot staff cannot serve, so its sales should also
+   be capped by its heads (today its demand is booked as output made by
+   workers who do not exist).
+2. **The export base's national trend swamps the cycle.** Export-weighted
+   `lnNat` rises 2-5% a year late in the run (computer design's `natTrend`
+   6%/yr compounds into 32% of the town's heads by year 26). In years 55-56
+   that trend (+5%) outran the cycle (−4%). A 1990-2019 trend held for a
+   century is the "too steady" growth trend; fast trades' share gains should
+   fade (#544's shares).
+3. **Arrivals run at the movers' cap.** Arrivals sit at `MOVE_M × households`
+   (~1,050 a year in seed 66) in every non-recession year, so the payroll
+   path is the migration flow, not the orders.
+
+Tried and reverted: making an industry's export tender (and its held
+orders) follow its staffed share of heads. It cut seed 66's openings at
+year 30 from 7% to 3% in the weaker form, but job-loss years did not move
+(0.34 and 0.17; correlation 0.55 and 0.46) because the openings that absorb
+the cycle are in trades that do not export.
+
 **Since (branch `claude/payroll-cycle-2`).** Three causes found and fixed:
 (1) a month-old opening reached the town's own jobless only beside a mover
 (`matchJobs` step 4 stopped when the movers ran out), so the bottom rung of
@@ -225,6 +263,31 @@ leave as they do (it is not converted, and #5's builders do not take it).
 The rent's slide is the right answer to that; the vacancy's persistence is
 what is missing (conversion or teardown of industrial). Seed 44 stays mostly
 inside the band (3-14%).
+
+### #5-#7 traced (claude/supply-response, 2026-10-30)
+
+One cause under all three. A probe on seed 11 (80 years) counted every
+builder's rejections: vacant lots run out (312 buildable at year 10, 43 at
+year 80), and by year 50 named firms own 12.3M of 14.0M sf of office, every
+shed and 3.0M of 3.4M sf of flats. The street's teardown desk skips owned
+deeds, so a built-out town renewed itself only through `startOwnJob`, which
+kept the rules the desk had retired — a 35-year birthday, a worn grade, a
+use drawn off the zoning table, the residual charged for a site the owner
+holds, a 12% monthly die on top of a yes. Owners started 0-5 replacements a
+decade, and empty sheds stood on dirt that paid for offices. Land price,
+financing and beliefs were not the binding terms. Now an owner runs the
+desk's own test on its buildings (dev.ts `ownerRedevelopment`): every use,
+every height, against the building's value standing, at its own margin.
+
+Re-measured, seeds 11 and 22 × 100 years (2-seed report, not the 6-seed
+table): office real rent +1.3%/yr (PASS; was 1.9%), industrial real rent
++0.8%/yr (PASS; was −0.7%) and vacancy median 9.9% (WATCH, 60% of years in
+band; was 15%, 46%), starts 1.5% of stock (PASS; was 0.6%), office sf per job
+0.94-1.31 of the opening (WATCH; was 0.42-0.78). The lags still FAIL (starts
+after jobs 3-4 years, band 0-3; vacancy after starts 5) — closer than the ±5
+edge, not yet the Wheaton shape. Side effect to watch with #1: owners also
+replace flats with offices where flats' rent pays less, so the flats
+shortage feeds on its own price signal until #1's rent is right.
 
 ### 8. Smaller watches
 

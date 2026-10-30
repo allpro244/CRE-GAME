@@ -20,6 +20,17 @@ are discarded as settling. First run on main at `625271e3` (#535),
 2026-10-29, 6 seeds × 100 years in 90 minutes; run 2 (below) on main at
 `c6469ed5` (#548), 2026-10-30, 156 minutes.
 
+## Results — run 3 (main `4d579be8`, #555, 2026-10-30, seeds 11/22/33)
+
+PASS 30 · WATCH 10 · FAIL 4 (3 seeds, so not strictly comparable with run 2's 6). Fixed since run 2: flats rent (#553), owners redevelop their own stock (#554), city payroll falls in downturns (#555, now PASS at 2.1 job-loss years a decade).
+
+Still failing:
+- Retail vacancy 17% typical (band 4–13%).
+- Multifamily vacancy 12% typical (band 3–10%). Flats now get built and rents rise, but the stock overshoots.
+- Construction lags: starts trail job growth by 4 years (band 0–3); vacancy peaks 5 years after starts (band 1–4).
+
+Watch: industrial vacancy and real rent, the rent–vacancy link (−0.14), cap level and moves, land trend, peak charge-offs, recessions per decade, starts share.
+
 ## Results — run 2 (main `c6469ed5`, #548, 2026-10-30)
 
 **PASS 24 · WATCH 14 · FAIL 6**, against the first run's PASS 15 · WATCH 16 ·

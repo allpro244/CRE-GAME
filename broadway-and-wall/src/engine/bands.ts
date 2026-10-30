@@ -275,9 +275,22 @@ export function tickBands(e: Econ, k: BuiltClass) {
   //    step 4) — a band with no lease in the window keeps its swing. Flats:
   //    each band's swing chases its vacancy gap against the class's. Then the
   //    set is re-centred so the occupied-weighted mean is one.
+  //
+  //    ONLY THE SWINGS SET THIS MONTH ARE RE-CENTRED (2026-10-29, PROOF.md
+  //    #5). Every band used to be divided by the occupied mean every month,
+  //    including a band with no lease in the window (which "keeps its swing")
+  //    and a band with no stock. Such a band was centred when it was last
+  //    set, and dividing it again each month compounded the mean's
+  //    departure from one: measured on seed 55, the two lowest office bands
+  //    stood at 7e13 and the lowest shop band at 3e16 by year 79, and the
+  //    first January a lot's scheme scored into one of them its land read
+  //    priced at 1e16 $/sf, every street firm marked its book at 1e20 and
+  //    drew its line against that, every bank's book went to 1e20, and the
+  //    econ went to NaN. A stale swing now stays where it was set.
+  const fresh = new Array<boolean>(N_BANDS).fill(false);
   if (k !== "multifamily" && e.streetRolls) {
     const ro = bandReadOut(e, k, N_BANDS);
-    for (let b = 0; b < N_BANDS; b++) { const v = ro[b]; if (v !== undefined && v > 0) bk.rent[b] = Math.max(0.2, v); }
+    for (let b = 0; b < N_BANDS; b++) { const v = ro[b]; if (v !== undefined && v > 0) { bk.rent[b] = Math.max(0.2, v); fresh[b] = true; } }
   } else {
     const gapClass = normalVac(e, k) - (1 - streetOcc / streetStock);
     for (let b = 0; b < N_BANDS; b++) {
@@ -285,11 +298,12 @@ export function tickBands(e: Econ, k: BuiltClass) {
       const vac = 1 - bk.occ[b] / bk.stock[b];
       const want = Math.max(0.2, 1 + BAND_RENT_BETA * ((nat[b] - vac) - gapClass));
       bk.rent[b] += (want - bk.rent[b]) / BAND_RENT_TAU;
+      fresh[b] = true;
     }
   }
-  const occW = bk.occ.reduce((a, v) => a + v, 0);
-  const mean = occW > 0 ? bk.occ.reduce((a, o, b) => a + o * bk!.rent[b], 0) / occW : 1;
-  if (mean > 0) for (let b = 0; b < N_BANDS; b++) bk.rent[b] /= mean;
+  const occW = bk.occ.reduce((a, v, b) => a + (fresh[b] ? v : 0), 0);
+  const mean = occW > 0 ? bk.occ.reduce((a, o, b) => a + (fresh[b] ? o * bk!.rent[b] : 0), 0) / occW : 1;
+  if (mean > 0) for (let b = 0; b < N_BANDS; b++) if (fresh[b]) bk.rent[b] /= mean;
 }
 
 /**

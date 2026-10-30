@@ -754,6 +754,8 @@ export interface HouseholdRegister {
    * read them); the last twelve months' home buyers.
    */
   ownMu?: number; locMu?: number; islandWant?: number;
+  /** the households across the water that wanted an island flat last month and found none empty (the street's waiting list) */
+  unmet?: number;
   leaseMoveRate?: number; moveOutYr?: number;
   buyers?: HomeBuyer[];
   /** WORKERS (step 3): each firm's heads last month (employer code -> heads), and this month's layoff events by firm (code -> why id). */
@@ -2821,6 +2823,12 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     const room = Math.max(0, Math.min(cap - (atStart.get(b.idx) ?? 0), cap - l.length, Math.floor((b.limU ?? 2) / r.wIsland)));
     if (room > 0) rooms.push({ b, room });
   }
+  // THE WAITING LIST: the households across the water that wanted an island
+  // flat at the going rent and found none empty (not one that saw a flat and
+  // would not pay its rent) — the excess demand a full street still shows its
+  // landlords (writeRolls; streetRolls.ts `markFlatAsk`).
+  let unmet = 0;
+  if (!rooms.length && byHH) for (const c of want) unmet += Math.floor(r.a!.wt[c] / r.wIsland) * r.wIsland;
   if (rooms.length) {
     let wTot = rooms.reduce((t, x) => t + (x.b.w ?? 1), 0);
     const pickRoom = () => { let u = R.u() * wTot; for (const x of rooms) { if (x.room <= 0) continue; u -= x.b.w ?? 1; if (u <= 0) return x; } return rooms.find((x) => x.room > 0); };
@@ -2828,11 +2836,12 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     for (let j = seekers.length - 1; j > 0; j--) { const q = Math.floor(R.u() * (j + 1)); const t = seekers[j]; seekers[j] = seekers[q]; seekers[q] = t; }
     for (const c of seekers) {
       // each whole household the agent stands for looks once
+      let none = false;
       for (let h = Math.floor(r.a!.wt[c] / r.wIsland); h > 0 && wTot > 0 && !(c < gone.length && gone[c]); h--) {
         let took = false;
         for (let k = 0; k < SHORTLIST; k++) {
           const x = pickRoom();
-          if (!x) break;
+          if (!x) { none = true; break; }
           if (!letTo(R, r, x.b, e, m, [c], gone)) continue;
           recordDeal(e, "multifamily", m, x.b.rel ?? 1, x.b.unitSf * r.wIsland);
           if (--x.room <= 0) wTot -= x.b.w ?? 1;
@@ -2840,8 +2849,10 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
         }
         if (!took) break;
       }
+      if ((none || wTot <= 1e-9) && !(c < gone.length && gone[c])) unmet += Math.floor(r.a!.wt[c] / r.wIsland) * r.wIsland;
     }
   }
+  r.unmet = unmet;
   for (const b of B.list) {
     if (byHH && b.street) continue;
     const l = inBlock.get(b.idx) ?? [];
@@ -3001,9 +3012,15 @@ function writeRolls(s: GameState, r: HouseholdRegister, B: { list: Block[] }, se
     if (x) x.sf += a.wt[i] * b.unitSf; else c.set(key, { sf: a.wt[i] * b.unitSf, rent, endM: a.leaseEnd[i] });
   }
   let let_ = 0, cap = 0, unit = 0;
+  // the waiting list, to the blocks its households asked at: each asks where
+  // it would have looked (a block's draw on movers, streetRolls `w`)
+  let wAll = 0;
+  for (const b of byIdx.values()) wAll += b.w ?? 1;
+  const unmet = r.unmet ?? 0;
   for (const b of byIdx.values()) {
     const roll = rolls[r.blocks[b.idx]];
     if (!roll) continue;
+    roll.q = wAll > 0 && unmet > 0 ? Math.round((unmet * (b.w ?? 1) / wAll) * b.unitSf) : 0;
     const l = [...(cohorts.get(b.idx)?.values() ?? [])].map((x) => ({ ...x, sf: Math.round(x.sf) }));
     roll.l = l;
     roll.occ = l.reduce((t, x) => t + x.sf, 0);

@@ -71,7 +71,14 @@ console.log("clean contracts close on their date");
   let s = structuredClone(g);
   const h = s.holdings[b.bbl];
   const px = Math.round(E.ownedHoldingValue(s, parcels, h));
-  h.sale = { ask: px, listedM: s.month, mode: "marketed", offer: { price: px, expiresM: s.month + 2, from: "Test Buyer", contract: true } };
+  // The buyer is a living firm that can fund the close: since the firms'-books
+  // rewrite acceptSaleOffer refuses an anonymous "Test Buyer" (nobody on the
+  // street to close with). Funded so the test is about the clock, not about
+  // whether this firm happens to be liquid in two months.
+  const rec = E.resolveRec(parcels, s, b.bbl);
+  const firm = E.livingRivals(s).find((r) => !r.stressMs && E.rivalCanClose(s, parcels, { ...r, cash: r.cash + 1e8 }, rec, px));
+  if (firm) firm.cash += 1e8;
+  h.sale = { ask: px, listedM: s.month, mode: "marketed", offer: { price: px, expiresM: s.month + 2, from: firm?.name ?? "Test Buyer", firmId: firm?.id, contract: true } };
   const it = E.attentionItems(s, parcels).find((x) => x.key.includes(b.bbl));
   ok(it?.soft && it.key.startsWith("contract-close"), `under contract is a soft docket row (${it?.key})`);
   const cash0 = s.cash;

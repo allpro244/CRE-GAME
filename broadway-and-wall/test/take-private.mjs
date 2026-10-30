@@ -106,8 +106,12 @@ let owned = null;   // the player after the close — a buyer with a record, for
   }
   check(t.realEstatePrice === q.ask - q.cash + q.debt, `real estate at ${M(t.realEstatePrice)} = equity price − cash + debt retired`);
   check(t.legs.reduce((a, l) => a + l.price, 0) === t.realEstatePrice, "the allocation sums to the real estate price to the dollar");
-  const ttWant = q.deeds.reduce((a, d) => a + Math.round(d.value * E.TRANSFER_TAX), 0);
-  check(t.transferTax === ttWant, `transfer tax ${M(t.transferTax)} at ${(E.TRANSFER_TAX * 100).toFixed(1)}% of the deeds' value`);
+  // The rate is the city's live policy (econ.gov.policy.transferRate), which a
+  // city government can raise above the statutory floor E.TRANSFER_TAX — read
+  // the same rate the close reads, not the floor.
+  const ttRate = E.transferTaxRate(g);
+  const ttWant = q.deeds.reduce((a, d) => a + Math.round(d.value * ttRate), 0);
+  check(t.transferTax === ttWant, `transfer tax ${M(t.transferTax)} at ${(ttRate * 100).toFixed(2)}% of the deeds' value (${M(ttWant)})`);
   const a = snap(g);
   const res = E.offerTakePrivate(g, parcels, q.firmId, q.ask, "cash");
   check(!res.err && !res.refused, `offer at the ask closes (${res.err ?? res.msg})`);

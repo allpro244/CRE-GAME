@@ -251,7 +251,20 @@ spread of the prints.
 
 ## Fixed here
 
-Nothing in the engine. [[FIXED]]
+- `bands.ts`: only the quality-band rent swings set this month are
+  re-centred (#5). `pnpm conserve` passes with it (4,171 months reconciled).
+  Not yet re-run through the century: the next proof run on combined main
+  should show seed 55 with no overflow and the peak charge-off row sane.
+  Test state at 625271e3: `advance`, `appraisal`, `refi-strong`, `buybox`,
+  `quiet-clock`, `fund-builds` fail **without** this change too (main was
+  already red there); `rival-assembly` and `sale-instructions` pass on main
+  and fail with it. Both are single-scenario tests whose winning bidder or
+  sale price moves when the band swings move. Not diagnosed yet: check them
+  before merging.
+
+Since this run, main closed ledger rows #6-#8, #20-#22, #25 and #26 (#536-#539):
+`--report` now counts **5 open** (#4, #5, #9, #10, #14). The run itself was
+on 625271e3, so every other number above is from before those PRs.
 
 ## How to read the tool
 

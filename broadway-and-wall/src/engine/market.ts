@@ -2292,6 +2292,13 @@ function spendNation(
   // Households answer the real rate over the year or two it takes to show up
   // in what they borrow and save — car loans, card balances, deposits.
   d.rr = (d.rr ?? 0) + ((x.rAvg - x.rStar) - (d.rr ?? 0)) / P.RR_M;
+  // THE PART OF THIS EQUATION EVERY HOUSEHOLD IN THE COUNTRY SHARES
+  // (2026-10-30): the mood, the real rate, a panic and a national swan —
+  // not income, home prices or the jobless rate, which the town's households
+  // read off their own (households.ts, the buffer-stock rule). The town's
+  // households spend by it too, so the nation's consumption cycle reaches
+  // the town's shops and not only its exporters.
+  d.cMood = d.cc - P.C_RATE * d.rr - 0.03 * panic + (sw?.c ?? 0);
   const cT = P.C0 / (1 - P.TAX) * ((1 - P.C_NOW) * d.Yp + P.C_NOW * Yd)
     * Math.exp(d.cc - P.C_RATE * d.rr + 0.088 * lnH + 0.6 * refi - P.PREC * Math.max(0, du6) - 0.03 * panic + (sw?.c ?? 0))
     + P.CRED_C * credFlow;

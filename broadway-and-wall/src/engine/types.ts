@@ -2156,7 +2156,7 @@ export interface Econ {
     tfpG?: number; kSeen?: number;
     /** the technology level, log points since the opening */
     techLn?: number;
-    dem?: { C: number; K: number; I: number; Ih: number; N: number; Yp: number; Ye: number; Se: number; f: number; Y: number; sup: number; uH: number[]; rr?: number; ws?: number; cc?: number; kc?: number; wr?: number; q?: number };
+    dem?: { C: number; K: number; I: number; Ih: number; N: number; Yp: number; Ye: number; Se: number; f: number; Y: number; sup: number; uH: number[]; rr?: number; ws?: number; cc?: number; kc?: number; cMood?: number; wr?: number; q?: number };
     /** national inflation, annualised */
     infl: number;
     /** what the nation EXPECTS — the anchor, and what a credible bank defends */

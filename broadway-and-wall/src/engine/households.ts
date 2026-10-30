@@ -2373,6 +2373,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   }
 
   const persons = (i: number) => a.adults[i] + a.kids[i];
+  const moodX = Math.exp(e.nat?.dem?.cMood ?? 0);
   const enterLf = (i: number) => enterLabourForce(a, i, e);
   const H = homeMarket(e);
   const atStart = new Map<number, number>();
@@ -2427,7 +2428,15 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     const room0 = Math.max(0, CARD_LIMIT[a.credit[i]] * 12 * Math.max(0, a.yperm[i]) - Math.max(0, a.debt[i] - minPay));
     const can = a.sav[i] + net - minPay - housing + room0;
     const sub = subsistence(e, persons(i));
-    const want = Math.max(sub, a.yperm[i] - housing - minPay + KAPPA * (a.sav[i] - target));
+    // ...AT THE NATION'S MOOD (2026-10-30): what households everywhere spend
+    // of their income moves with confidence, the real rate, a panic and a
+    // national swan (market.ts spendNation, `cMood`), and the town's
+    // households are the nation's. On what is left after the rent and the
+    // card, which are owed whatever the mood. Before this the town's spending
+    // followed only its own pay, so the national cycle reached the town
+    // through its exports alone.
+    const free = a.yperm[i] - housing - minPay;
+    const want = Math.max(sub, free + Math.max(0, free) * (moodX - 1) + KAPPA * (a.sav[i] - target));
     const spend = can < 0 ? sub : Math.min(want, can);
     let cash = a.sav[i] + net - spend - minPay - housing;
     a.debt[i] = Math.max(0, a.debt[i] - minPay);

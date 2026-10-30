@@ -300,6 +300,41 @@ edge, not yet the Wheaton shape. Side effect to watch with #1: owners also
 replace flats with offices where flats' rent pays less, so the flats
 shortage feeds on its own price signal until #1's rent is right.
 
+### Retail vacancy traced (claude/retail-vacancy, 2026-10-30)
+
+Too few shops, not too much building. Seed 11, 80 years, before the fix:
+population ×2.0, retail stock +22% (1.71M → 2.09M sf), shop floor 18 → 11 sf
+a person (ICSC centres alone ~23), island shops 528 → 337 (5.5 → 1.7 per
+1,000; County Business Patterns retail + food service ~5.4). New shop
+starts were small and the ground-floor rule already backs off in a glut.
+Two demand faults, both fixed:
+
+- **Six shopfront industries could never form a shop.** The shop trades drew
+  only clothing shops, restaurants and grocers, so department stores, car
+  dealers, salons/repair, gyms and theatres held an island share of 0
+  (industries.ts TRADE_TO_INDUSTRY, now weighted by CES on-floor employment).
+- **Shops grew staff instead of opening shops.** Industry growth landed as
+  heads in the existing shops (their staff tracks the industry), which met the
+  industry's island heads, so no new shop formed. Seed 22, 70 years: the shop
+  industries' heads +61%, shops 477 → 273, held 1.32M sf against 2.35M sf of
+  need, vacancy 14% → 34%. A shop now counts only the heads its floor holds
+  (streetRolls.ts `tradeAdd`); the rest is a gap a new shop forms into.
+
+Proof, seeds 11 + 22, 100 years (before → after): retail vacancy typical
+20.9% → 16.0% (in band 25% → 34% of years, still **FAIL**); industrial 20.8%
+→ 12.4%; multifamily 14.8% → 12.2%; peak charge-off 15.2% → 1.7%; rent/vacancy
+correlation −0.11 → −0.17 (now PASS); job growth 0.3 → 1.0%/yr and population
+0.4 → 1.1%/yr (both in band). Conserve passes.
+
+**What is left — a sawtooth.** Shops run 3-5% vacant for two decades, then
+climb to 35-45% over ~10 years and snap back to 4% in a single year (seed 11,
+years 72→73: +650k sf occupied, +400 firms, real shop rent 28 → 19). Read
+from that timing, not yet probed directly: the entry gate (`entrantMargin`) shuts new shops while shop rent holds up through
+the glut, and the pent-up gap floods in when rent breaks. Part of why rent
+holds: `natVac` learns from a glut (seed 22: 8.6% → 16.6%), and only the
+shortage side is guarded (`structTight`). Untested: a matching guard that
+stops `natVac` learning while entry is shut.
+
 ### 8. Smaller watches
 
 - **Unemployment, century mean 4.5%** (band 4.5-7; was 5.2%): arrivals

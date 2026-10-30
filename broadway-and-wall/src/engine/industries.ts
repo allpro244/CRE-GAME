@@ -189,8 +189,10 @@ export const HEALTH_SPLIT: Partial<Record<IndustryId, number>> = (() => {
  *           media -> broadcasting 900 / film and music 450 / publishing 830;
  *           medical -> doctors and clinics; logistics -> freight forwarding;
  *           a food or apparel firm's office is its head office.
- *   retail  apparel -> other shops (clothing); food -> restaurants 12,400 /
- *           grocers 3,150; medical -> doctors and clinics.
+ *   retail  apparel -> other shops 7,300 / department stores 3,100 / car
+ *           dealers 2,050; food -> restaurants 12,400 / grocers 3,150 /
+ *           repair and personal care 5,800 / gyms 1,950 / theatres 165
+ *           (550 × 0.3 on the floor); medical -> doctors and clinics.
  *   sheds   logistics -> wholesale 6,100 / warehousing 1,850 / trucking 1,560
  *           / couriers and forwarding 1,865; food -> food plants 1,990 /
  *           grocery wholesalers ~850; apparel -> textile mills 210 / apparel
@@ -209,8 +211,21 @@ export const TRADE_TO_INDUSTRY: Record<Floor, Partial<Record<Sector, readonly [I
     media: [["telecom", 900], ["film", 450], ["publishing", 830]],
     medical: [["ambulatory", 1]], logistics: [["transportsup", 1]], food: [["hq", 1]], apparel: [["hq", 1]],
   },
+  // EVERY INDUSTRY THAT RENTS A SHOPFRONT HAS A TRADE THAT CAN FORM IT
+  // (2026-10-30). The shop trades drew only clothing shops, restaurants and
+  // grocers, so the six other shopfront industries — department stores, car
+  // dealers, salons and repair, gyms, theatres — held no island firms at the
+  // opening, their island share (`sigma`) read 0, and their growth never
+  // became a shop. Measured, seed 11, 80 years: population ×2.0, island
+  // shops 528 -> 337 (5.5 -> 1.7 per 1,000 people; County Business Patterns
+  // 2022 retail and food-service establishments ~5.4 per 1,000), retail floor
+  // 18 -> 11 sf a person (ICSC shopping centres alone ~23), vacancy 17-26%.
+  // Each joins the trade its books already borrow like (FINANCE_LIKE),
+  // weighted by its US on-floor employment (CES 2023 empK × (1 - offFloor)).
   retail: {
-    apparel: [["retail", 1]], food: [["restaurants", 12400], ["grocers", 3150]], medical: [["ambulatory", 1]],
+    apparel: [["retail", 7300], ["genmerch", 3100], ["autodealers", 2050]],
+    food: [["restaurants", 12400], ["grocers", 3150], ["otherservices", 5800], ["recreation", 1950], ["arts", 165]],
+    medical: [["ambulatory", 1]],
   },
   industrial: {
     logistics: [["wholesale", 6100], ["warehousing", 1850], ["trucking", 1560], ["transportsup", 1865]],

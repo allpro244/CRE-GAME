@@ -960,9 +960,22 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     const ws = (secW[k] ??= {});
     ws[t.sector] = (ws[t.sector] ?? 0) + h;
     const ind = t.ind ?? indOf.get(t.fid!);
-    if (ind !== undefined) named[k as Comm][ind] += heads;
-    jobs += heads;
     const need = firmNeed(s, t);
+    // A SHOP GROWS BY OPENING ANOTHER SHOP (2026-10-30). A store's floor is
+    // set by its format and its staff flex with its sales; a trade's growth
+    // in shop jobs comes as more stores (County Business Patterns: retail and
+    // food-service establishments ~5.4 per 1,000 people, about level for
+    // decades while their payrolls grew). Counted at its full heads, a shop
+    // that took on staff in a full building met its industry's island heads
+    // by itself, so no new shop formed and the ones that closed were not
+    // replaced. Measured, seed 22, 70 years: the shop industries' island
+    // heads +61%, their shops 477 -> 273, the feet they held 1.47M -> 1.32M
+    // against 2.35M their heads need, shop vacancy 14% -> 34%. A shop that
+    // holds its premises counts the heads its floor holds; the rest is a gap
+    // a new shop forms into.
+    const held = holds && k === "retail" && need > 0 ? Math.min(1, t.sf / need) : 1;
+    if (ind !== undefined) named[k as Comm][ind] += heads * held;
+    jobs += heads;
     needSf[k as Comm] += need;
     if (holds) space[k]!.excess = (space[k]!.excess ?? 0) + Math.max(0, t.sf - need);
     const d = heads - (t.hdNote ?? 0), mv = movers[k as Comm];

@@ -210,7 +210,8 @@ check(fillOk, `the register's earners in each industry never exceed its heads, a
   check(ok, "the loaded game and the running one stay identical for a year");
   check(okJ, "and books that went through JSON play on identically too");
   const kb = v8.serialize(a.economy).length / 1024;
-  check(kb < 1200, `the books save in ${kb.toFixed(0)} KB (${a.economy.L.slot.n} firms)`);
+  // (1300: each firm's national orders, what they were a year ago and its quality, three columns, since FORMULA_LEDGER #9)
+  check(kb < 1300, `the books save in ${kb.toFixed(0)} KB (${a.economy.L.slot.n} firms)`);
 }
 
 // ---------------------------------------------------------------- named links (step 2d)
@@ -308,7 +309,7 @@ for (let m = 0; m < 24; m++) base24 = tick(base24);
   base.economy.XJ0[iM] += 0.25 * base.econ.stock.industrial / E.INDUSTRIES.machinery.sfPerWorker;
   for (let m = 0; m < 36; m++) base = tick(base);
   const trt = structuredClone(base);
-  trt.economy.lnShare[iM] -= Math.log(10);
+  trt.economy.lnNat[iM] -= Math.log(10);   // the nation stops buying the plant's product (an input; the town's share is its firms' orders)
   const { ma } = twin(structuredClone(base), trt, 36);
   const f = Object.fromEntries(CLS.map((k) => [k, firstOver(ma[k], 0.01)]));
   console.log(`    a plant's market collapses: the twelve-month vacancy gap first stands a point over the twin at month ${CLS.map((k) => `${k} ${f[k]}`).join(", ")}; industrial ${pp(Math.max(...ma.industrial))} at most`);
@@ -330,13 +331,17 @@ for (let m = 0; m < 24; m++) base24 = tick(base24);
 }
 {
   const trt = structuredClone(base24);
-  for (let i = 0; i < trt.economy.lnShare.length; i++) trt.economy.lnShare[i] += Math.log(0.7);
+  for (let i = 0; i < trt.economy.lnNat.length; i++) trt.economy.lnNat[i] += Math.log(0.7);
   const r = twin(structuredClone(base24), trt, 60);
   const ma = r.ma, last = Object.fromEntries(CLS.map((k) => [k, ma[k].at(-1)]));
   const third = Object.fromEntries(CLS.map((k) => { const pk = Math.max(...ma[k]); return [k, pk > 0 ? firstOver(ma[k], pk / 3) : Infinity]; }));
   const jobs = r.trt.econ.jobs / r.ctl.econ.jobs - 1;
   console.log(`    the export base loses 30%: jobs ${(100 * jobs).toFixed(1)}% on the twin after five years; vacancy gap then ${CLS.map((k) => `${k} ${pp(last[k])}`).join(", ")}; a third of each one's peak reached at month ${CLS.map((k) => `${k} ${third[k]}`).join(", ")}`);
-  check(jobs < -0.05 && CLS.every((k) => last[k] > 0), "an export slump costs the town jobs and leaves every class emptier than its twin");
+  // The flats' landlords re-mark their asks on their own lettings (streetRolls.ts markFlatAsk, FORMULA_LEDGER #4/#5):
+  // a year's leases reprice inside the five years, so the slump can show in the flats' rent rather than their vacancy.
+  const mfRent = r.trt.econ.rentIdx.multifamily / r.ctl.econ.rentIdx.multifamily - 1;
+  console.log(`    ...flats' asking rent ${(100 * mfRent).toFixed(1)}% on the twin`);
+  check(jobs < -0.05 && CLS.every((k) => last[k] > 0 || (k === "multifamily" && mfRent < -0.02)), "an export slump costs the town jobs and leaves every class emptier than its twin (the flats emptier or cheaper)");
   check(third.office <= third.retail, "...the exporters' floor before the shops (offices, on this map)");
 }
 

@@ -389,7 +389,7 @@ const HEADSHIP_JOBS = 0.5;
 // labour-force slowdown (LABOUR_FORCE_SLOWDOWN, below).
 const NAT_JOB_TREND = 0.003;
 /** A market's normal availability: monthly weight on this month's (twenty-year half-life). */
-const NATVAC_RATE = 1 - Math.exp(-Math.LN2 / 240);
+export const NATVAC_RATE = 1 - Math.exp(-Math.LN2 / 240);
 
 /**
  * THE INCOME ELASTICITY OF DEMAND FOR SPACE — the argument this model did not have.
@@ -906,15 +906,12 @@ export const CONC_DEPTH = 0.30;
  * town's people carry in their heads before the town has a record of its
  * own (`normalVac`). Nothing reads it after the opening as a cause: since ONE
  * ECONOMY step 4 office, shop and shed rents are the leases landlords and
- * firms sign (tenantMarket.ts). This was NATURAL_VAC, the rate every rent in
- * the town was pulled toward.
+ * firms sign (tenantMarket.ts), and since FORMULA_LEDGER #4/#5 the flats' are
+ * what each block's landlord asks from its own lettings (streetRolls.ts
+ * `tickStreetFlats`). This was NATURAL_VAC, the rate every rent in the town
+ * was pulled toward, and the flats' MF_NATURAL_VAC.
  */
 export const OPENING_VAC = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07 } as const;
-/**
- * THE FLATS' NATURAL VACANCY, still a driver of the flats' rent and lettings
- * until households set them (FORMULA_LEDGER.md #4, households stage 2).
- */
-export const MF_NATURAL_VAC = OPENING_VAC.multifamily;
 
 /**
  * WHAT THIS MARKET'S AVAILABILITY HAS RUN AT — the "normal" its landlords,
@@ -924,8 +921,6 @@ export const MF_NATURAL_VAC = OPENING_VAC.multifamily;
  * usual; nothing prices off it (ONE ECONOMY step 4: rents are the leases).
  */
 export function normalVac(e: Econ | undefined, k: BuiltClass): number {
-  // the flats keep their fixed rate until households set their rents (#4, households stage 2)
-  if (k === "multifamily") return MF_NATURAL_VAC;
   return e?.natVac?.[k] ?? OPENING_VAC[k];
 }
 
@@ -2360,42 +2355,29 @@ function spendNation(
 }
 
 /**
- * RENTS ARE WHAT LEASES SIGN AT (2026-10-16). The office and shop rent indices
- * used to move on an equation of the market's vacancy; every lease was then
- * priced off the index, and no lease ever moved it. Now every lease signed —
- * the street's new leases and renewals (streetRolls.ts) and the player's
- * (leasing.ts) — is a comp, and the index follows the comps.
- *
- * A deal reads the market's slack the month it signs: the vacancy equation's
- * pressure is now what a tenant's alternatives are worth at the table, carried
- * as `DEAL_H` months of it (in a soft market a tenant signs under the index
- * today, and the index follows over the months after). Each deal also carries
- * its own terms — space marked down for how long it sat, a tenant stretching up
- * or settling down, a landlord in trouble, the bargaining — which reach that
- * deal's rent. The index moves by the slack the last six months' comps were
- * struck at, weighted by the space they let: a market with few deals moves on
- * few deals, and on the ones that happened.
- *
- * (Measured and dropped: moving the index on the comps' mix as well — how far
- * their markdowns sat from the usual — needs a "usual", and every baseline
- * learned in the first years carried the opening's stale space with it and
- * pushed rents up for years.)
+ * THE FLATS' COMPS: every flat let or renewed in the last six months — its
+ * rent over the block's market rent the month it signed (`c`, log) — from
+ * which the flats' effective rent is read (streetRolls.ts `tickStreetFlats`).
+ * (Offices, shops and sheds are comps in tenantMarket.ts recordLease.)
  */
-export const DEAL_H = 6;
-/** What the market's slack does to a deal signed this month, against the index. */
-export function dealSlack(e: Econ, k: BuiltClass): number {
-  return Math.exp(DEAL_H * (e.dealPress?.[k] ?? 0));
-}
-/** A lease signed: `rel` is its rent over the building's market rent (the index's, for that building). */
 export function recordDeal(e: Econ, k: BuiltClass, m: number, rel: number, sf: number, renewal = false) {
-  // flats only: offices, shops and sheds are comps in tenantMarket.ts recordLease
   if (k !== "multifamily" || !(rel > 0) || !(sf > 0)) return;
-  const p = e.dealPress?.[k] ?? 0;
   const list = ((e.deals ??= {})[k] ??= []);
-  list.push({ m, c: +(Math.log(rel) - DEAL_H * p).toFixed(5), p: +p.toFixed(6), sf: Math.round(sf), ...(renewal ? { r: 1 } : {}) });
+  list.push({ m, c: +Math.log(rel).toFixed(5), sf: Math.round(sf), ...(renewal ? { r: 1 } : {}) });
   while (list.length && list[0].m < m - 6) list.shift();
   // (shift, not splice: the same array, and V8 trims the front in place.)
   while (list.length > 400) list.shift();
+}
+
+/**
+ * THE PRICE LEVEL A RENT IS RE-MARKED TO: the published index for the
+ * trailing year, less shelter (a rent marked to a price level that contains
+ * it indexes itself), as a lease's CPI clause reads it; expected inflation
+ * before there is a year of record.
+ */
+export function priceLevel12(e: Econ): number {
+  const h = e.history.length >= 12 ? e.history[e.history.length - 12] : undefined;
+  return h?.cpiXS ? (e.cpiXS ?? 1) / h.cpiXS - 1 : h?.cpi ? (e.cpi ?? 1) / h.cpi - 1 : (e.inflExp ?? 0.02);
 }
 
 export function tickNation(s: GameState) {
@@ -3125,15 +3107,15 @@ export const LENDER_COVER = 3;
  * offset: stationary spread 2%/yr, twenty-year memory. Shape parameters,
  * stated; the cost brake (`locationCost`) still answers a town that grows
  * dear or cheap. (Since step 2, each INDUSTRY's share of the nation's demand
- * for it carries them: economy.ts `tickExports`.)
+ * for it carries them; since FORMULA_LEDGER #9 that share is the orders the
+ * town's firms win on their own unit cost: economy.ts `tickExports`. The
+ * per-industry fortune walk, FORTUNE_SD over FORTUNE_TAU_M, went with it.)
  */
 /** Labour-augmenting technology: stationary spread of its growth, a year, and its memory. */
 const TFP_SD = 0.005;
 const TFP_TAU_M = 240;
 /** Capital's share of output (BLS multifactor productivity accounts). */
 const CAPITAL_SHARE = 0.33;
-export const FORTUNE_SD = 0.02;
-export const FORTUNE_TAU_M = 240;
 /** Each trade's national trend: spread around its 1990-2019 mean, and its memory. */
 export const NAT_TREND_SD = 0.008;
 export const NAT_TREND_TAU_M = 360;
@@ -3180,10 +3162,12 @@ const MOM_UNITS = 4;
 //
 // RETIRED 2026-10-28 (step 2): the drawn regional trend and its wandering
 // edge. A town grows now as its export industries do — the nation's demand
-// for them and its share of it — and the cost brake below moves that share
-// (economy.ts `tickExports`).
+// for them and its share of it. RETIRED with FORMULA_LEDGER #9: the cost
+// brake on that share (LOCATION_PULL, 4% a year of the log cost gap). The
+// share is the orders the town's firms win, each on its own price against
+// the nation's (economy.ts `tickExports`); `locationCost` below is now read
+// only by an anchor employer choosing the city (blackswans.ts).
 // ---------------------------------------------------------------------------
-export const LOCATION_PULL = 0.04;           // per year, per unit of log cost gap
 const AGGLOM = 0.04;                  // output elasticity to employment
 export const WAGE_CURVE = -0.10;             // pay level to local unemployment (Blanchflower & Oswald 1994)
 export const WAGE_GAP_HALF_M = 24;           // months for a firm's pay to close half its gap to what it takes to hire here (economy.ts)
@@ -3222,7 +3206,7 @@ function businessRentVsNation(e: Econ): number {
  * WHAT THIS TOWN COSTS AN EMPLOYER AGAINST THE NATION, in log points against
  * its own opening: pay against national pay (WAGE_SHARE of the bill), rent on
  * offices and sheds against the opening's (the rest), less what its size adds
- * to output (AGGLOM). `regionalPull` and the export share (economy.ts) read it.
+ * to output (AGGLOM). An anchor employer choosing the city reads it (blackswans.ts).
  */
 export function locationCost(e: Econ): number {
   const wageRatio = (e.wageIdx ?? 1) / Math.max(1e-6, e.natWageIdx ?? e.wageIdx ?? 1);
@@ -5167,7 +5151,14 @@ export function tickEcon(s: GameState) {
     // asking, effective, and the concession level between them — are the
     // comps of the last six months read back, not an equation of vacancy.
     // A month with no deal in the window leaves them standing.
-    if (k !== "multifamily" && e.streetRolls) {
+    // THE FLATS: THE RENT IS WHAT EACH BLOCK'S LANDLORD ASKS (FORMULA_LEDGER
+    // #4/#5). The households choose the blocks (households.ts); each block's
+    // landlord re-marks its ask from its own lettings against the vacancy it
+    // has learned to expect, and the flats' indices are read off the blocks'
+    // asks and the leases signed (streetRolls.ts `tickStreetFlats`). The
+    // vacancy equation below never prices a flat.
+    if (k === "multifamily") continue;
+    if (e.streetRolls) {
       const before = e.rentIdx[k];
       const ro = readOut(e, k, s.month);
       if (ro) {
@@ -5654,11 +5645,8 @@ export function tickEcon(s: GameState) {
     // and a landlord re-marking an asking sheet reads the same number; so
     // does this. The soft-market gate is unchanged: empty floors still do not
     // escalate.
-    const hRent = e.history.length >= 12 ? e.history[e.history.length - 12] : undefined;
-    // Prices LESS SHELTER (see the CPI block): a rent marked to a price
-    // level that contains it indexes itself.
-    const realised12 = hRent?.cpiXS ? (e.cpiXS ?? 1) / hRent.cpiXS - 1
-      : hRent?.cpi ? (e.cpi ?? 1) / hRent.cpi - 1 : (e.inflExp ?? 0.02);
+    // Prices LESS SHELTER (see the CPI block): `priceLevel12`.
+    const realised12 = priceLevel12(e);
     const escalation = (realised12 / 12) * escalGate;
     // Cap the lagged pressure term: chronic shortage was holding ~+1.6%/mo of
     // scarcity in rentPress and overpowering the income anchor for a decade.
@@ -5706,7 +5694,7 @@ export function tickEcon(s: GameState) {
     void liftGate;
     const cycleJobs = 0;
     const cycleMom = 0;
-    let drift = cycleRent + cycleMom + press + anchor + cycleJobs + escalation;
+    const drift = cycleRent + cycleMom + press + anchor + cycleJobs + escalation;
     // THE HALF-OF-BASE FLOOR IS NOW A GUARD AGAIN, WHICH IS ALL IT WAS EVER
     // MEANT TO BE. It used to be load-bearing and it used to be the reason the
     // amplitude above looked survivable: removing it took office peak-to-trough
@@ -5715,22 +5703,7 @@ export function tickEcon(s: GameState) {
     // channel: it binds 0.0% of months in every class over 6 seeds x 50 years,
     // and deleting it entirely reproduces every statistic in this file to the
     // digit. Left in place because a guard that never fires is a guard.
-    let noise = rrange(s, -vol, vol);
-    // FROM THE COMPS, where the town's firms are the market (see recordDeal):
-    // the slack the last six months' leases signed in, and how far their mix
-    // sat from the usual one. The market's pressure this month is what the
-    // next month's deals will read.
-    {
-      const list = ((k === "office" || k === "retail") && e.streetSpace?.[k]) || (k === "multifamily" && e.flatRolls) ? e.deals?.[k] : undefined;
-      while (list && list.length && list[0].m < s.month - 6) list.shift();
-      const sf = list ? list.reduce((a, d) => a + d.sf, 0) : 0;
-      if (list && sf > 0) {
-        const pD = list.reduce((a, d) => a + d.p * d.sf, 0) / sf;
-        drift = pD + escalation;
-        noise = 0;
-      }
-      (e.dealPress ??= {})[k] = press;
-    }
+    const noise = rrange(s, -vol, vol);
     const beforeRent = e.rentIdx[k];
     // (The floor at half the base rent is gone, 2026-10-16: measured over
     // 3 towns x 60 years it bound in no month.)

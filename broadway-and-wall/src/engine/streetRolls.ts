@@ -47,7 +47,7 @@ import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, 
 import { isCommercial, bumpOf, minLettableSf, streetLease, pickSector, pickName, termBandM, depositFor } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
 import { tickTenantFin, tenantFailOdds, entrantMargin } from "./tenantBooks";
-import { rng, rrange, reletMonths, dealSlack, recordDeal, FIRM_PROFILE, turnoverYr } from "./market";
+import { rng, rrange, reletMonths, recordDeal, FIRM_PROFILE, turnoverYr, normalVac, priceLevel12, CONC_DEPTH, SECTOR_LABEL } from "./market";
 import { staleDiscount } from "./absorption";
 import { tenantQualityTerms } from "./bands";
 import { drawTenantSf, sizeScale } from "./plates";
@@ -1329,7 +1329,88 @@ export function playerTenantLeft(s: GameState, t: Tenant, bbl: string, whyId?: n
 /** A block's let flats: their feet, the month it fell vacant, its leases, and its asking rent this month ($/sf a year, for the households choosing where to live). */
 export interface FlatRoll { occ: number; vac?: number; l?: { sf: number; rent: number; endM: number }[]; mkt?: number;
   /** the block's draw on movers (score, staleness, its owner's care) and its month's letting limit, sf (households.ts reads them) */
-  w?: number; lim?: number; ask?: number }
+  w?: number; lim?: number; ask?: number;
+  /** its landlord's ask over the flats' market rent for the block (log), its vacancy over the last year (a twelve-month average), and the vacancy the landlord has learned to expect of it (`markFlatAsk`) */
+  px?: number; ve?: number; nv?: number }
+
+/**
+ * A BLOCK'S LANDLORD RE-MARKS ITS ASK, every month, from its own lettings
+ * (FORMULA_LEDGER #4/#5: this was the town's flats' rent drifting on their
+ * vacancy against a fixed 4.5% "natural" rate). It passes on the price level
+ * (`priceLevel12`, as a lease's CPI clause reads it) and moves its ask on its
+ * block's vacancy over the last year (a block of a dozen flats is full one
+ * month and a twelfth empty the next: a landlord reads its year, not its
+ * month) against the vacancy it has learned to expect of the block — the
+ * block's own record, with a memory of OWN_MEMORY_M, from what the town's
+ * flats usually run at (`normalVac`) — at REV_MGMT:
+ * apartment rents grow about 2.5%/yr per point of occupancy round its neutral
+ * level under revenue management (RealPage / Axiometrics, 2010-2023) [S~],
+ * read within the range those years measured: a block more than OCC_RANGE
+ * off its normal is in lease-up or a glut, and its landlord's lever there is
+ * the concession for space that has stood (absorption.ts `staleDiscount`,
+ * in its ask), not a face rent cut without end.
+ * A block that stays full raises its ask until a household it would have
+ * kept chooses another; one that stands empty cuts until one chooses it
+ * (households.ts: the households choose the blocks).
+ */
+const REV_MGMT = 2.5;
+/** The national apartment occupancy RealPage measured over 2010-2023 moved about five points either side of its neutral level [S~]. */
+const OCC_RANGE = 0.05;
+/**
+ * How long a landlord's sense of its own block's normal vacancy remembers:
+ * a half-life of five years [K: about five turns of a year's lease, the
+ * record a revenue-management system is set on]. The town's normal
+ * (`normalVac`) keeps its twenty-year memory.
+ */
+const OWN_MEMORY_M = 60;
+function markFlatAsk(roll: FlatRoll, cap: number, usual: number, esc: number): void {
+  const vac = Math.max(0, 1 - roll.occ / Math.max(1, cap));
+  const ve = (roll.ve ?? usual) + (vac - (roll.ve ?? usual)) / 12;
+  const nv = roll.nv ?? usual;
+  roll.px = +((roll.px ?? 0) + esc + REV_MGMT / 12 * Math.max(-OCC_RANGE, Math.min(OCC_RANGE, nv - ve))).toFixed(5);
+  roll.ve = +ve.toFixed(5);
+  roll.nv = +(nv + (ve - nv) * (1 - Math.exp(-Math.LN2 / OWN_MEMORY_M))).toFixed(5);
+}
+/**
+ * THE FLATS' RENTS, READ OFF THE BLOCKS (FORMULA_LEDGER #4/#5). The asking
+ * index is the blocks' asks, averaged over their rentable feet (a survey of
+ * asking rents): it moves by the average re-mark, which every block's own
+ * ask then carries, so no ask moves when the index does. The effective index
+ * is what the last six months' lettings signed at against their blocks'
+ * market rent (renewals too when fewer than three new lettings signed), and
+ * the concession level the gap between them.
+ */
+function readFlats(s: GameState, fs: { roll: FlatRoll; cap: number; mkt: number }[], esc: number): void {
+  const e = s.econ;
+  let w = 0, x = 0;
+  for (const f of fs) { w += f.cap; x += f.cap * (f.roll.px ?? 0); }
+  if (!(w > 0) || !(e.rentIdx.multifamily > 0)) return;
+  const mu = x / w, g = Math.exp(mu);
+  const before = e.rentIdx.multifamily;
+  e.rentIdx.multifamily = +(before * g).toFixed(4);
+  for (const f of fs) { f.roll.px = +((f.roll.px ?? 0) - mu).toFixed(5); f.mkt *= g; f.roll.mkt = +f.mkt.toFixed(2); }
+  const list = e.deals?.multifamily ?? [];
+  while (list.length && list[0].m < s.month - 6) list.shift();
+  let nNew = 0;
+  for (const d of list) if (!d.r) nNew++;
+  let sf = 0, c = 0;
+  for (const d of list) { if (nNew >= 3 && d.r) continue; sf += d.sf; c += d.c * d.sf; }
+  const face = e.rentIdx.multifamily, eff = sf > 0 ? face * Math.exp(c / sf) : face;
+  e.effRentIdx = { ...(e.effRentIdx ?? e.rentIdx), multifamily: +eff.toFixed(4) };
+  (e.concIdx ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 }).multifamily = +Math.max(0, Math.min(1, (1 - eff / face) / CONC_DEPTH)).toFixed(4);
+  const nomCh = face / before - 1, usual = normalVac(e, "multifamily");
+  e.rentPath ??= {} as NonNullable<typeof e.rentPath>;
+  e.rentPath.multifamily = { gap: (e.cityVac?.multifamily ?? usual) - usual, vacTerm: 0, instant: 0, pressEma: 0, pressClamped: 0, clampBound: false, escalation: esc, anchor: 0, drift: mu, nomCh };
+  if (Math.abs(nomCh) >= 0.006) {
+    const line = `${SECTOR_LABEL.multifamily} asking rents ${nomCh < 0 ? "fell" : "rose"} ${Math.abs(nomCh * 100).toFixed(1)}% this month — ${fs.length} blocks re-marked their asks on their own lettings; flats let at $${eff.toFixed(2)} over the last six months.`;
+    e.rentWhy = { ...(e.rentWhy ?? {}), multifamily: line };
+    why(s, {
+      k: "market.rent", a: "trade", aid: "multifamily", name: SECTOR_LABEL.multifamily,
+      n: { rent: face, eff, ch: nomCh, leases: list.length, sf },
+      t: `${SECTOR_LABEL.multifamily} asking rent $${face.toFixed(2)}/sf, ${nomCh >= 0 ? "+" : "−"}${Math.abs(nomCh * 100).toFixed(1)}% this month · ${fs.length} blocks re-marked their asks · $${eff.toFixed(2)} let over six months`,
+    });
+  }
+}
 
 const MF_LEASEUP = 0.08;
 
@@ -1378,6 +1459,8 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
     // blocks and measures them. Before then (and while the opening street is
     // grown) the street's own renewals and lettings below.
     const byHouseholds = !growing && s.households?.locMu !== undefined;
+    // each landlord re-marks its block's ask (`markFlatAsk`); not while the opening street is grown on a town held still
+    const usual = normalVac(e, "multifamily"), esc = priceLevel12(e) / 12;
     // The town's jobs about a year ago (a twelve-month memory), for job moves.
     e.jobsPrevYr = (e.jobsPrevYr ?? e.jobs ?? 1) + ((e.jobs ?? 1) - (e.jobsPrevYr ?? e.jobs ?? 1)) / 12;
     const owners = new Map<string, NonNullable<GameState["rivals"]>[number]>();
@@ -1393,6 +1476,8 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       roll.occ = Math.min(cap, roll.occ);
       const mkt = useRentPsfYr(rec, e, gradeOf(s, rec), "multifamily");
       roll.mkt = +mkt.toFixed(2);
+      if (!growing) markFlatAsk(roll, cap, usual, esc);
+      const own = Math.exp(roll.px ?? 0);
       // The roll's leases (an old save, or a block that has just joined the
       // street, carries only a count: its flats were let over the last year
       // at about today's rent).
@@ -1407,21 +1492,18 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
         const sc = overallScore(rec, e, "multifamily");
         const unit = Math.max(300, flatUnitSf(rec, cap));
         roll.w = +(Math.exp((sc - 55) / 25) * Math.pow(1 / stale, 2) * care).toFixed(4);
-        // what a flat here lets for this month, as the street's lettings priced it: the block's rent, as the
-        // last six months' deals have moved it, less the concession a block that has stood empty gives
-        roll.ask = +(mkt * dealSlack(e, "multifamily") * stale).toFixed(2);
+        // what a flat here lets for this month: its landlord's ask, less the concession a block that has stood empty gives
+        roll.ask = +(mkt * own * stale).toFixed(2);
         roll.lim = Math.round(Math.max(cap * MF_LEASEUP, unit * 2));
         fs.push({ roll, cap, w: roll.w, unit, intake: 0, lim: roll.lim, mkt, sc });
         continue;
       }
       // THE MONTH'S EXPIRIES (2026-10-16). Each lease ending this month either
-      // renews — at today's rent for the block, less the discount a landlord
-      // gives a sitting tenant, and moved by how the last six months' deals
-      // went (market.ts dealSlack) — or moves out. About 55% of US renters
+      // renews — at its landlord's ask for the block (`markFlatAsk`), less
+      // the discount a landlord gives a sitting tenant — or moves out. About 55% of US renters
       // renew (NMHC/RealPage retention), and a renter whose lease has fallen
       // well under the market stays more often; one asked for much more goes.
       // Each renewal and each new letting below is a deal the market reads.
-      const slack = dealSlack(e, "multifamily");
       const keep: NonNullable<FlatRoll["l"]> = [];
       // WHY RENTERS MOVE OUT: THE HOUSEHOLDS DECIDE (households stage 2,
       // 2026-10-29). This was 0.22 + out-migration + a buying rate + a job
@@ -1436,7 +1518,7 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       for (const x of roll.l) {
         if (x.endM > m) { keep.push(x); continue; }
         // A stabilised block (citygov.ts) asks its sitting tenants no more than the guideline.
-        const ask = renewalAsk(e, rec.yearBuilt, mkt * slack * 0.97, x.rent);
+        const ask = renewalAsk(e, rec.yearBuilt, mkt * own * 0.97, x.rent);
         // (the renewal rent is in the households' own choice now — a rent the
         // household will not pay is a household that chose the mainland)
         const pRenew = Math.max(0.1, Math.min(0.9, 1 - moveOut));
@@ -1461,6 +1543,7 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       after += roll.occ;
     }
     if (!fs.length) return;
+    if (!growing) readFlats(s, fs, esc);
     if (byHouseholds) { measureFlatBands(e, fs); return; }
     if (!growing && after + flatOut > 0) {
       const r = 12 * flatOut / (after + flatOut), tm = (e.turnMeas ??= {});
@@ -1512,9 +1595,8 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       if (!(take > 0)) break;
       pick.roll.occ += take; pick.intake += take; gap -= take;
       setTerm(pickI);
-      // A new letting at the block's rent, as the last six months' deals have
-      // moved it, less the concession a block that has stood empty gives.
-      const rent = +(pick.mkt * dealSlack(e, "multifamily") * staleDiscount(pick.roll.vac === undefined ? 0 : m - pick.roll.vac)).toFixed(2);
+      // A new letting at the block's landlord's ask, less the concession a block that has stood empty gives.
+      const rent = +(pick.mkt * Math.exp(pick.roll.px ?? 0) * staleDiscount(pick.roll.vac === undefined ? 0 : m - pick.roll.vac)).toFixed(2);
       (pick.roll.l ??= []).push({ sf: take, rent, endM: m + 12 });
       recordDeal(e, "multifamily", m, rent / Math.max(0.01, pick.mkt), take);
     }

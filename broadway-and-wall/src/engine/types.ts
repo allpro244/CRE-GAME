@@ -2320,6 +2320,8 @@ export interface Econ {
    */
   /** The town's firms' prices against the nation's last month (market.ts CPI, economy.ts `postPayAndPrices`). */
   priceRelPrev?: number;
+  /** What the region's renters pay for shelter, its change over the last year (households.ts `shelterRead`): the CPI's shelter (market.ts). */
+  shelter12?: number;
   /** Labour-force participation, moving with how easy work is to find. */
   participation?: number;
   /** The nation's unemployment last month, for its monthly employment swing. */

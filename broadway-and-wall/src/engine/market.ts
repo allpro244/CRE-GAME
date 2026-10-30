@@ -173,8 +173,8 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 //
 // That is a fast ceiling on a shortage and a fast floor under a glut, and it
 // is the one that can exist without falsifying lease physics, because the
-// sublet decision is not a lease decision. `affordEff` stays exactly where it
-// was for office. This runs alongside it, eleven times faster.
+// sublet decision is not a lease decision. (`affordEff`, the lease-speed
+// aggregate response it ran beside, is gone: FORMULA_LEDGER #10.)
 //
 // `sublet[k]` is square feet INSIDE `occupied` — the landlord is still being
 // paid — that are on the market anyway. Rents, concessions and developers all
@@ -191,9 +191,11 @@ const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 // Ordinary inventory used to run ~0.23% of stock at the median against 1–1.5%
 // in a calm US office market, because give-back was only the AGGREGATE mismatch
 // and emptied whenever the city wanted what it held. The extremes were right
-// (dispersion shows up in busts); the ordinary level was not. Background
-// marketed space below is the idiosyncratic floor — mergers, relocations,
-// contractions in every kind of market — as a share of occupied. Direct
+// (dispersion shows up in busts); the ordinary level was not. A background
+// share of occupied was added for that (SUBLET_BG). Since FORMULA_LEDGER #10
+// neither the aggregate mismatch nor the background share is here: the
+// marketed space is each firm's own floor beyond its own heads' need, so the
+// idiosyncratic part is the firms' own fortunes (see the class loop). Direct
 // vacancy (cityVac) is unchanged; availability = direct + sublet/stock, which
 // is already what rent tightness reads.
 declare module "./types" {
@@ -236,15 +238,6 @@ const SUBLET_MAX: Record<BuiltClass, number> = {
   office: 0.10, industrial: 0.06, retail: 0.04, multifamily: 0,
 };
 
-/**
- * IDIOSYNCRATIC MARKETED FLOOR — share of occupied that is on the sublet
- * market even when the city as a whole wants the footprint it holds.
- * Calibrated to ordinary US availability: office ~1.2% of stock ≈ ~1.3% of
- * occupied at natural vacancy; retail/industrial thinner; flats none.
- */
-const SUBLET_BG: Record<BuiltClass, number> = {
-  office: 0.013, industrial: 0.006, retail: 0.004, multifamily: 0,
-};
 
 /** HOW FAST A TENANT'S FOOTPRINT CAN REPRICE — one over the lease term in
  *  months, because that is the rate at which leases actually come up. The old
@@ -289,7 +282,8 @@ const MOVE_OUT_M: Record<BuiltClass, number> = { office: 24, retail: 18, industr
 export const LEASE_TERM_M: Record<BuiltClass, number> = { office: 96, retail: 84, industrial: 72, multifamily: 12 };
 /** Months before a building not yet started can deliver: six of planning and the middle of its build (BUILD_MONTHS). */
 const SUPPLY_LAG_M: Record<BuiltClass, number> = { office: 27, retail: 29, industrial: 22, multifamily: 30 };
-const AFFORD_ROLL: Record<BuiltClass, number> = {
+/** The share of a class's leases that roll in a month: what the in-place rent moves at. */
+const LEASE_ROLL: Record<BuiltClass, number> = {
   office: 1 / LEASE_TERM_M.office,
   retail: 1 / LEASE_TERM_M.retail,
   industrial: 1 / LEASE_TERM_M.industrial,
@@ -309,69 +303,6 @@ const AFFORD_ROLL: Record<BuiltClass, number> = {
 // demand driver now (tenant trades' employment, population), not a momentum
 // multiplier on top of it.
 
-/** WHAT PRICE IS ALLOWED TO DO TO THE SPACE ONE WORKER OCCUPIES. Affordability
- *  rations demand — dear space, firms take less of it — but it was unbounded,
- *  and unbounded it manufactured tenants out of cheapness: measured over three
- *  careers it reached 2.34 — the model asserting that cheap rent, by itself,
- *  more than doubles the space the city's existing headcount takes. Space per
- *  worker is set by headcount and by workplace design, not by rent. US office
- *  ran about 250 sf/worker in 1990 and about 190 in 2019 — a quarter, over
- *  THIRTY years.
- *
- *  ASYMMETRIC ON PURPOSE. Cheapness still cannot manufacture tenants: the
- *  upper rail stays at +12%. Dearness may compress toward that observed
- *  secular densification floor (190/250 ≈ 0.76) — a century of elevated
- *  rent-to-income with the old ±12% band left affordEff glued near 0.88 while
- *  a permanent unhousable search queue minted scarcity rent (see pool search
- *  fringe below). The lower rail is that densification floor, not a CAGR dial:
- *  firms can end up as dense as the historical record, and no denser from
- *  price alone.
- *
- *  Symmetric ±12% DID NOT DAMP THE CYCLE AND THAT IS RECORDED HERE. Removing
- *  the bound entirely measured office sd(log) 0.263 -> 0.235 — calmer because
- *  manufactured demand is a stabiliser built on a fiction. The cheap-side rail
- *  stays; only the dear side opens to the densification floor. */
-/**
- *  WIDENED TO A GUARD (2026-10-09), because measured it was the demand curve.
- *  Forked worlds at year 15 (3 seeds x 10 years): a 20% rise in office rent
- *  moved occupied office by 0.0% after one year and +0.3% after ten, and the
- *  rent was STILL 12.6% higher a decade on — the price level had become
- *  path-dependent, because nothing on the demand side answered it. Industrial
- *  did not move at all. The cause is this bracket: once real rent sits more
- *  than ~25% under the town's opening print (most office and shed months in
- *  a fifty-year run), `burden^-0.4` is already over 1.12, so a 20% rise is
- *  still clamped to 1.12 and the demand curve is flat. tools/rails.mjs had it
- *  at its ceiling in 42% of office calls.
- *
- *  The cross-section says the elasticity holds over a far wider range than
- *  the bracket allowed, in both directions: office space per worker runs
- *  ~150 sf in New York and San Francisco against 250+ in cheap secondary
- *  markets — about 1.7x across a ~3x rent gap, which is an elasticity near
- *  -0.4 all the way across, and the dear end is denser than the 0.76 floor.
- *  "Cheapness cannot manufacture tenants" is true of HEADCOUNT, which this
- *  term does not touch (it scales feet per worker; jobs come from the
- *  labour block). So the bracket is now a guard outside anything a market
- *  has recorded: 0.45 is a rent 7x the opening in real terms, 2.2 one-seventh. */
-const AFFORD_BAND: [number, number] = [0.45, 2.2];
-/**
- * The substitution response flattens toward AFFORD_BAND rather than stopping
- * at it: a tenant economises on dear space less and less the further it has
- * already gone (in logs, a tanh toward the band's edge).
- */
-function affordSoft(v: number): number {
-  const y = Math.log(Math.max(1e-9, v));
-  const b = y < 0 ? Math.log(AFFORD_BAND[0]) : Math.log(AFFORD_BAND[1]);
-  return Math.exp(b * Math.tanh(y / b));
-}
-/**
- * Elasticity of substitution between floor space and labour in a firm's
- * costs (estimates for commercial space run 0.3-0.7: e.g. Eppli & Tu 1999 on
- * office space per worker); the opening's space share of space-and-staff
- * costs by class, from the trades' profiles (rent / (rent + wages)), until the
- * street's books report their own.
- */
-const SIGMA_KL = 0.5;
-const SPACE_SHARE0: Record<BuiltClass, number> = { office: 0.14, retail: 0.2, industrial: 0.23, multifamily: 0 };
 /** The share of income renters spend on rent (ACS): the level the household register's opening incomes are solved to. */
 export const HH_RENT_SHARE0 = 0.30;
 /** Online selling (see ONLINE in the secular block). */
@@ -391,83 +322,6 @@ const NAT_JOB_TREND = 0.003;
 /** A market's normal availability: monthly weight on this month's (twenty-year half-life). */
 export const NATVAC_RATE = 1 - Math.exp(-Math.LN2 / 240);
 
-/**
- * THE INCOME ELASTICITY OF DEMAND FOR SPACE — the argument this model did not have.
- *
- * `affordRaw` used to read ONE quantity, `burden = rent/wage`. Because rent and
- * income entered only as a ratio, the specification forced the INCOME elasticity
- * of space demand to equal the PRICE elasticity — a restriction the literature
- * rejects (office price elasticity is reported at -0.19..-0.24 against an income
- * elasticity near 0.67). And because they shared one expression, they shared one
- * clamp: AFFORD_BAND is an honest bound on the substitution response, and it was
- * silently bounding the income response too, which has no such bound. Measured
- * with tools/rails.mjs, that clamp sat at its CEILING in 70-95% of calls and at
- * its floor in 0.0% — a one-sided rail, pinned open, which is the fingerprint of
- * the mis-specification rather than a coincidence.
- *
- * What it cost, measured over 6 seeds x 100y: the city enters a mild permanent
- * glut around decade three (office vacancy parks ~4pp over natural and never
- * leaves), demand growth decays from 1.4%/yr to ~0.2%/yr, and real office rent
- * bleeds -0.2 to -2.1%/yr for seventy years. Feet per job is FLAT across the
- * whole run, so this is not densification — it is the one feedback that should
- * arrest a glut (space gets cheap relative to income, so firms take more of it)
- * being dead against a ceiling.
- *
- * These are SHAPE PARAMETERS, not industry constants, and the evidence behind
- * each is uneven — so each carries its own reasoning and its own doubt:
- *
- *  office 0.45 — the reported estimate is ~0.67 (Hendershott/MacGregor/Tse
- *    family, City of London). That figure is UNVERIFIED against the primary
- *    paper and rests on a single attribution, so it is a direction, not a point.
- *    It also measures total OCCUPANCY demand, and the modern record puts much of
- *    that on the QUALITY axis (prime rents ~84% over market average, up from
- *    ~60% pre-pandemic) — an axis this engine does not have, carrying one rent
- *    index per class. 0.45 is the quantity-only share of a 0.35-0.5 band.
- *  retail 0.00 — the cross-country record is flatly against an income effect
- *    here: retail floor space per capita is 23.5 sf in the US, 5.0 in France,
- *    4.6 in the UK, under 5 in Germany and Japan (ICSC 2018). That ordering is
- *    planning and land, not income.
- *    Re-examined 2026-10-09 against the US TIME SERIES, which looks like an
- *    income effect (shopping-centre space per head roughly tripled 1970-2005
- *    while real income per head about doubled) and is not one: the run-up
- *    tracks the 1954-86 accelerated-depreciation regime for new commercial
- *    construction and stalled when the 1986 Act withdrew it, and the
- *    e-commerce era has since cut space per head while real income kept
- *    rising. Spending does rise with income, but sales per square foot rise
- *    with it, so what is left for floor space is ~0. It stays at zero.
- *  multifamily 0.25 — the housing literature's income elasticity is the best
- *    measured of any class (~0.7 short-run, ~1.0 long-run; Mulford, RAND
- *    R-2449-HUD 1979) and this number is deliberately far below it, because US
- *    floor space per HOUSEHOLD is roughly flat (~1,970 sf 1900 -> ~2,060 sf
- *    today) — the doubling of space per PERSON is household shrinkage, and this
- *    engine already carries that as the household-formation leg of the
- *    multifamily secular menu. 0.25 is what is left after refusing to count it
- *    twice, and it is the number here I trust least.
- *  industrial 0.40 — US warehouse floor space per capita grew ~1.0%/yr against
- *    real GDP per capita of ~1.5-1.6%/yr over the last three decades, implying
- *    ~0.6; discounted because logistics rent is under 5% of the cost to supply
- *    a good (Prologis: $1 rent per $5-7 labour per ~$10 transport), so space is
- *    not the margin a shipper optimises.
- *
- * IF THESE MOVE, THEY MOVE BECAUSE THE EVIDENCE MOVED. They must never be
- * turned until a harness passes: `pnpm income` reports the consequence, and a
- * consequence outside its band is a finding about the rest of the model.
- */
-// OFFICE 0.45 -> 0 (2026-10-14). The 0.45 rested on one unverified London
-// estimate of total occupancy demand, which the note above already says is
-// mostly a QUALITY effect. The quantity record runs the other way: US office
-// space per worker fell from ~250 sf to ~190 sf over 1990-2019 while real
-// income per worker rose ~1.5%/yr — a quantity income elasticity at or below
-// zero, as retail's is. With the secular eras' own space-per-worker
-// compression this left office demand per job RISING +0.15%/yr on net, and
-// office demand per job outgrowing the record. (Real office rent on this
-// island still rises ~0.5%/yr over a century, and should: Manhattan asking
-// rents went ~$5/sf in 1950 to ~$75-85 in 2019 against 10.6x CPI — about
-// +0.5-0.7%/yr real on a supply-constrained island, where the US average
-// is ~0.)
-const INCOME_ELAST: Record<BuiltClass, number> = {
-  office: 0.00, retail: 0.00, multifamily: 0.00, industrial: 0.40,   // flats: in the households' budgets now
-};
 
 /**
  * INDUSTRIAL EMPLOYMENT SHARE — SECULAR DECLINE.
@@ -1501,7 +1355,6 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     employIdx: 1,
     stock: { ...CITY },
     baseStock: { ...CITY },
-    baseStock0: { ...CITY },
     occupied: {
       office: CITY.office * (1 - OPENING_VAC.office),
       retail: CITY.retail * (1 - OPENING_VAC.retail),
@@ -1585,8 +1438,6 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     multifamily: econ.stock.multifamily * (1 - OPENING_VAC.multifamily),
     industrial: econ.stock.industrial * (1 - OPENING_VAC.industrial),
   };
-  econ.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
-  econ.incomeEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
   // the closed loops open at their neutral values; everything after this is
   // the economy deciding for itself
   econ.inflExp = 0.02;
@@ -4004,8 +3855,8 @@ export function tickEcon(s: GameState) {
       // street" or "a logistics boom" whether or not anything in it had
       // happened. Each is now the thing that made the era:
       //  - offices: no era. What an office is wanted for is the firms in it —
-      //    their headcount, their trades and what space costs them (affordEff
-      //    off their own cost shares); a headquarters town is a finance and
+      //    their headcount, their trades and what space costs them (their own
+      //    books and choices); a headquarters town is a finance and
       //    law town, which the trades already are.
       //  - shops lose the goods that go online, and ONLINE (below) grows as the
       //    technology of selling at a distance improves (this town's own
@@ -4307,255 +4158,16 @@ export function tickEcon(s: GameState) {
     // adults, and headship rides the secular menu), so each further household
     // needs a dwelling — and in a spatial equilibrium the island keeps its
     // share of the region's households at given relative prices, so its
-    // demand for flats moves one-for-one with them. Price still rations it
-    // (`affordEff`), as it does every class.
-    const elastic = k === "office" ? 1.0 : k === "industrial" ? 0.9 : k === "retail" ? 0.7 : 1.0;
-    // PRICE RATIONS DEMAND. Affordability is rent against INCOME, not rent
-    // against construction cost — deflating by cost cancelled most of rent
-    // growth and left price with almost no say, which is how industrial ended
-    // up pegged at half a per cent vacancy with tenants who could not possibly
-    // pay for it. Space is a normal good: when it gets dear relative to what
-    // the city earns, firms take less of it.
-    // CONSERVATION OF DEMAND (ECONOMY.md). The old code chased a target that
-    // repriced at monthly speed off affordability with a -0.58 exponent — a
-    // supply shock that cut rents 18% MANUFACTURED ~11% more demand through
-    // cheapness alone, which is most of how +12% stock conjured tenants equal
-    // to 39.4% of itself in the acceptance run. Price still rations demand,
-    // but at era speed: the exponent softens and the multiplier is damped
-    // with a ~6-year half-life. Firms do not materialise because rent dipped
-    // this quarter.
-    // ...and the price is measured against INCOME PER WORKER, not against the
-    // NUMBER of workers. This deflator was `employIdx` — total jobs, which
-    // reached 1.83x by 2050 — so a city that merely GREW licensed an
-    // unbounded rise in rent per square foot: more firms in town was read as
-    // every firm being able to pay more. What rations space is what one
-    // tenant earns, and that is the wage index.
-    // ...and it is BOUNDED, because feet per worker is a physical quantity with
-    // a known range and this had none. See AFFORD_BAND.
-    // Housing is households at different incomes, not one citywide elasticity.
-    // Lower-income share rises with unemployment (who is exposed); each tier
-    // densifies / doubles up at its own rate. Commercial stays a single firm
-    // footprint response.
-    // TWO ARGUMENTS, NOT ONE RATIO. `burden = rent/wage` forced the income
-    // elasticity to equal the price elasticity and put both under one clamp —
-    // see INCOME_ELAST. The price argument is now a REAL RENT INDEX measured
-    // against this town's own opening print (rentAnchor, not RENT_BASE, so a
-    // dense map does not start off-parity), and income is its own argument.
-    // Both are exactly 1.0 in month zero on every seed and every map.
-    const cpiNow = Math.max(0.35, e.cpi ?? 1);
-    // EFFECTIVE, NOT ASKING (2026-10-11). Tenants take space at what deals
-    // sign at — the same number every valuation and pro forma in this engine
-    // reads (`useRentPsfYr`). Read off the face rate, a glut priced through
-    // the concession package (which is where it is priced since the glut curve
-    // became a net effective curve) never reached the tenants it was cheapening.
+    // demand for flats moves one-for-one with them. Price rations it through
+    // the households' own choices (households.ts).
+    // WHAT DEALS SIGN AT, rolled at the class's lease speed: the in-place
+    // rent a sitting tenant pays (tenantBooks.ts and value.ts read it). It is
+    // a record, not a demand term: since FORMULA_LEDGER #10 nothing here
+    // prices space down or up — the firms do, choosing.
     const effNow = e.effRentIdx?.[k] ?? e.rentIdx[k];
-    const anchor = e.effAnchor?.[k] ?? e.rentAnchor?.[k] ?? RENT_BASE[k];
-    const relRent = (effNow / Math.max(1e-6, anchor)) / cpiNow;
     if (!e.inPlaceReal) e.inPlaceReal = { ...(e.effAnchor ?? e.rentAnchor ?? e.rentIdx) };
-    e.inPlaceReal[k] += AFFORD_ROLL[k] * (effNow / cpiNow - e.inPlaceReal[k]);
-    const burden = relRent;
-    let affordRaw: number;
-    if (k === "multifamily") {
-      // THE FLATS' DEMAND IS THE HOUSEHOLDS THAT CHOOSE THEM (households
-      // stage 2, 2026-10-29). This was a household budget — a minimum flat
-      // (HH_MIN) and a fixed share of income over it — applied to the region's
-      // renter households, and an island-against-mainland elasticity on top
-      // (LOC_ELAST, rolled over five years): statements about households that
-      // none of the register's households made. Each renter household now
-      // weighs an island flat against one across the water at the going rents
-      // and its own commute and pay (households.ts `wantsIsland`), so the
-      // price, income and location responses are all in the driver below, and
-      // here the flats take none of their own (FORMULA_LEDGER #10, flats).
-      affordRaw = 1;
-    } else {
-      // FROM THE FIRMS' OWN COSTS (2026-10-16). The exponent was -0.40 for
-      // every commercial class. A firm trades floor against people at the
-      // relative cost of each: with an elasticity of substitution SIGMA_KL
-      // between space and labour, its space per worker answers its rent at
-      // -SIGMA_KL x (1 - space's share of what it pays for space and staff) —
-      // and that share is read off the street's own books (streetRolls
-      // spaceShare), so a dear town, where rent has grown into a bigger slice
-      // of every firm's costs, economises proportionally less on each further
-      // point (the Cobb-Douglas limit is SIGMA_KL = 1).
-      const sh = e.spaceShare?.[k] ?? SPACE_SHARE0[k];
-      affordRaw = affordSoft(Math.pow(burden, -SIGMA_KL * (1 - sh)));
-    }
-    if (!e.affordEff) e.affordEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
-    // At the lease-rollover rate of THIS class, not of an office. See AFFORD_ROLL.
-    e.affordEff[k] += AFFORD_ROLL[k] * (affordRaw - e.affordEff[k]);
+    e.inPlaceReal[k] += LEASE_ROLL[k] * (effNow / Math.max(0.35, e.cpi ?? 1) - e.inPlaceReal[k]);
 
-    // THE MAINLAND IS NEXT DOOR — AND THE HOUSEHOLDS KNOW IT (households
-    // stage 2, 2026-10-29). This was `locEff`, the island's share of the
-    // region's households moved by island rent over the mainland's real
-    // construction cost at elasticity 0.5 with a five-year half-life — the
-    // Alonso-Muth-Mills location margin asserted for the whole region at once.
-    // Measured, it let the flats' capacity rail bind 29% of months (BASELINE
-    // rail.occ.multifamily.cap), because the region's renters grew faster than
-    // a half-elastic, five-year margin sent any of them across the water. The
-    // margin is now each household's own choice (households.ts `wantsIsland`:
-    // its rent, commute, pay and taste) and the driver is the households that
-    // made it; firms' floor stays where its jobs are (a firm's location is the
-    // job-level `regionalPull`).
-    // THE INCOME ARGUMENT. A city that gets richer occupies more and better
-    // space; a city that gets poorer gives it back. Real income per worker
-    // against the town's opening real income — the INTENSIVE margin only,
-    // because headcount is already in `employIdx^elastic` above and counting it
-    // here would count the same workers twice.
-    //
-    // REAL, NOT NOMINAL, AND THIS IS NOT NEGOTIABLE. `wageIdx` is nominal (see
-    // its declaration in types.ts). Reading it raw would make physical square
-    // feet a function of the price level — a city needing more floor because
-    // prices rose — and would close a positive loop: prices up, nominal wage
-    // up, more space demanded, rent up, construction cost catch-up, prices up.
-    //
-    // ROLLED AT THE CLASS'S LEASE SPEED, for the same reason the price term is:
-    // feet per worker adjusts at lease events, not continuously (Hakfoort & Lie
-    // 1996). That damping also disarms a hazard this term would otherwise carry
-    // — real pay per SURVIVING worker RISES in a deflationary bust, because
-    // nominal wages are downward-rigid while cpi can fall, so an undamped term
-    // would hand a dying city extra office demand. At an eight-year roll a
-    // two-year deflation moves it by almost nothing.
-    if (!e.incomeEff) e.incomeEff = { office: 1, retail: 1, multifamily: 1, industrial: 1 };
-    const realWage = (e.wageIdx ?? 1) / cpiNow;
-    const w0 = e.wage0 ?? (e.wage0 = realWage);
-    const relWage = Math.max(0.25, realWage / Math.max(1e-6, w0));
-    const incomeRaw = Math.pow(relWage, INCOME_ELAST[k]);
-    e.incomeEff[k] += AFFORD_ROLL[k] * (incomeRaw - e.incomeEff[k]);
-
-    // A SECTOR PRICED OUT OF A CITY DOES NOT PAY FOUR TIMES THE RENT. IT LEAVES.
-    //
-    // affordEff above is a REVERSIBLE discount — dear space, firms take less
-    // of it; cheap space, they take more again. That is right for the cycle
-    // and it is not what happens to a sector over a generation. When the rent
-    // a use can pay is permanently beyond it, the use does not shrink its
-    // footprint and wait, it goes somewhere else, and the building it left
-    // becomes something else. Nobody reopens the foundry when rents dip.
-    //
-    // Without this the model had no exit at all. `baseStock` was frozen at
-    // month zero, so demand was forever a multiple of the city's ORIGINAL
-    // stock: a class the city cannot build more of — industrial, capped at two
-    // floors and confined to M-zoned land, of which this island has sixty-one
-    // vacant lots — met rising demand with a fixed supply and the only free
-    // variable left was price. Measured over fifty years, real rent growth by
-    // class: industrial +2.14%/yr and retail +1.52%/yr against office +1.11%
-    // and housing -0.47%. 2.3x real rent for a shed, and the tenants stayed
-    // and paid it, because there was nowhere in the model for them to go.
-    //
-    // This is the going. It is a RATCHET — `Math.min`, never recovering —
-    // because that is the asymmetry that makes it different from affordEff
-    // and it is the asymmetry real cities show: New York, San Francisco and
-    // London each lost more than half their manufacturing floor space between
-    // 1970 and 2010 and not one square foot of it came back when a recession
-    // made space cheap again.
-    //
-    // WHAT COUNTS AS PRICED OUT: rent per square foot against what the city
-    // earns, versus where that ratio started. A sector paying its historical
-    // share of income is fine at any nominal rent. The threshold is a fifth
-    // above it, which is roughly the point at which relocation beats renewal
-    // once moving costs are counted.
-    //
-    // NOBODY MOVES OUT MID-LEASE, AND THE RATE HAS TO SAY SO.
-    //
-    // The pace was a bare `LEAVE_RATE * over`, a tenth of the overshoot a year,
-    // with nothing bounding it — and the comment asserted that was "slow enough
-    // that a cyclical spike does nothing", which is a claim about behaviour
-    // that nothing in the code guaranteed. The missing mechanism is that A
-    // SECTOR CAN ONLY LEAVE AT THE RATE ITS LEASES ROLL: a tenant priced out in
-    // March with four years to run is a tenant who is still there in March.
-    // Terms here and in life average something like eight years, so about an
-    // eighth of a footprint faces renew-or-go in a year and nothing else can
-    // move at all; how many of those at the table go scales with the overshoot
-    // and cannot exceed all of them. Structural exit is therefore bounded near
-    // 1.2%/yr — half a sector over forty years, which is the fact this exists
-    // to reproduce.
-    //
-    // AND IT CHANGED NOTHING MEASURABLE, WHICH IS RECORDED HERE BECAUSE IT
-    // MATTERS. `ROLL_YR * GO_RATE` is 0.125 * 0.80 = 0.10, exactly the old
-    // LEAVE_RATE, so below the cap the two are the same expression; and `over`
-    // does not reach the 1.25 where the cap starts to bind. Output was
-    // byte-identical across two seeds x 50 years — same rents, same vacancies,
-    // same demand anchors to the digit. The bound is kept because it is the
-    // honest form and it holds at extremes the calibration has not seen, but it
-    // is NOT a fix for anything, and the estimate that motivated it was wrong:
-    // `over` peaks near 0.45, not 1.2, so this ratchet sheds about 4.4%/yr at
-    // the top of a cycle rather than the 12% first claimed.
-    //
-    // What that rules out is the important part. The demand anchor walks down
-    // smoothly — 0.93, 0.87, 0.80, 0.71, 0.71 by decade for office — while real
-    // office rent swings $14 to $95 and back on a ~28-year period. A slow trend
-    // and a violent cycle are different timescales, so the oscillator is not
-    // here. It is in the supply-and-rent feedback, and that is where to look.
-    //
-    // HOUSING IS EXEMPT and that is not a special case, it is the mechanism
-    // being right: people priced out of a city's housing leave, and the
-    // housing does not. The building stays and somebody poorer or somebody
-    // richer lives in it. Demand for shelter in a place is not a footprint
-    // that can relocate.
-    // AND A DEPARTURE SOMEBODY IS QUEUING TO BACKFILL IS NOT A SECTOR LEAVING.
-    //
-    // The trigger above is a PRICE and nothing else, and high rent has two
-    // opposite causes that a price cannot tell apart:
-    //
-    //   priced out — firms go, hand the space back, and vacancy RISES
-    //   starved    — firms want more and cannot get it, vacancy sits on its FLOOR
-    //
-    // Measured over 12 seeds x 50 years, asking what vacancy was doing on the
-    // months this fired, it was BELOW natural for 91.3% of office firings, 84.7%
-    // of retail and 93.4% of industrial — and for industrial, 43.4% of firings
-    // happened with the class pinned at its absolute frictional floor, median
-    // vacancy 1.8% against a natural rate of 7.0%. Industrial fired in 42.4% of
-    // all months and had a quarter of its base demand removed by year fifty.
-    //
-    // So nine times in ten this was not modelling an exodus. It was modelling a
-    // shortage and calling it an exodus — and `useForZone` in dev.ts then
-    // converts M-zoned land to housing in proportion to how much has "gone",
-    // one way and never back, which removes the very capacity that would have
-    // relieved the shortage. Shortage, higher rent, less land for the starved
-    // use, deeper shortage. The paragraph at the top of this block names the
-    // supply constraint as the reason it was built; deleting the demand is not
-    // the fix for supply that cannot respond.
-    //
-    // The mechanism stays — New York, San Francisco and London really did each
-    // lose more than half their manufacturing floor space, and none came back.
-    // What changes is that exit is NET OF THE QUEUE. A tenant priced out at
-    // renewal whose floor is immediately taken by another firm of the same use
-    // that could not find space is a tenant swap, and the sector's footprint in
-    // the city has not moved. You cannot have a waiting list and an exodus at
-    // the same time. The queue is a level of demand that has nowhere to go and
-    // departures are drawn against it before any of them count as the sector
-    // leaving, which is why a monthly flow is differenced against a stock here.
-    if (k !== "multifamily") {
-      const RELOCATE_AT = 1.20;    // a fifth above its historical rent-to-income
-      const ROLL_YR = 1 / 8;       // an eight-year term: an eighth comes up each year
-      const GO_RATE = 0.80;        // of those at renewal, per point of overshoot
-      // WHAT THE SECTOR IS PAYING, NOT THIS MONTH'S QUOTE (2026-10-11). This
-      // read the spot asking rent, so a cyclical spike counted as a sector
-      // being priced out of town for good. Measured on map 2002: a boom took
-      // office rent to 1.9x its parity against pay with vacancy on its floor,
-      // the ratchet fired for seven years and removed 30% of office demand
-      // (2.19M -> 1.52M sf) — permanently — while office jobs did not move.
-      // The towers the boom started then delivered into a town that had lost
-      // a third of its tenants on paper, and vacancy reached 43%. A firm at
-      // renewal relocates on what occupying space here costs across its roll,
-      // which is the in-place rent: effective rent rolled at lease speed, so
-      // only a SUSTAINED gap moves a firm, which is the generational exit this
-      // ratchet exists to model (manufacturing leaving New York over decades).
-      const burden = (e.inPlaceReal[k] * cpiNow / RENT_BASE[k]) / Math.max(0.35, e.wageIdx ?? 1);
-      const over = Math.max(0, burden - RELOCATE_AT);
-      if (over > 0 && e.baseStock) {
-        const leaving = Math.min(1, over * GO_RATE);      // cannot exceed everyone at the table
-        const goes = (ROLL_YR * leaving) / 12;            // share of the footprint walking this month
-        // Last month's unhoused demand for this use — the same expression the
-        // rent block calls `unmet`, read a month stale because the pool has not
-        // been rolled forward yet, which is also what a landlord can see.
-        const stk = Math.max(1, e.stock?.[k] ?? CITY_STOCK[k]);
-        // Physical unhousable looking demand — not the absorption queue.
-        const house = housableStock(e, k);
-        const queue = Math.max(0, ((e.pool?.[k] ?? 0) - house - (e.sublet?.[k] ?? 0)) / stk);
-        const net = Math.max(0, goes - queue);
-        if (net > 0) e.baseStock[k] = Math.min(e.baseStock[k], e.baseStock[k] * (1 - net));
-      }
-    }
     // WHAT EACH KIND OF SPACE IS ACTUALLY DEMANDED BY.
     //
     // History, each step a measured fault: every class once read jobs, so a
@@ -4619,23 +4231,75 @@ export function tickEcon(s: GameState) {
     // AND THE LEVEL EVENTS RIDE UNDERNEATH ALL OF IT. `swanClassLevel` is 1.0
     // in a city nothing structural has happened to, and it is the permanent
     // restatement of what this class is wanted for once something has: less
-    // office per job after remote work, fewer desks of any kind once the trade
+    // office per worker after remote work, fewer desks of any kind once the trade
     // that sat at them has gone, more shed once the shopping moved into one.
     // It multiplies rather than adding because it is a LEVEL, and it sits
-    // outside `sectorMom` and `affordEff` because neither of those ever stops
-    // reverting and this never reverts at all. See swans.ts.
+    // outside `sectorMom` because that never stops reverting and this never
+    // reverts at all. See swans.ts.
     // ...and the space a national swan has emptied for a while (a pandemic's
     // offices: blackswans.ts swanSpace), which comes back as it ends.
     const swanLvl = swanClassLevel(e, k) * (e.swanSpace?.[k] ?? 1);
-    // The cycle is already in the driver (the tenants' own employment or
-    // population); adding momentum on top would count it twice.
-    const cycleTerm = 1;
-    const targetRaw = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - OPENING_VAC[k])   // the opening's reference demand (an initial condition), moved by its drivers
-      * Math.pow(driver, elastic)
-      * cycleTerm
-      * e.affordEff[k]
-      * (e.incomeEff?.[k] ?? 1)   // the income argument — see INCOME_ELAST
-      * swanLvl;
+    // It is the feet a worker takes on the class's floor, so every firm on it
+    // takes it (streetRolls.ts `lvlNow`).
+    if (k !== "multifamily") (e.spaceLvl ??= {})[k] = swanLvl;
+    // THE STREET'S FIRMS DECIDE WHAT IS LET (streetRolls.ts, 2026-10-16).
+    // Offices and shops are all on the map: what is occupied is what the
+    // town's firms hold — the street's rolls and the player's — and what is
+    // looking is the firms still searching. Sheds run half and half: the
+    // region's off the map stays on the aggregate below (`aggOcc`), the
+    // mapped ones are the firms'.
+    // (flats: the street's households since households stage 2 — who stays,
+    // who leaves, who chose a block from across the water; households.ts)
+    const firms = k !== "multifamily" ? e.streetSpace?.[k] : e.flatSpace;
+    const offShare = firms ? Math.max(0, 1 - (firms.cap + (e.playerNow?.sf?.[k] ?? 0)) / Math.max(1, e.stock[k])) : 0;
+    // The class's ledger and the map drift a few per cent apart over decades
+    // (deliveries and demolitions are booked to the stock as they happen);
+    // at 2% that sliver alone sent the shops back to the aggregate equation,
+    // which no longer describes the town's firms, and it read a 10-40%
+    // shortage at 4-13% vacancy (retail rents x2.7 in six years, measured).
+    // The offices and shops stay the firms' market; the sliver off the map is
+    // let as the street is.
+    // ALWAYS, for offices and shops (2026-10-16): even a 10% threshold was
+    // crossed in a boom (seed 32, year 54: the ledger ran ahead of the map as
+    // the town grew 30% in seven years), the shops fell back to the aggregate
+    // equation and read a 98% shortage at 12% vacancy, and real shop rents
+    // went 11 -> 85 in five years. Sheds stay split (most are off the map).
+    const firmsOnly = !!firms && (k === "office" || k === "retail" || k === "multifamily" || offShare < 0.10);
+    // WHAT THE FLOOR OFF THE MAP IS WANTED FOR (FORMULA_LEDGER #10). Every
+    // foot the town's named firms demand is theirs (streetRolls.ts); what the
+    // aggregate below still carries is the floor of the firms off the map —
+    // the region's sheds — and, in a town with no mapped commercial stock,
+    // the whole class. It is those firms' own need: every industry's
+    // employment on a floor of this class at its feet a worker (economy.ts
+    // `workSf`, the same heads × feet a named firm's need is), moved one for
+    // one from the floor the off-map stock held when the books opened (an
+    // initial condition: OPENING_VAC on the off-map share). Why the whole
+    // class's industries and not only the heads the named firms do not hold:
+    // the books do not keep the region's shed tenants apart from the
+    // island's — measured on map 1, the industrial industries' on-floor heads
+    // beyond the named firms' were 0-170k sf of need against 540k sf of
+    // occupied sheds off the map, and a driver read off that sliver swung the
+    // region's shed demand twentyfold month to month. So the off-map sheds
+    // move with the class's industries as a whole, which is what the region's
+    // distributors and makers are. No
+    // affordability, income or Cobb-Douglas term: rent reaches the off-map
+    // firms through their own books (economy.ts: their rent is a cost, and a
+    // dear region employs fewer of them), and the street's through its firms'
+    // choices. (Retired with it: AFFORD_BAND, SIGMA_KL and the street's
+    // rent share, INCOME_ELAST, the sector-exit ratchet on `baseStock`.)
+    // Before the books open, the opening's level stands.
+    let targetRaw: number;
+    const base = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - OPENING_VAC[k]);
+    if (k === "multifamily") targetRaw = base * driver * swanLvl;
+    else {
+      const f = firms ? Math.max(0.02, offShare) : 1;
+      const w = eco?.workSf?.[k], w0 = e.eco0?.workSf?.[k];
+      const work = w && w0 ? Math.max(0.05, w / w0) : 1;
+      const ref = ((e.offRef ??= {})[k] ??= (firms ? (e.aggOcc?.[k] ?? e.occupied[k]) : e.occupied[k]) * f);
+      const want = ref * work * swanLvl;
+      (e.offWant ??= {})[k] = want;
+      targetRaw = want / f;
+    }
     // THE POOL. Demand takes about a year to form or dissolve, and demand
     // that cannot be housed here stops looking here within months — the
     // mainland takes it, exactly the fiction stockFromParcels already tells.
@@ -4660,18 +4324,6 @@ export function tickEcon(s: GameState) {
     // friction)` made every delivery raise the cap and occupy the same
     // month. Dark floor keeps the looking book from counting a crane's
     // last pour as already let.
-    // What the town's firms want of this class at reference rents, and the
-    // rent response today — the street's firms form, size and resize off it
-    // (streetRolls.ts).
-    if (k !== "multifamily") {
-      // ...and the space a worker takes beyond the rent: the island against the
-      // mainland, income, and the structural shifts (remote work after a swan).
-      // (Not the online shift since step 2: a shop's sales that ship from a
-      // shed are the fulfilment industry's, so the shops' heads already fall
-      // with it — economy.ts `spendVector`. Counting it here too took it twice.)
-      const lvl = (e.incomeEff?.[k] ?? 1) * swanLvl;
-      (e.demandAt ??= {})[k] = { ref: targetRaw / Math.max(1e-6, e.affordEff[k]), eff: e.affordEff[k], raw: affordRaw, lvl };
-    }
     if (!e.darkSf) e.darkSf = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     const housable = housableStock(e, k);
     const searchFringe = e.stock[k] * normalVac(e, k) * 0.25;
@@ -4722,30 +4374,6 @@ export function tickEcon(s: GameState) {
     // change in what the player's buildings actually hold since last month is
     // the city's change too, before the street's absorption runs on the gap.
     const pNow = e.playerNow?.occ?.[k];
-    // THE STREET'S FIRMS DECIDE WHAT IS LET (streetRolls.ts, 2026-10-16).
-    // Offices and shops are all on the map: what is occupied is what the
-    // town's firms hold — the street's rolls and the player's — and what is
-    // looking is the firms still searching. Sheds run half and half: the
-    // region's off the map stays on the aggregate below (`aggOcc`), the
-    // mapped ones are the firms'.
-    // (flats: the street's households since households stage 2 — who stays,
-    // who leaves, who chose a block from across the water; households.ts)
-    const firms = k !== "multifamily" ? e.streetSpace?.[k] : e.flatSpace;
-    const offShare = firms ? Math.max(0, 1 - (firms.cap + (e.playerNow?.sf?.[k] ?? 0)) / Math.max(1, e.stock[k])) : 0;
-    // The class's ledger and the map drift a few per cent apart over decades
-    // (deliveries and demolitions are booked to the stock as they happen);
-    // at 2% that sliver alone sent the shops back to the aggregate equation,
-    // which no longer describes the town's firms, and it read a 10-40%
-    // shortage at 4-13% vacancy (retail rents x2.7 in six years, measured).
-    // The offices and shops stay the firms' market; the sliver off the map is
-    // let as the street is.
-    // ALWAYS, for offices and shops (2026-10-16): even a 10% threshold was
-    // crossed in a boom (seed 32, year 54: the ledger ran ahead of the map as
-    // the town grew 30% in seven years), the shops fell back to the aggregate
-    // equation and read a 98% shortage at 12% vacancy, and real shop rents
-    // went 11 -> 85 in five years. Sheds stay split (most are off the map).
-    const firmsOnly = !!firms && (k === "office" || k === "retail" || k === "multifamily" || offShare < 0.10);
-    void offShare;
     if (firms && !firmsOnly) e.occupied[k] = (e.aggOcc ??= {})[k] ?? e.occupied[k];
     let absorb = 0;
     if (firmsOnly) {
@@ -4814,65 +4442,25 @@ export function tickEcon(s: GameState) {
     }
     }
 
-    // THE GIVE-BACK. What a tenant would take AT TODAY'S RENT, against what it
-    // is contractually sitting in — and the difference goes on the market at
-    // sublet speed rather than at lease speed. Same demand equation as
-    // `targetRaw` above, same bounded affordability, but read off `affordRaw`
-    // instead of the hundred-month `affordEff`: the footprint a firm has
-    // LEASED can only reprice when the lease rolls, and the footprint it
-    // ADVERTISES reprices the month the board decides to.
-    //
-    // That single distinction is the mechanism. It gives price a channel with a
-    // nine-month lag where before it had only a hundred-month one, and a loop
-    // that oscillates because it is PHASE-limited — this one was, by the
-    // Barkhausen arithmetic and by measurement — is damped by shortening the
-    // lag, not by weakening the gain.
-    //
-    // Both directions matter and they are the same expression. In a boom
-    // `affordRaw` falls below `affordEff`, tenants want less than they hold,
-    // and inventory appears on the market while direct vacancy is still pinned
-    // at its frictional floor — which is the fast ceiling. In a bust the sign
-    // flips, the wanted footprint runs ahead of the leased one, the marketed
-    // space is withdrawn inside a year, and availability tightens long before
-    // a single lease expires — the fast floor.
+    // THE SUBLET MARKET IS WHAT FIRMS HOLD BEYOND WHAT THEIR HEADS NEED
+    // (FORMULA_LEDGER #10). It was a give-back read off an aggregate demand
+    // equation at today's rent (`wantedNow`: the opening stock × drivers ×
+    // a bounded affordability term) against what the class occupied, plus an
+    // idiosyncratic background share of occupied (SUBLET_BG). Now it is each
+    // named firm's own floor against its own need — the feet it leases less
+    // its heads × its industry's feet a worker (streetRolls.ts `excess`) — and
+    // the off-map firms' occupied floor against theirs (`offWant`). The
+    // share a tenant can physically demise (DEMISABLE) reaches the market at
+    // sublet speed (SUBLET_TAU), and is withdrawn as fast when the heads come
+    // back. A firm that shrinks, a firm that signed a suite bigger than its
+    // people, a trade the swan sent home: each is its own line here.
     if (!e.sublet) e.sublet = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
-    // …and the swan level is in here too, which is where the FAST half of a
-    // level event comes from and is the single most realistic thing about the
-    // way this lands. A firm that has decided it needs a third less office does
-    // not wait eight years for its lease to expire — it puts the floors on the
-    // sublet market inside two quarters and goes on paying rent to the end of
-    // the term. That is exactly what happened in 2020-23: US office sublease
-    // inventory tripled while direct vacancy was still barely moving, and San
-    // Francisco's went from about 1.5M sf to about 9M sf. Because the level
-    // enters `wantedNow` as well as `targetRaw`, availability moves within
-    // months of an announcement and direct vacancy takes years.
-    //
-    // MEASURED, and this is the claim I would least have trusted unmeasured.
-    // Five paired forks — warm the city up fifteen years, clone it, inject a
-    // finance exodus into ONE clone and nothing else, run both fifteen more
-    // years off the same stream. The office availability gap opens like this:
-    //
-    //   months  1-12   +0.16pp,  of which sublet 0.09 and direct 0.07
-    //   months 13-24   +1.02pp,  of which sublet 0.43 and direct 0.59
-    //   months 25-60   +3.10pp,  of which sublet 0.30 and direct 2.80
-    //   months 61-180  +3.22pp,  of which sublet -1.10 and direct 4.32
-    //
-    // The first year is more than half sublet and the fifth year is almost
-    // entirely direct, which is the observed order of events in 2020-23 rather
-    // than an asserted one. And the last row is the give-back's OTHER half
-    // doing its job: by then real office rent is 25% lower in the treated
-    // clone, the footprint firms want at that rent exceeds the one they hold,
-    // and the marketed space is withdrawn — a fast floor under a glut,
-    // arriving long before a single lease expires.
-    const wantedNow = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - OPENING_VAC[k])   // the same opening reference as targetRaw
-      * Math.pow(driver, elastic)
-      * cycleTerm
-      * affordRaw
-      * incomeRaw   // the give-back reads the SAME arguments targetRaw does
-      * swanLvl;
-    const cyclical = Math.max(0, (e.occupied[k] - wantedNow) * DEMISABLE[k]);
-    const background = e.occupied[k] * (SUBLET_BG[k] ?? 0);
-    const marketable = clamp(cyclical + background, 0, e.occupied[k] * SUBLET_MAX[k]);
+    let excess = k !== "multifamily" ? (firms as { excess?: number } | undefined)?.excess ?? 0 : 0;
+    if (!firmsOnly && k !== "multifamily") {
+      const heldOff = firms ? (e.aggOcc?.[k] ?? 0) * offShare : e.occupied[k];
+      excess += Math.max(0, heldOff - (e.offWant?.[k] ?? heldOff));
+    }
+    const marketable = clamp(excess * DEMISABLE[k], 0, e.occupied[k] * SUBLET_MAX[k]);
     e.sublet[k] += (marketable - e.sublet[k]) / SUBLET_TAU;
     e.sublet[k] = clamp(e.sublet[k], 0, e.occupied[k]);
 
@@ -5025,23 +4613,23 @@ export function tickEcon(s: GameState) {
      */
     unmet[k] = Math.max(0, (e.pool[k] - housable - (e.sublet[k] ?? 0)) / Math.max(1, e.stock[k]));
     if (!e.structTight) e.structTight = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
-    // THE QUEUE IS PRICED AT TODAY'S RENT (2026-10-09). It read `targetRaw`,
-    // demand at the hundred-month `affordEff` — what sitting tenants hold, which
-    // can only reprice as leases roll. Once the queue began to bid (see
-    // `effGap` in the rent block) that lag made a cobweb: measured, seed 8919
-    // industrial asking tripled in five years against a queue that did not
-    // shrink as the price rose, then a quarter of the demand left town and
-    // vacancy sat at 45% for thirty years. The people in a queue are
-    // searchers, and a searcher answers the asking rent the month it is
-    // quoted — the same distinction the give-back draws for marketed space.
-    // So the queue is `wantedNow` (today's price, today's income) over what
-    // the city can house.
-    e.structTight[k] = Math.max(0, (wantedNow - housable) / Math.max(1, e.stock[k]));
+    // THE QUEUE OFF THE MAP: the off-map firms' need (`targetRaw`, their
+    // heads × their industries' feet a worker) over what the city can house.
+    // (It read `wantedNow`, an aggregate demand at today's rent, until
+    // FORMULA_LEDGER #10: the rent works through the firms' own choices.)
+    e.structTight[k] = Math.max(0, (targetRaw - housable) / Math.max(1, e.stock[k]));
     // Where the town's firms ARE the market (streetRolls.ts), the queue is the
     // firms actually looking that the empty floors could not take — not the
     // aggregate equation's wish list. In a glut that is nothing, and rents
     // fall as a glut's should.
-    if (firmsOnly) e.structTight[k] = Math.max(0, (firms!.seek - Math.max(0, housable - e.occupied[k])) / Math.max(1, e.stock[k]));
+    // ...and where the sheds run half and half, too (FORMULA_LEDGER #10): the
+    // off-map firms' need beyond the off-map stock is a firm that leases on
+    // the mainland — the region's — not a queue at the island's door. Read
+    // as one, it was the region's whole payroll growth against a stock of
+    // sheds off the map that never grows, a shortage no island floor could
+    // answer (measured, map 1: industrial `structTight` over the builders'
+    // 6% trigger most months, sheds built into a falling occupancy).
+    if (firms) e.structTight[k] = Math.max(0, (firms!.seek - Math.max(0, housable - e.occupied[k])) / Math.max(1, e.stock[k]));
     e.absorb12[k] = e.absorb12[k] * (11 / 12) + absorb;
     monthAbs[k] = absorb;
     monthComp[k] = delivered;
@@ -5395,8 +4983,8 @@ export function tickEcon(s: GameState) {
     // muted to zero on the frictional floor and scaled by `railSat` (room
     // above it) near the floor, on the argument that a pinned gap is a
     // constant and so a "permanent rent tax". It is permanent only if nothing
-    // answers it, and two things do: tenants economise on dear space
-    // (`affordEff`, the real-rent elasticity in the demand target) and
+    // answers it, and two things do: firms priced out of a dear floor
+    // do not start or do not stay (their own books and shopping) and
     // builders build once the residual clears (`startCityJob`). Muted, the
     // engine ran a class on its vacancy floor in 55-67% of months over four
     // 50-year worlds with real asking up 0.2-2.5%/yr — no faster than a
@@ -5419,7 +5007,7 @@ export function tickEcon(s: GameState) {
     // 6-68% of the required yield). In a market the people in the queue are
     // bidders. Unhoused demand is exactly availability below zero, so it
     // joins the gap, and the rent moves until enough of it is priced out
-    // (`affordEff`, migration, firms leaving) or until a building pencils.
+    // (migration, starts, firms leaving) or until a building pencils.
     //
     // ONE SLOPE THROUGH ZERO. The glut side's linear term is 0.070/mo per
     // unit of gap (0.84%/yr of rent per point of vacancy), fitted to the
@@ -5554,7 +5142,7 @@ export function tickEcon(s: GameState) {
     // rising pin rent compounded when supply never came; supply now answers
     // (startCityJob builds the scheme that pencils), and the level is held
     // by the income anchor below and by tenants economising on dear space
-    // (affordEff), which is where a shortage really stops.
+    // (their own choices), which is where a shortage really stops.
     // Hard rail on the EMA itself — see the press clamp at the drift line.
     // A GUARD, NOT THE ADJUSTMENT SPEED (2026-10-09). This was -0.8%/+0.75% a
     // month — the speed limit on how fast a market may reprice, and with the
@@ -5571,7 +5159,7 @@ export function tickEcon(s: GameState) {
     // (`scarcity`, up to +60%), pulled asking down up to 3.6%/mo when rent
     // outran it and up toward a 0.65 floor on the rail. It held the LEVEL of
     // rent by rule. The level is now held by what holds it in life: tenants
-    // economise on dear space (`affordEff`), households leave a town whose
+    // shop elsewhere, start less and fail more (their own books), households leave a town whose
     // rent eats its real pay (migration, with rent inside the price level),
     // firms hire elsewhere (`wageDemand`), and builders build once rent
     // clears replacement cost. See `anchor` below for the measurement.
@@ -5589,7 +5177,7 @@ export function tickEcon(s: GameState) {
     // pulled rent down up to 3.6%/mo whenever rent-to-income outran an
     // "earned" ratio, and pushed it up toward a 0.65 floor on the rail — a
     // second price rule on top of a demand side that already prices the same
-    // thing: tenants take less of dear space (`affordEff`), households leave
+    // thing: firms shop cheaper floors, start less and fail more, households leave
     // a town whose rent eats its pay (the real-wage premium in migration, now
     // that rent is in the price level), firms hire elsewhere (`wageDemand`),
     // and builders build into a rent that clears replacement cost. A level
@@ -5644,7 +5232,7 @@ export function tickEcon(s: GameState) {
     // office and industrial months with availability five points over
     // natural. The anchor it served is gone; a glut now holds asking flat
     // or cuts it while CPI runs, which is how real rents fall, and the
-    // glut clears through cheap space being taken up (`affordEff`) and
+    // glut clears through cheap space being taken up (firms choosing it) and
     // through supply leaving — not through a floor under the quote.
     // ONE GAP, ONE TERM (2026-10-15). This was `firmW * railEscal`: a market
     // one point over natural passed on two-thirds of inflation, three points

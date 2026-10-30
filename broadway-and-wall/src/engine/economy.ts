@@ -82,13 +82,14 @@ import {
   cashOf, debtOf, addSlot, compactSlots, reviveF64, reviveLedger,
 } from "./sfc";
 import {
-  SF_PER_JOB, FIRM_PROFILE, LENDER_COVER, shortIndexOf, BUILD_MONTHS, SECTORS,
+  FIRM_PROFILE, LENDER_COVER, shortIndexOf, BUILD_MONTHS, SECTORS,
   LABOUR_FORCE_SLOWDOWN, NAT_TREND_SD, NAT_TREND_TAU_M, NAT_SALES_PER_GAP, RENT_BASE,
   WAGE_CURVE, WAGE_GAP_HALF_M,
 } from "./market";
 import { HARD_COST_PSF, SOFT_COST, CONTINGENCY, constructionTypeMult } from "./value";
 import { householdMoney, registerPayroll, registerLabour, unpackHouseholds, whyHouseholdSpend } from "./households";
 import { why, whyOnce, whyNation, whyTenantBooks } from "./why";
+import { tenantHeads } from "./tenantMarket";
 
 // ---------------------------------------------------------------- the facts
 /** Off-map firms kept per industry: the sample each industry's off-map employment is shared over. [K] (precision, not a fact) */
@@ -311,9 +312,10 @@ export function economyStreamStep(st: number): number {
 
 // ---------------------------------------------------------------- reading the town
 interface Seen { sec: Sector; floor: Floor; hc: number; rentMo: number; z: number; ind?: number }
-/** Heads a tenant stands for: its headcount in reference feet (streetRolls.ts `firmHc`) over the engine's feet per job. */
+/** Heads a tenant stands for: its floor in reference feet over its industry's feet a worker (tenantMarket.ts `tenantHeads`). */
 function headsOf(t: Tenant, floor: Floor): number {
-  return (t.hcRef ?? t.sf) * (t.staff ?? 1) / Math.max(0.2, t.staffSign ?? 1) / SF_PER_JOB[floor];
+  void floor;
+  return tenantHeads(t);
 }
 /** Every named firm in town, in the engine's own order. Pure. */
 function readFirms(s: GameState): Map<number, Seen> {
@@ -857,7 +859,18 @@ export function tickFirms(s: GameState): void {
       const id = c.id[n];
       if (id < 0) { keep[n] = true; continue; }
       const sn = seen.get(id);
-      if (!sn) { closeBooks(L, n); keep[n] = false; continue; }
+      if (!sn) {
+        // A FIRM THAT CLOSES TAKES ITS JOBS WITH IT, THIS MONTH. Its earners
+        // are let go this month (the register parts them from an employer no
+        // longer live); its heads were handed to the off-map sample instead
+        // (`off` = employment less the named firms'), so the industry kept
+        // openings for people it had just laid off, filled only a month on —
+        // measured, a 24-head textile firm closing left textiles 19% short of
+        // earners for a month. The industry hires back toward the work its
+        // sales need at its own pace (`staff`).
+        if (E.emp && !opening) { const i = c.ind[n]; E.emp[i] = Math.max(0, E.emp[i] - c.hc[n]); }
+        closeBooks(L, n); keep[n] = false; continue;
+      }
       c.hc[n] = sn.hc; c.z[n] = sn.z; c.rent[n] = sn.rentMo; have.add(id); keep[n] = true;
     }
     if (keep.some((k) => !k)) {
@@ -1427,6 +1440,24 @@ export function economyToEngine(s: GameState): void {
       floorSf[floorOf(id)] += heads[i] * (1 - OFF_FLOOR[id]) * (1 - REMOTE[id]) * INDUSTRIES[id].sfPerWorker;
     }
     d.floorSf = floorSf;
+    // THE FLOOR THE INDUSTRIES' WORK NEEDS (FORMULA_LEDGER #10): the same
+    // heads × feet a worker, read off each industry's employment — what its
+    // sales pay for (`staff`) — rather than off the heads, which also carry
+    // named firms the work does not yet support (a mover that landed in a
+    // small industry). The region's sheds off the map are sized from it
+    // (market.ts), and a shed firm moving onto the map from the region is
+    // drawn by its industry's on-floor employment (streetRolls.ts). Read off
+    // the heads, both fed back: movers into a small industry raised its
+    // heads, which raised the region's shed demand and the next movers' odds
+    // of landing in it — measured on map 1, apparel 100 -> 4,272 heads in
+    // eighteen months and the off-map sheds wanting 3.5M sf against 540k.
+    const workSf: Record<Floor, number> = { office: 0, retail: 0, industrial: 0 };
+    for (let i = 0; i < N_IND; i++) {
+      const id = INDUSTRY_IDS[i];
+      workSf[floorOf(id)] += E.emp[i] * (1 - OFF_FLOOR[id]) * (1 - REMOTE[id]) * INDUSTRIES[id].sfPerWorker;
+    }
+    d.workSf = workSf;
+    d.floorHeads = E.emp.map((h, i) => h * (1 - OFF_FLOOR[INDUSTRY_IDS[i]]));
     d.emp = E.emp.slice(); d.empPrev = (E.empPrev ?? E.emp).slice();
     d.target = E.emp.map((v, i) => v * (E.sigma?.[i] ?? 0));
     // each trade, by the heads it had in each industry at the opening (its own
@@ -1464,6 +1495,8 @@ export function economyToEngine(s: GameState): void {
     e.eco0.jobs ??= d.jobs;
     delete e.eco0.mig;
   }
+  // the work's floor when it was first read: the off-map sheds' driver is read against it (market.ts `offRef`)
+  if (d.workSf) (e.eco0 ??= {}).workSf ??= { ...d.workSf };
   (e.eco0 ??= {}).renters ??= d.renters;
   if (d.islandWant !== undefined) e.eco0.islandWant ??= d.islandWant;
 }
@@ -1501,7 +1534,10 @@ export function migrateEconomy(s: GameState): void {
     for (const k of FLOORS) { const a = e.eco.floorSf[k], b = e.eco0.floorSf[k]; if (a && b) mig[k] = a / b; }
     e.eco0 = { ...e.eco0, floorSf: undefined, mig };
   }
-  if (e.eco) { delete e.eco.emp; delete e.eco.empPrev; delete e.eco.target; }
+  if (e.eco) { delete e.eco.emp; delete e.eco.empPrev; delete e.eco.target; delete e.eco.floorHeads; delete e.eco.workSf; }
+  // the off-map sheds re-anchor on the floor they hold and the work as it reopens (market.ts `offRef`)
+  if (e.eco0) delete e.eco0.workSf;
+  delete e.offRef;
   delete e.islandFill;
   delete s.economy;
 }

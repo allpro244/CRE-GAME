@@ -3416,8 +3416,8 @@ export function abatedShare(h: { taxAbate?: { pct: number; untilM: number } }, e
  * THE APPRAISER'S CAP RATE FOR THIS BUILDING: comps plus income.
  *
  * The class's cap rate is what its closed deals say (propmarket.ts
- * tickCapRead: the median of a year of prints, restated to a reference
- * building), and this building's is that read moved by the adjustment grid
+ * tickCapRead: the appraisers' index of the prints, restated to a reference
+ * building through a time-dummy hedonic grid), and this building's is that read moved by the adjustment grid
  * the same prints were fitted to — location, condition and spec, each worth
  * whatever the buyers who closed actually paid for it (econ.capFit). Before
  * any print exists the grid is flat and the read is the opening survey's.

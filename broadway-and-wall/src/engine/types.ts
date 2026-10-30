@@ -5814,6 +5814,8 @@ export interface CapPrint {
   nb?: number;
   /** the trade's cause-ledger event */
   why?: number;
+  /** the seller was under compulsion: a fund at the end of its life, a merchant builder's exit, a non-core trim, an estate, a receiver (Listing.reason) */
+  f?: 1;
 }
 
 /**
@@ -5840,7 +5842,7 @@ export interface CapRead {
   med: number; p25: number; p75: number;
   /** the window's own weighted median restated to the reference — what the deals alone say, before the appraisers weigh it against what they knew; and the index's standard error, % */
   raw?: number; se?: number;
-  /** the grid the read restated its window through: location, condition, spec, and an unclosed bid, a broker's indication, a distress sale (log cap per unit) */
+  /** the grid the read restated its window through: location, condition, spec, and an unclosed bid, a broker's indication, a distress sale, a compelled seller (log cap per unit) */
   adj?: number[];
   /** median age of the evidence, months */
   ageM: number;

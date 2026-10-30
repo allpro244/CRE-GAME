@@ -20,12 +20,14 @@ for (const seed of SEEDS) {
   let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
   g = { ...g, cash: 6e6 };
   const yr = []; const prints = []; const seen = new Set(); const condB = Object.fromEntries(K.map((k) => [k, []]));
+  const land = []; const seenL = new Set();
   for (let m = 1; m <= YEARS * 12; m++) {
     g = E.advanceMonth(g, parcels, bbls, adjacency);
     if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
     for (const p of g.capTape ?? []) { const key = `${p.m}|${p.bbl}|${p.kind}|${p.c}`; if (!seen.has(key)) { seen.add(key); prints.push(p); } }
+    for (const p of g.landTape ?? []) { const key = `${p.m}|${p.kind}|${p.L}`; if (!seenL.has(key)) { seenL.add(key); land.push(p); } }
     for (const k of K) if (g.econ.capFit?.[k]) condB[k].push(g.econ.capFit[k][1]);
-    if (m % 12 === 0) yr.push({ cap: { ...g.econ.capRate }, land: g.econ.landIdx });
+    if (m % 12 === 0) yr.push({ cap: { ...g.econ.capRate }, land: g.econ.landIdx, raw: Object.fromEntries(K.map((k) => [k, g.econ.capRead?.[k]?.raw])), landRaw: g.econ.landReadOut?.raw });
   }
   const out = { seed };
   for (const k of K) {
@@ -37,6 +39,6 @@ for (const seed of SEEDS) {
   out.land = { dLogYr: +mean(dl).toFixed(3), maxRatio: +Math.exp(Math.max(...dl)).toFixed(2), level: +med(yr.map((y) => y.land)).toFixed(3) };
   out.printsPerYr = Object.fromEntries(K.map((k) => [k, +(prints.filter((p) => p.k === k).reduce((a, p) => a + p.w, 0) / YEARS).toFixed(1)]));
   console.log(JSON.stringify(out));
-  dump[seed] = { prints, yr };
+  dump[seed] = { prints, yr, land };
 }
 if (process.env.OUT) writeFileSync(process.env.OUT, JSON.stringify(dump));

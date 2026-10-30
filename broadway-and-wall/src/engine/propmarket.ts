@@ -25,10 +25,12 @@
 //
 //   READ-OUTS. Every closed building, and the best bid on every round that did
 //   not close, goes on the cap tape as the cap rate it implies on the
-//   appraiser's own income. A class's cap rate is the median of that tape over
-//   a year — widened to two or three when the market is thin, and simply stale
-//   when nothing has traded — and the appraiser's per-building adjustments for
-//   location, condition and spec are fitted to it. Appraisals (value.ts
+//   appraiser's own income. A class's cap rate is the appraisers' index of
+//   that tape — every print restated to a reference building through a
+//   time-dummy hedonic grid, and weighed against what they already knew as it
+//   arrives (Quan & Quigley 1991) — simply stale when nothing has traded; the
+//   grid's location, condition and spec slopes are the appraiser's
+//   per-building adjustments. Appraisals (value.ts
 //   capRateFor), lenders' sizing and every mark in the game follow.
 //
 // What a crunch does to prices it does through the bidders: the desks cut the
@@ -536,6 +538,7 @@ export function printTrade(
   pushPrint(s, {
     m: s.month, k, bbl: rec.bbl, kind: "t", c, x: features(s, rec, cond, condIdx),
     w: distress || offMarket ? 0.5 : 1, why: id,
+    ...(li?.reason && li.reason !== "voluntary" ? { f: 1 as const } : {}),
   });
 }
 
@@ -580,6 +583,7 @@ export function noteRoundFailed(s: GameState, rec: ParcelRecord, li: Listing, ro
   pushPrint(s, {
     m: s.month, k, bbl: li.bbl, kind: "b", c, ca,
     x: features(s, rec, v.cond, v.condIdx), w: 0.5, rd: +(top.uw.rd * 100).toFixed(2), nb: round.n,
+    ...(li.reason && li.reason !== "voluntary" ? { f: 1 as const } : {}),
   });
 }
 
@@ -615,8 +619,11 @@ function wMedian(xs: { v: number; w: number }[], q = 0.5): number {
  * a market that moved, fitted on the whole record (the TBI's full sample),
  * kept as running sums. It also prices WHAT KIND of evidence a print is — an
  * unclosed round's bid-ask midpoint, a broker's indication, a distress or
- * never-listed sale — so a year rich in failed rounds or forced sellers does
- * not read as a market that moved (the selection the median could not see).
+ * never-listed sale, a seller under compulsion (a fund at the end of its
+ * life, a merchant builder's exit, a non-core trim, an estate, a receiver —
+ * sellerTerms "forced") — so a year rich in failed rounds or forced sellers
+ * does not read as a market that moved, and a slope is not a seller's
+ * situation (the selection the median could not see).
  * The ridge (RIDGE, a shape parameter: about ten prints spread across the town
  * to trust a slope halfway) is the prior that there is no adjustment until
  * the prints show one; +/-2 is a guard only.
@@ -736,13 +743,20 @@ function gridS2(ix: ApprIndex, beta: number[]): number {
   return Number.isFinite(s2) && s2 > 0 ? s2 : NaN;
 }
 
-/** How far the market moves in a year (variance, log): the appraisers' record of year means, net of their sampling noise. */
+/**
+ * How far the market moves in a year (variance, log): the appraisers' record
+ * of year means, net of their sampling noise. Only years that each carried an
+ * appraiser's worth of evidence (MIN_EVIDENCE) count: a year "mean" of one
+ * comp is that comp, and one 38% industrial print against a 9.8% read
+ * (measured, seed 55) taught the appraiser that the market moves a hundred
+ * per cent a year.
+ */
 function gridQ(ix: ApprIndex, beta: number[], s2: number, q0: number): number {
   let acc = 0, n = 0;
   const ys = ix.yrs;
   for (let i = 1; i < ys.length; i++) {
     const a = ys[i - 1], c = ys[i];
-    if (c.yr !== a.yr + 1 || !(a.W > 0) || !(c.W > 0)) continue;
+    if (c.yr !== a.yr + 1 || !(a.W >= MIN_EVIDENCE) || !(c.W >= MIN_EVIDENCE)) continue;
     const ya = (a.sy - dot(beta, a.sz)) / a.W, yc = (c.sy - dot(beta, c.sz)) / c.W;
     acc += (yc - ya) ** 2 - (Number.isFinite(s2) ? s2 / a.W + s2 / c.W : 0);
     n++;
@@ -764,10 +778,10 @@ function apprSee(ix: ApprIndex, y: number, w: number, s2: number): void {
 }
 
 /** A cap print's columns: location, condition and spec against the reference building; and what kind of evidence it is. */
-function zCap(p: Pick<CapPrint, "x" | "kind" | "w">): number[] {
+function zCap(p: Pick<CapPrint, "x" | "kind" | "w" | "f">): number[] {
   return [
     p.x[0] - CAP_REF_X[0], p.x[1] - CAP_REF_X[1], p.x[2] - CAP_REF_X[2],
-    p.kind === "b" ? 1 : 0, p.kind === "s" ? 1 : 0, p.kind === "t" && p.w < 1 ? 1 : 0,
+    p.kind === "b" ? 1 : 0, p.kind === "s" ? 1 : 0, p.kind === "t" && p.w < 1 ? 1 : 0, p.f ? 1 : 0,
   ];
 }
 const yrOf = (m: number) => Math.floor(m / 12);
@@ -787,7 +801,7 @@ function capIndex(s: GameState, k: BuiltClass): ApprIndex {
   let ix = all[k];
   if (!ix) {
     const lv = logVar((s.capTape ?? []).filter((p) => p.k === k).map((p) => p.c));
-    ix = all[k] = newIndex(6, Math.log(e.capRate[k]), lv.v, lv.n, lv.n ? lv.v / (lv.n + 1) : CAP_Q0 * CAP_Q0);
+    ix = all[k] = newIndex(7, Math.log(e.capRate[k]), lv.v, lv.n, lv.n ? lv.v / (lv.n + 1) : CAP_Q0 * CAP_Q0);
   }
   return ix;
 }
@@ -1045,7 +1059,7 @@ export function openingCapSurvey(s: GameState, parcels: ParcelTable): void {
   for (const k of K) {
     const pts = last[k] ?? [];
     const lv = logVar(pts.map((p) => p.c));
-    const ix = (idx[k] = newIndex(6, Math.log(e.capRate[k]), lv.v, lv.n, lv.n ? lv.v / (lv.n + 1) : CAP_Q0 * CAP_Q0));
+    const ix = (idx[k] = newIndex(7, Math.log(e.capRate[k]), lv.v, lv.n, lv.n ? lv.v / (lv.n + 1) : CAP_Q0 * CAP_Q0));
     for (const p of pts) gridAdd(ix, yrOf(s.month), zCap({ x: p.x, kind: "s", w: 0.5 }), Math.log(p.c), 0.5);
   }
   // (The opening land texture level stays the appraiser's provisional one:

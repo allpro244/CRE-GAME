@@ -105,7 +105,7 @@ function crunch() {
     const b = rd.adj;
     if (b.slice(0, 3).some((v, i) => v !== g.econ.capFit[k][i])) off++;
     // read at the top of the month (tickEcon), before this month's deals printed
-    const z = (p) => [p.x[0] - 0.5, p.x[1] - 0.6, p.x[2] - 0.5, p.kind === "b" ? 1 : 0, p.kind === "s" ? 1 : 0, p.kind === "t" && p.w < 1 ? 1 : 0];
+    const z = (p) => [p.x[0] - 0.5, p.x[1] - 0.6, p.x[2] - 0.5, p.kind === "b" ? 1 : 0, p.kind === "s" ? 1 : 0, p.kind === "t" && p.w < 1 ? 1 : 0, p.f ? 1 : 0];
     const pts = g.capTape.filter((p) => p.k === k && p.m > g.month - rd.win && p.m < g.month)
       .map((p) => ({ v: p.c * Math.exp(-z(p).reduce((a, v, i) => a + v * b[i], 0)), w: p.w }))
       .sort((x, y) => x.v - y.v);

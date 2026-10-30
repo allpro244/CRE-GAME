@@ -4250,18 +4250,19 @@ export function tickEcon(s: GameState) {
     // foot the town's named firms demand is theirs (streetRolls.ts); what the
     // aggregate below still carries is the floor of the firms off the map —
     // the region's sheds — and, in a town with no mapped commercial stock,
-    // the whole class. It is those firms' own need: every industry's heads on
-    // a floor of this class at its feet a worker (economy.ts `floorSf`, the
-    // same heads × feet a named firm's need is), moved one for one from the
-    // floor the off-map stock held at the opening (an initial condition:
-    // OPENING_VAC on the off-map share). Why all the heads and not only the
-    // ones the named firms do not hold: the books do not keep the region's
-    // shed tenants apart from the island's — measured on map 1, the
-    // industrial industries' on-floor heads beyond the named firms' were
-    // 0-170k sf of need against 540k sf of occupied sheds off the map, and a
-    // driver read off that sliver swung the region's shed demand twentyfold
-    // month to month. So the off-map sheds move with the class's industries
-    // as a whole, which is what the region's distributors and makers are. No
+    // the whole class. It is those firms' own need: every industry's
+    // employment on a floor of this class at its feet a worker (economy.ts
+    // `workSf`, the same heads × feet a named firm's need is), moved one for
+    // one from the floor the off-map stock held when the books opened (an
+    // initial condition: OPENING_VAC on the off-map share). Why the whole
+    // class's industries and not only the heads the named firms do not hold:
+    // the books do not keep the region's shed tenants apart from the
+    // island's — measured on map 1, the industrial industries' on-floor heads
+    // beyond the named firms' were 0-170k sf of need against 540k sf of
+    // occupied sheds off the map, and a driver read off that sliver swung the
+    // region's shed demand twentyfold month to month. So the off-map sheds
+    // move with the class's industries as a whole, which is what the region's
+    // distributors and makers are. No
     // affordability, income or Cobb-Douglas term: rent reaches the off-map
     // firms through their own books (economy.ts: their rent is a cost, and a
     // dear region employs fewer of them), and the street's through its firms'
@@ -4273,8 +4274,10 @@ export function tickEcon(s: GameState) {
     if (k === "multifamily") targetRaw = base * driver * swanLvl;
     else {
       const f = firms ? Math.max(0.02, offShare) : 1;
-      const ref = ((e.offRef ??= {})[k] ??= base * f);
-      const want = ref * driver * swanLvl;
+      const w = eco?.workSf?.[k], w0 = e.eco0?.workSf?.[k];
+      const work = w && w0 ? Math.max(0.05, w / w0) : 1;
+      const ref = ((e.offRef ??= {})[k] ??= (firms ? (e.aggOcc?.[k] ?? e.occupied[k]) : e.occupied[k]) * f);
+      const want = ref * work * swanLvl;
       (e.offWant ??= {})[k] = want;
       targetRaw = want / f;
     }
@@ -4600,7 +4603,14 @@ export function tickEcon(s: GameState) {
     // firms actually looking that the empty floors could not take — not the
     // aggregate equation's wish list. In a glut that is nothing, and rents
     // fall as a glut's should.
-    if (firmsOnly) e.structTight[k] = Math.max(0, (firms!.seek - Math.max(0, housable - e.occupied[k])) / Math.max(1, e.stock[k]));
+    // ...and where the sheds run half and half, too (FORMULA_LEDGER #10): the
+    // off-map firms' need beyond the off-map stock is a firm that leases on
+    // the mainland — the region's — not a queue at the island's door. Read
+    // as one, it was the region's whole payroll growth against a stock of
+    // sheds off the map that never grows, a shortage no island floor could
+    // answer (measured, map 1: industrial `structTight` over the builders'
+    // 6% trigger most months, sheds built into a falling occupancy).
+    if (firms) e.structTight[k] = Math.max(0, (firms!.seek - Math.max(0, housable - e.occupied[k])) / Math.max(1, e.stock[k]));
     e.absorb12[k] = e.absorb12[k] * (11 / 12) + absorb;
     monthAbs[k] = absorb;
     monthComp[k] = delivered;

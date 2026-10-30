@@ -1345,9 +1345,24 @@ export function economyToEngine(s: GameState): void {
       floorSf[floorOf(id)] += heads[i] * (1 - OFF_FLOOR[id]) * (1 - REMOTE[id]) * INDUSTRIES[id].sfPerWorker;
     }
     d.floorSf = floorSf;
-    // ...and by industry, in heads on the floor: a shed firm moving onto the
-    // map from the region is drawn by these (streetRolls.ts shed movers)
-    d.floorHeads = heads.map((h, i) => h * (1 - OFF_FLOOR[INDUSTRY_IDS[i]]));
+    // THE FLOOR THE INDUSTRIES' WORK NEEDS (FORMULA_LEDGER #10): the same
+    // heads × feet a worker, read off each industry's employment — what its
+    // sales pay for (`staff`) — rather than off the heads, which also carry
+    // named firms the work does not yet support (a mover that landed in a
+    // small industry). The region's sheds off the map are sized from it
+    // (market.ts), and a shed firm moving onto the map from the region is
+    // drawn by its industry's on-floor employment (streetRolls.ts). Read off
+    // the heads, both fed back: movers into a small industry raised its
+    // heads, which raised the region's shed demand and the next movers' odds
+    // of landing in it — measured on map 1, apparel 100 -> 4,272 heads in
+    // eighteen months and the off-map sheds wanting 3.5M sf against 540k.
+    const workSf: Record<Floor, number> = { office: 0, retail: 0, industrial: 0 };
+    for (let i = 0; i < N_IND; i++) {
+      const id = INDUSTRY_IDS[i];
+      workSf[floorOf(id)] += E.emp[i] * (1 - OFF_FLOOR[id]) * (1 - REMOTE[id]) * INDUSTRIES[id].sfPerWorker;
+    }
+    d.workSf = workSf;
+    d.floorHeads = E.emp.map((h, i) => h * (1 - OFF_FLOOR[INDUSTRY_IDS[i]]));
     d.emp = E.emp.slice(); d.empPrev = (E.empPrev ?? E.emp).slice();
     d.target = E.emp.map((v, i) => v * (E.sigma?.[i] ?? 0));
     // each trade, by the heads it had in each industry at the opening (its own
@@ -1384,6 +1399,8 @@ export function economyToEngine(s: GameState): void {
     e.eco0.jobs ??= d.jobs;
     delete e.eco0.mig;
   }
+  // the work's floor when it was first read: the off-map sheds' driver is read against it (market.ts `offRef`)
+  if (d.workSf) (e.eco0 ??= {}).workSf ??= { ...d.workSf };
   (e.eco0 ??= {}).renters ??= d.renters;
   if (d.islandWant !== undefined) e.eco0.islandWant ??= d.islandWant;
 }
@@ -1421,7 +1438,10 @@ export function migrateEconomy(s: GameState): void {
     for (const k of FLOORS) { const a = e.eco.floorSf[k], b = e.eco0.floorSf[k]; if (a && b) mig[k] = a / b; }
     e.eco0 = { ...e.eco0, floorSf: undefined, mig };
   }
-  if (e.eco) { delete e.eco.emp; delete e.eco.empPrev; delete e.eco.target; delete e.eco.floorHeads; }
+  if (e.eco) { delete e.eco.emp; delete e.eco.empPrev; delete e.eco.target; delete e.eco.floorHeads; delete e.eco.workSf; }
+  // the off-map sheds re-anchor on the floor they hold and the work as it reopens (market.ts `offRef`)
+  if (e.eco0) delete e.eco0.workSf;
+  delete e.offRef;
   delete e.islandFill;
   delete s.economy;
 }

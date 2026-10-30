@@ -95,7 +95,8 @@ export interface EcoDrive {
   heads: number;
   /** Floor the firms' heads take, by class (sf): on the floor, not at home, not in a building of their own. */
   floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>;
-  /** Each industry's heads on a rented floor (not in a building of its own). */
+  /** The floor each class's industries' employment needs (sf; employment, not heads: what their sales pay for), and each industry's employment on a rented floor. */
+  workSf?: Partial<Record<"office" | "retail" | "industrial", number>>;
   floorHeads?: number[];
   /** Each industry's employment now and a month ago, and the heads the island's named firms are formed toward (its share at the opening). */
   emp?: number[]; empPrev?: number[]; target?: number[];
@@ -2409,7 +2410,7 @@ export interface Econ {
   /** Each industry's heads in the island's named firms over the heads they are formed toward (streetRolls.ts): over 1, its firms shed the excess. */
   islandFill?: number[];
   /** The first month's drivers, which the space market's indices are read against. */
-  eco0?: { floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>; renters?: number; jobs?: number; islandWant?: number;
+  eco0?: { floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>; workSf?: Partial<Record<"office" | "retail" | "industrial", number>>; renters?: number; jobs?: number; islandWant?: number;
     /** a save reopened on step 2b's industries: each class's driver as it stood (economy.ts `migrateEconomy`) */
     mig?: Partial<Record<"office" | "retail" | "industrial", number>> };
   /** Each trade's payroll last month, for the firms' month-on-month change. */

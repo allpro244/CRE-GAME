@@ -755,14 +755,23 @@ function tickOil(s: GameState, E: EconomyState): void {
 
 // ---------------------------------------------------------------- the month, first half: who employs whom
 /**
- * HOW FAST AN INDUSTRY STAFFS TO WHAT IT SELLS: 3% of the gap a month when it
- * is short of heads and 7% when it has too many. Firms fire faster than they
- * hire, and the payroll's lag behind output (labour hoarding into a downturn,
- * shedding after the trough) is the gap. The rule the trades' own books ran
- * (market.ts tickFirmBook, retired with them in step 2), moved here unchanged:
- * one answer to how a payroll follows its sales.
+ * HOW FAST AN INDUSTRY STAFFS TO WHAT IT SELLS: 11% of the gap a month when it
+ * is short of heads and 21% when it has too many — half the gap closed in six
+ * months hiring, in three cutting. Firms fire faster than they hire, and the
+ * payroll's lag behind output (labour hoarding into a downturn, shedding after
+ * the trough) is the gap.
+ * RE-SOURCED (2026-10-30). This was 3% and 7% (half-lives of 23 and 9.5
+ * months), carried over unsourced from the trades' retired books. Employment
+ * follows output within a quarter or two: Hamermesh (1993, Labor Demand,
+ * ch. 7) surveys adjustment lags for total employment of a few months, half
+ * the adjustment inside one to two quarters, and US payrolls turn within a
+ * quarter of output at the NBER's peaks and troughs [S~: the half-lives are
+ * read off that range, the asymmetry kept]. At the old speeds a town's heads
+ * caught a third of the swing its orders called for: measured (seed 550991,
+ * 30 years), the heads the output needed fell 0.9% a year per point the
+ * nation's unemployment rose, the heads kept 0.29%; now about 1.0 and 0.9.
  */
-const HIRE_M = 0.03, FIRE_M = 0.07;
+const HIRE_M = 0.11, FIRE_M = 0.21;
 
 /**
  * EACH INDUSTRY'S EMPLOYMENT, the labour demand the household register fills

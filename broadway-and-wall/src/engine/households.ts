@@ -69,7 +69,7 @@
 // they are a shape parameter, stated as such (CLAUDE.md).
 import type { ParcelTable } from "@/data/types";
 import type { Econ, GameState } from "./types";
-import { HH_RENT_SHARE0, shortIndexOf, recordDeal } from "./market";
+import { HH_RENT_SHARE0, shortIndexOf, recordDeal, NATVAC_RATE } from "./market";
 import { resolveRecBare, useRentableSf } from "./value";
 import { flatUnitSf } from "./streetRolls";
 import { HH_SIZE, INCOME_SIGMA, TAX_INS, DTI, COMMUTE, REF_HOME, medianIncome, mortgageRate, fundamentalHomePsf } from "./homeprice";
@@ -323,6 +323,21 @@ const FORM_M = 0.138 / 12;
 const SEP_RATE = 0.014;
 /** Monthly unemployed-to-employed flow, about a quarter of the jobless a month (BLS CPS labour-force flows, 2015-19 average) — when there is a vacancy to take. [S] */
 const UE_RATE = 0.25;
+/**
+ * ...AND THE RATE FALLS WHEN THE OPENINGS DO (2026-10-30). A jobless worker's
+ * odds of a job in a month follow the openings per jobless worker, θ = V/U,
+ * through a matching function: f = UE_RATE x (θ / θ_ref)^MATCH_ETA, with
+ * MATCH_ETA about 0.3 (Shimer 2005, AER: 0.28 on CPS flows and the help-
+ * wanted index; Petrongolo & Pissarides 2001, JEL, survey 0.3-0.5) [S], and
+ * θ_ref the town's own normal tightness, learned over twenty years
+ * (market.ts NATVAC_RATE's clock) — the long-run mean the finding rate is
+ * calibrated at, as Shimer calibrates his. Before this the rate was 0.25
+ * whenever there was an opening at all, so a town whose firms cut their heads
+ * only took the openings away from the households that would have moved in:
+ * measured (seed 550991, 30 years), the labour force fell 0.7% per point of
+ * the nation's unemployment rise and the town's own rate rose 0.12 points.
+ */
+const MATCH_ETA = 0.3;
 /**
  * A household whose earners are all out of work, past their insurance, leaves
  * the region at about 5% a year: interstate migration ran about 2.5% a year
@@ -680,6 +695,8 @@ export interface HouseholdRegister {
   firmHc?: Record<number, number>; layoffWhy?: Record<number, number>;
   /** Each industry's openings still unfilled at the end of last month's matching: what a household may move to the region for. */
   vacLeft?: number[];
+  /** The town's normal labour-market tightness (openings per jobless at the month's matching), learned over twenty years (MATCH_ETA). */
+  thetaRef?: number;
   /** This month's move-outs from the player's blocks: the cause-ledger event per block (bbl -> why id). */
   flatWhy?: Record<string, number>;
   /** THE HOUSEHOLDS' YEAR (stage 5), rolled for the cause ledger: spending by category, net income, layoffs, the jobless rate and the wage index; the month each category's fall was last written. */
@@ -2122,9 +2139,19 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // 3b. the jobless, at the finding rate, where there is a vacancy; the rest a month longer out
   const jobless: number[] = [];
   for (let i = 0; i < r.n; i++) for (let k = 0; k < 3; k++) if (EMP()[k][i] === EMP_UNEMP) jobless.push(3 * i + k);
+  // the finding rate at this month's openings per jobless worker (MATCH_ETA)
+  let uW = 0, vW = 0;
+  for (const sl of jobless) uW += a.wt[(sl / 3) | 0];
+  for (let ind = 0; ind < N_IND; ind++) vW += Math.max(0, V[ind]);
+  let find = UE_RATE;
+  if (uW > 0 && vW > 0) {
+    const theta = vW / uW;
+    r.thetaRef = r.thetaRef === undefined ? theta : r.thetaRef + (theta - r.thetaRef) * NATVAC_RATE;
+    find = Math.min(1, UE_RATE * Math.pow(theta / r.thetaRef, MATCH_ETA));
+  }
   for (const sl of shuffle(jobless)) {
     const i = (sl / 3) | 0, k = sl % 3;
-    const hire = R.u() < UE_RATE, scar = R.n();
+    const hire = R.u() < find, scar = R.n();
     const job = hire ? bestJob(i, k) : null;
     // a returning worker takes a small cut in pay (job-loss scarring, Jacobson-LaLonde-Sullivan 1993) [S]
     if (job) { place(i, k, job); WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * scar); }

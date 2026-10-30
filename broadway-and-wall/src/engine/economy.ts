@@ -126,9 +126,9 @@ const F64 = ["hc", "z", "eq", "rev", "wages", "inputs", "rent", "prodTax", "inte
   // what the firm pays a head (posted, nominal, in the engine's wage-index units), the raises it owes
   // itself from months it could not cut, and its price against the nation's for its industry (§6c-D)
   "pay", "owe", "price",
-  // its unit cost against the nation's for its industry (pay, rent, inputs); its national orders
+  // its national orders
   // (`tickExports`: a share of its industry's opening exports) and what they were a year ago
-  "uc", "xo", "xo12"] as const;
+  "xo", "xo12"] as const;
 /** Revenue history columns, indexed by month mod 12. */
 export const REV_RING = ["h0", "h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8", "h9", "h10", "h11"] as const;
 type F64Name = typeof F64[number];
@@ -1519,7 +1519,7 @@ export function migrateEconomy(s: GameState): void {
  * are easier to hire) and the size term.
  *
  * PRICES. A firm's price against the nation's for its industry follows its
- * unit cost (`uc`) — its pay against the nation's, at its industry's labour
+ * unit cost (`unitCoster`) — its pay against the nation's, at its industry's labour
  * share (BEA compensation per $ of output); the rent on its lease per head
  * against what the nation's rents would charge it, at the share of output
  * that rent is at the nation's rents; its inputs, bought at national prices,
@@ -1553,9 +1553,7 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
   const close = 1 - Math.exp(-Math.LN2 / WAGE_GAP_HALF_M);
   const slack = WAGE_CURVE * Math.log(Math.max(0.01, uLoc) / Math.max(0.01, uNat));
   const prevNat = E.posted?.natW ?? natW;
-  // what a head's rent and output would be at the nation's rents and pay
-  const opwNat = perHead(natW).opw, opwHere = perHead(e.wageIdx ?? 1).opw, rentNat = new Float64Array(N_IND), rentMkt = new Float64Array(N_IND);
-  for (let i = 0; i < N_IND; i++) { rentNat[i] = natRentPerHead(s, i, opwNat); rentMkt[i] = rentPerHead(s, i, opwHere); }
+  const unitCost = unitCoster(s, E, natW);
   for (let n = 0; n < nF; n++) {
     const i = F.ind[n], I = INDUSTRIES[INDUSTRY_IDS[i]];
     // ---- pay
@@ -1571,11 +1569,9 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
     F.owe[n] = Math.min(0.25, Math.max(0, F.owe[n]));
     F.pay[n] = next;
     // ---- unit cost against the nation's, and the price, when this firm reprices this month
-    const rentHead = F.id[n] >= 0 && F.hc[n] > 0 ? F.rent[n] / F.hc[n] : rentMkt[i];
-    F.uc[n] = 1 + I.comp * (F.pay[n] / natW - 1) + (rentHead - rentNat[i]) / Math.max(1e-6, opwNat[i]);
     if (!(F.price[n] > 0) || hashU01(F.id[n], m) < 1 / PRICE_DUR_M) {
       const press = emp[i] > 0 && implied[i] > 0 ? Math.log(implied[i] / emp[i]) : 0;
-      F.price[n] = Math.max(0.5, F.uc[n] * Math.exp(PRICE_DEMAND * press));
+      F.price[n] = Math.max(0.5, unitCost(n) * Math.exp(PRICE_DEMAND * press));
     }
   }
   // ---- what the town's firms post, summed
@@ -1595,6 +1591,23 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
   E.posted = {
     m, wage, payIdx, priceRel: ws > 0 ? wp / ws : 1, localShare: all > 0 ? ws / all : 0,
     openings, unemp: uLoc, natW, wage12: hist.length === 13 ? wage / hist[0] - 1 : undefined,
+  };
+}
+/**
+ * A FIRM'S UNIT COST AGAINST THE NATION'S FOR ITS INDUSTRY (`postPayAndPrices`):
+ * its pay against the nation's at its industry's labour share; the rent on its
+ * lease per head (an off-map firm's, the market's) against what the nation's
+ * rents would charge the same head, over output per head at the nation's pay;
+ * its inputs, bought at national prices, the nation's.
+ */
+function unitCoster(s: GameState, E: EconomyState, natW: number): (n: number) => number {
+  const F = E.f;
+  const opwNat = perHead(natW).opw, opwHere = perHead(s.econ.wageIdx ?? 1).opw, rentNat = new Float64Array(N_IND), rentMkt = new Float64Array(N_IND);
+  for (let i = 0; i < N_IND; i++) { rentNat[i] = natRentPerHead(s, i, opwNat); rentMkt[i] = rentPerHead(s, i, opwHere); }
+  return (n) => {
+    const i = F.ind[n], I = INDUSTRIES[INDUSTRY_IDS[i]];
+    const rentHead = F.id[n] >= 0 && F.hc[n] > 0 ? F.rent[n] / F.hc[n] : rentMkt[i];
+    return 1 + I.comp * (F.pay[n] / natW - 1) + (rentHead - rentNat[i]) / Math.max(1e-6, opwNat[i]);
   };
 }
 /** A uniform [0,1) from a firm and a month: whether it reprices, the same in every copy of the game. */
@@ -1625,8 +1638,9 @@ function whyOrders(s: GameState, E: EconomyState): void {
     F.xo12[n] = F.xo[n];
   }
   moves.sort((a, b) => Math.abs(b.ch) * b.usd - Math.abs(a.ch) * a.usd);
+  const unitCost = unitCoster(s, E, E.posted?.natW ?? s.econ.natWageIdx ?? 1);
   for (const { n, ch, usd } of moves.slice(0, 12)) {
-    const name = names.get(F.id[n])!, uc = F.uc[n] - 1, i = F.ind[n];
+    const name = names.get(F.id[n])!, uc = unitCost(n) - 1, i = F.ind[n];
     const cost = `unit cost ${uc < 0 ? "−" : "+"}${Math.abs(uc * 100).toFixed(0)}% vs nation`;
     why(s, {
       k: "firm.orders", a: "firm", aid: String(F.id[n]), name,

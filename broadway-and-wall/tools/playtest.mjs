@@ -687,7 +687,9 @@ await flow("picker", async () => {
     const ap = await st(`g.approaches[${S(l.b)}] ?? null`);
     if (!ap || ap.refused || ap.ask === undefined) continue;
     await js(`window.__store.getState().select(${S(l.b)}); return true;`); await sleep(600);
-    // the negotiation panel: "Buy at" sets the dial to their ask, then the same button closes on the preset
+    // off the Offer tab the footer's one move is "Make an offer", which opens it (Negotiation.tsx onOfferTab);
+    // there "Buy at" sets the dial to their ask, then the same button closes on the preset
+    await tap(`/^Make an offer$/`, fileDrawer); await sleep(600);
     await tap(`/^Buy at /`, fileDrawer); await sleep(300);
     if (!(await tap(`/^Buy at /`, fileDrawer))) continue;
     await sleep(500);
@@ -703,7 +705,8 @@ await flow("picker", async () => {
   check(prods.length > 0, "the Build desk offers product types on a large commercial lot", use ? `use ${use}` : "no Retail/Industrial use button");
   if (!prods.length) return;
   await tap(`/^${prods[0].replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$/`, fileDrawer); await sleep(600);
-  const site = await js(`const det = ${fileDrawer}?.querySelector(".build-desk details"); if (!det) return null; det.setAttribute("open", "");
+  // the Numbers fold (BuildDesk.tsx Details), not the More one above it
+  const site = await js(`const det = ${fileDrawer}?.querySelector(".build-desk .bd-kv")?.closest("details"); if (!det) return null; det.setAttribute("open", "");
     const rows = [...det.querySelectorAll(".bd-kv tr")].map((r) => [__pt.norm(r.cells[0].textContent), __pt.norm(r.cells[1].textContent)]);
     return rows.some(([k]) => k === "Site") ? { head: "Site plan", rows } : null;`);
   await screen("site-plan");

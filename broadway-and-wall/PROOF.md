@@ -335,6 +335,74 @@ holds: `natVac` learns from a glut (seed 22: 8.6% → 16.6%), and only the
 shortage side is guarded (`structTight`). Untested: a matching guard that
 stops `natVac` learning while entry is shut.
 
+### Flats vacancy: do builders miss the pipeline? Measured: no (2026-10-31)
+
+Hypothesis tested: builders and construction lenders underwrite lease-up
+without the space already under construction or decided, so the flats stock
+overshoots. `tools/pipeline-probe.mjs` records, at every flats start decision
+(a developer's commitment, a street firm's start, a teardown), the delivery
+vacancy the builder read (`forwardVacancy`, with its own beliefs and with the
+town's figures), the same read with the decided-not-started schemes
+(`cityPlans`) added, and the city's vacancy the year the building delivered.
+Main `a8a7d3b` (#559), 80 years, square-foot weighted:
+
+| seed | source | starts | read (own beliefs) | + decided schemes | delivered into | vacancy at decision (believed) | decided-not-started, % of stock | queue, % of stock |
+|---|---|---|---|---|---|---|---|---|
+| 11 | developers | 3.49M sf | 0.3% | 0.4% | 12.7% | 12.2% (12.9%) | 2.6% | 82% |
+| 11 | street firms | 0.62M sf | 0.4% | 0.6% | 12.2% | 11.4% (12.1%) | 1.6% | 110% |
+| 22 | developers | 1.28M sf | 0.3% | 0.4% | 12.2% | 13.0% (13.5%) | 1.3% | 71% |
+| 22 | street firms | 0.70M sf | 0.0% | 0.0% | 11.7% | 13.0% (12.9%) | 1.4% | 59% |
+| 33 | developers | 1.33M sf | 0.3% | 0.4% | 13.2% | 14.1% (14.5%) | 1.9% | 81% |
+| 33 | street firms | 0.41M sf | 1.2% | 1.4% | 14.3% | 12.9% (12.8%) | 1.8% | 90% |
+
+(Teardowns are 0.1-0.2M sf a seed and read the same way.) Space under
+construction is already in every builder's read; the schemes decided and not
+yet started run 1-2.6% of the stock, and adding them moves the read by
+0.0-0.2 points. **The pipeline is not why the forecast misses.** The builders'
+own beliefs are also right: the vacancy they believe is within a point of
+the true one, and the absorption they extrapolate is about zero (it is
+occupied-space growth, beliefs.ts). Every read still lands at 0-1% because
+of the **queue** term (`structTight`, subtracted as certain move-ins): for
+flats it reads 59-110% of the stock as households waiting while 11-14% of it
+stands empty.
+
+**Why the queue is that big.** `households.ts writeRolls` sets `flatSpace.seek` to
+every household across the water that would like an island flat at the
+*average in-place* rent (`seekW`). Each of them has just been shown a
+shortlist of the empty flats and turned them down at their asking rents
+(`letTo`). What is left after the letting is the real waiting list,
+`r.unmet` (households that wanted a flat and found none free), which the
+street's landlords already read (`roll.q`). A market study counts a waiting
+list, not a wish list. The pro forma path (`underwriteDevelopment`, which
+the street firms use) also reads the town's demand trend, and for flats that
+trend is the growth of the same wish list (`islandWant`): 10-54% to delivery
+against ~0% believed.
+
+**Tried and not landed: the queue as the waiting list.** Same seeds, 100-year
+proof against main: multifamily vacancy 12.2% → 14.1% (FAIL), industrial
+12.4% → 17.0% (WATCH → FAIL), peak charge-off year 1.7% → 26.9%, bank failures
+1.05 → 3.16 a century, starts 0.5% → 0.2% of stock, construction lag 5 → 4
+years (still FAIL), vacancy-after-starts 4 → 5 years (WATCH → FAIL). The flats
+queue fell to 0, and seed 11 then built almost no flats (stock 2.90M →
+2.61M sf, starts 0.13%/yr of stock) **while its flats vacancy still climbed
+4% → 20%**. So on these seeds the flats vacancy is not mainly the stock
+overshooting. What the fake queue had been propping up: `structTight > 0.005`
+freezes the town's natural-vacancy learner (market.ts, `NATVAC_RATE`). With
+the queue gone, the learner follows the glut (seed 22: 7.8% → 11.8% by year
+59). Landlords' asks and builders' tolerance (`normalVac + vacTol`) both
+anchor on it, so a glut teaches the town that the glut is normal. This is
+the same ratchet as the retail note above (`natVac` 8.6% → 16.6%), now seen
+on flats.
+
+**Next, in order.** (1) The natural-vacancy learner: a glut must not become
+the town's normal. Real estimates of natural vacancy come from long
+histories and the structure of turnover (Wheaton-Torto), not from the last
+few years. (2) Then the waiting-list queue above, re-measured on top of (1).
+(3) Construction-lender concentration limits (interagency CRE guidance:
+construction over 100% of capital, CRE over 300%) are still unmodelled. They
+were not the binding fault here, because lenders lend against the same
+0%-vacancy pro forma.
+
 ### 8. Smaller watches
 
 - **Unemployment, century mean 4.5%** (band 4.5-7; was 5.2%): arrivals

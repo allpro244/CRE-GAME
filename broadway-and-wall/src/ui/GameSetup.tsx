@@ -8,7 +8,7 @@ import {
   type GameSetup, type FieldChoice, type HomeChoice, type RivalCapital,
 } from "@/engine/setup";
 import { generateFirmName } from "@/engine/firm";
-import { setupCity, currentSize, currentDev, currentCash0 } from "@/state/city";
+import { setupCity, currentSize, currentDev, currentCash0, regionShown } from "@/state/city";
 import { cityList, cityName, sizeList, developmentList, extentList, randomSeed, PARK_AMOUNTS, REGION } from "@/citygen/index.mjs";
 import { drawPlatOffThread } from "@/state/platClient";
 import { BUILD_STAMP } from "@/buildStamp";
@@ -69,8 +69,8 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
   const setPopupsOff = useStore((s) => s.setPopupsOff);
   const loadError = useStore((s) => s.loadError);
 
-  // the region leads; the rest in the order citygen lists them
-  const cities = [...cityList()].sort((a, b) => Number(b.id === REGION) - Number(a.id === REGION));
+  // the island leads; the region map is hidden unless a developer asks for it (`?maps=all`, state/city.ts regionShown)
+  const cities = cityList().filter((c) => c.id !== REGION || regionShown());
   const sizes = sizeList();
   const devs = developmentList();
 

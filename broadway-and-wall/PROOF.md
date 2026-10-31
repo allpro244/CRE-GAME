@@ -20,6 +20,26 @@ are discarded as settling. First run on main at `625271e3` (#535),
 2026-10-29, 6 seeds × 100 years in 90 minutes; run 2 (below) on main at
 `c6469ed5` (#548), 2026-10-30, 156 minutes.
 
+## Since run 3: flats priced on landlords' own guest cards (#560, 2026-10-31)
+
+The flats' rent rule is now each landlord's own decision on what reached its
+door (`streetRolls.ts priceFlats`, `households.ts budgetOf`): renters shop
+once a year, compare a shortlist and sign the cheapest they can pay for; the
+landlord picks the ask that earns most over a lease. The revenue-management
+gain, the learned normal vacancy, the ±5-point band and the CPI step are gone.
+Seeds 11/22/33 × 100 years against main a8a7d3b: multifamily vacancy 12.2% →
+10.9% typical, in band 22% → 44% of years (FAIL → WATCH); overall PASS 28 ·
+WATCH 13 · FAIL 3 → PASS 29 · WATCH 12 · FAIL 3.
+
+**Open, first thing to fix:** the flats' rent no longer moves against their
+vacancy — corr(Δlog rent, vacancy) went from −0.13…−0.24 to about 0 on all
+three seeds (the all-class row −0.22 → −0.01, PASS → WATCH; office drifted
+toward 0 on two seeds with it). Untested hypotheses: (1) each landlord fully
+re-prices every month on one month's cards, so rent clears inside the year —
+real revenue-management systems read several weeks of leads; (2) lease-up
+vacancy on new blocks is set by the letting pace, not price. The fix must be
+how a real landlord reads its information, not a smoothing coefficient.
+
 ## Results — run 3 (main `4d579be8`, #555, 2026-10-30, seeds 11/22/33)
 
 PASS 30 · WATCH 10 · FAIL 4 (3 seeds, so not strictly comparable with run 2's 6). Fixed since run 2: flats rent (#553), owners redevelop their own stock (#554), city payroll falls in downturns (#555, now PASS at 2.1 job-loss years a decade).

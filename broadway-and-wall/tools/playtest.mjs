@@ -266,7 +266,8 @@ function report() {
 
 // ---------------------------------------------------------------- the game
 const st = (expr) => js(`const s = window.__store.getState(), g = s.game; return (${expr});`);
-async function load(q = "?ui=next") {
+// `maps=all`: the region map is hidden from players (state/city.ts regionShown); its land flows are played here
+async function load(q = "?ui=next&maps=all") {
   pageErrors = [];
   await send("Page.navigate", { url: url + q });
   for (let i = 0; i < 120; i++) {

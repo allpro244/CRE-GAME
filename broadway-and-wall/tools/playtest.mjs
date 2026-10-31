@@ -101,7 +101,10 @@ for (const f of readdirSync(OUT)) if (f.endsWith(".png")) try { unlinkSync(join(
 const CHROME = process.env.BW_CHROME ?? [
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
-  "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
+  "/usr/bin/google-chrome", "/usr/bin/chromium",
+  // the cloud box's Playwright Chromium, whatever build it is today
+  ...(existsSync("/opt/pw-browsers") ? readdirSync("/opt/pw-browsers").filter((d) => /^chromium-\d+$/.test(d))
+    .flatMap((d) => ["chrome-linux64", "chrome-linux"].map((x) => join("/opt/pw-browsers", d, x, "chrome"))) : []),
 ].find((p) => existsSync(p));
 if (!CHROME) bail(2, "no Edge or Chrome found; set BW_CHROME");
 const dport = 9300 + Math.floor(Math.random() * 600);

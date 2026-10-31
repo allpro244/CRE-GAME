@@ -71,7 +71,7 @@ import type { ParcelTable } from "@/data/types";
 import type { Econ, GameState } from "./types";
 import { HH_RENT_SHARE0, shortIndexOf, recordDeal, NATVAC_RATE } from "./market";
 import { resolveRecBare, useRentableSf } from "./value";
-import { flatUnitSf } from "./streetRolls";
+import { flatUnitSf, priceFlats, flatComps } from "./streetRolls";
 import { HH_SIZE, INCOME_SIGMA, TAX_INS, DTI, COMMUTE, REF_HOME, medianIncome, mortgageRate, fundamentalHomePsf } from "./homeprice";
 import { why, whyOnce, whyAt } from "./why";
 import { RE_ALLOC, SAVERS } from "./investors";
@@ -1352,6 +1352,22 @@ function wantsIsland(r: HouseholdRegister, a: HouseholdArrays, i: number, e: Eco
   if (move <= 0 && (!(inc > 0) || (12 * rentIsl) / inc > SCREEN)) return false;
   return Math.log(rentIsl / Math.max(1, r.mainRent)) <= islandPull(r, a, i, e) + move;
 }
+
+/**
+ * THE MOST IT WOULD PAY for an island flat, a month — what it writes on a
+ * block's guest card: the island's pull on it over the mainland's rent, less
+ * the move (`wantsIsland` for a household across the water, solved for the
+ * rent), and no more than the landlord's income screen lets it sign for.
+ * Undefined before the opening's books, when nobody has chosen yet.
+ */
+function budgetOf(r: HouseholdRegister, a: HouseholdArrays, i: number, e: Econ): number | undefined {
+  if (r.locMu === undefined) return undefined;
+  const inc = payOf(a, i);
+  if (!(inc > 0)) return 0;
+  return Math.min(Math.max(1, r.mainRent) * Math.exp(islandPull(r, a, i, e) - MOVE_LOG), (SCREEN * inc) / 12);
+}
+/** This month's guest cards, by block index: each lead's budget over the block's market rent for a flat (log), and the flats it listed (writeRolls hands them to the rolls). Not saved: it lives one month. */
+let DOORS: Map<number, { x: number[]; u: number }> | null = null;
 
 // ---------------------------------------------------------------- owning (stage 2)
 type HomeMkt = { std: number; starter: number; rate: number; amort: number; ucMo: number };
@@ -2846,7 +2862,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   // it has stood empty, its owner's care: streetRolls) — and takes the first
   // it would pay for, up to each block's letting pace. A flat nobody chooses
   // stands empty, and its rent answers.
-  const rooms: { b: Block; room: number }[] = [];
+  const rooms: { b: Block; room: number; free: number }[] = [];
   for (const b of B.list) {
     if (!(byHH && b.street)) continue;
     const l = inBlock.get(b.idx) ?? [];
@@ -2859,35 +2875,63 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       toMainland(R, r, i, pool, gone, true); extra--;
     }
     const room = Math.max(0, Math.min(cap - (atStart.get(b.idx) ?? 0), cap - l.length, Math.floor((b.limU ?? 2) / r.wIsland)));
-    if (room > 0) rooms.push({ b, room });
+    // `room` is what the leasing office can sign this month (its pace); `free` is every flat standing empty, which is what its landlord prices against
+    if (room > 0) rooms.push({ b, room, free: Math.max(room, cap - l.length) });
   }
-  // THE WAITING LIST: the households across the water that wanted an island
-  // flat at the going rent and found none empty (not one that saw a flat and
-  // would not pay its rent) — the excess demand a full street still shows its
-  // landlords (writeRolls; streetRolls.ts `markFlatAsk`).
+  // WHO IS LOOKING THIS MONTH, AND WHAT EACH LANDLORD SEES AT ITS DOOR
+  // (2026-10-30). This was every household across the water that wanted an
+  // island flat at the street's average rent, every month: the stock of
+  // interest shopping twelve times a year, and nobody who would pay a little
+  // less than the average ever at a door, so no landlord could learn that its
+  // rent was too high. A renter shops when its lease ends: each household
+  // across the water looks once a year (a twelfth of each record's weight a
+  // month, phased by its id so no draw is spent on it), whatever it thinks of
+  // the island's rents. It tours a shortlist of the blocks listing flats,
+  // drawn by their draw on movers; at each it fills in the guest card — the
+  // most it would pay (`budgetOf`) — and takes the first it can pay for.
+  // Each block keeps its cards (writeRolls → streetRolls.ts `priceFlats`):
+  // its landlord prices next month on them. A listing that lets out keeps
+  // taking cards this month (the leads still come; it has nothing left to
+  // show them), so a block that fills fast knows it was cheap.
+  DOORS = null;
   let unmet = 0;
   if (!rooms.length && byHH) for (const c of want) unmet += Math.floor(r.a!.wt[c] / r.wIsland) * r.wIsland;
   if (rooms.length) {
-    let wTot = rooms.reduce((t, x) => t + (x.b.w ?? 1), 0);
-    const pickRoom = () => { let u = R.u() * wTot; for (const x of rooms) { if (x.room <= 0) continue; u -= x.b.w ?? 1; if (u <= 0) return x; } return rooms.find((x) => x.room > 0); };
-    const seekers = want.slice();
+    const wTot = rooms.reduce((t, x) => t + (x.b.w ?? 1), 0);
+    const pickRoom = () => { let u = R.u() * wTot; for (const x of rooms) { u -= x.b.w ?? 1; if (u <= 0) return x; } return rooms[rooms.length - 1]; };
+    const doors = (DOORS = new Map<number, { x: number[]; u: number }>());
+    for (const x of rooms) doors.set(x.b.idx, { x: [], u: x.free });
+    const seekers: { c: number; n: number }[] = [];
+    for (const c of pool) {
+      if (gone[c] || a.ten[c] !== TEN_MAINLAND) continue;
+      const W = a.wt[c] / r.wIsland, ph = a.id[c] % 12;
+      const n = Math.floor(((m + ph + 1) * W) / 12) - Math.floor(((m + ph) * W) / 12);
+      if (n > 0) seekers.push({ c, n });
+    }
     for (let j = seekers.length - 1; j > 0; j--) { const q = Math.floor(R.u() * (j + 1)); const t = seekers[j]; seekers[j] = seekers[q]; seekers[q] = t; }
-    for (const c of seekers) {
+    for (const { c, n } of seekers) {
+      const budget = budgetOf(r, a, c, e);
       // each whole household the agent stands for looks once
-      let none = false;
-      for (let h = Math.floor(r.a!.wt[c] / r.wIsland); h > 0 && wTot > 0 && !(c < gone.length && gone[c]); h--) {
-        let took = false;
-        for (let k = 0; k < SHORTLIST; k++) {
-          const x = pickRoom();
-          if (!x) { none = true; break; }
-          if (!letTo(R, r, x.b, e, m, [c], gone)) continue;
-          recordDeal(e, "multifamily", m, x.b.rel ?? 1, x.b.unitSf * r.wIsland);
-          if (--x.room <= 0) wTot -= x.b.w ?? 1;
-          took = true; break;
+      for (let h = n; h > 0 && !(c < gone.length && gone[c]); h--) {
+        // the shortlist, toured whole: a renter compares before it signs
+        const seen: typeof rooms = [];
+        for (let k = 0; k < SHORTLIST; k++) { const x = pickRoom(); if (!seen.includes(x)) seen.push(x); }
+        // each door's card: the most it would pay HERE, having seen the rest
+        // — its budget, or the cheapest other flat on its list it could still
+        // have taken, whichever is less ("where else are you looking?")
+        if (budget !== undefined && budget > 0) for (const x of seen) {
+          let alt = budget;
+          for (const y of seen) if (y !== x && y.room > 0 && y.b.let < alt) alt = y.b.let;
+          const mktUnit = x.b.let / (x.b.rel ?? 1);
+          if (mktUnit > 0) doors.get(x.b.idx)!.x.push(+Math.log(alt / mktUnit).toFixed(4));
         }
-        if (!took) break;
+        // ...and it signs for the cheapest flat on the list it can pay for
+        let pick: (typeof rooms)[number] | undefined;
+        for (const x of seen) if (x.room > 0 && (budget === undefined || x.b.let <= budget) && (!pick || x.b.let < pick.b.let)) pick = x;
+        if (!pick || !letTo(R, r, pick.b, e, m, [c], gone)) break;
+        recordDeal(e, "multifamily", m, pick.b.rel ?? 1, pick.b.unitSf * r.wIsland);
+        pick.room--;
       }
-      if ((none || wTot <= 1e-9) && !(c < gone.length && gone[c])) unmet += Math.floor(r.a!.wt[c] / r.wIsland) * r.wIsland;
     }
   }
   r.unmet = unmet;
@@ -3052,13 +3096,13 @@ function writeRolls(s: GameState, r: HouseholdRegister, B: { list: Block[] }, se
   let let_ = 0, cap = 0, unit = 0;
   // the waiting list, to the blocks its households asked at: each asks where
   // it would have looked (a block's draw on movers, streetRolls `w`)
-  let wAll = 0;
-  for (const b of byIdx.values()) wAll += b.w ?? 1;
-  const unmet = r.unmet ?? 0;
+  // each landlord prices next month on this month's guest cards, or on the street's comps (streetRolls.ts `priceFlats`)
+  const comp = flatComps(e, s.month);
   for (const b of byIdx.values()) {
     const roll = rolls[r.blocks[b.idx]];
     if (!roll) continue;
-    roll.q = wAll > 0 && unmet > 0 ? Math.round((unmet * (b.w ?? 1) / wAll) * b.unitSf) : 0;
+    const door = DOORS?.get(b.idx);
+    priceFlats(roll, door?.x, door?.u ?? 0, comp);
     const l = [...(cohorts.get(b.idx)?.values() ?? [])].map((x) => ({ ...x, sf: Math.round(x.sf) }));
     roll.l = l;
     roll.occ = l.reduce((t, x) => t + x.sf, 0);

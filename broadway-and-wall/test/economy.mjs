@@ -420,7 +420,7 @@ const n = W.length, col = (f) => W.map(f);
 // (b) The town's whole export base loses 30% of its sales out of town (a
 // Pittsburgh): it costs the town jobs and every class ends emptier than its
 // twin (the flats emptier or cheaper: their landlords re-mark asks on their
-// own lettings, streetRolls.ts markFlatAsk, FORMULA_LEDGER #4/#5, so a slump
+// own guest cards, streetRolls.ts priceFlats, FORMULA_LEDGER #4/#5, so a slump
 // can show in their rent rather than their vacancy) — four years of twins,
 // each class's mean gap over twice its SE. The exporters' own floor leads the
 // shops the payrolls spent in: on this map the base is offices (technology,

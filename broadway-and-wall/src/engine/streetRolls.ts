@@ -43,7 +43,7 @@
  */
 import { renewalAsk } from "./citygov";
 import type { ParcelTable, ParcelRecord } from "@/data/types";
-import type { BuiltClass, Condition, Credit, GameState, Tenant } from "./types";
+import type { BuiltClass, Condition, Credit, Econ, GameState, Tenant } from "./types";
 import { START_YEAR } from "./types";
 import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, useOccupancy, N_BANDS, scoreRentMult, locationRentMult } from "./value";
 import { isCommercial, bumpOf, minLettableSf, streetLease, pickSector, pickName, termBandM, depositFor } from "./leasing";
@@ -1431,68 +1431,62 @@ export function playerTenantLeft(s: GameState, t: Tenant, bbl: string, whyId?: n
 export interface FlatRoll { occ: number; vac?: number; l?: { sf: number; rent: number; endM: number }[]; mkt?: number;
   /** the block's draw on movers (score, staleness, its owner's care) and its month's letting limit, sf (households.ts reads them) */
   w?: number; lim?: number; ask?: number;
-  /** its landlord's ask over the flats' market rent for the block (log), its vacancy over the last year (a twelve-month average), and the vacancy the landlord has learned to expect of it (`markFlatAsk`) */
-  px?: number; ve?: number; nv?: number;
-  /** the households that asked for a flat here last month and found the street full, sf (households.ts `writeRolls`), and that waiting list over the last year as a share of the block (a twelve-month average) */
-  q?: number; qe?: number }
+  /** its landlord's ask over the flats' market rent for the block (log), set on its own guest cards (`priceFlats`) */
+  px?: number;
+  /** the leads that toured its listed flats last month (0 when it marked to the street's comps instead) */
+  ld?: number }
 
 /**
- * A BLOCK'S LANDLORD RE-MARKS ITS ASK, every month, from its own lettings
- * (FORMULA_LEDGER #4/#5: this was the town's flats' rent drifting on their
- * vacancy against a fixed 4.5% "natural" rate). It passes on the price level
- * (`priceLevel12`, as a lease's CPI clause reads it) and moves its ask on its
- * block's vacancy over the last year (a block of a dozen flats is full one
- * month and a twelfth empty the next: a landlord reads its year, not its
- * month) against the vacancy it has learned to expect of the block — the
- * block's own record, with a memory of OWN_MEMORY_M, from what the town's
- * flats usually run at (`normalVac`) — at REV_MGMT:
- * apartment rents grow about 2.5%/yr per point of occupancy round its neutral
- * level under revenue management (RealPage / Axiometrics, 2010-2023) [S~],
- * read within the range those years measured: a block more than OCC_RANGE
- * off its normal is in lease-up or a glut, and its landlord's lever there is
- * the concession for space that has stood (absorption.ts `staleDiscount`,
- * in its ask), not a face rent cut without end.
- * A block that stays full raises its ask until a household it would have
- * kept chooses another; one that stands empty cuts until one chooses it
- * (households.ts: the households choose the blocks).
+ * A BLOCK'S LANDLORD PRICES ITS FLATS ON ITS OWN GUEST CARDS (2026-10-30).
+ *
+ * This was a revenue-management gain (2.5%/yr per point) on the block's
+ * vacancy against a vacancy it had learned to expect, held to five points
+ * either side, plus the price level passed on and a waiting list shared out
+ * by draw — four rules standing in for the one thing a landlord actually
+ * does. Taught that full was normal, the island's flats sat full for fifty
+ * years while their real rent halved (PROOF run 2 #1); given the list, they
+ * overshot to 12% vacant (run 3).
+ *
+ * What a landlord knows is what came to its door: the leads that toured its
+ * listed flats this month and the most each said it would pay (the guest
+ * card's budget, households.ts `budgetOf`), and how many flats it had to
+ * let. It sets next month's ask to the rent that earns most over a lease:
+ * at an ask p, the leads that would sign are the k whose budgets reach it,
+ * a free flat waits about free/k months for one, and earns p for the rest of
+ * the year — so it picks the budget that maximises p·(LEASE_M − free/k).
+ * No gain, no normal vacancy, no bound and no price level: a shortage is a
+ * door with more budgets above the ask than flats, a glut one with fewer,
+ * and inflation arrives in the budgets (the households' pay and the
+ * mainland's rents). Where even every lead would leave a flat empty longer
+ * than a lease, it prices to the lowest budget that came.
+ *
+ * A block with nothing listed, or that nobody toured, has no door to read:
+ * it marks to the street — what new lettings signed at over the last six
+ * months against their own blocks' market rents (the comps a landlord pulls
+ * for a renewal, `e.deals`) — and keeps its ask when nothing has let.
  */
-const REV_MGMT = 2.5;
-/** The national apartment occupancy RealPage measured over 2010-2023 moved about five points either side of its neutral level [S~]. */
-const OCC_RANGE = 0.05;
-/**
- * How long a landlord's sense of its own block's normal vacancy remembers:
- * a half-life of five years [K: about five turns of a year's lease, the
- * record a revenue-management system is set on]. The town's normal
- * (`normalVac`) keeps its twenty-year memory.
- */
-const OWN_MEMORY_M = 60;
-/*
- * A FULL BLOCK STILL SEES ITS DEMAND (2026-10-30, PROOF run 2 #1). The
- * learned normal alone taught a block that stayed full that full was normal:
- * its pressure term went to zero and the ask passed on only the price level
- * ex-shelter, so the island's flats sat full for 50-70 years while their real
- * rent halved. Vacancy is only half of what a revenue-management system
- * reads; the other half is the leads it cannot house (RealPage YieldStar and
- * its peers price on demand against "exposure", the units available or on
- * notice). Here that is the waiting list: the households that asked for a
- * flat here and found the street full (`q`, households.ts — a household that
- * saw an empty flat and would not pay its rent is not on it). Averaged over
- * the year as a share of the block, it reads as occupancy past full: a block
- * with a twentieth of its flats' worth of households turned away is pressed
- * as one five points under its normal vacancy. The landlord's normal learns
- * from the vacancy it has, never from the list, so a shortage is not learned
- * away; it ends when the ask has risen until the households turned away
- * choose the mainland instead.
- */
-function markFlatAsk(roll: FlatRoll, cap: number, usual: number, esc: number): void {
-  const vac = Math.max(0, 1 - roll.occ / Math.max(1, cap));
-  const ve = (roll.ve ?? usual) + (vac - (roll.ve ?? usual)) / 12;
-  const qe = (roll.qe ?? 0) + (Math.max(0, roll.q ?? 0) / Math.max(1, cap) - (roll.qe ?? 0)) / 12;
-  const nv = roll.nv ?? usual;
-  roll.px = +((roll.px ?? 0) + esc + REV_MGMT / 12 * Math.max(-OCC_RANGE, Math.min(OCC_RANGE, nv - ve + qe))).toFixed(5);
-  roll.ve = +ve.toFixed(5);
-  roll.qe = +qe.toFixed(5);
-  roll.nv = +(nv + (ve - nv) * (1 - Math.exp(-Math.LN2 / OWN_MEMORY_M))).toFixed(5);
+const LEASE_M = 12; // a flat's lease (households.ts: leaseEnd = month + 12) [S]
+export function priceFlats(roll: FlatRoll, cards: number[] | undefined, free: number, comp: number | undefined): void {
+  if (cards && cards.length && free > 0) {
+    const x = cards.slice().sort((p, q) => q - p);
+    let best = -Infinity, bx = x[x.length - 1];
+    for (let k = 1; k <= x.length; k++) {
+      const v = Math.exp(x[k - 1]) * (LEASE_M - free / k);
+      if (v > best) { best = v; bx = x[k - 1]; }
+    }
+    if (!(best > 0)) bx = x[x.length - 1];
+    roll.px = +bx.toFixed(5);
+    roll.ld = x.length;
+    return;
+  }
+  roll.ld = 0;
+  if (comp !== undefined) roll.px = +comp.toFixed(5);
+}
+/** The street's comps for a flat: the log of what new lettings signed at over their blocks' market rents, over the last six months, by their feet (undefined when none let). */
+export function flatComps(e: Econ, m: number): number | undefined {
+  let sf = 0, c = 0;
+  for (const d of e.deals?.multifamily ?? []) if (!d.r && d.m > m - 6) { sf += d.sf; c += d.c * d.sf; }
+  return sf > 0 ? c / sf : undefined;
 }
 /**
  * THE FLATS' RENTS, READ OFF THE BLOCKS (FORMULA_LEDGER #4/#5). The asking
@@ -1582,8 +1576,8 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
     // blocks and measures them. Before then (and while the opening street is
     // grown) the street's own renewals and lettings below.
     const byHouseholds = !growing && s.households?.locMu !== undefined;
-    // each landlord re-marks its block's ask (`markFlatAsk`); not while the opening street is grown on a town held still
-    const usual = normalVac(e, "multifamily"), esc = priceLevel12(e) / 12;
+    // each landlord set its block's ask at the end of last month, on its own guest cards (households.ts → `priceFlats`)
+    const esc = priceLevel12(e) / 12;
     // The town's jobs about a year ago (a twelve-month memory), for job moves.
     e.jobsPrevYr = (e.jobsPrevYr ?? e.jobs ?? 1) + ((e.jobs ?? 1) - (e.jobsPrevYr ?? e.jobs ?? 1)) / 12;
     const owners = new Map<string, NonNullable<GameState["rivals"]>[number]>();
@@ -1599,7 +1593,6 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
       roll.occ = Math.min(cap, roll.occ);
       const mkt = useRentPsfYr(rec, e, gradeOf(s, rec), "multifamily");
       roll.mkt = +mkt.toFixed(2);
-      if (!growing) markFlatAsk(roll, cap, usual, esc);
       const own = Math.exp(roll.px ?? 0);
       // The roll's leases (an old save, or a block that has just joined the
       // street, carries only a count: its flats were let over the last year
@@ -1615,14 +1608,14 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
         const sc = overallScore(rec, e, "multifamily");
         const unit = Math.max(300, flatUnitSf(rec, cap));
         roll.w = +(Math.exp((sc - 55) / 25) * Math.pow(1 / stale, 2) * care).toFixed(4);
-        // what a flat here lets for this month: its landlord's ask, less the concession a block that has stood empty gives
-        roll.ask = +(mkt * own * stale).toFixed(2);
+        // what a flat here lets for this month: its landlord's ask (an empty block's cut is in it: it saw its own thin traffic)
+        roll.ask = +(mkt * own).toFixed(2);
         roll.lim = Math.round(Math.max(cap * MF_LEASEUP, unit * 2));
         fs.push({ roll, cap, w: roll.w, unit, intake: 0, lim: roll.lim, mkt, sc });
         continue;
       }
       // THE MONTH'S EXPIRIES (2026-10-16). Each lease ending this month either
-      // renews — at its landlord's ask for the block (`markFlatAsk`), less
+      // renews — at its landlord's ask for the block (`priceFlats`), less
       // the discount a landlord gives a sitting tenant — or moves out. About 55% of US renters
       // renew (NMHC/RealPage retention), and a renter whose lease has fallen
       // well under the market stays more often; one asked for much more goes.

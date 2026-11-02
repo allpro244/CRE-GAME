@@ -50,13 +50,15 @@ function boom(k) {
     probes: { built: (g, city, E) => (near(g, 120, [0, 1, 60]) ? builtSf(g, city, E, k) : NaN) },
     land(c, t) {
       const p = `supply-${k}-up50.built`;
-      const r1 = t[1].probe[p] / c[1].probe[p], s1 = t[1].stock[k] / c[1].stock[k];
-      return { ok: r1 >= 1.45 && s1 >= 1.45, msg: `buildings ×${r1.toFixed(2)}, econ.stock ×${s1.toFixed(2)} at +1 month` };
+      // the feet standing on the lots, added, as a share of the class's stock (buildings of the class
+      // alone undercount a class whose stock includes mixed buildings' floors: apartments)
+      const add = (t[1].probe[p] - c[1].probe[p]) / c[1].stock[k], s1 = t[1].stock[k] / c[1].stock[k];
+      return { ok: add >= 0.45 && s1 >= 1.45, msg: `buildings +${(100 * add).toFixed(0)}% of the stock, econ.stock ×${s1.toFixed(2)} at +1 month` };
     },
     hold(c, t) {
       const p = `supply-${k}-up50.built`;
-      const r = t[60]?.probe[p] / c[60]?.probe[p];
-      return { ok: r >= 1.3, msg: `buildings ×${Number.isFinite(r) ? r.toFixed(2) : "—"} at +5 years` };
+      const add = (t[60]?.probe[p] - c[60]?.probe[p]) / c[60]?.stock[k];
+      return { ok: add >= 0.3, msg: `buildings +${Number.isFinite(add) ? (100 * add).toFixed(0) : "—"}% of the stock at +5 years` };
     },
     expect: [
       { obs: `vac.${k}`, unit: "pp", win: "impact", sign: +1, lo: 10, hi: 35, label: `${LABEL[k]} vacancy`, want: "+10 to +35pp (day one is about +30pp)" },
@@ -64,7 +66,7 @@ function boom(k) {
       { obs: `eff.${k}`, unit: "rel", win: "impact", sign: -1, lo: -0.5, hi: -0.08, label: `${LABEL[k]} effective rent`, want: "falls 8-50%", trace: "rent rule for the class (streetRolls.ts / tenantMarket.ts)" },
       { obs: `val.${k}`, unit: "rel", win: "impact", sign: -1, lo: -0.6, hi: -0.1, label: `${LABEL[k]} values (existing buildings)`, want: "fall 10-60%, more than rents" },
       { obs: `starts.${k}`, unit: "rel", win: "mid", sign: -1, lo: -1, hi: -0.5, tiny: 0.1, label: `${LABEL[k]} starts, years 3-8`, want: "near zero: −50 to −100%", trace: "builders' pro formas (dev.ts developerLook)" },
-      { obs: "land", unit: "rel", win: "impact", sign: -1, lo: -0.5, hi: -0.01, label: "land value", want: "falls (lower residuals)" },
+      // (no land row: the boom itself takes the town's vacant lots, so land is moved by the injection, not only by the market)
       ...CLASSES.filter((o) => o !== k).map((o) => ({ obs: `eff.${o}`, unit: "rel", win: "impact", sign: 0, hi: 0.05, label: `${LABEL[o]} rent (should not move)`, want: "within ±5%" })),
     ],
     charts: [
@@ -100,14 +102,14 @@ function loss(k) {
     probes: { built: (g, city, E) => (near(g, 120, [0, 1, 60]) ? builtSf(g, city, E, k) : NaN) },
     land(c, t) {
       const p = `supply-${k}-down20.built`;
-      const r1 = t[1].probe[p] / c[1].probe[p], s1 = t[1].stock[k] / c[1].stock[k];
-      return { ok: r1 <= 0.82 && s1 <= 0.82, msg: `buildings ×${r1.toFixed(2)}, econ.stock ×${s1.toFixed(2)} at +1 month` };
+      const cut = (c[1].probe[p] - t[1].probe[p]) / c[1].stock[k], s1 = t[1].stock[k] / c[1].stock[k];
+      return { ok: cut >= 0.18 && s1 <= 0.82, msg: `buildings −${(100 * cut).toFixed(0)}% of the stock, econ.stock ×${s1.toFixed(2)} at +1 month` };
     },
     expect: [
       { obs: `vac.${k}`, unit: "pp", win: "impact", sign: -1, lo: -12, hi: -1, label: `${LABEL[k]} vacancy`, want: "falls 1-12pp (the displaced take the empty space)", trace: "do the displaced tenants relocate in town (toSeekers) or vanish?" },
       { obs: `eff.${k}`, unit: "rel", win: "impact", sign: +1, lo: 0.02, hi: 0.3, label: `${LABEL[k]} effective rent`, want: "rises 2-30%" },
       { obs: `starts.${k}`, unit: "rel", win: "mid", sign: +1, lo: 0.2, hi: 5, tiny: 0.1, label: `${LABEL[k]} starts, years 3-8`, want: "rise: a construction answer 1-3 years on" },
-      { obs: "land", unit: "rel", win: "mid", sign: +1, lo: 0.01, hi: 0.5, label: "land value, years 3-8", want: "rises" },
+      // (no land row: the loss itself clears lots, so the town's land supply moves with the injection)
     ],
     charts: [
       { title: `${LABEL[k]} vacancy, %`, obs: `vac.${k}`, scale: 100 },

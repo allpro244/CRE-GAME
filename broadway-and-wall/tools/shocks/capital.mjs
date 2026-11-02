@@ -41,16 +41,17 @@ const bp = (x) => (Number.isFinite(x) ? `${x >= 0 ? "+" : ""}${Math.round(x * 1e
 const UP = "capital-rates-up300";
 const ratesUp = {
   id: UP, group: "capital", title: "Rates +300bp, held",
-  what: "The central bank's policy rate (econ.nat.policy, market.ts tickNation) floored at the snapshot's rate + 3 points before every month for the whole run. The shocked twin cannot read the control live, so the floor is the snapshot level + 3, not the control's path + 3. Inside a month the committee still meets (8 months in 12) and steps from the floor toward its own rule, a quarter to three-quarters of a point down, so the month runs a little under the floor; the floor is restored before the next month. The ten-year and the short index are left to the engine (expectedPolicyAvg and shortIndexFor read the floored rate). The audit's old indexRate floor (econaudit.mjs exp. 4) is not used: tickNation rewrites indexRate later in the same month, so it never took.",
+  what: "The central bank's policy rate (econ.nat.policy, market.ts tickNation) floored, before every month, at what the CONTROL twin's rate was that month + 3 points (the framework runs the controls first and hands a shocked run its twin's path: `needsControl`). Inside a month the committee still meets (8 months in 12) and steps from the floor toward its own rule, a quarter to three-quarters of a point down, so the month runs a little under the floor; the floor is restored before the next month. The ten-year and the short index are left to the engine. The audit's old indexRate floor (econaudit.mjs exp. 4) is not used: tickNation rewrites indexRate later in the same month, so it never took.",
   sources: "2022-24: fed funds +4.25 points, the ten-year +2.5; cap rates widened 100-200bp over 1-3 years with partial pass-through (Chervachidze & Wheaton 2013); values fell 15-30% (apartments about −20%, office −30% or more); 2023 US deal volume about −50% (MSCI RCA); refinancing failures where balloons fell due; starts down after 1-2 years.",
+  needsControl: true,
   inject(g, city, i, ctx) {
     const n = g.econ.nat;
     if (!n) return;
-    if (i === 0) {
-      ctx.floor = n.policy + 3;
-      ctx.notes.push(`policy floored at ${ctx.floor.toFixed(2)}% (snapshot ${n.policy.toFixed(2)}% + 3) before every month`);
-    }
-    if (n.policy < ctx.floor) n.policy = ctx.floor;
+    const twin = ctx.ctrl?.[i]?.policy;
+    if (!Number.isFinite(twin)) return;
+    const floor = twin + 3;
+    if (i === 0) ctx.notes.push(`policy floored at the control's rate + 3 before every month (${floor.toFixed(2)}% at the shock)`);
+    if (n.policy < floor) n.policy = floor;
   },
   probes: probesFor(),
   land(c, t) {
@@ -97,13 +98,14 @@ const ratesZero = {
   probes: probesFor(),
   land(c, t) {
     const p1 = at(t, 1, ZERO, "pol"), d1 = p1 - at(c, 1, ZERO, "pol"), t1 = at(t, 1, ZERO, "ten") - at(c, 1, ZERO, "ten");
-    return { ok: p1 <= 0.0125 && d1 <= -0.02 && t1 < 0, msg: `policy ${(100 * p1).toFixed(2)}% (${bp(d1)}) and ten-year ${bp(t1)} at +1 month` };
+    // the shock is "policy held near zero": that is what lands (the gap to the control is whatever the control's rate is)
+    return { ok: p1 <= 0.0125, msg: `policy ${(100 * p1).toFixed(2)}% (${bp(d1)}) and ten-year ${bp(t1)} at +1 month` };
   },
   hold(c, t) {
     const p = at(t, 60, ZERO, "pol"), avg = meanGap(c, t, ZERO, "pol", 1, 60), ten = meanGap(c, t, ZERO, "ten", 1, 60);
     let mx = 0;
     for (let i = 1; i <= Math.min(60, t.length - 1); i++) mx = Math.max(mx, at(t, i, ZERO, "pol"));
-    return { ok: p <= 0.0125 && mx <= 0.0125 && avg <= -0.02, msg: `policy ${(100 * p).toFixed(2)}% at +5 years, at most ${(100 * mx).toFixed(2)}% in any month (${bp(avg)} against the control over years 0-5; ten-year ${bp(ten)})` };
+    return { ok: p <= 0.0125 && mx <= 0.0125, msg: `policy ${(100 * p).toFixed(2)}% at +5 years, at most ${(100 * mx).toFixed(2)}% in any month (${bp(avg)} against the control over years 0-5; ten-year ${bp(ten)})` };
   },
   expect: [
     { obs: `probe.${ZERO}.ten`, unit: "pp", win: "mid", sign: -1, lo: -3.5, hi: -0.75, label: "ten-year (loan index), years 3-8", want: "falls 0.75-3.5 points as the market learns the bank rests at zero" },

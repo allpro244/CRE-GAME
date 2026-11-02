@@ -125,6 +125,13 @@ async function childRun() {
   g = snap.g; city.parcels = snap.parcels;
   const h0 = hashOf(g);
   const ctx = { seed, bbls, adjacency: city.adjacency, at: g.month, notes: [] };
+  // a shock defined against the counterfactual (e.g. the control's own policy rate + 3) reads its twin's
+  // recorded path: controls run first (main), so the file is there; ctx.ctrl[i] is the control's state after i months
+  if (shock?.needsControl) {
+    const cp = join(out, `run-control-${seed}.json`);
+    if (!existsSync(cp)) throw new Error(`${id} needs the control's run (${cp}) first`);
+    ctx.ctrl = JSON.parse(readFileSync(cp, "utf8")).rows;
+  }
   const rows = [record(E, g, city, shocks, snap.sample)];
   let resurrect = 0;
   const t0 = Date.now();
@@ -165,8 +172,9 @@ export function effect(ctrl, treat, obs, unit, win) {
 }
 function peakOf(ctrl, treat, obs, unit) {
   let best = 0, at = 0;
-  const base = Math.max(1e-9, Math.abs(meanOf(ctrl.slice(1, 181).map((r) => getPath(r, obs)))));
-  for (let i = 1; i < Math.min(ctrl.length, treat.length); i++) {
+  const base = Math.max(1e-9, Math.abs(meanOf(ctrl.slice(1, 97).map((r) => getPath(r, obs)))));
+  // within the first eight years: past that, twins drift apart from compounding alone (econaudit's lesson)
+  for (let i = 1; i < Math.min(ctrl.length, treat.length, 97); i++) {
     const x = getPath(ctrl[i], obs), y = getPath(treat[i], obs);
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
     const v = unit === "pp" ? 100 * (y - x) : (y - x) / base;
@@ -302,11 +310,10 @@ async function main() {
   const t0 = Date.now();
   console.log(`shocks: ${shocks.length} · seeds ${seeds.join(",")} · ${months} months after a ${SETTLE_M}-month opening · ${jobs} jobs · out ${out}`);
   await pool(seeds.filter((sd) => has("fresh") || !existsSync(join(out, `snap-${sd}.json`))).map((sd) => ["--run", "snapshot", "--seed", String(sd), "--out", out]));
+  // the controls first: a shock defined against its twin's path reads it from disk
+  await pool(seeds.map((sd) => ["--run", "control", "--seed", String(sd), "--out", out, "--months", String(months)]));
   const tasks = [];
-  for (const sd of seeds) {
-    tasks.push(["--run", "control", "--seed", String(sd), "--out", out, "--months", String(months)]);
-    for (const s of shocks) tasks.push(["--run", s.id, "--seed", String(sd), "--out", out, "--months", String(months)]);
-  }
+  for (const sd of seeds) for (const s of shocks) tasks.push(["--run", s.id, "--seed", String(sd), "--out", out, "--months", String(months)]);
   await pool(tasks);
   console.log(`all runs in ${((Date.now() - t0) / 60000).toFixed(1)} min`);
   await report(out, landing);

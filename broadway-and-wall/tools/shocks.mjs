@@ -140,7 +140,8 @@ async function childRun() {
 }
 
 // ---------------------------------------------------------------- reading a scorecard
-const getPath = (row, p) => p.split(".").reduce((o, k) => (o == null ? undefined : o[k]), row);
+// probe keys are stored flat as "<shock id>.<name>", so they are looked up whole
+const getPath = (row, p) => p.startsWith("probe.") ? row.probe?.[p.slice(6)] : p.split(".").reduce((o, k) => (o == null ? undefined : o[k]), row);
 const WINDOWS = { impact: [1, 36], mid: [37, 96], late: [97, 180], all: [1, 180] };
 const meanOf = (a) => { const b = a.filter(Number.isFinite); return b.length ? b.reduce((x, y) => x + y, 0) / b.length : NaN; };
 /**

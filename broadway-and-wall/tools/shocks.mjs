@@ -198,7 +198,8 @@ function judge(x, ex) {
   }
   return "RIGHT";
 }
-const RANK = { "DID NOT LAND": 6, "BACKWARDS": 5, "NO RESPONSE": 4, "SPILLS": 3, "WRONG SIZE": 2, "NO DATA": 1, "RIGHT": 0 };
+// NO DATA (a control near zero, e.g. a class nobody builds) is reported but does not set the shock's verdict
+const RANK = { "DID NOT LAND": 6, "BACKWARDS": 5, "NO RESPONSE": 4, "SPILLS": 3, "WRONG SIZE": 2, "RIGHT": 0, "NO DATA": -1 };
 const med = (a) => { const b = a.filter(Number.isFinite).sort((x, y) => x - y); return b.length ? (b.length % 2 ? b[(b.length - 1) / 2] : (b[b.length / 2 - 1] + b[b.length / 2]) / 2) : NaN; };
 const fmt = (x, unit) => !Number.isFinite(x) ? "—" : unit === "pp" ? `${x >= 0 ? "+" : ""}${x.toFixed(1)}pp` : `${x >= 0 ? "+" : ""}${(100 * x).toFixed(1)}%`;
 

@@ -8,8 +8,8 @@ Verdicts: **RIGHT** (direction and size inside the record's range) · **WRONG SI
 
 | group | shock | verdict |
 |---|---|---|
-| capital | Rates +300bp, held | **DID NOT LAND** |
-| capital | Rates near zero for 10 years | **DID NOT LAND** |
+| capital | Rates +300bp, held | **BACKWARDS** |
+| capital | Rates near zero for 10 years | **BACKWARDS** |
 | capital | Credit crunch: max LTV and loan sizing halved for 3 years | **BACKWARDS** |
 | capital | Foreign capital wave, high end | **NO RESPONSE** |
 | cost | Construction cost +40%, held | **BACKWARDS** |
@@ -19,87 +19,91 @@ Verdicts: **RIGHT** (direction and size inside the record's range) · **WRONG SI
 | demand | +30% population over 2 years | **BACKWARDS** |
 | demand | Remote work: office space per worker −30% | **RIGHT** |
 | demand | E-commerce: 20% of shop spending moves online | **NO RESPONSE** |
-| supply | +50% office stock overnight | **BACKWARDS** |
-| supply | −20% office stock lost | **BACKWARDS** |
+| supply | +50% office stock overnight | **RIGHT** |
+| supply | −20% office stock lost | **RIGHT** |
 | supply | +50% retail stock overnight | **WRONG SIZE** |
-| supply | −20% retail stock lost | **BACKWARDS** |
-| supply | +50% industrial stock overnight | **NO RESPONSE** |
-| supply | −20% industrial stock lost | **BACKWARDS** |
-| supply | +50% apartments stock overnight | **DID NOT LAND** |
-| supply | −20% apartments stock lost | **DID NOT LAND** |
+| supply | −20% retail stock lost | **NO RESPONSE** |
+| supply | +50% industrial stock overnight | **RIGHT** |
+| supply | −20% industrial stock lost | **RIGHT** |
+| supply | +50% apartments stock overnight | **NO RESPONSE** |
+| supply | −20% apartments stock lost | **WRONG SIZE** |
 
 ## Findings, worst first
 
-1. **Rates +300bp, held** — DID NOT LAND: policy +178bp at +5 years (+218bp averaged over years 0-5; ten-year +64bp)
-2. **Rates near zero for 10 years** — DID NOT LAND: policy 0.25% (-173bp) and ten-year -7bp at +1 month; policy 1.00% at +5 years, at most 1.00% in any month (-169bp against the control over years 0-5; ten-year +9bp)
-3. **+50% apartments stock overnight** — DID NOT LAND: buildings ×1.41, econ.stock ×1.50 at +1 month; buildings ×1.41, econ.stock ×1.51 at +1 month
-4. **−20% apartments stock lost** — DID NOT LAND: buildings ×0.84, econ.stock ×0.80 at +1 month; buildings ×0.84, econ.stock ×0.80 at +1 month; buildings ×0.84, econ.stock ×0.80 at +1 month
-5. **Credit crunch: max LTV and loan sizing halved for 3 years** — distressed listings: -4.1% (impact), expected rise: balloons that cannot refinance. BACKWARDS.
-6. **Construction cost +40%, held** — apartment starts, years 3-8: +424.9% (mid), expected fall sharply: −30 to −100%. BACKWARDS.
-7. **Construction cost +40%, held** — apartment values (existing): -7.7% (mid), expected rise somewhat: +1 to +25%. BACKWARDS.
-8. **Insurance ×2 and energy ×2, held** — apartment starts, years 3-8: +27.7% (mid), expected fall (lower NOI on a new block). BACKWARDS.
-9. **Property tax rate ×2, held** — office values: +4.1% (impact), expected fall about Δtax ÷ cap (≈0.55pt ÷ ~6-7% ≈ 8%), 2-15%. BACKWARDS. Trace: tax line in NOI (value.ts grossTaxYr, taxRate) and its recovery by lease
-10. **Property tax rate ×2, held** — apartment values: +4.2% (impact), expected fall 2-15%. BACKWARDS.
-11. **Property tax rate ×2, held** — land value: +2.3% (impact), expected falls 2-30% (the tax capitalises into land). BACKWARDS.
-12. **The largest employer leaves** — the class's occupied floor, per foot the firm held (×100): +93.3pp (impact), expected about −100 (its floor comes empty), −50 to −150. BACKWARDS. Trace: do the suites re-let at once (streetRolls.ts new firms, `form`)?
-13. **The largest employer leaves** — town jobs lost per direct job (×100): +16.6pp (impact), expected −150 to −250: the direct job and 0.5-1.5 more (Moretti 2010). BACKWARDS. Trace: is the industry hired back at once (economy.ts `staff`, the off-map sample `off`)?
-14. **The largest employer leaves** — office vacancy: -0.4pp (impact), expected up by about the firm's floor (seed 11: ~0.9pp of stock). BACKWARDS.
-15. **The largest employer leaves** — population: +0.3% (impact), expected some laid-off households leave town. BACKWARDS. Trace: households.ts moves (a job loss as a reason to leave)
-16. **The largest employer leaves** — apartment vacancy: -0.2pp (impact), expected rises over 1-2 years as leavers' flats come empty. BACKWARDS.
-17. **+30% population over 2 years** — apartment vacancy: +1.4pp (impact), expected falls first. BACKWARDS.
-18. **+50% office stock overnight** — land value: +2.1% (impact), expected falls (lower residuals). BACKWARDS.
-19. **−20% office stock lost** — land value, years 3-8: -4.9% (mid), expected rises. BACKWARDS.
-20. **−20% retail stock lost** — land value, years 3-8: -5.5% (mid), expected rises. BACKWARDS.
-21. **−20% industrial stock lost** — land value, years 3-8: -17.3% (mid), expected rises. BACKWARDS.
-22. **Credit crunch: max LTV and loan sizing halved for 3 years** — lenders' cumulative charge-offs: -0.8% (impact), expected rise. NO RESPONSE.
-23. **Foreign capital wave, high end** — apartment cap rate: -0.4pp (impact), expected compresses. NO RESPONSE.
-24. **Construction cost +40%, held** — office values (existing buildings): -0.6% (mid), expected rise somewhat (replacement cost up): +1 to +25%. NO RESPONSE.
-25. **Construction cost +40%, held** — office rent, years 8-15: +1.5% (late), expected drifts up: +2 to +40%. NO RESPONSE.
-26. **Insurance ×2 and energy ×2, held** — office values (gross leases): +1.0% (impact), expected fall 2-25% with NOI (owner eats it until leases roll). NO RESPONSE. Trace: expense recoveries by lease type (opex pass-through in the lease)
-27. **Property tax rate ×2, held** — listings: -0.2% (impact), expected rise: marginal owners sell. NO RESPONSE.
-28. **E-commerce: 20% of shop spending moves online** — shop vacancy, years 0-3: +0.4pp (impact), expected rises as marginal shops close. NO RESPONSE. Trace: shop firms' books (tenantBooks.ts) and exits (streetRolls.ts)
-29. **E-commerce: 20% of shop spending moves online** — shop vacancy, years 8-15: +0.3pp (late), expected stays up until shops convert. NO RESPONSE.
-30. **E-commerce: 20% of shop spending moves online** — shop effective rent: +0.7% (impact), expected falls 3-30%. NO RESPONSE.
-31. **E-commerce: 20% of shop spending moves online** — shop stock, years 8-15: -0.2% (late), expected conversions where they pencil. NO RESPONSE.
-32. **−20% retail stock lost** — retail vacancy: -0.5pp (impact), expected falls 1-12pp (the displaced take the empty space). NO RESPONSE. Trace: do the displaced tenants relocate in town (toSeekers) or vanish?
-33. **−20% retail stock lost** — retail effective rent: +1.4% (impact), expected rises 2-30%. NO RESPONSE.
-34. **+50% industrial stock overnight** — land value: -1.2% (impact), expected falls (lower residuals). NO RESPONSE.
-35. **Foreign capital wave, high end** — office values, years 8-15: -11.5% (late), expected back to the control (±10%) once the money has gone. SPILLS.
-36. **Insurance ×2 and energy ×2, held** — retail values (NNN / CAM): -7.5% (impact), expected barely move: within ±5%. SPILLS.
+1. **Rates +300bp, held** — office cap rate: -0.7pp (impact), expected +50 to +200bp over 1-3 years, less than the rate move. BACKWARDS. Trace: cap-rate formation off the tape (propmarket.ts bids, the street's debt rate)
+2. **Rates near zero for 10 years** — ten-year (loan index), years 3-8: +6.5pp (mid), expected falls 0.75-3.5 points as the market learns the bank rests at zero. BACKWARDS.
+3. **Credit crunch: max LTV and loan sizing halved for 3 years** — distressed listings: -4.1% (impact), expected rise: balloons that cannot refinance. BACKWARDS.
+4. **Construction cost +40%, held** — apartment starts, years 3-8: +424.9% (mid), expected fall sharply: −30 to −100%. BACKWARDS.
+5. **Construction cost +40%, held** — apartment values (existing): -7.7% (mid), expected rise somewhat: +1 to +25%. BACKWARDS.
+6. **Insurance ×2 and energy ×2, held** — apartment starts, years 3-8: +27.7% (mid), expected fall (lower NOI on a new block). BACKWARDS.
+7. **Property tax rate ×2, held** — office values: +4.1% (impact), expected fall about Δtax ÷ cap (≈0.55pt ÷ ~6-7% ≈ 8%), 2-15%. BACKWARDS. Trace: tax line in NOI (value.ts grossTaxYr, taxRate) and its recovery by lease
+8. **Property tax rate ×2, held** — apartment values: +4.2% (impact), expected fall 2-15%. BACKWARDS.
+9. **Property tax rate ×2, held** — land value: +2.3% (impact), expected falls 2-30% (the tax capitalises into land). BACKWARDS.
+10. **The largest employer leaves** — the class's occupied floor, per foot the firm held (×100): +93.3pp (impact), expected about −100 (its floor comes empty), −50 to −150. BACKWARDS. Trace: do the suites re-let at once (streetRolls.ts new firms, `form`)?
+11. **The largest employer leaves** — town jobs lost per direct job (×100): +16.6pp (impact), expected −150 to −250: the direct job and 0.5-1.5 more (Moretti 2010). BACKWARDS. Trace: is the industry hired back at once (economy.ts `staff`, the off-map sample `off`)?
+12. **The largest employer leaves** — office vacancy: -0.4pp (impact), expected up by about the firm's floor (seed 11: ~0.9pp of stock). BACKWARDS.
+13. **The largest employer leaves** — population: +0.3% (impact), expected some laid-off households leave town. BACKWARDS. Trace: households.ts moves (a job loss as a reason to leave)
+14. **The largest employer leaves** — apartment vacancy: -0.2pp (impact), expected rises over 1-2 years as leavers' flats come empty. BACKWARDS.
+15. **+30% population over 2 years** — apartment vacancy: +1.4pp (impact), expected falls first. BACKWARDS.
+16. **Rates +300bp, held** — apartments cap rate: -0.5pp (impact), expected +50 to +200bp over 1-3 years, less than the rate move. NO RESPONSE. Trace: cap-rate formation off the tape (propmarket.ts bids, the street's debt rate)
+17. **Rates +300bp, held** — office values: +0.8% (impact), expected fall 15-45%. NO RESPONSE.
+18. **Credit crunch: max LTV and loan sizing halved for 3 years** — lenders' cumulative charge-offs: -0.8% (impact), expected rise. NO RESPONSE.
+19. **Foreign capital wave, high end** — apartment cap rate: -0.4pp (impact), expected compresses. NO RESPONSE.
+20. **Construction cost +40%, held** — office values (existing buildings): -0.6% (mid), expected rise somewhat (replacement cost up): +1 to +25%. NO RESPONSE.
+21. **Construction cost +40%, held** — office rent, years 8-15: +1.5% (late), expected drifts up: +2 to +40%. NO RESPONSE.
+22. **Insurance ×2 and energy ×2, held** — office values (gross leases): +1.0% (impact), expected fall 2-25% with NOI (owner eats it until leases roll). NO RESPONSE. Trace: expense recoveries by lease type (opex pass-through in the lease)
+23. **Property tax rate ×2, held** — listings: -0.2% (impact), expected rise: marginal owners sell. NO RESPONSE.
+24. **E-commerce: 20% of shop spending moves online** — shop vacancy, years 0-3: +0.4pp (impact), expected rises as marginal shops close. NO RESPONSE. Trace: shop firms' books (tenantBooks.ts) and exits (streetRolls.ts)
+25. **E-commerce: 20% of shop spending moves online** — shop vacancy, years 8-15: +0.3pp (late), expected stays up until shops convert. NO RESPONSE.
+26. **E-commerce: 20% of shop spending moves online** — shop effective rent: +0.7% (impact), expected falls 3-30%. NO RESPONSE.
+27. **E-commerce: 20% of shop spending moves online** — shop stock, years 8-15: -0.2% (late), expected conversions where they pencil. NO RESPONSE.
+28. **−20% retail stock lost** — retail vacancy: -0.5pp (impact), expected falls 1-12pp (the displaced take the empty space). NO RESPONSE. Trace: do the displaced tenants relocate in town (toSeekers) or vanish?
+29. **−20% retail stock lost** — retail effective rent: +1.4% (impact), expected rises 2-30%. NO RESPONSE.
+30. **+50% apartments stock overnight** — apartments starts, years 3-8: -2.0% (mid), expected near zero: −50 to −100%. NO RESPONSE. Trace: builders' pro formas (dev.ts developerLook)
+31. **Foreign capital wave, high end** — office values, years 8-15: -11.5% (late), expected back to the control (±10%) once the money has gone. SPILLS.
+32. **Insurance ×2 and energy ×2, held** — retail values (NNN / CAM): -7.5% (impact), expected barely move: within ±5%. SPILLS.
+33. **Rates +300bp, held** — ten-year (loan index): +0.5pp (impact), expected +1 to +2.5 points (2022: +2.5 on a +4.25 policy move). WRONG SIZE. Trace: market.ts expectedPolicyAvg / endShift: does the bond market believe a held rate?
+34. **Rates +300bp, held** — apartment values: -2.7% (impact), expected fall 10-30% (about −20%). WRONG SIZE.
+35. **Rates +300bp, held** — distressed listings: +13.8% (impact), expected rise: balloons that cannot refinance. WRONG SIZE.
+36. **Rates near zero for 10 years** — starts, all classes, years 3-8: +176.0% (mid), expected rise. WRONG SIZE.
 37. **Credit crunch: max LTV and loan sizing halved for 3 years** — office values: -8.4% (impact), expected fall 10-45%, more than rents. WRONG SIZE.
 38. **Credit crunch: max LTV and loan sizing halved for 3 years** — apartment values: -6.4% (impact), expected fall 10-40%. WRONG SIZE.
 39. **+30% population over 2 years** — apartment effective rent: +25.2% (impact), expected +5 to +15% real over 2-3 years. WRONG SIZE. Trace: flat rents (streetRolls.ts flats, landlords' guest cards)
 40. **+30% population over 2 years** — unemployment: +14.0pp (impact), expected up briefly (newcomers looking for work). WRONG SIZE.
 41. **+50% retail stock overnight** — retail effective rent: -5.6% (impact), expected falls 8-50%. WRONG SIZE. Trace: rent rule for the class (streetRolls.ts / tenantMarket.ts)
 42. **−20% retail stock lost** — retail starts, years 3-8: +16.7% (mid), expected rise: a construction answer 1-3 years on. WRONG SIZE.
-43. **Construction cost +40%, held** — industrial starts, years 3-8: — (mid), expected fall sharply: −30 to −100%. NO DATA.
-44. **+30% population over 2 years** — home prices, years 3-8: — (mid), expected follow the rents up. NO DATA.
-45. **+50% industrial stock overnight** — industrial starts, years 3-8: — (mid), expected near zero: −50 to −100%. NO DATA. Trace: builders' pro formas (dev.ts developerLook)
-46. **−20% industrial stock lost** — industrial starts, years 3-8: — (mid), expected rise: a construction answer 1-3 years on. NO DATA.
+43. **+50% apartments stock overnight** — apartments vacancy: +8.7pp (impact), expected +10 to +35pp (day one is about +30pp). WRONG SIZE.
+44. **+50% apartments stock overnight** — apartments values (existing buildings): -7.3% (impact), expected fall 10-60%, more than rents. WRONG SIZE.
+45. **+50% apartments stock overnight** — apartments stock, years 3-8: +57.4% (mid), expected the new buildings still stand (+35 to +55%): a glut is absorbed, not torn down — new buildings are rarely demolished. WRONG SIZE. Trace: teardown / owner redevelopment of new empty buildings (dev.ts tickTeardowns, ownerRedevelopment)
+46. **−20% apartments stock lost** — apartments starts, years 3-8: +1759.5% (mid), expected rise: a construction answer 1-3 years on. WRONG SIZE.
+47. **Construction cost +40%, held** — industrial starts, years 3-8: — (mid), expected fall sharply: −30 to −100%. NO DATA.
+48. **+30% population over 2 years** — home prices, years 3-8: — (mid), expected follow the rents up. NO DATA.
+49. **+50% industrial stock overnight** — industrial starts, years 3-8: — (mid), expected near zero: −50 to −100%. NO DATA. Trace: builders' pro formas (dev.ts developerLook)
+50. **−20% industrial stock lost** — industrial starts, years 3-8: — (mid), expected rise: a construction answer 1-3 years on. NO DATA.
 
 ## Rates +300bp, held
 
-The central bank's policy rate (econ.nat.policy, market.ts tickNation) floored at the snapshot's rate + 3 points before every month for the whole run. The shocked twin cannot read the control live, so the floor is the snapshot level + 3, not the control's path + 3. Inside a month the committee still meets (8 months in 12) and steps from the floor toward its own rule, a quarter to three-quarters of a point down, so the month runs a little under the floor; the floor is restored before the next month. The ten-year and the short index are left to the engine (expectedPolicyAvg and shortIndexFor read the floored rate). The audit's old indexRate floor (econaudit.mjs exp. 4) is not used: tickNation rewrites indexRate later in the same month, so it never took.
+The central bank's policy rate (econ.nat.policy, market.ts tickNation) floored, before every month, at what the CONTROL twin's rate was that month + 3 points (the framework runs the controls first and hands a shocked run its twin's path: `needsControl`). Inside a month the committee still meets (8 months in 12) and steps from the floor toward its own rule, a quarter to three-quarters of a point down, so the month runs a little under the floor; the floor is restored before the next month. The ten-year and the short index are left to the engine. The audit's old indexRate floor (econaudit.mjs exp. 4) is not used: tickNation rewrites indexRate later in the same month, so it never took.
 
-- Twins identical before the shock: yes · landing: policy +300bp and ten-year +27bp at +1 month; policy +289bp over the first year / policy +300bp and ten-year +25bp at +1 month; policy +200bp over the first year / policy +300bp and ten-year +23bp at +1 month; policy +202bp over the first year · holding: policy +270bp at +5 years (+304bp averaged over years 0-5; ten-year +86bp) / policy +279bp at +5 years (+366bp averaged over years 0-5; ten-year +89bp) / policy +178bp at +5 years (+218bp averaged over years 0-5; ten-year +64bp)
-- Injector notes: policy floored at 7.21% (snapshot 4.21% + 3) before every month; policy floored at 7.73% (snapshot 4.73% + 3) before every month; policy floored at 4.98% (snapshot 1.98% + 3) before every month
+- Twins identical before the shock: yes · landing: policy +300bp and ten-year +27bp at +1 month; policy +266bp over the first year / policy +300bp and ten-year +25bp at +1 month; policy +261bp over the first year / policy +300bp and ten-year +23bp at +1 month; policy +255bp over the first year · holding: policy +201bp at +5 years (+252bp averaged over years 0-5; ten-year +72bp) / policy +257bp at +5 years (+253bp averaged over years 0-5; ten-year +56bp) / policy +200bp at +5 years (+252bp averaged over years 0-5; ten-year +71bp)
+- Injector notes: policy floored at the control's rate + 3 before every month (7.21% at the shock); policy floored at the control's rate + 3 before every month (7.73% at the shock); policy floored at the control's rate + 3 before every month (4.98% at the shock)
 - Record: 2022-24: fed funds +4.25 points, the ten-year +2.5; cap rates widened 100-200bp over 1-3 years with partial pass-through (Chervachidze & Wheaton 2013); values fell 15-30% (apartments about −20%, office −30% or more); 2023 US deal volume about −50% (MSCI RCA); refinancing failures where balloons fell due; starts down after 1-2 years.
 
 | observable | window | effect, median (by seed) | peak | the record says | verdict |
 |---|---|---|---|---|---|
-| ten-year (loan index) | impact | +0.6pp (+0.7pp, +0.6pp, +0.5pp) | peak +1.4pp at 9.8y | +1 to +2.5 points (2022: +2.5 on a +4.25 policy move) | **—** |
-| office cap rate | impact | -0.7pp (-0.7pp, +0.9pp, -1.3pp) | peak +5.2pp at 9.8y | +50 to +200bp over 1-3 years, less than the rate move | **—** |
-| apartments cap rate | impact | +0.3pp (+0.3pp, +0.4pp, -1.4pp) | peak +3.5pp at 6.7y | +50 to +200bp over 1-3 years, less than the rate move | **—** |
-| office values | impact | -3.3% (-3.3%, -14.8%, +6.1%) | peak -76.8% at 14y | fall 15-45% | **—** |
-| apartment values | impact | -6.0% (-6.0%, -8.4%, -1.4%) | peak -122.5% at 13.3y | fall 10-30% (about −20%) | **—** |
-| deal volume (sales a month) | impact | -38.0% (-30.0%, -44.7%, -38.0%) | peak -364.9% at 3y | falls 20-80% (2023: about −50%) | **—** |
-| distressed listings | impact | +18.4% (+25.6%, +5.4%, +18.4%) | peak +193.3% at 12y | rise: balloons that cannot refinance | **—** |
-| lenders' cumulative charge-offs, years 3-8 | mid | +74.3% (+74.3%, +77.8%, +0.0%) | peak +71.9% at 4.2y | rise | **—** |
-| starts, all classes, years 3-8 | mid | -69.7% (-52.1%, -81.1%, -69.7%) | peak -1365.1% at 3.9y | fall 10-80% after 1-2 years | **—** |
-| office effective rent, years 0-3 | impact | -1.1% (-1.1%, -1.3%, -0.5%) | peak -38.0% at 14.6y | barely moves at first (within ±5%); NOI is not the channel | **—** |
-| retail effective rent, years 0-3 | impact | -0.8% (-0.8%, +0.3%, -1.2%) | peak -52.9% at 14.3y | barely moves at first (within ±5%); NOI is not the channel | **—** |
-| industrial effective rent, years 0-3 | impact | -0.0% (-0.0%, -5.2%, +0.9%) | peak -46.5% at 12.3y | barely moves at first (within ±5%); NOI is not the channel | **—** |
-| apartments effective rent, years 0-3 | impact | -3.3% (-3.3%, -3.2%, -5.0%) | peak -65.6% at 14.6y | barely moves at first (within ±5%); NOI is not the channel | **—** |
+| ten-year (loan index) | impact | +0.5pp (+0.6pp, +0.4pp, +0.5pp) | peak +1.1pp at 4.8y | +1 to +2.5 points (2022: +2.5 on a +4.25 policy move) | **WRONG SIZE** |
+| office cap rate | impact | -0.7pp (-0.7pp, +0.8pp, -2.8pp) | peak +2.3pp at 3.1y | +50 to +200bp over 1-3 years, less than the rate move | **BACKWARDS** |
+| apartments cap rate | impact | -0.5pp (-0.5pp, +0.1pp, -1.4pp) | peak +2.8pp at 6y | +50 to +200bp over 1-3 years, less than the rate move | **NO RESPONSE** |
+| office values | impact | +0.8% (+0.8%, -10.8%, +11.6%) | peak -56.2% at 6.5y | fall 15-45% | **NO RESPONSE** |
+| apartment values | impact | -2.7% (+3.2%, -2.7%, -3.2%) | peak -64.6% at 8y | fall 10-30% (about −20%) | **WRONG SIZE** |
+| deal volume (sales a month) | impact | -48.0% (-48.0%, -42.1%, -59.2%) | peak -304.8% at 2.7y | falls 20-80% (2023: about −50%) | **RIGHT** |
+| distressed listings | impact | +13.8% (+15.7%, +8.3%, +13.8%) | peak +145.9% at 5.3y | rise: balloons that cannot refinance | **WRONG SIZE** |
+| lenders' cumulative charge-offs, years 3-8 | mid | +22.4% (+39.2%, +22.4%, +2.0%) | peak +5.0% at 7.6y | rise | **RIGHT** |
+| starts, all classes, years 3-8 | mid | -65.4% (-65.4%, -70.5%, -31.7%) | peak -1125.4% at 3.9y | fall 10-80% after 1-2 years | **RIGHT** |
+| office effective rent, years 0-3 | impact | +0.0% (+0.1%, -0.2%, +0.0%) | peak -19.5% at 7.8y | barely moves at first (within ±5%); NOI is not the channel | **RIGHT** |
+| retail effective rent, years 0-3 | impact | +0.2% (-1.4%, +1.0%, +0.2%) | peak -21.4% at 8y | barely moves at first (within ±5%); NOI is not the channel | **RIGHT** |
+| industrial effective rent, years 0-3 | impact | -2.2% (-2.2%, -1.9%, -2.6%) | peak -30.0% at 7.3y | barely moves at first (within ±5%); NOI is not the channel | **RIGHT** |
+| apartments effective rent, years 0-3 | impact | -3.5% (-3.5%, -1.4%, -5.1%) | peak -42.9% at 7.7y | barely moves at first (within ±5%); NOI is not the channel | **RIGHT** |
 
 ![policy rate and ten-year, %](docs/shocks/capital-rates-up300-0.svg)
 ![office cap rate, %](docs/shocks/capital-rates-up300-1.svg)
@@ -115,14 +119,14 @@ The central bank's policy rate (econ.nat.policy, market.ts tickNation) set to 0.
 
 | observable | window | effect, median (by seed) | peak | the record says | verdict |
 |---|---|---|---|---|---|
-| ten-year (loan index), years 3-8 | mid | +6.5pp (+6.5pp, +6.5pp, +4.2pp) | peak +79.4pp at 12.5y | falls 0.75-3.5 points as the market learns the bank rests at zero | **—** |
-| office cap rate, years 3-8 | mid | -1.7pp (-2.6pp, -1.7pp, -1.0pp) | peak +8.9pp at 15y | compresses 50-250bp over years | **—** |
-| apartments cap rate, years 3-8 | mid | -1.5pp (-1.5pp, -1.5pp, -1.7pp) | peak +5.6pp at 14.5y | compresses 50-250bp over years | **—** |
-| land value, years 3-8 | mid | +25.6% (+25.6%, +58.7%, -6.5%) | peak +7522.0% at 15y | inflates (10-150%) | **—** |
-| the street's mortgage book, years 3-8 | mid | +23.7% (+46.9%, +23.7%, +1.7%) | peak -84.5% at 14.8y | leverage builds up (10-100%) | **—** |
-| starts, all classes, years 3-8 | mid | +176.0% (+176.0%, -5.7%, +673.5%) | peak -760.6% at 13.2y | rise | **—** |
-| office values, years 3-8 | mid | +65.9% (+70.9%, +65.9%, +52.7%) | peak +2930.4% at 15y | rise | **—** |
-| distressed listings, years 8-15 (after release at year 10) | late | +92.9% (+70.1%, +229.5%, +92.9%) | peak +241.7% at 14.8y | rise when rates normalise: loans written at the top | **—** |
+| ten-year (loan index), years 3-8 | mid | +6.5pp (+6.5pp, +6.5pp, +4.2pp) | peak +20.9pp at 8y | falls 0.75-3.5 points as the market learns the bank rests at zero | **BACKWARDS** |
+| office cap rate, years 3-8 | mid | -1.7pp (-2.6pp, -1.7pp, -1.0pp) | peak -5.4pp at 2.1y | compresses 50-250bp over years | **RIGHT** |
+| apartments cap rate, years 3-8 | mid | -1.5pp (-1.5pp, -1.5pp, -1.7pp) | peak -2.6pp at 3.1y | compresses 50-250bp over years | **RIGHT** |
+| land value, years 3-8 | mid | +25.6% (+25.6%, +58.7%, -6.5%) | peak +107.0% at 8y | inflates (10-150%) | **RIGHT** |
+| the street's mortgage book, years 3-8 | mid | +23.7% (+46.9%, +23.7%, +1.7%) | peak +41.6% at 6y | leverage builds up (10-100%) | **RIGHT** |
+| starts, all classes, years 3-8 | mid | +176.0% (+176.0%, -5.7%, +673.5%) | peak +1809.2% at 4.8y | rise | **WRONG SIZE** |
+| office values, years 3-8 | mid | +65.9% (+70.9%, +65.9%, +52.7%) | peak +109.7% at 7.3y | rise | **RIGHT** |
+| distressed listings, years 8-15 (after release at year 10) | late | +92.9% (+70.1%, +229.5%, +92.9%) | peak -95.9% at 6.2y | rise when rates normalise: loans written at the top | **RIGHT** |
 
 ![policy rate, %](docs/shocks/capital-rates-zero10y-0.svg)
 ![office cap rate, %](docs/shocks/capital-rates-zero10y-1.svg)
@@ -138,17 +142,17 @@ For 36 months every lender's product terms are cut through the sheets themselves
 
 | observable | window | effect, median (by seed) | peak | the record says | verdict |
 |---|---|---|---|---|---|
-| deal volume (sales a month) | impact | -52.6% (-26.0%, -52.6%, -67.6%) | peak -355.0% at 6.1y | collapses 30-85% | **RIGHT** |
-| distressed listings | impact | -4.1% (+1.4%, -9.0%, -4.1%) | peak -54.5% at 1.8y | rise: balloons that cannot refinance | **BACKWARDS** |
-| lenders' cumulative charge-offs | impact | -0.8% (-0.8%, -6.7%, +0.5%) | peak +10.4% at 11y | rise | **NO RESPONSE** |
-| the street's mortgage book | impact | -8.6% (-0.9%, -8.6%, -12.4%) | peak -43.8% at 14.5y | shrinks as loans pay down and are not rewritten | **RIGHT** |
-| office values | impact | -8.4% (-5.7%, -8.4%, -15.2%) | peak -22.4% at 9y | fall 10-45%, more than rents | **WRONG SIZE** |
-| apartment values | impact | -6.4% (-3.1%, -6.4%, -14.9%) | peak -47.4% at 10.8y | fall 10-40% | **WRONG SIZE** |
-| starts, all classes | impact | -26.4% (+25.7%, -26.4%, -46.6%) | peak -1365.1% at 8.1y | fall 20-90% (construction loans halved) | **RIGHT** |
-| office effective rent | impact | +0.2% (+0.3%, -1.6%, +0.2%) | peak -6.0% at 10.4y | within ±5%: prices fall more than rents | **RIGHT** |
-| retail effective rent | impact | -1.1% (+3.2%, -1.1%, -1.8%) | peak -18.8% at 13.3y | within ±5%: prices fall more than rents | **RIGHT** |
-| industrial effective rent | impact | -2.2% (-1.1%, -6.7%, -2.2%) | peak -19.8% at 11.3y | within ±5%: prices fall more than rents | **RIGHT** |
-| apartments effective rent | impact | +1.2% (+1.2%, +1.2%, -1.4%) | peak -28.3% at 11.3y | within ±5%: prices fall more than rents | **RIGHT** |
+| deal volume (sales a month) | impact | -52.6% (-26.0%, -52.6%, -67.6%) | peak -304.8% at 2.7y | collapses 30-85% | **RIGHT** |
+| distressed listings | impact | -4.1% (+1.4%, -9.0%, -4.1%) | peak -50.0% at 1.8y | rise: balloons that cannot refinance | **BACKWARDS** |
+| lenders' cumulative charge-offs | impact | -0.8% (-0.8%, -6.7%, +0.5%) | peak +10.6% at 7.8y | rise | **NO RESPONSE** |
+| the street's mortgage book | impact | -8.6% (-0.9%, -8.6%, -12.4%) | peak -17.1% at 4.8y | shrinks as loans pay down and are not rewritten | **RIGHT** |
+| office values | impact | -8.4% (-5.7%, -8.4%, -15.2%) | peak -24.9% at 3.8y | fall 10-45%, more than rents | **WRONG SIZE** |
+| apartment values | impact | -6.4% (-3.1%, -6.4%, -14.9%) | peak -28.1% at 7.5y | fall 10-40% | **WRONG SIZE** |
+| starts, all classes | impact | -26.4% (+25.7%, -26.4%, -46.6%) | peak -718.3% at 1.1y | fall 20-90% (construction loans halved) | **RIGHT** |
+| office effective rent | impact | +0.2% (+0.3%, -1.6%, +0.2%) | peak +5.4% at 6.3y | within ±5%: prices fall more than rents | **RIGHT** |
+| retail effective rent | impact | -1.1% (+3.2%, -1.1%, -1.8%) | peak +12.0% at 7.6y | within ±5%: prices fall more than rents | **RIGHT** |
+| industrial effective rent | impact | -2.2% (-1.1%, -6.7%, -2.2%) | peak +12.1% at 6.7y | within ±5%: prices fall more than rents | **RIGHT** |
+| apartments effective rent | impact | +1.2% (+1.2%, +1.2%, -1.4%) | peak -24.8% at 5.6y | within ±5%: prices fall more than rents | **RIGHT** |
 
 ![sales a month, all classes](docs/shocks/capital-credit-crunch-0.svg)
 ![distressed listings](docs/shocks/capital-credit-crunch-1.svg)
@@ -164,15 +168,15 @@ The capital-wave swan's state set directly, as blackswans.ts startCapitalWave se
 
 | observable | window | effect, median (by seed) | peak | the record says | verdict |
 |---|---|---|---|---|---|
-| office values | impact | +5.4% (+5.4%, -2.7%, +14.4%) | peak -29.6% at 13.3y | rise 5-50%, trophy first | **RIGHT** |
+| office values | impact | +5.4% (+5.4%, -2.7%, +14.4%) | peak -14.6% at 6.3y | rise 5-50%, trophy first | **RIGHT** |
 | office cap rate | impact | -0.8pp (-0.8pp, +0.2pp, -2.9pp) | peak +1.3pp at 2.1y | compresses 20-150bp | **RIGHT** |
-| apartment cap rate | impact | -0.4pp (-0.4pp, -0.4pp, -3.1pp) | peak -3.4pp at 7.3y | compresses | **NO RESPONSE** |
-| deal volume | impact | +12.7% (+20.0%, +7.9%, +12.7%) | peak -355.0% at 2.7y | rises: the funds buy | **RIGHT** |
-| office effective rent | impact | -0.6% (+1.5%, -0.6%, -0.6%) | peak +5.4% at 12.9y | unchanged (within ±5%): rents moving is a miswiring | **RIGHT** |
-| retail effective rent | impact | +0.4% (+1.1%, -0.1%, +0.4%) | peak +26.4% at 13.3y | unchanged (within ±5%): rents moving is a miswiring | **RIGHT** |
-| industrial effective rent | impact | +0.1% (+0.1%, +2.0%, -3.4%) | peak -19.0% at 12.4y | unchanged (within ±5%): rents moving is a miswiring | **RIGHT** |
-| apartments effective rent | impact | -0.2% (+0.9%, -0.2%, -2.3%) | peak -35.7% at 13.9y | unchanged (within ±5%): rents moving is a miswiring | **RIGHT** |
-| office values, years 8-15 | late | -11.5% (+15.1%, -11.5%, -13.5%) | peak -29.6% at 13.3y | back to the control (±10%) once the money has gone | **SPILLS** |
+| apartment cap rate | impact | -0.4pp (-0.4pp, -0.4pp, -3.1pp) | peak -1.5pp at 7.3y | compresses | **NO RESPONSE** |
+| deal volume | impact | +12.7% (+20.0%, +7.9%, +12.7%) | peak -304.8% at 2.7y | rises: the funds buy | **RIGHT** |
+| office effective rent | impact | -0.6% (+1.5%, -0.6%, -0.6%) | peak -6.0% at 7.2y | unchanged (within ±5%): rents moving is a miswiring | **RIGHT** |
+| retail effective rent | impact | +0.4% (+1.1%, -0.1%, +0.4%) | peak -13.6% at 7.8y | unchanged (within ±5%): rents moving is a miswiring | **RIGHT** |
+| industrial effective rent | impact | +0.1% (+0.1%, +2.0%, -3.4%) | peak +9.4% at 4.2y | unchanged (within ±5%): rents moving is a miswiring | **RIGHT** |
+| apartments effective rent | impact | -0.2% (+0.9%, -0.2%, -2.3%) | peak +26.5% at 4.4y | unchanged (within ±5%): rents moving is a miswiring | **RIGHT** |
+| office values, years 8-15 | late | -11.5% (+15.1%, -11.5%, -13.5%) | peak -14.6% at 6.3y | back to the control (±10%) once the money has gone | **SPILLS** |
 
 ![office cap rate, %](docs/shocks/capital-foreign-wave-0.svg)
 ![office values (sample)](docs/shocks/capital-foreign-wave-1.svg)
@@ -188,16 +192,16 @@ The contractors' direct cost raised 40% overnight and left there: last month's m
 
 | observable | window | effect, median (by seed) | peak | the record says | verdict |
 |---|---|---|---|---|---|
-| construction cost index (bids) | impact | +34.0% (+36.6%, +34.0%, +33.0%) | peak +48.7% at 13.8y | +25 to +45%: the 40% input rise, less what idle contractors shave off their markup | **RIGHT** |
-| office starts, years 3-8 | mid | -84.5% (-99.2%, -69.7%, —) | peak -2580.9% at 9.2y | fall sharply: −30 to −100% | **RIGHT** |
-| apartment starts, years 3-8 | mid | +424.9% (—, +424.9%, —) | peak +4215.3% at 4.3y | fall sharply: −30 to −100% | **BACKWARDS** |
-| industrial starts, years 3-8 | mid | — (—, —, —) | peak -5027.1% at 12.5y | fall sharply: −30 to −100% | **NO DATA** |
-| land value | impact | -5.9% (-11.2%, -5.9%, -0.3%) | peak -125.0% at 13y | FALLS 5-80% (residual = value − cost); a rise is a backwards wire | **RIGHT** |
-| land value, years 3-8 | mid | -28.3% (-21.0%, -31.4%, -28.3%) | peak -125.0% at 13y | stays down | **RIGHT** |
-| office values (existing buildings) | mid | -0.6% (-0.6%, +2.5%, -14.8%) | peak -35.1% at 12y | rise somewhat (replacement cost up): +1 to +25% | **NO RESPONSE** |
-| apartment values (existing) | mid | -7.7% (-7.7%, +9.1%, -9.3%) | peak -67.5% at 13y | rise somewhat: +1 to +25% | **BACKWARDS** |
-| apartment rent, years 8-15 | late | +19.1% (+17.3%, +23.8%, +19.1%) | peak +50.3% at 10.5y | drifts up as supply stops answering demand: +2 to +40% | **RIGHT** |
-| office rent, years 8-15 | late | +1.5% (+1.5%, +9.0%, -3.9%) | peak +7.5% at 14.8y | drifts up: +2 to +40% | **NO RESPONSE** |
+| construction cost index (bids) | impact | +34.0% (+36.6%, +34.0%, +33.0%) | peak +48.4% at 6.5y | +25 to +45%: the 40% input rise, less what idle contractors shave off their markup | **RIGHT** |
+| office starts, years 3-8 | mid | -84.5% (-99.2%, -69.7%, —) | peak -1636.3% at 3.9y | fall sharply: −30 to −100% | **RIGHT** |
+| apartment starts, years 3-8 | mid | +424.9% (—, +424.9%, —) | peak -2707.0% at 0.8y | fall sharply: −30 to −100% | **BACKWARDS** |
+| industrial starts, years 3-8 | mid | — (—, —, —) | peak -2956.6% at 0.8y | fall sharply: −30 to −100% | **NO DATA** |
+| land value | impact | -5.9% (-11.2%, -5.9%, -0.3%) | peak -55.9% at 8y | FALLS 5-80% (residual = value − cost); a rise is a backwards wire | **RIGHT** |
+| land value, years 3-8 | mid | -28.3% (-21.0%, -31.4%, -28.3%) | peak -55.9% at 8y | stays down | **RIGHT** |
+| office values (existing buildings) | mid | -0.6% (-0.6%, +2.5%, -14.8%) | peak -14.5% at 2.3y | rise somewhat (replacement cost up): +1 to +25% | **NO RESPONSE** |
+| apartment values (existing) | mid | -7.7% (-7.7%, +9.1%, -9.3%) | peak +28.1% at 2.3y | rise somewhat: +1 to +25% | **BACKWARDS** |
+| apartment rent, years 8-15 | late | +19.1% (+17.3%, +23.8%, +19.1%) | peak +40.1% at 7.2y | drifts up as supply stops answering demand: +2 to +40% | **RIGHT** |
+| office rent, years 8-15 | late | +1.5% (+1.5%, +9.0%, -3.9%) | peak -4.5% at 5.4y | drifts up: +2 to +40% | **NO RESPONSE** |
 
 ![construction cost index](docs/shocks/cost-construction-up40-0.svg)
 ![apartment starts, sf a month](docs/shocks/cost-construction-up40-1.svg)
@@ -213,11 +217,11 @@ The owner's two outside bills doubled and held (inputs.ts tickOpexInputs). Insur
 
 | observable | window | effect, median (by seed) | peak | the record says | verdict |
 |---|---|---|---|---|---|
-| office values (gross leases) | impact | +1.0% (+1.0%, -0.6%, +4.7%) | peak -38.4% at 15y | fall 2-25% with NOI (owner eats it until leases roll) | **NO RESPONSE** |
-| apartment values (gross) | impact | -11.5% (-11.5%, -14.2%, -4.7%) | peak +50.7% at 13.3y | fall 2-25% | **RIGHT** |
-| industrial values (NNN) | impact | -0.7% (-0.7%, +14.3%, -2.4%) | peak -46.5% at 15y | barely move: within ±4% (tenants pay it) | **RIGHT** |
-| retail values (NNN / CAM) | impact | -7.5% (+3.0%, -7.5%, -8.0%) | peak -43.2% at 10.5y | barely move: within ±5% | **SPILLS** |
-| apartment starts, years 3-8 | mid | +27.7% (—, +27.7%, —) | peak -4443.7% at 7.2y | fall (lower NOI on a new block) | **BACKWARDS** |
+| office values (gross leases) | impact | +1.0% (+1.0%, -0.6%, +4.7%) | peak +15.4% at 6.5y | fall 2-25% with NOI (owner eats it until leases roll) | **NO RESPONSE** |
+| apartment values (gross) | impact | -11.5% (-11.5%, -14.2%, -4.7%) | peak -46.3% at 6y | fall 2-25% | **RIGHT** |
+| industrial values (NNN) | impact | -0.7% (-0.7%, +14.3%, -2.4%) | peak -27.1% at 6.5y | barely move: within ±4% (tenants pay it) | **RIGHT** |
+| retail values (NNN / CAM) | impact | -7.5% (+3.0%, -7.5%, -8.0%) | peak -25.5% at 8y | barely move: within ±5% | **SPILLS** |
+| apartment starts, years 3-8 | mid | +27.7% (—, +27.7%, —) | peak +4826.3% at 3.2y | fall (lower NOI on a new block) | **BACKWARDS** |
 
 ![office values, sample](docs/shocks/cost-insurance-energy-x2-0.svg)
 ![apartment values, sample](docs/shocks/cost-insurance-energy-x2-1.svg)
@@ -233,12 +237,12 @@ City Hall's adopted property-tax rate (citygov.ts `policy.propRate`, published a
 
 | observable | window | effect, median (by seed) | peak | the record says | verdict |
 |---|---|---|---|---|---|
-| office values | impact | +4.1% (+8.1%, -0.5%, +4.1%) | peak +24.8% at 15y | fall about Δtax ÷ cap (≈0.55pt ÷ ~6-7% ≈ 8%), 2-15% | **BACKWARDS** |
-| apartment values | impact | +4.2% (+4.2%, -4.3%, +6.0%) | peak +73.3% at 14.8y | fall 2-15% | **BACKWARDS** |
-| industrial values (NNN) | impact | -1.1% (-1.1%, +12.1%, -11.6%) | peak -68.2% at 13.5y | fall less: 0-8% (tenants pay the tax at today's rents) | **RIGHT** |
-| land value | impact | +2.3% (-0.3%, +3.7%, +2.3%) | peak +102.0% at 15y | falls 2-30% (the tax capitalises into land) | **BACKWARDS** |
-| listings | impact | -0.2% (-0.2%, -7.7%, +2.0%) | peak -44.3% at 7.9y | rise: marginal owners sell | **NO RESPONSE** |
-| population, years 8-15 | late | -0.5% (-0.5%, +1.4%, -2.5%) | peak -1.7% at 13.9y | a little out-migration (Tiebout): −0.2 to −5% | **RIGHT** |
+| office values | impact | +4.1% (+8.1%, -0.5%, +4.1%) | peak +16.2% at 4.8y | fall about Δtax ÷ cap (≈0.55pt ÷ ~6-7% ≈ 8%), 2-15% | **BACKWARDS** |
+| apartment values | impact | +4.2% (+4.2%, -4.3%, +6.0%) | peak -24.4% at 7.5y | fall 2-15% | **BACKWARDS** |
+| industrial values (NNN) | impact | -1.1% (-1.1%, +12.1%, -11.6%) | peak -39.9% at 6.5y | fall less: 0-8% (tenants pay the tax at today's rents) | **RIGHT** |
+| land value | impact | +2.3% (-0.3%, +3.7%, +2.3%) | peak -39.7% at 8y | falls 2-30% (the tax capitalises into land) | **BACKWARDS** |
+| listings | impact | -0.2% (-0.2%, -7.7%, +2.0%) | peak -34.9% at 6.7y | rise: marginal owners sell | **NO RESPONSE** |
+| population, years 8-15 | late | -0.5% (-0.5%, +1.4%, -2.5%) | peak +0.9% at 5y | a little out-migration (Tiebout): −0.2 to −5% | **RIGHT** |
 
 ![property tax rate, %](docs/shocks/cost-proptax-x2-0.svg)
 ![office values, sample](docs/shocks/cost-proptax-x2-1.svg)
@@ -254,12 +258,12 @@ The named firm with the most heads closes its local operation at the snapshot. I
 
 | observable | window | effect, median (by seed) | peak | the record says | verdict |
 |---|---|---|---|---|---|
-| the class's occupied floor, per foot the firm held (×100) | impact | +93.3pp (-10.8pp, +102.9pp, +93.3pp) | peak -550.1pp at 12.8y | about −100 (its floor comes empty), −50 to −150 | **BACKWARDS** |
-| town jobs lost per direct job (×100) | impact | +16.6pp (+3.7pp, +16.6pp, +51.8pp) | peak -281.7pp at 13.3y | −150 to −250: the direct job and 0.5-1.5 more (Moretti 2010) | **BACKWARDS** |
-| office vacancy | impact | -0.4pp (+0.3pp, -0.4pp, -1.1pp) | peak -3.5pp at 7.8y | up by about the firm's floor (seed 11: ~0.9pp of stock) | **BACKWARDS** |
-| population | impact | +0.3% (-0.1%, +1.2%, +0.3%) | peak +1.4% at 9.4y | some laid-off households leave town | **BACKWARDS** |
+| the class's occupied floor, per foot the firm held (×100) | impact | +93.3pp (-10.8pp, +102.9pp, +93.3pp) | peak +389.7pp at 4.3y | about −100 (its floor comes empty), −50 to −150 | **BACKWARDS** |
+| town jobs lost per direct job (×100) | impact | +16.6pp (+3.7pp, +16.6pp, +51.8pp) | peak -154.2pp at 6.3y | −150 to −250: the direct job and 0.5-1.5 more (Moretti 2010) | **BACKWARDS** |
+| office vacancy | impact | -0.4pp (+0.3pp, -0.4pp, -1.1pp) | peak -2.6pp at 7.5y | up by about the firm's floor (seed 11: ~0.9pp of stock) | **BACKWARDS** |
+| population | impact | +0.3% (-0.1%, +1.2%, +0.3%) | peak +1.2% at 4y | some laid-off households leave town | **BACKWARDS** |
 | apartment vacancy | impact | -0.2pp (-0.1pp, -0.2pp, -0.7pp) | peak -4.1pp at 2.8y | rises over 1-2 years as leavers' flats come empty | **BACKWARDS** |
-| shop vacancy, years 3-8 | mid | +0.1pp (+0.3pp, +0.1pp, +0.1pp) | peak +4.2pp at 12.7y | follows with a lag (less pay spent in town) | **RIGHT** |
+| shop vacancy, years 3-8 | mid | +0.1pp (+0.3pp, +0.1pp, +0.1pp) | peak +1.5pp at 4.2y | follows with a lag (less pay spent in town) | **RIGHT** |
 
 ![town jobs](docs/shocks/demand-employer-leaves-0.svg)
 ![office vacancy, %](docs/shocks/demand-employer-leaves-1.svg)
@@ -275,13 +279,13 @@ An arrivals wave: 1.10% of the register's people a month for 24 months (compound
 
 | observable | window | effect, median (by seed) | peak | the record says | verdict |
 |---|---|---|---|---|---|
-| population | impact | +19.8% (+21.1%, +19.8%, +18.7%) | peak +29.6% at 2.1y | ramps to about +30% (years 0-3 mean ~+20%) | **RIGHT** |
+| population | impact | +19.8% (+21.1%, +19.8%, +18.7%) | peak +30.4% at 2.1y | ramps to about +30% (years 0-3 mean ~+20%) | **RIGHT** |
 | apartment vacancy | impact | +1.4pp (+1.7pp, +1.4pp, +1.0pp) | peak +5.6pp at 4.4y | falls first | **BACKWARDS** |
-| apartment effective rent | impact | +25.2% (+25.2%, +31.6%, +20.4%) | peak +54.4% at 11.3y | +5 to +15% real over 2-3 years | **WRONG SIZE** |
+| apartment effective rent | impact | +25.2% (+25.2%, +31.6%, +20.4%) | peak +44.5% at 2.8y | +5 to +15% real over 2-3 years | **WRONG SIZE** |
 | home prices, years 3-8 | mid | — (—, —, —) | peak +0.0% at 0y | follow the rents up | **NO DATA** |
-| apartment starts | impact | +394.3% (+394.3%, —, —) | peak +14246.7% at 2.1y | rise 1-3 years on | **RIGHT** |
+| apartment starts | impact | +394.3% (+394.3%, —, —) | peak +15773.2% at 2.1y | rise 1-3 years on | **RIGHT** |
 | unemployment | impact | +14.0pp (+15.0pp, +14.0pp, +13.8pp) | peak +21.7pp at 2.1y | up briefly (newcomers looking for work) | **WRONG SIZE** |
-| jobs, years 3-8 | mid | +6.9% (+6.9%, +7.2%, +6.2%) | peak +11.4% at 10.8y | firms expand toward the bigger town | **RIGHT** |
+| jobs, years 3-8 | mid | +6.9% (+6.9%, +7.2%, +6.2%) | peak +9.5% at 7.9y | firms expand toward the bigger town | **RIGHT** |
 
 ![population](docs/shocks/demand-arrivals-30-0.svg)
 ![apartment vacancy, %](docs/shocks/demand-arrivals-30-1.svg)
@@ -299,10 +303,10 @@ Every office firm's need per head falls 30%, through the engine's own remote-wor
 |---|---|---|---|---|---|
 | office vacancy, years 0-3 | impact | +5.0pp (+6.7pp, +5.0pp, +4.7pp) | peak +16.3pp at 6.3y | rises gradually as leases roll (not overnight): +0.5 to +8pp | **RIGHT** |
 | office vacancy, years 3-8 | mid | +13.6pp (+15.4pp, +11.7pp, +13.6pp) | peak +16.3pp at 6.3y | +4 to +20pp as most leases have rolled (US 2020-24: ~+7-8pp, part-rolled) | **RIGHT** |
-| office effective rent, years 3-8 | mid | -25.2% (-25.2%, -19.1%, -28.1%) | peak -44.0% at 13.6y | falls 10-50% | **RIGHT** |
-| office values, years 3-8 | mid | -39.6% (-38.0%, -39.6%, -54.3%) | peak -73.7% at 13.5y | −20 to −45% (US 2022-24: −30 to −40%) | **RIGHT** |
-| office starts, years 3-8 | mid | -96.8% (-98.3%, -95.4%, —) | peak -2580.9% at 3.9y | near zero | **RIGHT** |
-| office stock, years 8-15 | late | -8.1% (-8.1%, -12.5%, -6.7%) | peak -10.7% at 14.5y | conversions and teardowns where they pencil | **RIGHT** |
+| office effective rent, years 3-8 | mid | -25.2% (-25.2%, -19.1%, -28.1%) | peak -31.2% at 7.4y | falls 10-50% | **RIGHT** |
+| office values, years 3-8 | mid | -39.6% (-38.0%, -39.6%, -54.3%) | peak -65.1% at 7.8y | −20 to −45% (US 2022-24: −30 to −40%) | **RIGHT** |
+| office starts, years 3-8 | mid | -96.8% (-98.3%, -95.4%, —) | peak -1636.3% at 3.9y | near zero | **RIGHT** |
+| office stock, years 8-15 | late | -8.1% (-8.1%, -12.5%, -6.7%) | peak -5.4% at 7.8y | conversions and teardowns where they pencil | **RIGHT** |
 
 ![office vacancy, %](docs/shocks/demand-remote-office-30-0.svg)
 ![office effective rent index](docs/shocks/demand-remote-office-30-1.svg)
@@ -318,11 +322,11 @@ Households' in-store share of retail spending falls by a fifth: the town's onlin
 
 | observable | window | effect, median (by seed) | peak | the record says | verdict |
 |---|---|---|---|---|---|
-| shop sales (the shop industries' output) | impact | -18.7% (-19.4%, -17.9%, -18.7%) | peak -24.6% at 13.4y | fall 10-30% (a fifth of the household part) | **RIGHT** |
-| shop vacancy, years 0-3 | impact | +0.4pp (+0.6pp, +0.3pp, +0.4pp) | peak +3.8pp at 11.4y | rises as marginal shops close | **NO RESPONSE** |
-| shop vacancy, years 8-15 | late | +0.3pp (+0.3pp, +1.8pp, +0.3pp) | peak +3.8pp at 11.4y | stays up until shops convert | **NO RESPONSE** |
-| shop effective rent | impact | +0.7% (+0.7%, +2.3%, -0.9%) | peak -23.1% at 11.6y | falls 3-30% | **NO RESPONSE** |
-| shop stock, years 8-15 | late | -0.2% (-0.2%, +2.7%, -1.9%) | peak -3.1% at 13.5y | conversions where they pencil | **NO RESPONSE** |
+| shop sales (the shop industries' output) | impact | -18.7% (-19.4%, -17.9%, -18.7%) | peak -21.9% at 6.4y | fall 10-30% (a fifth of the household part) | **RIGHT** |
+| shop vacancy, years 0-3 | impact | +0.4pp (+0.6pp, +0.3pp, +0.4pp) | peak +3.2pp at 5.1y | rises as marginal shops close | **NO RESPONSE** |
+| shop vacancy, years 8-15 | late | +0.3pp (+0.3pp, +1.8pp, +0.3pp) | peak +3.2pp at 5.1y | stays up until shops convert | **NO RESPONSE** |
+| shop effective rent | impact | +0.7% (+0.7%, +2.3%, -0.9%) | peak +6.3% at 7.3y | falls 3-30% | **NO RESPONSE** |
+| shop stock, years 8-15 | late | -0.2% (-0.2%, +2.7%, -1.9%) | peak +1.7% at 4.8y | conversions where they pencil | **NO RESPONSE** |
 
 ![shop vacancy, %](docs/shocks/demand-online-20-0.svg)
 ![shop effective rent index](docs/shocks/demand-online-20-1.svg)
@@ -332,7 +336,7 @@ Households' in-store share of retail spending falls by a fifth: the town's onlin
 
 Half as much office again, finished and empty, on the town's vacant lots where zoning allows it — best-located lots first, as a boom builds — each at its lot's legal envelope. Unowned, leasing up through the street like any delivery.
 
-- Twins identical before the shock: yes · landing: buildings ×1.50, econ.stock ×1.49 at +1 month / buildings ×1.52, econ.stock ×1.50 at +1 month / buildings ×1.48, econ.stock ×1.48 at +1 month · holding: buildings ×1.40 at +5 years / buildings ×1.41 at +5 years / buildings ×1.38 at +5 years
+- Twins identical before the shock: yes · landing: buildings +49% of the stock, econ.stock ×1.49 at +1 month / buildings +50% of the stock, econ.stock ×1.50 at +1 month / buildings +47% of the stock, econ.stock ×1.48 at +1 month · holding: buildings +39% of the stock at +5 years / buildings +41% of the stock at +5 years / buildings +38% of the stock at +5 years
 - Injector notes: 75 buildings, 3.41M sf rentable = 50% of the stock (target 50%); 91 buildings, 3.33M sf rentable = 50% of the stock (target 50%); 27 buildings, 3.28M sf rentable = 51% of the stock (target 50%)
 - Record: Houston office 1983-87: vacancy to ~30%, effective rents roughly halved, a decade to absorb (Wheaton & Torto); real rent growth ≈ −2 to −3%/yr per point of vacancy over normal (Wheaton-Torto 1988); starts stop until vacancy recovers; values fall more than rents.
 
@@ -340,13 +344,13 @@ Half as much office again, finished and empty, on the town's vacant lots where z
 |---|---|---|---|---|---|
 | office vacancy | impact | +25.6pp (+25.6pp, +25.9pp, +24.7pp) | peak +29.1pp at 0.1y | +10 to +35pp (day one is about +30pp) | **RIGHT** |
 | office vacancy, years 8-15 | late | +15.2pp (+15.2pp, +9.6pp, +17.3pp) | peak +29.1pp at 0.1y | smaller than the impact: absorbing (0 to +20pp) | **RIGHT** |
-| office effective rent | impact | -8.1% (-8.1%, -11.8%, -6.3%) | peak -61.6% at 14.6y | falls 8-50% | **RIGHT** |
-| office values (existing buildings) | impact | -15.8% (-15.8%, -27.3%, +13.6%) | peak -92.9% at 14.8y | fall 10-60%, more than rents | **RIGHT** |
-| office starts, years 3-8 | mid | -100.0% (-100.0%, -100.0%, —) | peak -2580.9% at 3.9y | near zero: −50 to −100% | **RIGHT** |
-| land value | impact | +2.1% (+4.2%, +0.2%, +2.1%) | peak -148.1% at 13y | falls (lower residuals) | **BACKWARDS** |
-| retail rent (should not move) | impact | -1.9% (-2.0%, -1.6%, -1.9%) | peak -18.3% at 13.1y | within ±5% | **RIGHT** |
-| industrial rent (should not move) | impact | +1.5% (+1.4%, +2.8%, +1.5%) | peak +17.1% at 14.3y | within ±5% | **RIGHT** |
-| apartments rent (should not move) | impact | -4.5% (-0.4%, -4.5%, -6.4%) | peak -35.2% at 12.3y | within ±5% | **RIGHT** |
+| office effective rent | impact | -8.1% (-8.1%, -11.8%, -6.3%) | peak -59.0% at 7.8y | falls 8-50% | **RIGHT** |
+| office values (existing buildings) | impact | -15.8% (-15.8%, -27.3%, +13.6%) | peak -93.5% at 6.3y | fall 10-60%, more than rents | **RIGHT** |
+| office starts, years 3-8 | mid | -100.0% (-100.0%, -100.0%, —) | peak -1636.3% at 3.9y | near zero: −50 to −100% | **RIGHT** |
+| office stock, years 3-8 | mid | +39.3% (+40.3%, +38.3%, +39.3%) | peak +48.2% at 0.8y | the new buildings still stand (+35 to +55%): a glut is absorbed, not torn down — new buildings are rarely demolished | **RIGHT** |
+| retail rent (should not move) | impact | -1.9% (-2.0%, -1.6%, -1.9%) | peak -10.1% at 5.6y | within ±5% | **RIGHT** |
+| industrial rent (should not move) | impact | +1.5% (+1.4%, +2.8%, +1.5%) | peak +17.3% at 4.4y | within ±5% | **RIGHT** |
+| apartments rent (should not move) | impact | -4.5% (-0.4%, -4.5%, -6.4%) | peak -23.6% at 5.6y | within ±5% | **RIGHT** |
 
 ![office vacancy, %](docs/shocks/supply-office-up50-0.svg)
 ![office effective rent index](docs/shocks/supply-office-up50-1.svg)
@@ -356,16 +360,15 @@ Half as much office again, finished and empty, on the town's vacant lots where z
 
 A fifth of the town's office feet gone overnight (a fire, a wipe-out): buildings spread across the town and its vintages by a hash of their deed, not the player's own. Their tenants mid-lease go looking (streetRolls.ts: a firm is not demolished with its building).
 
-- Twins identical before the shock: yes · landing: buildings ×0.80, econ.stock ×0.80 at +1 month / buildings ×0.79, econ.stock ×0.80 at +1 month / buildings ×0.80, econ.stock ×0.80 at +1 month
+- Twins identical before the shock: yes · landing: buildings −20% of the stock, econ.stock ×0.80 at +1 month / buildings −20% of the stock, econ.stock ×0.80 at +1 month / buildings −20% of the stock, econ.stock ×0.80 at +1 month
 - Injector notes: 91 buildings, 1.36M sf rentable lost; 90 buildings, 1.34M sf rentable lost; 88 buildings, 1.30M sf rentable lost
 - Record: Scarcity raises rents and cuts vacancy; starts answer 1-3 years after the signal (Wheaton 1999), with overshoot; land in the class's districts rises.
 
 | observable | window | effect, median (by seed) | peak | the record says | verdict |
 |---|---|---|---|---|---|
 | office vacancy | impact | -11.6pp (-11.6pp, -7.1pp, -12.7pp) | peak -13.6pp at 2.7y | falls 1-12pp (the displaced take the empty space) | **RIGHT** |
-| office effective rent | impact | +6.4% (+7.9%, +1.8%, +6.4%) | peak +50.1% at 13.2y | rises 2-30% | **RIGHT** |
-| office starts, years 3-8 | mid | +117.5% (+273.6%, -38.7%, —) | peak +1904.1% at 13.9y | rise: a construction answer 1-3 years on | **RIGHT** |
-| land value, years 3-8 | mid | -4.9% (+3.4%, -4.9%, -12.5%) | peak -112.0% at 13y | rises | **BACKWARDS** |
+| office effective rent | impact | +6.4% (+7.9%, +1.8%, +6.4%) | peak +38.5% at 8y | rises 2-30% | **RIGHT** |
+| office starts, years 3-8 | mid | +117.5% (+273.6%, -38.7%, —) | peak +2204.0% at 6.4y | rise: a construction answer 1-3 years on | **RIGHT** |
 
 ![office vacancy, %](docs/shocks/supply-office-down20-0.svg)
 ![office effective rent index](docs/shocks/supply-office-down20-1.svg)
@@ -375,7 +378,7 @@ A fifth of the town's office feet gone overnight (a fire, a wipe-out): buildings
 
 Half as much retail again, finished and empty, on the town's vacant lots where zoning allows it — best-located lots first, as a boom builds — each at its lot's legal envelope. Unowned, leasing up through the street like any delivery.
 
-- Twins identical before the shock: yes · landing: buildings ×1.72, econ.stock ×1.50 at +1 month / buildings ×1.70, econ.stock ×1.50 at +1 month / buildings ×1.74, econ.stock ×1.48 at +1 month · holding: buildings ×1.60 at +5 years / buildings ×1.61 at +5 years / buildings ×1.75 at +5 years
+- Twins identical before the shock: yes · landing: buildings +51% of the stock, econ.stock ×1.50 at +1 month / buildings +50% of the stock, econ.stock ×1.50 at +1 month / buildings +49% of the stock, econ.stock ×1.48 at +1 month · holding: buildings +41% of the stock at +5 years / buildings +43% of the stock at +5 years / buildings +48% of the stock at +5 years
 - Injector notes: 130 buildings, 1.02M sf rentable = 51% of the stock (target 50%); 138 buildings, 0.99M sf rentable = 50% of the stock (target 50%); 119 buildings, 0.95M sf rentable = 50% of the stock (target 50%)
 - Record: Houston office 1983-87: vacancy to ~30%, effective rents roughly halved, a decade to absorb (Wheaton & Torto); real rent growth ≈ −2 to −3%/yr per point of vacancy over normal (Wheaton-Torto 1988); starts stop until vacancy recovers; values fall more than rents.
 
@@ -383,13 +386,13 @@ Half as much retail again, finished and empty, on the town's vacant lots where z
 |---|---|---|---|---|---|
 | retail vacancy | impact | +17.7pp (+17.7pp, +15.1pp, +21.3pp) | peak +29.4pp at 0.1y | +10 to +35pp (day one is about +30pp) | **RIGHT** |
 | retail vacancy, years 8-15 | late | +7.3pp (+7.3pp, +5.0pp, +8.8pp) | peak +29.4pp at 0.1y | smaller than the impact: absorbing (0 to +20pp) | **RIGHT** |
-| retail effective rent | impact | -5.6% (-6.5%, -3.2%, -5.6%) | peak -51.0% at 13.7y | falls 8-50% | **WRONG SIZE** |
-| retail values (existing buildings) | impact | -21.4% (-21.4%, -25.8%, -14.8%) | peak -93.6% at 13y | fall 10-60%, more than rents | **RIGHT** |
-| retail starts, years 3-8 | mid | -71.5% (-78.1%, -58.3%, -71.5%) | peak -1082.9% at 10.1y | near zero: −50 to −100% | **RIGHT** |
-| land value | impact | -8.5% (-17.7%, -8.5%, -8.0%) | peak -148.7% at 13y | falls (lower residuals) | **RIGHT** |
-| office rent (should not move) | impact | +2.7% (+4.1%, +2.7%, +2.5%) | peak +14.0% at 10.5y | within ±5% | **RIGHT** |
-| industrial rent (should not move) | impact | -0.1% (-0.9%, +3.3%, -0.1%) | peak -22.8% at 11.5y | within ±5% | **RIGHT** |
-| apartments rent (should not move) | impact | -0.2% (+2.9%, -0.2%, -5.0%) | peak +38.0% at 11.2y | within ±5% | **RIGHT** |
+| retail effective rent | impact | -5.6% (-6.5%, -3.2%, -5.6%) | peak -34.2% at 7.2y | falls 8-50% | **WRONG SIZE** |
+| retail values (existing buildings) | impact | -21.4% (-21.4%, -25.8%, -14.8%) | peak -66.1% at 5.5y | fall 10-60%, more than rents | **RIGHT** |
+| retail starts, years 3-8 | mid | -71.5% (-78.1%, -58.3%, -71.5%) | peak -1097.1% at 0.7y | near zero: −50 to −100% | **RIGHT** |
+| retail stock, years 3-8 | mid | +38.3% (+36.5%, +38.3%, +42.7%) | peak +48.2% at 0.6y | the new buildings still stand (+35 to +55%): a glut is absorbed, not torn down — new buildings are rarely demolished | **RIGHT** |
+| office rent (should not move) | impact | +2.7% (+4.1%, +2.7%, +2.5%) | peak +12.8% at 6.4y | within ±5% | **RIGHT** |
+| industrial rent (should not move) | impact | -0.1% (-0.9%, +3.3%, -0.1%) | peak -19.8% at 7.3y | within ±5% | **RIGHT** |
+| apartments rent (should not move) | impact | -0.2% (+2.9%, -0.2%, -5.0%) | peak +27.3% at 5.8y | within ±5% | **RIGHT** |
 
 ![retail vacancy, %](docs/shocks/supply-retail-up50-0.svg)
 ![retail effective rent index](docs/shocks/supply-retail-up50-1.svg)
@@ -399,16 +402,15 @@ Half as much retail again, finished and empty, on the town's vacant lots where z
 
 A fifth of the town's retail feet gone overnight (a fire, a wipe-out): buildings spread across the town and its vintages by a hash of their deed, not the player's own. Their tenants mid-lease go looking (streetRolls.ts: a firm is not demolished with its building).
 
-- Twins identical before the shock: yes · landing: buildings ×0.72, econ.stock ×0.80 at +1 month / buildings ×0.72, econ.stock ×0.80 at +1 month / buildings ×0.70, econ.stock ×0.80 at +1 month
+- Twins identical before the shock: yes · landing: buildings −20% of the stock, econ.stock ×0.80 at +1 month / buildings −20% of the stock, econ.stock ×0.80 at +1 month / buildings −20% of the stock, econ.stock ×0.80 at +1 month
 - Injector notes: 72 buildings, 0.40M sf rentable lost; 70 buildings, 0.40M sf rentable lost; 70 buildings, 0.38M sf rentable lost
 - Record: Scarcity raises rents and cuts vacancy; starts answer 1-3 years after the signal (Wheaton 1999), with overshoot; land in the class's districts rises.
 
 | observable | window | effect, median (by seed) | peak | the record says | verdict |
 |---|---|---|---|---|---|
-| retail vacancy | impact | -0.5pp (-1.0pp, +0.7pp, -0.5pp) | peak +3.3pp at 14.9y | falls 1-12pp (the displaced take the empty space) | **NO RESPONSE** |
-| retail effective rent | impact | +1.4% (+1.4%, +1.4%, +0.8%) | peak +24.4% at 13.5y | rises 2-30% | **NO RESPONSE** |
-| retail starts, years 3-8 | mid | +16.7% (-34.1%, +16.7%, +182.6%) | peak +1529.3% at 6.3y | rise: a construction answer 1-3 years on | **WRONG SIZE** |
-| land value, years 3-8 | mid | -5.5% (+3.3%, -21.8%, -5.5%) | peak -106.4% at 13y | rises | **BACKWARDS** |
+| retail vacancy | impact | -0.5pp (-1.0pp, +0.7pp, -0.5pp) | peak -2.1pp at 6.6y | falls 1-12pp (the displaced take the empty space) | **NO RESPONSE** |
+| retail effective rent | impact | +1.4% (+1.4%, +1.4%, +0.8%) | peak +14.9% at 6.3y | rises 2-30% | **NO RESPONSE** |
+| retail starts, years 3-8 | mid | +16.7% (-34.1%, +16.7%, +182.6%) | peak +1837.4% at 6.3y | rise: a construction answer 1-3 years on | **WRONG SIZE** |
 
 ![retail vacancy, %](docs/shocks/supply-retail-down20-0.svg)
 ![retail effective rent index](docs/shocks/supply-retail-down20-1.svg)
@@ -418,7 +420,7 @@ A fifth of the town's retail feet gone overnight (a fire, a wipe-out): buildings
 
 Half as much industrial again, finished and empty, on the town's vacant lots where zoning allows it — best-located lots first, as a boom builds — each at its lot's legal envelope. Unowned, leasing up through the street like any delivery.
 
-- Twins identical before the shock: yes · landing: buildings ×2.38, econ.stock ×1.50 at +1 month / buildings ×2.17, econ.stock ×1.49 at +1 month / buildings ×2.32, econ.stock ×1.50 at +1 month · holding: buildings ×2.13 at +5 years / buildings ×1.55 at +5 years / buildings ×2.11 at +5 years
+- Twins identical before the shock: yes · landing: buildings +50% of the stock, econ.stock ×1.50 at +1 month / buildings +49% of the stock, econ.stock ×1.49 at +1 month / buildings +50% of the stock, econ.stock ×1.50 at +1 month · holding: buildings +40% of the stock at +5 years / buildings +26% of the stock at +5 years / buildings +42% of the stock at +5 years
 - Injector notes: 61 buildings, 0.46M sf rentable = 50% of the stock (target 50%); 75 buildings, 0.49M sf rentable = 50% of the stock (target 50%); 59 buildings, 0.46M sf rentable = 50% of the stock (target 50%)
 - Record: Houston office 1983-87: vacancy to ~30%, effective rents roughly halved, a decade to absorb (Wheaton & Torto); real rent growth ≈ −2 to −3%/yr per point of vacancy over normal (Wheaton-Torto 1988); starts stop until vacancy recovers; values fall more than rents.
 
@@ -426,13 +428,13 @@ Half as much industrial again, finished and empty, on the town's vacant lots whe
 |---|---|---|---|---|---|
 | industrial vacancy | impact | +29.0pp (+29.3pp, +26.7pp, +29.0pp) | peak +36.2pp at 0.6y | +10 to +35pp (day one is about +30pp) | **RIGHT** |
 | industrial vacancy, years 8-15 | late | +14.4pp (+17.3pp, +5.7pp, +14.4pp) | peak +36.2pp at 0.6y | smaller than the impact: absorbing (0 to +20pp) | **RIGHT** |
-| industrial effective rent | impact | -26.2% (-20.2%, -26.2%, -27.4%) | peak -106.5% at 12.3y | falls 8-50% | **RIGHT** |
-| industrial values (existing buildings) | impact | -15.0% (-38.5%, -9.9%, -15.0%) | peak -102.3% at 13.8y | fall 10-60%, more than rents | **RIGHT** |
-| industrial starts, years 3-8 | mid | — (—, —, —) | peak -5027.1% at 12.5y | near zero: −50 to −100% | **NO DATA** |
-| land value | impact | -1.2% (+4.6%, -8.2%, -1.2%) | peak -135.3% at 13y | falls (lower residuals) | **NO RESPONSE** |
-| office rent (should not move) | impact | +0.2% (+0.2%, +0.2%, +2.3%) | peak -4.9% at 14.2y | within ±5% | **RIGHT** |
-| retail rent (should not move) | impact | -0.8% (-1.0%, -0.8%, +0.2%) | peak -21.3% at 11.5y | within ±5% | **RIGHT** |
-| apartments rent (should not move) | impact | -1.0% (+1.3%, -1.0%, -5.4%) | peak -26.5% at 14.3y | within ±5% | **RIGHT** |
+| industrial effective rent | impact | -26.2% (-20.2%, -26.2%, -27.4%) | peak -88.9% at 7.9y | falls 8-50% | **RIGHT** |
+| industrial values (existing buildings) | impact | -15.0% (-38.5%, -9.9%, -15.0%) | peak -89.0% at 7.8y | fall 10-60%, more than rents | **RIGHT** |
+| industrial starts, years 3-8 | mid | — (—, —, —) | peak -2956.6% at 0.8y | near zero: −50 to −100% | **NO DATA** |
+| industrial stock, years 3-8 | mid | +35.3% (+35.3%, +21.1%, +36.2%) | peak +49.9% at 0.1y | the new buildings still stand (+35 to +55%): a glut is absorbed, not torn down — new buildings are rarely demolished | **RIGHT** |
+| office rent (should not move) | impact | +0.2% (+0.2%, +0.2%, +2.3%) | peak +6.5% at 4.3y | within ±5% | **RIGHT** |
+| retail rent (should not move) | impact | -0.8% (-1.0%, -0.8%, +0.2%) | peak -8.3% at 4.6y | within ±5% | **RIGHT** |
+| apartments rent (should not move) | impact | -1.0% (+1.3%, -1.0%, -5.4%) | peak -20.0% at 7.7y | within ±5% | **RIGHT** |
 
 ![industrial vacancy, %](docs/shocks/supply-industrial-up50-0.svg)
 ![industrial effective rent index](docs/shocks/supply-industrial-up50-1.svg)
@@ -442,16 +444,15 @@ Half as much industrial again, finished and empty, on the town's vacant lots whe
 
 A fifth of the town's industrial feet gone overnight (a fire, a wipe-out): buildings spread across the town and its vintages by a hash of their deed, not the player's own. Their tenants mid-lease go looking (streetRolls.ts: a firm is not demolished with its building).
 
-- Twins identical before the shock: yes · landing: buildings ×0.43, econ.stock ×0.79 at +1 month / buildings ×0.52, econ.stock ×0.80 at +1 month / buildings ×0.47, econ.stock ×0.80 at +1 month
+- Twins identical before the shock: yes · landing: buildings −21% of the stock, econ.stock ×0.79 at +1 month / buildings −20% of the stock, econ.stock ×0.80 at +1 month / buildings −20% of the stock, econ.stock ×0.80 at +1 month
 - Injector notes: 17 buildings, 0.18M sf rentable lost; 17 buildings, 0.20M sf rentable lost; 18 buildings, 0.19M sf rentable lost
 - Record: Scarcity raises rents and cuts vacancy; starts answer 1-3 years after the signal (Wheaton 1999), with overshoot; land in the class's districts rises.
 
 | observable | window | effect, median (by seed) | peak | the record says | verdict |
 |---|---|---|---|---|---|
-| industrial vacancy | impact | -5.9pp (-6.1pp, -2.5pp, -5.9pp) | peak -17.1pp at 6.3y | falls 1-12pp (the displaced take the empty space) | **RIGHT** |
-| industrial effective rent | impact | +10.3% (+11.8%, +10.3%, +10.1%) | peak +27.5% at 7.3y | rises 2-30% | **RIGHT** |
-| industrial starts, years 3-8 | mid | — (—, —, —) | peak -4442.4% at 12.4y | rise: a construction answer 1-3 years on | **NO DATA** |
-| land value, years 3-8 | mid | -17.3% (+19.8%, -18.1%, -17.3%) | peak -109.0% at 14y | rises | **BACKWARDS** |
+| industrial vacancy | impact | -5.9pp (-6.1pp, -2.5pp, -5.9pp) | peak -17.1pp at 2y | falls 1-12pp (the displaced take the empty space) | **RIGHT** |
+| industrial effective rent | impact | +10.3% (+11.8%, +10.3%, +10.1%) | peak +33.1% at 6.7y | rises 2-30% | **RIGHT** |
+| industrial starts, years 3-8 | mid | — (—, —, —) | peak +13142.9% at 2.7y | rise: a construction answer 1-3 years on | **NO DATA** |
 
 ![industrial vacancy, %](docs/shocks/supply-industrial-down20-0.svg)
 ![industrial effective rent index](docs/shocks/supply-industrial-down20-1.svg)
@@ -461,21 +462,21 @@ A fifth of the town's industrial feet gone overnight (a fire, a wipe-out): build
 
 Half as much apartments again, finished and empty, on the town's vacant lots where zoning allows it — best-located lots first, as a boom builds — each at its lot's legal envelope. Unowned, leasing up through the street like any delivery.
 
-- Twins identical before the shock: yes · landing: buildings ×1.41, econ.stock ×1.50 at +1 month / buildings ×1.41, econ.stock ×1.51 at +1 month / buildings ×1.54, econ.stock ×1.68 at +1 month · holding: buildings ×1.46 at +5 years / buildings ×1.42 at +5 years / buildings ×1.53 at +5 years
+- Twins identical before the shock: yes · landing: buildings +50% of the stock, econ.stock ×1.50 at +1 month / buildings +51% of the stock, econ.stock ×1.51 at +1 month / buildings +68% of the stock, econ.stock ×1.68 at +1 month · holding: buildings +58% of the stock at +5 years / buildings +53% of the stock at +5 years / buildings +67% of the stock at +5 years
 - Injector notes: 32 buildings, 1.50M sf rentable = 50% of the stock (target 50%); 43 buildings, 1.43M sf rentable = 51% of the stock (target 50%); 18 buildings, 1.94M sf rentable = 68% of the stock (target 50%)
 - Record: Houston office 1983-87: vacancy to ~30%, effective rents roughly halved, a decade to absorb (Wheaton & Torto); real rent growth ≈ −2 to −3%/yr per point of vacancy over normal (Wheaton-Torto 1988); starts stop until vacancy recovers; values fall more than rents.
 
 | observable | window | effect, median (by seed) | peak | the record says | verdict |
 |---|---|---|---|---|---|
-| apartments vacancy | impact | +8.7pp (+8.7pp, +7.3pp, +11.8pp) | peak +31.9pp at 0.2y | +10 to +35pp (day one is about +30pp) | **—** |
-| apartments vacancy, years 8-15 | late | +8.4pp (+8.9pp, -1.0pp, +8.4pp) | peak +31.9pp at 0.2y | smaller than the impact: absorbing (0 to +20pp) | **—** |
-| apartments effective rent | impact | -27.5% (-20.8%, -27.5%, -48.6%) | peak +233.8% at 13.8y | falls 8-50% | **—** |
-| apartments values (existing buildings) | impact | -7.3% (-2.7%, -21.8%, -7.3%) | peak +86.2% at 12.5y | fall 10-60%, more than rents | **—** |
-| apartments starts, years 3-8 | mid | -2.0% (—, -2.0%, —) | peak +25413.6% at 9.5y | near zero: −50 to −100% | **—** |
-| land value | impact | +6.7% (+8.6%, +5.0%, +6.7%) | peak +115.2% at 15y | falls (lower residuals) | **—** |
-| office rent (should not move) | impact | -2.2% (-1.6%, -2.2%, -2.5%) | peak -8.1% at 14.4y | within ±5% | **—** |
-| retail rent (should not move) | impact | -0.4% (-0.4%, -0.0%, -1.4%) | peak +17.9% at 13.3y | within ±5% | **—** |
-| industrial rent (should not move) | impact | -1.4% (-1.4%, -9.7%, +0.0%) | peak +12.3% at 14.8y | within ±5% | **—** |
+| apartments vacancy | impact | +8.7pp (+8.7pp, +7.3pp, +11.8pp) | peak +31.9pp at 0.2y | +10 to +35pp (day one is about +30pp) | **WRONG SIZE** |
+| apartments vacancy, years 8-15 | late | +8.4pp (+8.9pp, -1.0pp, +8.4pp) | peak +31.9pp at 0.2y | smaller than the impact: absorbing (0 to +20pp) | **RIGHT** |
+| apartments effective rent | impact | -27.5% (-20.8%, -27.5%, -48.6%) | peak +178.7% at 5.1y | falls 8-50% | **RIGHT** |
+| apartments values (existing buildings) | impact | -7.3% (-2.7%, -21.8%, -7.3%) | peak +84.3% at 0.8y | fall 10-60%, more than rents | **WRONG SIZE** |
+| apartments starts, years 3-8 | mid | -2.0% (—, -2.0%, —) | peak +19081.6% at 3.8y | near zero: −50 to −100% | **NO RESPONSE** |
+| apartments stock, years 3-8 | mid | +57.4% (+57.4%, +49.6%, +69.8%) | peak +62.4% at 6.3y | the new buildings still stand (+35 to +55%): a glut is absorbed, not torn down — new buildings are rarely demolished | **WRONG SIZE** |
+| office rent (should not move) | impact | -2.2% (-1.6%, -2.2%, -2.5%) | peak -6.6% at 3.8y | within ±5% | **RIGHT** |
+| retail rent (should not move) | impact | -0.4% (-0.4%, -0.0%, -1.4%) | peak -7.2% at 5.7y | within ±5% | **RIGHT** |
+| industrial rent (should not move) | impact | -1.4% (-1.4%, -9.7%, +0.0%) | peak +10.2% at 4.1y | within ±5% | **RIGHT** |
 
 ![apartments vacancy, %](docs/shocks/supply-multifamily-up50-0.svg)
 ![apartments effective rent index](docs/shocks/supply-multifamily-up50-1.svg)
@@ -485,16 +486,15 @@ Half as much apartments again, finished and empty, on the town's vacant lots whe
 
 A fifth of the town's apartments feet gone overnight (a fire, a wipe-out): buildings spread across the town and its vintages by a hash of their deed, not the player's own. Their tenants mid-lease go looking (streetRolls.ts: a firm is not demolished with its building).
 
-- Twins identical before the shock: yes · landing: buildings ×0.84, econ.stock ×0.80 at +1 month / buildings ×0.84, econ.stock ×0.80 at +1 month / buildings ×0.84, econ.stock ×0.80 at +1 month
+- Twins identical before the shock: yes · landing: buildings −20% of the stock, econ.stock ×0.80 at +1 month / buildings −20% of the stock, econ.stock ×0.80 at +1 month / buildings −20% of the stock, econ.stock ×0.80 at +1 month
 - Injector notes: 65 buildings, 0.60M sf rentable lost; 64 buildings, 0.56M sf rentable lost; 65 buildings, 0.58M sf rentable lost
 - Record: Scarcity raises rents and cuts vacancy; starts answer 1-3 years after the signal (Wheaton 1999), with overshoot; land in the class's districts rises.
 
 | observable | window | effect, median (by seed) | peak | the record says | verdict |
 |---|---|---|---|---|---|
-| apartments vacancy | impact | -4.7pp (-5.1pp, -4.7pp, -4.1pp) | peak -7.5pp at 9.3y | falls 1-12pp (the displaced take the empty space) | **—** |
-| apartments effective rent | impact | +3.0% (+4.7%, +3.0%, +1.3%) | peak +32.5% at 11.7y | rises 2-30% | **—** |
-| apartments starts, years 3-8 | mid | +1759.5% (—, +1759.5%, —) | peak +12837.6% at 6.3y | rise: a construction answer 1-3 years on | **—** |
-| land value, years 3-8 | mid | -17.1% (-17.1%, -5.8%, -20.4%) | peak +79.7% at 15y | rises | **—** |
+| apartments vacancy | impact | -4.7pp (-5.1pp, -4.7pp, -4.1pp) | peak -7.2pp at 2y | falls 1-12pp (the displaced take the empty space) | **RIGHT** |
+| apartments effective rent | impact | +3.0% (+4.7%, +3.0%, +1.3%) | peak +25.9% at 6.5y | rises 2-30% | **RIGHT** |
+| apartments starts, years 3-8 | mid | +1759.5% (—, +1759.5%, —) | peak +15985.9% at 6.3y | rise: a construction answer 1-3 years on | **WRONG SIZE** |
 
 ![apartments vacancy, %](docs/shocks/supply-multifamily-down20-0.svg)
 ![apartments effective rent index](docs/shocks/supply-multifamily-down20-1.svg)

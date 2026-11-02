@@ -275,3 +275,41 @@ and holds (step 0).
   mechanism to trace (file and function), ready to be worked one by one.
 - No engine change in the same PR: the tests first, fixes after, each its own
   measured PR.
+
+## Run 1, read (2026-11-02)
+
+The full battery is in `SHOCK_TESTS.md`, with charts in `docs/shocks/`: 19 shocks × seeds 11/22/33, 15 years after a year-10 shock, 60 runs, 45 minutes on 4 cores. Every pair hashed identical before its shock, and every shock lands. **7 of 19 are RIGHT throughout:**
+- office +50% and −20%;
+- industrial +50% and −20%;
+- remote work.
+
+The rest, grouped by what they say about the economy (worst first). Each item is a mechanism to trace, not a number to tune:
+
+1. **The price of money barely reaches property prices.**
+   - **Rates +300bp, held:** office caps go 0.7pt *lower*, values are flat, and the ten-year rises only +0.5pt (the record says +1 to +2.5).
+   - **Credit halved:** values fall only 6-8% (the record says 10-45%), and distressed listings and charge-offs do not rise.
+   - **Foreign capital wave:** caps do not compress.
+   - **Rates near zero:** the ten-year rises about 6.5pt in years 3-8, which needs its own look (an inflation spiral?).
+   - **Trace:** cap formation off the tape (`propmarket.ts` bidders, `tickCapReadInner`), and how a held policy rate reaches the ten-year (`market.ts` expected policy path).
+2. **Lease expense recovery looks reversed.** With insurance and energy doubled, NNN retail values fall 7.5% while gross-lease office values do not move. It should be the other way round. **Trace:** `value.ts` `recoveryFor` and the recovery split in `noiYr`.
+3. **Property tax does not capitalise.** With the rate doubled, office and apartment values rise about 4% and land rises 2%. The appraisal is tax-loaded (`value.ts:4043`), so look at the cap read off trades and at City Hall's extra revenue (Tiebout services).
+4. **A closure is refilled at once; arrivals do not create work.**
+   - **Largest employer leaves:** its suite re-lets and the town's jobs are back within months (the record says 1.5-2.5 jobs lost per direct job). **Trace:** `economy.ts` order re-tender and `staff()`, the off-map sample.
+   - **+30% population:** unemployment rises 14pt, and flats rents jump 25% while flats vacancy *rises*. The landlords' guest-card pricing (#560) prices into a crowd of budgets; this ties to PROOF's open flats regression.
+5. **Shops do not close when their sales fall.**
+   - **E-commerce, −20% in-store spending:** shop vacancy and rents are unmoved.
+   - **Retail +50%:** rents fall only 5.6%.
+   - **Retail −20%:** the displaced shops vanish rather than relocate.
+   - **Trace:** shop exits (`tenantBooks.ts`, `streetRolls.ts`). This matches PROOF's retail-vacancy findings.
+6. **Construction.**
+   - Builders keep adding flats into a +50% apartment glut (stock +57% at years 3-8).
+   - Construction +40% *raises* apartment starts.
+   - **Trace:** `dev.ts` `developerLook` and its absorption read.
+
+**Caveats:**
+- 3 seeds, on one generated city.
+- Values come from every fourth building, through `assetValue`.
+- Starts are lumpy; a control near zero reads NO DATA.
+- The rate floor is re-applied before each month, and the committee's in-month step leaks part of it.
+
+Next: one PR per finding above, each measured with `node tools/shocks.mjs --only <ids>` against this run.

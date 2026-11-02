@@ -58,7 +58,8 @@ function boom(k) {
     hold(c, t) {
       const p = `supply-${k}-up50.built`;
       const add = (t[60]?.probe[p] - c[60]?.probe[p]) / c[60]?.stock[k];
-      return { ok: add >= 0.3, msg: `buildings +${Number.isFinite(add) ? (100 * add).toFixed(0) : "—"}% of the stock at +5 years` };
+      // informational: the shock landed at +1; what stands at +5 years is the market's answer (graded below)
+      return { ok: true, msg: `buildings +${Number.isFinite(add) ? (100 * add).toFixed(0) : "—"}% of the stock at +5 years` };
     },
     expect: [
       { obs: `vac.${k}`, unit: "pp", win: "impact", sign: +1, lo: 10, hi: 35, label: `${LABEL[k]} vacancy`, want: "+10 to +35pp (day one is about +30pp)" },
@@ -67,6 +68,7 @@ function boom(k) {
       { obs: `val.${k}`, unit: "rel", win: "impact", sign: -1, lo: -0.6, hi: -0.1, label: `${LABEL[k]} values (existing buildings)`, want: "fall 10-60%, more than rents" },
       { obs: `starts.${k}`, unit: "rel", win: "mid", sign: -1, lo: -1, hi: -0.5, tiny: 0.1, label: `${LABEL[k]} starts, years 3-8`, want: "near zero: −50 to −100%", trace: "builders' pro formas (dev.ts developerLook)" },
       // (no land row: the boom itself takes the town's vacant lots, so land is moved by the injection, not only by the market)
+      { obs: `stock.${k}`, unit: "rel", win: "mid", sign: +1, lo: 0.35, hi: 0.55, label: `${LABEL[k]} stock, years 3-8`, want: "the new buildings still stand (+35 to +55%): a glut is absorbed, not torn down — new buildings are rarely demolished", trace: "teardown / owner redevelopment of new empty buildings (dev.ts tickTeardowns, ownerRedevelopment)" },
       ...CLASSES.filter((o) => o !== k).map((o) => ({ obs: `eff.${o}`, unit: "rel", win: "impact", sign: 0, hi: 0.05, label: `${LABEL[o]} rent (should not move)`, want: "within ±5%" })),
     ],
     charts: [

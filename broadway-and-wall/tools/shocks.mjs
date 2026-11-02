@@ -157,7 +157,10 @@ export function effect(ctrl, treat, obs, unit, win) {
     d.push(y - x); c.push(x);
   }
   if (!d.length) return NaN;
-  return unit === "pp" ? 100 * meanOf(d) : meanOf(d) / Math.max(1e-9, Math.abs(meanOf(c)));
+  if (unit === "pp") return 100 * meanOf(d);
+  // a relative effect on a control that is (nearly) nothing is not a measurement: starts sit at zero for years
+  const base = Math.abs(meanOf(c)), ref = Math.max(...c.map(Math.abs));
+  return base > 1e-6 && base > 0.05 * ref ? meanOf(d) / base : NaN;
 }
 function peakOf(ctrl, treat, obs, unit) {
   let best = 0, at = 0;
@@ -175,7 +178,7 @@ function peakOf(ctrl, treat, obs, unit) {
  * (same unit, signed) the range it says. NO RESPONSE under `tiny` (2pp or 2%).
  */
 function judge(x, ex) {
-  if (!Number.isFinite(x)) return "NO DATA";
+  if (!Number.isFinite(x)) return "NO DATA";   // also: a relative effect on a control near zero
   const tiny = ex.tiny ?? (ex.unit === "pp" ? 0.5 : 0.02);
   if (ex.sign === 0) return Math.abs(x) <= (ex.hi ?? tiny * 2) ? "RIGHT" : "SPILLS";
   if (Math.abs(x) < tiny) return "NO RESPONSE";

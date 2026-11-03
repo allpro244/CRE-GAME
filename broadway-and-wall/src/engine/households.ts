@@ -2916,18 +2916,28 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
         // the shortlist, toured whole: a renter compares before it signs
         const seen: typeof rooms = [];
         for (let k = 0; k < SHORTLIST; k++) { const x = pickRoom(); if (!seen.includes(x)) seen.push(x); }
-        // each door's card: the most it would pay HERE, having seen the rest
-        // — its budget, or the cheapest other flat on its list it could still
-        // have taken, whichever is less ("where else are you looking?")
+        // A RENTER BUYS VALUE, NOT THE LOWEST RENT (2026-11-03). It weighs
+        // each flat's rent against what the flat is worth — its size, its
+        // block, its street, which the market prices as the flat's market
+        // rent — and signs for the best value it can pay for: the lowest
+        // rent over market. Comparing bare monthly rents (as #560 did) made a
+        // better-placed flat only ever lose: measured on seed 11, blocks 8-30%
+        // empty drew ~55 leads a month at 4-8% over market and let a flat in
+        // only 12-16% of months.
+        const val = (y: (typeof rooms)[number]) => y.b.rel ?? 1;
+        // each door's card: the most it would pay HERE, having seen the rest —
+        // its budget, or this flat at the value of the best other flat on its
+        // list it could have taken, whichever is less ("where else are you looking?")
         if (budget !== undefined && budget > 0) for (const x of seen) {
-          let alt = budget;
-          for (const y of seen) if (y !== x && y.room > 0 && y.b.let < alt) alt = y.b.let;
           const mktUnit = x.b.let / (x.b.rel ?? 1);
-          if (mktUnit > 0) doors.get(x.b.idx)!.x.push(+Math.log(alt / mktUnit).toFixed(4));
+          if (!(mktUnit > 0)) continue;
+          let alt = budget;
+          for (const y of seen) if (y !== x && y.room > 0 && y.b.let <= budget) alt = Math.min(alt, mktUnit * val(y));
+          doors.get(x.b.idx)!.x.push(+Math.log(alt / mktUnit).toFixed(4));
         }
-        // ...and it signs for the cheapest flat on the list it can pay for
+        // ...and it signs for the best value on the list it can pay for
         let pick: (typeof rooms)[number] | undefined;
-        for (const x of seen) if (x.room > 0 && (budget === undefined || x.b.let <= budget) && (!pick || x.b.let < pick.b.let)) pick = x;
+        for (const x of seen) if (x.room > 0 && (budget === undefined || x.b.let <= budget) && (!pick || val(x) < val(pick))) pick = x;
         if (!pick || !letTo(R, r, pick.b, e, m, [c], gone)) break;
         recordDeal(e, "multifamily", m, pick.b.rel ?? 1, pick.b.unitSf * r.wIsland);
         pick.room--;

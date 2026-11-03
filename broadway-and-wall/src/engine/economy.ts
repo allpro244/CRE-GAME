@@ -615,9 +615,22 @@ function natRentPerHead(s: GameState, i: number, opwNat: Float64Array): number {
  * with quality as the demand shifter (Armington 1969; Khandelwal 2010; Hallak
  * & Schott 2011) — over what the same sum was when the books opened (`xa0`),
  * so the town opens on its own share. When a firm closes, its customers
- * re-tender the whole of its orders at once. The town's share is the sum of
- * its firms' orders.
+ * re-tender its orders to the nation, and the town keeps of them only its
+ * share of the nation's capacity; the town's new firms win orders as new
+ * firms do everywhere (`tenderOrders`). The town's share is the sum of its
+ * firms' orders.
  */
+/**
+ * WHAT NEW FIRMS WIN, a year, as a share of what their industry already sells:
+ * US job creation by establishment births, 2010-2019 mean 4.16% of employment
+ * a year (deaths 3.73%) — Census Business Dynamics Statistics, bds2022.csv,
+ * `job_creation_rate_births` [S]. Establishment births, not firm startups: a
+ * new office of an insurer from out of town wins its orders the same way. New
+ * firms start where their industry already is (Glaeser & Kerr 2009: entry
+ * scales with the local industry's size), so the town's entrants win at the
+ * nation's rate times what its industry holds.
+ */
+const ENTRY_YR = 0.0416;
 /** Contracts between firms run 24-48 months (`tickLinks`, TERM): the first month and the span of the draw. */
 const TERM_LO = 24, TERM_SPAN = 25;
 const TENDER_M = TERM_LO + (TERM_SPAN - 1) / 2;
@@ -666,8 +679,24 @@ function tickExports(s: GameState, E: EconomyState, R: Rand): void {
 /**
  * THE MONTH'S TENDER (`tickExports`). Each industry's firms keep what is not
  * up for renewal and win their share of what is: the nation's re-tendered
- * 1/TENDER_M of its orders, and the whole of the orders of the town's firms
- * that closed since last month. The first month the firms have posted prices,
+ * 1/TENDER_M of its orders, and what the town's new firms win (ENTRY_YR of
+ * the industry's orders a year).
+ * A CLOSED FIRM'S ORDERS GO BACK TO THE NATION (2026-11-03). Its customers
+ * re-tender them among every supplier of the product, wherever they are, and
+ * the town's survivors win their share of the nation's capacity — a tenth of
+ * a percent to a few percent of the industry (the town's heads over the
+ * nation's), which is not booked. Until this, they were re-tendered whole
+ * to the town's own firms the next month: the largest employer's closure
+ * (shock test demand-employer-leaves) left its industry's orders where they
+ * were, `staff` hired its heads back within ten months, new named firms
+ * formed into them, and the town's jobs were back above the control's
+ * within a year (seed 11: Kemble & Pell, 408 heads, 6.7% of insurance's
+ * orders, back by month 1). Plant-closure studies find the loss stays
+ * (Gathmann, Helm & Schoenberg 2020, JEEA: German mass layoffs, regional
+ * employment still down years on). The orders closures take from the town
+ * come back as the nation's do: its routine re-tenders and its new firms.
+ * Measured before this (seed 11, years 0-5 and 10-12): firms closing held
+ * 4-7% of the town's orders a year, against the nation's 3.7% (BDS deaths). The first month the firms have posted prices,
  * their orders are booked at the town's share and their price index then is
  * the one they compete against from here (an old save's share carries over).
  */
@@ -695,8 +724,9 @@ function tenderOrders(E: EconomyState): void {
   }
   const a0 = E.xa0, tot = (E.xoTot ??= Array.from(S));
   const r = 1 / TENDER_M;
-  // the orders of the firms that closed since last month: re-tendered whole
-  const pool = Float64Array.from(S, (v, i) => r + Math.max(0, (tot[i] ?? 0) - v));
+  // the nation's routine re-tender, and what the town's new firms win of the
+  // industry's orders; the closed firms' orders (tot - S) went to the nation
+  const pool = Float64Array.from(S, (v) => r + ENTRY_YR / 12 * v);
   S.fill(0);
   for (let n = 0; n < nF; n++) {
     const i = F.ind[n];

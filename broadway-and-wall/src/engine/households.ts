@@ -2250,8 +2250,21 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
     r.flow.quits = (r.flow.quits ?? 0) + r.a!.wt[i];
   }
   // 3b. the jobless, at the finding rate, where there is a vacancy; the rest a month longer out
+  // ...BUT NOT THE ONES WHO LOST THEIR JOB THIS MONTH (2026-11-03). The CPS
+  // flows SEP_RATE and UE_RATE are month-to-month: a worker in work last
+  // month and out of it this month is the E-to-U flow, unemployed when the
+  // month is counted, and the finding rate is the odds of the jobless being
+  // in work a month on. A worker let go this month (a separation, a layoff
+  // in step 1: months out still 0) is counted out of work this month and
+  // searches from the next. Letting it search the month it was let go
+  // counted a within-month spell the survey never sees, and with the sweep
+  // below it took every separation back in the same month: measured (seed
+  // 22, policy held at 0.25% from year 10), unemployment 0.0-0.1% for years.
   const jobless: number[] = [];
-  for (let i = 0; i < r.n; i++) for (let k = 0; k < 3; k++) if (EMP()[k][i] === EMP_UNEMP) jobless.push(3 * i + k);
+  for (let i = 0; i < r.n; i++) for (let k = 0; k < 3; k++) if (EMP()[k][i] === EMP_UNEMP) {
+    if (UN()[k][i] === 0) { UN()[k][i] = 1; continue; }
+    jobless.push(3 * i + k);
+  }
   // the finding rate at this month's openings per jobless worker (MATCH_ETA)
   let uW = 0, vW = 0;
   for (const sl of jobless) uW += a.wt[(sl / 3) | 0];
@@ -2262,12 +2275,18 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
     r.thetaRef = r.thetaRef === undefined ? theta : r.thetaRef + (theta - r.thetaRef) * NATVAC_RATE;
     find = Math.min(1, UE_RATE * Math.pow(theta / r.thetaRef, MATCH_ETA));
   }
+  // THE MONTH'S HIRES OUT OF UNEMPLOYMENT ARE THE MATCHING FUNCTION'S: the
+  // finding rate times the jobless looking. A jobless worker passed over
+  // below (its draw, or no opening on its shortlist its household's weight
+  // can take) may still reach a month-old opening (steps 4 and 4b), but only
+  // while the month's hires are short of that flow (`budget`).
+  let budget = find * uW;
   for (const sl of shuffle(jobless)) {
     const i = (sl / 3) | 0, k = sl % 3;
     const hire = R.u() < find, scar = R.n();
     const job = hire ? bestJob(i, k) : null;
     // a returning worker takes a small cut in pay (job-loss scarring, Jacobson-LaLonde-Sullivan 1993) [S]
-    if (job) { place(i, k, job); WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * scar); }
+    if (job) { place(i, k, job); budget -= a.wt[i]; WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * scar); }
     else if (UN()[k][i] < 65535) UN()[k][i]++;
   }
   // the town's jobless still looking, in the order they searched: step 4's first claim
@@ -2324,11 +2343,11 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       if (V[ind] < wR / 2) continue;
       if (r.arriveAcc < wR / 2) break;
       // a local's application wins (`outsiders`, above): the opening goes to the town's own jobless
-      if (stillAt < still.length && !(R.u() < outsiders)) {
+      if (stillAt < still.length && budget >= r.a!.wt[(still[stillAt] / 3) | 0] / 2 && !(R.u() < outsiders)) {
         const sl = still[stillAt++], i = (sl / 3) | 0, k = sl % 3, w = r.a!.wt[i];
         if (V[ind] >= w / 2) {
           const job = bestJob(i, k, ind);
-          if (job) { place(i, k, job); WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * R.n()); continue; }
+          if (job) { place(i, k, job); budget -= w; WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * R.n()); continue; }
         }
       }
       r.arriveAcc -= wR;
@@ -2384,6 +2403,14 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // leaves its opening behind; QUIT_GAIN) — so restaurants ran 13-51% short
   // at full employment and soaked up every layoff in a slump. A trade stays
   // short only when the town has nobody left looking.
+  // ...UP TO THE MONTH'S MATCHES (`budget`, 2026-11-03). Where the openings
+  // outnumber the jobless, this took every one of them every month — a
+  // finding rate of one, whatever the matching function said — and the
+  // town's unemployment sat at 0.0% through an overheated decade (seed 22,
+  // policy held at 0.25%: 3b hired ~550 of ~1,150 looking, at 0.47, and this
+  // the other ~600). A real labour market never empties: search takes time
+  // even with jobs to spare (US unemployment has not gone under 3.4% since
+  // 1969, with JOLTS layoffs ~1.1% and quits ~2.3% of jobs a month).
   const left = Float64Array.from(open, (o, ind) => Math.min(V[ind], o - (V4[ind] - V[ind])));
   const pickLeft = (w: number) => {
     let t = 0;
@@ -2396,6 +2423,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   for (; stillAt < still.length; stillAt++) {
     const sl = still[stillAt], i = (sl / 3) | 0, k = sl % 3, w = r.a!.wt[i];
     if (EMP()[k][i] !== EMP_UNEMP) continue;
+    if (budget < w / 2) break;
     let job: ReturnType<typeof bestJob> = null;
     for (let t = 0; t < JOB_SHORTLIST; t++) {
       const ind = pickLeft(w);
@@ -2404,7 +2432,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       if (c && (!job || c.value > job.value)) job = c;
     }
     if (!job) { let any = false; for (let ind = 0; ind < N_IND; ind++) if (left[ind] >= 0.5) { any = true; break; } if (!any) break; continue; }
-    place(i, k, job); left[job.ind] -= w;
+    place(i, k, job); left[job.ind] -= w; budget -= w;
     WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * R.n());
   }
   r.arriveAcc = Math.max(0, Math.min(wR, r.arriveAcc));

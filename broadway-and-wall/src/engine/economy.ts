@@ -631,6 +631,17 @@ function natRentPerHead(s: GameState, i: number, opwNat: Float64Array): number {
  * nation's rate times what its industry holds.
  */
 const ENTRY_YR = 0.0416;
+/**
+ * ...AND WHAT CLOSING FIRMS LOSE, for the firms the town's books do not name.
+ * A named firm's closure is the street's (its orders leave with it, above);
+ * the off-map sample stands for the rest of the industry, whose firms close
+ * as firms do everywhere: US job destruction by establishment deaths,
+ * 2010-2019 mean 3.73% of employment a year (Census BDS, bds2022.csv,
+ * `job_destruction_rate_deaths`) [S]. Without it the sample's industries
+ * gained entrants and lost no one, and their share of the nation's orders
+ * crept up (measured: the town's jobs +1.7 to +4.5% at year 10).
+ */
+const EXIT_YR = 0.0373;
 /** Contracts between firms run 24-48 months (`tickLinks`, TERM): the first month and the span of the draw. */
 const TERM_LO = 24, TERM_SPAN = 25;
 const TENDER_M = TERM_LO + (TERM_SPAN - 1) / 2;
@@ -731,7 +742,7 @@ function tenderOrders(E: EconomyState): void {
   for (let n = 0; n < nF; n++) {
     const i = F.ind[n];
     if (!(H[i] > 0)) continue;
-    F.xo[n] = (1 - r) * F.xo[n] + pool[i] * F.hc[n] / H[i] * pull(n) / a0[i];
+    F.xo[n] = (1 - r - (F.id[n] < 0 ? EXIT_YR / 12 : 0)) * F.xo[n] + pool[i] * F.hc[n] / H[i] * pull(n) / a0[i];
     S[i] += F.xo[n];
   }
   for (let i = 0; i < N_IND; i++) if (H[i] > 0) { sh[i] = Math.log(Math.max(1e-6, S[i])); tot[i] = S[i]; }

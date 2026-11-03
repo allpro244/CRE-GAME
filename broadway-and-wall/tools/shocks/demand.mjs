@@ -154,7 +154,8 @@ const arrivals = {
   expect: [
     { obs: "pop", unit: "rel", win: "impact", sign: +1, lo: 0.12, hi: 0.35, label: "population", want: "ramps to about +30% (years 0-3 mean ~+20%)" },
     { obs: "vac.multifamily", unit: "pp", win: "impact", sign: -1, lo: -15, hi: -1, label: "apartment vacancy", want: "falls first" },
-    { obs: "eff.multifamily", unit: "rel", win: "impact", sign: +1, lo: 0.05, hi: 0.15, label: "apartment effective rent", want: "+5 to +15% real over 2-3 years", trace: "flat rents (streetRolls.ts flats, landlords' guest cards)" },
+    // Saiz (2007, J. Urban Econ.): an immigrant inflow of 1% of a city's population raises its rents about 1% in the short run, so +30% people ≈ +15 to +35% (the first cut's +5-15% was a misreading)
+    { obs: "eff.multifamily", unit: "rel", win: "impact", sign: +1, lo: 0.15, hi: 0.35, label: "apartment effective rent", want: "+15 to +35% (Saiz 2007: ~1% per 1% inflow)", trace: "flat rents (streetRolls.ts flats, landlords' guest cards)" },
     { obs: "homePsf", unit: "rel", win: "mid", sign: +1, lo: 0.03, hi: 0.3, label: "home prices, years 3-8", want: "follow the rents up" },
     { obs: "starts.multifamily", unit: "rel", win: "impact", sign: +1, lo: 0.1, hi: 5, tiny: 0.1, label: "apartment starts", want: "rise 1-3 years on", trace: "builders' pro formas (dev.ts developerLook)" },
     { obs: "u", unit: "pp", win: "impact", sign: +1, lo: 0.2, hi: 6, tiny: 0.1, label: "unemployment", want: "up briefly (newcomers looking for work)" },

@@ -1436,7 +1436,9 @@ export interface FlatRoll { occ: number; vac?: number; l?: { sf: number; rent: n
   /** the leads that toured its listed flats last month (0 when it marked to the street's comps instead) */
   ld?: number;
   /** the landlord's earlier months of cards, compressed: the rent index then, how many came, their budgets' quantiles (`priceFlats`) */
-  cq?: { i: number; n: number; q: number[] }[] }
+  cq?: { i: number; n: number; q: number[] }[];
+  /** the months a flat it lets out waits for a signer at its ask, on its own cards (0 when it has nothing listed) */
+  fm?: number }
 
 /**
  * A BLOCK'S LANDLORD PRICES ITS FLATS ON ITS OWN GUEST CARDS (2026-10-30).
@@ -1504,10 +1506,15 @@ export function priceFlats(roll: FlatRoll, cards: number[] | undefined, free: nu
     }
     if (!(best > 0)) bx = pts[pts.length - 1].x;
     roll.px = +bx.toFixed(5);
+    // its own read of how long a flat waits for a signer at that ask (renewals price against it, households.ts)
+    let Wb = 0;
+    for (const p of pts) { if (p.x < bx) break; Wb += p.w; }
+    roll.fm = +Math.min(LEASE_M, free / Math.max(1e-9, Wb / months)).toFixed(2);
     roll.ld = now.length;
     return;
   }
   roll.ld = 0;
+  roll.fm = 0;
   if (comp !== undefined) roll.px = +comp.toFixed(5);
 }
 /** The street's comps for a flat: the log of what new lettings signed at over their blocks' market rents, over the last six months, by their feet (undefined when none let). */

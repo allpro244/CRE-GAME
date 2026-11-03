@@ -5110,9 +5110,20 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       const rec = resolveRec(parcels, s, bbl);
       if (rec && !s.holdings[bbl] && !s.listings.some((l) => l.bbl === bbl)) {
         const v = conveyedValue(s, rec, bbl, false, assetGrade(r, rec));
-        // A FIRM CUTTING BACK TO ITS COVENANT must sell; one trimming into
-        // strength sells only at what the building is worth to it (sellerTerms).
-        const terms = sellerTerms(s, r, rec, bbl, v, mustSell ? "forced" : "voluntary", assetGrade(r, rec));
+        // A FIRM OVER ITS COVENANT must sell (sellerTerms "forced": anything
+        // that clears the loan). One selling BEFORE it has to — a careful shop
+        // keeping its cushion, or working a plan to pay debt down — sells on
+        // its own timetable at a full price (the block comment above), so its
+        // reservation is what the building is worth to it to keep, as any
+        // willing seller's is. Pricing those as forced let a lone buyer bidding
+        // its last dollar take a building at a quarter of its appraisal from a
+        // firm that was under no compulsion at all, and the tape printed it as
+        // a voluntary sale, so the appraisers' grid could not see the
+        // compulsion either (SHOCK_TESTS_PLAN.md finding 1, seed 11 from year
+        // 10: such sales were the office tape's 22-38% "voluntary" prints,
+        // against 7-8% implied by the street's own bidders).
+        const compelled = lev > st.maxLtv;
+        const terms = sellerTerms(s, r, rec, bbl, v, compelled ? "forced" : "voluntary", assetGrade(r, rec));
         // THE CORNER COMES BACK. If this is a building they took out from
         // under a live negotiation of yours, it does not hit the tape — they
         // ring you first, because a firm that knows you wanted it once knows
@@ -5147,7 +5158,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
           bbl, ask: terms.ask, reserve: terms.reserve,
           listedM: s.month, expiresM: s.month + Math.round(rrange(s, 6, 12, "rivals")),
           sellerId: r.id,
-          reason: "voluntary",
+          reason: compelled ? "deleverage" : "voluntary",
         });
       }
     }

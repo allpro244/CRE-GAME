@@ -61,6 +61,8 @@ const costUp = {
     { obs: "costIdx", unit: "rel", win: "impact", sign: +1, lo: 0.25, hi: 0.45, label: "construction cost index (bids)", want: "+25 to +45%: the 40% input rise, less what idle contractors shave off their markup" },
     { obs: "starts.office", unit: "rel", win: "mid", sign: -1, lo: -1, hi: -0.3, tiny: 0.1, label: "office starts, years 3-8", want: "fall sharply: −30 to −100%", trace: "builders' pro formas (dev.ts developerLook): does cost reach the go/no-go?" },
     { obs: "starts.multifamily", unit: "rel", win: "mid", sign: -1, lo: -1, hi: -0.3, tiny: 0.1, label: "apartment starts, years 3-8", want: "fall sharply: −30 to −100%" },
+    // on the stock's scale (tools/shocks.mjs MIN_EVENTS): a rise of a tenth of a point of the stock a year or more is a backwards wire
+    { obs: "startsYr.multifamily", unit: "pp", win: "mid", sign: -1, lo: -100, hi: 0, tiny: 0.1, label: "apartment starts, % of the stock a year, years 3-8", want: "no higher than without the shock (≤ 0pp)" },
     { obs: "starts.industrial", unit: "rel", win: "mid", sign: -1, lo: -1, hi: -0.3, tiny: 0.1, label: "industrial starts, years 3-8", want: "fall sharply: −30 to −100%" },
     { obs: "land", unit: "rel", win: "impact", sign: -1, lo: -0.8, hi: -0.05, label: "land value", want: "FALLS 5-80% (residual = value − cost); a rise is a backwards wire", trace: "land pricing off the residual (land market / dev.ts residual)" },
     { obs: "land", unit: "rel", win: "mid", sign: -1, lo: -0.8, hi: -0.05, label: "land value, years 3-8", want: "stays down" },

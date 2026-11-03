@@ -148,7 +148,12 @@ async function childRun() {
 
 // ---------------------------------------------------------------- reading a scorecard
 // probe keys are stored flat as "<shock id>.<name>", so they are looked up whole
-const getPath = (row, p) => p.startsWith("probe.") ? row.probe?.[p.slice(6)] : p.split(".").reduce((o, k) => (o == null ? undefined : o[k]), row);
+// `startsYr.<class>`: the month's starts as a share of the class's standing stock, a year's pace —
+// the builders' answer on a scale that does not need the control to have built anything
+const startsYr = (row, k) => { const st = row.stock?.[k], sf = row.starts?.[k]; return st > 0 && Number.isFinite(sf) ? 12 * sf / st : undefined; };
+const getPath = (row, p) => p.startsWith("probe.") ? row.probe?.[p.slice(6)]
+  : p.startsWith("startsYr.") ? startsYr(row, p.slice(9))
+  : p.split(".").reduce((o, k) => (o == null ? undefined : o[k]), row);
 const WINDOWS = { impact: [1, 36], mid: [37, 96], late: [97, 180], all: [1, 180] };
 const meanOf = (a) => { const b = a.filter(Number.isFinite); return b.length ? b.reduce((x, y) => x + y, 0) / b.length : NaN; };
 /**
@@ -156,15 +161,28 @@ const meanOf = (a) => { const b = a.filter(Number.isFinite); return b.length ? b
  * rates and shares, ×100) or relative to the control's mean over the window
  * (`rel`). Rows without a reading (values are read quarterly) are skipped.
  */
-export function effect(ctrl, treat, obs, unit, win) {
+/**
+ * A COUNT OF LUMPY EVENTS NEEDS EVENTS. Starts are buildings: a month either
+ * breaks ground on one or two or it does not. With n start-months in the
+ * control's window the count's own error is about 1/sqrt(n) of it (Poisson):
+ * over 45% below five, wider than the narrowest band a starts row grades
+ * against (a fall of 30%), so a twin difference of one or two buildings cannot
+ * tell a response from luck. Run 1's "apartment starts ROSE 425%" under the
+ * construction-cost shock was one seed whose control broke ground in four
+ * months of sixty (6k sf on a 2.8M sf stock). Such a reading is NO DATA.
+ */
+export const MIN_EVENTS = 5;
+export function effect(ctrl, treat, obs, unit, win, minEvents = 0) {
   const [a, b] = WINDOWS[win] ?? WINDOWS.impact;
   const d = [], c = [];
+  let events = 0;
   for (let i = a; i <= Math.min(b, ctrl.length - 1, treat.length - 1); i++) {
     const x = getPath(ctrl[i], obs), y = getPath(treat[i], obs);
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
     d.push(y - x); c.push(x);
+    if (x > 0) events++;
   }
-  if (!d.length) return NaN;
+  if (!d.length || events < minEvents) return NaN;
   if (unit === "pp") return 100 * meanOf(d);
   // a relative effect on a control that is (nearly) nothing is not a measurement: starts sit at zero for years
   const base = Math.abs(meanOf(c)), ref = Math.max(...c.map(Math.abs));
@@ -250,7 +268,7 @@ async function report(dir, landingOnly) {
     const rowsOut = [];
     let worst = landed ? "RIGHT" : "DID NOT LAND";
     if (!landingOnly) for (const ex of s.expect ?? []) {
-      const xs = per.map((x) => effect(x.c.rows, x.t.rows, ex.obs, ex.unit, ex.win ?? "impact"));
+      const xs = per.map((x) => effect(x.c.rows, x.t.rows, ex.obs, ex.unit, ex.win ?? "impact", ex.minEvents ?? (ex.obs.startsWith("starts.") ? MIN_EVENTS : 0)));
       const v = med(xs), j = landed ? judge(v, ex) : "—";
       const pk = per.map((x) => peakOf(x.c.rows, x.t.rows, ex.obs, ex.unit));
       rowsOut.push(`| ${ex.label ?? ex.obs} | ${ex.win ?? "impact"} | ${fmt(v, ex.unit)} (${xs.map((x) => fmt(x, ex.unit)).join(", ")}) | peak ${fmt(med(pk.map((p) => p.peak)), ex.unit)} at ${Math.round(med(pk.map((p) => p.at)) / 12 * 10) / 10}y | ${ex.want} | **${j}** |`);

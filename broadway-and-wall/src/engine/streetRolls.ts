@@ -1434,7 +1434,9 @@ export interface FlatRoll { occ: number; vac?: number; l?: { sf: number; rent: n
   /** its landlord's ask over the flats' market rent for the block (log), set on its own guest cards (`priceFlats`) */
   px?: number;
   /** the leads that toured its listed flats last month (0 when it marked to the street's comps instead) */
-  ld?: number }
+  ld?: number;
+  /** the landlord's earlier months of cards, compressed: the rent index then, how many came, their budgets' quantiles (`priceFlats`) */
+  cq?: { i: number; n: number; q: number[] }[] }
 
 /**
  * A BLOCK'S LANDLORD PRICES ITS FLATS ON ITS OWN GUEST CARDS (2026-10-30).
@@ -1466,17 +1468,43 @@ export interface FlatRoll { occ: number; vac?: number; l?: { sf: number; rent: n
  * for a renewal, `e.deals`) — and keeps its ask when nothing has let.
  */
 const LEASE_M = 12; // a flat's lease (households.ts: leaseEnd = month + 12) [S]
-export function priceFlats(roll: FlatRoll, cards: number[] | undefined, free: number, comp: number | undefined): void {
-  if (cards && cards.length && free > 0) {
-    const x = cards.slice().sort((p, q) => q - p);
-    let best = -Infinity, bx = x[x.length - 1];
-    for (let k = 1; k <= x.length; k++) {
-      const v = Math.exp(x[k - 1]) * (LEASE_M - free / k);
-      if (v > best) { best = v; bx = x[k - 1]; }
+/**
+ * HOW FAR BACK A LANDLORD READS ITS CARDS: a quarter. Revenue-management
+ * systems size demand on the trailing 60-90 days of leads and the units
+ * "exposed" over the same window (RealPage YieldStar / LRO practice) [S~] — not
+ * on one month's traffic, which on a small block is a handful of people. The
+ * older cards are carried as a few weighted points each (quantiles of the
+ * month's budgets) and re-expressed against today's market rent, since each
+ * was written against its own month's.
+ */
+const FLAT_LOOKBACK_M = 3;
+const CARD_Q = 16;
+export function priceFlats(roll: FlatRoll, cards: number[] | undefined, free: number, comp: number | undefined, idxNow = 1): void {
+  const now = cards?.length ? cards.slice().sort((p, q) => q - p) : [];
+  // this month's cards, compressed for the months after it
+  const hist = (roll.cq ?? []).slice(-(FLAT_LOOKBACK_M - 1));
+  const pts: { x: number; w: number }[] = now.map((x) => ({ x, w: 1 }));
+  for (const h of hist) {
+    const shift = Math.log(Math.max(1e-9, h.i) / Math.max(1e-9, idxNow));
+    for (const x of h.q) pts.push({ x: x + shift, w: h.n / h.q.length });
+  }
+  roll.cq = FLAT_LOOKBACK_M > 1 && now.length
+    ? [...hist, { i: +idxNow.toFixed(4), n: now.length, q: Array.from({ length: Math.min(CARD_Q, now.length) }, (_, j) => +now[Math.floor((j + 0.5) * now.length / Math.min(CARD_Q, now.length))].toFixed(4)) }].slice(-(FLAT_LOOKBACK_M - 1))
+    : hist;
+  if (!roll.cq.length) delete roll.cq;
+  if (pts.length && free > 0) {
+    pts.sort((p, q) => q.x - p.x);
+    // leads a month that would sign at each price: the pooled cards over the months they came from
+    const months = 1 + hist.length;
+    let W = 0, best = -Infinity, bx = pts[pts.length - 1].x;
+    for (const p of pts) {
+      W += p.w;
+      const v = Math.exp(p.x) * (LEASE_M - free / (W / months));
+      if (v > best) { best = v; bx = p.x; }
     }
-    if (!(best > 0)) bx = x[x.length - 1];
+    if (!(best > 0)) bx = pts[pts.length - 1].x;
     roll.px = +bx.toFixed(5);
-    roll.ld = x.length;
+    roll.ld = now.length;
     return;
   }
   roll.ld = 0;

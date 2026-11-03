@@ -3102,7 +3102,7 @@ function writeRolls(s: GameState, r: HouseholdRegister, B: { list: Block[] }, se
     const roll = rolls[r.blocks[b.idx]];
     if (!roll) continue;
     const door = DOORS?.get(b.idx);
-    priceFlats(roll, door?.x, door?.u ?? 0, comp);
+    priceFlats(roll, door?.x, door?.u ?? 0, comp, e.rentIdx.multifamily);
     const l = [...(cohorts.get(b.idx)?.values() ?? [])].map((x) => ({ ...x, sf: Math.round(x.sf) }));
     roll.l = l;
     roll.occ = l.reduce((t, x) => t + x.sf, 0);

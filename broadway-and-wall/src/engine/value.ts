@@ -3381,6 +3381,20 @@ export const TAX_RATE = 0.011;
 export const taxRate = (econ?: { taxMult?: number }) => TAX_RATE * (econ?.taxMult ?? 1);
 
 /**
+ * WHAT A YEAR OF HOLDING IDLE DIRT COSTS, as a share of its value: the
+ * property tax the council actually levies (`taxRate`), and a vacant-land
+ * liability policy. This was a flat 1.2% — the statutory 1.1% plus a tenth of
+ * a point — so a council that halved or doubled its rate (citygov.ts
+ * `taxMult`) never reached the owner of an empty lot (found in #565). The
+ * tenth of a point is the insurance that 1.2% always carried above the tax:
+ * vacant-land general-liability cover runs a few hundred dollars a year a
+ * lot, around 0.1% of a typical urban lot's value (commercial-lines quotes;
+ * no building, so no property cover).
+ */
+const IDLE_LAND_INS = 0.001;
+export const idleLandCarryRate = (econ?: { taxMult?: number }) => taxRate(econ) + IDLE_LAND_INS;
+
+/**
  * WHAT A FOOT OF EACH CLASS IS WORTH, citywide: stabilised (or, given `occ`,
  * actual) NOI the way this engine computes NOI, capitalised at the class's cap
  * rate with the tax solve V = NOI / (cap + t(1 - recovery)). One copy, read by
@@ -3455,8 +3469,8 @@ export function appraise(bbl: string, value: number): { lo: number; mid: number;
 // stabilized case for owned). Tax is capitalized in assetValue.
 export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition, stabilised = false, condIdx?: number): number {
   if (rec.class === "land" || !rec.bldgArea) {
-    // carry: taxes and insurance bleed on idle land
-    return -landValue(rec, econ) * 0.012;
+    // carry: taxes and insurance bleed on idle land (idleLandCarryRate)
+    return -landValue(rec, econ) * idleLandCarryRate(econ);
   }
   // ONE OPERATING-COST MODEL.
   //
@@ -3829,7 +3843,7 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
   // insurance, operating cost and vacancy despite the ground lease explicitly
   // putting every one of them on the lessee.
   if (h.groundLeased) return 0;
-  if (rec.class === "land" || !rec.bldgArea) return -landValue(rec, econ) * 0.012;
+  if (rec.class === "land" || !rec.bldgArea) return -landValue(rec, econ) * idleLandCarryRate(econ);
   return operatingStatement(rec, econ, h, currentQ).noi;
 }
 

@@ -1427,9 +1427,35 @@ function urbanLot(rec: ParcelRecord, e: Econ): boolean {
 function landX(rec: ParcelRecord): [number, number] {
   return [+clamp(demandLinear(rec.demandScore) / 100, 0, 1).toFixed(4), +Math.log(Math.max(1, rec.lotArea) / LAND_REF_LOT).toFixed(4)];
 }
+/**
+ * WHICH EVIDENCE IS THE REFERENCE: THE BROKER'S PANEL, NOT THE LOTS THAT SOLD.
+ *
+ * A texture-priced lot sells only when a bid clears its owner's ask, and the
+ * ask is the appraisal itself, times the owner's belief and a 15% per-lot
+ * misread (value.ts ownerAskPsf). So a sale is drawn from the top of the bids
+ * (a lot whose room happens to pay over the book), and an unclosed round
+ * prints halfway to an ask that sits on the book. Neither can print far below
+ * the level being read; both can print far above it. The grid used to take
+ * the sale as its reference and restate the broker's indications UP to it,
+ * by a gap fitted on the few years that had both, so the selection set the
+ * level for every lot in town. Measured (seed 550991, 25 years, on #568's
+ * engine): seventeen sales of texture-priced lots, every one at or above the
+ * level of its day (L 1.1, 1.3 ... 7.4, 13.4); the level ratcheted 1.07 ->
+ * 7.96 in twenty years, and the grid restated each survey by e^0.77 (x2.2)
+ * while that year's survey alone read a median of 0.6-1.8.
+ *
+ * Market value is the most probable price of a lot EXPOSED to the market:
+ * any lot, not the ones whose owners guessed low (USPAP's definition; on the
+ * sample selection of transaction-based indices, Fisher, Gatzlaff, Geltner &
+ * Haurin 2003, Real Estate Economics 31). The broker's survey is exactly
+ * that: what the room would bid on a panel of lots chosen by location, not
+ * by who sold. So the survey is the reference (its kind carries no column),
+ * and a sale or an unclosed round carries the premium the grid measures for
+ * it against the panel in the same years.
+ */
 function zLand(p: { x?: [number, number]; kind: "t" | "b" | "s" }): number[] {
   const x = p.x ?? [0.5, 0];
-  return [x[0] - 0.5, x[1], p.kind === "b" ? 1 : 0, p.kind === "s" ? 1 : 0];
+  return [x[0] - 0.5, x[1], p.kind === "b" ? 1 : 0, p.kind === "t" ? 1 : 0];
 }
 
 /**
@@ -1442,9 +1468,11 @@ function zLand(p: { x?: [number, number]; kind: "t" | "b" | "s" }): number[] {
  */
 function landIndex(s: GameState): ApprIndex {
   const e = s.econ;
-  if (!e.landIx) {
+  // (a grid kept before the survey became the reference has its fourth column
+  // on the other kind of evidence: it starts again at the level it had reached)
+  if (!e.landIx || e.landIx.ref !== "s") {
     const lv = logVar((s.landTape ?? []).map((p) => p.L));
-    e.landIx = newIndex(4, Math.log(Math.max(1e-9, e.landIdx)), lv.v, lv.n, LAND_Q0 * LAND_Q0);
+    e.landIx = { ...newIndex(4, Math.log(Math.max(1e-9, e.landIdx)), lv.v, lv.n, LAND_Q0 * LAND_Q0), ref: "s" };
   }
   return e.landIx;
 }
@@ -1569,9 +1597,9 @@ export function tickLandRead(s: GameState): void {
 }
 
 /**
- * DIRT NOTHING HAS PRINTED ON FOR A YEAR gets the broker's survey once a year,
- * the same rule a cap rate with no print gets (tickBrokerSurvey): six
- * texture-priced lots across the town's range of locations, each priced at
+ * THE BROKER'S LAND SURVEY, once a year (it began as the rule a cap rate
+ * with no print gets, tickBrokerSurvey): a panel of vacant lots across the
+ * town's range of locations, each priced at
  * what the room would pay — the best of the land funds' and builders' own
  * numbers (landMaxPrice), shaded for the room exactly as a land round bids —
  * at half weight. Without it a land level nobody tests stands at the appraiser's
@@ -1586,13 +1614,22 @@ export function tickLandRead(s: GameState): void {
  * cleared the lower floor), the lots left were worse, and the next survey
  * read lower again — 1.31 to 0.06 in nine years (seed 3). A fixed sample has
  * no such selection: the funds' and builders' numbers do not read the level.
- * It runs when nothing has printed in a year, and whenever the read is stale.
+ *
+ * EVERY YEAR, AND ON ENOUGH LOTS TO BE A PANEL. It used to run only when
+ * nothing else had printed for a year, on six lots. The survey is now the
+ * reference the grid reads every other kind of evidence against (zLand), so
+ * it has to be there in the years the sales are, or the sale's premium over
+ * it cannot be measured; and six lots do not make a level: one lot's
+ * indication strays from the grid by about 0.75 in log (measured, seed
+ * 550991, year 25: s2 0.56), so six read the year to +/-0.31 and the level
+ * swung x3-10 at five-year steps (PROOF.md #2). LAND_SURVEY_LOTS is set
+ * from that scatter: 24 lots read a year to about +/-0.15, inside the 0.20 a
+ * year commercial land prices actually move (LAND_Q0). A shape parameter
+ * placed on the measured scatter, not on any outcome.
  */
+const LAND_SURVEY_LOTS = 24;
 export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
   if (s.month % 12 !== 6) return;
-  const tape = s.landTape ?? [];
-  const stale = !(s.econ.landReadOut?.win);
-  if (!stale && tape.some((p) => p.kind !== "s" && p.m > s.month - 12)) return;
   const firms = livingRivals(s).filter((r) => !r.stressMs && r.failedM === undefined && (paramsOf(r).build > 0 || landBanker(r)));
   if (!firms.length) return;
   const recs: ParcelRecord[] = [];
@@ -1602,7 +1639,7 @@ export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
   }
   if (!recs.length) return;
   recs.sort((a, b) => a.demandScore - b.demandScore || (a.bbl < b.bbl ? -1 : 1));
-  const want = 6;
+  const want = LAND_SURVEY_LOTS;
   const step = Math.max(1, Math.floor(recs.length / want));
   let n = 0;
   for (let i = Math.floor(step / 2); i < recs.length && n < want; i += step) {

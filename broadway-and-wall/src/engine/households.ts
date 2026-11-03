@@ -339,10 +339,18 @@ const UE_RATE = 0.25;
  */
 const MATCH_ETA = 0.3;
 /**
- * A household whose earners are all out of work, past their insurance, leaves
- * the region at about 5% a year: interstate migration ran about 2.5% a year
- * through the 2000s (Census CPS; Molloy, Smith & Wozniak 2011, JEP), and the
- * jobless move about twice as often as the employed — the doubling is [K].
+ * A household whose earners are all out of work leaves the region at about 5%
+ * a year: interstate migration ran about 2.5% a year through the 2000s (Census
+ * CPS; Molloy, Smith & Wozniak 2011, JEP), and the jobless move about twice as
+ * often as the employed — the doubling is [K]. From the month the job goes
+ * (2026-11-03): a displaced worker's search is national from the start, and
+ * the move follows the job loss within a year or two (Huttunen, Moen &
+ * Salvanes 2018, JOLE: displaced Norwegian workers' odds of leaving the region
+ * rise in the year of the layoff); unemployment insurance goes with a claimant
+ * who moves (the liable state pays, US DOL Interstate Benefit Payment Plan).
+ * It waited for the insurance to run out, six months, by when four in five of
+ * the laid off had found work (UE_RATE), so a closure sent almost nobody away
+ * (shock test demand-employer-leaves: population +0.3%).
  */
 const LEAVE_JOBLESS_M = 0.05 / 12;
 /**
@@ -2089,7 +2097,7 @@ function retire(emp: Int32Array, wg: Float32Array, i: number) {
  *      working-age, renting across the water, one earner in the vacancy and a
  *      second adult who looks for work like anyone else;
  *   5. each industry's earners are paid its going rate on average (below);
- *   6. a household with nobody in work and its insurance run out may leave
+ *   6. a household with nobody in work may leave
  *      (LEAVE_JOBLESS_M); returned, with step 0's, for the caller to drop.
  * An earner's industry is the employer's; its pay is the industry's cash pay
  * times its own standing — kept, in proportion, through a move between
@@ -2446,7 +2454,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   const nowHc: Record<number, number> = {};
   for (const [c, h] of D.hc) nowHc[c] = +h.toFixed(2);
   r.firmHc = nowHc;
-  // 6. who leaves: nobody in work, insurance run out — an island renter too
+  // 6. who leaves: nobody in work (LEAVE_JOBLESS_M) — an island renter too
   // (households stage 2: its flat empties and is let again from across the
   // water). A jobless other adult past six months out leaves on its own.
   const c = r.a!;
@@ -2458,7 +2466,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       c.emp3[i] = EMP_NONE; c.wage3[i] = 0; c.un3[i] = 0; c.ind3[i] = IND_NONE;
     }
     if (isWorking(e1) || isWorking(e2) || isWorking(c.emp3[i])) continue;
-    const out = (e1 === EMP_UNEMP && c.un1[i] > UI_MONTHS) || (e2 === EMP_UNEMP && c.un2[i] > UI_MONTHS);
+    const out = e1 === EMP_UNEMP || e2 === EMP_UNEMP;
     if (out && R.u() < LEAVE_JOBLESS_M) {
       leave.push(i); r.flow.left = (r.flow.left ?? 0) + c.wt[i];
       if (c.ten[i] === TEN_RENT) {

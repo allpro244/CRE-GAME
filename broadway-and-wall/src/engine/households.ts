@@ -426,6 +426,16 @@ export function hereRel(e: Econ): number {
   return realPayRel(e) * (e.fiscalRel ?? 1);
 }
 /**
+ * A job seeker's odds of work here against elsewhere: the town's employed
+ * share of its labour force over the nation's (last month's published rates,
+ * as a mover reads them). Harris & Todaro (1970): a mover without a job
+ * weighs a place's pay by the chance of getting it.
+ */
+export function workOdds(e: Econ): number {
+  const uN = Math.min(0.9, Math.max(0, e.nat?.unemp ?? 0.05)), uL = Math.min(0.9, Math.max(0, e.unemployment ?? uN));
+  return (1 - uL) / (1 - uN);
+}
+/**
  * A month in which the city's services and taxes, not pay, tipped who came or
  * went: the movers they account for, cited to the council's last budget —
  * one event a year.
@@ -2984,7 +2994,16 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   // A TOWN WHOSE PAY BUYS MORE THAN ELSEWHERE draws movers the same way, at
   // the excess of its pull over the movers' rate (MOVE_ELAST), carried month
   // to month until it makes a whole household of the region's weight.
-  const draw = D ? MOVE_M * Math.max(0, Math.pow(Math.max(0.01, hereRel(e)), MOVE_ELAST) - 1) : 0;
+  // ...AT THE ODDS OF FINDING THE WORK (2026-11-03). These movers come with
+  // no job, so what the town's pay is worth to them is that pay times their
+  // odds of being paid it: the share of the town's labour force in work
+  // against the nation's (Harris & Todaro 1970, expected income; Blanchard &
+  // Katz 1992: gross in-migration falls with a region's relative
+  // unemployment), at the same elasticity as the pay (MOVE_ELAST) [S~].
+  // Read on pay alone, the draw ignored the town's jobless rate: after an
+  // arrivals wave left a quarter of its labour force out of work (shock test
+  // demand-arrivals-30) it drew job seekers on its pay as before.
+  const draw = D ? MOVE_M * Math.max(0, Math.pow(Math.max(0.01, hereRel(e) * workOdds(e)), MOVE_ELAST) - 1) : 0;
   const wave = e.bsMigPull ?? 0;
   const bsIsland = wave > 0 && e.bsArrivals ? e.bsArrivals.island * Math.min(1, e.bsArrivals.monthly / wave) : 0;
   if ((wave > 0 || draw > 0) && D) {

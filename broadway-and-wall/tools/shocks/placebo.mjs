@@ -51,12 +51,13 @@ const placebo = {
   ],
 };
 
-// TWO MORE SHOCKS OF NOTHING, through other doors (REAL_ECONOMY_PLAN 0.3).
+// ANOTHER SHOCK OF NOTHING, through other doors (REAL_ECONOMY_PLAN 0.3).
 // One placebo is one path to divergence; the floor is the spread over several.
 // Neither draws from the engine's RNG, neither moves money through the books
 // (they are perturbations of a state, not payments), and no actor could act
-// on either: a bank's capital moved by one part in ten thousand, and one
-// shop's or firm's cash by $100.
+// on it: a bank's capital moved by one part in ten thousand. (A third, one
+// tenant's cash +$100, never diverged in 180 months on seeds 11/22/33: that
+// cash reaches no decision, so it measured nothing and was dropped.)
 const quiet = (id, title, what, poke) => ({
   id, group: "placebo", title, what, sources: placebo.sources,
   inject(g, city, i, ctx) { if (i === 0) ctx.notes.push(poke(g)); },
@@ -71,12 +72,4 @@ const placeboLender = quiet("placebo-lender", "Placebo: a bank's capital +$1,000
     l.capital += 1000;
     return `${l.name} capital +$1,000`;
   });
-const placeboTenant = quiet("placebo-tenant", "Placebo: one tenant's cash +$100",
-  "The first street tenant (in bbl order) with books has $100 more cash at the snapshot.",
-  (g) => {
-    const rolls = g.econ.streetRolls ?? {};
-    for (const b of Object.keys(rolls).sort()) for (const t of rolls[b].t ?? []) if (t.fin && Number.isFinite(t.fin.cash)) { t.fin.cash += 100; return `tenant fid ${t.fid} at ${b}: cash +$100`; }
-    return "no tenant with books: not injected";
-  });
-
-export const SHOCKS = [placebo, placeboLender, placeboTenant];
+export const SHOCKS = [placebo, placeboLender];

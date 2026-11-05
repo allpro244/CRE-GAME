@@ -199,6 +199,14 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
     if (s.holdings[child] && !s.holdings[parent]) bad("merge", at, "a merged deed you hold under a parent you do not");
     if ((s.rivals ?? []).some((r) => r.bbls.includes(child))) bad("merge", at, "a firm still lists a lot folded into a site");
     if (s.merged![parent]) bad("merge", at, `merged into ${parent}, which is itself merged into something else`);
+    // A lot folded into a site has no land of its own (value.ts resolveRec:
+    // lotArea 0), so a mortgage on it is a lien on nothing: it was paid off
+    // when the lot was sold into the site (streetLoans.ts tickStreetLoans).
+    // One left on the child was foreclosed in a playthrough and listed at $0
+    // (deepplay seed 7919, month 31).
+    for (const [book, ln] of [["firms'", s.cityLoans?.[child]], ["private owners'", s.streetLoans?.[child]]] as const) {
+      if (ln) bad("merge", at, `carries a ${ln.lender ?? "desk"} loan (${book} book) of ${Math.round(ln.balance ?? 0)} on a lot with no land of its own`);
+    }
   }
   for (const [bbl, gl] of Object.entries(s.groundLeases ?? {})) {
     const at = `ground lease ${bbl}`;

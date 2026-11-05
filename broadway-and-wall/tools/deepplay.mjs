@@ -54,6 +54,8 @@ const fin = (x) => typeof x === "number" && Number.isFinite(x);
 // deep NaN walk, bounded
 function nanWalk(obj, path, out, depth = 0) {
   if (depth > 7 || out.length > 20) return;
+  // a documented sentinel, not a fault: a household's taste is NaN until first drawn (households.ts), and the save keeps it in binary
+  if (path === "g.households.a.taste") return;
   if (obj === null || typeof obj !== "object") {
     if (typeof obj === "number" && !Number.isFinite(obj)) out.push(path);
     return;
@@ -174,7 +176,9 @@ for (const SEED of SEEDS) {
           if (!(L.balance >= -1)) note("BUG", "loan-neg", "loan balance negative", { m: month, bbl: h.bbl, bal: L.balance });
           if (L.balance > L.principal * 1.02 + 1) note("BUG", "loan-over-principal", "loan balance above principal", { m: month, bbl: h.bbl, bal: L.balance, p: L.principal });
           if (!(L.ratePct > 0 && L.ratePct < 30)) note("REALISM", "coupon-range", "coupon outside 0-30%", { m: month, bbl: h.bbl, r: L.ratePct });
-          if (L.maturityM < month - 1) note("BUG", "loan-past-maturity", "a loan past its maturity still on the book", { m: month, bbl: h.bbl, mat: L.maturityM, sweep: L.sweep, wk: !!g.workouts?.[h.bbl] });
+          // a matured balloon in an open workout (cure, forbearance, deed in lieu, the auction calendar)
+          // stays on the book until the table resolves it: that is the process, not a fault (workout.ts)
+          if (L.maturityM < month - 1 && !g.workouts?.[h.bbl]) note("BUG", "loan-past-maturity", "a loan past its maturity still on the book", { m: month, bbl: h.bbl, mat: L.maturityM, sweep: L.sweep, wk: !!g.workouts?.[h.bbl] });
           if (m % 12 === 0) { met(SEED, "couponSpread", L.ratePct - e.indexRate); met(SEED, "ltvLive", L.balance / Math.max(1, val)); }
         }
       }

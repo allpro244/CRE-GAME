@@ -897,8 +897,9 @@ export function tickLocBeliefs(e: Econ): void {
     const bk = e.bands[k];
     if (!bk) continue;
     let incC = 0, stC = 0;
-    const inc = bk.stock.map((st, b) => {
-      if (!(st > 0)) return NaN;
+    // an empty band has no income to log: null, not NaN, so the record reads the same after a save (JSON keeps null, turns NaN into it)
+    const inc: (number | null)[] = bk.stock.map((st, b) => {
+      if (!(st > 0)) return null;
       incC += bk.rent[b] * bk.occ[b]; stC += st;
       return Math.log(Math.max(1e-6, bk.rent[b] * bk.occ[b] / st));
     });
@@ -926,8 +927,9 @@ export function tickLocBeliefs(e: Econ): void {
     vPool = wPool > 0 ? vPool / wPool : 0;
     for (let b = 0; b < inc.length; b++) {
       // a band too thin to measure, or one that only just came into being, says nothing this month
-      if (!Number.isFinite(inc[b]) || !Number.isFinite(prev.li[b]) || bk.stock[b] < 0.005 * stC) continue;
-      const d0 = (inc[b] - prev.li[b]) - (lc - prev.lc);
+      const ib = inc[b], pb = prev.li[b];
+      if (typeof ib !== "number" || typeof pb !== "number" || !Number.isFinite(ib) || !Number.isFinite(pb) || bk.stock[b] < 0.005 * stC) continue;
+      const d0 = (ib - pb) - (lc - prev.lc);
       const sc = Math.sqrt(Math.max(prev.v[b], vPool) / fill);
       const d = sc > 0 ? clamp(d0, -HUBER_K * sc, HUBER_K * sc) : d0;
       prev.g[b] += a * (d - prev.g[b]);

@@ -2391,7 +2391,7 @@ export interface Econ {
    * mean monthly change (`g`) and its mean square (`v`). `lc` is the class's
    * own log income last month; `n` months watched.
    */
-  locSeen?: Partial<Record<BuiltClass, { li: number[]; lc: number; g: number[]; v: number[]; n: number }>>;
+  locSeen?: Partial<Record<BuiltClass, { li: (number | null)[]; lc: number; g: number[]; v: number[]; n: number }>>;
   /** Every street block of flats and the flats let in it (streetRolls.ts). */
   flatRolls?: Record<string, import("./streetRolls").FlatRoll>;
   /** The street's flats by quality band, measured off the blocks each month (streetRolls.ts; bands.ts reads it). */

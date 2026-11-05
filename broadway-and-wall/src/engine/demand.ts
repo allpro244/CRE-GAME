@@ -53,7 +53,7 @@ import { isHomeOffMarket } from "./homes";
 import { isHoaBbl } from "./landdev";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState } from "./types";
-import { liveDemand, useOccupancy } from "./value";
+import { liveDemand, useOccupancy, resolveRec } from "./value";
 import { START_YEAR } from "./types";
 import { mixOf, type UseMix } from "./mix";
 import { SECTORS, INDUSTRY_LABEL } from "./market";
@@ -982,8 +982,12 @@ function claimCivicLot(
   const host = model.blocks.get(line.id);
   const pool: string[] = [];
   const consider = (bbl: string) => {
-    const rec = parcels[bbl];
-    if (!rec || rec.class !== "land" || !(rec.lotArea > minArea)) return;
+    // THE LOT AS IT STANDS, not as the map was drawn: the base parcel stays
+    // "land" after someone builds on it (`s.built`), and the city "bought the
+    // vacant lot" for a station on a lot with a building on it, which a
+    // builder then took for a teardown (deepplay seed 7919, months 204-206).
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec || rec.class !== "land" || (rec.bldgArea ?? 0) > 0 || !(rec.lotArea > minArea)) return;
     if (deedTaken(s, bbl)) return;
     pool.push(bbl);
   };

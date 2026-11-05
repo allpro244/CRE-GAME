@@ -61,7 +61,10 @@ Anything else is a fault. The plan is done when all of these hold:
   - apartment pricing (#567, landlords' guest cards, `streetRolls.ts priceFlats`): 4.2 extends that rent-setting model and does not replace it;
   - the closure re-tender (#566, ledger #28): 5.1 builds on it;
   - owner redevelopment (#554): 4.3 builds on it;
-  - the land amplifier (#572).
+  - the land amplifier (#572);
+  - tenants bidding for scarce suites (#569: tours, proposals, best and final; the landlord posts at what the contest fetched). Phase 4 builds on it. Its own open step is item 4.1: a firm's willingness to pay is still `worthOf`, relative to the town's rent index, not drawn from its own sales;
+  - job matching (#570: hires at the matching function's flow, job loss as a reason to leave, job seekers weighing pay by their odds of work), and the search-friction unemployment floor that replaced the 0.0% rail. Phase 5 builds on it. Its open channels are items 5.1-5.2 and 5.4: the export base does not scale with labour supply, and the region builds no housing for newcomers.
+  - Read those PR bodies before touching their code.
 - **Grade against the noise floor** (owner, 2026-11-05). With few sales, twin cities drift 20-35% apart on values and land from a meaningless shock. No verdict is taken from inside the measured floor (0.3), and values and land need it most. Until 0.3 lands, use the floor in this file's last section.
 - **Mind the CPU** (owner, 2026-11-05). The box has 4 cores, and one fault's shocks on 5 seeds take 30-60 minutes. Run heavy jobs in the background, one at a time (shocks *or* century *or* rail audit, never two together), do light reading and probes meanwhile, and never leave a job running past twice its expected time.
 - **`BASELINE.json` will move.** Regenerate it in the same PR and say in the commit message which standing numbers moved, and why.

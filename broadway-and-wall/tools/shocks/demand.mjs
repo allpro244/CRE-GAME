@@ -154,7 +154,8 @@ const arrivals = {
   expect: [
     { obs: "pop", unit: "rel", win: "impact", sign: +1, lo: 0.12, hi: 0.35, label: "population", want: "ramps to about +30% (years 0-3 mean ~+20%)" },
     { obs: "vac.multifamily", unit: "pp", win: "impact", sign: -1, lo: -15, hi: -1, label: "apartment vacancy", want: "falls first" },
-    { obs: "eff.multifamily", unit: "rel", win: "impact", sign: +1, lo: 0.05, hi: 0.15, label: "apartment effective rent", want: "+5 to +15% real over 2-3 years", trace: "flat rents (streetRolls.ts flats, landlords' guest cards)" },
+    // Saiz (2007, J. Urban Econ.): an immigrant inflow of 1% of a city's population raises its rents about 1% in the short run, so +30% people ≈ +15 to +35% (the first cut's +5-15% was a misreading)
+    { obs: "eff.multifamily", unit: "rel", win: "impact", sign: +1, lo: 0.15, hi: 0.35, label: "apartment effective rent", want: "+15 to +35% (Saiz 2007: ~1% per 1% inflow)", trace: "flat rents (streetRolls.ts flats, landlords' guest cards)" },
     { obs: "homePsf", unit: "rel", win: "mid", sign: +1, lo: 0.03, hi: 0.3, label: "home prices, years 3-8", want: "follow the rents up" },
     { obs: "starts.multifamily", unit: "rel", win: "impact", sign: +1, lo: 0.1, hi: 5, tiny: 0.1, label: "apartment starts", want: "rise 1-3 years on", trace: "builders' pro formas (dev.ts developerLook)" },
     { obs: "u", unit: "pp", win: "impact", sign: +1, lo: 0.2, hi: 6, tiny: 0.1, label: "unemployment", want: "up briefly (newcomers looking for work)" },
@@ -257,6 +258,31 @@ const shopSales = (g, E) => {
   for (const id of E.RETAIL_IDS) v += x[E.INDUSTRY_INDEX[id]] ?? 0;
   return v;
 };
+// WHO HOLDS THE TOWN'S SHOPFRONTS. Not every shop-floor firm sells what moves
+// online: the shop floor also holds restaurants, doctors' and dentists'
+// offices (ambulatory care), salons and gyms. The firms the shock reaches are
+// the four RETAIL_IDS industries (economy.ts IND_RETAIL, the dollars
+// spendVector moves). Their feet, the other shop-floor firms' feet, and the
+// feet of shop firms looking with nowhere to sit (unhoused seekers: the
+// town's unmet shop requirements — "tenants in the market") say whether a
+// shop that closed left a hole or was backfilled.
+function shopFloor(g, E) {
+  const F = g.economy?.f, n = g.economy?.L?.slot?.n ?? 0;
+  const indOf = new Map();
+  if (F) for (let k = 0; k < n; k++) if (F.id[k] >= 0) indOf.set(F.id[k], F.ind[k]);
+  const hit = new Set(E.RETAIL_IDS.map((id) => E.INDUSTRY_INDEX[id]));
+  let exposed = 0, other = 0;
+  const add = (t) => {
+    if ((t.use ?? "office") !== "retail") return;
+    const ind = t.ind ?? indOf.get(t.fid);
+    if (hit.has(ind)) exposed += t.sf; else other += t.sf;
+  };
+  for (const r of Object.values(g.econ.streetRolls ?? {})) for (const t of r.t) add(t);
+  for (const h of Object.values(g.holdings ?? {})) for (const t of h.tenants ?? []) add(t);
+  let unhoused = 0;
+  for (const sk of g.econ.seekers ?? []) if (sk.use === "retail" && !sk.from) unhoused += sk.want ?? 0;
+  return { exposed, other, unhoused };
+}
 const online = {
   id: "demand-online-20", group: "demand", title: "E-commerce: 20% of shop spending moves online",
   what: "Households' in-store share of retail spending falls by a fifth: the town's online share (market.ts `econ.online`, read by economy.ts `spendVector`, which moves that share of every shop industry's household dollars to warehousing, IND_ONLINE) is set to the unshocked share plus 20% of the in-store remainder, and held there every month against the engine's own drift (a shadow of the unshocked share is stepped toward the engine's target, recovered from each month's step).",
@@ -279,6 +305,9 @@ const online = {
   probes: {
     online: (g) => g.econ.online ?? NaN,
     shopSales: (g, city, E) => shopSales(g, E),
+    exposedSf: (g, city, E) => shopFloor(g, E).exposed,
+    otherSf: (g, city, E) => shopFloor(g, E).other,
+    unhousedSf: (g, city, E) => shopFloor(g, E).unhoused,
   },
   land(c, t) {
     const P = "demand-online-20.";
@@ -294,6 +323,11 @@ const online = {
   },
   expect: [
     { obs: "probe.demand-online-20.shopSales", unit: "rel", win: "impact", sign: -1, lo: -0.3, hi: -0.1, label: "shop sales (the shop industries' output)", want: "fall 10-30% (a fifth of the household part)" },
+    // the shops the shock reaches close or shrink as their leases roll: their feet fall toward the cut in their sales (a fifth of the household part), no further
+    { obs: "probe.demand-online-20.exposedSf", unit: "rel", win: "mid", sign: -1, lo: -0.25, hi: -0.03, label: "floor held by the shops online reaches, years 3-8", want: "falls toward their sales cut (−3 to −25%) as leases roll", trace: "shop firms' staff and renewals (streetRolls.ts tickFirms, renewInPlace)" },
+    // ...and what takes their space: where the town had unmet shop requirements, other shop-floor firms (restaurants, clinics) backfill, and vacancy rises only by the closures in excess of them
+    { obs: "probe.demand-online-20.otherSf", unit: "rel", win: "mid", sign: +1, label: "floor held by other shop-floor firms (backfill), years 3-8", want: "rises where shop requirements were going unmet" },
+    { obs: "probe.demand-online-20.unhousedSf", unit: "rel", win: "mid", sign: -1, label: "unhoused shop requirements, years 3-8", want: "fall as the closed shops' space is taken" },
     { obs: "vac.retail", unit: "pp", win: "impact", sign: +1, lo: 1, hi: 15, label: "shop vacancy, years 0-3", want: "rises as marginal shops close", trace: "shop firms' books (tenantBooks.ts) and exits (streetRolls.ts)" },
     { obs: "vac.retail", unit: "pp", win: "late", sign: +1, lo: 0.5, hi: 15, label: "shop vacancy, years 8-15", want: "stays up until shops convert" },
     { obs: "eff.retail", unit: "rel", win: "impact", sign: -1, lo: -0.3, hi: -0.03, label: "shop effective rent", want: "falls 3-30%" },

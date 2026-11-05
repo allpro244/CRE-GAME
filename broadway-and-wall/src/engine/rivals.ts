@@ -260,23 +260,24 @@ const MARGIN_BAND: Record<RivalStyle, [number, number]> = {
   opportunistic: [0.18, 0.28], pe: [0.18, 0.25], vulture: [0.25, 0.35],
 };
 //
-// AND A BUILDER WITH NOTHING ON THE GROUND TALKS ITSELF INTO THE NEXT ONE. A
-// developer's overhead, team and lender relationships exist to start jobs; one
-// that has gone years without a groundbreak finds a way to believe a thinner
-// deal works. The margin a firm asks erodes with the months since its last
-// start, to 40% of its own number after about three years idle, and resets
-// the day it breaks ground. Busy firms stay picky; idle ones get hungry.
-// The margin sits on top of the exit cap, which already tracks the policy
-// rate — so every firm's hurdle rises and falls with rates.
-export function firmMargin(r: { id: string; style: RivalStyle; lastBuildM?: number }, month?: number): number {
+// AN IDLE BUILDER DOES NOT LOWER ITS HURDLE (REAL_ECONOMY_PLAN 3.1,
+// 2026-11-05). This eroded the margin with the months since the firm's last
+// start, to 40% of its own number after about three years idle, so a firm that
+// had never built (lastBuildM undefined: idle = the town's age) bid land and
+// tore down buildings at under half the margin its trade quotes — every
+// land bid, the street's hurdle (streetMargin takes the minimum) and the owner
+// redevelopment bar read it. It was set so idle firms would build, an outcome
+// (CLAUDE.md fake 1). What idleness costs a builder is the overhead it carries
+// on its own books while nothing is on the ground; it is not a reason a deal
+// needs to earn less. The margin sits on top of the exit cap, which already
+// tracks the policy rate — so every firm's hurdle rises and falls with rates.
+// `month` is kept so callers need not change.
+export function firmMargin(r: { id: string; style: RivalStyle; lastBuildM?: number }, _month?: number): number {
   let h = 2166136261;
   for (let i = 0; i < r.id.length; i++) h = Math.imul(h ^ r.id.charCodeAt(i), 16777619);
   const u = (h >>> 0) / 4294967296;
   const [lo, hi] = MARGIN_BAND[r.style] ?? [DEV_MARGIN, DEV_MARGIN];
-  const base = lo + (hi - lo) * u;
-  if (month === undefined) return base;
-  const idle = Math.max(0, month - (r.lastBuildM ?? 0));
-  return base * (0.4 + 0.6 * Math.exp(-idle / 18));
+  return lo + (hi - lo) * u;
 }
 /** The plan's hurdle at a given margin: yield on cost over exit yield x (1 + margin). */
 export function hurdleAt(plan: { yieldOnCost: number; exitCap: number }, margin: number): number {

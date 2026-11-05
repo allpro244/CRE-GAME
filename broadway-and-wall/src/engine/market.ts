@@ -2827,6 +2827,11 @@ export function tickNation(s: GameState) {
         && rng(s, "nation") > Math.exp((n.policy + step) / 0.35)) step = 0;
     const was = n.policy;
     n.policy = n.policy + step;
+    // A RATE HELD FROM OUTSIDE (harnesses only: tools/shocks/capital.mjs, tools/econprobe/nation-peg.mjs).
+    // The shocks set the rate before each month, and the committee's step then moved it inside the
+    // month: a "zero peg" read 6-21% by its fifth to tenth year. No engine code sets policyHold.
+    const hold = (n as { policyHold?: { lo?: number; hi?: number } }).policyHold;
+    if (hold) n.policy = Math.min(hold.hi ?? Infinity, Math.max(hold.lo ?? -Infinity, n.policy));
     // A RATE DECISION IS NEWS. It once stopped the game like a new chair and
     // a swan (the policy rate is what every floater resets on next month and
     // what the bond market prices the fixed index off); see below for why it

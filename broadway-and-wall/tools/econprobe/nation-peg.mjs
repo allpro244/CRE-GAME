@@ -8,8 +8,8 @@
 //  1. BASELINE, 40 seeds x 100 years, no intervention: mean inflation, share of
 //     months over 6%, the median century peak, deflation (< -2%) share, months
 //     at the zero floor. A fix to the peg must leave these about where they are.
-//  2. THE PEG: policy held at 0.25% for 120 months from year 10 (re-imposed
-//     before every month, as tools/shocks/capital.mjs does), then released.
+//  2. THE PEG: policy held at 0.25% for 120 months from year 10 (nat.policyHold,
+//     so the committee's in-month step cannot leak past it), then released.
 //     Read: peak 12-month inflation during and after, and months from release
 //     until 12-month inflation is back under 5%. The record: easy money into
 //     full employment ran US inflation to 5-14% over 1965-81, never triple
@@ -65,7 +65,7 @@ for (let i = 0; i < N; i++) {
   const h = []; let a = -1, b = -1, br = NaN, um = 1;
   for (let m = 0; m < PEG_AT + PEG_M + AFTER; m++) {
     const pegged = m >= PEG_AT && m < PEG_AT + PEG_M;
-    const n = step(s, m, pegged ? (nat) => { nat.policy = 0.25; } : null);
+    const n = step(s, m, pegged ? (nat) => { nat.policy = 0.25; nat.policyHold = { lo: 0.25, hi: 0.25 }; } : (nat) => { delete nat.policyHold; });
     h.push(n.infl); const y = yoy(h);
     if (pegged) { a = Math.max(a, y); um = Math.min(um, n.unemp); }
     if (m >= PEG_AT + PEG_M) {
@@ -88,9 +88,10 @@ for (let i = 0; i < N; i++) {
     let pre = null;
     if (started < 0 && m >= 120) {
       if (y0 >= 0.12) { started = m; u0 = n0.unemp; }
-      else pre = (nat) => { nat.policy = 0.25; };
+      else pre = (nat) => { nat.policy = 0.25; nat.policyHold = { lo: 0.25, hi: 0.25 }; };
     }
-    if (started >= 0 && m < started + 36) pre = (nat) => { nat.policy = Math.max(nat.policy, 100 * (yoy(h) + 0.08)); };
+    if (started >= 0 && m < started + 36) pre = (nat) => { const lo = 100 * (yoy(h) + 0.08); nat.policy = Math.max(nat.policy, lo); nat.policyHold = { lo }; };
+    if (started >= 0 && m >= started + 36) pre = (nat) => { delete nat.policyHold; };
     const n = step(s, m, pre);
     h.push(n.infl); const y = yoy(h);
     if (started >= 0) {

@@ -4140,6 +4140,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
     if (s.holdings[bbl] || s.developments[bbl]) continue;        // never yours
     if (s.cityGroundLeases?.[bbl]) continue;                     // leased fee sold off-book — lessee still controls
     if (s.landmarks?.[bbl] !== undefined) continue;              // and never a landmark
+    if (isCivicLand(s, bbl)) continue;                           // nor the city's (a park, a station, an HOA's common)
     if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
     if (ownerOf(s, bbl)) continue;                               // named firm path is startOwnJob
     // NO BIRTHDAY AND NO GRADE TEST (2026-10-09). `age < 45` and "worn or
@@ -4551,7 +4552,7 @@ function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) 
     if (s.cityGroundLeases?.[bbl]) continue;
     if (s.landmarks?.[bbl] !== undefined) continue;
     if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
-    if (ownerOf(s, bbl)) continue;
+    if (ownerOf(s, bbl) || isCivicLand(s, bbl)) continue;
     const age = START_YEAR + Math.floor(s.month / 12) - (rec.yearBuilt || 1900);
     if (age < 35) continue;
     const cond = gradeOf(s, rec);
@@ -4678,7 +4679,7 @@ function tickSurplusExit(s: GameState, parcels: ParcelTable, bbls: string[]) {
       if (s.cityGroundLeases?.[bbl]) continue;
       if (s.landmarks?.[bbl] !== undefined) continue;
       if ((s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
-      if (ownerOf(s, bbl)) continue;
+      if (ownerOf(s, bbl) || isCivicLand(s, bbl)) continue;
       const age = START_YEAR + Math.floor(s.month / 12) - (rec.yearBuilt || 1900);
       if (age < 30) continue;
       const cond = gradeOf(s, rec);

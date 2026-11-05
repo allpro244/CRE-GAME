@@ -435,6 +435,12 @@ function rollBalloon(s: GameState, x: StreetLoan) {
  * One month of the private owners' mortgages. Runs before the desks close
  * their books (tickLenders), so the statement counts this month's payments.
  */
+/** Pay off the private owners' notes on lots folded into a site this month (see tickStreetLoans). */
+export function retireFoldedLoans(s: GameState): void {
+  if (!s.streetLoans || !s.merged) return;
+  for (const bbl of Object.keys(s.streetLoans)) if (s.merged[bbl]) retire(s, s.streetLoans[bbl], s.streetLoans[bbl].value);
+}
+
 export function tickStreetLoans(s: GameState, parcels: ParcelTable) {
   if (!s.lenders?.length) return;
   // A LOT FOLDED INTO A SITE WAS SOLD INTO IT. A builder that assembles a
@@ -445,8 +451,9 @@ export function tickStreetLoans(s: GameState, parcels: ParcelTable) {
   // parent (value.ts resolveRec: lotArea 0), the note became a lien on
   // nothing, went into arrears on no income and was foreclosed and listed at
   // $0 (deepplay seed 7919, month 31: "$1.28M owed, listed at $0").
-  // Monthly, not with the quarterly read, so no payment falls due on it.
-  if (s.streetLoans && s.merged) for (const bbl of Object.keys(s.streetLoans)) if (s.merged[bbl]) retire(s, s.streetLoans[bbl], s.streetLoans[bbl].value);
+  // Monthly, not with the quarterly read, so no payment falls due on it, and
+  // again at the month's close (sim.ts) for a lot folded after this tick ran.
+  retireFoldedLoans(s);
   if (!s.streetLoans || s.month % 3 === 0) readHolders(s, parcels);
   payMonth(s, parcels);
 }

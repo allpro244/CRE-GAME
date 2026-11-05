@@ -3652,9 +3652,15 @@ function reviveColumns(r: HouseholdRegister): void {
     const v = cur[k];
     if (ArrayBuffer.isView(v)) { (a[k] as Uint8Array).set((v as Uint8Array).subarray(0, r.cap)); continue; }
     if (v === undefined && FIELD_DEFAULT[k] !== undefined) { (a[k] as Uint8Array).fill(FIELD_DEFAULT[k]!, 0, r.n); continue; }
-    if (v && typeof v === "object") for (const [i, x] of Object.entries(v as Record<string, number>)) {
+    // JSON writes a non-finite number as null. In a float column that is a
+    // NaN sentinel (taste is NaN until drawn), and a null stored into a
+    // Float32Array becomes 0: every household that had not drawn its taste
+    // came back from a JSON copy (the shock harness's snapshots) with a taste
+    // of exactly zero instead of a draw.
+    const isFloat = a[k] instanceof Float32Array || a[k] instanceof Float64Array;
+    if (v && typeof v === "object") for (const [i, x] of Object.entries(v as Record<string, number | null>)) {
       const j = +i;
-      if (j >= 0 && j < r.cap) (a[k] as Uint8Array)[j] = x;
+      if (j >= 0 && j < r.cap) (a[k] as Uint8Array)[j] = x === null ? (isFloat ? NaN : 0) : x;
     }
   }
   r.a = a;

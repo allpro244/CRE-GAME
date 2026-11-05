@@ -54,6 +54,8 @@ const fin = (x) => typeof x === "number" && Number.isFinite(x);
 // deep NaN walk, bounded
 function nanWalk(obj, path, out, depth = 0) {
   if (depth > 7 || out.length > 20) return;
+  // a documented sentinel, not a fault: a household's taste is NaN until first drawn (households.ts), and the save keeps it in binary
+  if (path === "g.households.a.taste") return;
   if (obj === null || typeof obj !== "object") {
     if (typeof obj === "number" && !Number.isFinite(obj)) out.push(path);
     return;

@@ -43,7 +43,7 @@ import { tickCorporate } from "./corporate";
 import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose, landFundBid } from "./rivals";
 import { openingCapSurvey, tickBrokerSurvey, tickLandSurvey, anchoredAsk, forcedSalePrice, BUY_CLOSING } from "./propmarket";
 import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
-import { tickStreetLoans } from "./streetLoans";
+import { tickStreetLoans, retireFoldedLoans } from "./streetLoans";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
 import { tickWorkouts, couponFundable } from "./workout";
@@ -1678,6 +1678,8 @@ export function advanceMonth(
   if (prev.gameOver) return prev;
   const s: GameState = cloneState(prev);
   tickMonth(s, parcels, bbls, adjacency);
+  // a lot folded into a site after the loan desks' tick: its owner's note was paid at that sale
+  retireFoldedLoans(s);
   return s;
 }
 

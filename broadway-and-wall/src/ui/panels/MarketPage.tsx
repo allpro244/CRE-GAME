@@ -769,12 +769,14 @@ export function MarketPage() {
                             : li.reason === "fund-life" ? "Closed-end fund at end of life · must sell"
                               : li.reason === "estate" ? "Estate sale"
                                 : li.reason === "non-core" ? "Large firm selling a non-core asset"
+                                : li.reason === "deleverage" ? "Firm over its loan covenant · must sell"
                                 : li.reason === "receiver" ? "Lender-owned · receiver sale"
                                   : "Voluntary sale"}>
                           {li.reason === "merchant" ? "MERCHANT EXIT"
                             : li.reason === "fund-life" ? "FUND CLOCK"
                               : li.reason === "estate" ? "ESTATE"
                                 : li.reason === "non-core" ? "NON-CORE"
+                                : li.reason === "deleverage" ? "OVER COVENANT"
                                 : li.reason === "receiver" ? "BANK-OWNED" : "VOLUNTARY"}
                         </span>
                       )}

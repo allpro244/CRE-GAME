@@ -1145,7 +1145,7 @@ export interface Listing {
   askFactor?: number;
   distress?: boolean;  // motivated seller — priced under appraisal, goes fast
   /** Why ordinary product reached the tape; makes turnover legible. */
-  reason?: "fund-life" | "merchant" | "estate" | "voluntary" | "receiver" | "non-core";
+  reason?: "fund-life" | "merchant" | "estate" | "voluntary" | "receiver" | "non-core" | "deleverage";
   // A SITE WITH A FRAME ON IT. The sponsor could not finish, the receiver is
   // clearing it, and whoever buys inherits the steel that is already up and
   // the bill for the rest. Buying one starts a development at that progress
@@ -5839,7 +5839,7 @@ export interface CapPrint {
   nb?: number;
   /** the trade's cause-ledger event */
   why?: number;
-  /** the seller was under compulsion: a fund at the end of its life, a merchant builder's exit, a non-core trim, an estate, a receiver (Listing.reason) */
+  /** the seller was under compulsion: a fund at the end of its life, a merchant builder's exit, a non-core trim, an estate, a receiver, a book over its covenant (Listing.reason) */
   f?: 1;
 }
 

@@ -5857,6 +5857,8 @@ export interface ApprIndex {
   cur?: { yr: number; W: number; sz: number[]; sy: number; szz: number[]; szy: number[]; syy: number };
   yrs: { yr: number; W: number; sz: number[]; sy: number }[];
   x: number; P: number; s0: number; n0: number;
+  /** the land index's reference evidence: "s", the broker's panel (propmarket.ts zLand); absent on a grid kept before it */
+  ref?: "s";
 }
 
 /** A class's cap read-out (propmarket.ts tickCapRead). */

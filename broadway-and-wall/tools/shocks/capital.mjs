@@ -52,6 +52,8 @@ const ratesUp = {
     const floor = twin + 3;
     if (i === 0) ctx.notes.push(`policy floored at the control's rate + 3 before every month (${floor.toFixed(2)}% at the shock)`);
     if (n.policy < floor) n.policy = floor;
+    // held through the month, not just before it: the committee's in-month step cannot undercut it (market.ts policyHold)
+    n.policyHold = { lo: floor };
   },
   probes: probesFor(),
   land(c, t) {
@@ -94,9 +96,12 @@ const ratesZero = {
   sources: "2009-15 and 2020-21: policy at the zero bound; the ten-year near 2%; US cap rates compressed over years (about 8% to 5.5% 2009-2019); land prices and leverage rose; starts rose. When rates normalised (2022-24), the reverse, and distress concentrated in loans written at the top.",
   inject(g, city, i, ctx) {
     const n = g.econ.nat;
-    if (!n || i >= ZERO_M) return;
-    if (i === 0) ctx.notes.push(`policy pegged at ${ZERO_RATE}% (snapshot ${n.policy.toFixed(2)}%) before each of the first ${ZERO_M} months, then released`);
+    if (!n) return;
+    if (i >= ZERO_M) { delete n.policyHold; return; }
+    if (i === 0) ctx.notes.push(`policy pegged at ${ZERO_RATE}% (snapshot ${n.policy.toFixed(2)}%) for the first ${ZERO_M} months, then released`);
     n.policy = ZERO_RATE;
+    // held through the month (market.ts policyHold): before this the committee's in-month step climbed to 21% by year 10
+    n.policyHold = { lo: ZERO_RATE, hi: ZERO_RATE };
   },
   probes: probesFor(),
   land(c, t) {

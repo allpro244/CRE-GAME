@@ -19,6 +19,25 @@ Every fault below carries the audit's evidence, so a fix can be measured against
 
 It supersedes the open parts of `ECON_REALISM_PLAN.md` and `RENT_VACANCY_RESPONSE_PLAN.md` (both 2026-10-12, written before the agent economy). `SHOCK_TESTS_PLAN.md` stays the method.
 
+## Progress (updated as work lands)
+
+| Item | State | PR |
+|---|---|---|
+| Plan and rules on main; ledger rows #29-#34 | done | #573 |
+| 0.2 scorecard: charge-offs since the shock, the whole zero-rate peg, first-year vacancy | done | #574 |
+| 0.3 the measured noise floor in every verdict; a second placebo | done | #575 |
+| 0.5 deepplay bugs: folded-lot mortgages, city land, NaN through JSON | done | #576 |
+| 1, step 1: ease measured ex ante; rigidity fades with inflation; a held rate holds | done | #577 |
+| 1, step 2: the bank's overshoot once its credibility is gone (real rate ~+25, unemployment 29-34% after the peg) | open | — |
+| 1b City Hall: foundation school aid, the buildings' own service cost, the budget sets the rate | in review | #578 |
+| 2.1 stabilise at natural occupancy, deduct the building's own lease-up | in review | #579 |
+| 3.1 step 1: an idle builder no longer lowers its margin | measuring | branch `claude/real-economy-3-1-margins` |
+
+### Corrections to the audit
+- **3.3 loan spreads: mostly not a fake.** The playthrough's coupons 5.7 points over the index (p50) were the bot borrowing from a private-credit desk (Cordage Debt Partners), which in life does price 4-7 points over. The bank desks quoted about 2.5-3 points, high in the real range. Desk pricing is already built from funding, expected loss and running cost (`pricing.ts` `liveSpread`, `costFloor`). Lower priority; re-check against MBA/ACLI once caps are right.
+- **3.2 `deployPressure`: narrower than it looked.** It applies only to a raised fund with an empty book, so its cheaper equity can pull caps down, not up. It is still a rail to replace with fee drag on uncalled commitments, but it does not explain caps running high.
+- **4.3 demolition is not the valuation.** With 2.1's stabilisation in place, new office stock standing in years 3-8 of a +50% glut is still +31.8% (was +31.9%). The driver is the redevelopment bar (builders' margins, 3.1), not the appraisal.
+
 ## What "everything is real" means here
 
 A model always has inputs. "Nothing artificial" is a precise, checkable claim. Every number in the economy is exactly one of these:

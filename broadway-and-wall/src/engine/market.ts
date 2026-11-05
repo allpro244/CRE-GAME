@@ -2241,6 +2241,16 @@ export function priceLevel12(e: Econ): number {
 /** Of the nation's drawn shocks, the share that are supply shocks; the other 0.30 were the wars' finance, now drawn as THE WAR (blackswans.ts). */
 const SUPPLY_SHARE = 0.70;
 
+/** The spread of individual annual wage changes, ~6 points (CPS; Daly, Hobijn & Lucking 2012) [S]. */
+const WAGE_CHANGE_SD = 0.06;
+/** Months from a policy move to its peak effect on prices (Havranek & Rusnak 2013 meta-analysis) [S]. */
+const EASE_LAG_M = 29;
+/** erf, Abramowitz & Stegun 7.1.26 (|error| < 1.5e-7). */
+function erfN(x: number): number {
+  const t = 1 / (1 + 0.3275911 * Math.abs(x));
+  const y = 1 - ((((1.061405429 * t - 1.453152027) * t + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return x >= 0 ? y : -y;
+}
 export function tickNation(s: GameState) {
   const e = s.econ;
   if (!e.nat) {
@@ -2526,7 +2536,17 @@ export function tickNation(s: GameState) {
   // holding, smoothed over about four years, and it is the wire that lets a
   // policy MISTAKE compound into a regime instead of washing out next month.
   if (n.easeEma === undefined) n.easeEma = 0;
-  n.easeEma += 0.026 * ((n.neutralReal - realPolicy) - n.easeEma);
+  // EASE IS MEASURED EX ANTE (REAL_ECONOMY_PLAN Phase 1, 2026-11-05): the real
+  // rate that borrowing, spending and pricing decisions face is the policy
+  // rate less the inflation people EXPECT (Fisher), not last month's print.
+  // Read off the print, a surge made money look ever cheaper as it ran — at a
+  // 0.25% peg and 40% realised inflation the "ease" was 40 points while
+  // expectations, and so the cost of borrowing anyone actually faced, had
+  // not caught up — and that fed the next month's print.
+  // Its memory is the transmission lag of policy to prices: about 29 months to
+  // the peak effect, the mean over 67 studies (Havranek & Rusnak 2013, "Transmission
+  // Lags of Monetary Policy: A Meta-Analysis", IJCB) [S]; was 0.026 (38 months, unsourced).
+  n.easeEma += (1 / EASE_LAG_M) * ((n.neutralReal - (n.policy / 100 - n.inflExp)) - n.easeEma);
   // AND THE CHANNEL IS STICKY DOWNWARD, like the Phillips curve above it.
   // Money held DEAR disinflates far more weakly than money held cheap
   // inflates, because wages and contract rents are rarely cut in nominal
@@ -2555,7 +2575,22 @@ export function tickNation(s: GameState) {
   // which leaves 2009-15 (about three points of slack) near target, and the
   // 1970s and 2021 — easy money into a tight labour market — at full force.
   const passThrough = Math.exp(-Math.max(0, n.unemp - NAT_U_STAR) / 0.02);
-  const easy = 0.55 * (n.easeEma >= 0 ? n.easeEma * passThrough : 0.5 * n.easeEma);
+  // ...AND THE STICKINESS IS ABOUT NOMINAL CUTS, SO IT FADES WITH INFLATION
+  // (REAL_ECONOMY_PLAN Phase 1, 2026-11-05). Dear money disinflates at half
+  // strength because pay and contract rents are rarely cut in nominal terms —
+  // which binds only on the people whose real pay has to fall by more than
+  // inflation, a share of about Phi(-pi / sigma) with sigma the spread of
+  // individual wage changes (~6 points, CPS: Daly, Hobijn & Lucking 2012). At
+  // 2% that share is large and the half strength stands exactly; at 20-100%
+  // nobody needs a nominal cut to take a real one, and dear money bites in
+  // full. Without this a 100% inflation met a 124% policy rate and still took
+  // ten years to fall under 5% (nation-peg probe: release-to-5% p50 128
+  // months; the record ends high inflations within 1-3 years of a positive
+  // real rate: Volcker 1980-83, Israel and Bolivia 1985).
+  const cutShare = (pi: number) => 0.5 * (1 + erfN(-pi / WAGE_CHANGE_SD / Math.SQRT2));
+  const rigid = Math.min(1, cutShare(Math.max(0, n.infl)) / cutShare(0.02));
+  const dear = 1 - 0.5 * rigid;
+  const easy = 0.55 * (n.easeEma >= 0 ? n.easeEma * passThrough : dear * n.easeEma);
   // DOWNWARD NOMINAL RIGIDITY BENDS THE CURVE AT ZERO (2026-10-13). Pay and
   // contract rents are rarely cut in nominal terms, so the forces pulling
   // inflation DOWN — slack and dear money — lose their grip as inflation
@@ -2792,6 +2827,11 @@ export function tickNation(s: GameState) {
         && rng(s, "nation") > Math.exp((n.policy + step) / 0.35)) step = 0;
     const was = n.policy;
     n.policy = n.policy + step;
+    // A RATE HELD FROM OUTSIDE (harnesses only: tools/shocks/capital.mjs, tools/econprobe/nation-peg.mjs).
+    // The shocks set the rate before each month, and the committee's step then moved it inside the
+    // month: a "zero peg" read 6-21% by its fifth to tenth year. No engine code sets policyHold.
+    const hold = (n as { policyHold?: { lo?: number; hi?: number } }).policyHold;
+    if (hold) n.policy = Math.min(hold.hi ?? Infinity, Math.max(hold.lo ?? -Infinity, n.policy));
     // A RATE DECISION IS NEWS. It once stopped the game like a new chair and
     // a swan (the policy rate is what every floater resets on next month and
     // what the bond market prices the fixed index off); see below for why it

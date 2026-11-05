@@ -34,6 +34,8 @@ export const CLASSES = ["office", "retail", "industrial", "multifamily"];
 export const SETTLE_M = Number(process.env.SETTLE_M ?? 120);   // the shock lands at year 10
 const HORIZON_M = Number(process.env.HORIZON_M ?? 180);        // fifteen years read after it
 const LANDING_M = 61;                                           // landing at +1, holding at +60
+const SAMPLE_ALL_BELOW = 120;   // a class this small is sampled whole (one building in nine is not a market)
+const LOT_PANEL_EVERY = 8;      // the lot panel for `lots`: every eighth parcel in bbl order, the same in both twins
 
 // ---------------------------------------------------------------- the shocks
 async function loadShocks() {
@@ -49,9 +51,9 @@ async function loadShocks() {
 // ---------------------------------------------------------------- the recorder
 // One row a month, citywide: what a research desk would chart.
 function sumLenders(g, f) { let x = 0; for (const l of g.lenders ?? []) x += f(l) ?? 0; return x; }
-function record(E, g, city, shocks, sample) {
+function record(E, g, city, shocks, sample, capRead) {
   const e = g.econ, m = g.month;
-  const row = { m, vac: {}, rent: {}, eff: {}, stock: {}, occupied: {}, starts: {}, pipeline: {}, cap: {}, trades: {}, val: {} };
+  const row = { m, vac: {}, rent: {}, eff: {}, stock: {}, occupied: {}, starts: {}, pipeline: {}, cap: {}, trades: {}, val: {}, inc: {} };
   for (const k of CLASSES) {
     row.vac[k] = e.cityVac?.[k];
     row.rent[k] = e.rentIdx?.[k];
@@ -66,15 +68,43 @@ function record(E, g, city, shocks, sample) {
   // VALUES, read through the game's own appraiser, on a fixed sample of each
   // class's buildings (the same deeds in both twins, chosen at the snapshot):
   // the sum of their values today. A deed torn down reads zero, as it should.
-  if (sample) for (const k of CLASSES) {
-    let v = 0;
-    for (const b of sample[k] ?? []) {
-      const rec = E.resolveRec(city.parcels, g, b);
-      if (!rec || rec.class === "land" || !(rec.bldgArea > 0)) continue;
-      const h = g.holdings?.[b];
-      v += E.assetValue(rec, e, h?.condition ?? E.initialCondition(rec), h?.condIdx) || 0;
+  //
+  // THE INCOME CHANNEL, `inc.<class>`: the same sample, the same appraiser,
+  // with the class cap read (`econ.capRate`, `econ.capFit`) held at the
+  // snapshot's in both twins. The cap read is an index of the month's closed
+  // prints (propmarket.ts tickCapRead), and this town closes 0-3 a class a
+  // month: measured in run 1, one print moved the control's office cap
+  // 18.7% -> 23.4% in a month (seed 33), and which twin happens to close
+  // which deal swings `val` by ±10-50% inside a year, with no shock in it.
+  // A test of what a lease passes through, or of how a tax bill capitalises,
+  // is a test of income over a capital market that has not moved; `inc` reads
+  // exactly that, and `val` keeps the market's own read for the tests that are
+  // about the capital market. Everything else the twin's state carries —
+  // rents, occupancy, the tax rate, opex, the rolls, the land under it — is
+  // the twin's own.
+  if (sample) {
+    const ex = capRead ? { ...e, capRate: capRead.capRate, capFit: capRead.capFit } : e;
+    for (const [out, econ] of [[row.val, e], [row.inc, ex]]) for (const k of CLASSES) {
+      let v = 0;
+      for (const b of sample[k] ?? []) {
+        const rec = E.resolveRec(city.parcels, g, b);
+        if (!rec || rec.class === "land" || !(rec.bldgArea > 0)) continue;
+        const h = g.holdings?.[b];
+        v += E.assetValue(rec, econ, h?.condition ?? E.initialCondition(rec), h?.condIdx) || 0;
+      }
+      out[k] = v;
     }
-    row.val[k] = v;
+    // THE LAND UNDER A FIXED PANEL OF LOTS, read quarterly by the land read
+    // itself (value.ts landValue). `land` (econ.landMkt) is the same read
+    // averaged over its own 400-lot panel but refreshed only each January
+    // (value.ts refreshLandQueue), so a shock in the snapshot's January shows
+    // nothing in `land` for eleven months, and a third of the impact window
+    // reads a stale index.
+    if (capRead?.lots) {
+      let v = 0;
+      for (const b of capRead.lots) { const rec = E.resolveRec(city.parcels, g, b); if (rec && rec.lotArea > 0) v += E.landValue(rec, e) || 0; }
+      row.lots = v;
+    }
   }
   row.cpi = e.cpi ?? 1; row.policy = e.nat?.policy; row.tenY = e.indexRate;
   row.jobs = e.jobs; row.pop = e.population; row.u = e.unemployment;
@@ -114,9 +144,15 @@ async function childRun() {
       g = E.advanceMonth(g, city.parcels, bbls, city.adjacency);
       if (g.gameOver) { g = { ...g, gameOver: null, cash: 6e6 }; resurrect++; }
     }
-    // the value sample: every fourth standing building of each class, in bbl order
+    // the value sample: every fourth standing building of each class, in bbl
+    // order — or every one, for a class with fewer than SAMPLE_ALL_BELOW. A
+    // town's industrial stock is a few dozen buildings, and a quarter of it
+    // (9, run 1) let one re-let or one redevelopment move the class ±20-50%.
     const sample = {};
-    for (const k of CLASSES) sample[k] = bbls.filter((b) => { const r = E.resolveRec(city.parcels, g, b); return r && r.class === k && r.bldgArea > 0; }).filter((_, i) => i % 4 === 0);
+    for (const k of CLASSES) {
+      const all = bbls.filter((b) => { const r = E.resolveRec(city.parcels, g, b); return r && r.class === k && r.bldgArea > 0; });
+      sample[k] = all.length < SAMPLE_ALL_BELOW ? all : all.filter((_, i) => i % 4 === 0);
+    }
     writeFileSync(snapPath, JSON.stringify({ seed, g, parcels: city.parcels, sample, resurrect }));
     console.log(JSON.stringify({ done: "snapshot", seed, hash: hashOf(g) }));
     return;
@@ -132,7 +168,9 @@ async function childRun() {
     if (!existsSync(cp)) throw new Error(`${id} needs the control's run (${cp}) first`);
     ctx.ctrl = JSON.parse(readFileSync(cp, "utf8")).rows;
   }
-  const rows = [record(E, g, city, shocks, snap.sample)];
+  // the capital market's read at the snapshot, held for the `inc` channel
+  const capRead = { capRate: structuredClone(g.econ.capRate), capFit: structuredClone(g.econ.capFit), lots: bbls.filter((_, j) => j % LOT_PANEL_EVERY === 0) };
+  const rows = [record(E, g, city, shocks, snap.sample, capRead)];
   let resurrect = 0;
   const t0 = Date.now();
   for (let i = 0; i < months; i++) {
@@ -140,7 +178,7 @@ async function childRun() {
     if (shock) shock.inject(g, city, i, ctx, E);
     g = E.advanceMonth(g, city.parcels, bbls, city.adjacency);
     if (g.gameOver) { g = { ...g, gameOver: null, cash: 6e6 }; resurrect++; }
-    rows.push(record(E, g, city, shocks, i % 3 === 2 ? snap.sample : null));
+    rows.push(record(E, g, city, shocks, i % 3 === 2 ? snap.sample : null, capRead));
   }
   writeFileSync(join(out, `run-${id}-${seed}.json`), JSON.stringify({ id, seed, h0, months, resurrect, notes: ctx.notes, secs: (Date.now() - t0) / 1000, rows }));
   console.log(JSON.stringify({ done: id, seed, h0, secs: Math.round((Date.now() - t0) / 1000) }));
@@ -154,7 +192,10 @@ const startsYr = (row, k) => { const st = row.stock?.[k], sf = row.starts?.[k]; 
 const getPath = (row, p) => p.startsWith("probe.") ? row.probe?.[p.slice(6)]
   : p.startsWith("startsYr.") ? startsYr(row, p.slice(9))
   : p.split(".").reduce((o, k) => (o == null ? undefined : o[k]), row);
-const WINDOWS = { impact: [1, 36], mid: [37, 96], late: [97, 180], all: [1, 180] };
+// year1: the first year, for a repricing the record says is immediate (a tax
+// bill capitalising, a cost passing through a lease) before the town's own
+// answers and the twins' drift apart (the placebo's floor) pile on top of it
+const WINDOWS = { year1: [1, 12], impact: [1, 36], mid: [37, 96], late: [97, 180], all: [1, 180] };
 const meanOf = (a) => { const b = a.filter(Number.isFinite); return b.length ? b.reduce((x, y) => x + y, 0) / b.length : NaN; };
 /**
  * The twin difference of one observable over a window: in points (`pp`, for
@@ -255,7 +296,7 @@ async function report(dir, landingOnly) {
   if (!landingOnly) mkdirSync(chartDir, { recursive: true });
   const L = [], findings = [];
   L.push(`# SHOCK TESTS — results`, ``,
-    `Generated by \`tools/shocks.mjs\` (plan: SHOCK_TESTS_PLAN.md). Every number is on a GENERATED city. Twins: the same town and seed, one shocked at year 10, both run 15 years on; every difference is the shock's. Seeds ${seeds.join(", ")}; effects are the median across seeds. Windows: impact = years 0-3 after the shock, mid = 3-8, late = 8-15. \`pp\` = percentage points; \`%\` = relative to the control's mean over the window.`, ``,
+    `Generated by \`tools/shocks.mjs\` (plan: SHOCK_TESTS_PLAN.md). Every number is on a GENERATED city. Twins: the same town and seed, one shocked at year 10, both run 15 years on; every difference is the shock's. Seeds ${seeds.join(", ")}; effects are the median across seeds. Windows: year1 = the first year after the shock, impact = years 0-3, mid = 3-8, late = 8-15. \`val\` is a fixed sample's appraised value at the market's own cap read; \`inc\` is the same sample at the snapshot's cap read (the income channel); \`lots\` is the land read on a fixed lot panel, quarterly. \`pp\` = percentage points; \`%\` = relative to the control's mean over the window.`, ``,
     `Verdicts: **RIGHT** (direction and size inside the record's range) · **WRONG SIZE** · **BACKWARDS** · **NO RESPONSE** · **SPILLS** (moved where it should not) · **DID NOT LAND** (the injection did not take, so nothing else about the shock means anything).`, ``);
   const summary = [];
   for (const s of shocks) {

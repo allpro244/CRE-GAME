@@ -42,6 +42,8 @@ Anything else is a fault. The plan is done when all of these hold:
 | `tools/deepplay.mjs` on 3 seeds × 20 years | 0 BUG, 0 REALISM lines |
 | One-valuation identity (Phase 2) | The same building valued by any two functions differs only by a named, real role difference |
 
+**These are a direction, not a target** (owner, 2026-11-05). Zero century FAILs over 3 × 100 years, every shock RIGHT on 5 seeds and zero rails may not all be reachable together, and a hard target is exactly what tempts tuning. A good mechanism that leaves one band failing ships, with the reason written down in the PR and in PROOF.md. The no-caps rule below is not part of this softening: no rail is ever added or kept to make a row pass.
+
 ## Rules for every step
 
 - **One fault per PR.** Every PR states:
@@ -51,7 +53,17 @@ Anything else is a fault. The plan is done when all of these hold:
 - **No caps or rails on economic outcomes, anywhere** (owner, 2026-11-05: *"nothing should be bound by rails or caps … everything needs to be simulated"*). A number that would go somewhere absurd without a bound is a broken mechanism; fix the mechanism. The only bounds allowed are physical ones (which must never bind) and real actors' or laws' limits (cited). See 8.4.
 - **Remove the fake, build the mechanism, then look.** If a test reads wrong afterwards, trace it upstream. Never re-add a rail or turn a constant to restore the old reading.
 - **Delete the old path in the same PR.** Do not leave dead code that the next agent mistakes for live (`market.ts` holds about 500 lines of dead rent equation; Phase 8).
-- **Run `pnpm check` before every push, and `test/conserve.mjs` on anything that moves money.**
+- **Check what changed, not everything** (owner, 2026-11-05). `pnpm check` is the full suite (1-2 h) and runs nightly (`full.yml`) or at the end of a phase, never per PR. Per PR, run:
+  - the CI smoke test (`.github/workflows/check.yml`: `tsc -b`, `test/fresh.mjs`, `test/rng-discipline.mjs`, `test/playable-fresh.mjs`, `test/playable-loads.mjs`, `tools/rng-audit.mjs`);
+  - the targeted shock rows and century rows the fault touches;
+  - `test/conserve.mjs` on anything that moves money.
+- **Build on recent fixes; don't replace them blind** (owner, 2026-11-05). Several items touch fresh code, so read its PR and extend it:
+  - apartment pricing (#567, landlords' guest cards, `streetRolls.ts priceFlats`): 4.2 extends that rent-setting model and does not replace it;
+  - the closure re-tender (#566, ledger #28): 5.1 builds on it;
+  - owner redevelopment (#554): 4.3 builds on it;
+  - the land amplifier (#572).
+- **Grade against the noise floor** (owner, 2026-11-05). With few sales, twin cities drift 20-35% apart on values and land from a meaningless shock. No verdict is taken from inside the measured floor (0.3), and values and land need it most. Until 0.3 lands, use the floor in this file's last section.
+- **Mind the CPU** (owner, 2026-11-05). The box has 4 cores, and one fault's shocks on 5 seeds take 30-60 minutes. Run heavy jobs in the background, one at a time (shocks *or* century *or* rail audit, never two together), do light reading and probes meanwhile, and never leave a job running past twice its expected time.
 - **`BASELINE.json` will move.** Regenerate it in the same PR and say in the commit message which standing numbers moved, and why.
 - **Run the course check** (`.claude/skills/course-check`) before each phase, and whenever a fix surprises you.
 
@@ -63,11 +75,12 @@ The order is set by dependency, not by size. Instruments come first, because hal
 |---|---|---|---|
 | 0 | Instruments and honest accounting | So the next fixes can be measured | 4-6 small PRs |
 | 1 | The nation cannot hyperinflate | It wrecks every other number | 1-2 PRs |
+| 1b | City Hall (Phase 6, run here) | A tax rate stuck at half its sourced value feeds every value, cap and land price. Fixing it later would mean re-measuring phases 2-5 | 2-3 PRs |
 | 2 | One valuation | Every other system reads it | 5-7 PRs |
 | 3 | The price of capital | Caps, spreads and land sit on it | 4-5 PRs |
 | 4 | Space markets | Retail, flats, demolition, starts | 5-6 PRs |
 | 5 | Jobs and people | The aggregates still set from the top | 5 PRs |
-| 6 | City Hall | The tax rail and three assessors | 2-3 PRs |
+| 6 | (City Hall: moved to 1b) | | |
 | 7 | One ledger for the whole town | Money that is really accounted | 2 PRs |
 | 8 | The remaining tuned constants, and dead code | The long tail | many small PRs |
 
@@ -315,7 +328,9 @@ Every function that values a building or a lot reads **one** income model. Funct
   - E-commerce −20%: shop vacancy +3-8pp, closures, and conversions where they pencil.
   - Century retail vacancy 4-13%, and rent/vacancy correlation −0.15 or below.
 
-### 4.2 Flats: pricing that real revenue management would produce
+### 4.2 Flats: pricing that real revenue management would produce (extends #567)
+
+#567 already prices each block on its own guest cards, which is the right rule. This item extends it: the landlord's objective over the lease term, an occupancy target and renewal limits. It does not replace it.
 - **Fault:**
   - +50% stock: effective rent −64% in two months, recovered within 2 years.
   - The control swings ±20% a year.
@@ -332,7 +347,7 @@ Every function that values a building or a lot reads **one** income model. Funct
   - A +50% glut gives about −5% to −20% over 1-2 years.
   - −20% stock gives a construction answer in 1-3 years and rents +5-15%.
 
-### 4.3 New buildings are not demolished
+### 4.3 New buildings are not demolished (builds on #554)
 - **Fault:**
   - New office, retail and industrial stock standing in years 3-8: S/C +31.9%, +26.8%, +18.6% of a +50% injection.
   - Office is back to S/C 1.01-1.22 by year 15.
@@ -370,7 +385,7 @@ Every function that values a building or a lot reads **one** income model. Funct
 
 ## Phase 5: jobs and people
 
-### 5.1 The town's share of national orders is what its firms win (ledger #28)
+### 5.1 The town's share of national orders is what its firms win (ledger #28; builds on #566)
 - **Fault:**
   - The routine re-tender is `r` × the *opening* share (`economy.ts:740-745`), so every industry drifts back to where it started in 4-8 years.
   - A closure is refilled: −1.06 to −1.37 jobs per direct job at +2 months, back to −0.89 (one seed +0.04) within 3 years.
@@ -411,7 +426,7 @@ Every function that values a building or a lot reads **one** income model. Funct
 
 ---
 
-## Phase 6: City Hall
+## Phase 6: City Hall (run as phase 1b, right after Phase 1)
 
 ### 6.1 The property-tax rate closes a real budget
 - **Fault:**

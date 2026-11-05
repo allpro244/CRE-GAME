@@ -922,18 +922,38 @@ function locBelief(e: Econ, rec: ParcelRecord, k: BuiltClass, condIdx: number): 
   // an exponential memory started from nothing reads too calm until it has filled: correct for it
   const fill = 1 - Math.pow(1 - 1 / LOC_MEMORY_M, seen.n);
   const sig = seen.v.map((v) => Math.sqrt(Math.max(0, v / fill) * 12) * 100);   // annual, points
-  let mean = 0, w = 0;
-  for (let b = 0; b < sig.length; b++) if (bk.stock[b] > 0) { mean += sig[b] * bk.stock[b]; w += bk.stock[b]; }
-  mean = w > 0 ? mean / w : 0;
-  const score = overallScore(rec, e, k, condIdx);
-  const b = Math.max(0, Math.min(N_BANDS - 1, Math.floor(score / 10)));
-  if (!(bk.stock[b] > 0)) return { prem: 0, g: 0 };
+  let w = 0;
+  for (let b = 0; b < sig.length; b++) if (bk.stock[b] > 0) w += bk.stock[b];
+  if (!(w > 0)) return { prem: 0, g: 0 };
   // HOW MUCH TO BELIEVE A THIN SUBMARKET. A band holding a few buildings
   // swings with every tenant who moves, and a buyer credits its record in
   // proportion to how much of the market it is (Buhlmann credibility: a band
   // with a tenth of the class's stock is believed halfway; a shape parameter).
-  const cred = (bk.stock[b] / w) / (bk.stock[b] / w + 0.1);
-  return { prem: cred * RISK_PRICE * (sig[b] - mean), g: cred * (seen.g[b] / fill) * 12 };
+  const credOf = (j: number) => (bk.stock[j] / w) / (bk.stock[j] / w + 0.1);
+  // ...AND MEASURES EACH BAND AGAINST THE CLASS AS IT BELIEVES IT, not as the
+  // raw records say. The equity targets are for the class's ordinary
+  // building, so a premium must average to nothing over the class's stock.
+  // Centring on the raw stock-weighted record and only then shrinking each
+  // band toward it broke that: the thin bands' noise (one empty shed in a
+  // band of two reads as a 300-point swing) sat in the centre but not in
+  // their own, shrunk, premium — measured on seed 22 at year 10, the
+  // industrial stock as a whole was credited 3.2 points of yield (the band
+  // holding half of it 7.9 points, against a required yield of 7.9), and
+  // its buildings priced at 1%. The centre that makes the credited premiums
+  // average to zero is the credibility-weighted one, sum(w Z x) / sum(w Z)
+  // (Buhlmann & Straub 1970, the collective estimate); the same for growth.
+  let ws = 0, ms = 0, mg = 0;
+  for (let j = 0; j < sig.length; j++) {
+    if (!(bk.stock[j] > 0)) continue;
+    const wz = bk.stock[j] * credOf(j);
+    ws += wz; ms += wz * sig[j]; mg += wz * seen.g[j];
+  }
+  ms /= ws; mg /= ws;
+  const score = overallScore(rec, e, k, condIdx);
+  const b = Math.max(0, Math.min(N_BANDS - 1, Math.floor(score / 10)));
+  if (!(bk.stock[b] > 0)) return { prem: 0, g: 0 };
+  const cred = credOf(b);
+  return { prem: cred * RISK_PRICE * (sig[b] - ms), g: cred * ((seen.g[b] - mg) / fill) * 12 };
 }
 
 function tickCapReadInner(s: GameState): void {

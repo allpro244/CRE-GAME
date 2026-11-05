@@ -33,7 +33,9 @@ Anything else is a fault. The plan is done when all of these hold:
 | Test | Done when |
 |---|---|
 | FORMULA_LEDGER.md | **0 open rows**, including the six found unlisted (Phase 0) |
-| `tools/rail-audit.mjs` | No `rail`-class site on an economic quantity binds in ≥1% of calls, unless it is a sourced actor's limit (reclassed `behaviour` with a citation) |
+| `tools/rail-audit.mjs` | **No caps or rails on any economic outcome.** Every `rail`-class site is deleted, not merely made to bind less. Every remaining `Math.min` / `Math.max` / clamp is one of the two kinds below, and the audit asserts it |
+| Physical and accounting bounds | Feet, people, money held and shares cannot go negative or above the whole. A bound of this kind **binds 0%** in a run, and a bind is logged as a bug: the model produced an impossible number upstream |
+| Real actors' and laws' limits | A lender's maximum LTV or minimum DSCR, a zoning FAR, a tenant's lease term, a statute. Each cites its source, sits in the rail audit as `behaviour`, and binds only where the real limit would |
 | `tools/shocks.mjs` on 5 seeds | Every graded row is RIGHT, or inside the measured noise floor of its window |
 | `tools/proof.mjs` on 3 seeds × 100 years | 0 FAIL; WATCH only where the band itself is under review |
 | `test/conserve.mjs` + the economy-wide identity (Phase 7) | $0 unexplained, for every agent, not only the player |
@@ -46,6 +48,7 @@ Anything else is a fault. The plan is done when all of these hold:
   - before and after for the rows it names (`node tools/shocks.mjs --only <ids> --seeds 11,22,33,44,55`);
   - the century rows it touches;
   - the rail-audit line for any rail it removes.
+- **No caps or rails on economic outcomes, anywhere** (owner, 2026-11-05: *"nothing should be bound by rails or caps … everything needs to be simulated"*). A number that would go somewhere absurd without a bound is a broken mechanism; fix the mechanism. The only bounds allowed are physical ones (which must never bind) and real actors' or laws' limits (cited). See 8.4.
 - **Remove the fake, build the mechanism, then look.** If a test reads wrong afterwards, trace it upstream. Never re-add a rail or turn a constant to restore the old reading.
 - **Delete the old path in the same PR.** Do not leave dead code that the next agent mistakes for live (`market.ts` holds about 500 lines of dead rent equation; Phase 8).
 - **Run `pnpm check` before every push, and `test/conserve.mjs` on anything that moves money.**
@@ -482,7 +485,21 @@ Each one becomes either a cited fact or an output. Each is its own small PR, wit
 | `TAX_RATE` 0.011 | `value.ts:3381` | "~1.1%" with no citation | Cite (Lincoln / MFC); becomes moot after 6.1 |
 | `takeprivate.ts:184-187` ±5% premia | | Design bounds | Control premia from M&A data (median about 25-35%; FactSet Mergerstat) |
 
-Run `tools/rail-audit.mjs` after each phase. Every `rail`-class site still binding ≥1% gets a row in this table, until none are left.
+Run `tools/rail-audit.mjs` after each phase. Every `rail`-class site still in the code, at any bind rate, gets a row in this table, until none are left.
+
+### 8.4 Every bound in the engine is classified, and the classification is enforced
+- **Fault:** the rail audit classes 3,264 sites from their source text, so a rail can hide under the name "guard".
+  - 257 sites classed `guard` bind in ≥1% of calls. A true guard on a physical bound should never bind in a working model.
+  - 1,441 sites never ran in the audit (the player's paths and rare branches), so their bind rate is unknown.
+- **Build:**
+  - **Annotate every remaining bound** with one of `// bound: physical — <what cannot be negative or exceed the whole>`, `// bound: actor — <who, and the source>`, or `// bound: law — <statute>`.
+  - **Make the rail audit read the annotation.** It fails on any unannotated site, any `rail` site, and any `physical` site that binds in a run.
+  - **Read the 257 binding guards one by one.** Each is a disguised rail (delete it, simulate the quantity), a symptom (fix upstream, then it stops binding), or a correctly classed actor limit.
+  - **Cover the unrun sites** with the deepplay bot and the MDGA player paths, so no bound goes unmeasured.
+- **Done when:**
+  - The audit passes with 0 `rail` sites and 0 binding `physical` sites.
+  - Every `actor` and `law` site carries a citation.
+  - Coverage of instrumented sites is above 95%.
 
 ### 8.2 Delete dead code
 - The old rent equation, `market.ts:4697-5227`: runs only when `!e.streetRolls`, which is created at opening. It is still read by appraisal scratch copies (`absorption.ts:183`, `rivals.ts:2361`), which must be switched first.

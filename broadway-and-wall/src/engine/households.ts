@@ -219,6 +219,10 @@ const LOC_SIGMA = 0.5, CROSS_KM = 8;
  * off — over the twelve months of a lease. [S~]
  */
 const MOVE_LOG = 1.5 / 12;
+/** A flat's lease, months (leaseEnd = month + 12) [S]. */
+const LEASE_M = 12;
+/** A flat between tenants is made ready for a month before it is shown again (the street's own turn rule below: a freed flat is not listed the month it frees) [S~: industry make-ready 1-3 weeks plus marketing]. */
+const MAKE_READY_M = 1;
 /**
  * WORKERS (ONE ECONOMY step 3, 2026-10-29). A worker looking for a job sees a
  * shortlist of JOB_SHORTLIST openings — drawn by where the openings are, and
@@ -931,7 +935,9 @@ function subsistence(e: Econ, persons: number): number {
 
 type Block = { idx: number; target: number; let: number; unitSf: number;
   /** a street block (its households let it, stage 2): its flats, its draw on movers and its month's letting limit, in flats */
-  street?: boolean; capU?: number; w?: number; limU?: number; rel?: number };
+  street?: boolean; capU?: number; w?: number; limU?: number; rel?: number;
+  /** its landlord's own estimate of the months a flat it lets out would stand empty at its ask (streetRolls.ts `priceFlats`) */
+  fm?: number };
 
 /**
  * THE ISLAND'S FLATS, AS HOUSEHOLDS: every street block's let flats (its roll,
@@ -940,7 +946,9 @@ type Block = { idx: number; target: number; let: number; unitSf: number;
  * a flat let this month — its newest lease cohort, or the street's average for
  * a block that has none. Pure: it reads the parcels and the state.
  */
-type RawBlock = { bbl: string; units: number; unitSf: number; psf: number | null; street?: boolean; capU?: number; w?: number; limU?: number; rel?: number };
+type RawBlock = { bbl: string; units: number; unitSf: number; psf: number | null; street?: boolean; capU?: number; w?: number; limU?: number; rel?: number;
+  /** its landlord's own estimate of the months a flat it lets out would stand empty at its ask (streetRolls.ts `priceFlats`) */
+  fm?: number };
 /**
  * A street block's flat size, through the register's memo when it has one.
  * Resolving 2,000 records a month was most of a region month's cost, and a
@@ -980,7 +988,7 @@ function rawBlocks(s: GameState, parcels: ParcelTable, memo?: UnitMemo, all = fa
     const capSf = memo?.[bbl]?.[3] ?? 0;
     if (all && psf === null) continue;   // a block not yet priced by the street: next month
     raw.push(all
-      ? { bbl, units: roll.occ / unitSf, unitSf, psf, street: true, capU: capSf / unitSf, w: roll.w ?? 1, limU: (roll.lim ?? 2 * unitSf) / unitSf, rel: roll.ask && roll.mkt ? roll.ask / roll.mkt : 1 }
+      ? { bbl, units: roll.occ / unitSf, unitSf, psf, street: true, capU: capSf / unitSf, w: roll.w ?? 1, limU: (roll.lim ?? 2 * unitSf) / unitSf, rel: roll.ask && roll.mkt ? roll.ask / roll.mkt : 1, fm: roll.fm }
       : { bbl, units: roll.occ / unitSf, unitSf, psf });
   }
   const psfAvg = sf > 0 ? rs / sf : 0;
@@ -1019,7 +1027,7 @@ function readBlocks(s: GameState, parcels: ParcelTable, r: HouseholdRegister, by
     cum += x.units / r.wIsland;
     const target = Math.round(cum) - done;
     done += target;
-    const b: Block = { idx: idxOf(x.bbl), target, let: (psf * x.unitSf) / 12, unitSf: x.unitSf, street: x.street, capU: x.capU, w: x.w, limU: x.limU, rel: x.rel };
+    const b: Block = { idx: idxOf(x.bbl), target, let: (psf * x.unitSf) / 12, unitSf: x.unitSf, street: x.street, capU: x.capU, w: x.w, limU: x.limU, rel: x.rel, fm: x.fm };
     list.push(b); byIdx.set(b.idx, b);
   }
   return { list, byIdx, psfAvg };
@@ -2861,7 +2869,20 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     if (a.leaseEnd[i] <= m) {
       // RENEW OR MOVE (stage 2): buy, choose the mainland at the renewal rent, or move for another reason
       r.flow.leaseEnds! += w;
-      const renew = Math.max(a.rent[i] * 0.97, b.let * 0.97);
+      // A RENEWAL IS PRICED AGAINST WHAT TURNOVER COSTS (2026-11-03). Lose
+      // this tenant and the flat takes a month to make ready and then stands
+      // empty for as long as the landlord's own cards say a flat waits for a
+      // signer at its ask (`fm`, priceFlats) — rent the landlord forgoes. So
+      // it offers the sitting tenant the new-lease ask less that cost spread
+      // over the lease (revenue-management renewal pricing weighs exactly
+      // this: the cost of a move-out against the increase), and rarely cuts a
+      // sitting tenant's rent by more than a few per cent. Until this a
+      // renewal followed the new-lease ask at 0.97: in a rising market every
+      // sitting tenant got the newcomers' raise and moved out (measured:
+      // flats vacancy +2.1-2.8pp after a +30% arrivals wave, +0.4-0.7pp with
+      // renewals held), so vacancy rose BECAUSE rents rose.
+      const turnM = MAKE_READY_M + Math.max(0, b.fm ?? 0);
+      const renew = Math.max(a.rent[i] * 0.97, b.let * Math.max(0, 1 - turnM / LEASE_M));
       const c = D && r.ownMu !== undefined ? buyCheck(a, i, H, renew) : null;
       if (c !== null && r.ownMu! + OWN_SIGMA * R.n() >= c) {
         const j = ownerLike(R, r, i, gone);
@@ -2962,18 +2983,28 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
         // the shortlist, toured whole: a renter compares before it signs
         const seen: typeof rooms = [];
         for (let k = 0; k < SHORTLIST; k++) { const x = pickRoom(); if (!seen.includes(x)) seen.push(x); }
-        // each door's card: the most it would pay HERE, having seen the rest
-        // — its budget, or the cheapest other flat on its list it could still
-        // have taken, whichever is less ("where else are you looking?")
+        // A RENTER BUYS VALUE, NOT THE LOWEST RENT (2026-11-03). It weighs
+        // each flat's rent against what the flat is worth — its size, its
+        // block, its street, which the market prices as the flat's market
+        // rent — and signs for the best value it can pay for: the lowest
+        // rent over market. Comparing bare monthly rents (as #560 did) made a
+        // better-placed flat only ever lose: measured on seed 11, blocks 8-30%
+        // empty drew ~55 leads a month at 4-8% over market and let a flat in
+        // only 12-16% of months.
+        const val = (y: (typeof rooms)[number]) => y.b.rel ?? 1;
+        // each door's card: the most it would pay HERE, having seen the rest —
+        // its budget, or this flat at the value of the best other flat on its
+        // list it could have taken, whichever is less ("where else are you looking?")
         if (budget !== undefined && budget > 0) for (const x of seen) {
-          let alt = budget;
-          for (const y of seen) if (y !== x && y.room > 0 && y.b.let < alt) alt = y.b.let;
           const mktUnit = x.b.let / (x.b.rel ?? 1);
-          if (mktUnit > 0) doors.get(x.b.idx)!.x.push(+Math.log(alt / mktUnit).toFixed(4));
+          if (!(mktUnit > 0)) continue;
+          let alt = budget;
+          for (const y of seen) if (y !== x && y.room > 0 && y.b.let <= budget) alt = Math.min(alt, mktUnit * val(y));
+          doors.get(x.b.idx)!.x.push(+Math.log(alt / mktUnit).toFixed(4));
         }
-        // ...and it signs for the cheapest flat on the list it can pay for
+        // ...and it signs for the best value on the list it can pay for
         let pick: (typeof rooms)[number] | undefined;
-        for (const x of seen) if (x.room > 0 && (budget === undefined || x.b.let <= budget) && (!pick || x.b.let < pick.b.let)) pick = x;
+        for (const x of seen) if (x.room > 0 && (budget === undefined || x.b.let <= budget) && (!pick || val(x) < val(pick))) pick = x;
         if (!pick || !letTo(R, r, pick.b, e, m, [c], gone)) break;
         recordDeal(e, "multifamily", m, pick.b.rel ?? 1, pick.b.unitSf * r.wIsland);
         pick.room--;
@@ -3157,7 +3188,7 @@ function writeRolls(s: GameState, r: HouseholdRegister, B: { list: Block[] }, se
     const roll = rolls[r.blocks[b.idx]];
     if (!roll) continue;
     const door = DOORS?.get(b.idx);
-    priceFlats(roll, door?.x, door?.u ?? 0, comp);
+    priceFlats(roll, door?.x, door?.u ?? 0, comp, e.rentIdx.multifamily);
     const l = [...(cohorts.get(b.idx)?.values() ?? [])].map((x) => ({ ...x, sf: Math.round(x.sf) }));
     roll.l = l;
     roll.occ = l.reduce((t, x) => t + x.sf, 0);

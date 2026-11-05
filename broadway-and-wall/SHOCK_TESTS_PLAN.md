@@ -314,3 +314,42 @@ The rest, grouped by what they say about the economy (worst first). Each item is
 - The rate floor is re-applied before each month, and the committee's in-month step leaks part of it.
 
 Next: one PR per finding above, each measured with `node tools/shocks.mjs --only <ids>` against this run.
+
+## Run 2, read (2026-11-05: main 5c2b70b1 + #572, all of #563-#572's fixes)
+
+`SHOCK_TESTS.md` now holds run 2: 20 shocks (the placebo included) × seeds 11/22/33, fresh year-10 snapshots on this engine, 65 minutes on 4 cores. Every pair is identical before its shock.
+
+Run 1 re-graded with today's scorecards, against run 2, on the 123 rows graded in both:
+
+| | run 1 | run 2 |
+|---|---|---|
+| RIGHT | 85 | 85 |
+| BACKWARDS | 11 | 8 |
+| NO RESPONSE | 14 | 3 |
+| WRONG SIZE | 12 | 17 |
+
+Unresponsive and backwards rows mostly became responsive. The size is not always right yet.
+
+**Now RIGHT:**
+- rates +300bp: office and apartment caps widen (+0.9 and +0.7pp; were −0.7 and −0.5), and distressed listings +81%;
+- credit halved: office and apartment values −25 to −27% (were −6 to −8%), distressed listings +35% (were −4%);
+- construction +40%: existing office values +12%, office rents +10% late, apartment starts down;
+- property tax ×2: listings +11%;
+- largest employer leaves: office vacancy rises;
+- −20% retail: rents rise;
+- +50% flats: values −18% and builders stop.
+
+**Was RIGHT, now not:**
+- **The foreign capital wave no longer lands:** 67-74% of its money is raised, against the 80% its hold check needs (#568's note).
+- **Gluts are torn down too fast:** new office, retail and industrial stock still standing in years 3-8 is +32%, +27% and +19% (was +39%, +38% and +35%). New empty buildings demolished within a few years is the owner-redevelopment test (`dev.ts` `ownerRedevelopment`) reading a new empty shell as worth less than its land.
+- **+50% retail:** vacancy is below the control by years 8-15; flats rent +5% spills.
+- **−20% industrial:** vacancy does not fall.
+- **Credit halved:** deal volume falls only 26% (was 53%).
+
+**Open, by size:**
+1. Gluts torn down.
+2. The foreign wave's landing.
+3. Caps running high: all-class median 9.4%, from #572's report.
+4. Rent and vacancy no longer moving opposite on the century run (#572: +0.07).
+5. Builders' land bids still about 1.7× the residual: `firmMargin`, and the land survey taking the best bid of 40-60.
+

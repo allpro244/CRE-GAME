@@ -1015,7 +1015,14 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
     return;
   }
   if (e.landQueue) { e.landQueuePrev = e.landQueue; e.landQueueW = 0; }
-  const bare = { ...e, landQueue: undefined } as Econ;
+  // ...and without LAST year's queue either. queueFactor blends the new
+  // measurement in from the old one (landQueueW, just set to 0), so an econ
+  // with only `landQueue` cleared read every residual through last year's
+  // wait in full: the sites were ranked, and the thresholds stored, on
+  // queue-discounted residuals, while every lot is later looked up on its
+  // undiscounted one — so each lot found fewer sites ahead of it than there
+  // are, and the wait read short.
+  const bare = { ...e, landQueue: undefined, landQueuePrev: undefined } as Econ;
   const n = bbls.length;
   const take = Math.min(n, LAND_QUEUE_SAMPLE);
   const step = n / take;

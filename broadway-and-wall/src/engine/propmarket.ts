@@ -44,7 +44,7 @@ import { underwrittenGrowthPct, dollarLevel, RENT_BASE, CAP_BASE } from "./marke
 import {
   assetValue, capRateFor, initialCondIdx, demandLinear, incomeValueAsIs, initialCondition, inPlace, landValue,
   marketAppraisal, noiYr, resolveRec, specWearMult, taxBorneShare, taxRate, useOccupancy, useRentableSf,
-  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, queueFactor, residualScheme,
+  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, residualScheme,
 } from "./value";
 import { uses } from "./mix";
 import { catchUpCapex } from "./dev";
@@ -671,6 +671,8 @@ const LAND_Q0 = 0.20;
 const Q_PRIOR_YRS = 5;
 /** Huber's tuning constant (Huber 1964): 95% efficiency at the normal. A statistical constant, not a fit. */
 const HUBER_K = 1.345;
+/** E[psi(Z)^2] for Huber's psi at HUBER_K, Z standard normal: the consistency factor of the Huber scale (a statistical constant). */
+const HUBER_PSI2 = 0.7102;
 /** Closed years' means kept for the volatility record. */
 const YRS_KEPT = 40;
 /** The standard lot a land read is quoted for: 25 x 100 ft, the Manhattan standard lot. */
@@ -904,12 +906,32 @@ export function tickLocBeliefs(e: Econ): void {
     const lc = Math.log(incC / stC);
     const prev = seen[k];
     if (!prev) { seen[k] = { li: inc, lc, g: inc.map(() => 0), v: inc.map(() => 0), n: 0 }; continue; }
+    // A MONTH THAT IS ONE BUILDING, NOT THE SUBMARKET, IS WEIGHED AS AN OUTLIER.
+    // A band of one or two sheds goes from let to empty and back as a single
+    // tenant moves, and in logs an empty band is a fall of thirteen (the 1e-6
+    // guard above): measured on seed 11 at year 13 (#572's engine), two
+    // industrial bands holding 7% of the stock had remembered swings of 640
+    // and 890 points a year, the class's centre stood at 43 against the 19-25
+    // of the bands holding the rest, and those were credited 6 points of
+    // yield — a required yield under 1%, and an industrial cap read of 1.3%.
+    // A buyer reading a submarket's record weighs a month against how far
+    // that submarket usually moves, as the appraisers weigh a comp (apprSee):
+    // Huber's psi at k = 1.345 on the band's own scale (or the class's,
+    // where the band's own is calmer or not yet known), the robust recursive
+    // estimate of Masreliez & Martin (1977), with the variance divided by
+    // E[psi(Z)^2] = 0.7102 so a normal record reads at its true size.
+    const fill = 1 - Math.pow(1 - a, Math.max(1, prev.n));
+    let vPool = 0, wPool = 0;
+    for (let b = 0; b < inc.length; b++) if (bk.stock[b] > 0 && prev.v[b] > 0) { vPool += prev.v[b] * bk.stock[b]; wPool += bk.stock[b]; }
+    vPool = wPool > 0 ? vPool / wPool : 0;
     for (let b = 0; b < inc.length; b++) {
       // a band too thin to measure, or one that only just came into being, says nothing this month
       if (!Number.isFinite(inc[b]) || !Number.isFinite(prev.li[b]) || bk.stock[b] < 0.005 * stC) continue;
-      const d = (inc[b] - prev.li[b]) - (lc - prev.lc);
+      const d0 = (inc[b] - prev.li[b]) - (lc - prev.lc);
+      const sc = Math.sqrt(Math.max(prev.v[b], vPool) / fill);
+      const d = sc > 0 ? clamp(d0, -HUBER_K * sc, HUBER_K * sc) : d0;
       prev.g[b] += a * (d - prev.g[b]);
-      prev.v[b] += a * (d * d - prev.v[b]);
+      prev.v[b] += a * ((sc > 0 ? d * d / HUBER_PSI2 : d * d) - prev.v[b]);
     }
     prev.li = inc; prev.lc = lc; prev.n++;
   }
@@ -922,18 +944,38 @@ function locBelief(e: Econ, rec: ParcelRecord, k: BuiltClass, condIdx: number): 
   // an exponential memory started from nothing reads too calm until it has filled: correct for it
   const fill = 1 - Math.pow(1 - 1 / LOC_MEMORY_M, seen.n);
   const sig = seen.v.map((v) => Math.sqrt(Math.max(0, v / fill) * 12) * 100);   // annual, points
-  let mean = 0, w = 0;
-  for (let b = 0; b < sig.length; b++) if (bk.stock[b] > 0) { mean += sig[b] * bk.stock[b]; w += bk.stock[b]; }
-  mean = w > 0 ? mean / w : 0;
-  const score = overallScore(rec, e, k, condIdx);
-  const b = Math.max(0, Math.min(N_BANDS - 1, Math.floor(score / 10)));
-  if (!(bk.stock[b] > 0)) return { prem: 0, g: 0 };
+  let w = 0;
+  for (let b = 0; b < sig.length; b++) if (bk.stock[b] > 0) w += bk.stock[b];
+  if (!(w > 0)) return { prem: 0, g: 0 };
   // HOW MUCH TO BELIEVE A THIN SUBMARKET. A band holding a few buildings
   // swings with every tenant who moves, and a buyer credits its record in
   // proportion to how much of the market it is (Buhlmann credibility: a band
   // with a tenth of the class's stock is believed halfway; a shape parameter).
-  const cred = (bk.stock[b] / w) / (bk.stock[b] / w + 0.1);
-  return { prem: cred * RISK_PRICE * (sig[b] - mean), g: cred * (seen.g[b] / fill) * 12 };
+  const credOf = (j: number) => (bk.stock[j] / w) / (bk.stock[j] / w + 0.1);
+  // ...AND MEASURES EACH BAND AGAINST THE CLASS AS IT BELIEVES IT, not as the
+  // raw records say. The equity targets are for the class's ordinary
+  // building, so a premium must average to nothing over the class's stock.
+  // Centring on the raw stock-weighted record and only then shrinking each
+  // band toward it broke that: the thin bands' noise (one empty shed in a
+  // band of two reads as a 300-point swing) sat in the centre but not in
+  // their own, shrunk, premium — measured on seed 22 at year 10, the
+  // industrial stock as a whole was credited 3.2 points of yield (the band
+  // holding half of it 7.9 points, against a required yield of 7.9), and
+  // its buildings priced at 1%. The centre that makes the credited premiums
+  // average to zero is the credibility-weighted one, sum(w Z x) / sum(w Z)
+  // (Buhlmann & Straub 1970, the collective estimate); the same for growth.
+  let ws = 0, ms = 0, mg = 0;
+  for (let j = 0; j < sig.length; j++) {
+    if (!(bk.stock[j] > 0)) continue;
+    const wz = bk.stock[j] * credOf(j);
+    ws += wz; ms += wz * sig[j]; mg += wz * seen.g[j];
+  }
+  ms /= ws; mg /= ws;
+  const score = overallScore(rec, e, k, condIdx);
+  const b = Math.max(0, Math.min(N_BANDS - 1, Math.floor(score / 10)));
+  if (!(bk.stock[b] > 0)) return { prem: 0, g: 0 };
+  const cred = credOf(b);
+  return { prem: cred * RISK_PRICE * (sig[b] - ms), g: cred * ((seen.g[b] - mg) / fill) * 12 };
 }
 
 function tickCapReadInner(s: GameState): void {
@@ -1198,17 +1240,22 @@ export function landMaxPrice(s: GameState, r: Rival, rec: ParcelRecord): number 
     const atTrade = value / (1 + DEV_MARGIN) - nonLand;
     if (atTrade > 0) {
       // the scheme's wait and carry, per dollar of residual
-      let f = (sc.psf * rec.lotArea) / atTrade;
-      if (builds) {
-        // A BUILDER WHO BUYS IS AT THE FRONT OF THE QUEUE: it breaks ground,
-        // so the lot's wait behind better sites (queueFactor — what the
-        // appraisal of a lot nobody is building on carries) is not its cost;
-        // the carry through construction is. The queue is backed out of the
-        // scheme's own factor at the residual it was struck on.
-        let q = queueFactor(s.econ, sc.use, sc.psf);
-        for (let it = 0; it < 2; it++) q = queueFactor(s.econ, sc.use, (sc.psf / Math.max(1e-6, q)));
-        if (q > 0) f /= q;
-      }
+      const f = (sc.psf * rec.lotArea) / atTrade;
+      // THE WAIT IS EVERY BIDDER'S COST, THE BUILDER'S INCLUDED. This backed
+      // the queue out for a builder ("a builder who buys is at the front of
+      // the queue: it breaks ground"), so each of the town's builders bid as
+      // if its lot were the best site left. It is not: the town takes up a
+      // class's space at its absorption rate, best sites first, and a
+      // building on the four-hundredth site leases against the three hundred
+      // and ninety-nine better ones — whose builders can let for less and
+      // still earn their margin. Breaking ground early does not move the lot
+      // up the queue; it moves the lease-up to the back of it. So the dirt is
+      // worth its residual on the day its turn comes (Titman 1985; Capozza &
+      // Helsley 1990), the surplus over the marginal site (Ricardo), and a
+      // builder who pays more than that has paid for the better sites'
+      // tenants. Measured on #571 (seed 22, year 10): every surveyed vacant
+      // lot was bid at the no-queue residual, ~1.5x the appraiser's, with
+      // 3.07M sf of industrial sites ahead at 87k sf a year (35 years).
       own = Math.max(0, f * (value / (1 + (builds ? firmMargin(r, s.month) : DEV_MARGIN)) - nonLand));
     }
   }

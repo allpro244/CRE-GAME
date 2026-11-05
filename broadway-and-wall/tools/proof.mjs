@@ -120,6 +120,23 @@ async function run(SEEDS, YEARS, OUT) {
       const book = (g.lenders ?? []).reduce((s, l) => s + (l.anonBook ?? 0) + (l.namedBook ?? 0), 0);
       const nan = []; nonFinite(e, "econ.", nan);
       for (const p of nan) nanPaths.add(p);
+      // LAND'S SHARE OF A BUILT LOT'S VALUE, every ten years (Davis & Heathcote
+      // 2007: about 20-50% for US housing): every third built lot, the appraiser's own numbers
+      let landShare;
+      if (y % 10 === 0) {
+        let sl = 0, sv = 0, i = 0;
+        const per = [];
+        for (const b of bbls) {
+          if (i++ % 3) continue;
+          const rec = E.resolveRec(city.parcels, g, b);
+          if (!rec || rec.class === "land" || !(rec.bldgArea > 0)) continue;
+          const lv = E.landValue(rec, e), av = E.assetValue(rec, e, E.initialCondition(rec), E.initialCondIdx(rec, g.month));
+          if (!(av > 0) || !Number.isFinite(lv)) continue;
+          sl += lv; sv += av; per.push(lv / av);
+        }
+        per.sort((a, b) => a - b);
+        landShare = { agg: sv > 0 ? sl / sv : NaN, med: per.length ? per[per.length >> 1] : NaN, atLand: per.length ? per.filter((x) => x >= 0.999).length / per.length : NaN };
+      }
       const pz = pulse(g);
       if (pz === pulsePrev) frozenYrs++;
       const cpi = e.cpi ?? 1;
@@ -132,7 +149,7 @@ async function run(SEEDS, YEARS, OUT) {
         cap: Object.fromEntries(CLASSES.map((k) => [k, e.capRate?.[k]])),
         capDeal: Object.fromEntries(CLASSES.map((k) => [k, e.capRead?.[k]?.win ? e.capRead[k].med : null])),
         capTrades: Object.fromEntries(CLASSES.map((k) => [k, e.capRead?.[k]?.trades ?? 0])),
-        landR: (e.landMkt ?? NaN) / cpi, landIdx: e.landIdx,
+        landR: (e.landMkt ?? NaN) / cpi, landIdx: e.landIdx, landShare,
         starts: { ...starts }, stock: { ...e.stock }, absorb12: { ...e.absorb12 }, completions12: { ...e.completions12 },
         recStarts, recMonths, failures, chargeOffs, book,
         hh: hs?.households, owners: hs?.owners, doubled: hs?.doubledUp, islandRenters: hs?.islandRenters, mainlandRenters: hs?.mainlandRenters,
@@ -339,6 +356,8 @@ function report(runs) {
     for (const x of r.yr.filter((x) => x.y % 20 === 0 || x.y === 1)) {
       lines.push(`  y${String(x.y).padStart(3)} ${Math.round(x.jobs).toLocaleString("en-US").padStart(8)} u${pc(x.u)} pop ${Math.round(x.pop).toLocaleString("en-US")} pay ${nm(x.realPayRel)} cpi ${nm(x.cpi)} vac ${CLASSES.map((k) => pc(x.vac[k], 0)).join("/")} rent ${CLASSES.map((k) => nm(x.rentR[k], 1)).join("/")} cap ${CLASSES.map((k) => nm(x.cap[k], 1)).join("/")} vs ${nm(x.tenY, 1)} land ${nm(x.landR, 1)} own ${pc(x.hh > 0 ? x.owners / x.hh : NaN, 0)} firms ${x.firms}`);
     }
+    const ls = r.yr.filter((x) => x.landShare);
+    if (ls.length) lines.push(`  land's share of built-lot value (all / median lot / lots marked at their land): ${ls.map((x) => `y${x.y} ${pc(x.landShare.agg, 0)}/${pc(x.landShare.med, 0)}/${pc(x.landShare.atLand, 0)}`).join(" · ")}`);
   }
   return { text: lines.join("\n"), rows };
 }

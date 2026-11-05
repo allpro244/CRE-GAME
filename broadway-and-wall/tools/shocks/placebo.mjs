@@ -51,4 +51,25 @@ const placebo = {
   ],
 };
 
-export const SHOCKS = [placebo];
+// ANOTHER SHOCK OF NOTHING, through other doors (REAL_ECONOMY_PLAN 0.3).
+// One placebo is one path to divergence; the floor is the spread over several.
+// Neither draws from the engine's RNG, neither moves money through the books
+// (they are perturbations of a state, not payments), and no actor could act
+// on it: a bank's capital moved by one part in ten thousand. (A third, one
+// tenant's cash +$100, never diverged in 180 months on seeds 11/22/33: that
+// cash reaches no decision, so it measured nothing and was dropped.)
+const quiet = (id, title, what, poke) => ({
+  id, group: "placebo", title, what, sources: placebo.sources,
+  inject(g, city, i, ctx) { if (i === 0) ctx.notes.push(poke(g)); },
+  land: () => ({ ok: true, msg: "perturbed" }),
+  expect: placebo.expect,
+});
+const placeboLender = quiet("placebo-lender", "Placebo: a bank's capital +$1,000",
+  "The largest desk's capital raised by $1,000 at the snapshot (one part in ten thousand of a town lender's capital) and left alone.",
+  (g) => {
+    const l = [...(g.lenders ?? [])].sort((a, b) => (b.capital ?? 0) - (a.capital ?? 0) || (a.name < b.name ? -1 : 1))[0];
+    if (!l) return "no lender: not injected";
+    l.capital += 1000;
+    return `${l.name} capital +$1,000`;
+  });
+export const SHOCKS = [placebo, placeboLender];

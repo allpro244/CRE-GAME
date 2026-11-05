@@ -2441,7 +2441,9 @@ export interface Econ {
   /** The street's let space, rentable space and unhoused seekers' wants by class, this month (streetRolls.ts). */
   streetSpace?: Partial<Record<BuiltClass, { let: number; cap: number; seek: number; ratio?: number; byBand?: { stock: number[]; occ: number[] };
     /** the feet the town's firms hold beyond what their heads need (FORMULA_LEDGER #10: the sublet market's source) */
-    excess?: number }>>;
+    excess?: number;
+    /** proposals the street's landlords turned away this month for want of room (streetRolls.ts, the search) */
+    turned?: number }>>;
   /** The street's flats as its households hold them (households.ts, stage 2): feet let, feet on the street, and the feet the households across the water who want a flat here are looking for. */
   flatSpace?: { let: number; cap: number; seek: number };
   /** The region's sheds off the map, occupied, on the city aggregate (market.ts). */

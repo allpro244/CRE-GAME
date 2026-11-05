@@ -67,6 +67,9 @@ function boom(k) {
       { obs: `eff.${k}`, unit: "rel", win: "impact", sign: -1, lo: -0.5, hi: -0.08, label: `${LABEL[k]} effective rent`, want: "falls 8-50%", trace: "rent rule for the class (streetRolls.ts / tenantMarket.ts)" },
       { obs: `val.${k}`, unit: "rel", win: "impact", sign: -1, lo: -0.6, hi: -0.1, label: `${LABEL[k]} values (existing buildings)`, want: "fall 10-60%, more than rents" },
       { obs: `starts.${k}`, unit: "rel", win: "mid", sign: -1, lo: -1, hi: -0.5, tiny: 0.1, label: `${LABEL[k]} starts, years 3-8`, want: "near zero: −50 to −100%", trace: "builders' pro formas (dev.ts developerLook)" },
+      // the same answer on the stock's scale, which reads where the control itself builds next to nothing (tools/shocks.mjs MIN_EVENTS):
+      // into a glut, builders add no more a year than they would have without it (a tenth of a point of the stock either way is noise)
+      { obs: `startsYr.${k}`, unit: "pp", win: "mid", sign: -1, lo: -100, hi: 0, tiny: 0.1, label: `${LABEL[k]} starts, % of the stock a year, years 3-8`, want: "no more than without the glut (≤ 0pp)", trace: "builders' forward vacancy and pro formas (dev.ts replacementSearch, developerLook; market.ts forwardVacancy)" },
       // (no land row: the boom itself takes the town's vacant lots, so land is moved by the injection, not only by the market)
       { obs: `stock.${k}`, unit: "rel", win: "mid", sign: +1, lo: 0.35, hi: 0.55, label: `${LABEL[k]} stock, years 3-8`, want: "the new buildings still stand (+35 to +55%): a glut is absorbed, not torn down — new buildings are rarely demolished", trace: "teardown / owner redevelopment of new empty buildings (dev.ts tickTeardowns, ownerRedevelopment)" },
       ...CLASSES.filter((o) => o !== k).map((o) => ({ obs: `eff.${o}`, unit: "rel", win: "impact", sign: 0, hi: 0.05, label: `${LABEL[o]} rent (should not move)`, want: "within ±5%" })),

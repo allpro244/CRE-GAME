@@ -95,8 +95,8 @@ export interface Seeker {
   tourM?: number;
   /** the player's building it left, if it came from one */
   fromPlayer?: string;
-  /** what it paid and how far it sat from its partners and people where it was, for the line its move writes */
-  was?: { rent: number; dLink: number; dWork: number };
+  /** what it paid where it was, for the line its move writes */
+  was?: { rent: number };
   /** the cause-ledger event of its going to market */
   whyId?: number;
 }
@@ -340,7 +340,7 @@ function toSeekers(s: GameState, t: Tenant, why: Seeker["why"], fromPlayer: stri
   ensureFirm(s, t);
   const firm: Tenant = { ...structuredClone(t), freeUntilM: undefined, deposit: 0 };
   (e.seekers ??= []).push({ fid: t.fid!, use, want: Math.round(firmNeed(s, firm)), since: s.month, why, t: firm,
-    ...(fromPlayer ? { fromPlayer, was: { rent: t.rentPsf, dLink: NaN, dWork: NaN } } : {}) });
+    ...(fromPlayer ? { fromPlayer, was: { rent: t.rentPsf } } : {}) });
 }
 
 interface Bld {
@@ -882,7 +882,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
         const best = opts[0];
         if (outgrown || (best && !best.stay)) {
           const sk: Seeker = { fid: t.fid!, use: kk, want: Math.round(need), since: m, why: outgrown ? "grow" : "move", from: bbl,
-            was: { rent: t.rentPsf, dLink: stayOpt?.dLink ?? NaN, dWork: stayOpt?.dWork ?? NaN } };
+            was: { rent: t.rentPsf } };
           e.seekers.push(sk);
           seeking.set(t.fid!, sk);
           t.endM = m + HOLDOVER_M;

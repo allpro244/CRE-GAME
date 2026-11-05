@@ -111,6 +111,9 @@ function loss(k) {
       return { ok: cut >= 0.18 && s1 <= 0.82, msg: `buildings −${(100 * cut).toFixed(0)}% of the stock, econ.stock ×${s1.toFixed(2)} at +1 month` };
     },
     expect: [
+      // THE FIRST YEAR, beside years 0-3 (audit 2026-11-05): industrial vacancy fell 5.6→1.7, 9.4→1.9 and
+      // 9.3→2.7 at month 1 and a seed rebuilt the lost 194k sf by month 36, so the 0-3 year mean read NO RESPONSE.
+      { obs: `vac.${k}`, unit: "pp", win: "year1", sign: -1, lo: -12, hi: -1, label: `${LABEL[k]} vacancy, first year`, want: "falls 1-12pp (the displaced take the empty space)", trace: "do the displaced tenants relocate in town (toSeekers) or vanish?" },
       { obs: `vac.${k}`, unit: "pp", win: "impact", sign: -1, lo: -12, hi: -1, label: `${LABEL[k]} vacancy`, want: "falls 1-12pp (the displaced take the empty space)", trace: "do the displaced tenants relocate in town (toSeekers) or vanish?" },
       { obs: `eff.${k}`, unit: "rel", win: "impact", sign: +1, lo: 0.02, hi: 0.3, label: `${LABEL[k]} effective rent`, want: "rises 2-30%" },
       { obs: `starts.${k}`, unit: "rel", win: "mid", sign: +1, lo: 0.2, hi: 5, tiny: 0.1, label: `${LABEL[k]} starts, years 3-8`, want: "rise: a construction answer 1-3 years on" },

@@ -71,7 +71,10 @@ const ratesUp = {
     { obs: "val.multifamily", unit: "rel", win: "impact", sign: -1, lo: -0.30, hi: -0.10, label: "apartment values", want: "fall 10-30% (about −20%)" },
     { obs: `probe.${UP}.trades`, unit: "rel", win: "impact", sign: -1, lo: -0.8, hi: -0.2, tiny: 0.05, label: "deal volume (sales a month)", want: "falls 20-80% (2023: about −50%)" },
     { obs: "distress", unit: "rel", win: "impact", sign: +1, lo: 0.2, hi: 5, label: "distressed listings", want: "rise: balloons that cannot refinance" },
-    { obs: "chargeOffs", unit: "rel", win: "mid", sign: +1, lo: 0.05, hi: 3, label: "lenders' cumulative charge-offs, years 3-8", want: "rise" },
+    // Charge-offs booked since the shock, against the control's over the same months. Bank CRE net
+    // charge-off rates rose about tenfold or more 2021-24 and about thirtyfold 2006-10 (FDIC QBP), so a
+    // flow can rise far more than the lifetime total this row once read (hi was 3 on that total).
+    { obs: "chargeOffsNew", unit: "rel", win: "mid", sign: +1, lo: 0.05, hi: 30, label: "lenders' charge-offs since the shock, years 3-8", want: "rise" },
     { obs: `probe.${UP}.starts`, unit: "rel", win: "mid", sign: -1, lo: -0.8, hi: -0.1, tiny: 0.05, label: "starts, all classes, years 3-8", want: "fall 10-80% after 1-2 years" },
     ...CLASSES.map((k) => ({ obs: `eff.${k}`, unit: "rel", win: "impact", sign: 0, hi: 0.05, label: `${LABEL[k]} effective rent, years 0-3`, want: "barely moves at first (within ±5%); NOI is not the channel" })),
   ],
@@ -103,9 +106,17 @@ const ratesZero = {
   },
   hold(c, t) {
     const p = at(t, 60, ZERO, "pol"), avg = meanGap(c, t, ZERO, "pol", 1, 60), ten = meanGap(c, t, ZERO, "ten", 1, 60);
-    let mx = 0;
-    for (let i = 1; i <= Math.min(60, t.length - 1); i++) mx = Math.max(mx, at(t, i, ZERO, "pol"));
-    return { ok: p <= 0.0125 && mx <= 0.0125, msg: `policy ${(100 * p).toFixed(2)}% at +5 years, at most ${(100 * mx).toFixed(2)}% in any month (${bp(avg)} against the control over years 0-5; ten-year ${bp(ten)})` };
+    // THE WHOLE PEG, not its first five years (audit 2026-11-05): read only to
+    // +60 months the hold passed while the end-of-month rate climbed to 6-21%
+    // in years 6-10, so everything after year 5 was graded as a zero-rate
+    // decade that did not happen.
+    let mx = 0, mxAt = 0, off = 0;
+    for (let i = 1; i <= Math.min(ZERO_M, t.length - 1); i++) {
+      const v = at(t, i, ZERO, "pol");
+      if (v > mx) { mx = v; mxAt = i; }
+      if (v > 0.0125) off++;
+    }
+    return { ok: p <= 0.0125 && mx <= 0.0125, msg: `policy ${(100 * p).toFixed(2)}% at +5 years; over the ${ZERO_M}-month peg at most ${(100 * mx).toFixed(2)}% (month +${mxAt}), above 1.25% in ${off} months (${bp(avg)} against the control over years 0-5; ten-year ${bp(ten)})` };
   },
   expect: [
     { obs: `probe.${ZERO}.ten`, unit: "pp", win: "mid", sign: -1, lo: -3.5, hi: -0.75, label: "ten-year (loan index), years 3-8", want: "falls 0.75-3.5 points as the market learns the bank rests at zero" },
@@ -185,7 +196,7 @@ const crunch = {
   expect: [
     { obs: `probe.${CRUNCH}.trades`, unit: "rel", win: "impact", sign: -1, lo: -0.85, hi: -0.3, tiny: 0.05, label: "deal volume (sales a month)", want: "collapses 30-85%" },
     { obs: "distress", unit: "rel", win: "impact", sign: +1, lo: 0.3, hi: 5, label: "distressed listings", want: "rise: balloons that cannot refinance" },
-    { obs: "chargeOffs", unit: "rel", win: "impact", sign: +1, lo: 0.05, hi: 3, label: "lenders' cumulative charge-offs", want: "rise" },
+    { obs: "chargeOffsNew", unit: "rel", win: "impact", sign: +1, lo: 0.05, hi: 30, label: "lenders' charge-offs since the shock", want: "rise" },
     { obs: `probe.${CRUNCH}.debt`, unit: "rel", win: "impact", sign: -1, lo: -0.5, hi: -0.05, label: "the street's mortgage book", want: "shrinks as loans pay down and are not rewritten" },
     { obs: "val.office", unit: "rel", win: "impact", sign: -1, lo: -0.45, hi: -0.1, label: "office values", want: "fall 10-45%, more than rents" },
     { obs: "val.multifamily", unit: "rel", win: "impact", sign: -1, lo: -0.4, hi: -0.1, label: "apartment values", want: "fall 10-40%" },

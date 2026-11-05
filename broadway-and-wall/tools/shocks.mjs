@@ -289,6 +289,15 @@ async function report(dir, landingOnly) {
   const runs = new Map();
   for (const f of readdirSync(dir).filter((x) => /^run-.*\.json$/.test(x))) {
     const r = JSON.parse(readFileSync(join(dir, f), "utf8"));
+    // CHARGE-OFFS SINCE THE SHOCK. `chargeOffs` is each desk's lifetime total
+    // (lenders.ts chargeOffsTotal), so graded relative to the control's mean it
+    // carried ten years of pre-shock losses in both twins and diluted the
+    // response: the credit crunch read +0.3% (NO RESPONSE) while the losses
+    // booked after the shock ran 1.4x / 2.5x / 3.1x the control's by year 6
+    // (audit 2026-11-05). Both twins start from the same snapshot, so the
+    // difference from month 0 is the shock's own flow.
+    const c0 = r.rows?.[0]?.chargeOffs;
+    if (Number.isFinite(c0)) for (const row of r.rows) row.chargeOffsNew = row.chargeOffs - c0;
     runs.set(`${r.id}|${r.seed}`, r);
   }
   const seeds = [...new Set([...runs.values()].map((r) => r.seed))].sort((a, b) => a - b);

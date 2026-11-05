@@ -48,7 +48,8 @@ const done = (code, msg) => {
 };
 
 let wsUrl;
-for (let i = 0; i < 100 && !wsUrl; i++) {
+// a cold browser on a shared CI runner can take well over 15 s to open its port (seen on GitHub Actions): wait up to a minute
+for (let i = 0; i < 400 && !wsUrl; i++) {
   try { wsUrl = (await fetch(`http://127.0.0.1:${port}/json/list`).then((r) => r.json())).find((t) => t.type === "page")?.webSocketDebuggerUrl; } catch { /* not up */ }
   if (!wsUrl) await sleep(150);
 }

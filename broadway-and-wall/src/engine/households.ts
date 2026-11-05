@@ -219,6 +219,10 @@ const LOC_SIGMA = 0.5, CROSS_KM = 8;
  * off — over the twelve months of a lease. [S~]
  */
 const MOVE_LOG = 1.5 / 12;
+/** A flat's lease, months (leaseEnd = month + 12) [S]. */
+const LEASE_M = 12;
+/** A flat between tenants is made ready for a month before it is shown again (the street's own turn rule below: a freed flat is not listed the month it frees) [S~: industry make-ready 1-3 weeks plus marketing]. */
+const MAKE_READY_M = 1;
 /**
  * WORKERS (ONE ECONOMY step 3, 2026-10-29). A worker looking for a job sees a
  * shortlist of JOB_SHORTLIST openings — drawn by where the openings are, and
@@ -339,10 +343,18 @@ const UE_RATE = 0.25;
  */
 const MATCH_ETA = 0.3;
 /**
- * A household whose earners are all out of work, past their insurance, leaves
- * the region at about 5% a year: interstate migration ran about 2.5% a year
- * through the 2000s (Census CPS; Molloy, Smith & Wozniak 2011, JEP), and the
- * jobless move about twice as often as the employed — the doubling is [K].
+ * A household whose earners are all out of work leaves the region at about 5%
+ * a year: interstate migration ran about 2.5% a year through the 2000s (Census
+ * CPS; Molloy, Smith & Wozniak 2011, JEP), and the jobless move about twice as
+ * often as the employed — the doubling is [K]. From the month the job goes
+ * (2026-11-03): a displaced worker's search is national from the start, and
+ * the move follows the job loss within a year or two (Huttunen, Moen &
+ * Salvanes 2018, JOLE: displaced Norwegian workers' odds of leaving the region
+ * rise in the year of the layoff); unemployment insurance goes with a claimant
+ * who moves (the liable state pays, US DOL Interstate Benefit Payment Plan).
+ * It waited for the insurance to run out, six months, by when four in five of
+ * the laid off had found work (UE_RATE), so a closure sent almost nobody away
+ * (shock test demand-employer-leaves: population +0.3%).
  */
 const LEAVE_JOBLESS_M = 0.05 / 12;
 /**
@@ -424,6 +436,16 @@ export function realPayRel(e: Econ): number {
  */
 export function hereRel(e: Econ): number {
   return realPayRel(e) * (e.fiscalRel ?? 1);
+}
+/**
+ * A job seeker's odds of work here against elsewhere: the town's employed
+ * share of its labour force over the nation's (last month's published rates,
+ * as a mover reads them). Harris & Todaro (1970): a mover without a job
+ * weighs a place's pay by the chance of getting it.
+ */
+export function workOdds(e: Econ): number {
+  const uN = Math.min(0.9, Math.max(0, e.nat?.unemp ?? 0.05)), uL = Math.min(0.9, Math.max(0, e.unemployment ?? uN));
+  return (1 - uL) / (1 - uN);
 }
 /**
  * A month in which the city's services and taxes, not pay, tipped who came or
@@ -913,7 +935,9 @@ function subsistence(e: Econ, persons: number): number {
 
 type Block = { idx: number; target: number; let: number; unitSf: number;
   /** a street block (its households let it, stage 2): its flats, its draw on movers and its month's letting limit, in flats */
-  street?: boolean; capU?: number; w?: number; limU?: number; rel?: number };
+  street?: boolean; capU?: number; w?: number; limU?: number; rel?: number;
+  /** its landlord's own estimate of the months a flat it lets out would stand empty at its ask (streetRolls.ts `priceFlats`) */
+  fm?: number };
 
 /**
  * THE ISLAND'S FLATS, AS HOUSEHOLDS: every street block's let flats (its roll,
@@ -922,7 +946,9 @@ type Block = { idx: number; target: number; let: number; unitSf: number;
  * a flat let this month — its newest lease cohort, or the street's average for
  * a block that has none. Pure: it reads the parcels and the state.
  */
-type RawBlock = { bbl: string; units: number; unitSf: number; psf: number | null; street?: boolean; capU?: number; w?: number; limU?: number; rel?: number };
+type RawBlock = { bbl: string; units: number; unitSf: number; psf: number | null; street?: boolean; capU?: number; w?: number; limU?: number; rel?: number;
+  /** its landlord's own estimate of the months a flat it lets out would stand empty at its ask (streetRolls.ts `priceFlats`) */
+  fm?: number };
 /**
  * A street block's flat size, through the register's memo when it has one.
  * Resolving 2,000 records a month was most of a region month's cost, and a
@@ -962,7 +988,7 @@ function rawBlocks(s: GameState, parcels: ParcelTable, memo?: UnitMemo, all = fa
     const capSf = memo?.[bbl]?.[3] ?? 0;
     if (all && psf === null) continue;   // a block not yet priced by the street: next month
     raw.push(all
-      ? { bbl, units: roll.occ / unitSf, unitSf, psf, street: true, capU: capSf / unitSf, w: roll.w ?? 1, limU: (roll.lim ?? 2 * unitSf) / unitSf, rel: roll.ask && roll.mkt ? roll.ask / roll.mkt : 1 }
+      ? { bbl, units: roll.occ / unitSf, unitSf, psf, street: true, capU: capSf / unitSf, w: roll.w ?? 1, limU: (roll.lim ?? 2 * unitSf) / unitSf, rel: roll.ask && roll.mkt ? roll.ask / roll.mkt : 1, fm: roll.fm }
       : { bbl, units: roll.occ / unitSf, unitSf, psf });
   }
   const psfAvg = sf > 0 ? rs / sf : 0;
@@ -1001,7 +1027,7 @@ function readBlocks(s: GameState, parcels: ParcelTable, r: HouseholdRegister, by
     cum += x.units / r.wIsland;
     const target = Math.round(cum) - done;
     done += target;
-    const b: Block = { idx: idxOf(x.bbl), target, let: (psf * x.unitSf) / 12, unitSf: x.unitSf, street: x.street, capU: x.capU, w: x.w, limU: x.limU, rel: x.rel };
+    const b: Block = { idx: idxOf(x.bbl), target, let: (psf * x.unitSf) / 12, unitSf: x.unitSf, street: x.street, capU: x.capU, w: x.w, limU: x.limU, rel: x.rel, fm: x.fm };
     list.push(b); byIdx.set(b.idx, b);
   }
   return { list, byIdx, psfAvg };
@@ -2079,7 +2105,7 @@ function retire(emp: Int32Array, wg: Float32Array, i: number) {
  *      working-age, renting across the water, one earner in the vacancy and a
  *      second adult who looks for work like anyone else;
  *   5. each industry's earners are paid its going rate on average (below);
- *   6. a household with nobody in work and its insurance run out may leave
+ *   6. a household with nobody in work may leave
  *      (LEAVE_JOBLESS_M); returned, with step 0's, for the caller to drop.
  * An earner's industry is the employer's; its pay is the industry's cash pay
  * times its own standing — kept, in proportion, through a move between
@@ -2232,8 +2258,21 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
     r.flow.quits = (r.flow.quits ?? 0) + r.a!.wt[i];
   }
   // 3b. the jobless, at the finding rate, where there is a vacancy; the rest a month longer out
+  // ...BUT NOT THE ONES WHO LOST THEIR JOB THIS MONTH (2026-11-03). The CPS
+  // flows SEP_RATE and UE_RATE are month-to-month: a worker in work last
+  // month and out of it this month is the E-to-U flow, unemployed when the
+  // month is counted, and the finding rate is the odds of the jobless being
+  // in work a month on. A worker let go this month (a separation, a layoff
+  // in step 1: months out still 0) is counted out of work this month and
+  // searches from the next. Letting it search the month it was let go
+  // counted a within-month spell the survey never sees, and with the sweep
+  // below it took every separation back in the same month: measured (seed
+  // 22, policy held at 0.25% from year 10), unemployment 0.0-0.1% for years.
   const jobless: number[] = [];
-  for (let i = 0; i < r.n; i++) for (let k = 0; k < 3; k++) if (EMP()[k][i] === EMP_UNEMP) jobless.push(3 * i + k);
+  for (let i = 0; i < r.n; i++) for (let k = 0; k < 3; k++) if (EMP()[k][i] === EMP_UNEMP) {
+    if (UN()[k][i] === 0) { UN()[k][i] = 1; continue; }
+    jobless.push(3 * i + k);
+  }
   // the finding rate at this month's openings per jobless worker (MATCH_ETA)
   let uW = 0, vW = 0;
   for (const sl of jobless) uW += a.wt[(sl / 3) | 0];
@@ -2244,12 +2283,18 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
     r.thetaRef = r.thetaRef === undefined ? theta : r.thetaRef + (theta - r.thetaRef) * NATVAC_RATE;
     find = Math.min(1, UE_RATE * Math.pow(theta / r.thetaRef, MATCH_ETA));
   }
+  // THE MONTH'S HIRES OUT OF UNEMPLOYMENT ARE THE MATCHING FUNCTION'S: the
+  // finding rate times the jobless looking. A jobless worker passed over
+  // below (its draw, or no opening on its shortlist its household's weight
+  // can take) may still reach a month-old opening (steps 4 and 4b), but only
+  // while the month's hires are short of that flow (`budget`).
+  let budget = find * uW;
   for (const sl of shuffle(jobless)) {
     const i = (sl / 3) | 0, k = sl % 3;
     const hire = R.u() < find, scar = R.n();
     const job = hire ? bestJob(i, k) : null;
     // a returning worker takes a small cut in pay (job-loss scarring, Jacobson-LaLonde-Sullivan 1993) [S]
-    if (job) { place(i, k, job); WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * scar); }
+    if (job) { place(i, k, job); budget -= a.wt[i]; WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * scar); }
     else if (UN()[k][i] < 65535) UN()[k][i]++;
   }
   // the town's jobless still looking, in the order they searched: step 4's first claim
@@ -2306,11 +2351,11 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       if (V[ind] < wR / 2) continue;
       if (r.arriveAcc < wR / 2) break;
       // a local's application wins (`outsiders`, above): the opening goes to the town's own jobless
-      if (stillAt < still.length && !(R.u() < outsiders)) {
+      if (stillAt < still.length && budget >= r.a!.wt[(still[stillAt] / 3) | 0] / 2 && !(R.u() < outsiders)) {
         const sl = still[stillAt++], i = (sl / 3) | 0, k = sl % 3, w = r.a!.wt[i];
         if (V[ind] >= w / 2) {
           const job = bestJob(i, k, ind);
-          if (job) { place(i, k, job); WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * R.n()); continue; }
+          if (job) { place(i, k, job); budget -= w; WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * R.n()); continue; }
         }
       }
       r.arriveAcc -= wR;
@@ -2366,6 +2411,14 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // leaves its opening behind; QUIT_GAIN) — so restaurants ran 13-51% short
   // at full employment and soaked up every layoff in a slump. A trade stays
   // short only when the town has nobody left looking.
+  // ...UP TO THE MONTH'S MATCHES (`budget`, 2026-11-03). Where the openings
+  // outnumber the jobless, this took every one of them every month — a
+  // finding rate of one, whatever the matching function said — and the
+  // town's unemployment sat at 0.0% through an overheated decade (seed 22,
+  // policy held at 0.25%: 3b hired ~550 of ~1,150 looking, at 0.47, and this
+  // the other ~600). A real labour market never empties: search takes time
+  // even with jobs to spare (US unemployment has not gone under 3.4% since
+  // 1969, with JOLTS layoffs ~1.1% and quits ~2.3% of jobs a month).
   const left = Float64Array.from(open, (o, ind) => Math.min(V[ind], o - (V4[ind] - V[ind])));
   const pickLeft = (w: number) => {
     let t = 0;
@@ -2378,6 +2431,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   for (; stillAt < still.length; stillAt++) {
     const sl = still[stillAt], i = (sl / 3) | 0, k = sl % 3, w = r.a!.wt[i];
     if (EMP()[k][i] !== EMP_UNEMP) continue;
+    if (budget < w / 2) break;
     let job: ReturnType<typeof bestJob> = null;
     for (let t = 0; t < JOB_SHORTLIST; t++) {
       const ind = pickLeft(w);
@@ -2386,7 +2440,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       if (c && (!job || c.value > job.value)) job = c;
     }
     if (!job) { let any = false; for (let ind = 0; ind < N_IND; ind++) if (left[ind] >= 0.5) { any = true; break; } if (!any) break; continue; }
-    place(i, k, job); left[job.ind] -= w;
+    place(i, k, job); left[job.ind] -= w; budget -= w;
     WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * R.n());
   }
   r.arriveAcc = Math.max(0, Math.min(wR, r.arriveAcc));
@@ -2436,7 +2490,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   const nowHc: Record<number, number> = {};
   for (const [c, h] of D.hc) nowHc[c] = +h.toFixed(2);
   r.firmHc = nowHc;
-  // 6. who leaves: nobody in work, insurance run out — an island renter too
+  // 6. who leaves: nobody in work (LEAVE_JOBLESS_M) — an island renter too
   // (households stage 2: its flat empties and is let again from across the
   // water). A jobless other adult past six months out leaves on its own.
   const c = r.a!;
@@ -2448,7 +2502,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       c.emp3[i] = EMP_NONE; c.wage3[i] = 0; c.un3[i] = 0; c.ind3[i] = IND_NONE;
     }
     if (isWorking(e1) || isWorking(e2) || isWorking(c.emp3[i])) continue;
-    const out = (e1 === EMP_UNEMP && c.un1[i] > UI_MONTHS) || (e2 === EMP_UNEMP && c.un2[i] > UI_MONTHS);
+    const out = e1 === EMP_UNEMP || e2 === EMP_UNEMP;
     if (out && R.u() < LEAVE_JOBLESS_M) {
       leave.push(i); r.flow.left = (r.flow.left ?? 0) + c.wt[i];
       if (c.ten[i] === TEN_RENT) {
@@ -2815,7 +2869,20 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     if (a.leaseEnd[i] <= m) {
       // RENEW OR MOVE (stage 2): buy, choose the mainland at the renewal rent, or move for another reason
       r.flow.leaseEnds! += w;
-      const renew = Math.max(a.rent[i] * 0.97, b.let * 0.97);
+      // A RENEWAL IS PRICED AGAINST WHAT TURNOVER COSTS (2026-11-03). Lose
+      // this tenant and the flat takes a month to make ready and then stands
+      // empty for as long as the landlord's own cards say a flat waits for a
+      // signer at its ask (`fm`, priceFlats) — rent the landlord forgoes. So
+      // it offers the sitting tenant the new-lease ask less that cost spread
+      // over the lease (revenue-management renewal pricing weighs exactly
+      // this: the cost of a move-out against the increase), and rarely cuts a
+      // sitting tenant's rent by more than a few per cent. Until this a
+      // renewal followed the new-lease ask at 0.97: in a rising market every
+      // sitting tenant got the newcomers' raise and moved out (measured:
+      // flats vacancy +2.1-2.8pp after a +30% arrivals wave, +0.4-0.7pp with
+      // renewals held), so vacancy rose BECAUSE rents rose.
+      const turnM = MAKE_READY_M + Math.max(0, b.fm ?? 0);
+      const renew = Math.max(a.rent[i] * 0.97, b.let * Math.max(0, 1 - turnM / LEASE_M));
       const c = D && r.ownMu !== undefined ? buyCheck(a, i, H, renew) : null;
       if (c !== null && r.ownMu! + OWN_SIGMA * R.n() >= c) {
         const j = ownerLike(R, r, i, gone);
@@ -2916,18 +2983,28 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
         // the shortlist, toured whole: a renter compares before it signs
         const seen: typeof rooms = [];
         for (let k = 0; k < SHORTLIST; k++) { const x = pickRoom(); if (!seen.includes(x)) seen.push(x); }
-        // each door's card: the most it would pay HERE, having seen the rest
-        // — its budget, or the cheapest other flat on its list it could still
-        // have taken, whichever is less ("where else are you looking?")
+        // A RENTER BUYS VALUE, NOT THE LOWEST RENT (2026-11-03). It weighs
+        // each flat's rent against what the flat is worth — its size, its
+        // block, its street, which the market prices as the flat's market
+        // rent — and signs for the best value it can pay for: the lowest
+        // rent over market. Comparing bare monthly rents (as #560 did) made a
+        // better-placed flat only ever lose: measured on seed 11, blocks 8-30%
+        // empty drew ~55 leads a month at 4-8% over market and let a flat in
+        // only 12-16% of months.
+        const val = (y: (typeof rooms)[number]) => y.b.rel ?? 1;
+        // each door's card: the most it would pay HERE, having seen the rest —
+        // its budget, or this flat at the value of the best other flat on its
+        // list it could have taken, whichever is less ("where else are you looking?")
         if (budget !== undefined && budget > 0) for (const x of seen) {
-          let alt = budget;
-          for (const y of seen) if (y !== x && y.room > 0 && y.b.let < alt) alt = y.b.let;
           const mktUnit = x.b.let / (x.b.rel ?? 1);
-          if (mktUnit > 0) doors.get(x.b.idx)!.x.push(+Math.log(alt / mktUnit).toFixed(4));
+          if (!(mktUnit > 0)) continue;
+          let alt = budget;
+          for (const y of seen) if (y !== x && y.room > 0 && y.b.let <= budget) alt = Math.min(alt, mktUnit * val(y));
+          doors.get(x.b.idx)!.x.push(+Math.log(alt / mktUnit).toFixed(4));
         }
-        // ...and it signs for the cheapest flat on the list it can pay for
+        // ...and it signs for the best value on the list it can pay for
         let pick: (typeof rooms)[number] | undefined;
-        for (const x of seen) if (x.room > 0 && (budget === undefined || x.b.let <= budget) && (!pick || x.b.let < pick.b.let)) pick = x;
+        for (const x of seen) if (x.room > 0 && (budget === undefined || x.b.let <= budget) && (!pick || val(x) < val(pick))) pick = x;
         if (!pick || !letTo(R, r, pick.b, e, m, [c], gone)) break;
         recordDeal(e, "multifamily", m, pick.b.rel ?? 1, pick.b.unitSf * r.wIsland);
         pick.room--;
@@ -2984,7 +3061,16 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   // A TOWN WHOSE PAY BUYS MORE THAN ELSEWHERE draws movers the same way, at
   // the excess of its pull over the movers' rate (MOVE_ELAST), carried month
   // to month until it makes a whole household of the region's weight.
-  const draw = D ? MOVE_M * Math.max(0, Math.pow(Math.max(0.01, hereRel(e)), MOVE_ELAST) - 1) : 0;
+  // ...AT THE ODDS OF FINDING THE WORK (2026-11-03). These movers come with
+  // no job, so what the town's pay is worth to them is that pay times their
+  // odds of being paid it: the share of the town's labour force in work
+  // against the nation's (Harris & Todaro 1970, expected income; Blanchard &
+  // Katz 1992: gross in-migration falls with a region's relative
+  // unemployment), at the same elasticity as the pay (MOVE_ELAST) [S~].
+  // Read on pay alone, the draw ignored the town's jobless rate: after an
+  // arrivals wave left a quarter of its labour force out of work (shock test
+  // demand-arrivals-30) it drew job seekers on its pay as before.
+  const draw = D ? MOVE_M * Math.max(0, Math.pow(Math.max(0.01, hereRel(e) * workOdds(e)), MOVE_ELAST) - 1) : 0;
   const wave = e.bsMigPull ?? 0;
   const bsIsland = wave > 0 && e.bsArrivals ? e.bsArrivals.island * Math.min(1, e.bsArrivals.monthly / wave) : 0;
   if ((wave > 0 || draw > 0) && D) {
@@ -3102,7 +3188,7 @@ function writeRolls(s: GameState, r: HouseholdRegister, B: { list: Block[] }, se
     const roll = rolls[r.blocks[b.idx]];
     if (!roll) continue;
     const door = DOORS?.get(b.idx);
-    priceFlats(roll, door?.x, door?.u ?? 0, comp);
+    priceFlats(roll, door?.x, door?.u ?? 0, comp, e.rentIdx.multifamily);
     const l = [...(cohorts.get(b.idx)?.values() ?? [])].map((x) => ({ ...x, sf: Math.round(x.sf) }));
     roll.l = l;
     roll.occ = l.reduce((t, x) => t + x.sf, 0);

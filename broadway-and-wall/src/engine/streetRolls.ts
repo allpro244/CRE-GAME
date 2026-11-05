@@ -61,7 +61,7 @@ import { why, whyTenantBooks } from "./why";
 import { tenantFin } from "./tenantBooks";
 import {
   type LandlordAsk, type Option, SHORTLIST, TASTE, askOf, postedEff, compsFace, compsPackage, reviewAsk, noteLetting, reservation, locCtx, posOf, hourCost,
-  placeCost, worthOf, footFactor, moveCostPsfYr, bargain, freeMonthsFor, gumbel, recordLease, movedLine, fmtPct, creditOfSize, readOut, tenantHeads,
+  placeCost, worthOf, footFactor, moveCostPsfYr, bargain, bidCeiling, contestPrice, noteContest, freeMonthsFor, gumbel, recordLease, movedLine, fmtPct, creditOfSize, readOut, tenantHeads,
 } from "./tenantMarket";
 
 export interface StreetRoll {
@@ -696,7 +696,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
    * comp, teaches the landlord, and — for a firm that moved — the line that
    * says why. Returns the lease.
    */
-  const signAt = (firm: Tenant, k: Comm, pick: Option, second: Option | undefined, want: number, fromBbl: string | undefined, fromPlayer: string | undefined, was: Seeker["was"], cause?: number): Tenant | null => {
+  const signAt = (firm: Tenant, k: Comm, pick: Option, second: Option | undefined, want: number, fromBbl: string | undefined, fromPlayer: string | undefined, was: Seeker["was"], cause?: number, contest?: { eff: number; turned: number }): Tenant | null => {
     const b = blds.get(pick.bbl) ?? bld(pick.bbl);
     const roll = R[pick.bbl];
     if (!b || !roll) return null;
@@ -710,8 +710,10 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     // option value in lease term; the covenant bands stay, since they are
     // what landlords and their lenders will take from each grade).
     const termM = rrange(s, band.loM, band.hiM, "leasing") * qt.term * Math.max(0.6, Math.min(1.4, Math.exp(-4 * gTradeOf(firm.sector))));
-    const eff = bargain(pick, second);
-    const face = pick.ask;
+    // a contested suite signs at the price its best-and-final set (`contestPrice`),
+    // on the face when that is above the ask: no free months then
+    const eff = contest ? contest.eff : bargain(pick, second);
+    const face = Math.max(pick.ask, eff);
     const freeM = freeMonthsFor(face, eff, termM);
     const carry: Partial<Tenant> = {
       fid: firm.fid, quality: firm.quality, staff: firm.staff, empRef: firm.empRef, fin: firm.fin,
@@ -732,6 +734,8 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     const full = left < minSfOf(b, k);
     // what the letting took of what it had to let: all of it, when it filled the building
     noteLetting(bookOf(b, roll, k), k, since === undefined ? 0 : Math.max(0, m - since), full ? 1 : pick.take / Math.max(1, pick.take + left), opening);
+    // ...and, when it turned firms away, from what the space fetched (tenantMarket.ts noteContest)
+    if (contest && contest.turned > 0) noteContest(bookOf(b, roll, k), effSigned, opening);
     if (full) { roll.vac ??= {}; delete roll.vac[k]; if (roll.vsf) delete roll.vsf[k]; }
     // WHY IT MOVED: where it went, what it pays against what it paid, and how much nearer its partners and people it is.
     if ((fromBbl || fromPlayer) && !opening) {
@@ -1156,16 +1160,9 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   const pool = [...e.seekers];
   for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(rng(s, "leasing") * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
   const signed = new Set<number>();
-  for (const sk of pool) {
-    if (sk.tourM !== undefined && m - sk.tourM < 3) continue;          // in talks at one of the player's buildings
-    if (rng(s, "leasing") > 1 / SEARCH_M[sk.use]) continue;            // still looking
-    const k = sk.use;
-    const firm = sk.from ? R[sk.from]?.t.find((t) => t.fid === sk.fid) : sk.t;
-    if (!firm) continue;
-    const opts = shop(firm, k, sk.want, sk.from, null, !!(sk.from || sk.fromPlayer));
-    if (!opts.length) continue;
-    const lease = signAt(firm, k, opts[0], opts[1], sk.want, sk.from, sk.fromPlayer, sk.was, sk.whyId);
-    if (!lease) continue;
+  // proposals the street's landlords turned away this month, by class (the brokers' "multiple offers" count)
+  const turnedAway: Record<string, number> = {};
+  const landed = (sk: Seeker, firm: Tenant) => {
     // ...and the space it leaves behind.
     if (sk.from) {
       const old = R[sk.from];
@@ -1176,6 +1173,82 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       }
     }
     signed.add(sk.fid);
+  };
+  if (opening) {
+    // The opening's years grow the town on its opening economy held still: firms sign one by one, as found.
+    for (const sk of pool) {
+      if (sk.tourM !== undefined && m - sk.tourM < 3) continue;          // in talks at one of the player's buildings
+      if (rng(s, "leasing") > 1 / SEARCH_M[sk.use]) continue;            // still looking
+      const k = sk.use;
+      const firm = sk.from ? R[sk.from]?.t.find((t) => t.fid === sk.fid) : sk.t;
+      if (!firm) continue;
+      const opts = shop(firm, k, sk.want, sk.from, null, !!(sk.from || sk.fromPlayer));
+      if (!opts.length) continue;
+      if (signAt(firm, k, opts[0], opts[1], sk.want, sk.from, sk.fromPlayer, sk.was, sk.whyId)) landed(sk, firm);
+    }
+  } else {
+    // THE TOURS, THEN THE PROPOSALS (2026-11-03). Every firm that looks this
+    // month takes its broker's tour book on the market as it stands — so in a
+    // tight market several firms tour the same suite — and puts a proposal to
+    // the landlord of the one it likes best. A landlord with more proposals
+    // than room takes the best (`bidCeiling`: the most each would pay before
+    // its next-best option wins), and the firm it signs pays enough to beat
+    // the best it turned away (`contestPrice`); the landlord learns its space
+    // fetches that (`noteContest`). A firm turned away goes to the next suite
+    // on its list that still has room, the same month, as tenants who lose a
+    // space do. It used to be first come, first served: the first firm to
+    // reach a suite paid the post, and a queue of firms a suite could not hold
+    // showed the landlord nothing (shock tests, retail -20%: 500k sf of firms
+    // after 50k sf of space, rent +0.6% in a year).
+    type Bidder = { sk: Seeker; firm: Tenant; k: Comm; opts: Option[]; at: number };
+    for (const k of COMM) turnedAway[k] = 0;
+    let live: Bidder[] = [];
+    for (const sk of pool) {
+      if (sk.tourM !== undefined && m - sk.tourM < 3) continue;          // in talks at one of the player's buildings
+      if (rng(s, "leasing") > 1 / SEARCH_M[sk.use]) continue;            // still looking
+      const k = sk.use;
+      const firm = sk.from ? R[sk.from]?.t.find((t) => t.fid === sk.fid) : sk.t;
+      if (!firm) continue;
+      const opts = shop(firm, k, sk.want, sk.from, null, !!(sk.from || sk.fromPlayer));
+      if (opts.length) live.push({ sk, firm, k, opts, at: 0 });
+    }
+    const roomFor = (o: Option, k: Comm) => {
+      const b = blds.get(o.bbl), roll = R[o.bbl];
+      return b && roll ? availOf(b, roll, k) : 0;
+    };
+    while (live.length) {
+      type Bid = { bd: Bidder; o: Option; alt?: Option; offer: number; ceil: number };
+      const at = new Map<string, Bid[]>();
+      for (const bd of live) {
+        // its best option that still has room for what it would take there
+        while (bd.at < bd.opts.length && roomFor(bd.opts[bd.at], bd.k) < bd.opts[bd.at].take) bd.at++;
+        if (bd.at >= bd.opts.length) continue;                              // nothing left on its list: it keeps looking
+        const o = bd.opts[bd.at];
+        let alt: Option | undefined;
+        for (let j = bd.at + 1; j < bd.opts.length; j++) if (roomFor(bd.opts[j], bd.k) >= bd.opts[j].take) { alt = bd.opts[j]; break; }
+        const offer = bargain(o, alt);
+        const key = `${o.bbl}|${bd.k}`;
+        let g = at.get(key);
+        if (!g) { g = []; at.set(key, g); }
+        g.push({ bd, o, alt, offer, ceil: bidCeiling(o, alt, offer) });
+      }
+      const next: Bidder[] = [];
+      for (const g of at.values()) {
+        // the landlord takes the best proposals its room holds; the rest it turns away
+        g.sort((a, b) => b.ceil - a.ceil);
+        let room = roomFor(g[0].o, g[0].bd.k);
+        const win: Bid[] = [], lose: Bid[] = [];
+        for (const p of g) { if (p.o.take <= room) { win.push(p); room -= p.o.take; } else lose.push(p); }
+        const turned = lose.length ? Math.max(...lose.map((p) => p.ceil)) : 0;
+        turnedAway[g[0].bd.k] += lose.length;
+        for (const p of win) {
+          const contest = lose.length ? { eff: contestPrice(p.offer, p.ceil, turned), turned: lose.length } : undefined;
+          if (signAt(p.bd.firm, p.bd.k, p.o, p.alt, p.bd.sk.want, p.bd.sk.from, p.bd.sk.fromPlayer, p.bd.sk.was, p.bd.sk.whyId, contest)) landed(p.bd.sk, p.bd.firm);
+        }
+        for (const p of lose) { p.bd.at++; next.push(p.bd); }
+      }
+      live = next;
+    }
   }
   if (signed.size) e.seekers = e.seekers.filter((k) => !signed.has(k.fid));
   // Where the street's empty space began, for the markdown it signs at.
@@ -1251,6 +1324,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     const l = space[k]!.let;
     if (l > 0) { const tm = (e.turnMeas ??= {}); const was = tm[k] ?? turnoverYr(e, k); tm[k] = was + (12 * handed[k] / l - was) / 24; }
   }
+  for (const k of COMM) if (turnedAway[k] !== undefined) space[k]!.turned = turnedAway[k];
   e.streetSpace = space;
   if (e.streetFailed && e.streetFailed.length > 600) e.streetFailed = e.streetFailed.slice(-600);
 }
@@ -1434,7 +1508,11 @@ export interface FlatRoll { occ: number; vac?: number; l?: { sf: number; rent: n
   /** its landlord's ask over the flats' market rent for the block (log), set on its own guest cards (`priceFlats`) */
   px?: number;
   /** the leads that toured its listed flats last month (0 when it marked to the street's comps instead) */
-  ld?: number }
+  ld?: number;
+  /** the landlord's earlier months of cards, compressed: the rent index then, how many came, their budgets' quantiles (`priceFlats`) */
+  cq?: { i: number; n: number; q: number[] }[];
+  /** the months a flat it lets out waits for a signer at its ask, on its own cards (0 when it has nothing listed) */
+  fm?: number }
 
 /**
  * A BLOCK'S LANDLORD PRICES ITS FLATS ON ITS OWN GUEST CARDS (2026-10-30).
@@ -1466,20 +1544,51 @@ export interface FlatRoll { occ: number; vac?: number; l?: { sf: number; rent: n
  * for a renewal, `e.deals`) — and keeps its ask when nothing has let.
  */
 const LEASE_M = 12; // a flat's lease (households.ts: leaseEnd = month + 12) [S]
-export function priceFlats(roll: FlatRoll, cards: number[] | undefined, free: number, comp: number | undefined): void {
-  if (cards && cards.length && free > 0) {
-    const x = cards.slice().sort((p, q) => q - p);
-    let best = -Infinity, bx = x[x.length - 1];
-    for (let k = 1; k <= x.length; k++) {
-      const v = Math.exp(x[k - 1]) * (LEASE_M - free / k);
-      if (v > best) { best = v; bx = x[k - 1]; }
+/**
+ * HOW FAR BACK A LANDLORD READS ITS CARDS: a quarter. Revenue-management
+ * systems size demand on the trailing 60-90 days of leads and the units
+ * "exposed" over the same window (RealPage YieldStar / LRO practice) [S~] — not
+ * on one month's traffic, which on a small block is a handful of people. The
+ * older cards are carried as a few weighted points each (quantiles of the
+ * month's budgets) and re-expressed against today's market rent, since each
+ * was written against its own month's.
+ */
+const FLAT_LOOKBACK_M = 3;
+const CARD_Q = 16;
+export function priceFlats(roll: FlatRoll, cards: number[] | undefined, free: number, comp: number | undefined, idxNow = 1): void {
+  const now = cards?.length ? cards.slice().sort((p, q) => q - p) : [];
+  // this month's cards, compressed for the months after it
+  const hist = (roll.cq ?? []).slice(-(FLAT_LOOKBACK_M - 1));
+  const pts: { x: number; w: number }[] = now.map((x) => ({ x, w: 1 }));
+  for (const h of hist) {
+    const shift = Math.log(Math.max(1e-9, h.i) / Math.max(1e-9, idxNow));
+    for (const x of h.q) pts.push({ x: x + shift, w: h.n / h.q.length });
+  }
+  roll.cq = FLAT_LOOKBACK_M > 1 && now.length
+    ? [...hist, { i: +idxNow.toFixed(4), n: now.length, q: Array.from({ length: Math.min(CARD_Q, now.length) }, (_, j) => +now[Math.floor((j + 0.5) * now.length / Math.min(CARD_Q, now.length))].toFixed(4)) }].slice(-(FLAT_LOOKBACK_M - 1))
+    : hist;
+  if (!roll.cq.length) delete roll.cq;
+  if (pts.length && free > 0) {
+    pts.sort((p, q) => q.x - p.x);
+    // leads a month that would sign at each price: the pooled cards over the months they came from
+    const months = 1 + hist.length;
+    let W = 0, best = -Infinity, bx = pts[pts.length - 1].x;
+    for (const p of pts) {
+      W += p.w;
+      const v = Math.exp(p.x) * (LEASE_M - free / (W / months));
+      if (v > best) { best = v; bx = p.x; }
     }
-    if (!(best > 0)) bx = x[x.length - 1];
+    if (!(best > 0)) bx = pts[pts.length - 1].x;
     roll.px = +bx.toFixed(5);
-    roll.ld = x.length;
+    // its own read of how long a flat waits for a signer at that ask (renewals price against it, households.ts)
+    let Wb = 0;
+    for (const p of pts) { if (p.x < bx) break; Wb += p.w; }
+    roll.fm = +Math.min(LEASE_M, free / Math.max(1e-9, Wb / months)).toFixed(2);
+    roll.ld = now.length;
     return;
   }
   roll.ld = 0;
+  roll.fm = 0;
   if (comp !== undefined) roll.px = +comp.toFixed(5);
 }
 /** The street's comps for a flat: the log of what new lettings signed at over their blocks' market rents, over the last six months, by their feet (undefined when none let). */

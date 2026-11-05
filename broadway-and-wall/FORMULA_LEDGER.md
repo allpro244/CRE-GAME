@@ -12,6 +12,7 @@ When you remove one, move it to **Removed** with the PR. When you add a mechanis
 
 | # | What it sets | Where | Replaced by |
 |---|---|---|---|
+| 28 | The orders the town's NEW firms win: each industry gains ENTRY_YR (4.16%/yr, US establishment-birth job creation, Census BDS 2010-19) of what it already sells; and the off-map sample's firms lose EXIT_YR (3.73%/yr, BDS deaths) — national rates applied to the town as a flow, not entry and exit decisions (#566) | `economy.ts` `tenderOrders` (`ENTRY_YR`, `EXIT_YR`) | an entrant that decides to open here on its own costs and the orders it can win, and unnamed firms that close on their books — until then the town's share drifts back to its opening share in 4-8 years whatever its capacity |
 
 ## Allowed exogenous inputs
 

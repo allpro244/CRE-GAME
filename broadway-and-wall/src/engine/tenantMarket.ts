@@ -23,6 +23,14 @@
 //   runner-up, so a firm with a close second gets a concession and a firm with
 //   nowhere else to go pays the ask.
 //
+//   AND TENANTS COMPETE. The firms looking in a month tour the same market, so
+//   in a tight one several want the same suite. Its landlord takes the best
+//   proposal its room holds, the firm it signs pays enough to beat the best
+//   one it turned away (`contestPrice`), and its next suite is posted at what
+//   this one fetched (`noteContest`). Where space is plentiful nobody is
+//   turned away and none of this binds; it is what makes rents climb fastest
+//   at the lowest vacancy.
+//
 // The city's rent index is then a READ-OUT of the leases signed (`readOut`),
 // and so are its concession level and the rent swing between quality bands.
 //
@@ -553,6 +561,51 @@ export function bargain(best: Option, second: Option | undefined): number {
   if (!second) return best.post;
   const rMax = best.post + (best.joint - second.joint) + (second.post - second.res);
   return Math.max(best.res, Math.min(best.post, (best.res + rMax) / 2));
+}
+
+/**
+ * THE MOST A FIRM WILL OFFER FOR AN OPTION when other firms want the same
+ * space: the rent at which it is no better off here than at its runner-up at
+ * the runner-up's post — or, with no runner-up worth having, than with no
+ * space this month (it keeps looking: worth 0 to it) — so its ceiling is the
+ * post plus how much more it likes this suite than its next-best thing. Never
+ * under what it would bargain to anyway (`bargain`). The counterpart of
+ * `bargain`'s outside option, from the tenant's side; nothing new is assumed.
+ */
+export function bidCeiling(best: Option, alt: Option | undefined, offer: number): number {
+  return Math.max(offer, best.post + best.joint - Math.max(0, alt?.joint ?? 0));
+}
+
+/**
+ * COMPETING PROPOSALS. Several firms that toured the same space each put in a
+ * proposal; the landlord takes the best and runs a "best and final" round, so
+ * the firm it signs pays what it bargained (`offer`) or, when it beat a firm
+ * the landlord had to turn away, enough to beat that firm's best — never more
+ * than its own ceiling. That is an English auction's price: the winner pays
+ * the loser's ceiling (Vickrey 1961; in leasing, the "multiple offers" market
+ * brokers report in tight markets, where face rents rise and concessions
+ * burn off — CBRE / JLL / Cushman tenant-rep commentary 2021-22 on industrial
+ * and 2014-15 on Manhattan retail).
+ */
+export function contestPrice(offer: number, ceiling: number, turnedDown: number): number {
+  return Math.min(ceiling, Math.max(offer, turnedDown));
+}
+
+/**
+ * THE LANDLORD LEARNS FROM THE OFFERS IT TURNED DOWN. A landlord that had to
+ * turn firms away has seen what its space fetches: the deal it just signed,
+ * which beat them. When that is above what it posts, its next suite is posted
+ * there — the package taken back first (a landlord with several proposals
+ * stops offering free rent and fit-out), then the face raised to it. This is
+ * the price the contest set, not a step: no gain is chosen. In the opening's
+ * years the face holds, as in `noteLetting`.
+ */
+export function noteContest(L: LandlordAsk, cleared: number, holdFace = false): void {
+  if (!(cleared > 0) || !(L.a > 0) || cleared <= L.a * (1 - L.c)) return;
+  const c = 1 - cleared / L.a;
+  if (c >= 0) { L.c = Math.min(L.c, c); return; }
+  L.c = 0;
+  if (!holdFace) L.a = +cleared.toFixed(2);
 }
 
 /** Free months that take a face rent to an effective one over a term. */

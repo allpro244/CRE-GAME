@@ -44,7 +44,7 @@ import { underwrittenGrowthPct, dollarLevel, RENT_BASE, CAP_BASE } from "./marke
 import {
   assetValue, capRateFor, initialCondIdx, demandLinear, incomeValueAsIs, initialCondition, inPlace, landValue,
   marketAppraisal, noiYr, resolveRec, specWearMult, taxBorneShare, taxRate, useOccupancy, useRentableSf,
-  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, queueFactor, residualScheme,
+  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, residualScheme,
 } from "./value";
 import { uses } from "./mix";
 import { catchUpCapex } from "./dev";
@@ -1218,17 +1218,22 @@ export function landMaxPrice(s: GameState, r: Rival, rec: ParcelRecord): number 
     const atTrade = value / (1 + DEV_MARGIN) - nonLand;
     if (atTrade > 0) {
       // the scheme's wait and carry, per dollar of residual
-      let f = (sc.psf * rec.lotArea) / atTrade;
-      if (builds) {
-        // A BUILDER WHO BUYS IS AT THE FRONT OF THE QUEUE: it breaks ground,
-        // so the lot's wait behind better sites (queueFactor — what the
-        // appraisal of a lot nobody is building on carries) is not its cost;
-        // the carry through construction is. The queue is backed out of the
-        // scheme's own factor at the residual it was struck on.
-        let q = queueFactor(s.econ, sc.use, sc.psf);
-        for (let it = 0; it < 2; it++) q = queueFactor(s.econ, sc.use, (sc.psf / Math.max(1e-6, q)));
-        if (q > 0) f /= q;
-      }
+      const f = (sc.psf * rec.lotArea) / atTrade;
+      // THE WAIT IS EVERY BIDDER'S COST, THE BUILDER'S INCLUDED. This backed
+      // the queue out for a builder ("a builder who buys is at the front of
+      // the queue: it breaks ground"), so each of the town's builders bid as
+      // if its lot were the best site left. It is not: the town takes up a
+      // class's space at its absorption rate, best sites first, and a
+      // building on the four-hundredth site leases against the three hundred
+      // and ninety-nine better ones — whose builders can let for less and
+      // still earn their margin. Breaking ground early does not move the lot
+      // up the queue; it moves the lease-up to the back of it. So the dirt is
+      // worth its residual on the day its turn comes (Titman 1985; Capozza &
+      // Helsley 1990), the surplus over the marginal site (Ricardo), and a
+      // builder who pays more than that has paid for the better sites'
+      // tenants. Measured on #571 (seed 22, year 10): every surveyed vacant
+      // lot was bid at the no-queue residual, ~1.5x the appraiser's, with
+      // 3.07M sf of industrial sites ahead at 87k sf a year (35 years).
       own = Math.max(0, f * (value / (1 + (builds ? firmMargin(r, s.month) : DEV_MARGIN)) - nonLand));
     }
   }

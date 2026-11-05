@@ -30,6 +30,12 @@ const placebo = {
   },
   land: () => ({ ok: true, msg: `premium ×${(1 + EPS).toFixed(6)}` }),
   expect: [
+    // the labour rows the labour fixes are read against (#570)
+    { obs: "pop", unit: "rel", win: "impact", sign: 0, hi: 0.002, label: "population", want: "nothing" },
+    { obs: "jobs", unit: "rel", win: "impact", sign: 0, hi: 0.002, label: "jobs", want: "nothing" },
+    { obs: "u", unit: "pp", win: "impact", sign: 0, hi: 0.1, label: "unemployment", want: "nothing" },
+    { obs: "vac.multifamily", unit: "pp", win: "impact", sign: 0, hi: 0.1, label: "apartment vacancy", want: "nothing" },
+    { obs: "jobs", unit: "rel", win: "mid", sign: 0, hi: 0.002, label: "jobs, years 3-8", want: "nothing" },
     ...CLASSES.map((k) => ({ obs: `val.${k}`, unit: "rel", win: "impact", sign: 0, hi: 0.02, label: `${k} values, market read (val)`, want: "nothing: any move is the noise floor" })),
     ...CLASSES.map((k) => ({ obs: `inc.${k}`, unit: "rel", win: "year1", sign: 0, hi: 0.02, label: `${k} values, cap read held (inc), first year`, want: "nothing: any move is the noise floor" })),
     ...CLASSES.map((k) => ({ obs: `inc.${k}`, unit: "rel", win: "impact", sign: 0, hi: 0.02, label: `${k} values, cap read held (inc)`, want: "nothing: any move is the noise floor" })),
@@ -39,6 +45,7 @@ const placebo = {
     { obs: "listings", unit: "rel", win: "impact", sign: 0, hi: 0.02, label: "listings", want: "nothing" },
   ],
   charts: [
+    { title: "population", obs: "pop" },
     { title: "office values, sample (market read)", obs: "val.office" },
     { title: "office values, sample (cap read held)", obs: "inc.office" },
   ],

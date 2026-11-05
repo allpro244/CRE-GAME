@@ -3007,7 +3007,13 @@ export function streetLetShare(rec: ParcelRecord, econ: Econ, use: BuiltClass): 
   return Math.max(0, Math.min(1, l / cap));
 }
 
-export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, stabilised = false): number {
+/**
+ * `stabilised`: false — as is (a street building's own roll; else the model's read with the lease-up);
+ * true — the occupancy it runs at once no longer new, the cycle mostly kept (85% of the market's gap);
+ * "natural" — the building's band at the market's own natural vacancy, the cycle and the roll both out:
+ * what an appraiser capitalises before deducting the lease-up (stabilisedIncome).
+ */
+export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, stabilised: boolean | "natural" = false): number {
   // THE STREET'S BUILDINGS HAVE TENANTS NOW (streetRolls.ts). As-is, a
   // standing building the player does not own is exactly as full as its own
   // roll — the tenants a listing discloses and an appraiser counts. What
@@ -3076,7 +3082,7 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, sta
   const sc = tierLive ? overallScore(rec, econ, use) : 50;
   const natHere = tierLive ? scoreNatVac(econ, use, sc) : normalVac(econ, use);
   const vacNow = tierLive ? scoreVacOf(econ, use, sc) : (econ.streetVac?.[use] ?? econ.cityVac?.[use]);
-  let mktDelta = Number.isFinite(vacNow) ? (natHere - (vacNow as number)) * 0.85 : 0;
+  let mktDelta = stabilised !== "natural" && Number.isFinite(vacNow) ? (natHere - (vacNow as number)) * 0.85 : 0;
   // QUALITY SEGMENTS THE MARKET (ECONOMY.md): when the market sheds tenants,
   // the 1928 building sheds ~3x what last year's does — flight to quality is
   // the pain of new supply landing on the oldest competing stock. Applied
@@ -3474,7 +3480,7 @@ export function appraise(bbl: string, value: number): { lo: number; mid: number;
 
 // market-implied NOI before property tax (unowned parcels; also the
 // stabilized case for owned). Tax is capitalized in assetValue.
-export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition, stabilised = false, condIdx?: number): number {
+export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition, stabilised: boolean | "natural" = false, condIdx?: number): number {
   if (rec.class === "land" || !rec.bldgArea) {
     // carry: taxes and insurance bleed on idle land (idleLandCarryRate)
     return -landValue(rec, econ) * idleLandCarryRate(econ);
@@ -4027,8 +4033,13 @@ export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition, 
 function stabilisedIncome(rec: ParcelRecord, econ: Econ, condition: Condition, capY: number, condIdx?: number): number {
   const noiNow = noiYr(rec, econ, condition, false, condIdx);
   if (!econ.cityVac || !econ.landQueue) return noiNow / capY;
-  const natEcon = { ...econ, cityVac: { ...econ.cityVac, ...Object.fromEntries(BUILT_CLASSES.map((k) => [k, normalVac(econ, k)])) } } as Econ;
-  const noiNat = noiYr(rec, natEcon, condition, false, condIdx);
+  // THE BUILDING AT THE MARKET'S NATURAL OCCUPANCY (REAL_ECONOMY_PLAN 2.1,
+  // 2026-11-05). This swapped the city's vacancy for its normal rate — but a
+  // street building's as-is occupancy is its own roll (useOccupancy), which
+  // that swap never touched: noiNat equalled noiNow on 292 of 292 sampled
+  // buildings (seed 11, year 10), so every street building was valued as if
+  // today's roll lasted forever — a 60%-let office (the street's p10) at 60%.
+  const noiNat = noiYr(rec, econ, condition, "natural", condIdx);
   const gap = noiNat - noiNow;
   if (!(Math.abs(gap) > 0)) return noiNow / capY;
   const rc = Math.log(1 + capY);
@@ -4037,15 +4048,21 @@ function stabilisedIncome(rec: ParcelRecord, econ: Econ, condition: Condition, c
     const yrs = LEASE_TERM_M[use] / 24;
     return noiNat / capY - gap * (1 - Math.exp(-rc * yrs)) / rc;
   }
+  // THE LEASE-UP IS THIS BUILDING'S, at the pace the market lets space: its
+  // own shortfall from natural occupancy over the share of the class's stock
+  // the market absorbs a year (`landQueue.absYr`, five trailing years of gross
+  // absorption). It was the CITY's excess over the city's absorption, so a
+  // half-empty building in a market at its normal rate had no lease-up to
+  // deduct, and one full building in a glut was charged the glut's.
   const h = econ.history ?? [];
   const stock = h.length ? (h[h.length - 1].stock?.[use] ?? 0) : 0;
-  const excess = Math.max(0, ((econ.cityVac[use] ?? normalVac(econ, use)) - normalVac(econ, use)) * stock);
   const absYr = econ.landQueue[use]?.absYr ?? 0;
   // PV of a loss that starts at `gap` and falls linearly to zero over T years:
   // gap * (1/r - (1 - e^{-rT}) / (r^2 T)). T -> infinity is gap / r, today's
   // income capitalised; T -> 0 is nothing.
-  if (!(absYr > 0)) return noiNow / capY;
-  const T = excess / absYr;
+  if (!(absYr > 0) || !(stock > 0)) return noiNow / capY;
+  const short = Math.max(0, useOccupancy(rec, econ, use, "natural") - useOccupancy(rec, econ, use, false));
+  const T = short / (absYr / stock);
   const lossPv = T > 0 ? gap * (1 / rc - (1 - Math.exp(-rc * T)) / (rc * rc * T)) : 0;
   return noiNat / capY - lossPv;
 }

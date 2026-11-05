@@ -671,6 +671,8 @@ const LAND_Q0 = 0.20;
 const Q_PRIOR_YRS = 5;
 /** Huber's tuning constant (Huber 1964): 95% efficiency at the normal. A statistical constant, not a fit. */
 const HUBER_K = 1.345;
+/** E[psi(Z)^2] for Huber's psi at HUBER_K, Z standard normal: the consistency factor of the Huber scale (a statistical constant). */
+const HUBER_PSI2 = 0.7102;
 /** Closed years' means kept for the volatility record. */
 const YRS_KEPT = 40;
 /** The standard lot a land read is quoted for: 25 x 100 ft, the Manhattan standard lot. */
@@ -904,12 +906,32 @@ export function tickLocBeliefs(e: Econ): void {
     const lc = Math.log(incC / stC);
     const prev = seen[k];
     if (!prev) { seen[k] = { li: inc, lc, g: inc.map(() => 0), v: inc.map(() => 0), n: 0 }; continue; }
+    // A MONTH THAT IS ONE BUILDING, NOT THE SUBMARKET, IS WEIGHED AS AN OUTLIER.
+    // A band of one or two sheds goes from let to empty and back as a single
+    // tenant moves, and in logs an empty band is a fall of thirteen (the 1e-6
+    // guard above): measured on seed 11 at year 13 (#572's engine), two
+    // industrial bands holding 7% of the stock had remembered swings of 640
+    // and 890 points a year, the class's centre stood at 43 against the 19-25
+    // of the bands holding the rest, and those were credited 6 points of
+    // yield — a required yield under 1%, and an industrial cap read of 1.3%.
+    // A buyer reading a submarket's record weighs a month against how far
+    // that submarket usually moves, as the appraisers weigh a comp (apprSee):
+    // Huber's psi at k = 1.345 on the band's own scale (or the class's,
+    // where the band's own is calmer or not yet known), the robust recursive
+    // estimate of Masreliez & Martin (1977), with the variance divided by
+    // E[psi(Z)^2] = 0.7102 so a normal record reads at its true size.
+    const fill = 1 - Math.pow(1 - a, Math.max(1, prev.n));
+    let vPool = 0, wPool = 0;
+    for (let b = 0; b < inc.length; b++) if (bk.stock[b] > 0 && prev.v[b] > 0) { vPool += prev.v[b] * bk.stock[b]; wPool += bk.stock[b]; }
+    vPool = wPool > 0 ? vPool / wPool : 0;
     for (let b = 0; b < inc.length; b++) {
       // a band too thin to measure, or one that only just came into being, says nothing this month
       if (!Number.isFinite(inc[b]) || !Number.isFinite(prev.li[b]) || bk.stock[b] < 0.005 * stC) continue;
-      const d = (inc[b] - prev.li[b]) - (lc - prev.lc);
+      const d0 = (inc[b] - prev.li[b]) - (lc - prev.lc);
+      const sc = Math.sqrt(Math.max(prev.v[b], vPool) / fill);
+      const d = sc > 0 ? clamp(d0, -HUBER_K * sc, HUBER_K * sc) : d0;
       prev.g[b] += a * (d - prev.g[b]);
-      prev.v[b] += a * (d * d - prev.v[b]);
+      prev.v[b] += a * ((sc > 0 ? d * d / HUBER_PSI2 : d * d) - prev.v[b]);
     }
     prev.li = inc; prev.lc = lc; prev.n++;
   }

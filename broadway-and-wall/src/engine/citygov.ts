@@ -74,10 +74,37 @@ const SERVICES_PC = 1_400;
 const PER_PUPIL = 15_600;
 /** Public K-12 pupils per resident under 18 (NCES: 49.6M enrolled / ~73M children). */
 const PUPILS_PER_CHILD = 0.68;
-/** Non-local share of school revenue: state 45% + federal 11% (NCES, FY2021). */
-const AID_SCHOOL = 0.55;
 /** State revenue sharing toward general government: a few per cent of municipal spending (Census, intergovernmental revenue). */
 const AID_GENERAL = 0.04;
+/**
+ * SCHOOL AID IS EQUALISING (REAL_ECONOMY_PLAN 1b, 2026-11-05). Most states pay
+ * schools on a FOUNDATION formula: the state makes up what a district's
+ * schools cost beyond a required local effort on its own property, so a
+ * district rich in property gets little. The national average share, state
+ * 45% + federal 11% (NCES, FY2021), is what that formula pays the average
+ * district; paid at that share
+ * to an island with $343k of commercial value a resident it was $6.75M a year,
+ * more than the year-10 surplus. The required effort is the one under which
+ * the average district gets the average share: local school revenue ~45% of
+ * ~$775B of K-12 current spending (NCES FY2022) over ~$67T of US real estate
+ * (Fed Z.1 households' real estate ~$45T + commercial ~$21T, Nareit) ≈ 0.52%
+ * of market value [S]. Federal money is not equalised: a floor of 11% (NCES,
+ * FY2021) [S].
+ */
+const SCHOOL_LOCAL_EFFORT = 0.0052, AID_SCHOOL_FEDERAL = 0.11;
+/**
+ * WHAT IT COSTS TO SERVE THE BUILDINGS (REAL_ECONOMY_PLAN 1b). SERVICES_PC is
+ * the nation's municipal spending over its residents, so it already carries
+ * the nation's average commercial stock per resident — about $62k (~$20.7T of
+ * US commercial real estate, Nareit 2021, over 332M) [S]. A downtown holds
+ * several times that, and police, fire, streets and sanitation for its
+ * buildings and its daytime crowd are paid whether or not anyone sleeps there.
+ * Cost-of-community-services studies put commercial and industrial land at a
+ * median $0.30 of services per $1 of revenue it pays (American Farmland Trust,
+ * >150 studies) [S]; at the statutory rate that is 0.30 x TAX_RATE a year on
+ * the commercial value above the national average per resident.
+ */
+const NAT_COMM_PC = 62_000, COCS_COMMERCIAL = 0.30;
 /**
  * Current charges — sewer and refuse fees, parking, permits, park fees, fines:
  * about $890 a resident (Census 2021 local current charges ex-utilities and
@@ -166,8 +193,8 @@ const CLOSE_SPREAD = 3.0, SHUT_SPREAD = 1.25;
 const STATE_SPREAD = 1.0;
 /** A capital programme the market will not fund shrinks to the emergencies (New York's capital spending fell by more than half after 1975). */
 const DEFERRED = 0.4;
-/** Rails — guards, not targets; bind rates are in the hist rows. */
-const PROP_LO = 0.5, PROP_HI = 2.5, WAGE_HI = 0.05, SERVICE_LO = 0.6, SERVICE_HI = 1.2;
+/** Rails — guards, not targets; bind rates are in the hist rows. PROP_LO was 0.5 and held the rate at 0.55% from year 3 in every seed (REAL_ECONOMY_PLAN 1b): the budget sets the rate now, and the floor is only non-negativity. */
+const PROP_LO = 0, PROP_HI = 2.5, WAGE_HI = 0.05, SERVICE_LO = 0.6, SERVICE_HI = 1.2;
 /** What a council will move in one budget: a twelfth of the property rate, half a point of payroll tax, 6% of services. */
 const STEP_PROP = 0.12, STEP_WAGE = 0.005, STEP_SERVICE = 0.06;
 /**
@@ -384,7 +411,9 @@ function computeLines(s: GameState, g: CityGov, capital: number, transferBase: n
   // What is provided: the council's service level on top of what residents at
   // this income ask for (Wagner), each unit priced at the town's wage (Baumol).
   const q = P.service * Math.pow(Math.max(0.2, g.incEma ?? 1), WAGNER_ELAST);
-  L.spend.services = SERVICES_PC * pop * w * q / 12;
+  const roll = marketRoll(e);
+  // residents' services, and the buildings' beyond what the national average carries per resident
+  L.spend.services = (SERVICES_PC * pop * w + COCS_COMMERCIAL * TAX_RATE * Math.max(0, roll.commercial - NAT_COMM_PC * pop * w)) * q / 12;
   L.spend.schools = PER_PUPIL * kids * PUPILS_PER_CHILD * w * q / 12;
   const payroll = LABOR_SHARE * (L.spend.services + L.spend.schools) * 12;
   // The actuarial contribution amortises a surplus as well as a hole — a plan
@@ -397,7 +426,9 @@ function computeLines(s: GameState, g: CityGov, capital: number, transferBase: n
   L.rev.sales = pop * TAXABLE_SALES_PC * w * P.salesRate / 12;
   L.rev.transfer = transferBase * P.transferRate;
   L.rev.fees = FEES_PC * pop * w * q / 12;
-  L.rev.aid = AID_SCHOOL * L.spend.schools + AID_GENERAL * L.spend.services;
+  // the state makes up what the schools cost beyond the district's required effort on its own property (never under the federal share)
+  const schoolAid = Math.max(AID_SCHOOL_FEDERAL * L.spend.schools, L.spend.schools - SCHOOL_LOCAL_EFFORT * (roll.commercial + roll.homes) / 12);
+  L.rev.aid = schoolAid + AID_GENERAL * L.spend.services;
   L.rev.interest = Math.max(0, g.cash) * Math.max(0, e.shortIndex ?? e.indexRate) / 100 / 12;
   return L;
 }

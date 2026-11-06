@@ -51,7 +51,7 @@ import { programmeSf, queueSupplyProject, rescheduleSupplyProject, stallSupplyPr
 import { recordPropertyEvent, noteTenantMove } from "./history";
 import { sizeAreaScale } from "./cityscale";
 import { money } from "./money";
-import { FUND_INVEST_M, FUND_PREF, FUND_PROMOTE } from "./fund";
+import { FUND_INVEST_M, FUND_MGMT_FEE, FUND_PREF, FUND_PROMOTE } from "./fund";
 import { observe, yearOfWatching } from "./competitorReads";
 import { logFirm, milestone } from "./firmLog";
 import { developmentProForma, marketConstructionQuote, underwritingEcon } from "./proforma";
@@ -917,7 +917,6 @@ export function claimJob(
 ): Rival | null {
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return null;
-  const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   const shared = underwriting
     ? { plan: underwriting, clears: underwriting.ltcMax > 0 }
     : underwriteDevelopment(s, parcels, bbl, use, floors, cityCoverage(use));
@@ -983,20 +982,26 @@ export function claimJob(
     // warehouse on the fringe because the city's pipeline offered one.
     const suit = r.sheet ? Math.min(1.6, fitOf(s, parcels, r, { ...rec, class: use === "mixed" ? "retail" : use } as ParcelRecord)) : 1;
     if (suit <= 0) return false;
-    if (only) return true;
-    // Named builders should claim a real share of the pipeline. Near the
-    // player is still hotter (comp + tenant risk), but far sites are no longer
-    // a coin-flip against a 0.5× haircut that left them at ~3%.
-    const p = Math.min(0.95, want * ci * (nearPlayer ? 2.6 : 1.35) * suit * deployPressure(s, r));
-    return rng(s, "rivals") < p;
+    return true;
   });
   if (!runners.length) return null;
 
-  // the hungriest of the firms that can actually fund it
+  // THE SITE GOES TO WHOEVER READS IT BEST (2026-11-06). Every builder that
+  // clears its own bar and can fund the job is a bidder for the dirt, and the
+  // one whose pencil carries the most margin over its own hurdle can pay the
+  // most for it — the anonymous merchants included, at the trade margin and
+  // their spread of leans (anonHurdle), because they are most of the market.
+  // A named firm takes the site only when it out-reads them. This replaced a
+  // coin: min(0.95, appetite x credit x 1.35 (2.6 next to the player) x fit x
+  // deployPressure), at its 0.95 cap in 86% of calls, and the winner among
+  // the takers drawn on appetite x cash x a random 0.6-1.4.
   let best = runners[0], bestW = -Infinity;
-  if (!only) for (const r of runners) {
-    const w = paramsOf(r).build * (r.cash / Math.max(1, dayOneOf(r) * sponsorShareOf(s, r))) * (0.6 + rng(s, "rivals") * 0.8);
-    if (w > bestW) { bestW = w; best = r; }
+  if (!only) {
+    for (const r of runners) {
+      const w = firmHurdle(s, r, plan, use);
+      if (w > bestW) { bestW = w; best = r; }
+    }
+    if (!(bestW > anonHurdle(s, plan, use, financeable))) return null;
   }
 
   // A groundbreak says what a builder builds, and how big.
@@ -5524,18 +5529,37 @@ export function firmMaxPrice(s: GameState, r: Rival, rec: ParcelRecord): number 
   return view ? maxPrice(s.econ, view, bidderOf(s, r, rec), beliefSignals(s, r)).max : 0;
 }
 /**
- * DRY POWDER BURNS A HOLE. A fund that raised money and has not found a
- * building is paid to deploy it: every year it sits on an empty book its
- * committee bends a little more — it hunts harder (up to 3x) and takes up to
- * a point and a half less spread. Without it a small, picky fund sat on its
- * cash for five years, began paying it back, and was wound up two years later
- * having never made a deal (6 of ~50 firms a town, all at month 84). Returns
- * 1 for a firm with a book, or one that was never a raised fund.
+ * DRY POWDER BURNS A HOLE — on the fund's own terms (2026-11-06). A fund
+ * that raised money and has not found a building is paid to deploy it: the
+ * sponsor's fee and its promote are earned on capital invested, and what is
+ * uncalled when the investment period closes (FUND_INVEST_M) is gone. So
+ * the committee bends as the deadline nears: `deployRamp` is the share of
+ * the investment period spent with an empty book, 0 at the close and 1 at
+ * the deadline, and nothing after it (there is no more money to deploy).
+ *
+ * This replaced 1 + min(2, (age - 6) / 24), which reached its cap at month
+ * 54 and sat there for as long as the fund lived — at its bound in 71.5% of
+ * calls (rail audit #9). Returns 0 for a firm with a book, or one that was
+ * never a raised fund.
  */
+export function deployRamp(s: GameState, r: Rival): number {
+  if (r.bbls.length || r.uncalled === undefined) return 0;
+  if ((s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned)) return 0;
+  const age = s.month - (r.bornM ?? 0);
+  return age >= 0 && age < FUND_INVEST_M ? age / FUND_INVEST_M : 0;
+}
+/**
+ * How much less a fund with an empty book asks of a deal, in points: the
+ * management fee it earns on each dollar it invests (FUND_MGMT_FEE, 1.25%
+ * a year, on invested capital once the period closes) — the most a sponsor
+ * can give up and still be paid to deploy — scaled by the deadline.
+ */
+export function deployDiscountPp(s: GameState, r: Rival): number {
+  return 100 * FUND_MGMT_FEE * deployRamp(s, r);
+}
+/** How much harder a fund with an empty book hunts: up to three times its ordinary calls at the deadline. Shape, stated. */
 export function deployPressure(s: GameState, r: Rival): number {
-  if (r.bbls.length || r.uncalled === undefined) return 1;
-  if ((s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned)) return 1;
-  return 1 + Math.min(2, Math.max(0, s.month - (r.bornM ?? 0) - 6) / 24);
+  return 1 + 2 * deployRamp(s, r);
 }
 /** A firm whose sheet buys dirt to hold for the town to grow into. */
 export const landBanker = (r: Rival) => !!r.sheet && r.sheet.land >= 70;
@@ -5759,7 +5783,7 @@ export function rivalBuys(
     // what nobody else can finance is its whole strategy (up to ~1.4 points
     // at Cycle 0 in a credit crunch).
     const contrarianBid = Math.max(0, st.contra) * shut * 2;
-    const need = builds ? 0 : paramsOf(r).hurdle - 0.75 * (deployPressure(s, r) - 1) - contrarianBid;
+    const need = builds ? 0 : paramsOf(r).hurdle - deployDiscountPp(s, r) - contrarianBid;
     // WHAT AND WHERE (COMPETITORS_PLAN.md §2): 1 for a firm with no sheet.
     const fit = fitOf(s, parcels, r, rec, isDistress);
     if (fit <= 0) continue;

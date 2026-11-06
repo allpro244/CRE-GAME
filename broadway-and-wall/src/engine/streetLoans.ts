@@ -55,7 +55,7 @@ import { holderOf } from "./owners";
 import type { Holder } from "./owners";
 import { holderNoteTerms, holderCfads, HOLDER_AMORT_M } from "./ownership";
 import { deskQuotes } from "./rivalDebt";
-import { productById, singleNameCap } from "./debt";
+import { productById, nameLimit } from "./debt";
 import { chargeLenderLoss, reoAsk, bookShareOf, targetCapital } from "./lenders";
 import { cityLoanBook, deskTotals } from "./loanbook";
 import { NOTICE_M, FORECLOSE_M } from "./workout";
@@ -112,7 +112,7 @@ function roomOf(s: GameState, lender: string, holderId: string, replacing = 0): 
   const book = Math.max(0, l.book) - replacing;
   let exposure = -replacing;
   for (const x of Object.values(s.streetLoans ?? {})) if (x.lender === lender && x.holderId === holderId) exposure += x.balance * (x.share ?? 1);
-  const nameRoom = Math.max(book, 20_000_000 * (s.econ.priceLevel ?? 1) * 0.25) * singleNameCap(l.kind) - exposure;
+  const nameRoom = nameLimit(l, Math.max(book, 20_000_000 * (s.econ.priceLevel ?? 1) * 0.25)) - exposure;
   return Math.min(nameRoom, l.capital / Math.max(0.01, targetCapital(l.name)) - book);
 }
 
@@ -123,7 +123,7 @@ export function deskHasRoom(s: GameState, lender: string, holderId: string, amou
   let exposure = 0;
   for (const x of Object.values(s.streetLoans ?? {})) if (x.lender === lender && x.holderId === holderId) exposure += x.balance * (x.share ?? 1);
   exposure -= replacing;
-  const nameRoom = Math.max(book, 20_000_000 * (s.econ.priceLevel ?? 1) * 0.25) * singleNameCap(l.kind) - exposure;
+  const nameRoom = nameLimit(l, Math.max(book, 20_000_000 * (s.econ.priceLevel ?? 1) * 0.25)) - exposure;
   const capRoom = l.capital / Math.max(0.01, targetCapital(l.name)) - book;
   return Math.min(nameRoom, capRoom) >= amount;
 }
@@ -265,7 +265,7 @@ function readHolders(s: GameState, parcels: ParcelTable) {
     for (const l of live) {
       const target = all * bookShareOf(l.name, l.kind) / shareSum;
       room.set(l.name, target - (named[l.name]?.named ?? 0));
-      nameCap.set(l.name, target * singleNameCap(l.kind));
+      nameCap.set(l.name, nameLimit({ kind: l.kind, book: target, capital: target * targetCapital(l.name) }));
     }
     fresh.sort((a, b) => hash01(a.d.bbl + ":seed") - hash01(b.d.bbl + ":seed"));
     for (const f of fresh) {

@@ -32,9 +32,9 @@
 //
 // Nothing here draws on the RNG stream.
 import type { CityLoan, GameState, Rival } from "./types";
-import { productById, quote, REFI_FEE, singleNameCap, windowOpen, CAP_TERM_M, type StabView } from "./debt";
+import { productById, quote, REFI_FEE, nameLimit, windowOpen, CAP_TERM_M, type StabView } from "./debt";
 import { capPremiumOn } from "./amortize";
-import { targetCapital } from "./lenders";
+import { chargeLenderLoss, targetCapital } from "./lenders";
 import type { Lender } from "./lenders";
 import { LOC_SPREAD } from "./credit";
 import { bankRatePct, liveSpread } from "./pricing";
@@ -188,10 +188,16 @@ export function deskWithRoom(s: GameState, obligorId: string, amount: number): b
       if (r.id === obligorId) a.exposure += r.lineBal!;
     }
   }
+  // The construction loans are loans to the same borrower (12 CFR 32.2(q)).
+  for (const j of s.cityJobs ?? []) {
+    if (j.firmId !== obligorId || !(j.debt ?? 0) || !j.lender) continue;
+    const a = acc.get(j.lender);
+    if (a) a.exposure += j.debt!;
+  }
   for (const l of lenders) {
     if (l.failedM !== undefined) continue;
     const a = acc.get(l.name)!;
-    const nameRoom = l.book * singleNameCap(l.kind) - a.exposure;
+    const nameRoom = nameLimit(l) - a.exposure;
     const room = l.capital / Math.max(0.01, targetCapital(l.name)) - l.book;
     if (Math.min(nameRoom, room) >= amount) return true;
   }
@@ -214,7 +220,8 @@ export function deskRoom(s: GameState, l: Lender, obligorId: string, opening = f
       if (r.id === obligorId) exposure += r.lineBal!;
     }
   }
-  const nameRoom = l.book * singleNameCap(l.kind) - exposure;
+  for (const j of s.cityJobs ?? []) if (j.firmId === obligorId && j.lender === l.name) exposure += j.debt ?? 0;
+  const nameRoom = nameLimit(l) - exposure;
   const room = opening
     ? l.book * 0.75 - onDesk
     : l.capital / Math.max(0.01, targetCapital(l.name)) - l.book;
@@ -242,11 +249,17 @@ function deskRooms(s: GameState, obligorId: string, opening: boolean): Map<Lende
       if (r.id === obligorId) a.exposure += r.lineBal!;
     }
   }
+  // The construction loans are loans to the same borrower (12 CFR 32.2(q)).
+  for (const j of s.cityJobs ?? []) {
+    if (j.firmId !== obligorId || !(j.debt ?? 0) || !j.lender) continue;
+    const a = acc.get(j.lender);
+    if (a) a.exposure += j.debt!;
+  }
   const out = new Map<Lender, number>();
   for (const l of s.lenders ?? []) {
     if (l.failedM !== undefined) { out.set(l, 0); continue; }
     const a = acc.get(l.name)!;
-    const nameRoom = l.book * singleNameCap(l.kind) - a.exposure;
+    const nameRoom = nameLimit(l) - a.exposure;
     const room = opening
       ? l.book * 0.75 - a.onDesk
       : l.capital / Math.max(0.01, targetCapital(l.name)) - l.book;
@@ -529,7 +542,16 @@ export function settleSale(s: GameState, r: Rival, bbl: string, price: number): 
   if (row) {
     delete s.cityLoans![bbl];
     loanBookTouched();
-    if (row.balance > price) addToLine(s, r, row.balance - price);
+    // A SHORT SALE'S SHORTFALL IS THE MORTGAGE LENDER'S (2026-11-06). The
+    // street's income paper is non-recourse (rivals.ts deedInLieu): what the
+    // price does not cover is its holder's loss, booked against its own share.
+    // It used to move onto the firm's corporate line — a different bank's
+    // book, with no limit, so a life company's short paper became a hometown
+    // bank's exposure. A land loan is recourse and stays owed, on the line.
+    if (row.balance > price) {
+      if (row.klass === "land") addToLine(s, r, row.balance - price);
+      else chargeLenderLoss(s, row.lender, Math.round((row.balance - price) * (row.share ?? 1)), { borrower: r.name, id: r.id, bbl, cls: "income", how: "short sale" });
+    }
   }
   const fromLine = relief - Math.min(price, row?.balance ?? 0);
   r.lineBal = Math.max(0, (r.lineBal ?? 0) - fromLine);

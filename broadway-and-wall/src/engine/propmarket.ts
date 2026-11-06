@@ -1716,6 +1716,37 @@ export function tickLandRead(s: GameState): void {
  * placed on the measured scatter, not on any outcome.
  */
 const LAND_SURVEY_LOTS = 24;
+/**
+ * ONE PANEL, AND EACH LOT AGAINST ITSELF (2026-11-07). The survey used to be
+ * re-drawn every year from whatever lots were vacant, and a lot nobody bid on
+ * was simply left out. In a weak year the 24-lot survey shrank to the 3-7
+ * prime lots that still drew a bid — and prime lots read the texture level at
+ * 5-8 against 0.3-0.8 for fringe lots, a location gap the grid's location
+ * column, held at its +/-2 guard, could not take out — so the level jumped UP
+ * as the market weakened (seed 33: the survey mean 0.60 -> 1.21 in a year;
+ * the level 1.10 -> 0.65 -> 1.03 -> 1.86), and the appraisers learned those
+ * composition jumps as volatility (a process sd of 0.6-1.1 a year against
+ * the 0.20 prior). Measured over sixteen centuries, the land level carried
+ * 56% of the land index's yearly variance and 65% of its ten-year variance
+ * with no correlation to property values (-0.01 / -0.02 / 0.11 at 1, 5 and
+ * 10 years).
+ *
+ * The panel is now chosen once per city, by location, and a lot stays in it
+ * while it is vacant (a built one is replaced by the nearest vacant lot by
+ * location). Each lot's indication is read against its own record — its mean
+ * log gap to the level over its past surveys — so the level moves on the
+ * matched change of the same lots between surveys, and a lot with no bid
+ * this year is simply out of this year's change (the repeat-sales and
+ * matched-sample construction: Bailey, Muth & Nourse 1963; Case & Shiller
+ * 1987; the MSCI/IPD matched-sample indices). A lot's first survey has no
+ * record, so it reads through the grid as before and starts one. A lot's
+ * record weighs its last ten surveys or so (each older one 0.9 of the next:
+ * a shape parameter, so a rezoned or re-rated lot re-learns within a decade).
+ */
+const LAND_FE_KEEP = 0.9;
+function surveyLot(rec: ParcelRecord | undefined | null): rec is ParcelRecord {
+  return !!rec && (rec.class === "land" || !(rec.bldgArea > 0)) && rec.lotArea > 0 && !rec.ag && !rec.homeLot && !rec.tract;
+}
 export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
   if (s.month % 12 !== 6) return;
   const firms = livingRivals(s).filter((r) => !r.stressMs && r.failedM === undefined && (paramsOf(r).build > 0 || landBanker(r)));
@@ -1723,15 +1754,36 @@ export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
   const recs: ParcelRecord[] = [];
   for (const bbl of Object.keys(parcels)) {
     const rec = resolveRec(parcels, s, bbl);
-    if (rec && (rec.class === "land" || !(rec.bldgArea > 0)) && rec.lotArea > 0 && !rec.ag && !rec.homeLot && !rec.tract) recs.push(rec);
+    if (surveyLot(rec)) recs.push(rec);
   }
   if (!recs.length) return;
   recs.sort((a, b) => a.demandScore - b.demandScore || (a.bbl < b.bbl ? -1 : 1));
   const want = LAND_SURVEY_LOTS;
-  const step = Math.max(1, Math.floor(recs.length / want));
+  const sv = (s.econ.landSurvey ??= { lots: [], fe: {} });
+  if (!sv.lots.length) {
+    const step = Math.max(1, Math.floor(recs.length / want));
+    for (let i = Math.floor(step / 2); i < recs.length && sv.lots.length < want; i += step) sv.lots.push(recs[i].bbl);
+  }
+  // a lot built on, merged or retired from the dirt leaves the panel for the
+  // nearest vacant lot by location that is not already in it
+  const inPanel = new Set(sv.lots);
+  for (let k = 0; k < sv.lots.length; k++) {
+    const cur = resolveRec(parcels, s, sv.lots[k]);
+    if (surveyLot(cur) && !s.merged?.[sv.lots[k]]) continue;
+    const ds = cur?.demandScore ?? parcels[sv.lots[k]]?.demandScore ?? 50;
+    let pick: ParcelRecord | undefined, gap = Infinity;
+    for (const r of recs) {
+      if (inPanel.has(r.bbl) || s.merged?.[r.bbl]) continue;
+      const d = Math.abs(r.demandScore - ds);
+      if (d < gap || (d === gap && pick && r.bbl < pick.bbl)) { gap = d; pick = r; }
+    }
+    delete sv.fe[sv.lots[k]];
+    if (pick) { inPanel.delete(sv.lots[k]); sv.lots[k] = pick.bbl; inPanel.add(pick.bbl); }
+  }
   let n = 0;
-  for (let i = Math.floor(step / 2); i < recs.length && n < want; i += step) {
-    const rec = recs[i];
+  for (const bbl of sv.lots) {
+    const rec = resolveRec(parcels, s, bbl);
+    if (!surveyLot(rec)) continue;
     const maxes = firms.map((r) => landMaxPrice(s, r, rec)).filter((m) => m > 0).sort((a, b) => b - a);
     if (!maxes.length) continue;
     // WHAT THE LOT WOULD CLEAR AT: the second-best number, as the cap survey
@@ -1746,8 +1798,20 @@ export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
     // not the lots the level itself makes texture-priced: see below)
     const mark = landRead(rec, s.econ).texture * rec.lotArea;
     const L = mark > 0 ? s.econ.landIdx * px / mark : NaN;
-    if (Number.isFinite(L) && L > 0) { pushLandPrint(s, { m: s.month, L, w: 0.5, kind: "s", x: landX(rec) }); n++; }
+    if (!(Number.isFinite(L) && L > 0)) continue;
+    const fe = sv.fe[bbl];
+    // against its own record (the reference lot: no location or size column
+    // left to price), or through the grid on its first survey
+    if (fe && fe.n > 0) pushLandPrint(s, { m: s.month, L: L * Math.exp(-fe.sum / fe.n), w: 0.5, kind: "s", x: [0.5, 0] });
+    else pushLandPrint(s, { m: s.month, L, w: 0.5, kind: "s", x: landX(rec) });
+    const gapNow = Math.log(L) - landIndex(s).x;
+    if (Number.isFinite(gapNow)) {
+      const keep = fe ? LAND_FE_KEEP : 0;
+      sv.fe[bbl] = { sum: +((fe?.sum ?? 0) * keep + gapNow).toFixed(5), n: +((fe?.n ?? 0) * keep + 1).toFixed(5) };
+    }
+    n++;
   }
+  void n;
 }
 
 /** For the UI: the read's line, numbers first. */

@@ -2388,6 +2388,13 @@ export interface Econ {
   capIdx?: Partial<Record<BuiltClass, ApprIndex>>;
   landIx?: ApprIndex;
   /**
+   * THE BROKER'S LAND PANEL (propmarket.ts tickLandSurvey): the survey lots,
+   * fixed per city, and each lot's own record against the level — the sum and
+   * count of log(indication / level) over its surveys — so the level moves on
+   * matched lot-by-lot changes.
+   */
+  landSurvey?: { lots: string[]; fe: Record<string, { sum: number; n: number }> };
+  /**
    * WHAT BUYERS HAVE SEEN OF EACH SUBMARKET (propmarket.ts tickLocBeliefs):
    * per class and quality band (`bands` — address and building blended), the
    * band's income (rent swing x occupancy) last month in logs (`li`), and a

@@ -477,11 +477,32 @@ export function singleNameCap(kind: string | undefined): number {
   return kind === "bank" ? 0.12 : kind === "life" ? 0.30 : kind === "conduit" ? 0.30 : 0.35;
 }
 
+/**
+ * THE MOST ONE DESK MAY HOLD AGAINST ONE BORROWER, in dollars — every loan,
+ * the mortgages, the line and the construction loans together.
+ *
+ * A BANK'S LIMIT IS ITS CAPITAL'S, NOT ITS BOOK'S (2026-11-06). The legal
+ * lending limit (12 CFR 32.3(a)(1), and the state rules modelled on it) is
+ * 15% of the bank's capital and surplus to one borrower; the further 10% of
+ * 32.3(a)(2) needs readily marketable collateral, which real estate is not.
+ * The limit had been 12% of the BOOK: at an 11% capital ratio that is more
+ * than a whole bank's capital on one name, and measured on main (seed 11)
+ * the hometown bank held 0.6-1.4x its capital against single firms from year
+ * three, until one firm's failure wrote off $262M against $149M of capital.
+ * A bank whose capital is impaired has no limit left, which is the law too.
+ * The national books (life, conduit, fund) are limited against balance
+ * sheets the game does not carry, so theirs stays a share of their slice.
+ */
+export const LEGAL_LENDING_LIMIT = 0.15;
+export function nameLimit(l: { kind?: string; book: number; capital: number }, book = l.book): number {
+  if (l.kind === "bank") return LEGAL_LENDING_LIMIT * Math.max(0, l.capital);
+  return Math.max(0, book) * singleNameCap(l.kind);
+}
+
 export function concentrationRoom(s: GameState, p: LoanProduct, klass?: string): { mult: number; capRoom: number; why?: string } {
   const l = lenderByNameLocal(s, p.lender);
   if (!l || l.book <= 0) return { mult: 1, capRoom: Infinity };
-  const nameCap = singleNameCap(l.kind);
-  const capRoom = Math.max(0, l.book * nameCap - l.yours);
+  const capRoom = Math.max(0, nameLimit(l) - l.yours);
   let mult = 1; let why: string | undefined;
   // The class test is a local balance sheet's: a national lender's property-
   // type allocation is set across the country, where this town's office

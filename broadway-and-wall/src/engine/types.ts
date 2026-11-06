@@ -38,6 +38,8 @@ export interface SupplyProject {
   deliverM: number;
   sfByUse: Partial<Record<BuiltClass, number>>;
   status: "active" | "stalled" | "cancelled";
+  /** Counted in this month's starts (econ.brokeMonth) and not yet read out (supply.ts cancelSupplyProject). */
+  broke?: true;
 }
 export const BUILT_CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
 

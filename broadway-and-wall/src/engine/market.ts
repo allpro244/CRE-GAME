@@ -4048,6 +4048,9 @@ export function tickEcon(s: GameState) {
   // ONE QUEUE SETTLES ONCE. Mixed-use projects arrive atomically and a stalled
   // or cancelled physical job cannot leak an anonymous leg into stock.
   const monthDeliveries = settleSupplyDeliveries(s);
+  // The month's starts are read out below; a start unwound after this point
+  // was counted in a month already published (supply.ts cancelSupplyProject).
+  for (const p of e.deliveryQueue ?? []) delete p.broke;
   for (const k of BUILT_CLASSES) {
     const stk = e.stock?.[k] ?? CITY_STOCK[k];
     // Keep the adaptive rent belief for the residual/land market. The decision

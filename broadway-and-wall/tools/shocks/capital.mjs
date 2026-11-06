@@ -76,7 +76,7 @@ const ratesUp = {
     // Charge-offs booked since the shock, against the control's over the same months. Bank CRE net
     // charge-off rates rose about tenfold or more 2021-24 and about thirtyfold 2006-10 (FDIC QBP), so a
     // flow can rise far more than the lifetime total this row once read (hi was 3 on that total).
-    { obs: "chargeOffsNew", unit: "rel", win: "mid", sign: +1, lo: 0.05, hi: 30, label: "lenders' charge-offs since the shock, years 3-8", want: "rise" },
+    { obs: "chargeOffShareNew", unit: "pp", win: "mid", sign: +1, lo: 0.05, hi: 15, tiny: 0.05, label: "lenders' charge-offs since the shock, years 3-8 (% of the book)", want: "rise" },
     { obs: `probe.${UP}.starts`, unit: "rel", win: "mid", sign: -1, lo: -0.8, hi: -0.1, tiny: 0.05, label: "starts, all classes, years 3-8", want: "fall 10-80% after 1-2 years" },
     ...CLASSES.map((k) => ({ obs: `eff.${k}`, unit: "rel", win: "impact", sign: 0, hi: 0.05, label: `${LABEL[k]} effective rent, years 0-3`, want: "barely moves at first (within ±5%); NOI is not the channel" })),
   ],
@@ -201,7 +201,7 @@ const crunch = {
   expect: [
     { obs: `probe.${CRUNCH}.trades`, unit: "rel", win: "impact", sign: -1, lo: -0.85, hi: -0.3, tiny: 0.05, label: "deal volume (sales a month)", want: "collapses 30-85%" },
     { obs: "distress", unit: "rel", win: "impact", sign: +1, lo: 0.3, hi: 5, label: "distressed listings", want: "rise: balloons that cannot refinance" },
-    { obs: "chargeOffsNew", unit: "rel", win: "impact", sign: +1, lo: 0.05, hi: 30, label: "lenders' charge-offs since the shock", want: "rise" },
+    { obs: "chargeOffShareNew", unit: "pp", win: "impact", sign: +1, lo: 0.05, hi: 15, tiny: 0.05, label: "lenders' charge-offs since the shock (% of the book)", want: "rise: US CRE charge-offs ran ~1-3% of loans a year in 2009-11 (FDIC QBP)" },
     { obs: `probe.${CRUNCH}.debt`, unit: "rel", win: "impact", sign: -1, lo: -0.5, hi: -0.05, label: "the street's mortgage book", want: "shrinks as loans pay down and are not rewritten" },
     { obs: "val.office", unit: "rel", win: "impact", sign: -1, lo: -0.45, hi: -0.1, label: "office values", want: "fall 10-45%, more than rents" },
     { obs: "val.multifamily", unit: "rel", win: "impact", sign: -1, lo: -0.4, hi: -0.1, label: "apartment values", want: "fall 10-40%" },

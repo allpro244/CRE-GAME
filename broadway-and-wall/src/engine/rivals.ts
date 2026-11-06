@@ -4496,7 +4496,34 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
     };
     // Renewed at today's terms, and nobody hears about it. If this was
     // extended paper the file closes with it.
-    if (gap <= 0) { renew(); continue; }
+    //
+    // AND A FIRM THAT LEVERS RE-LEVERS (2026-11-06). The balloon is when a
+    // sponsor takes its gains out of a building without selling it: the new
+    // note is sized on today's value, up to the firm's own target — its
+    // style's limit less the cushion its Discipline keeps (rivalBuys reads the
+    // same cushion) — on a desk that will write it, while the whole book stays
+    // under that target. Renewing at the old balance and nothing else let the
+    // street's paper drift to a fifth of value over a generation (seed 11:
+    // median 17-19% on the firms' buildings by year twenty), so a 47% fall in
+    // values cost the lenders nothing. A style that does not take cash out of
+    // its buildings (`cashOut` 0: the family office, the owner-user) rolls
+    // what it owes. This replaces a monthly coin that did the same thing at
+    // random in a loose credit market.
+    if (gap <= 0) {
+      renew();
+      if (st.cashOut > 0 && rec.class !== "land" && rec.bldgArea > 0) {
+        const cushion = Math.max(0.04, r.sheet ? 0.10 * r.sheet.discipline / 100 : 0);
+        const target = st.maxLtv - cushion;
+        const head = Math.round(Math.min(target * v, refi.principal) - due);
+        const bookRoom = Math.round(target * aum - (r.debt ?? 0));
+        const take = Math.min(head, bookRoom);
+        if (take > 250_000 && deskWithRoom(s, r.id, take)) {
+          const row = originateRow(s, r, bbl, take, v, noi, { klass: rec.class, condition: assetGrade(r, rec) });
+          if (row) r.cash += take - streetLoanCost(row, take, row.balance);
+        }
+      }
+      continue;
+    }
 
     // 1. WRITE THE CHEQUE. A balloon is paid before a reserve is kept.
     if (r.cash >= gap) { r.cash -= gap; x.balance -= gap; syncDebt(s, r); renew(); continue; }
@@ -4614,36 +4641,6 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
     deedInLieu(s, parcels, r,
       `Balloon due, no full refinance: ${money(refi.principal)} available vs ${money(due)} outstanding.`, bbl);
     return;   // one workout at a time; the rest of the ladder is next month's problem
-  }
-}
-
-/**
- * A CASH-OUT REFINANCING. The equity comes out of the buildings with the most
- * room under the firm's own covenant — each re-papered at a desk that will
- * write the bigger loan (rivalDebt.originateRow), up to `room` in all.
- */
-function cashOutRefi(s: GameState, parcels: ParcelTable, r: Rival, room: number, ltvCap: number) {
-  const opts: { bbl: string; rec: ParcelRecord; v: number; noi: number; head: number }[] = [];
-  for (const bbl of r.bbls) {
-    const rec = resolveRec(parcels, s, bbl);
-    if (!rec || rec.class === "land" || !(rec.bldgArea > 0)) continue;
-    const row = rowOn(s, r, bbl);
-    if (row?.heldBy) continue;
-    const { v, noi } = markAsset(s, r, rec, true);   // a deal: a fresh appraisal
-    const head = Math.round(Math.min(ltvCap * v, streetRefiProceeds(s, v, noi, ltvCap).principal) - (row?.balance ?? 0));
-    if (head > 250_000) opts.push({ bbl, rec, v, noi, head });
-  }
-  opts.sort((a, b) => b.head - a.head);
-  let left = Math.round(room);
-  for (const o of opts) {
-    if (left <= 250_000) break;
-    const take = Math.min(left, o.head);
-    const row = originateRow(s, r, o.bbl, take, o.v, o.noi, { klass: o.rec.class, condition: assetGrade(r, o.rec) });
-    // A cash-out is a refinancing: the fee on the whole new balance, the new
-    // desk's points on what is drawn, a cap on floating paper — as the
-    // player's refinance charges.
-    r.cash += take - (row ? streetLoanCost(row, take, row.balance) : 0);
-    left -= take;
   }
 }
 
@@ -4956,22 +4953,10 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     }
 
     // --- the overreach ---------------------------------------------------
-    // Cheap money is a temptation and it is supposed to be taken. A firm that
-    // refinances equity out at the top has more to buy with and less to lose
-    // it with — which is exactly the trade that kills them two phases later.
-    //
-    // AND THE DESK HAS TO WRITE THE CHEQUE. This used to invent
-    // `(maxLtv − lev) × aum` of debt with no lender — the same "personality
-    // LTV, no coverage" bug acquisitionLoan already fixed for purchases.
-    // Opportunistic/PE shops printed boom powder no desk would have funded,
-    // then died on the coupon. Cap the cash-out at what `lineRoom` will still
-    // advance against the book's own income.
-    if (st.cashOut > 0 && ci > 1.02 && lev < st.maxLtv - 0.06 && rng(s, "rivals") < 0.06 * st.cashOut) {
-      const styleRoom = Math.round((st.maxLtv - 0.04 - lev) * aum);
-      const deskRoom = Math.max(0, lineRoom(s, r, aum, noiYr, landV));
-      const room = Math.min(styleRoom, deskRoom);
-      if (room > 1_000_000) cashOutRefi(s, parcels, r, room, st.maxLtv - 0.04);
-    }
+    // Cheap money is a temptation and it is taken at the balloon: a firm that
+    // levers re-levers when its paper matures (tickMaturities), on a desk that
+    // will write it. That is where the boom's extra debt comes from now; the
+    // monthly coin that used to take it at random is gone.
 
     // --- taking profits --------------------------------------------------
     // Nobody accumulates for a hundred years without ever selling. A firm

@@ -323,6 +323,18 @@ async function report(dir, landingOnly) {
     // difference from month 0 is the shock's own flow.
     const c0 = r.rows?.[0]?.chargeOffs;
     if (Number.isFinite(c0)) for (const row of r.rows) row.chargeOffsNew = row.chargeOffs - c0;
+    // ...AND AS A SHARE OF THE BOOK THEY CAME OUT OF, graded in points. A loss
+    // count is lumpy and often zero in a control twin, and a relative effect on
+    // a control of zero is not a measurement: the crunch's row dropped the two
+    // seeds whose controls lost nothing (+$4.0M and +$1.2M against $0 by +36
+    // months) and graded the one whose control happened to book a single $21.8M
+    // default, BACKWARDS. Both twins fork from one snapshot, so the month-0
+    // book (the street's first mortgages, probe *.debt) is the same denominator
+    // for both and the difference is the shock's own loss rate.
+    const p0 = r.rows?.[0]?.probe ?? {};
+    const bookKey = Object.keys(p0).find((k) => k.endsWith(".debt") && p0[k] > 0);
+    const book0 = bookKey ? p0[bookKey] : NaN;
+    if (Number.isFinite(c0) && book0 > 0) for (const row of r.rows) row.chargeOffShareNew = (row.chargeOffs - c0) / book0;
     runs.set(`${r.id}|${r.seed}`, r);
   }
   const seeds = [...new Set([...runs.values()].map((r) => r.seed))].sort((a, b) => a - b);

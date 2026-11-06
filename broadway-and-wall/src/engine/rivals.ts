@@ -4538,7 +4538,7 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
     //    nobody extends twice. `ext !== undefined` means this paper has already
     //    been re-papered once and the desk is out of patience.
     const desk = deskFor(s, r, bbl);
-    if (ext === undefined && deskWillExtend(s, desk)) {
+    if (ext === undefined && deskWillExtend(s, desk, 20, { noi, interest: due * x.ratePct / 100 })) {
       // Modification paper is not free, and the point the desk charges is the
       // point it charges the player — `extensionFeePct`, one answer for both
       // borrowers. It is capitalised, which is what a desk does when the

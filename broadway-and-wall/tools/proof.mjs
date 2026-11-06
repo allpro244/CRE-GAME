@@ -35,7 +35,16 @@ const CLASSES = ["office", "retail", "industrial", "multifamily"];
 const COMM = ["office", "retail", "industrial"];
 const mean = (a) => { const b = a.filter(Number.isFinite); return b.length ? b.reduce((s, x) => s + x, 0) / b.length : NaN; };
 const q = (a, p) => { const b = a.filter(Number.isFinite).sort((x, y) => x - y); return b.length ? b[Math.min(b.length - 1, Math.floor(p * b.length))] : NaN; };
-const median = (a) => q(a, 0.5);
+// THE MIDDLE OF AN EVEN COUNT IS THE MEAN OF ITS TWO MIDDLE VALUES. q(a, 0.5)
+// returns the upper of the two, so a two-seed run reported its higher seed as
+// "typical" (two seeds at 1.45 and 2.00 recessions a decade read 2.00, FAIL,
+// with a two-seed mean of 1.73), and a median of four classes read the third.
+const median = (a) => {
+  const b = a.filter(Number.isFinite).sort((x, y) => x - y);
+  if (!b.length) return NaN;
+  const h = b.length >> 1;
+  return b.length % 2 ? b[h] : (b[h - 1] + b[h]) / 2;
+};
 const sd = (a) => { const m = mean(a); const b = a.filter(Number.isFinite); return b.length > 1 ? Math.sqrt(b.reduce((s, x) => s + (x - m) ** 2, 0) / (b.length - 1)) : NaN; };
 const growth = (a, b, n) => (a > 0 && b > 0 && n > 0) ? Math.pow(b / a, 1 / n) - 1 : NaN;
 
@@ -203,20 +212,72 @@ function grade(c) {
   return "FAIL";
 }
 
-/** lag (years) at which yearly starts correlate best with yearly demand (jobs growth): + = starts follow demand */
-function leadLag(xs, ys, maxLag = 5) {
-  let best = { lag: NaN, r: -Infinity };
-  for (let L = -maxLag; L <= maxLag; L++) {
-    const a = [], b = [];
-    for (let i = 0; i < xs.length; i++) { const j = i + L; if (j >= 0 && j < ys.length && Number.isFinite(xs[i]) && Number.isFinite(ys[j])) { a.push(xs[i]); b.push(ys[j]); } }
-    if (a.length < 10) continue;
-    const ma = mean(a), mb = mean(b);
-    let sab = 0, saa = 0, sbb = 0;
-    for (let i = 0; i < a.length; i++) { sab += (a[i] - ma) * (b[i] - mb); saa += (a[i] - ma) ** 2; sbb += (b[i] - mb) ** 2; }
-    const r = sab / Math.sqrt(saa * sbb || 1);
-    if (r > best.r) best = { lag: L, r };
+/**
+ * A LAG THAT IS THERE, OR NONE. leadLag returns the argmax of a correlation
+ * curve with no floor, so it names a lag even when every lag correlates
+ * negatively (the vacancy-after-starts row read the least-negative lag at the
+ * window's edge on 10 of 14 seed-runs) and when the curve is noise (both lag
+ * rows scored as well on mismatched worlds, seed 11's x against seed 22's y,
+ * as on the true pairing). This is the standard construction instead:
+ * stationary series in, lags in the hypothesis's direction only, each seed's
+ * curve pooled by the Fisher-z mean, and the peak kept only if it clears twice
+ * the pooled Bartlett standard error (Bartlett 1935; Box & Jenkins 1976 ch.
+ * 11; Granger & Newbold 1974 on trending levels). A peak that does not clear
+ * it reads "no structure": NaN, graded FAIL.
+ */
+const detrend = (a) => {
+  const p = a.map((v, i) => [i, v]).filter(([, v]) => Number.isFinite(v));
+  if (p.length < 3) return a.map(() => NaN);
+  const mx = mean(p.map((z) => z[0])), my = mean(p.map((z) => z[1]));
+  let sxy = 0, sxx = 0; for (const [x, v] of p) { sxy += (x - mx) * (v - my); sxx += (x - mx) ** 2; }
+  const b = sxx > 0 ? sxy / sxx : 0;
+  return a.map((v, i) => Number.isFinite(v) ? v - my - b * (i - mx) : NaN);
+};
+const acfAt = (a, j) => {
+  const b = a.filter(Number.isFinite); const m = mean(b); let n = 0, d = 0;
+  for (let i = 0; i < b.length; i++) { d += (b[i] - m) ** 2; if (i + j < b.length) n += (b[i] - m) * (b[i + j] - m); }
+  return d > 0 ? n / d : 0;
+};
+/** Bartlett's large-sample variance of a cross-correlation between two autocorrelated series. */
+const bartlettVar = (x, y) => {
+  const n = Math.min(x.filter(Number.isFinite).length, y.filter(Number.isFinite).length);
+  if (n < 10) return NaN;
+  let s = 1; for (let j = 1; j < Math.floor(n / 4); j++) s += 2 * acfAt(x, j) * acfAt(y, j);
+  return Math.max(s, 1) / n;
+};
+const corrAtLag = (xs, ys, L) => {
+  const a = [], b = [];
+  for (let i = 0; i < xs.length; i++) { const j = i + L; if (j >= 0 && j < ys.length && Number.isFinite(xs[i]) && Number.isFinite(ys[j])) { a.push(xs[i]); b.push(ys[j]); } }
+  if (a.length < 10) return NaN;
+  const ma = mean(a), mb = mean(b);
+  let sab = 0, saa = 0, sbb = 0;
+  for (let i = 0; i < a.length; i++) { sab += (a[i] - ma) * (b[i] - mb); saa += (a[i] - ma) ** 2; sbb += (b[i] - mb) ** 2; }
+  return sab / Math.sqrt(saa * sbb || 1);
+};
+/** pooled across seeds: `pair(run)` returns [x, y]; y following x by L years for L in 0..maxLag */
+function pooledLag(runs, pair, maxLag, lo, hi) {
+  const z = (r) => 0.5 * Math.log((1 + r) / (1 - r));
+  const curves = [], vars = [], seedVals = [];
+  for (const r of runs) {
+    const [x, y] = pair(r);
+    const c = Array.from({ length: maxLag + 1 }, (_, L) => corrAtLag(x, y, L));
+    if (!c.every(Number.isFinite)) continue;
+    curves.push(c); vars.push(bartlettVar(x, y));
+    const bi = c.reduce((bb, v, L) => (v > c[bb] ? L : bb), 0);
+    seedVals.push(c[bi] > 0 ? bi : NaN);
   }
-  return best;
+  if (!curves.length) return { val: NaN, p10: NaN, p90: NaN, seedVals, lo, hi, inShare: NaN, grade: "FAIL" };
+  const pooled = Array.from({ length: maxLag + 1 }, (_, L) => Math.tanh(mean(curves.map((c) => z(Math.max(-0.999, Math.min(0.999, c[L])))))));
+  const se = Math.sqrt(mean(vars) / curves.length);
+  const bi = pooled.reduce((bb, v, L) => (v > pooled[bb] ? L : bb), 0);
+  const sig = pooled[bi] > 2 * se;
+  const fin = seedVals.filter(Number.isFinite);
+  const c = {
+    val: sig ? bi : NaN, p10: fin.length ? Math.min(...fin) : NaN, p90: fin.length ? Math.max(...fin) : NaN, seedVals, lo, hi,
+    inShare: seedVals.length ? seedVals.filter((v) => v >= lo && v <= hi).length / seedVals.length : NaN,
+    r: +pooled[bi].toFixed(2), se2: +(2 * se).toFixed(2),
+  };
+  return { ...c, grade: sig ? grade(c) : "FAIL" };
 }
 const diff = (a) => a.map((x, i) => i ? x - a[i - 1] : NaN);
 const lgr = (a) => a.map((x, i) => (i && a[i - 1] > 0 && x > 0) ? Math.log(x / a[i - 1]) : NaN);
@@ -283,7 +344,7 @@ function checks(runs) {
     "NCREIF/RCA 1980-2024: 4-11%");
   add("Capital", "Cap spread over 10Y (all classes, yearly)", levelCheck(R.map((r) => ({ ...r, yr: r.yr.flatMap((x) => CLASSES.map((k) => ({ v: x.cap[k] - x.tenY }))) })), (x) => x.v, 1, 6), pp,
     "NCREIF/RCA cap rate minus UST10 1990-2024: ~1.5-5.5pp");
-  add("Capital", "Cap rates lag the 10Y (best lag, years)", seedCheck(R, (r) => leadLag(diff(r.yr.map((x) => x.tenY)), diff(r.yr.map((x) => mean(CLASSES.map((k) => x.cap[k])))), 4).lag, 0, 3), nm,
+  add("Capital", "Cap rates lag the 10Y (best lag, years)", pooledLag(R, (r) => [diff(r.yr.map((x) => x.tenY)), diff(r.yr.map((x) => mean(CLASSES.map((k) => x.cap[k]))))], 4, 0, 3), nm,
     "cap rates follow rates with a 0-3 year lag and partial pass-through (Chervachidze-Wheaton 2013)");
   add("Capital", "Cap rate yearly move, mean abs change (median of classes)", seedCheck(R, (r) => median(CLASSES.map((k) => mean(diff(r.yr.map((x) => x.cap[k])).map(Math.abs)))), 0.1, 0.6), pp,
     "NCREIF/ACLI cap rates 1985-2024: typical annual move 0.2-0.5pp; 2009's +1.5pp was the extreme");
@@ -304,9 +365,17 @@ function checks(runs) {
     "NBER 1945-2020: ~14% of months");
   add("Cycle", "City job-loss years per decade", seedCheck(R, (r) => { const j = r.yr.map((x) => x.jobs); let n = 0; for (let i = 1; i < j.length; i++) if (j[i] < j[i - 1] * 0.995) n++; return n * 10 / (j.length - 1); }, 1, 3.5), nm,
     "BLS CES metros 1990-2024: payrolls fall in ~1-3 years a decade");
-  add("Cycle", "Construction follows demand (lag, years: starts after jobs growth)", seedCheck(R, (r) => leadLag(lgr(r.yr.map((x) => x.jobs)), r.yr.map((x) => CLASSES.reduce((s, k) => s + x.starts[k], 0))).lag, 0, 3), nm,
+  add("Cycle", "Construction follows demand (lag, years: starts after jobs growth)", pooledLag(R, (r) => [lgr(r.yr.map((x) => x.jobs)),
+    // the classes jobs fill (flats follow households), as a share of their
+    // stock, each seed's trend removed: two trending levels correlate whatever
+    // they are (Granger & Newbold 1974)
+    detrend(r.yr.map((x) => (x.starts.office + x.starts.industrial) / Math.max(1, x.stock.office + x.stock.industrial)))], 5, 0, 3), nm,
     "Wheaton (1987, 1999): starts peak 1-3 years after demand; deliveries land as demand fades (overbuilding)");
-  add("Cycle", "Vacancy rises after starts (lag, years: vacancy after starts)", seedCheck(R, (r) => leadLag(r.yr.map((x) => COMM.reduce((s, k) => s + x.starts[k], 0)), r.yr.map((x) => mean(COMM.map((k) => x.vac[k]))), 5).lag, 1, 4), nm,
+  add("Cycle", "Vacancy rises after starts (lag, years: vacancy after starts)", pooledLag(R, (r) => [
+    r.yr.map((x) => COMM.reduce((s, k) => s + x.starts[k], 0) / Math.max(1, COMM.reduce((s, k) => s + x.stock[k], 0))),
+    // completions move vacancy's CHANGE (the stock-flow identity), and the
+    // town's vacancy is weighted by its stock
+    diff(r.yr.map((x) => 1 - COMM.reduce((s, k) => s + x.stock[k] * (1 - x.vac[k]), 0) / Math.max(1, COMM.reduce((s, k) => s + x.stock[k], 0))))], 5, 1, 4), nm,
     "Wheaton-Torto: completions 2-3 yrs after starts push vacancy up");
   add("Cycle", "Construction starts %/yr of stock", levelCheck(R, (x) => { const s = CLASSES.reduce((a, k) => a + x.starts[k], 0), st = CLASSES.reduce((a, k) => a + (x.stock[k] ?? 0), 0); return st > 0 ? s / st : NaN; }, 0.005, 0.04), pc,
     "Census/Dodge: commercial + multifamily starts ~1-3% of stock a year");

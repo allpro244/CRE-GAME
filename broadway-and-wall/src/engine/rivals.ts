@@ -892,7 +892,6 @@ export function claimJob(
 ): Rival | null {
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return null;
-  const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   const shared = underwriting
     ? { plan: underwriting, clears: underwriting.ltcMax > 0 }
     : underwriteDevelopment(s, parcels, bbl, use, floors, cityCoverage(use));
@@ -958,20 +957,26 @@ export function claimJob(
     // warehouse on the fringe because the city's pipeline offered one.
     const suit = r.sheet ? Math.min(1.6, fitOf(s, parcels, r, { ...rec, class: use === "mixed" ? "retail" : use } as ParcelRecord)) : 1;
     if (suit <= 0) return false;
-    if (only) return true;
-    // Named builders should claim a real share of the pipeline. Near the
-    // player is still hotter (comp + tenant risk), but far sites are no longer
-    // a coin-flip against a 0.5× haircut that left them at ~3%.
-    const p = Math.min(0.95, want * ci * (nearPlayer ? 2.6 : 1.35) * suit * deployPressure(s, r));
-    return rng(s, "rivals") < p;
+    return true;
   });
   if (!runners.length) return null;
 
-  // the hungriest of the firms that can actually fund it
+  // THE SITE GOES TO WHOEVER READS IT BEST (2026-11-06). Every builder that
+  // clears its own bar and can fund the job is a bidder for the dirt, and the
+  // one whose pencil carries the most margin over its own hurdle can pay the
+  // most for it — the anonymous merchants included, at the trade margin and
+  // their spread of leans (anonHurdle), because they are most of the market.
+  // A named firm takes the site only when it out-reads them. This replaced a
+  // coin: min(0.95, appetite x credit x 1.35 (2.6 next to the player) x fit x
+  // deployPressure), at its 0.95 cap in 86% of calls, and the winner among
+  // the takers drawn on appetite x cash x a random 0.6-1.4.
   let best = runners[0], bestW = -Infinity;
-  if (!only) for (const r of runners) {
-    const w = paramsOf(r).build * (r.cash / Math.max(1, dayOneOf(r) * sponsorShareOf(s, r))) * (0.6 + rng(s, "rivals") * 0.8);
-    if (w > bestW) { bestW = w; best = r; }
+  if (!only) {
+    for (const r of runners) {
+      const w = firmHurdle(s, r, plan, use);
+      if (w > bestW) { bestW = w; best = r; }
+    }
+    if (!(bestW > anonHurdle(s, plan, use, financeable))) return null;
   }
 
   // A groundbreak says what a builder builds, and how big.

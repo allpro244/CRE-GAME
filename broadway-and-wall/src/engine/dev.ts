@@ -4180,7 +4180,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
   // programme is the probe already drawn in the sample. inKind / share /
   // duration draws stay at one each, as before.
   const teardownRoll = rng(s, "dev");
-  const inKindRoll = rng(s, "dev");
+  rng(s, "dev");   // was the in-kind roll (dead: replacementSearch picks the use); drawn so the stream is unchanged
   const shareJitter = rng(s, "dev");
   const formerBuildRoll = rng(s, "dev");
   const formerDemoRoll = rng(s, "dev");
@@ -4224,19 +4224,11 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
     if (s.merged?.[bbl] || (s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
     const oldSf = rec.bldgArea;
     const cls = rec.class;
-    // When the standing class is pinned and still wanted, densify IN KIND.
-    // useForZone's programme mix was converting short office into multifamily
-    // — supply answering the wrong demand, and (once the office book went
-    // empty because nothing penciled) dismantling the class the city was
-    // short of. classPinnedOwed now fires on the book OR on structTight.
-    if (cls !== "land" && cls !== "house" && (CITY_STOCK as Record<string, number>)[cls] !== undefined) {
-      const standing = cls;
-      const stStand = e.structTight?.[standing] ?? 0;
-      if (classPinnedOwed(e, standing) && inKindRoll < Math.min(0.92, 0.70 + stStand * 1.2)) {
-        nextUse = standing;
-        lead = standing;
-      }
-    }
+    // (An in-kind coin stood here — min(0.92, 0.70 + structTight x 1.2) to
+    // keep the standing class — and replacementSearch below overwrote its
+    // answer every time: it was dead, and the rail audit read it as a rail at
+    // its bound in 44.8% of calls. The search prices every use and keeps the
+    // one that pays.)
     const stood = gradeOf(s, rec);
     const stoodAge = START_YEAR + Math.floor(s.month / 12) - (rec.yearBuilt || 1900);
     // US commercial economic life is 50–60 years (IRS depreciation is 39;
@@ -4248,9 +4240,6 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
     // the space market has filed an order for it, and one that does not is
     // not, at any age. Vacancy reaches it through rent, exit cap and lease-up.
     void stood; void stoodAge;
-    const leadShort = classPinnedOwed(e, lead)
-      || ((e.structTight?.[lead] ?? 0) > 0.06
-        && (e.cityVac?.[lead] ?? normalVac(e, lead)) <= frictionFloor(lead, e) + 0.02);
 
     // NOBODY DEMOLISHES A BUILDING AND LEAVES A HOLE.
     //
@@ -4340,7 +4329,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
     if (!bestU) continue;
     taken.add(bbl);
     for (const kk of bestKids) taken.add(kk);
-    void teardownRoll; void shareJitter; void stood; void stoodAge; void leadShort;
+    void teardownRoll; void shareJitter; void stood; void stoodAge;
     const plan = bestU.plan;
     const nsf = plan.sf;
     const nfl = plan.floors;

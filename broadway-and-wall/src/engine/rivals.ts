@@ -61,7 +61,7 @@ import { beliefOf, beliefSignals } from "./beliefs";
 const CLASS_NOUN: Record<string, string> = { office: "office", multifamily: "apartments", retail: "retail", industrial: "industrial", land: "a site" };
 import { assembledBlock, reviewThesis, thesisFit, thesisLabel, thesisSellMult } from "./strategy";
 import { SURNAMES as OWNER_SURNAMES } from "./owners";
-import { deskWithRoom, loanBookTouched, renewRow, streetLoanCost, addToLine, amortizeRows, drawLine as lineDraw, dropDeed, markPayments, monthlyService, originateRow, payDown, rowOn, rowsOf, saleRelief, settleSale, fileSpreadAdj as fileSpread, syncDebt } from "./rivalDebt";
+import { deskRoom, deskWithRoom, lineBankOf, loanBookTouched, renewRow, streetLoanCost, addToLine, amortizeRows, drawLine as lineDraw, dropDeed, markPayments, monthlyService, originateRow, payDown, rowOn, rowsOf, saleRelief, settleSale, fileSpreadAdj as fileSpread, syncDebt } from "./rivalDebt";
 import {
   paramsFrom, siteFit, dealsPerYear, misreadPp, drawSheet, profilesForStyle, hash01, GRADE_NUM,
   PROFILE_OF, PROFILES, inv as invTrait, LEVERAGE_RANGE, sheetFromStyle, classTrait, nearestProfile,
@@ -3927,7 +3927,16 @@ export function lineRoom(s: GameState, r: Rival, aum: number, noiYr: number, lan
   const income = Math.max(0, aum - landV);
   const market = streetRefiProceeds(s, income, noiYr, st.maxLtv).principal
     + (landV > 0 ? streetRefiProceeds(s, landV, 0, st.maxLtv).principal : 0);
-  return Math.min(covenant, market) - r.debt;
+  // ...AND THE BANK BEHIND THE LINE HAS A LEGAL LENDING LIMIT (2026-11-06).
+  // A revolver is a loan to one borrower like any other, so it counts toward
+  // the bank's single-name limit (nameLimit: 15% of capital for a bank). The
+  // line used to be sized on the firm's covenants alone and the bank's
+  // capital never entered it: measured (seed 22, year 53), Ashcombe Estate
+  // owed First Harbor $416.5M on its line against $170.5M of bank capital,
+  // and its failure took the bank down with two other firms behind it.
+  const bank = lineBankOf(s, r);
+  const bankRoom = bank ? Math.max(0, deskRoom(s, bank, r.id)) : 0;
+  return Math.min(Math.min(covenant, market) - r.debt, bankRoom);
 }
 
 /** What the investor base could be asked for today — WITHOUT asking. */

@@ -28,7 +28,7 @@ It supersedes the open parts of `ECON_REALISM_PLAN.md` and `RENT_VACANCY_RESPONS
 | 0.3 the measured noise floor in every verdict; a second placebo | done | #575 |
 | 0.5 deepplay bugs: folded-lot mortgages, city land, NaN through JSON | done | #576 |
 | 1, step 1: ease measured ex ante; rigidity fades with inflation; a held rate holds | done | #577 |
-| 1, step 2: the bank's overshoot once its credibility is gone (real rate ~+25, unemployment 29-34% after the peg) | open | — |
+| 1, step 2: the bank's overshoot once its credibility is gone (real rate ~+25, unemployment 29-34% after the peg). **Diagnosed 2026-11-06: output has no capacity ceiling.** `spendNation` books all spending as output (`d.Y = S + invInv − d.sup`). After a ten-year peg the output gap is +25% at 2.5% unemployment (US peacetime peak ~+6%, CBO 1966), and the bust to −18% is what the bank answers. Ruled out by measurement on the national block (20 seeds): dropping the restore premium (still +13% real, +14.7pt unemployment) and reading trailing 12-month inflation instead of the 11-month-lag smoothing (no change). Build: production is the lesser of demand and capacity; unserved demand goes to prices, imports and backlogs | open | — |
 | 1b City Hall: foundation school aid, the buildings' own service cost, the budget sets the rate | done | #578 |
 | 2.1 stabilise at natural occupancy, deduct the building's own lease-up | done | #579 |
 | 2.5 the player's renewals bargain with an outside option | done | #583 |

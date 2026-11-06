@@ -596,6 +596,8 @@ const SPLIT_YR = [0.06, 0.04, 0.03, 0.02, 0.012, 0.005];
  * at each quintile's midpoint of the lognormal income spread. [S]
  */
 const TAX_RATES = [0.046, 0.109, 0.170, 0.214, 0.297];
+/** The state-and-local income and sales tax inside every TAX_RATES row (ITEP, above): the part the town's government collects. */
+const STATE_LOCAL_TAX = 0.04;
 const TAX_Z = [-1.2816, -0.5244, 0, 0.5244, 1.2816];
 /**
  * WHAT A HOUSEHOLD BUYS, BY ITS INCOME (households stage 5, 2026-10-29). Its
@@ -3449,7 +3451,10 @@ export function householdMoney(s: GameState): {
     const gross = slot(a.emp1[i], a.wage1[i], a.un1[i], w) + slot(a.emp2[i], a.wage2[i], a.un2[i], w) + slot(a.emp3[i], a.wage3[i], a.un3[i], w);
     const t = taxRate(gross * 12, e);
     tax += w * gross * t;
-    taxLocal += w * gross * Math.min(t, 0.04);   // the state-and-local part of TAX_RATES (ITEP, above)
+    // The state-and-local part of TAX_RATES. It was written Math.min(t, 0.04),
+    // which every rate exceeds (the lowest is 4.6%), so it read as a rail at
+    // its bound in 98.6% of calls (rail audit #1) while being a constant.
+    taxLocal += w * gross * STATE_LOCAL_TAX;
     const ten = a.ten[i];
     if (ten === TEN_RENT || ten === TEN_MAINLAND) rent += w * a.rent[i];
     else if (ten === TEN_OWN) { if (a.mort[i] > 0) mortgage += w * a.mortPmt[i]; ownerCost += w * (TAX_INS / 12) * a.hval[i]; ownerValue += w * a.hval[i]; }

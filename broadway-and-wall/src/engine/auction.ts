@@ -29,18 +29,19 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { AuctionLot, AuctionResultRow, Exit, GameState, Holding, Rival } from "./types";
 import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, closeDeedLedger, autoLeaseOnClose } from "./types";
-import { rng, rrange, cycleHot, cycleDown } from "./market";
+import { rng, rrange } from "./market";
+import { bidRound } from "./propmarket";
 import { openReoPortfolio } from "./portfoliosale";
 import { collateralAsIs, ownedHoldingValue, resolveRec } from "./value";
 import { lenderPressure, lenderByName, chargeLenderLoss } from "./lenders";
-import { distressPrice, markSponsor } from "./sponsor";
+import { markSponsor } from "./sponsor";
 import { recordComp } from "./comps";
 import { firmShort } from "./firm";
 import { genRentRoll, depositsOn } from "./leasing";
 import { bumpLenderRel } from "./debt";
 import { saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { takeDeed, FILE_COST } from "./notes";
-import { clearRivalClaims, fitOf, forgetDeed, noteLost } from "./rivals";
+import { clearRivalClaims, forgetDeed, noteLost } from "./rivals";
 import { dropDeed, originateRow } from "./rivalDebt";
 import { reinstateFundedForeclosures } from "./workout";
 import { spendable, fundAndBook } from "./credit";
@@ -237,43 +238,6 @@ function buildDocket(s: GameState, parcels: ParcelTable) {
 
 // ------------------------------------------------------------------ the hammer
 
-/** Who shows up with money, and how hard they push. The room IS the cycle. */
-function roomBid(s: GameState, est: number): { px: number; heads: number } {
-  const ci = s.econ.creditIdx ?? 1;
-  const hot = ci > 1.02 && cycleHot(s.econ) > 0.5;
-  const crunch = ci < 0.92 || cycleDown(s.econ) > 0.5;
-  const heads = hot ? 2 + Math.floor(rng(s) * 4) : crunch ? Math.floor(rng(s) * 2) : 1 + Math.floor(rng(s) * 2);
-  let best = 0;
-  for (let i = 0; i < heads; i++) {
-    best = Math.max(best, est * distressPrice(s) * rrange(s, 0.84, 1.02));
-  }
-  // fever: a crowded room forgets it is buying somebody's failure
-  if (heads >= 4) best *= rrange(s, 1.03, 1.14);
-  return { px: Math.round(best), heads };
-}
-
-/**
- * WHO IS IN THE ROOM: firms whose sheet hunts distress (Distress 55+), the
- * building fitting what they buy, and the keenest of them takes it — the
- * ALWAYS-at-the-courthouse shop first. A firm with no sheet keeps its style.
- * It has to bring the third of the price a courthouse sale wants in cash; the
- * rest is a desk's money on the deed. Reads no dice and moves nothing.
- *
- * Nobody else is in the room. The fallback was "money from out of town",
- * which outbid the player on the steps and took deeds into no book anyone
- * could see; with no firm on the street able to pay, the room is empty and
- * the holder's credit bid takes it.
- */
-function thirdPartyFor(s: GameState, parcels: ParcelTable, rec: ParcelRecord, px: number): Rival | undefined {
-  const keen = (x: Rival) => x.sheet
-    ? (x.sheet.distress >= 55 ? (x.sheet.distress / 100) ** 2 * (x.rules?.includes("alwaysCourthouse") ? 2 : 1) * fitOf(s, parcels, x, rec, true) : 0)
-    : (x.style === "opportunistic" || x.style === "core" ? 0.5 : 0);
-  return (s.rivals ?? [])
-    .filter((x) => x.failedM === undefined && !x.stressMs && !x.bbls.includes(rec.bbl)
-      && x.cash >= Math.round(px * 0.35) && keen(x) > 0)
-    .sort((a, b) => keen(b) * b.cash - keen(a) * a.cash)[0];
-}
-
 /** The firm in the room takes the deed onto its own book, on its own money. */
 function thirdPartyTakes(s: GameState, _parcels: ParcelTable, rec: ParcelRecord, px: number, r: Rival): string {
   {
@@ -374,17 +338,27 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     }
 
     // ---- the room, the credit bid, and your number ------------------------
-    let { px: room, heads } = roomBid(s, lot.est);
-    // The room is the street. A price nobody on it can pay is no price.
-    const roomFirm = room > 0
-      ? thirdPartyFor(s, parcels, rec, lot.kind === "note" ? Math.max(room, Math.round(lot.debt * 1.01)) : room)
-      : undefined;
-    if (!roomFirm) { room = 0; heads = 0; }
+    // THE ROOM IS THE FIRMS WHO REGISTER (2026-11-06). Every named firm that
+    // buys distress and can close bids its own number for the building
+    // (propmarket bidRound, open outcry: each stays in up to what it can pay).
+    // This replaced a room of 0-5 phantom heads drawn off the cycle, each at
+    // distressPrice x 84-102%, and a x1.03-1.14 "fever" when four showed up.
+    const round = bidRound(s, parcels, rec, { bbl: lot.bbl, ask: lot.est, distress: true, open: true });
+    const roomFirm = round.bids[0]?.r;
+    const topV = round.bids[0]?.bid ?? 0;
+    const secondV = round.bids[1]?.bid ?? 0;
+    let heads = round.bids.length;
     // an impaired holder does not protect its whole debt — cash beats REO
     const holderL = lot.kind === "yours" || lot.kind === "bank" ? lenderByName(s, lot.holder) : undefined;
     const protect = lot.kind === "note" ? lot.debt
       : lot.kind === "receiver" ? lot.upset
       : Math.round(lot.debt * (1 - 0.35 * lenderPressure(holderL)));
+    // An English auction: the top firm stays in until the runner-up drops out
+    // or the floor (the credit bid) is met, whichever is higher — and it will
+    // go on against you up to its own limit, so you take it only at `topV`.
+    const floor = lot.kind === "note" ? Math.round(lot.debt * 1.01) : protect;
+    let room = topV >= floor ? Math.max(secondV, floor) : topV;
+    if (!roomFirm) { room = 0; heads = 0; }
     // your bid only counts if you can actually close the balance — and on
     // your own note's lot the cash you owe is only the part above your debt
     const owedAtHammer = lot.kind === "note" ? Math.max(0, bid - lot.debt) : bid;
@@ -408,9 +382,9 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
 
     const bestCash = Math.max(room, yours);
     // AT the posted minimum is a sale: "minimum is X — bid that" has to win.
-    const youWin = yours > 0 && yours >= room && bestCash >= protect
+    const youWin = yours > 0 && yours >= topV && yours >= room && bestCash >= protect
       && !(lot.kind === "note");       // your own lot: handled below, credit bid first
-    const notePlayerWins = lot.kind === "note" && (yours >= Math.max(room, lot.debt) || room <= lot.debt);
+    const notePlayerWins = lot.kind === "note" && (yours >= Math.max(topV, lot.debt) || room <= lot.debt);
 
     // ---- settle, by kind --------------------------------------------------
     if (lot.kind === "note") {
@@ -418,7 +392,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       const r = s.rivals?.find((x) => x.id === n.obligorId);
       if (!notePlayerWins) {
         // outbid over your debt: you are PAID OFF, they get the building
-        const paid = Math.round(Math.max(room, lot.debt * 1.01));
+        const paid = Math.round(Math.max(room, yours, lot.debt * 1.01));
         s.cash += lot.debt; logBooks(s, "sold", lot.debt);
         const surplus = Math.max(0, paid - lot.debt);
         const buyer = thirdPartyTakes(s, parcels, rec, paid, roomFirm!);
@@ -570,7 +544,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       continue;
     }
     if (room > protect && room >= lot.upset) {
-      const paid = room;
+      const paid = Math.max(room, Math.min(topV, yours));
       const buyer = thirdPartyTakes(s, parcels, rec, paid, roomFirm!);
       if (bid > 0) said(lot.bbl, lot.address, "outbid", bid, paid, buyer,
         `The room went past you. Your deposit came back.`);

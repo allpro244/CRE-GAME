@@ -2156,7 +2156,7 @@ export interface Econ {
     tfpG?: number; kSeen?: number;
     /** the technology level, log points since the opening */
     techLn?: number;
-    dem?: { C: number; K: number; I: number; Ih: number; N: number; Yp: number; Ye: number; Se: number; f: number; Y: number; sup: number; uH: number[]; rr?: number; ws?: number; cc?: number; kc?: number; cMood?: number; wr?: number; q?: number };
+    dem?: { C: number; K: number; I: number; Ih: number; N: number; Yp: number; Ye: number; Se: number; f: number; Y: number; sup: number; uH: number[]; rr?: number; ws?: number; cc?: number; kc?: number; cMood?: number; wr?: number; q?: number; unmet?: number };
     /** national inflation, annualised */
     infl: number;
     /** what the nation EXPECTS — the anchor, and what a credible bank defends */
@@ -2437,7 +2437,7 @@ export interface Econ {
   /** each market's normal availability, learned from its own history (market.ts rent gap) */
   natVac?: Record<BuiltClass, number>;
   /** the opening's rent per foot by class and price level: what sales per head are measured from (tenantBooks) */
-  revAnchor?: { cpi: number; rent: Partial<Record<string, number>> };
+  revAnchor?: { cpi: number; rent: Partial<Record<string, number>>; prod?: Partial<Record<string, number>> };
   /** The street's let space, rentable space and unhoused seekers' wants by class, this month (streetRolls.ts). */
   streetSpace?: Partial<Record<BuiltClass, { let: number; cap: number; seek: number; ratio?: number; byBand?: { stock: number[]; occ: number[] };
     /** the feet the town's firms hold beyond what their heads need (FORMULA_LEDGER #10: the sublet market's source) */

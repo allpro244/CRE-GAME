@@ -53,7 +53,7 @@ import { stabViewFor, streetRefiProceeds } from "./debt";
 import { TI_ASK, renewalRefreshShare } from "./leasing";
 import {
   livingRivals, paramsOf, fitOf, ownerOf, firmOutlook, deployPressure, contractedEquity, lineRoom,
-  minTicket, boughtLastYear, gainsTax, streetSaleCost, spreadAdj, firmMaxPrice, firmMargin, landBanker,
+  minTicket, boughtLastYear, gainsTax, streetSaleCost, spreadAdj, firmMaxPrice, firmMargin, capForSpread, landBanker,
 } from "./rivals";
 import { dealsPerYear, misreadPp } from "./competitorTraits";
 import { rowOn, deskWithRoom } from "./rivalDebt";
@@ -1258,7 +1258,7 @@ export function landMaxPrice(s: GameState, r: Rival, rec: ParcelRecord): number 
       // tenants. Measured on #571 (seed 22, year 10): every surveyed vacant
       // lot was bid at the no-queue residual, ~1.5x the appraiser's, with
       // 3.07M sf of industrial sites ahead at 87k sf a year (35 years).
-      own = Math.max(0, f * (value / (1 + (builds ? firmMargin(r, s.month) : DEV_MARGIN)) - nonLand));
+      own = Math.max(0, f * (value / (1 + (builds ? firmMargin(r, s.month, capForSpread(s.econ)) : DEV_MARGIN)) - nonLand));
     }
   }
   return builds ? own : Math.max(own, bankerHoldValue(s, r, rec));

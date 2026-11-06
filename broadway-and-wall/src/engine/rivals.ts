@@ -36,7 +36,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
 import { sweepApy, monthLabel, START_YEAR } from "./types";
 import { isCivicLand } from "./demand";
-import { dollarLevel, rng, newsChance, rrange, addStock, CITY_STOCK, underwrittenGrowthPct, cycleHot, cycleDown } from "./market";
+import { dollarLevel, rng, newsChance, rrange, addStock, CITY_STOCK, underwrittenGrowthPct, cycleDown } from "./market";
 import { mergedTouched, DEV_MARGIN, capRateFor, holdingValue, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec, ownerAskPsf } from "./value";
 import type { DevPlan } from "./dev";
 import { lpNetIrr } from "./waterfall";
@@ -59,7 +59,7 @@ import { dealView, maxPrice, bidderOf, sellerTerms, bidRound, forcedSalePrice, b
 import { why } from "./why";
 import { beliefOf, beliefSignals } from "./beliefs";
 const CLASS_NOUN: Record<string, string> = { office: "office", multifamily: "apartments", retail: "retail", industrial: "industrial", land: "a site" };
-import { assembledBlock, reviewThesis, thesisFit, thesisLabel, thesisSellMult } from "./strategy";
+import { assembledBlock, reviewThesis, thesisFit, thesisLabel } from "./strategy";
 import { SURNAMES as OWNER_SURNAMES } from "./owners";
 import { deskRoom, deskWithRoom, lineBankOf, loanBookTouched, renewRow, streetLoanCost, addToLine, amortizeRows, drawLine as lineDraw, dropDeed, markPayments, monthlyService, originateRow, payDown, rowOn, rowsOf, saleRelief, settleSale, fileSpreadAdj as fileSpread, syncDebt } from "./rivalDebt";
 import {
@@ -4978,7 +4978,6 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // trims into strength — it is where their returns are realised, it is what
     // their investors are waiting for, and it is why there is anything on the
     // tape in a good market at all. Without it the street simply ate the city.
-    const hotW = cycleHot(s.econ);
     // THE CLOCK, and it is the loudest personality difference on this street.
     //
     // Trimming into strength is what every firm does. What a fund with a life
@@ -5148,56 +5147,71 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         }
       }
     }
-    // Soft books trim harder — empty floors are a reason to sell, not a
-    // reason to sit on 65 buildings like Wrenfield in the century report.
-    const softBook = (r.occ ?? 1) < (r.mktOcc ?? 1) - 0.05;
-    // Thicker tape: slightly higher trim hazard, and books of 5+ (was 7+) can
-    // put a weak ticket out — same rng() call, lower length gate.
-    // WHO TRIMS is the firm's Hold number when it has a sheet (a 90 sells a
-    // quarter as often as a 50; a 10 nearly twice as often) and its style
-    // when it does not. A firm under NEVER sells does not trim at all.
+    // --- the hold/sell review (PARITY_PLAN.md P2, 2026-11-06) --------------
     //
-    // AND A DISCIPLINED FIRM SELLS BEFORE IT HAS TO. Leverage creeping
-    // toward the firm's own covenant is the moment a careful shop sells its
-    // weakest building — on its own timetable, at a full price — instead of
-    // waiting for the arrears clock to sell one for it at a receiver's. How
-    // early it moves, and how hard, is its Discipline: a 90 starts twelve
-    // points under its limit and is five times as likely to list; a 10 waits
-    // until it is nearly there.
+    // A FIRM SELLS WHEN SELLING IS WORTH MORE THAN KEEPING. This used to be a
+    // coin: `rng < trimBase`, a base hazard scaled by the cycle's heat, the
+    // firm's Hold and Discipline numbers, a soft book and its plan — a
+    // building went to the tape because a die said so, and the weakest ticket
+    // was the one that went. The player decides by looking at what a building
+    // would fetch against what it is worth to them. So does every firm now.
+    //
+    // Each building is reviewed once a year, in its own month (an asset
+    // manager's annual hold/sell analysis; the month is fixed per firm and
+    // deed, never drawn). The firm reads what the building would fetch — the
+    // appraisal the tape supports (`conveyedValue`), the same broker's opinion
+    // the player is shown — against its own reservation (`sellerTerms`: what
+    // the building is worth to it to keep, on its own capital and beliefs,
+    // plus the tax a sale crystallises and the cost of selling). When the
+    // market covers that, it lists; whether it trades is the month's bid round.
+    // Selling into strength is no longer a coefficient: in a hot market the
+    // bidders' numbers rise past the holder's, and the holder sells.
+    //
+    // AND A DISCIPLINED FIRM SELLS BEFORE IT HAS TO. Leverage creeping toward
+    // the firm's own covenant is the moment a careful shop sells its weakest
+    // building — on its own timetable, at a full price — instead of waiting
+    // for the arrears clock to sell one for it at a receiver's. How early it
+    // moves is its Discipline: a 90 starts twelve points under its limit, a 10
+    // waits until it is nearly there. Rates up a point since its last annual
+    // review double the cushion. The board takes that decision quarterly.
     const shS = r.sheet;
-    const holdW = shS ? Math.max(0.15, 1.75 - 1.5 * shS.hold / 100) : (r.style === "family" || r.style === "owneruser" || r.style === "foreign" ? 0.25 : 1);
-    //
-    // RATES RISING ARE A WARNING A CAREFUL FIRM TAKES. When the index is a
-    // point or more above where it stood at the firm's last annual review,
-    // a disciplined shop doubles its cushion — the squeeze comes at the
-    // refinancing, and it would rather sell before it than at it.
     const rising = (s.econ.indexRate - (r.rateYr ?? s.econ.indexRate)) >= 1;
-    const prudent = shS && lev > st.maxLtv - (rising ? 0.24 : 0.12) * (shS.discipline / 100) ? 1 + 4 * (shS.discipline / 100) : 1;
-    // SELLING INTO STRENGTH is a disciplined habit: a 90 reads a hot market
-    // twice as strongly as a 50, and a 10 barely reads it at all — it holds at
-    // the top. The plan bends it too: a harvester sells into the heat, a firm
-    // paying down debt sells its weakest (strategy.ts).
-    const heatW = shS ? 0.2 + 1.6 * shS.discipline / 100 : 1;
-    const trimBase = (0.018 + 0.052 * hotW * heatW) * (softBook ? 1.85 : 1) * holdW * prudent * thesisSellMult(r);
-    const mustSell = prudent > 1 || r.thesis?.kind === "deleverage";
-    if (r.bbls.length > (mustSell ? 1 : 4) && !r.stressMs && !r.rules?.includes("neverSells") && rng(s, "rivals") < trimBase) {
-      // Sell the WEAKEST ticket, not a random one: lowest mark yield, and
-      // off-mandate classes first. Random trim put good assets on the tape
-      // while dogs stayed on the book.
-      let bbl: string | null = null;
-      let worst = Infinity;
+    const prudent = !!shS && lev > st.maxLtv - (rising ? 0.24 : 0.12) * (shS.discipline / 100);
+    const mustSell = prudent || r.thesis?.kind === "deleverage";
+    const toSell: string[] = [];
+    if (!r.stressMs && !r.rules?.includes("neverSells")) {
+      if (mustSell && s.month % 3 === 0) {
+        // The WEAKEST ticket: lowest mark yield, off-mandate classes first.
+        let pick: string | null = null;
+        let worst = Infinity;
+        for (const b of r.bbls) {
+          if (s.holdings[b] || s.listings.some((l) => l.bbl === b)) continue;
+          const recB = resolveRec(parcels, s, b);
+          if (!recB || recB.class === "land" || !recB.bldgArea) continue;
+          const vB = Math.max(1, assetValue(recB, s.econ, assetGrade(r, recB)));
+          const noiB = Math.max(0, noiAfterTaxYr(recB, s.econ, assetGrade(r, recB), vB));
+          const offMandate = st.classes && !st.classes.includes(recB.class) ? -0.04 : 0;
+          const score = noiB / vB + offMandate;
+          if (score < worst) { worst = score; pick = b; }
+        }
+        if (pick) toSell.push(pick);
+      }
       for (const b of r.bbls) {
-        if (s.holdings[b] || s.listings.some((l) => l.bbl === b)) continue;
+        // A firm harvesting its book (strategy.ts) reviews every quarter: it
+        // has decided to realise, and is marketing rather than waiting.
+        const every = r.thesis?.kind === "harvest" ? 3 : 12;
+        if (Math.floor(hash01(`${r.id}:review:${b}`) * every) !== s.month % every) continue;
+        if (toSell.includes(b) || s.holdings[b] || s.listings.some((l) => l.bbl === b)) continue;
+        if (s.month - (r.heldSince?.[b] ?? r.bornM ?? 0) < 12) continue;
         const recB = resolveRec(parcels, s, b);
         if (!recB || recB.class === "land" || !recB.bldgArea) continue;
-        const vB = Math.max(1, assetValue(recB, s.econ, assetGrade(r, recB)));
-        const noiB = Math.max(0, noiAfterTaxYr(recB, s.econ, assetGrade(r, recB), vB));
-        const yld = noiB / vB;
-        const offMandate = st.classes && !st.classes.includes(recB.class) ? -0.04 : 0;
-        const score = yld + offMandate;
-        if (score < worst) { worst = score; bbl = b; }
+        if (s.developments?.[b] || (s.cityJobs ?? []).some((j) => j.bbl === b)) continue;
+        const vB = conveyedValue(s, recB, b, false, assetGrade(r, recB));
+        const keep = sellerTerms(s, r, recB, b, vB, "voluntary", assetGrade(r, recB));
+        if (vB > 0 && keep.reserve <= vB) toSell.push(b);
       }
-      if (!bbl) bbl = r.bbls[Math.floor(rng(s, "rivals") * r.bbls.length)];
+    }
+    for (const bbl of toSell) {
       const rec = resolveRec(parcels, s, bbl);
       if (rec && !s.holdings[bbl] && !s.listings.some((l) => l.bbl === bbl)) {
         const v = conveyedValue(s, rec, bbl, false, assetGrade(r, rec));

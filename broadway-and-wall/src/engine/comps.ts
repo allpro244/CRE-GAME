@@ -473,6 +473,8 @@ function holderCapitulation(s: GameState, parcels: Record<string, ParcelRecord>)
     // a quarter of the texture stopped the owner short of the only bid there
     // was — at its bound in 36.7% of calls (rail audit #19), every one a lot
     // whose ask stayed over four times what any builder could pay.
-    s.landAdj![bbl] = +(cur * (1 - CAPITULATION * gap)).toFixed(4);
+    // Six significant figures, not four decimals: a small adjustment rounded to
+    // 0 would read as no adjustment at all (resolveBase) and snap back to 1.
+    s.landAdj![bbl] = +(cur * (1 - CAPITULATION * gap)).toPrecision(6);
   }
 }

@@ -35,7 +35,16 @@ const CLASSES = ["office", "retail", "industrial", "multifamily"];
 const COMM = ["office", "retail", "industrial"];
 const mean = (a) => { const b = a.filter(Number.isFinite); return b.length ? b.reduce((s, x) => s + x, 0) / b.length : NaN; };
 const q = (a, p) => { const b = a.filter(Number.isFinite).sort((x, y) => x - y); return b.length ? b[Math.min(b.length - 1, Math.floor(p * b.length))] : NaN; };
-const median = (a) => q(a, 0.5);
+// THE MIDDLE OF AN EVEN COUNT IS THE MEAN OF ITS TWO MIDDLE VALUES. q(a, 0.5)
+// returns the upper of the two, so a two-seed run reported its higher seed as
+// "typical" (two seeds at 1.45 and 2.00 recessions a decade read 2.00, FAIL,
+// with a two-seed mean of 1.73), and a median of four classes read the third.
+const median = (a) => {
+  const b = a.filter(Number.isFinite).sort((x, y) => x - y);
+  if (!b.length) return NaN;
+  const h = b.length >> 1;
+  return b.length % 2 ? b[h] : (b[h - 1] + b[h]) / 2;
+};
 const sd = (a) => { const m = mean(a); const b = a.filter(Number.isFinite); return b.length > 1 ? Math.sqrt(b.reduce((s, x) => s + (x - m) ** 2, 0) / (b.length - 1)) : NaN; };
 const growth = (a, b, n) => (a > 0 && b > 0 && n > 0) ? Math.pow(b / a, 1 / n) - 1 : NaN;
 

@@ -2208,9 +2208,28 @@ function spendNation(
   // SUPPLY: an oil shock takes real output while it runs (an adverse one; a favourable one gives it)
   const supShock = (n.pressureM ?? 0) > 0 ? 0 : x.shock;
   d.sup += (0.5 * supShock - d.sup) / 6;
-  d.Y = S + invInv - d.sup;
+  // CAPACITY (2026-11-06). Output was spending, whatever spending was: after
+  // a ten-year zero peg the measured gap reached +25% with unemployment on
+  // its 2.5% floor — a quarter more output than the labour force and the
+  // capital stock can make — and the bust from there was what the bank was
+  // answering. Production is what can be made: it follows demand one for one
+  // to a +3% gap, then bends toward a ceiling at +6%, the largest peacetime
+  // output gap on the US record (CBO, 1966; +5-6% again 1969 and 1973) —
+  // overtime, extra shifts and plant run past its rating, and no more. The
+  // bend is a tanh, a shape stated as such. Demand past it is not output and
+  // not income: it is unfilled orders and stretched delivery times, and it
+  // shows up where it does in life, in the labour market's floor and in the
+  // easy-money channel's prices, and in next month's spending, which reads
+  // the income actually earned.
+  const want = S + invInv - d.sup - 1;
+  const g0 = CAPACITY_LINEAR, gm = CAPACITY_CEILING;
+  const made = want <= g0 ? want : g0 + (gm - g0) * Math.tanh((want - g0) / (gm - g0));
+  d.unmet = want - made;
+  d.Y = 1 + made;
   return d.Y - 1;
 }
+/** The output gap production follows demand one for one up to, and the ceiling it bends to (CBO potential output: peacetime peak +6.1%, 1966). */
+const CAPACITY_LINEAR = 0.03, CAPACITY_CEILING = 0.06;
 
 /**
  * THE FLATS' COMPS: every flat let or renewed in the last six months — its

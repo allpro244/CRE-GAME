@@ -357,7 +357,12 @@ export interface Bid { r: Rival; max: number; bid: number; uw: Underwriting }
  * underwriting it on its own books. Sorted best first. `n` is how many were
  * in the room — the broker's read the bidders shade against.
  */
-export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress"> & { listedM?: number }): { bids: Bid[]; n: number; view: DealView | null } {
+/**
+ * `open`: an open-outcry sale (the courthouse steps), where nobody shades —
+ * each bidder stays in up to what it can pay, so its "bid" is its limit and
+ * the price is set by the runner-up, not by a sealed guess.
+ */
+export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress"> & { listedM?: number; open?: boolean }): { bids: Bid[]; n: number; view: DealView | null } {
   const view = dealView(s, rec, li.bbl, li.ask);
   if (!view) return { bids: [], n: 0, view };
   const seller = ownerOf(s, rec.bbl);
@@ -381,7 +386,7 @@ export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
     const b = bidderOf(s, r, rec);
     const { max, uw } = maxPrice(s.econ, view, b, beliefSignals(s, r));
     if (!(max > 0)) continue;
-    let bid = Math.min(max * (1 - SHADE / Math.max(1, n)), affordable(s, r, view, b));
+    let bid = Math.min(li.open ? max : max * (1 - SHADE / Math.max(1, n)), affordable(s, r, view, b));
     bid = Math.round(bid / 1000) * 1000;
     if (!(bid > 0)) continue;
     // A firm already at its covenant, or with no desk that will take more of
@@ -415,6 +420,25 @@ export function forcedSalePrice(s: GameState, parcels: ParcelTable, rec: ParcelR
   }
   const round = bidRound(s, parcels, rec, { bbl, ask: mark, distress: true });
   return Math.min(mark, round.bids[0]?.bid ?? 0);
+}
+
+/**
+ * A FORECLOSURE SALE: the receiver or the creditors put the deed to the room,
+ * and it goes for the room's best bid (forcedSalePrice) — the named firms who
+ * can close, against a seller who must sell today. This replaced a formula
+ * (sponsor.ts distressPrice: 90 cents, less up to 22 for a credit crunch and
+ * 8 for the cycle, floored at 62), which priced a fire sale without asking
+ * whether anyone in town had the money.
+ *
+ * When nobody bids, the foreclosing lender takes the deed by credit bid, and
+ * the borrower is credited its fair value: a deficiency is the debt less the
+ * greater of the sale price and the property's fair market value (NY RPAPL
+ * 1371(2); most states have a fair-value rule). So an empty room clears at
+ * the mark — and it is no comp, because nothing traded at arm's length.
+ */
+export function foreclosureSale(s: GameState, parcels: ParcelTable, rec: ParcelRecord, bbl: string, mark: number): { px: number; bid: boolean } {
+  const best = forcedSalePrice(s, parcels, rec, bbl, mark);
+  return best > 0 ? { px: Math.round(best), bid: true } : { px: Math.round(Math.max(0, mark)), bid: false };
 }
 
 // ---------------------------------------------------------------- the seller

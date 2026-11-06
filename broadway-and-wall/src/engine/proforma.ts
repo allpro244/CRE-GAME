@@ -622,11 +622,17 @@ export function deskQuote(
 ): ConstructionQuote & { held: boolean } {
   const tight = Math.max(0, 1 - (e.creditIdx ?? 1));
   const space = constructionSpaceTight(e, mix);
-  // The fund prices the cycle instead of leaving it: its advance rate reads
-  // through a recession the way its perm sheet does, at its coupon.
-  const base = d.fund
-    ? constructionLtc(mix, "expansion", Math.max(0.85, e.creditIdx ?? 1), Math.max(0.5, app), space)
-    : constructionLtc(mix, e.phase, e.creditIdx ?? 1, app, space);
+  // THE FUND IS FUNDED BY BANKS TOO (2026-11-06). Its advance read a
+  // recession as an expansion, the credit window at no worse than 0.85 and
+  // its own appetite at no less than half — floors at their bound in 56-69%
+  // of 1.6M calls, so a crunch barely reached construction (the plan's 4.6:
+  // halving construction loans moved three-year starts inside the noise).
+  // A debt fund lends its LPs' equity levered on back-leverage — repo and
+  // warehouse lines from the banks — and the window cuts those first: the
+  // banks pulled them in 2008-09, and the margin calls of March 2020 hit the
+  // mortgage REITs and credit funds before anyone. So it reads the window and
+  // its own book like any desk; what sets it apart is its price (liveSpread).
+  const base = constructionLtc(mix, e.phase, e.creditIdx ?? 1, app, space);
   const uncapped = Math.min(d.cap, base * d.scale);
   // The 1.1 approximates the interest-reserve gross-up, so the solved
   // commitment lands at the hold size rather than a tenth over it.

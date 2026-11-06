@@ -1271,19 +1271,24 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // building cannot pay its own coupon, and ignore the months it can, because
   // by then the money has already been spent.
   const dsMonthly = (preReserve * ltc * ((econ.indexRate + 2.1) / 100)) / 12;
-  let deficit = 0;
-  if (dsMonthly > 0) {
+  // ...and the same shortfall as if every dollar in the building were
+  // borrowed: the decision's basis (below), not the cash the reserve holds.
+  const dsAll = (preReserve * ((econ.indexRate + 2.1) / 100)) / 12;
+  let deficit = 0, deficitAll = 0;
+  if (dsAll > 0) {
     const curve = absorptionCurve(carryMonths);
     for (let t = 0; t < carryMonths; t++) {
       const occT = stabOcc0 * curve[t];
       const noiT = (openSf * (rentPsf0 * occT - opex0 * (1 - recovery0 * occT))) / 12;
       // Income only rises along the curve, so the first month the building
       // covers its coupon is the last month the reserve has to fund.
-      if (noiT >= dsMonthly) break;
-      deficit += dsMonthly - noiT;
+      if (noiT >= dsAll) break;
+      deficitAll += dsAll - noiT;
+      if (noiT < dsMonthly) deficit += dsMonthly - noiT;
     }
   }
   deficit = Math.round(deficit);
+  deficitAll = Math.round(deficitAll);
   const carry = Math.round(openSf * opex0 * (1 - fillOcc) * (carryMonths / 12));
   // TI tracks construction cost. Lease commissions are already a fraction of
   // today's rent (months × rate) — multiplying them by costIdx double-counts
@@ -1344,13 +1349,33 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // who has ever filled one in. Computed here rather than added to costTotal
   // because the commitment is sized off costTotal.
   const pointsCost = commitment > 0 ? Math.round(commitment * cq.points) : 0;
+  // THE DECISION IS MADE ON ALL THE CAPITAL, NOT ON THE BORROWED PART
+  // (2026-11-07). The interest reserve and the lease-up shortfall above are
+  // the cash a job really carries, and they scale with the loan; the equity
+  // that replaces a loan is not free money, it is the sponsor's and its
+  // investors' capital, carried for the same months. Pricing only the
+  // borrowed part made a scheme CHEAPER when the banks lent less: halving the
+  // construction desks cut the median basis 1.0-1.8% and lifted yield on cost
+  // as much on three seeds' month-120 snapshots (1,428 schemes, nothing
+  // simulated), and in the forked twins the decisions to build rose in a
+  // credit crunch (commitments 6 -> 14 and 10 -> 16) and landed a plan lead
+  // later as more starts. The residual convention charges finance on all
+  // costs as if the scheme were wholly debt-funded (RICS Valuation Information
+  // Paper 12, 2008; RICS guidance note "Valuation of development property",
+  // 2019), which makes the appraisal independent of the capital structure
+  // (Modigliani & Miller 1958): leverage then acts through quantities — what
+  // the sponsor can fund — not through a cheaper building. DEV_MARGIN is the
+  // developer's profit on top of that full finance. The commitment, the
+  // equity and the cash the job draws are unchanged.
+  const reserveAll = Math.round(reserveFor(costTotal / Math.max(0.35, 1 - rFrac), ratePct, months));
+  const fullCarry = Math.max(0, reserveAll - interestReserve) + Math.max(0, deficitAll - deficit) * (1 - btsShare);
 
 
   return {
     asBuilt, mix, floors: fl, coverage: cov, gsf, rentable,
     hardCost, softCost, demo, contingency, leaseUp, anchorCost, costTotal, months,
     ltc, ltcMax, ratePct, lender: cq.lender, points: cq.points, commitment, interestReserve, pointsCost,
-    nonLandBasis: costTotal + interestReserve + pointsCost,
+    nonLandBasis: costTotal + interestReserve + pointsCost + fullCarry,
     stabNoi, exitCap, exitYieldPct, taxYr1, abate,
     landCarryRate: landCarryFactor(months),
     bts, btsShare,

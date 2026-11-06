@@ -5320,16 +5320,23 @@ function momentumRead(s: GameState, k: BuiltClass, momentum: number, who: { id: 
 }
 
 /**
- * THE EXIT A SHOP UNDERWRITES IS ITS BROKER'S CAP, not today's tape. The pro
- * forma's exit cap is the town's current read; a developer takes its exit from
- * the opinion of value its broker gives it, which is the class as of the last
- * trade that shop closed (beliefs.ts) — stale in a fast market, as broker and
- * appraiser opinions are. A value multiple on the hurdle: today's cap over the
- * believed one.
+ * THE EXIT A SHOP UNDERWRITES IS ITS BROKER'S CAP. A developer takes its exit
+ * from the opinion of value its broker gives it, which is the class as of the
+ * last trade that shop closed (beliefs.ts) — stale in a fast market, as broker
+ * and appraiser opinions are. A value multiple on the hurdle: the cap the pro
+ * forma already exits at over the believed one.
+ *
+ * THE PRO FORMA EXITS AT THE EXPECTED CAP (proforma.ts underwritingEcon:
+ * capExp, a slow memory of the cap), so the ratio is capExp over the belief
+ * (2026-11-07). It read the SPOT cap over the belief, which multiplied every
+ * hurdle up when a crunch lifted spot caps faster than capExp and the
+ * brokers' stale beliefs: a wrong-sign channel — the worse the tape, the
+ * better a scheme looked (crunch over control, months 1-12, seed 33: office
+ * spot cap x1.08, industrial x1.14) — and the teardown test read it too.
  */
 function exitRead(s: GameState, who: { id: string } | null | undefined, k: BuiltClass): number {
-  const now = s.econ.capRate?.[k], b = beliefOf(s, who, k).cap;
-  return now && now > 0 && b > 0 ? now / b : 1;
+  const used = s.econ.capExp?.[k] ?? s.econ.capRate?.[k], b = beliefOf(s, who, k).cap;
+  return used && used > 0 && b > 0 ? used / b : 1;
 }
 
 /** Developers SITES_PER_LOOK examines in one look — a broker's shortlist. */

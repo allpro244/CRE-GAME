@@ -467,6 +467,14 @@ function holderCapitulation(s: GameState, parcels: Record<string, ParcelRecord>)
     const gap = 1 - read.builder / read.psf;
     if (!(gap > 0)) continue;
     const cur = s.landAdj![bbl] ?? 1;
-    s.landAdj![bbl] = +Math.max(0.25, cur * (1 - CAPITULATION * gap)).toFixed(4);
+    // NO FLOOR (2026-11-06). The texture is rec.landPsf x landAdj, so each
+    // step moves the ask a share of the way to the builder's bid and can never
+    // pass it: cur x (1 - CAPITULATION x gap) >= cur x builder/psf. A floor at
+    // a quarter of the texture stopped the owner short of the only bid there
+    // was — at its bound in 36.7% of calls (rail audit #19), every one a lot
+    // whose ask stayed over four times what any builder could pay.
+    // Six significant figures, not four decimals: a small adjustment rounded to
+    // 0 would read as no adjustment at all (resolveBase) and snap back to 1.
+    s.landAdj![bbl] = +(cur * (1 - CAPITULATION * gap)).toPrecision(6);
   }
 }

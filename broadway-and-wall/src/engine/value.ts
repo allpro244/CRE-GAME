@@ -1279,7 +1279,8 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   // itself through `heightPremium` where it is actually planned — and
   // low-rise apartments are wood frame (constructionTypeMult).
   const costPsf = HARD_COST_PSF[k] * constructionTypeMult(k, 3) * e.costIdx * (1 + SOFT_COST) * (1 + CONTINGENCY);
-  const yoc = noiPsf / Math.max(1, costPsf);
+  // per gross foot, like the cost (REAL_ECONOMY_PLAN 2.6): the NOI is per rentable foot, the hard cost per gross
+  const yoc = noiPsf * rentableFromSpec(45_000, 3) / 45_000 / Math.max(1, costPsf);
   const hurdle = developmentHurdle(yoc, (e.capRate?.[k] ?? CAP_BASE[k]) / 100);
   // THE RESPONSE CURVE WAS CALIBRATED FOR INPUTS THIS FUNCTION NO LONGER HAS.
   //

@@ -708,7 +708,11 @@ export function cityValueToReplacement(s: GameState): number {
     // real claim on a real building and is capitalised into every other value
     // in this engine.
     // (value.ts classValuePsf: the same solve the assessor's roll reads)
-    const valuePsf = classValuePsf(e, k);
+    // PER GROSS FOOT, like the cost it is weighed against (REAL_ECONOMY_PLAN 2.6): classValuePsf is per
+    // rentable foot and HARD_COST_PSF per gross, which overstated q by gross/rentable (~1.1-1.3).
+    // The cost below prices the low-rise reference shell, so the value is converted at that shell's own
+    // rentable ratio (rentableFromSpec, BOMA core loss), the same 45k-sf, three-floor reference the pro forma sizes from.
+    const valuePsf = classValuePsf(e, k) * rentableFromSpec(45_000, 3) / 45_000;
     // The low-rise base, deliberately: this is a citywide average against a
     // citywide stock, and weighting the height premium would need a height
     // distribution nobody has measured. It biases the ratio UP for a tall town

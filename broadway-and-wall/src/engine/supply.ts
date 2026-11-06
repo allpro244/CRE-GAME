@@ -120,6 +120,7 @@ export function queueSupplyProject(
     // town's construction starts are the sum of these (market.ts).
     const b = (s.econ.brokeMonth ??= emptyByClass(() => 0));
     for (const k of CLASSES) b[k] += Math.max(0, input.sfByUse[k] ?? 0);
+    row.broke = true;
   }
   syncSupplyViews(s.econ);
 }
@@ -140,6 +141,15 @@ export function stallSupplyProject(s: GameState, bbl: string): void {
 }
 
 export function cancelSupplyProject(s: GameState, bbl: string): void {
+  // A START UNWOUND BEFORE THE MONTH IS READ NEVER HAPPENED. dev.ts
+  // breakCityGround queues the start before any firm claims it, and unwinds
+  // it when none can carry it; the square feet stayed in the month's starts,
+  // so a credit crunch that stopped a claim still read as a start.
+  const b = s.econ.brokeMonth;
+  for (const p of ensureQueue(s.econ)) {
+    if (p.bbl !== bbl || !p.broke || !b) continue;
+    for (const k of CLASSES) b[k] = Math.max(0, b[k] - Math.max(0, p.sfByUse[k] ?? 0));
+  }
   s.econ.deliveryQueue = ensureQueue(s.econ).filter((p) => p.bbl !== bbl);
   syncSupplyViews(s.econ);
 }

@@ -41,6 +41,7 @@ import { livingRivals } from "./rivals";
 import { packageCanClose, packageFinance } from "./portfoliosale";
 import { financePackage } from "./rivalDebt";
 import { logFirm } from "./firmLog";
+import { BUY_CLOSING } from "./propmarket";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
@@ -742,11 +743,11 @@ export function acceptPortfolioBid(
     logBooks(next, "taxes", taxTotal);
   }
   // THE DEEDS LAND IN THE BUYER'S BOOK, ON THE BUYER'S MONEY. Equity and the
-  // 2% closing out of its account, the rest on acquisition mortgages written
+  // the buyer's closing (BUY_CLOSING) out of its account, the rest on acquisition mortgages written
   // deed by deed (rivalDebt.financePackage) — the same close a street book
   // gets in tickPortfolios.
   {
-    const closing = Math.round(bid.price * 0.02);
+    const closing = Math.round(bid.price * BUY_CLOSING);
     winner.cash -= fin.equity + closing;
     financePackage(next, winner, fin.debt, marks);
     winner.basis = Math.round((winner.basis ?? 0) + fin.equity + closing);

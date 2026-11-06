@@ -967,11 +967,18 @@ export function claimJob(
     // The firm's own cheque: all of the day-one equity, or a deal-by-deal
     // sponsor's co-invest (sponsorShare) with the deal's investors writing the
     // rest.
-    const need = Math.round(dayOneOf(r) * sponsorShareOf(s, r)) + Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.04);
+    const reserve = Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.04);
+    const need = Math.round(dayOneOf(r) * sponsorShareOf(s, r)) + reserve;
     if (freeCash(s, r) + lineDrawFor(s, parcels, r, need) < need) return false;
-    // A firm building mostly with its own money has to HAVE it: the whole of
-    // its equity, called or callable, not only the first draw.
-    if (ltcOf(r) < ltc && r.cash + (r.uncalled ?? 0) < equityOf(r) * sponsorShareOf(s, r)) return false;
+    // ...AND THE WHOLE CHEQUE, NOT ONLY THE FIRST DRAW (2026-11-07). The desk
+    // lends its advance and no more (below), so the rest of the equity is
+    // called as the work goes in: a sponsor that cannot show its share of all
+    // of it, free, on the line or callable from its investors, does not break
+    // ground. This tested only the day-one draw for any firm borrowing the
+    // desk's full advance, because the facility then quietly paid for
+    // everything after day one.
+    const whole = Math.round(equityOf(r) * sponsorShareOf(s, r)) + reserve;
+    if (freeCash(s, r) + lineDrawFor(s, parcels, r, whole) + (r.uncalled ?? 0) < whole) return false;
     // THE SITE HAS TO SUIT THE BUILDER: a trophy builder does not put a
     // warehouse on the fringe because the city's pipeline offered one.
     const suit = r.sheet ? Math.min(1.6, fitOf(s, parcels, r, { ...rec, class: use === "mixed" ? "retail" : use } as ParcelRecord)) : 1;
@@ -1017,23 +1024,23 @@ export function claimJob(
     // once sponsor cash ran dry before the loan ever advanced (debt stayed 0).
     job.spent = dayOneEquity;
     job.debt = 0;
-    if (bestLtc < ltc) {
-      // BUILT WITH ITS OWN MONEY, OR MOSTLY. The firm pays its equity as the
-      // work goes in and borrows only its own style's share — none at all
-      // when it went ahead with the desk shut.
-      job.equityLeft = Math.max(0, equityOf(best) - dayOneEquity);
-      job.commitment = Math.round(projectCost * bestLtc * 1.12);
-      job.ratePct = bestLtc > 0 ? plan.ratePct : 0;
-      job.lender = bestLtc > 0 ? plan.lender : undefined;
-    } else {
-      job.equityLeft = 0;
-      // Facility covers the unpaid balance plus a thin interest reserve — without
-      // it, capitalised interest fills the commitment and the next month orphans
-      // a nearly finished frame.
-      job.commitment = Math.round(Math.max(0, projectCost - dayOneEquity) * 1.12);
-      job.ratePct = plan.ratePct;
-      job.lender = plan.lender;
-    }
+    // THE DESK LENDS ITS ADVANCE, AFTER THE EQUITY IS IN (2026-11-07). The
+    // firm pays the rest of its equity as the work goes in (fundJobs draws
+    // equity first, its investors meeting their share of each call), and the
+    // facility is the desk's advance on the project with its interest reserve
+    // grossed up — none at all when the firm went ahead with the desk shut.
+    // A firm borrowing the desk's full advance used to get a facility of
+    // (cost - day-one equity) x 1.12, whatever the desk would lend: measured
+    // (seed 11, 36 months from year 10), the levered builders' jobs drew
+    // 0.92-0.99 of cost against a desk that would lend 0.58-0.74, and every
+    // dollar after day one was debt — so a credit crunch that halved the
+    // desks moved only the first cheque, and starts fell 6-10% where 2008-10's
+    // fell 20-90%. The player's own job has always run this way
+    // (dev.ts tickDevelopments); one rulebook (PARITY_PLAN.md).
+    job.equityLeft = Math.max(0, equityOf(best) - dayOneEquity);
+    job.commitment = Math.round(projectCost * bestLtc * 1.12);
+    job.ratePct = bestLtc > 0 ? plan.ratePct : 0;
+    job.lender = bestLtc > 0 ? plan.lender : undefined;
   }
   poachForBuildToSuit(s, parcels, best, rec, use === "mixed" ? "retail" : use, sf, deliverM);
   if (only) return best;
@@ -3651,9 +3658,14 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   if (cost > (r.aum ?? 0) * 0.9 + r.cash * 5) return;
   // Dirt is already theirs — first equity draw only (loan follows over the job).
   const dayOneNeed = Math.round(plan.equity * 0.40);
-  const needWithReserve = Math.round(dayOneNeed * sponsorShareOf(s, r)) + Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.03);
+  const reserve = Math.max(400_000 * dollarLevel(s.econ), r.cash * 0.03);
+  const needWithReserve = Math.round(dayOneNeed * sponsorShareOf(s, r)) + reserve;
   const draw = lineDrawFor(s, parcels, r, needWithReserve);
   if (r.cash + draw < needWithReserve) return;
+  // ...and its share of the whole equity, which the job will call as the work
+  // goes in (breakGround: the desk lends its commitment, after the equity).
+  const whole = Math.round(plan.equity * sponsorShareOf(s, r)) + reserve;
+  if (freeCash(s, r) + lineDrawFor(s, parcels, r, whole) + (r.uncalled ?? 0) < whole) return;
   const formerDurationRoll = rng(s, "rivals");
   void formerDurationRoll;
   drawLine(s, r, draw);
@@ -3717,8 +3729,11 @@ export function breakGround(
   s.cityJobs.push({
     bbl, use, sf, floors, startM: s.month, deliverM, mix: prog,
     firmId: r.id, cost, spent: dayOne,
-    equityLeft: 0, debt: 0,
-    commitment: Math.round(Math.max(0, cost - dayOne) * 1.12),
+    // the rest of the equity first, then the desk's commitment — the loan its
+    // quote wrote (deskWithRoom tested it in startOwnJob), not the balance of
+    // the cost (claimJob carries the same note)
+    equityLeft: Math.max(0, plan.equity - dayOne), debt: 0,
+    commitment: plan.commitment,
     ratePct: plan.ratePct,
     lender: plan.lender,
     ...(plan.product ? { product: plan.product.key, ...(plan.product.draw !== undefined ? { draw: plan.product.draw } : {}) } : {}),

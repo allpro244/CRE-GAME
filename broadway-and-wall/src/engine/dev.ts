@@ -27,7 +27,7 @@ export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from 
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
 import { depositFor, depositsOn, genAnchorTenant, leasableUses, minLettableSf, pickName, pickSector, useVacantSf } from "./leasing";
-import { claimJob, jobDelivered, ownerOf, gradeOf, firmMargin, capForSpread, streetHurdle, streetHasOwnMoney, anonHurdle, hurdleAt, freeCash, transferDeed } from "./rivals";
+import { claimJob, jobDelivered, ownerOf, gradeOf, firmMargin, capForSpread, streetHurdle, streetHasOwnMoney, anonHurdle, hurdleAt, freeCash, transferDeed, sponsorShareOf } from "./rivals";
 import { logFirm } from "./firmLog";
 import { spendable, fundableNow, fundAndBook } from "./credit";
 import { mixOf, districtLabel } from "./mix";
@@ -5137,8 +5137,14 @@ function developerLook(
         // rent, whatever it believes about tomorrow's.
         if (!kids.length) nearV = Math.max(nearV, hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) / spreadFloor(dev));
         if (hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) < spreadFloor(dev)) continue;
-        // ...and only what its own money can carry its share of.
-        const coInvest = builderCoInvest(u.plan.basisTotal, ltcHere);
+        // ...and only what its own money can carry its share of: for a firm,
+        // the share of the whole equity it writes on its record
+        // (sponsorShareOf), the same cheque claimJob tests at the groundbreak.
+        // One quantity, one answer: this read a tenth of the equity while 32
+        // of 36 builder firms write half of it or all of it.
+        const coInvest = firm
+          ? Math.round(Math.max(0, u.plan.basisTotal * (1 - ltcHere)) * sponsorShareOf(s, firm))
+          : builderCoInvest(u.plan.basisTotal, ltcHere);
         if (coInvest > purse) continue;
         const h = hurdleAt(u.plan, DEV_MARGIN) * dev.outlook * momentumRead(s, lead, dev.momentum, firm) * exitRead(s, firm, lead);
         if (!best || h > best.h) best = { bbl, rec, use, floors: fl, plate, h, coInvest, kids, sf: ownSf };

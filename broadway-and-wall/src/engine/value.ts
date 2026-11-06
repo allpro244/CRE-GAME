@@ -1279,7 +1279,8 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   // itself through `heightPremium` where it is actually planned — and
   // low-rise apartments are wood frame (constructionTypeMult).
   const costPsf = HARD_COST_PSF[k] * constructionTypeMult(k, 3) * e.costIdx * (1 + SOFT_COST) * (1 + CONTINGENCY);
-  const yoc = noiPsf / Math.max(1, costPsf);
+  // per gross foot, like the cost (REAL_ECONOMY_PLAN 2.6): the NOI is per rentable foot, the hard cost per gross
+  const yoc = noiPsf * rentableFromSpec(45_000, 3) / 45_000 / Math.max(1, costPsf);
   const hurdle = developmentHurdle(yoc, (e.capRate?.[k] ?? CAP_BASE[k]) / 100);
   // THE RESPONSE CURVE WAS CALIBRATED FOR INPUTS THIS FUNCTION NO LONGER HAS.
   //
@@ -3834,7 +3835,8 @@ export function propertyTaxYr(rec: ParcelRecord, h: Holding, econ?: Econ): numbe
   const bill = grossTaxYr(rec, h, econ);
   if (!bill) return 0;
   if (rec.class === "multifamily") return bill;   // residential leases are gross
-  const taxPsf = bill / Math.max(1, rec.bldgArea);
+  // PER RENTABLE FOOT (REAL_ECONOMY_PLAN 2.6): recoveries bill t.sf, which is rentable; on gross feet a fully let NNN building recovered only rentable/gross (~83-90%) of its tax (BOMA Z65.1 pro-rata share).
+  const taxPsf = bill / Math.max(1, rentableSf(rec));
   const opexNowPsf = econ ? opexPsf(rec.class as BuiltClass, econ, h.programsDone?.systems !== undefined, recoverableService(h.service)) * locOpexMult(rec, econ, rec.class as BuiltClass) : taxPsf;
   let recovered = 0;
   for (const t of h.tenants) recovered += recoveryFor(t, opexNowPsf, taxPsf).tax;
@@ -3919,7 +3921,7 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   let opexBill = 0;
   for (const u of legs) opexBill += useRentableSf(rec, u) * opexAt(u, h.service);
   const taxBill = grossTaxYr(rec, h, econ);
-  const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
+  const taxNowPsf = taxBill / Math.max(1, rentableSf(rec));   // per rentable foot, as billed (see above)
   let baseRent = 0, leasedSf = 0, recOpex = 0, recTax = 0, free = 0;
   for (const t of h.tenants) {
     leasedSf += t.sf;
@@ -4431,7 +4433,7 @@ function leaseUpGapNoiYr(rec: ParcelRecord, econ: Econ, h: Holding, gapSf: numbe
   if (cls === "multifamily") return gapSf * rent * (1 - MGMT_FEE - APT_RESERVE);
   const systemsDone = h.programsDone?.systems !== undefined;
   const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service)) * locOpexMult(rec, econ, cls);
-  const taxNowPsf = grossTaxYr(rec, h, econ) / Math.max(1, rec.bldgArea);
+  const taxNowPsf = grossTaxYr(rec, h, econ) / Math.max(1, rentableSf(rec));   // per rentable foot, as billed
   return gapSf * (rent + RECOVERY_RATE[cls] * (opexRecoverPsf + taxNowPsf)) * (1 - MGMT_FEE);
 }
 

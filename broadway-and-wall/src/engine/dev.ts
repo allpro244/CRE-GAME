@@ -27,7 +27,7 @@ export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from 
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
 import { depositFor, depositsOn, genAnchorTenant, leasableUses, minLettableSf, pickName, pickSector, useVacantSf } from "./leasing";
-import { claimJob, jobDelivered, ownerOf, gradeOf, firmMargin, streetHurdle, streetHasOwnMoney, anonHurdle, hurdleAt, freeCash, transferDeed } from "./rivals";
+import { claimJob, jobDelivered, ownerOf, gradeOf, firmMargin, capForSpread, streetHurdle, streetHasOwnMoney, anonHurdle, hurdleAt, freeCash, transferDeed } from "./rivals";
 import { logFirm } from "./firmLog";
 import { spendable, fundableNow, fundAndBook } from "./credit";
 import { mixOf, districtLabel } from "./mix";
@@ -708,7 +708,11 @@ export function cityValueToReplacement(s: GameState): number {
     // real claim on a real building and is capitalised into every other value
     // in this engine.
     // (value.ts classValuePsf: the same solve the assessor's roll reads)
-    const valuePsf = classValuePsf(e, k);
+    // PER GROSS FOOT, like the cost it is weighed against (REAL_ECONOMY_PLAN 2.6): classValuePsf is per
+    // rentable foot and HARD_COST_PSF per gross, which overstated q by gross/rentable (~1.1-1.3).
+    // The cost below prices the low-rise reference shell, so the value is converted at that shell's own
+    // rentable ratio (rentableFromSpec, BOMA core loss), the same 45k-sf, three-floor reference the pro forma sizes from.
+    const valuePsf = classValuePsf(e, k) * rentableFromSpec(45_000, 3) / 45_000;
     // The low-rise base, deliberately: this is a citywide average against a
     // citywide stock, and weighting the height premium would need a height
     // distribution nobody has measured. It biases the ratio UP for a tall town
@@ -4044,7 +4048,7 @@ export function ownerRedevelopment(
   if (rec.class === "land" || !(rec.bldgArea > 0)) return null;
   const prof: DeveloperProfile = r.builderProf
     ? { ...r.builderProf, minDemand: 0 }
-    : { bar: (1 + firmMargin(r, s.month)) / (1 + DEV_MARGIN), minDemand: 0, spec: 0.5, maxFloors: Infinity, ltc: 0.6,
+    : { bar: (1 + firmMargin(r, s.month, capForSpread(s.econ, rec.class))) / (1 + DEV_MARGIN), minDemand: 0, spec: 0.5, maxFloors: Infinity, ltc: 0.6,
         uses: ["office", "multifamily", "industrial", "retail"], outlook: 1, momentum: 0, vacTol: 0.06, maxShare: 0.02 };
   const oc = redevelopmentBasis(rec, s.econ, gradeOf(s, rec));
   const found = replacementSearch(s, parcels, bbl, rec, rec, rec.class, rec.bldgArea, oc, prof, r);

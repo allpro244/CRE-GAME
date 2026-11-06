@@ -75,7 +75,7 @@ function rollRecovery(s: GameState, cls: string): Recovery {
 
 /** The expense level frozen into a base-year lease on the day it is signed. */
 function stopPsfNow(rec: ParcelRecord, econ: GameState["econ"], h: Holding, use?: BuiltClass): number {
-  const tax = (h.assessed ?? h.costBasis) * taxRate(econ) * (1 - abatedShare(h, econ)) / Math.max(1, rec.bldgArea);
+  const tax = (h.assessed ?? h.costBasis) * taxRate(econ) * (1 - abatedShare(h, econ)) / Math.max(1, rentableSf(rec));   // per rentable foot, as recoveries bill it (REAL_ECONOMY_PLAN 2.6)
   const sys = h.programsDone?.systems !== undefined;
   // A shop and an office in the same building do not have the same expense
   // stop — their expense loads are not the same and never were.

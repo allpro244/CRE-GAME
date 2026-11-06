@@ -58,24 +58,6 @@ export function sponsorStanding(s: GameState): {
 }
 
 
-/**
- * What a building fetches when the seller has no choice.
- *
- * A forced sale used to clear at 92% of the appraisal in every market, which
- * made an involuntary exit a mild inconvenience — and in the common case where
- * the loan was well inside the value, it actually RETURNED cash. That is not
- * what a foreclosure sale is. The bid for distressed paper disappears at
- * exactly the moment distress appears: everyone who would buy it is dealing
- * with their own balloon, and the only money in the room knows you have to
- * transact today. In a good market you lose a tenth; in a crunch you lose a
- * third, and that gap is the entire cost of having been levered into it.
- */
-export function distressPrice(s: GameState): number {
-  const tight = Math.max(0, 1 - (s.econ.creditIdx ?? 1));
-  const down = Math.max(0, -(s.econ.cycleDev ?? 0));
-  return Math.max(0.62, 0.90 - 0.22 * tight - 0.08 * down);
-}
-
 /** Record a black mark, and say so out loud. */
 // "dpo" is a discounted payoff: you bought your own debt back for less than
 // you owed. types.ts already listed it as an exit kind; this signature had not

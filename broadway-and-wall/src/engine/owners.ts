@@ -53,6 +53,7 @@
  * set, and the small stock on a tail — which produces the concentration
  * without anyone having to sort the city.
  */
+import { ownerFirm } from "./firms";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Rival, SellerKind } from "./types";
 import { START_YEAR } from "./types";
@@ -386,7 +387,7 @@ function landTierOf(rec: ParcelRecord, r: number): HolderTier {
 export function holderOf(s: GameState, parcels: ParcelTable, bbl: string): Holder | null {
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return null;
-  if (s.holdings[bbl] || ownerOf(s, bbl)) return null;
+  if (ownerFirm(s, bbl) !== null) return null;
   if (isCivicLand(s, bbl)) return null;
   // A deed pinned to a retired firm's family stays theirs until it next trades.
   const pin = s.deedHolder?.[bbl];

@@ -526,9 +526,10 @@ export function gumbel(u: number): number {
  * that make a shop's sales: streetRolls CATCHMENT), less what being there
  * costs it in its people's and partners' time.
  */
-export function worthOf(t: Tenant, k: Comm, mkt: number, sc: number, take: number, distCostYr: number, footRel?: number): number {
+export function worthOf(t: Tenant, k: Comm, mkt: number, sc: number, take: number, distCostYr: number, footRel?: number, capacity = 1): number {
   const fit = tenantQualityTerms(t.quality ?? sc, sc).rent;
-  return mkt * fit * footFactor(k, footRel) - distCostYr / Math.max(1, take);
+  // `capacity`: what the firm's trade can pay against what the market asks (tenantBooks.ts rentCapacity)
+  return mkt * capacity * fit * footFactor(k, footRel) - distCostYr / Math.max(1, take);
 }
 /**
  * A SHOP'S WALK-INS against what its address's rent already charges for, as a

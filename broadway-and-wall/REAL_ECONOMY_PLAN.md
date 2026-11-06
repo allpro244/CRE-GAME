@@ -48,7 +48,10 @@ It supersedes the open parts of `ECON_REALISM_PLAN.md` and `RENT_VACANCY_RESPONS
 | 1, step 2, part 1: national output has a capacity ceiling (+6%, CBO 1966); ordinary cycles unchanged | done | #592 |
 | 3.2 dry powder bends a fund's hurdle by its own fee as its investment period runs out | done | #598 |
 | 4.6 part 1: the debt fund's construction advance reads the window and its own book, without floors (no measured effect: the floored quote never decided a loan) | done | #600 |
-| 4.6 next: halving construction loans moves starts +5.5% (noise ±22%), because nothing on the street runs short of equity. Not a levered hurdle: under Modigliani-Miller leverage does not change a scheme's value, so the unlevered margin test is the consistent one. What bites in a crunch is that equity is scarce and dear to raise, and the anonymous merchants have no balance sheet. Build: the merchants' equity as a pool that is spent on starts and refilled from completions, so a doubled equity cheque per scheme halves what the pool can start | open | — |
+| 4.6 part 2: a builder takes the construction loan the desk will write | done | #606 |
+| Crunch: a seller who can wait (fund extensions, non-core holds) waits in a dislocated market; deal volume under a crunch −6.5% → −22.2% (5 seeds) | done | #610 |
+| Crunch: a lender extends only a loan whose building covers its coupon. With #610, all crunch rows right-signed on 5 seeds: deal volume −31.6%, charge-offs up, starts −22.9%, office −12.9% | measuring | branch `claude/real-economy-extend-performing` |
+| Hotfix: the player's closing cost was NaN after #609 (circular import read at load) | done | #611 |
 | 8: rail audit #1 (a constant written as a rail) and #16 (a dead coin) | done | #595, #596 |
 | 8: rail audit #19, land capitulation runs to the builder's bid | done | #601 |
 | 3.4 follow-up: courthouse bidders finance on the bridge desk; the courthouse room is the distress specialists (open room's runner-up below the worn mark, p50: −8% → +8%) | done | #602, #603 |

@@ -60,7 +60,7 @@ import type { ParcelRecord } from "@/data/types";
 import type { BtsCommitment, BuiltClass, Contract, DevUse, Econ, UseMix } from "./types";
 import { BUILT_CLASSES, CONSTRUCTION_LENDER } from "./types";
 import { productOf, layoutProduct, productHardCostBase, productBuildMonths, anchorShare, type ProductKey, type ProductSite } from "./products";
-import { normalVac, CITY_STOCK, BUILD_MONTHS, LEASE_TERM_M, forwardVacancy, concessionTarget, CONC_DEPTH, rentTrend12 } from "./market";
+import { normalVac, CITY_STOCK, BUILD_MONTHS, LEASE_TERM_M, forwardVacancy, concessionTarget, CONC_DEPTH } from "./market";
 import {
   HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
   rentableRatio, marketRentPsfYr, opexPsf, locOpexMult, RECOVERY_RATE, MGMT_FEE, noiYr, capRateFor,
@@ -678,8 +678,6 @@ export function deskQuote(
  * The bounds are guards on a ratio of two indices that track each other; they
  * are not meant to bind. `rentMult` is the holder's peak scenario (value.ts).
  */
-/** Months from a groundbreak to the middle of its lease-up — the horizon of a delivery forecast. */
-const DELIVERY_FORECAST_M = 30;
 export function underwritingEcon(econ: Econ, rentMult = 1): Econ {
   // An overlay, not a copy: the three indices are replaced and every other
   // field reads through to the live econ. Spreading the whole econ object
@@ -699,16 +697,24 @@ export function underwritingEcon(econ: Econ, rentMult = 1): Econ {
     const vAt = econ.stock?.[u] ? forwardVacancy(econ, u) : vNow;
     const conc = (1 - CONC_DEPTH * concessionTarget(vAt - nat))
       / Math.max(0.05, 1 - CONC_DEPTH * concessionTarget(vNow - nat));
-    // ...and the rent itself at delivery: where the comps have gone over the
-    // last year (market.ts rentTrend12), carried half the ~30 months to the
-    // middle of the lease-up — a market study extrapolates the trend and
-    // expects some of it to revert [K: half]. This read the city's rent
-    // equation at the delivery vacancy (`rentDriftAt`), which no rent follows
-    // any more (ONE ECONOMY step 4).
-    const drift = econ.stock?.[u] ? Math.exp(Math.max(-0.25, Math.min(0.25, 0.5 * rentTrend12(econ, u) * DELIVERY_FORECAST_M / 12))) : 1;
+    // THE RENT IS TODAY'S MARKET RENT, UNTRENDED (2026-11-07). The rent
+    // belief above (rentExp) is the market's own adaptive expectation, and
+    // the concessions at delivery vacancy carry the supply side forward. A
+    // developer's yield on cost is quoted untrended — at today's rent, not at
+    // a rent projected from last year's move — which is how a scheme is
+    // judged in practice. This used to multiply in the last twelve months'
+    // effective-rent change carried half the 30 months to mid-lease-up and
+    // clamped at +/-25%, a market study's extrapolation [K: half]. In this
+    // town rents revert: the trailing twelve months' change predicts the next
+    // fifteen with correlation -0.29 to -0.54 (office -0.39, retail -0.54,
+    // industrial -0.29, flats -0.45; the shock suite's control and placebo
+    // twins, three seeds, 180 months), so the extrapolation doubled the noise
+    // in every builder's residual (flats' underwritten rent sd 0.235 against
+    // the market's 0.108; the drift sat on its clamp 6 months in 37) and was
+    // most of the land panel's quarterly swing (58% in the diagnosis probe).
     const k = belief * rentMult;
     if (rentIdx[u] !== undefined) rentIdx[u] = rentIdx[u] * k;
-    if (effRentIdx && effRentIdx[u] !== undefined) effRentIdx[u] = effRentIdx[u] * k * conc * drift;
+    if (effRentIdx && effRentIdx[u] !== undefined) effRentIdx[u] = effRentIdx[u] * k * conc;
     const capBelief = econ.capExp?.[u] && econ.capRate?.[u]
       ? clampP(econ.capExp[u] / econ.capRate[u], 0.6, 1.7) : 1;
     if (capRate[u] !== undefined) capRate[u] = capRate[u] * capBelief;

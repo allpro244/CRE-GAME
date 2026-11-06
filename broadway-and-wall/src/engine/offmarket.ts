@@ -35,6 +35,7 @@
  * The owner's draws come from the "owners" stream and the firm's from
  * "rivals"; the player's own approaches keep the "sales" stream they had.
  */
+import { ownerFirm } from "./firms";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Rival, RivalStyle } from "./types";
 import { rng, rrange } from "./market";
@@ -42,7 +43,7 @@ import { assetValue, initialCondition, resolveRec } from "./value";
 import { isCivicLand } from "./demand";
 import { holderOf } from "./owners";
 import { ownerAnswersCall } from "./actions";
-import { livingRivals, ownerOf, rivalBuys, firmMaxPrice, styleHunt, fitOf, deployPressure } from "./rivals";
+import { livingRivals, rivalBuys, firmMaxPrice, styleHunt, fitOf, deployPressure } from "./rivals";
 import { money } from "./money";
 import { tableVersion } from "./tableVersion";
 import { loneBid } from "./propmarket";
@@ -99,7 +100,7 @@ export function tickOffMarketCalls(s: GameState, parcels: ParcelTable): void {
       const pool = homeShare > 0 && rng(s, "rivals") < homeShare ? homeKeys! : keys;
       const bbl = pool[Math.floor(rng(s, "rivals") * pool.length)];
       if ((r.doors?.[bbl] ?? 0) > s.month) continue;
-      if (s.holdings[bbl] || ownerOf(s, bbl) || isCivicLand(s, bbl)) continue;
+      if (ownerFirm(s, bbl) !== null || isCivicLand(s, bbl)) continue;
       if (s.listings.some((l) => l.bbl === bbl)) continue;
       if (s.developments[bbl] || (s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
       if (s.month - (s.lastTradeM?.[bbl] ?? -999) < 24) continue;

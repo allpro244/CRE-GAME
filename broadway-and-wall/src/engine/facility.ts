@@ -66,7 +66,8 @@ import { transferGroundLeaseOffBook } from "./actions";
 import { ownedHoldingNoiYr, ownedHoldingValue, ownedMonthlyNoi, resolveRec } from "./value";
 import { PRODUCTS, productById, bumpLenderRel, windowOpen, quote, advanceFactor, statedLtv, stackPayoff } from "./debt";
 import { shortIndexOf } from "./market";
-import { distressPrice, sponsorStanding, markSponsor } from "./sponsor";
+import { sponsorStanding, markSponsor } from "./sponsor";
+import { foreclosureSale } from "./propmarket";
 import { recordComp } from "./comps";
 import { firmShort } from "./firm";
 import { fundCashNeed, fundableNow, spendable, fundAndBook } from "./credit";
@@ -1146,10 +1147,11 @@ function accelerate(s: GameState, parcels: ParcelTable): number {
     const h = s.holdings[bbl];
     const rec = resolveRec(parcels, s, bbl);
     if (!h || !rec) continue;
-    const px = Math.round(ownedHoldingValue(s, parcels, h) * distressPrice(s));
+    const sale = foreclosureSale(s, parcels, rec, bbl, ownedHoldingValue(s, parcels, h));
+    const px = sale.px;
     gross += px;
     taken.push(rec.address);
-    recordComp(s, rec, px, "a receiver", firmShort(s), true, h.condition);
+    if (sale.bid) recordComp(s, rec, px, "a receiver", firmShort(s), true, h.condition);
     // THE SAME CLOSING AS ANY CREDITORS' SALE (sim.ts insolvency). The pool's
     // deeds used to vanish without one: the tenants' deposits stayed in your
     // account, the sale never reached your exits or the deed ledger, and a

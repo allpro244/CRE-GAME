@@ -50,11 +50,13 @@ import { rng, rrange } from "./market";
 import { assetValue, collateralAsIs, holdingValue, ownedHoldingValue, resolveRec } from "./value";
 import { lenderByName, lenderPressure, chargeLenderLoss } from "./lenders";
 import { assetGrade, clearRivalClaims, fitOf, forgetDeed, noteLost } from "./rivals";
+import { dealView, maxPrice, bidderOf, forcedSalePrice } from "./propmarket";
+import { beliefSignals } from "./beliefs";
 import { addToLine, dropDeed, syncDebt } from "./rivalDebt";
 import { hash01 } from "./competitorTraits";
 import { genRentRoll } from "./leasing";
 import { recordComp } from "./comps";
-import { distressPrice, markSponsor } from "./sponsor";
+import { markSponsor } from "./sponsor";
 import { firmShort } from "./firm";
 import { productById, loanLender, bumpLenderRel } from "./debt";
 import { clearPrivateOrigination, creditBookRoom, releasePrivateStreetRecord } from "./privateCredit";
@@ -874,7 +876,9 @@ export function payoffQuote(
     };
   }
   const value = ownedHoldingValue(s, parcels, h);
-  const auction = value * distressPrice(s) * 0.86;
+  // What the bank gets if it forecloses instead: the room's best bid today
+  // (propmarket forcedSalePrice), not a formula off the cycle.
+  const auction = forcedSalePrice(s, parcels, rec, bbl, value);
   const under = auction < bal;
   const open = p > 0.25 || under;
   const px = Math.round(Math.min(bal, Math.max(auction, bal * (0.98 - 0.26 * p)) * (1.04 - 0.10 * p)));
@@ -975,13 +979,26 @@ function sellYourDefaultToACompetitor(s: GameState, parcels: ParcelTable) {
     if (!rec) continue;
     const bal = Math.round(h.loan.balance);
     const value = ownedHoldingValue(s, parcels, h);
-    const pct = Math.max(0.55, Math.min(0.95, (value * distressPrice(s) * 0.92) / Math.max(1, bal)));
-    const px = Math.round(bal * pct);
-    const buyer = hunters.find((r) =>
-      !used.has(r.id) && (r.aum ?? 0) > px * 3 && r.debt / Math.max(1, r.aum ?? 1) < 0.75
-      && Math.max(0, r.cash) >= px * 0.34
-      && hash01(`${s.seed}:ltoYou:${r.id}:${w.bbl}:${s.month}`) < 0.12);
+    // THE PRICE IS THE BUYER'S (2026-11-06). A loan-to-own fund pays for the
+    // paper what the building is worth to it — its own bid for the deed
+    // (propmarket maxPrice, the number it would pay at a sale) — discounted at
+    // its own cost of capital over the months until the July auction hands
+    // it the deed, because a loan in default pays it nothing meanwhile. Never
+    // more than the balance: at par the bank simply sells it whole. This
+    // replaced distressPrice x 0.92 held between 55 and 95 cents.
+    const view = dealView(s, rec, w.bbl, value);
+    if (!view) continue;
+    const toJuly = ((6 - (s.month % 12)) + 12) % 12 || 12;
+    let buyer: Rival | undefined; let px = 0;
+    for (const r of hunters) {
+      if (used.has(r.id) || hash01(`${s.seed}:ltoYou:${r.id}:${w.bbl}:${s.month}`) >= 0.12) continue;
+      const { max, uw } = maxPrice(s.econ, view, bidderOf(s, r, rec), beliefSignals(s, r));
+      const offer = Math.round(Math.min(bal, max / Math.pow(1 + Math.max(0, uw.r), toJuly / 12)));
+      if (!(offer > 0)) continue;
+      if ((r.aum ?? 0) > offer * 3 && r.debt / Math.max(1, r.aum ?? 1) < 0.75 && Math.max(0, r.cash) >= offer * 0.34) { buyer = r; px = offer; break; }
+    }
     if (!buyer) continue;
+    const pct = px / Math.max(1, bal);
     used.add(buyer.id);
     const equity = Math.round(px * 0.34);
     buyer.cash -= equity;

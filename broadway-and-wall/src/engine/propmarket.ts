@@ -53,7 +53,7 @@ import { stabViewFor, streetRefiProceeds } from "./debt";
 import { TI_ASK, renewalRefreshShare } from "./leasing";
 import {
   livingRivals, paramsOf, fitOf, ownerOf, firmOutlook, deployPressure, contractedEquity, lineRoom,
-  minTicket, boughtLastYear, gainsTax, streetSaleCost, spreadAdj, firmMaxPrice, firmMargin, landBanker,
+  minTicket, boughtLastYear, gainsTax, streetSaleCost, spreadAdj, firmMaxPrice, firmMargin, capForSpread, landBanker,
 } from "./rivals";
 import { dealsPerYear, misreadPp } from "./competitorTraits";
 import { rowOn, deskWithRoom } from "./rivalDebt";
@@ -357,7 +357,12 @@ export interface Bid { r: Rival; max: number; bid: number; uw: Underwriting }
  * underwriting it on its own books. Sorted best first. `n` is how many were
  * in the room — the broker's read the bidders shade against.
  */
-export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress"> & { listedM?: number }): { bids: Bid[]; n: number; view: DealView | null } {
+/**
+ * `open`: an open-outcry sale (the courthouse steps), where nobody shades —
+ * each bidder stays in up to what it can pay, so its "bid" is its limit and
+ * the price is set by the runner-up, not by a sealed guess.
+ */
+export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress"> & { listedM?: number; open?: boolean }): { bids: Bid[]; n: number; view: DealView | null } {
   const view = dealView(s, rec, li.bbl, li.ask);
   if (!view) return { bids: [], n: 0, view };
   const seller = ownerOf(s, rec.bbl);
@@ -381,7 +386,7 @@ export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
     const b = bidderOf(s, r, rec);
     const { max, uw } = maxPrice(s.econ, view, b, beliefSignals(s, r));
     if (!(max > 0)) continue;
-    let bid = Math.min(max * (1 - SHADE / Math.max(1, n)), affordable(s, r, view, b));
+    let bid = Math.min(li.open ? max : max * (1 - SHADE / Math.max(1, n)), affordable(s, r, view, b));
     bid = Math.round(bid / 1000) * 1000;
     if (!(bid > 0)) continue;
     // A firm already at its covenant, or with no desk that will take more of
@@ -415,6 +420,25 @@ export function forcedSalePrice(s: GameState, parcels: ParcelTable, rec: ParcelR
   }
   const round = bidRound(s, parcels, rec, { bbl, ask: mark, distress: true });
   return Math.min(mark, round.bids[0]?.bid ?? 0);
+}
+
+/**
+ * A FORECLOSURE SALE: the receiver or the creditors put the deed to the room,
+ * and it goes for the room's best bid (forcedSalePrice) — the named firms who
+ * can close, against a seller who must sell today. This replaced a formula
+ * (sponsor.ts distressPrice: 90 cents, less up to 22 for a credit crunch and
+ * 8 for the cycle, floored at 62), which priced a fire sale without asking
+ * whether anyone in town had the money.
+ *
+ * When nobody bids, the foreclosing lender takes the deed by credit bid, and
+ * the borrower is credited its fair value: a deficiency is the debt less the
+ * greater of the sale price and the property's fair market value (NY RPAPL
+ * 1371(2); most states have a fair-value rule). So an empty room clears at
+ * the mark — and it is no comp, because nothing traded at arm's length.
+ */
+export function foreclosureSale(s: GameState, parcels: ParcelTable, rec: ParcelRecord, bbl: string, mark: number): { px: number; bid: boolean } {
+  const best = forcedSalePrice(s, parcels, rec, bbl, mark);
+  return best > 0 ? { px: Math.round(best), bid: true } : { px: Math.round(Math.max(0, mark)), bid: false };
 }
 
 // ---------------------------------------------------------------- the seller
@@ -1258,7 +1282,7 @@ export function landMaxPrice(s: GameState, r: Rival, rec: ParcelRecord): number 
       // tenants. Measured on #571 (seed 22, year 10): every surveyed vacant
       // lot was bid at the no-queue residual, ~1.5x the appraiser's, with
       // 3.07M sf of industrial sites ahead at 87k sf a year (35 years).
-      own = Math.max(0, f * (value / (1 + (builds ? firmMargin(r, s.month) : DEV_MARGIN)) - nonLand));
+      own = Math.max(0, f * (value / (1 + (builds ? firmMargin(r, s.month, capForSpread(s.econ)) : DEV_MARGIN)) - nonLand));
     }
   }
   return builds ? own : Math.max(own, bankerHoldValue(s, r, rec));
@@ -1695,8 +1719,14 @@ export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
     const rec = recs[i];
     const maxes = firms.map((r) => landMaxPrice(s, r, rec)).filter((m) => m > 0).sort((a, b) => b - a);
     if (!maxes.length) continue;
-    // the best number, shaded for the room as a land round bids (landBidRound)
-    const px = maxes[0] * (1 - SHADE / maxes.length);
+    // WHAT THE LOT WOULD CLEAR AT: the second-best number, as the cap survey
+    // reads its room (capSurvey, `maxes[1] ?? maxes[0]`) — in an open round the
+    // best bidder pays what it takes to beat the runner-up (Vickrey 1961), not
+    // its own maximum. This printed the top of 40-60 firms' maxima shaded by
+    // 0.1/N, the extreme order statistic of the whole street, as the price of
+    // land (REAL_ECONOMY_PLAN 2.7; SHOCK_TESTS_PLAN run 2: land bids ~1.7x the
+    // residual). Two surveys of the same street, two rules: one answer now.
+    const px = maxes[1] ?? maxes[0];
     // per unit of the map's texture, whoever's number it is (a fixed sample,
     // not the lots the level itself makes texture-priced: see below)
     const mark = landRead(rec, s.econ).texture * rec.lotArea;

@@ -384,6 +384,14 @@ export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
     if (r.sheet && boughtLastYear(r, s.month) >= dealsPerYear(r.sheet)) continue;
     if (li.ask < minTicket(r)) continue;
     if (distress && r.sheet && r.sheet.distress < 25) continue;
+    // WHO GOES TO THE COURTHOUSE (2026-11-06). An open-outcry foreclosure
+    // sale is a specialist's room — 10% down at the hammer, as-is, no
+    // inspection — and the firms in it are the ones whose business it is:
+    // a sheet that hunts distress (Distress 55+), or, with no sheet, the
+    // opportunistic and core money that has always worked the steps. This was
+    // the auction's own rule before the room was the street's round (#588),
+    // and dropping it put sixteen firms on every lot.
+    if (li.open && (r.sheet ? r.sheet.distress < 55 : !(r.style === "opportunistic" || r.style === "core"))) continue;
     if (r.sheet && fitOf(s, parcels, r, rec, distress) <= 0) continue;
     room.push(r);
   }

@@ -88,8 +88,31 @@ function tradeProd(e: Econ, t: Tenant): number {
 }
 
 /** The opening's rent per foot and price level, which sales per head are measured from. */
-export function revAnchor(e: Econ): { cpi: number; rent: Partial<Record<string, number>> } {
+export function revAnchor(e: Econ): { cpi: number; rent: Partial<Record<string, number>>; prod?: Partial<Record<string, number>> } {
   return (e.revAnchor ??= { cpi: e.cpi ?? 1, rent: { office: e.rentIdx?.office, retail: e.rentIdx?.retail, industrial: e.rentIdx?.industrial } });
+}
+
+/**
+ * WHAT A FIRM'S TRADE CAN PAY FOR SPACE NOW, AGAINST WHAT THE MARKET ASKS
+ * (REAL_ECONOMY_PLAN 4.1, 2026-11-05). A firm values space at the market rent
+ * for the address (tenantMarket.ts worthOf) — and the market rent is what firms
+ * paid, so what a firm would pay rose with the rent index itself and nothing a
+ * firm earned ever pushed back: shop rents climbed 90% through a run to 27%
+ * vacancy (audit seed 11). What a trade can pay for space is its rent share of
+ * what it sells, and what it sells per foot is the opening's (the anchor the
+ * books are sized from) carried forward by the price level and the trade's own
+ * sales per worker. This is that capacity over today's rent index: exactly 1
+ * at the opening, under 1 once rents outrun what the trade earns, over 1 when
+ * they lag it. It multiplies what the space is worth to the firm.
+ */
+export function rentCapacity(e: Econ, t: { sector?: Tenant["sector"] }, k: "office" | "retail" | "industrial"): number {
+  const A = revAnchor(e);
+  const idx = e.rentIdx?.[k], r0 = A.rent[k];
+  if (!(idx && idx > 0) || !(r0 && r0 > 0) || !t.sector) return 1;
+  const prod = tradeProd(e, t as Tenant);
+  const p0 = ((A.prod ??= {})[t.sector] ??= prod);
+  const cap = r0 * ((e.cpi ?? 1) / Math.max(1e-6, A.cpi)) * (prod / Math.max(1e-9, p0));
+  return cap / idx;
 }
 
 /**

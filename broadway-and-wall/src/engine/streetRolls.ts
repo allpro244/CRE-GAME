@@ -48,7 +48,7 @@ import { START_YEAR } from "./types";
 import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, useOccupancy, N_BANDS, scoreRentMult, locationRentMult } from "./value";
 import { isCommercial, bumpOf, minLettableSf, streetLease, pickSector, pickName, termBandM, depositFor } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
-import { tickTenantFin, tenantFailOdds, entrantMargin } from "./tenantBooks";
+import { tickTenantFin, tenantFailOdds, entrantMargin, rentCapacity } from "./tenantBooks";
 import { rng, rrange, reletMonths, recordDeal, FIRM_PROFILE, turnoverYr, normalVac, priceLevel12, CONC_DEPTH, SECTOR_LABEL, SF_PER_JOB } from "./market";
 import { staleDiscount } from "./absorption";
 import { tenantQualityTerms } from "./bands";
@@ -467,7 +467,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
     const post = postedEff(L, e, k, mkt, stay);
     const res = reservation(L, k, post, termM, stay, b.stressed);
     const pc = placeCost(firm.fid !== undefined ? ctx.pts.get(firm.fid) : undefined, b.pos, hourCost(firm));
-    const worth = worthOf(firm, k, mkt, b.sc[k] ?? 50, take, pc.cost, k === "retail" ? footRel(b.bbl) : undefined);
+    const worth = worthOf(firm, k, mkt, b.sc[k] ?? 50, take, pc.cost, k === "retail" ? footRel(b.bbl) : undefined, rentCapacity(s.econ, firm, k));
     const move = !stay && moving ? moveCostPsfYr(e, k, termM) : 0;
     const joint = worth - post - move + TASTE[k] * mkt * gumbel(rng(s, "leasing"));
     // a sitting tenant is offered its landlord's ask, like anyone (tenantMarket.ts postedEff)
@@ -577,7 +577,7 @@ export function offerForPlayer(s: GameState, parcels: ParcelTable, firm: Tenant,
   const c = opts[0];
   if (!c) return { bid: 1 };
   const pc = placeCost(firm.fid !== undefined ? V.ctx.pts.get(firm.fid) : undefined, posOf(rec), hourCost(firm));
-  const worth = worthOf(firm, k, mktHere, score, sf, pc.cost, k === "retail" ? V.footRel(rec.bbl) : undefined);
+  const worth = worthOf(firm, k, mktHere, score, sf, pc.cost, k === "retail" ? V.footRel(rec.bbl) : undefined, rentCapacity(s.econ, firm, k));
   const taste = TASTE[k] * mktHere * gumbel(rng(s, "leasing"));
   // a sitting tenant renewing does not move; every street option costs it the move
   const rMax = worth - (sitting ? 0 : moveCostPsfYr(s.econ, k, termM)) + taste - c.joint - (c.post - c.res);
@@ -617,7 +617,7 @@ export function stayOdds(s: GameState, parcels: ParcelTable | null | undefined, 
   const pts = firm.fid !== undefined ? V.ctx.pts.get(firm.fid) : undefined;
   const hour = hourCost(firm);
   const here = placeCost(pts, posOf(rec), hour);
-  const vStay = worthOf(firm, k, mktHere, score, sf, here.cost, k === "retail" ? V.footRel(rec.bbl) : undefined) - postEff;
+  const vStay = worthOf(firm, k, mktHere, score, sf, here.cost, k === "retail" ? V.footRel(rec.bbl) : undefined, rentCapacity(e, firm, k)) - postEff;
   const q = firm.quality ?? score;
   const move = moveCostPsfYr(e, k, termM);
   const cands: { w: number; v: number; bbl: string }[] = [];
@@ -642,7 +642,7 @@ export function stayOdds(s: GameState, parcels: ParcelTable | null | undefined, 
     if (avail - take < floor) take = avail <= sf * 1.4 ? avail : Math.max(floor, avail - floor);
     if (take < floor) continue;
     const pc = placeCost(pts, b.pos, hour);
-    const worth = worthOf(firm, k, mkt, b.sc[k] ?? 50, take, pc.cost, k === "retail" ? V.footRel(bbl) : undefined);
+    const worth = worthOf(firm, k, mkt, b.sc[k] ?? 50, take, pc.cost, k === "retail" ? V.footRel(bbl) : undefined, rentCapacity(e, firm, k));
     cands.push({ w, v: worth - post - move, bbl });
     tot += w;
   }

@@ -12,9 +12,10 @@ import type { ParcelTable } from "@/data/types";
 import type { ParcelRecord } from "@/data/types";
 import type { GameState, BuiltClass, Econ } from "./types";
 import { inPlace, landRead, landValue, resolveRec, ownedHoldingNoiYr } from "./value";
+import { BUY_CLOSING } from "./propmarket";
 
-/** Closing costs a buyer carries into basis on top of the ask. */
-const CLOSING = 0.02;
+// Closing costs a buyer carries into basis on top of the ask: BUY_CLOSING,
+// the one figure every buyer pays (PARITY_PLAN.md).
 
 /**
  * DOES THE DIRT PENCIL — the ask plus closing set against the trade's own
@@ -26,7 +27,7 @@ export function landPencils(rec: ParcelRecord, econ: Econ, ask: number): { penci
   if (!(rec.lotArea > 0) || !(ask > 0)) return { pencils: false, builderPsf: 0, askPsf: 0 };
   const lr = landRead(rec, econ);
   const askPsf = ask / rec.lotArea;
-  return { pencils: lr.builder > 0 && askPsf * (1 + CLOSING) <= lr.builder, builderPsf: lr.builder, askPsf };
+  return { pencils: lr.builder > 0 && askPsf * (1 + BUY_CLOSING) <= lr.builder, builderPsf: lr.builder, askPsf };
 }
 
 export interface BuyBox {

@@ -48,6 +48,7 @@ import { fundableNow, fundAndBook } from "./credit";
 import { isCivicLand } from "./demand";
 import { PRODUCTS, allInCostPct, productById } from "./debt";
 import { newsChance } from "./market";
+import { BUY_CLOSING } from "./propmarket";
 
 const money = (n: number) =>
   Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${Math.round(n / 1000)}K`;
@@ -382,7 +383,7 @@ function runClose(
     const share = shares[i];
     const legTt = Math.round(d.value * transferTaxRate(s));
     tt += legTt;
-    closing += Math.round(share * 0.02);
+    closing += Math.round(share * BUY_CLOSING);
     if (err) {
       // Past a failure, the rest is priced on the state where it stopped so the
       // desk can still say how far short the whole closing is.

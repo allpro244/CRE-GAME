@@ -152,6 +152,8 @@ export interface Lender {
   failedM?: number;
   /** Months until the franchise lends again under new owners (a bank: a P&A, days to weeks). */
   reopenM?: number;
+  /** The month a bank first read critically undercapitalised (12 CFR 6.4: tangible equity 2% of assets or less); cleared when it recovers. */
+  criticalM?: number;
   /** The receiver keeps the failed desk's bad paper and sells it down until this month (notes.ts). */
   receiverUntilM?: number;
   /** What they have lent to YOU — the part of the book you are. */
@@ -1336,8 +1338,30 @@ export function tickLenders(s: GameState) {
     // the losses past its retained first-loss piece are the bondholders'
     // (borneLoss). The banks and the life company are closed by examiners; the
     // fund by running out of committed capital.
-    const seizable = l.kind === "bank" || l.kind === "life";
-    if (l.kind !== "conduit" && ((l.capital <= 0 && rng(s, "lenders") < 0.35) || (seizable && cr < target * 0.22 && rng(s, "lenders") < 0.09))) {
+    //
+    // AND THE DATE IS THE LAW'S, NOT A COIN'S (2026-11-06). Closure was a
+    // monthly draw: 35% a month once capital was gone, 9% a month below a
+    // fifth of target. So an insolvent bank could stay open for a year — one
+    // measured run kept First Harbor lending at -$240M of capital while it
+    // took three more firm failures. Each charter has its rule:
+    //  - a bank is critically undercapitalised at a tangible-equity ratio of
+    //    2% or less (12 CFR 6.4), and the regulator must appoint a receiver
+    //    within 90 days of it (12 U.S.C. 1831o(h)(3)); at once if its capital
+    //    is gone;
+    //  - a life company is put under the commissioner's control at the
+    //    mandatory control level, 70% of authorised-control RBC (NAIC RBC
+    //    Model Act s.6). Insurers hold about four times authorised control
+    //    (NAIC aggregate), so that is about 0.7 / 4 = 0.175 of the capital
+    //    ratio it runs at;
+    //  - a fund that has lost its committed capital is wound up.
+    let closes = false;
+    if (l.kind === "bank") {
+      if (cr <= 0.02) l.criticalM ??= s.month; else delete l.criticalM;
+      closes = l.capital <= 0 || (l.criticalM !== undefined && s.month - l.criticalM >= 3);
+    } else if (l.kind === "life") closes = cr < target * 0.175;
+    else if (l.kind !== "conduit") closes = l.capital <= 0;
+    if (closes) {
+      delete l.criticalM;
       // ASK WHOSE BANK THIS IS BEFORE YOU CLOSE IT. bankOf() only considers
       // LIVE desks, so calling seizeDeposits after failedM was set meant the
       // failing bank had already been filtered out of its own question and the

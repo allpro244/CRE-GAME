@@ -92,3 +92,16 @@ The player gains the AI-only abilities where they make sense: claiming a conceiv
 - Behaviour-neutral refactors are proven by a state hash; behaviour changes by conserve, the century, the shocks that touch them, and a CPU-per-month figure.
 - No step adds a rail or a coin.
 - Perfect parity is checked by the inventory itself: every action has the same function on both sides.
+
+## Progress
+
+| Step | Landed | What it changed |
+|---|---|---|
+| P0 | #609, #611 | `firms.ts`: one way to ask who owns a deed and what a firm holds |
+| P1 | #613 | every buyer pays the same closing cost (`BUY_CLOSING`) |
+| P1 | #615 | one seller's settlement for every buyer (`firmSells`) |
+| P1 | #617 | the player's tape offer joins the firms' bid round: taken when it clears the seller's own floor and beats every bid that can close; the dice (`bidOdds`) and the appetite index are gone from that path |
+| P1 | #619 | the negotiation desk faces the same seller: its floor and the best closing bid this month, not a table of seller kinds |
+| P2 | in review | firms sell on a yearly hold/sell review (the tape's appraisal against what the building is worth to them to keep), not a coin |
+
+Still open in P1: rivals choosing a desk by relationship, and rivals haggling and countering.

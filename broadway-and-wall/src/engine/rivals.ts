@@ -5614,7 +5614,7 @@ export function styleHunt(r: Rival): { appetite: number; procyclical: number; co
  * asks whether a firm can close — `rivalBuys` and `rivalCanClose` both read it.
  */
 function closingFinance(s: GameState, parcels: ParcelTable, r: Rival, price: number, debt: number) {
-  const closing = Math.round(price * 0.02);
+  const closing = Math.round(price * BUY_CLOSING);
   const equity = price - debt;
   const reserve = Math.max(500_000 * dollarLevel(s.econ), Math.max(0, r.cash) * 0.05);
   // Prefer this month's tickRivals mark. Remaking the whole book here was
@@ -5668,7 +5668,7 @@ export function contractedEquity(s: GameState, r: Rival, exceptBbl?: string): nu
     const o = h.sale?.offer;
     if (!o?.contract || o.firmId !== r.id || h.bbl === exceptBbl) continue;
     // The firm's own leverage on the price, and the 2% closing.
-    held += Math.round(o.price * (1 - Math.max(0, Math.min(0.8, r.targetLtv ?? 0)))) + Math.round(o.price * 0.02);
+    held += Math.round(o.price * (1 - Math.max(0, Math.min(0.8, r.targetLtv ?? 0)))) + Math.round(o.price * BUY_CLOSING);
   }
   return held;
 }
@@ -5708,7 +5708,7 @@ export function rivalBuys(
   // for the equity cheque the same way they already draw it for a balloon.
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   const loan = acquisitionLoan(s, rec, price);
-  const closing = Math.round(price * 0.02);
+  const closing = Math.round(price * BUY_CLOSING);
   const drawFor = (r: Rival) => closingFinance(s, parcels, r, price, loan(r, ci));
   // A firm that bid closes on its own cheque: the yield hurdle and the
   // committee's appetite were passed when it bid. What it cannot skip is the

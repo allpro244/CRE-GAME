@@ -26,7 +26,7 @@ import type { ParcelRecord, ParcelTable } from "../data/types";
 import { dollarLevel, rng, rrange } from "./market";
 import { assetValue, capRateFor, collateralAsIs, inPlace, resolveRec } from "./value";
 import { livingRivals, gradeOf, ownerOf, paramsOf, receiverDeskFor, forgetDeed, fitOf, streetSaleCost } from "./rivals";
-import { packageBids, sellerTerms, forcedSalePrice } from "./propmarket";
+import { packageBids, sellerTerms, forcedSalePrice, BUY_CLOSING } from "./propmarket";
 import { lenderByName, lenderPressure, raiseAlert } from "./lenders";
 import { streetRefiProceeds } from "./debt";
 import { financePackage, settleSale } from "./rivalDebt";
@@ -291,7 +291,7 @@ export function buyPortfolio(
   // cash plus the line, and a book bought on the line leaves no room for the
   // next bad month anywhere else. Each deed still closes through
   // `executePurchase`, which draws cash first and then the revolver.
-  const closing = Math.round(struck * 0.02);
+  const closing = Math.round(struck * BUY_CLOSING);
   const purse = fundableNow(s, parcels);
   if (purse < struck + closing) {
     return { s, err: `${money(struck + closing - purse)} short (cash plus undrawn line). Packages are all-cash.` };

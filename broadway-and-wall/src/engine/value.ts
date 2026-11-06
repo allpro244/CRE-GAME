@@ -980,6 +980,35 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
   if (e.landMkt !== undefined) {
     e.landBelief = (e.landBelief ?? e.landMkt) + BELIEF_MONTHLY * (e.landMkt - (e.landBelief ?? e.landMkt));
   }
+  // THE LAND PANEL, A TWELFTH RE-READ EACH MONTH (2026-11-07). The level
+  // owners learn (landBelief above) and the land index everyone reads used
+  // to be set once a year, on a January read of the whole panel: a panel
+  // whose value swings on one-to-two-year half-cycles, sampled once a year,
+  // is a sawtooth — yearly sd of its log change 0.34-0.37 on January points
+  // against 0.14-0.18 on the same panel's annual means (the shock suite's
+  // controls, three seeds) — and every owner's ask jumped on the morning it
+  // was published. Rolling appraisal indices re-value a fixed share of their
+  // panel each period; this reads the same 400 lots a year at the same cost,
+  // panel lot j in the month j falls due (j = month mod 12), and publishes
+  // the mean of each lot's latest read. A new panel is read whole once.
+  {
+    const n = bbls.length, take = Math.min(n, LAND_QUEUE_SAMPLE), step = n / Math.max(1, take);
+    const off = ((s.seed ^ 0x9e3779b1) >>> 0) % Math.max(1, Math.floor(step));
+    const fresh = !e.landPanel || e.landPanel.length !== take;
+    const panel: (number | null)[] = fresh ? Array(take).fill(null) : e.landPanel!;
+    for (let j = fresh ? 0 : s.month % 12; j < take; j += fresh ? 1 : 12) {
+      const rec = resolveRec(parcels, s, bbls[Math.min(n - 1, Math.floor(j * step) + off)]);
+      const p = rec && rec.lotArea > 0 ? landPsfNow(rec, e) : 0;
+      panel[j] = p > 0 ? p : null;
+    }
+    e.landPanel = panel;
+    let sum = 0, cnt = 0;
+    for (const v of panel) if (v !== null && v > 0) { sum += v; cnt++; }
+    if (cnt > 0) {
+      e.landMkt = sum / cnt;
+      if (e.landBelief === undefined) e.landBelief = e.landMkt;
+    }
+  }
   const h = e.history ?? [];
   const L = Math.min(60, h.length - 1);
   if (L < 12) return;
@@ -1037,12 +1066,10 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
   // only when the lots in it do. Deterministic per city, and never the RNG.
   const off = ((s.seed ^ 0x9e3779b1) >>> 0) % Math.max(1, Math.floor(step));
   const rows: Record<BuiltClass, { psf: number; sf: number }[]> = { office: [], retail: [], multifamily: [], industrial: [] };
-  let mktSum = 0, mktN = 0;
   for (let j = 0; j < take; j++) {
     const bbl = bbls[Math.min(n - 1, Math.floor(j * step) + off)];
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || !(rec.lotArea > 0)) continue;
-    { const p = landPsfNow(rec, e); if (p > 0) { mktSum += p; mktN++; } }
     const sch = residualScheme(rec, bare);
     if (!sch || !(sch.psf > 0)) continue;
     let sf = sch.usable * rec.lotArea;
@@ -1064,10 +1091,6 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
     q[use] = { psf, ahead, total: Math.round(cum), absYr: Math.round(absYr), r: rOf(use) };
   }
   e.landQueue = q;
-  if (mktN > 0) {
-    e.landMkt = mktSum / mktN;
-    if (e.landBelief === undefined) e.landBelief = e.landMkt;
-  }
 }
 
 /**

@@ -2675,8 +2675,10 @@ export interface Econ {
   inPlaceReal?: Record<BuiltClass, number>;
   /** The opening effective rent — the parity the demand side's price argument is measured against. */
   effAnchor?: Record<BuiltClass, number>;
-  /** The land market's level, $/sf of land (mean model price over the queue's yearly sample). */
+  /** The land market's level, $/sf of land (mean model price over the fixed 400-lot panel, a twelfth re-read each month). */
   landMkt?: number;
+  /** The panel's latest reads, $/sf, by panel index (value.ts refreshLandQueue); null until read. */
+  landPanel?: (number | null)[];
   /** What owners BELIEVE that level is — it learns the market at appraisal-smoothing speed. */
   landBelief?: number;
   landQueue?: Partial<Record<BuiltClass, { psf: number[]; ahead: number[]; total: number; absYr: number; r: number }>>;

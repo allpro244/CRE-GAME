@@ -38,12 +38,19 @@ It supersedes the open parts of `ECON_REALISM_PLAN.md` and `RENT_VACANCY_RESPONS
 | 3.1 step 2: builders that hold underwrite a development spread over the cap | done | #587 |
 | 3.4 forced sales, the July auction and the note desk price from named bidders; `distressPrice` deleted | done | #588 |
 | 3.4 next: a distress buyer's own premium for as-is, all-cash, deadline risk. With #588, distressed comps clear at about appraisal (seed 11, p50 −1%) against the record's 10-30% | open | — |
-| 3.5 note collateral is the appraiser's as-is value, not a capped line | measuring | branch `claude/real-economy-3-5-collateral` |
+| 3.5 note collateral is the appraiser's as-is value, not a capped line | done | #591 |
 | 4.1 a tenant's willingness to pay scales with its own revenue | done | #584 |
-| 4.4 part 1: a pipeline site goes to the builder that reads it best, not a coin | measuring | branch `claude/real-economy-4-4-starts` |
+| 4.4 part 1: a pipeline site goes to the builder that reads it best, not a coin (vacancy-after-starts lag −5 → +1, PASS) | done | #597 |
+| 4.4 next: `BUILD_APPETITE` and crew capacity | open | — |
 | Lenders: a failed firm's estate pays its creditors in order | done | #589 |
-| Lenders: a bank's single-name limit is 15% of capital (12 CFR 32), the corporate line and construction loans included | measuring | branch `claude/real-economy-lending-limit` |
-| Lenders: a desk closes on its regulator's rule (12 U.S.C. 1831o; NAIC RBC), not a monthly coin | measuring | branch `claude/real-economy-pca-closure` |
+| Lenders: a bank's single-name limit is 15% of capital (12 CFR 32), the corporate line and construction loans included (peak yearly charge-off 11.1% → 0.6%) | done | #593 |
+| Lenders: a desk closes on its regulator's rule (12 U.S.C. 1831o; NAIC RBC), not a monthly coin | done | #594 |
+| 1, step 2, part 1: national output has a capacity ceiling (+6%, CBO 1966); ordinary cycles unchanged | done | #592 |
+| 3.2 dry powder bends a fund's hurdle by its own fee as its investment period runs out | done | #598 |
+| 4.6 the debt fund's construction advance reads the window and its own book, without floors | measuring | branch `claude/real-economy-4-6-fund-desk` |
+| 8: rail audit #1 (a constant written as a rail) and #16 (a dead coin) | done | #595, #596 |
+| 8: rail audit #19, land capitulation runs to the builder's bid | measuring | branch `claude/real-economy-land-capitulation` |
+| 8 next: `marketAppetite` (an index of the room, rail audit #15) and the take-private premium (#8) should be the named bidders themselves | open | — |
 
 ### Corrections to the audit
 - **3.3 loan spreads: mostly not a fake.** The playthrough's coupons 5.7 points over the index (p50) were the bot borrowing from a private-credit desk (Cordage Debt Partners), which in life does price 4-7 points over. The bank desks quoted about 2.5-3 points, high in the real range. Desk pricing is already built from funding, expected loss and running cost (`pricing.ts` `liveSpread`, `costFloor`). Lower priority; re-check against MBA/ACLI once caps are right.

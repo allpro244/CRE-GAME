@@ -29,8 +29,12 @@ import { consentFor, purseOf, partnerShare, routeProceeds, taxShare } from "./ve
 import { investorsTakeOfExit } from "./waterfall";
 import { heldByRaises } from "./investors";
 
-// One closing cost for every buyer, the player and the street alike (propmarket BUY_CLOSING).
-const CLOSING_PCT = BUY_CLOSING;
+// One closing cost for every buyer, the player and the street alike: propmarket's
+// BUY_CLOSING, read where it is used. NOT copied into a module constant —
+// actions.ts and propmarket.ts import each other, so at load time BUY_CLOSING
+// can still be undefined, and a copy taken then made every player purchase's
+// closing cost NaN (caught by conserve, 2026-11-06; the state-hash check had
+// no player purchases in it).
 const SALE_FRICTION = 0.012;  // legal, title, diligence — the unavoidable rest
 
 /**
@@ -101,7 +105,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // deliveries, rezonings, variances and assemblage. Sizing a loan against the
   // static one underwrote a delivered tower as the vacant lot it used to be.
   const rec = resolveRec(parcels, s, bbl);
-  const closing = Math.round(price * CLOSING_PCT);
+  const closing = Math.round(price * BUY_CLOSING);
   const deposits = incomingDeposits(s, bbl);
   if (product === "cash" || !rec) {
     return { principal: 0, ratePct: 0, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind: "none" as const, ltvCap: 0, uwDscr: 0, appraised: 0, uwBasis: price, overpay: 0, allInPct: 0 };
@@ -330,7 +334,7 @@ export function executePurchase(
   const holding: Holding = {
     bbl,
     boughtM: next.month,
-    costBasis: price + Math.round(price * CLOSING_PCT),
+    costBasis: price + Math.round(price * BUY_CLOSING),
     assessed: price, // the sale reassesses the property at the deal price
     loan: null,
     condition: gradeOf(s, rec),

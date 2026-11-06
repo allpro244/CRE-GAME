@@ -27,6 +27,7 @@ import { rrange, payrollGrowth12 } from "./market";
 import { executePurchase } from "./actions";
 import { spendable, fundAndBook } from "./credit";
 import { money } from "./money";
+import { bidRound, landBidRound, listingReserve } from "./propmarket";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
@@ -307,57 +308,38 @@ const OPEN_ROUNDS: Record<SellerKind, number> = {
   estate: 4, institution: 2, partnership: 3, developer: 3, local: 4, lender: 4,
 };
 
-/** What this seller will actually take today. Never shown to the player. */
+/**
+ * WHAT THIS SELLER WILL ACTUALLY TAKE TODAY. Never shown to the player.
+ *
+ * ONE SELLER, WHOEVER RINGS (PARITY_PLAN.md P1, 2026-11-06). This used to be
+ * a table: the seller kind's floor (`reserveMidOf`), the cycle's shift, a
+ * certainty discount, and two guards (96% of the ask, 84% of value) standing
+ * in for the outside option. The firms bidding on the same listing faced the
+ * seller's own floor (`listingReserve`: a named firm's hold value plus the tax
+ * and costs of selling, or the loan it must clear; an anonymous holder's
+ * belief of value) and each other, in the month's round. Measured on seed 11
+ * over 20 years, the two disagreed by a median 14 points of the ask on
+ * voluntary sales and 21 on distress.
+ *
+ * Now the seller across the table is the seller on the tape: it will not go
+ * under its own floor, and it will not take less from you than the best bid
+ * a firm that can close would make this month (`bidRound`, `landBidRound`),
+ * because that is its outside option, named. What stays yours is your own
+ * record: the door you soured (`soured`, a share of the ask) and the street's
+ * memory of your lowballs (`repFloorMult`).
+ */
 function reservationOf(
-  s: GameState, parcels: ParcelTable, bbl: string, sellerKind: SellerKind,
+  s: GameState, parcels: ParcelTable, bbl: string, _sellerKind: SellerKind,
 ): { reservation: number; ask: number } {
-  const prof = SELLERS[sellerKind];
   const rec = resolveRec(parcels, s, bbl);
   const li = s.listings.find((l) => l.bbl === bbl);
   const ask = li?.ask ?? (rec ? marketAppraisal(s, rec, bbl, gradeOf(s, rec)) : 0);
-  // THE MOTIVATION IS ALREADY IN THE ASK for voluntary sellers — the tape price
-  // carries their urgency. Lender/receiver sales are different: the ask is loan
-  // basis, and servicers still negotiate below it to clear the book.
-  const lenderSale = !!li?.distress && (sellerKind === "lender" || li.reason === "receiver" || !!li.receiverFor || !!li.loanBasis);
+  if (!li || !rec) return { reservation: ask, ask };
   const soured = s.approaches[bbl]?.soured ?? 0;
-  // ONE RESERVATION. The tape (`bidOdds`, retired 2026-11-06 for the bid round) centred its acceptance curve on
-  // `reserveMidOf` — the kind's floor, the lift, the motivated discount —
-  // shifted by the cycle; this path carried its own floor, its own phase
-  // shifts (−0.055 / +0.03 against the tape's −0.035 / +0.025) and its own
-  // distress notches, so the same seller wanted two different numbers
-  // depending on which door you knocked on, and the closing band the desk
-  // prints (`closingBand`, from the tape's centre) was wrong for a
-  // negotiation. Both paths read the same centre and the same phase now
-  // (`phaseShift`); a soft market drags it down, a hot one lets them hold out.
-  const phase = phaseShift(s);
-  const floor = Math.max(0.6, reserveMidOf(sellerKind, { distress: !!li?.distress, lenderSale }) + phase + soured);
-  // A clean, unconditional close is worth real money to somebody who has been
-  // retraded before, and every seller has been. With no diligence to offer,
-  // every deal here IS that close — so the discount they will take for it is
-  // simply part of the floor, priced by who they are.
-  // ...and what you did to EVERYBODY ELSE. The per-building memory above is
-  // one seller pricing one story; this is the whole street pricing the pattern.
-  let reservation = Math.round((ask * floor * repFloorMult(s)) / (1 + prof.certainty));
-  // THE SELLER'S OUTSIDE OPTION IS THE TAPE ITSELF. A fairly-priced listing is
-  // absorbed by the rest of the market at the ASK within a few months
-  // (tickListingAbsorption) — so nobody holding a healthy building takes
-  // materially less from you than the street is already offering them. The
-  // floor binds hardest on stale, repriced listings, which a flipper bot was
-  // grinding to 0.5-0.65x appraisal. Distress is exempt: a receiver's building
-  // is impaired now, and the impairment is the discount.
-  if (!li?.distress && rec && rec.class !== "land") {
-    const value = marketAppraisal(s, rec, bbl, gradeOf(s, rec));
-    reservation = Math.max(reservation, Math.min(Math.round(ask * 0.96), Math.round(value * 0.84)));
-  }
-  // Lenders price at loan basis but will take a haircut below the ask to move REO.
-  if (lenderSale && li?.loanBasis !== undefined && li.loanBasis > 0) {
-    reservation = Math.min(reservation, Math.round(Math.min(ask, li.loanBasis) * 0.88));
-  } else if (lenderSale) {
-    reservation = Math.min(reservation, Math.round(ask * 0.88));
-  }
-  // A NAMED SELLER'S OWN FLOOR (propmarket.ts sellerTerms) — the loan a sale
-  // must clear, the tax it crystallises — binds across the table as on the tape.
-  if (li?.reserve !== undefined) reservation = Math.max(reservation, Math.min(ask, li.reserve));
+  const building = rec.class !== "land" && rec.bldgArea > 0;
+  const top = building ? bidRound(s, parcels, rec, li).bids[0]?.bid ?? 0
+    : !li.halfBuilt ? landBidRound(s, parcels, rec, li).bids[0]?.bid ?? 0 : 0;
+  const reservation = Math.round(Math.max(listingReserve(li), top + 1000) * repFloorMult(s) + ask * soured);
   return { reservation, ask };
 }
 

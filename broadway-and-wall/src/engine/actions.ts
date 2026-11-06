@@ -12,7 +12,7 @@ import { mergedTouched, ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, rivalCanClose, rivalsWhoCanClose, gradeOf, tie, forgetDeed, jvLpTake, noteRealised, streetSaleCost, gainsTax } from "./rivals";
-import { bidRound, listingReserve, noteRoundFailed, noteRoundClosed, impliedCap, landBidRound, noteLandRoundFailed } from "./propmarket";
+import { BUY_CLOSING, bidRound, listingReserve, noteRoundFailed, noteRoundClosed, impliedCap, landBidRound, noteLandRoundFailed } from "./propmarket";
 import { PREMARKET_M } from "./beliefs";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
@@ -30,7 +30,8 @@ import { consentFor, purseOf, partnerShare, routeProceeds, taxShare } from "./ve
 import { investorsTakeOfExit } from "./waterfall";
 import { heldByRaises } from "./investors";
 
-const CLOSING_PCT = 0.02;
+// One closing cost for every buyer, the player and the street alike (propmarket BUY_CLOSING).
+const CLOSING_PCT = BUY_CLOSING;
 const SALE_FRICTION = 0.012;  // legal, title, diligence — the unavoidable rest
 
 /**

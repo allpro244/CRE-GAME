@@ -456,7 +456,15 @@ for (const SEED of SEEDS) {
     for (const h of Object.values(g.holdings)) {
       const ph = prev.holdings[h.bbl];
       const seen = new Set((ph?.tenants ?? []).map((t) => t.name + ":" + t.startM));
-      for (const t of h.tenants) if (!seen.has(t.name + ":" + t.startM)) {
+      for (const t of h.tenants) {
+        // A RENEWAL EXTENDS THE SITTING LEASE (leasing.ts signLoi: same tenant, same startM, a later endM),
+        // so it was never seen as a signing and renewals read 0 by construction.
+        const old = (ph?.tenants ?? []).find((x) => x.name === t.name && x.startM === t.startM);
+        if (old && t.endM > old.endM + 1) {
+          leases.push({ m: month, bbl: h.bbl, sf: t.sf, rent: t.rentPsf, term: (t.endM - month) / 12, ti: t.tiPsf, free: 0, renewal: true, rec: t.recovery, bump: t.bumpPct, use: t.use });
+          continue;
+        }
+        if (seen.has(t.name + ":" + t.startM)) continue;
         const wasThere = (ph?.tenants ?? []).some((x) => x.name === t.name);
         leases.push({ m: month, bbl: h.bbl, sf: t.sf, rent: t.rentPsf, term: (t.endM - t.startM) / 12, ti: t.tiPsf, free: t.freeUntilM ? t.freeUntilM - t.startM : 0, renewal: wasThere, rec: t.recovery, bump: t.bumpPct, use: t.use });
       }

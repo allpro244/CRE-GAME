@@ -1260,70 +1260,89 @@ export function fundJobs(s: GameState) {
  * under; the banks that financed them eat it; enough of that and the bank goes
  * under too. This closes it.
  *
- * WHOSE LOSS IT IS. Construction debt names its desk — a job carries the
- * lender that wrote it — so that part is known rather than guessed. The rest
- * is term paper, and the model does not track which desk wrote which mortgage
- * for a firm on the street. It is allocated across the live desks by book
- * share, because a bigger book holds more of this town's paper. That is an
- * allocation, not a fact the engine knows, and it is written here as one.
+ * WHOSE LOSS IT IS. Every loan names its desk — a job carries the lender
+ * that wrote it, the line its bank, each deed's mortgage the desk on the
+ * record — and the estate pays them in the order a receiver does: each
+ * building to its own loans, the rest to the recourse creditors (see below).
  */
 function chargeSponsorFailure(s: GameState, parcels: ParcelTable, r: Rival): { desk: string; owed: number } {
   const none = { desk: "", owed: Math.max(0, r.debt) };
   if (r.debt <= 0) return none;
-  // What the receiver gets back: the cash, and the buildings sold into the
-  // market that killed the borrower — what the street would bid for each as a
+  // THE ESTATE PAYS IN ORDER (2026-11-06). Each building is sold into the
+  // market that killed the borrower — what the street would bid for it as a
   // distress sale today (propmarket.ts forcedSalePrice), the same number the
-  // firm was weighing on its way down.
-  let recovered = Math.max(0, r.cash);
+  // firm was weighing on its way down — and the proceeds go first to the
+  // loans secured on it: the mortgage on the deed and any construction loan
+  // on the site, pro rata between them. The street's mortgages are
+  // non-recourse (deedInLieu): what a building is short by is its lender's
+  // loss and no claim on the estate. A land loan is recourse, and so is a
+  // construction loan (completion and repayment guaranty). What is left — the
+  // cash and every building's surplus over its own loans — is the pool the
+  // recourse creditors share pro rata: the line, those deficiencies, and any
+  // term debt the record does not tie to a deed.
+  //
+  // This replaced one loss, debt less everything recovered, split across the
+  // desks by exposure: a desk whose mortgage its building fully covered paid
+  // for the hole in the unsecured line, and one firm's surplus building
+  // covered another lender's short one.
+  const sale = new Map<string, number>();
   for (const bbl of r.bbls) {
     const rec = resolveRec(parcels, s, bbl);
     if (!rec) continue;
-    recovered += forcedSalePrice(s, parcels, rec, bbl, assetValue(rec, s.econ, assetGrade(r, rec)));
+    sale.set(bbl, forcedSalePrice(s, parcels, rec, bbl, assetValue(rec, s.econ, assetGrade(r, rec))));
   }
-  const loss = Math.round(r.debt - recovered);
+  type Claim = { lender: string; amt: number; recourse: boolean; bbl?: string; share: number; paid: number };
+  const claims: Claim[] = [];
+  for (const j of s.cityJobs ?? []) {
+    if (j.firmId !== r.id || !((j.debt ?? 0) > 0)) continue;
+    claims.push({ lender: j.lender ?? CONSTRUCTION_LENDER, amt: j.debt!, recourse: true, bbl: j.bbl, share: 1, paid: 0 });
+  }
+  // The line is its bank's loss, like any other loan, and it is unsecured.
+  if ((r.lineBal ?? 0) > 0 && r.lineBank) claims.push({ lender: r.lineBank, amt: r.lineBal!, recourse: true, share: 1, paid: 0 });
+  // THE TERM DEBT LANDS ON WHOEVER HOLDS IT. The mortgage record (ledger.ts)
+  // names a desk on every one of this firm's financed deeds. A syndicated
+  // row's out-of-town participants take their share (no desk here).
+  for (const x of Object.values(s.cityLoans ?? {})) {
+    if (x.obligorId !== r.id || !(x.balance > 0) || x.heldBy) continue;
+    claims.push({ lender: x.lender, amt: x.balance, recourse: x.klass === "land", bbl: x.bbl, share: x.share ?? 1, paid: 0 });
+  }
+  // Debt the record does not tie to a deed or a desk (a line with no bank
+  // named): unsecured, and spread over the live desks by book share, because
+  // nothing says whose it is.
+  const live = (s.lenders ?? []).filter((l) => l.failedM === undefined);
+  const residual = r.debt - claims.reduce((a, c) => a + c.amt, 0);
+  const books = live.reduce((a, l) => a + Math.max(0, l.book), 0);
+  if (residual > 1 && books > 0) for (const l of live) {
+    if (l.book > 0) claims.push({ lender: l.name, amt: residual * l.book / books, recourse: true, share: 1, paid: 0 });
+  }
+  // 1. Each building pays its own loans.
+  let pool = Math.max(0, r.cash);
+  for (const [bbl, px] of sale) {
+    const on = claims.filter((c) => c.bbl === bbl);
+    const owedOn = on.reduce((a, c) => a + c.amt, 0);
+    const paid = Math.min(owedOn, Math.max(0, px));
+    for (const c of on) c.paid += owedOn > 0 ? paid * c.amt / owedOn : 0;
+    pool += Math.max(0, px) - paid;
+  }
+  // 2. The rest of the estate goes to the recourse claims, pro rata.
+  const shortRecourse = claims.reduce((a, c) => a + (c.recourse ? c.amt - c.paid : 0), 0);
+  const ratio = shortRecourse > 0 ? Math.min(1, pool / shortRecourse) : 0;
+  for (const c of claims) if (c.recourse) c.paid += (c.amt - c.paid) * ratio;
+
+  const lossBy: Record<string, number> = {};
+  for (const c of claims) {
+    const short = Math.max(0, c.amt - c.paid);
+    if (!(short > 0)) continue;
+    lossBy[c.lender] = (lossBy[c.lender] ?? 0) + short * c.share;
+    if (c.share < 1) lossBy["(participants out of town)"] = (lossBy["(participants out of town)"] ?? 0) + short * (1 - c.share);
+  }
+  const loss = Math.round(Object.values(lossBy).reduce((a, x) => a + x, 0));
   if (loss <= 0) return none;
 
-  const exposure: Record<string, number> = {};
-  let known = 0;
-  for (const j of s.cityJobs ?? []) {
-    if (j.firmId !== r.id || !(j.debt ?? 0)) continue;
-    const name = j.lender ?? CONSTRUCTION_LENDER;
-    exposure[name] = (exposure[name] ?? 0) + (j.debt ?? 0);
-    known += j.debt ?? 0;
-  }
-  // The line is its bank's loss, like any other loan.
-  if ((r.lineBal ?? 0) > 0 && r.lineBank) {
-    exposure[r.lineBank] = (exposure[r.lineBank] ?? 0) + r.lineBal!;
-    known += r.lineBal!;
-  }
-  const term = Math.max(0, r.debt - known);
-  const live = (s.lenders ?? []).filter((l) => l.failedM === undefined);
-  // THE TERM DEBT LANDS ON WHOEVER HOLDS IT. The mortgage record (ledger.ts)
-  // names a desk on every one of this firm's financed deeds; the loss follows
-  // those rows. Spreading it across every desk by book size made a failure
-  // nobody's problem in particular — the hometown bank ate a slice of a
-  // conduit borrower's collapse — and it is the same loan book the desk's
-  // delinquency line has been counting while the firm was in workout.
-  // Only a firm with no rows on the record (term debt and nothing financed)
-  // falls back to the market's shares.
-  const rows = Object.values(s.cityLoans ?? {}).filter((x) => x.obligorId === r.id && x.balance > 0 && !x.heldBy);
-  const rowSum = rows.reduce((a, x) => a + x.balance, 0);
-  const books = live.reduce((a, l) => a + l.book, 0);
-  if (term > 0 && rowSum > 0) {
-    // a syndicated row's out-of-town participants take their share (no desk here)
-    for (const x of rows) {
-      exposure[x.lender] = (exposure[x.lender] ?? 0) + term * (x.balance * (x.share ?? 1) / rowSum);
-      if ((x.share ?? 1) < 1) exposure["(participants out of town)"] = (exposure["(participants out of town)"] ?? 0) + term * (x.balance * (1 - (x.share ?? 1)) / rowSum);
-    }
-  } else if (term > 0 && books > 0) {
-    for (const l of live) exposure[l.name] = (exposure[l.name] ?? 0) + term * (l.book / books);
-  }
-  const total = Object.values(exposure).reduce((a, x) => a + x, 0);
-  if (total <= 0) return none;
-
   let worst = { name: "", amt: 0 };
-  for (const [name, exp] of Object.entries(exposure)) {
-    const share = Math.round((loss * exp) / total);
+  for (const [name, amt] of Object.entries(lossBy)) {
+    const share = Math.round(amt);
+    if (share <= 0) continue;
     chargeLenderLoss(s, name, share, { borrower: r.name, id: r.id, cls: "income", how: "firm failed" });
     if (share > worst.amt) worst = { name, amt: share };
   }

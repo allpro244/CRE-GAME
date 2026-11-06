@@ -350,6 +350,26 @@ function checks(runs) {
     "NCREIF/ACLI cap rates 1985-2024: typical annual move 0.2-0.5pp; 2009's +1.5pp was the extreme");
   add("Capital", "Deal-read share (years a sale priced the cap)", seedCheck(R, (r) => mean(r.yr.flatMap((x) => CLASSES.map((k) => x.capDeal[k] != null ? 1 : 0))), 0.6, 1), pc,
     "a cap rate read off closed deals needs deals: RCA tracks trades in every class in every major metro each year");
+  // LAND'S SMOKE DETECTORS. A trend row alone passes an index that swings
+  // seven times as hard as the buildings on it and barely moves with them
+  // (the 2026-11-07 diagnosis: yearly sd of Δlog real land 0.26-0.57 across
+  // sixteen centuries, against 0.06 for property; correlation 0.12). Land is
+  // levered to property and moves with it, harder: these read how hard, and
+  // whether with it.
+  const prop = (r) => r.yr.map((x) => mean(CLASSES.map((k) => Math.log((x.rentR[k] ?? NaN) / (x.cap[k] ?? NaN)))));
+  const d5 = (a) => a.map((x, i) => (i >= 5 && Number.isFinite(x) && Number.isFinite(a[i - 5])) ? x - a[i - 5] : NaN).filter((_, i) => i >= 5 && i % 5 === 0);
+  add("Capital", "Real land, yearly swing sd", seedCheck(R, (r) => sd(lgr(r.yr.map((x) => x.landR))), 0.05, 0.20), pc,
+    "Davis & Heathcote 2007: land ~2x house-price volatility; Nichols, Oliner & Mulhall 2013: US commercial land about +0.18/-0.25 log a year in 2002-09; Japan's six-city commercial land +0.23 a year 1985-91 (JREI)");
+  add("Capital", "Land vs property, 5-year swing ratio", seedCheck(R, (r) => sd(d5(r.yr.map((x) => Math.log(x.landR)))) / sd(d5(prop(r))), 1.2, 3.0), nm,
+    "Nichols, Oliner & Mulhall 2013 (Table 6, 23 MSAs, 2002-09): commercial land +111/-37% against property indices +74-82/-27-28%, about 1.3-1.5x; residential land 1.8-3x house prices");
+  add("Capital", "Land moves with property (corr of 5-year changes)", seedCheck(R, (r) => {
+    const a = d5(r.yr.map((x) => Math.log(x.landR))), b = d5(prop(r));
+    const p = a.map((v, i) => [v, b[i]]).filter(([u, w]) => Number.isFinite(u) && Number.isFinite(w));
+    if (p.length < 5) return NaN;
+    const ma = mean(p.map((z) => z[0])), mb = mean(p.map((z) => z[1]));
+    let s = 0, sa = 0, sb = 0; for (const [u, w] of p) { s += (u - ma) * (w - mb); sa += (u - ma) ** 2; sb += (w - mb) ** 2; }
+    return s / Math.sqrt(sa * sb || 1);
+  }, 0.5, 1.0), nm, "Nichols, Oliner & Mulhall 2013; Bostic, Longhofer & Redfearn 2007 (land leverage): land prices are cointegrated with and move with property values");
   add("Capital", "Real land price growth, trend %/yr", seedCheck(R, (r) => trendG(r.yr.map((x) => x.landR)), -0.01, 0.03), pc,
     "Davis-Heathcote / Knoll et al. (2017): real land prices ~0-3%/yr long-run, most of house-price growth");
   add("Capital", "Bank charge-offs %/yr of book", levelCheck(R, (x) => x.book > 0 ? x.chargeOffs / x.book : NaN, 0, 0.03), pc,

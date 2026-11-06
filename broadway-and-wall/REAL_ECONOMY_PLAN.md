@@ -29,9 +29,21 @@ It supersedes the open parts of `ECON_REALISM_PLAN.md` and `RENT_VACANCY_RESPONS
 | 0.5 deepplay bugs: folded-lot mortgages, city land, NaN through JSON | done | #576 |
 | 1, step 1: ease measured ex ante; rigidity fades with inflation; a held rate holds | done | #577 |
 | 1, step 2: the bank's overshoot once its credibility is gone (real rate ~+25, unemployment 29-34% after the peg) | open | — |
-| 1b City Hall: foundation school aid, the buildings' own service cost, the budget sets the rate | in review | #578 |
-| 2.1 stabilise at natural occupancy, deduct the building's own lease-up | in review | #579 |
-| 3.1 step 1: an idle builder no longer lowers its margin | measuring | branch `claude/real-economy-3-1-margins` |
+| 1b City Hall: foundation school aid, the buildings' own service cost, the budget sets the rate | done | #578 |
+| 2.1 stabilise at natural occupancy, deduct the building's own lease-up | done | #579 |
+| 2.5 the player's renewals bargain with an outside option | done | #583 |
+| 2.6 tax per rentable foot; q and the yield on cost per gross foot | done | #585 |
+| 2.7 the land survey prints the clearing (second-best) bid | done | #586 |
+| 3.1 step 1: an idle builder no longer lowers its margin | done | #582 |
+| 3.1 step 2: builders that hold underwrite a development spread over the cap | done | #587 |
+| 3.4 forced sales, the July auction and the note desk price from named bidders; `distressPrice` deleted | done | #588 |
+| 3.4 next: a distress buyer's own premium for as-is, all-cash, deadline risk. With #588, distressed comps clear at about appraisal (seed 11, p50 −1%) against the record's 10-30% | open | — |
+| 3.5 note collateral is the appraiser's as-is value, not a capped line | measuring | branch `claude/real-economy-3-5-collateral` |
+| 4.1 a tenant's willingness to pay scales with its own revenue | done | #584 |
+| 4.4 part 1: a pipeline site goes to the builder that reads it best, not a coin | measuring | branch `claude/real-economy-4-4-starts` |
+| Lenders: a failed firm's estate pays its creditors in order | done | #589 |
+| Lenders: a bank's single-name limit is 15% of capital (12 CFR 32), the corporate line and construction loans included | measuring | branch `claude/real-economy-lending-limit` |
+| Lenders: a desk closes on its regulator's rule (12 U.S.C. 1831o; NAIC RBC), not a monthly coin | measuring | branch `claude/real-economy-pca-closure` |
 
 ### Corrections to the audit
 - **3.3 loan spreads: mostly not a fake.** The playthrough's coupons 5.7 points over the index (p50) were the bot borrowing from a private-credit desk (Cordage Debt Partners), which in life does price 4-7 points over. The bank desks quoted about 2.5-3 points, high in the real range. Desk pricing is already built from funding, expected loss and running cost (`pricing.ts` `liveSpread`, `costFloor`). Lower priority; re-check against MBA/ACLI once caps are right.

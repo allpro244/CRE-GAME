@@ -560,7 +560,18 @@ export function moveCostPsfYr(e: Econ, k: Comm, termM: number): number {
  */
 export function bargain(best: Option, second: Option | undefined): number {
   if (!second) return best.post;
-  const rMax = best.post + (best.joint - second.joint) + (second.post - second.res);
+  // THE FIRM'S CEILING HERE: the rent r at which it is as well off as at the
+  // runner-up at that landlord's reservation. Its surplus here at r is
+  // joint_best + post_best - r; at the runner-up gone to its reservation,
+  // joint_second + post_second - res_second. Equal at
+  // r = post_best + (joint_best - joint_second) - (post_second - res_second).
+  // The last term was ADDED (REAL_ECONOMY_PLAN 2.5, 2026-11-05): a hungrier
+  // runner-up RAISED the firm's ceiling, so the ceiling sat over the post and
+  // every street deal signed at the post — while offerForPlayer, with the
+  // sign right, priced the player's tenants against a discount no street
+  // landlord ever gave (a sitting tenant's renewal letter at a median 0.61x
+  // the player's market in a 20-year playthrough; 0 renewals).
+  const rMax = best.post + (best.joint - second.joint) - (second.post - second.res);
   return Math.max(best.res, Math.min(best.post, (best.res + rMax) / 2));
 }
 

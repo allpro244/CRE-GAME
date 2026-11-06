@@ -11,14 +11,13 @@ import { dollarLevel, rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown
 import { mergedTouched, ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
-import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, rivalCanClose, rivalsWhoCanClose, gradeOf, tie, forgetDeed, jvLpTake, noteRealised, streetSaleCost, gainsTax } from "./rivals";
+import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, rivalCanClose, rivalsWhoCanClose, gradeOf, tie, firmSells } from "./rivals";
 import { BUY_CLOSING, bidRound, listingReserve, noteRoundFailed, noteRoundClosed, impliedCap, landBidRound, noteLandRoundFailed } from "./propmarket";
 import { PREMARKET_M } from "./beliefs";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg, holderSheet } from "./owners";
 import { payOffDue, payOffLoan } from "./debt";
-import { settleSale } from "./rivalDebt";
 import { originate, quote, productById, stabViewFor, recastPayment, capPremiumOn, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen, loanMin } from "./debt";
 import { takeoverDevelopment, takeoverEquityNeed, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
 import { demandNow, isCivicLand } from "./demand";
@@ -321,24 +320,8 @@ export function executePurchase(
   // both move, and their balance sheet is one building lighter.
   {
     const seller = ownerOf(next, bbl);
-    if (seller) {
-      // Struck while the deed is still theirs (rivals.ts basisShare).
-      const tax = gainsTax(seller, price);
-      seller.bbls = seller.bbls.filter((b) => b !== bbl);
-      const jv = seller.jvs?.[bbl];
-      forgetDeed(seller, bbl);
-      // The mortgage on the building is paid at the closing, then their line;
-      // the seller pays its own selling costs and gains tax, as on every other
-      // sale on the street.
-      const relief = settleSale(next, seller, bbl, price);
-      const costs = streetSaleCost(price, s);
-      seller.cash += price - relief - costs - tax;
-      // A syndicated deed pays its deal investors out of the closing — see
-      // jvLpTake (rivals.ts).
-      const partnersOut = jvLpTake(jv, price - relief - costs - tax, next.month);
-      seller.cash -= partnersOut;
-      noteRealised(next, seller, jv, price, partnersOut);
-    }
+    // The seller's side of the closing is every buyer's (rivals.ts firmSells).
+    if (seller) firmSells(next, seller, bbl, price);
   }
   clearRivalClaims(next, bbl);
   // A DEAL IS A RELATIONSHIP. You closed with a name, they got paid, and both

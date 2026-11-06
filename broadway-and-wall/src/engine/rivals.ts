@@ -802,24 +802,18 @@ export function canCarryAnother(s: GameState, r: Rival): boolean {
 export function transferDeed(s: GameState, bbl: string, to: Rival, price: number) {
   for (const r of s.rivals ?? []) {
     if (r === to || !r.bbls.includes(bbl)) continue;
+    // A deed that moves at a price is a sale like any other (firmSells: the
+    // gain taxed, the loan paid, the costs and the partners settled).
+    if (price > 0) { firmSells(s, r, bbl, price); continue; }
     r.bbls = r.bbls.filter((b) => b !== bbl);
-    const jv = takeJv(r, bbl);
+    takeJv(r, bbl);
     // The paper goes with the deed. Leaving a stale extension record behind
     // meant that if the same firm ever bought the same corner back, its first
     // month of ownership arrived with an expired forbearance already on file.
     forgetDeed(r, bbl);
-    // The mortgage on the building is paid at the closing table, then the
-    // line out of what is left (rivalDebt.settleSale). A deed that moves for
-    // nothing still takes its loan off the old owner's record — the debt it
-    // secured stays owed, on the line.
-    const relief = settleSale(s, r, bbl, Math.max(0, price));
-    if (price > 0) {
-      const costs = streetSaleCost(price, s);
-      const lpOut = jvLpTake(jv, price - relief - costs, s.month);
-      r.cash += price - relief - costs;
-      r.cash -= lpOut;
-      noteRealised(s, r, jv, price, lpOut);
-    }
+    // A deed that moves for nothing still takes its loan off the old owner's
+    // record (rivalDebt.settleSale) — the debt it secured stays owed, on the line.
+    settleSale(s, r, bbl, 0);
   }
   if (!to.bbls.includes(bbl)) to.bbls.push(bbl);
   // WHEN THE DEED ARRIVED. A hold period is the difference between a family
@@ -5869,19 +5863,7 @@ export function rivalBuys(
     // building smaller and the estimated basis in the building that just sold
     // correspondingly larger, so the street was under-taxed on every disposal
     // by exactly the amount that made the decision and the settlement disagree.
-    const tax = gainsTax(seller, price);
-    seller.bbls = seller.bbls.filter((b) => b !== rec.bbl);
-    const jv = takeJv(seller, rec.bbl);
-    forgetDeed(seller, rec.bbl);
-    // Same event, same rule — a firm selling to another firm and a firm selling
-    // to Hartford both retire the loan that was on the building, then the line.
-    const relief = settleSale(s, seller, rec.bbl, price);
-    const costs = streetSaleCost(price, s);
-    seller.cash += price - relief - tax - costs;
-    const partnersOut = jvLpTake(jv, price - relief - tax - costs, s.month);
-    seller.cash -= partnersOut;
-    noteRealised(s, seller, jv, price, partnersOut);
-    settleEmptyBook(s, seller);
+    firmSells(s, seller, rec.bbl, price);
   }
   const fin = drawFor(best);
   // The corporate line funds any equity the operating account cannot cover —
@@ -5935,21 +5917,39 @@ export function rivalBuys(
  * Returns whether a modelled firm actually lost a building — false means the
  * listing was the street's own and no deed had to move.
  */
-export function sellToOutsider(s: GameState, bbl: string, price: number): boolean {
-  const seller = (s.rivals ?? []).find((r) => r.bbls.includes(bbl));
-  if (!seller) return false;
-  const tax = gainsTax(seller, price);      // struck before the deed moves; see basisShare
+/**
+ * A FIRM SELLS A DEED — ONE SETTLEMENT FOR EVERY BUYER (PARITY_PLAN.md P1).
+ * Whoever buys (the player, another firm, money from out of town, a builder
+ * taking the dirt), the seller's side of the closing is the same: the gain is
+ * taxed while the deed is still on its book (basisShare), the deed and its JV
+ * leave the book, the mortgage is paid out of the price and then the line
+ * (settleSale), the seller pays its own selling costs, its deal investors take
+ * their share, and a book left empty has its unsecured remainder called. There
+ * were four copies of this and they had drifted: the player's purchase left the
+ * seller's JV record behind and never settled an empty book, and a deed moved
+ * at a price through transferDeed paid no gains tax. Returns the seller's cash
+ * from the sale.
+ */
+export function firmSells(s: GameState, seller: Rival, bbl: string, price: number): number {
+  const tax = gainsTax(seller, price);
   seller.bbls = seller.bbls.filter((b) => b !== bbl);
   const jv = takeJv(seller, bbl);
   forgetDeed(seller, bbl);
   const relief = settleSale(s, seller, bbl, price);
   const costs = streetSaleCost(price, s);
-  seller.cash += price - relief - tax - costs;
-  const partnersOut = jvLpTake(jv, price - relief - tax - costs, s.month);
-  seller.cash -= partnersOut;
+  const net = price - relief - tax - costs;
+  const partnersOut = jvLpTake(jv, net, s.month);
+  seller.cash += net - partnersOut;
   noteRealised(s, seller, jv, price, partnersOut);
-  logFirm(s, seller, "sell", `Sold a building to money from out of town`, bbl, price);
   settleEmptyBook(s, seller);
+  return net - partnersOut;
+}
+
+export function sellToOutsider(s: GameState, bbl: string, price: number): boolean {
+  const seller = (s.rivals ?? []).find((r) => r.bbls.includes(bbl));
+  if (!seller) return false;
+  firmSells(s, seller, bbl, price);
+  logFirm(s, seller, "sell", `Sold a building to money from out of town`, bbl, price);
   return true;
 }
 

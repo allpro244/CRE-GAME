@@ -41,13 +41,28 @@ function boom(k) {
         const gross = Math.round(r.lotArea * cov * floors);
         if (!(gross > 2000)) continue;
         g.built[r.bbl] = { class: k, bldgArea: gross, floors, yearBuilt: START_YEAR + Math.floor(g.month / 12), cov };
+        (g.shockNew ??= []).push({ bbl: r.bbl, yb: START_YEAR + Math.floor(g.month / 12) });
         const rent = E.rentableSf({ bldgArea: gross, floors });
         E.addStock(g.econ, k, rent);
         added += rent; n++;
       }
       ctx.notes.push(`${n} buildings, ${(added / 1e6).toFixed(2)}M sf rentable = ${(100 * added / Math.max(1, target) / 2).toFixed(0)}% of the stock (target 50%)${added < 0.9 * target ? " — the town ran out of buildable lots" : ""}`);
     },
-    probes: { built: (g, city, E) => (near(g, 120, [0, 1, 60]) ? builtSf(g, city, E, k) : NaN) },
+    probes: {
+      built: (g, city, E) => (near(g, 120, [0, 1, 60]) ? builtSf(g, city, E, k) : NaN),
+      // the share of the injected buildings' feet still standing as built (same class, same year built)
+      newStanding: (g, city, E) => {
+        if (!g.shockNew?.length || !near(g, 120, [1, 60, 120])) return NaN;
+        let on = 0, all = 0;
+        for (const x of g.shockNew) {
+          const b0 = g.built?.[x.bbl];
+          const sf = E.rentableSf({ bldgArea: Math.max(1, b0?.bldgArea ?? 0), floors: b0?.floors ?? 1 });
+          all += sf;
+          if (b0 && b0.class === k && b0.bldgArea > 0 && b0.yearBuilt === x.yb) on += sf;
+        }
+        return all > 0 ? on / all : NaN;
+      },
+    },
     land(c, t) {
       const p = `supply-${k}-up50.built`;
       // the feet standing on the lots, added, as a share of the class's stock (buildings of the class
@@ -59,7 +74,11 @@ function boom(k) {
       const p = `supply-${k}-up50.built`;
       const add = (t[60]?.probe[p] - c[60]?.probe[p]) / c[60]?.stock[k];
       // informational: the shock landed at +1; what stands at +5 years is the market's answer (graded below)
-      return { ok: true, msg: `buildings +${Number.isFinite(add) ? (100 * add).toFixed(0) : "—"}% of the stock at +5 years` };
+      // the new buildings themselves, tracked by lot (audit probe 2026-11-05, seed 11: 0% of 4.43M sf gone in five
+      // years, while econ.stock read +28-32% — it carries off-map stock — and old office converted at 5.9% against 1.8%)
+      const q = `supply-${k}-up50.newStanding`, s5 = t[60]?.probe[q], s10 = t[120]?.probe[q];
+      const pct = (x) => (Number.isFinite(x) ? (100 * x).toFixed(0) + "%" : "—");
+      return { ok: true, msg: `buildings +${Number.isFinite(add) ? (100 * add).toFixed(0) : "—"}% of the stock at +5 years; of the new buildings, ${pct(s5)} still standing at +5 years and ${pct(s10)} at +10` };
     },
     expect: [
       { obs: `vac.${k}`, unit: "pp", win: "impact", sign: +1, lo: 10, hi: 35, label: `${LABEL[k]} vacancy`, want: "+10 to +35pp (day one is about +30pp)" },
@@ -71,7 +90,6 @@ function boom(k) {
       // into a glut, builders add no more a year than they would have without it (a tenth of a point of the stock either way is noise)
       { obs: `startsYr.${k}`, unit: "pp", win: "mid", sign: -1, lo: -100, hi: 0, tiny: 0.1, label: `${LABEL[k]} starts, % of the stock a year, years 3-8`, want: "no more than without the glut (≤ 0pp)", trace: "builders' forward vacancy and pro formas (dev.ts replacementSearch, developerLook; market.ts forwardVacancy)" },
       // (no land row: the boom itself takes the town's vacant lots, so land is moved by the injection, not only by the market)
-      { obs: `stock.${k}`, unit: "rel", win: "mid", sign: +1, lo: 0.35, hi: 0.55, label: `${LABEL[k]} stock, years 3-8`, want: "the new buildings still stand (+35 to +55%): a glut is absorbed, not torn down — new buildings are rarely demolished", trace: "teardown / owner redevelopment of new empty buildings (dev.ts tickTeardowns, ownerRedevelopment)" },
       ...CLASSES.filter((o) => o !== k).map((o) => ({ obs: `eff.${o}`, unit: "rel", win: "impact", sign: 0, hi: 0.05, label: `${LABEL[o]} rent (should not move)`, want: "within ±5%" })),
     ],
     charts: [

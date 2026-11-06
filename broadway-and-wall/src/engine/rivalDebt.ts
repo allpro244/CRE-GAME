@@ -34,7 +34,7 @@
 import type { CityLoan, GameState, Rival } from "./types";
 import { productById, quote, REFI_FEE, nameLimit, windowOpen, CAP_TERM_M, type StabView } from "./debt";
 import { capPremiumOn } from "./amortize";
-import { targetCapital } from "./lenders";
+import { chargeLenderLoss, targetCapital } from "./lenders";
 import type { Lender } from "./lenders";
 import { LOC_SPREAD } from "./credit";
 import { bankRatePct, liveSpread } from "./pricing";
@@ -542,7 +542,16 @@ export function settleSale(s: GameState, r: Rival, bbl: string, price: number): 
   if (row) {
     delete s.cityLoans![bbl];
     loanBookTouched();
-    if (row.balance > price) addToLine(s, r, row.balance - price);
+    // A SHORT SALE'S SHORTFALL IS THE MORTGAGE LENDER'S (2026-11-06). The
+    // street's income paper is non-recourse (rivals.ts deedInLieu): what the
+    // price does not cover is its holder's loss, booked against its own share.
+    // It used to move onto the firm's corporate line — a different bank's
+    // book, with no limit, so a life company's short paper became a hometown
+    // bank's exposure. A land loan is recourse and stays owed, on the line.
+    if (row.balance > price) {
+      if (row.klass === "land") addToLine(s, r, row.balance - price);
+      else chargeLenderLoss(s, row.lender, Math.round((row.balance - price) * (row.share ?? 1)), { borrower: r.name, id: r.id, bbl, cls: "income", how: "short sale" });
+    }
   }
   const fromLine = relief - Math.min(price, row?.balance ?? 0);
   r.lineBal = Math.max(0, (r.lineBal ?? 0) - fromLine);

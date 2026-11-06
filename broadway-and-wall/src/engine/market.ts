@@ -4418,7 +4418,11 @@ export function tickEcon(s: GameState) {
     e.sublet[k] += (marketable - e.sublet[k]) / SUBLET_TAU;
     e.sublet[k] = clamp(e.sublet[k], 0, e.occupied[k]);
 
-    e.cityVac[k] = clamp(1 - e.occupied[k] / e.stock[k], 0, 0.45);
+    // NO CEILING (2026-11-06, REAL_ECONOMY_PLAN 4.5). This was clamped at 45%:
+    // a town can be emptier than that (Detroit's downtown office ran 30-40%
+    // in the 2000s; a glut after a closure goes higher), and occupied never
+    // exceeds the stock (above), so the unit interval is the only bound.
+    e.cityVac[k] = clamp(1 - e.occupied[k] / e.stock[k], 0, 1);
     // THE STREET'S VACANCY, WHICH IS NOT THE CITY'S WHEN YOU OWN PART OF IT
     // (2026-10-15). Every building the player does not own read the CITY
     // rate — which counts the player's empty floors. So a player who built a
@@ -4434,7 +4438,7 @@ export function tickEcon(s: GameState) {
       const pSf = e.playerNow?.sf?.[k] ?? 0, pOcc = e.playerNow?.occ?.[k] ?? 0;
       const streetSf = e.stock[k] - pSf;
       (e.streetVac ??= { ...e.cityVac })[k] = streetSf > e.stock[k] * 0.05
-        ? clamp(1 - Math.max(0, e.occupied[k] - pOcc) / streetSf, 0, 0.45)
+        ? clamp(1 - Math.max(0, e.occupied[k] - pOcc) / streetSf, 0, 1)
         : e.cityVac[k];
     }
     // ...and the street by quality (bands.ts): which of its floors the vacancy is in.

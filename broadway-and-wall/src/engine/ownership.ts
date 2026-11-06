@@ -287,6 +287,31 @@ export function holderNoteTerms(
   return { ltv, into };
 }
 
+/**
+ * THE ADVANCE A HOLDER RE-LEVERS TO AT ITS BALLOON (2026-11-06), as a share of
+ * the building's value; 0 for a holder that only rolls what it owes.
+ *
+ * The private book's refinancing used to carry the old balance forward and
+ * nothing else: a note only ever amortised, and nobody borrowed again until
+ * the deed changed hands. With values growing with the price level the book
+ * drifted to a median 16% of value by year twenty (seed 11; 13-25% on the
+ * notes being rolled), which no market's paper looks like, and lenders could
+ * not lose money in a 47% fall. An owner that levers re-levers at maturity:
+ * the cash-out refinancing is the ordinary way a partnership or a fund takes
+ * its gains out of a building without selling it (and the 2005-07 vintage of
+ * them is what went under water in 2009). The advance is the one its kind
+ * writes at a purchase (HOLDER_ADVANCE). Old family money pays its mortgages
+ * off and does not take new ones; an estate cannot refinance while probate
+ * runs. Those two roll the balance, as before.
+ */
+const RELEVERS: Partial<Record<SellerKind, true>> = { institution: true, partnership: true, developer: true };
+export function holderRefiAdvance(h: Holder, bbl: string, dirt: boolean, salt: string): number {
+  if (!RELEVERS[h.kind]) return 0;
+  const adv = HOLDER_ADVANCE[h.kind];
+  const ltv = dirt ? Math.min(adv.ltv, 0.35) : adv.ltv;
+  return ltv * (0.86 + 0.28 * hash01(`${bbl}:${salt}:adv`));
+}
+
 /** Commercial amortisation, in months — the convention the private notes run on. */
 export const HOLDER_AMORT_M = AMORT_M;
 

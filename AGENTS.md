@@ -47,6 +47,7 @@ real browser start. The Unreal project lives in `unreal/`.
   `broadway-and-wall/HANDOFF.md`.
 - Before debt, lender or rival-debt work: `broadway-and-wall/BANKING.md`
   (the loan book, the price law, and the handoff for rival per-loan debt).
+- Player/competitor parity (one rulebook; firms decide freely; owner 2026-11-06): `broadway-and-wall/PARITY_PLAN.md`.
 - Economy realism queue (every number real, nothing artificial; from the 2026-11-05 audit): `broadway-and-wall/REAL_ECONOMY_PLAN.md`.
 - Post-skyline / no-playtest queue: `broadway-and-wall/NO_PLAYTEST_PLAN.md`.
 - Developer-only play (MDGA — Make Development Great Again): `broadway-and-wall/MDGA_PLAN.md`;

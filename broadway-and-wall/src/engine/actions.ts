@@ -4,7 +4,7 @@
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import type { Bid, BuiltClass, Condition, DevUse, Econ, Exit, GameState, GroundLease, GroundReview, Holding, Rival, RivalStyle, SaleInstructions } from "./types";
 import { logBooks, moveDeposit, moveFundCash, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger, autoLeaseOnClose } from "./types";
-import { recentLowballs, sellerOf, reserveMidOf, strikeDeal, phaseShift } from "./acquire";
+import { recentLowballs, sellerOf, strikeDeal, insultShareOfAsk } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
 import { dollarLevel, rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown, labourSlack, type RngChannel } from "./market";
@@ -545,66 +545,22 @@ export function executePurchase(
 // how hot the market is. Push too far and the deal dies rather than merely
 // being refused — a listing you blew up goes to somebody else.
 /**
- * WILL THEY TAKE IT. A SELLER HAS A NUMBER, AND YOU CANNOT SEE IT.
+ * WHAT THE SELLER DOES WITH YOUR NUMBER (PARITY_PLAN.md P1, 2026-11-06).
  *
- * This was linear in the discount with a floor: `max(0.02, 1.02 - disc*6.2 + …)`.
- * The floor is the fault. Past about 80% of the ask the linear term has gone
- * negative and every offer below it — 70%, half, ONE DOLLAR — comes out at the
- * same 2%. So a bid of $1 on a $5M building closed one time in fifty, and the
- * dominant play was to put a dollar on every listing in town every month and
- * wait. That is a money pump, and it is the textbook shape of a rail holding
- * up a model: the floor was there so there would "always be a chance", and it
- * ended up deciding the whole lowball range.
+ * An offer under the ask on the tape used to be a dice roll: a logistic curve
+ * centred on a table of seller kinds (`reserveMidOf`), shifted by the street's
+ * appetite index. The firms bidding on the same listing faced something else
+ * entirely: the seller's own floor (`listingReserve`: a named firm's hold value
+ * plus the tax and costs of selling, or the loan it must clear; an anonymous
+ * holder's belief of value) and each other, in the month's bid round. One
+ * building, two sellers, depending on who rang.
  *
- * A seller does not roll dice against the discount. They have a reservation
- * price they will not go under, it is private, and it is not the same number
- * from one owner to the next. So the honest object is the CDF of that
- * reservation: the chance the person on the other side of this particular
- * table happens to be at or below what you offered. Logistic rather than
- * normal, because the tail is real — somewhere in a city there is always an
- * estate that wants it done this week — but it is a TAIL and it thins, instead
- * of levelling off into a free option.
- *
- * Calibrated on sale-to-list: commercial deals close at a median near 95% of
- * ask, so a bid at 95% is close to a coin flip FOR A TYPICAL SELLER. The
- * centre is no longer one number for the whole city — `reserveMidOf` reads
- * the same floors the desk uses (local 0.94, estate 0.89, institution 1.00).
- * The curve still thins in the tail: 1-in-950 at 70% of ask against a local,
- * and effectively never for a dollar.
+ * Now there is one seller. Your offer goes into the same round as theirs: it
+ * is taken when it clears the seller's own floor and beats every bid from a
+ * firm that can close (`bidRound`, `landBidRound`). Under the floor it is a
+ * no; under a better bid it is a no with the reason. The appetite index is
+ * gone from this path because the appetite is the bids themselves.
  */
-const RESERVE_SD = 0.035;      // spread across owners; distress widens it, below
-export function bidOdds(
-  s: GameState, parcels: ParcelTable, bbl: string,
-  listing: { ask: number; distress?: boolean; reason?: string; receiverFor?: string; loanBasis?: number }, bid: number,
-): number {
-  const held = holderOf(s, parcels, bbl);
-  if (held && isCold(s, held.id)) return 0;
-  const r = bid / Math.max(1, listing.ask);               // 1 at full ask
-  // The same three forces as before, moved from the probability onto the
-  // seller's NUMBER, which is where they act. A recession does not make a
-  // seller likelier to accept a given discount by some fixed amount of luck —
-  // it lowers what they will settle for.
-  const phase = phaseShift(s);
-  const lenderSale = !!listing.distress && (listing.reason === "receiver" || !!listing.receiverFor || !!listing.loanBasis);
-  const seller = sellerOf(s, parcels, bbl);
-  // Kind + distress share the desk's floors. Phase / street / relationship
-  // stay here — they are this month, not this person.
-  let mid = reserveMidOf(seller.kind, { distress: !!listing.distress, lenderSale }) + phase;
-  // A seller refuses a lowball because somebody else will pay more. How much
-  // that is true depends on who else has money today — which is the whole
-  // reason to know what the other firms on the street are doing.
-  const room = (marketAppetite(s) - 1) * 0.05;
-  mid += room;
-  if (held) mid -= (relMult(s, held.id) - 1) * 0.04;
-  // ASK PREMIUM (§5a): some holders settle at the mark, some want more.
-  if (held) mid += (holderSheet(s, held).askPremium - 50) / 1000;
-  mid = Math.max(0.70, Math.min(1.08, mid));
-  // A forced sale is not just cheaper, it is less predictable: a receiver with
-  // a deadline and an estate with a lawyer settle in very different places.
-  const sd = listing.distress ? (lenderSale ? 0.075 : 0.060) : RESERVE_SD;
-  return Math.max(0, Math.min(0.98, 1 / (1 + Math.exp(-(r - mid) / sd))));
-}
-
 export function buyListing(
   s: GameState, parcels: ParcelTable, bbl: string, product: BuyProduct, lev = 1, bid?: number,
 ): { s: GameState; err?: string; msg?: string; refused?: boolean } {
@@ -613,40 +569,48 @@ export function buyListing(
   const cold = coldOnDeed(s, parcels, bbl);
   if (cold) return { s, err: coldRefuseMsg(cold) };
   const price = Math.round(bid ?? listing.ask);
-  // THE AS-IS PATH. This is a real offer — full price, no contingencies, close
-  if (price >= listing.ask) {
-    const st = clone(s);
-    return executePurchase(st, parcels, bbl, listing.ask, product, false, lev);
-  }
-
+  // THE FULL ASK IS AN OFFER LIKE ANY OTHER. It used to skip the round and
+  // close at the ask whatever the street was bidding, so the player bought at
+  // the ask what a firm had bid ten per cent over. At or over the ask the
+  // seller's floor is met; a better bid from a firm that can close still wins.
+  // A number over the ask is paid in full, as a firm's is.
   // check the money is there before spending a negotiation on it
   const q = buyQuote(s, parcels, bbl, price, product, lev);
   // Same purse the closing uses — an offer you could fund at the table is an
   // offer worth making, and testing it against cash alone stopped bids the
   // firm could plainly have honoured.
   if (fundableNow(s, parcels) < q.equity) return { s, err: `That bid needs ${money(q.equity)} of equity; you are short.` };
+  // A SELLER READS OFFERS ONCE A MONTH, as the round below runs once a month
+  // for every firm on the street. A second number the same month is not a new
+  // bid, it is a probe of the first answer.
+  if (listing.offeredM === s.month) return { s, err: "The seller has your offer for this month. Try again next month." };
 
   const next = clone(s);
-  const p = bidOdds(next, parcels, bbl, listing, price);
-  const roll = rng(next);
-  if (roll < p) {
+  const rec = resolveRec(parcels, next, bbl);
+  if (!rec) return { s, err: "Unknown parcel." };
+  const floor = listingReserve(listing);
+  const building = rec.class !== "land" && rec.bldgArea > 0;
+  const rival = building ? bidRound(next, parcels, rec, listing).bids[0]
+    : !listing.halfBuilt ? landBidRound(next, parcels, rec, listing).bids[0] : undefined;
+  if (price >= floor && !(rival && rival.bid >= price)) {
     const done = executePurchase(next, parcels, bbl, price, product, false, lev);
     if (done.err) return { s, err: done.err };
     return { s: done.s, msg: `They took ${money(price)}.` };
   }
+  const li = next.listings.find((l) => l.bbl === bbl);
+  if (li) li.offeredM = next.month;
   // Refusal is not a purchase. Callers (and the toast path) used to treat a
   // missing `err` as "deed recorded," so a lowball that the seller waved off
   // still printed as a closing. `refused` carries the news / listing pull
   // without pretending the deed changed hands — same shape as approachOwner.
-  // AN INSULT IS A NUMBER NOWHERE NEAR THEIRS. Every refusal used to carry the
-  // same slice of insult — so a bid at 95% of the ask, a coin flip on the
-  // seller's own curve, could end the relationship across the owner's whole
-  // book. Only a bid this seller would almost never take (under 2% on the
-  // curve: about a fifth under the ask for a typical owner, further for a
-  // forced one) can offend; anything closer is a plain no.
-  if (roll < p + 0.45 || p >= 0.02) {
-    next.news.unshift({ q: next.month, kind: "info", text: `Offer refused · ${parcels[bbl]?.address} · ${money(price)}. Ask unchanged.` });
-    return { s: next, msg: "Refused. The ask stands.", refused: true };
+  // AN INSULT IS A NUMBER NOWHERE NEAR THEIRS: under the public insult line
+  // (insultShareOfAsk, the line the negotiation panel draws) AND under the
+  // seller's own floor. Anything closer is a plain no.
+  const lenderSale = !!listing.distress && (listing.reason === "receiver" || !!listing.receiverFor || !!listing.loanBasis);
+  if (price >= floor || price >= listing.ask * insultShareOfAsk(!!listing.distress, lenderSale)) {
+    const why = price >= floor && rival ? ` A firm on the street bid more.` : ``;
+    next.news.unshift({ q: next.month, kind: "info", text: `Offer refused · ${parcels[bbl]?.address} · ${money(price)}.${why} Ask unchanged.` });
+    return { s: next, msg: `Refused.${why} The ask stands.`, refused: true };
   }
   // insulted: the listing goes away — and the person remembers across their book
   {
@@ -3851,7 +3815,7 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
     //
     // `marketAppetite` is the quantity this wanted all along: it aggregates who
     // actually has dry powder, scaled by the credit window, normalised so a
-    // healthy street reads 1.0 — and `bidOdds` in this same file already uses
+    // healthy street reads 1.0 — and `bidOdds` in this same file used (until the bid round replaced it)
     // it for exactly this judgement, which is how much competition a seller
     // faces. Three hand-set constants become one number the engine already
     // computes, the peak stops being punished, and the swing lands at 2.14x.

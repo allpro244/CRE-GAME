@@ -66,9 +66,9 @@ ok("buyListing blocked", !!buy.err && /will not sell/i.test(buy.err));
 const neg = E.negotiate(g, parcels, target.bbl, Math.round(g.listings.find((l) => l.bbl === target.bbl).ask * 0.85));
 ok("negotiate blocked", !!neg.err);
 
-const listing = g.listings.find((l) => l.bbl === target.bbl);
-const odds = E.bidOdds(g, parcels, target.bbl, listing, Math.round(listing.ask * 0.9));
-ok("bidOdds zero when cold", odds === 0);
+// Over the ask too: a cold holder takes no number at all (buyListing joins the round only past the door).
+const over = E.buyListing(g, parcels, target.bbl, "cash", 1, Math.round(g.listings.find((l) => l.bbl === target.bbl).ask * 1.2));
+ok("an offer over the ask is blocked when cold", !!over.err && !over.s.holdings?.[target.bbl]);
 
 // Mid-flight off-market doors — re-plant a live ask and prove each mutator.
 g.approaches[other] = { q: g.month, refused: false, ask: 1_000_000, mode: "ask" };

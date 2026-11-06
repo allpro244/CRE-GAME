@@ -320,7 +320,7 @@ function reservationOf(
   // basis, and servicers still negotiate below it to clear the book.
   const lenderSale = !!li?.distress && (sellerKind === "lender" || li.reason === "receiver" || !!li.receiverFor || !!li.loanBasis);
   const soured = s.approaches[bbl]?.soured ?? 0;
-  // ONE RESERVATION. The tape (`bidOdds`) centres its acceptance curve on
+  // ONE RESERVATION. The tape (`bidOdds`, retired 2026-11-06 for the bid round) centred its acceptance curve on
   // `reserveMidOf` — the kind's floor, the lift, the motivated discount —
   // shifted by the cycle; this path carried its own floor, its own phase
   // shifts (−0.055 / +0.03 against the tape's −0.035 / +0.025) and its own

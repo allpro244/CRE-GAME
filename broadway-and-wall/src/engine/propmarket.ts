@@ -52,7 +52,7 @@ import { productOf } from "./products";
 import { stabViewFor, streetRefiProceeds } from "./debt";
 import { TI_ASK, renewalRefreshShare } from "./leasing";
 import {
-  livingRivals, paramsOf, fitOf, ownerOf, firmOutlook, deployPressure, contractedEquity, lineRoom,
+  livingRivals, paramsOf, fitOf, ownerOf, firmOutlook, deployDiscountPp, contractedEquity, lineRoom,
   minTicket, boughtLastYear, gainsTax, streetSaleCost, spreadAdj, firmMaxPrice, firmMargin, capForSpread, landBanker,
 } from "./rivals";
 import { dealsPerYear, misreadPp } from "./competitorTraits";
@@ -249,10 +249,10 @@ export interface Bidder {
 export function bidderOf(s: GameState, r: Rival, rec: ParcelRecord): Bidder {
   const st = paramsOf(r);
   const shut = Math.max(0, 1 - (s.econ.creditIdx ?? 1));
-  // DRY POWDER BURNS A HOLE (deployPressure): a fund paid to deploy takes up
-  // to a point and a half less. A CONTRARIAN takes less when the window has
+  // DRY POWDER BURNS A HOLE (deployDiscountPp): a fund paid to deploy takes up
+  // to its management fee less as its investment period runs out. A CONTRARIAN takes less when the window has
   // shut — buying what nobody else can finance is its whole strategy.
-  const eqPrem = (EQUITY_PREMIUM[r.style] ?? 8) - 0.75 * (deployPressure(s, r) - 1) - Math.max(0, st.contra) * shut * 2;
+  const eqPrem = (EQUITY_PREMIUM[r.style] ?? 8) - deployDiscountPp(s, r) - Math.max(0, st.contra) * shut * 2;
   const local = r.sheet && r.home === rec.district ? 1 - 0.8 * r.sheet.homeTurf / 100 : 1;
   return {
     id: r.id, style: r.style,

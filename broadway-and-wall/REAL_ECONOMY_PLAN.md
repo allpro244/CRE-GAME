@@ -47,9 +47,12 @@ It supersedes the open parts of `ECON_REALISM_PLAN.md` and `RENT_VACANCY_RESPONS
 | Lenders: a desk closes on its regulator's rule (12 U.S.C. 1831o; NAIC RBC), not a monthly coin | done | #594 |
 | 1, step 2, part 1: national output has a capacity ceiling (+6%, CBO 1966); ordinary cycles unchanged | done | #592 |
 | 3.2 dry powder bends a fund's hurdle by its own fee as its investment period runs out | done | #598 |
-| 4.6 the debt fund's construction advance reads the window and its own book, without floors | measuring | branch `claude/real-economy-4-6-fund-desk` |
+| 4.6 part 1: the debt fund's construction advance reads the window and its own book, without floors (no measured effect: the floored quote never decided a loan) | done | #600 |
+| 4.6 next: halving construction loans moves starts +5.5% (noise ±22%), because nothing on the street runs short of equity. Not a levered hurdle: under Modigliani-Miller leverage does not change a scheme's value, so the unlevered margin test is the consistent one. What bites in a crunch is that equity is scarce and dear to raise, and the anonymous merchants have no balance sheet. Build: the merchants' equity as a pool that is spent on starts and refilled from completions, so a doubled equity cheque per scheme halves what the pool can start | open | — |
 | 8: rail audit #1 (a constant written as a rail) and #16 (a dead coin) | done | #595, #596 |
-| 8: rail audit #19, land capitulation runs to the builder's bid | measuring | branch `claude/real-economy-land-capitulation` |
+| 8: rail audit #19, land capitulation runs to the builder's bid | done | #601 |
+| 3.4 follow-up: courthouse bidders finance on the bridge desk; the courthouse room is the distress specialists (open room's runner-up below the worn mark, p50: −8% → +8%) | done | #602, #603 |
+| 4.5 part 1: vacancy has no 45% ceiling | done | #604 |
 | 8 next: `marketAppetite` (an index of the room, rail audit #15) and the take-private premium (#8) should be the named bidders themselves | open | — |
 
 ### Corrections to the audit

@@ -77,11 +77,13 @@ Anything else is a fault. The plan is done when all of these hold:
 | `tools/rail-audit.mjs` | **No caps or rails on any economic outcome.** Every `rail`-class site is deleted, not merely made to bind less. Every remaining `Math.min` / `Math.max` / clamp is one of the two kinds below, and the audit asserts it |
 | Physical and accounting bounds | Feet, people, money held and shares cannot go negative or above the whole. A bound of this kind **binds 0%** in a run, and a bind is logged as a bug: the model produced an impossible number upstream |
 | Real actors' and laws' limits | A lender's maximum LTV or minimum DSCR, a zoning FAR, a tenant's lease term, a statute. Each cites its source, sits in the rail audit as `behaviour`, and binds only where the real limit would |
-| `tools/shocks.mjs` on 5 seeds | Every graded row is RIGHT, or inside the measured noise floor of its window |
-| `tools/proof.mjs` on 3 seeds × 100 years | 0 FAIL; WATCH only where the band itself is under review |
+| `tools/shocks.mjs` on 5 seeds | No row BACKWARDS or NO RESPONSE: every shock moves what it causes in the direction any real economy does. Magnitudes are graded against the record loosely; a WRONG SIZE starts an investigation, not a tuning pass |
+| `tools/proof.mjs` on 3 seeds × 100 years | No row outside what comparable economies have shown (bands from the G7 / OECD record, not US post-war history alone). A FAIL is a smoke detector: trace it to a broken mechanism and fix that, or, if none is found, widen the band with a source and say so |
 | `test/conserve.mjs` + the economy-wide identity (Phase 7) | $0 unexplained, for every agent, not only the player |
 | `tools/deepplay.mjs` on 3 seeds × 20 years | 0 BUG, 0 REALISM lines |
 | One-valuation identity (Phase 2) | The same building valued by any two functions differs only by a named, real role difference |
+
+**The record is a range, not a script** (owner, 2026-11-06: *"it doesn't have to be exactly like history right?"*). US history is one draw of a random process; a simulation that matched it row for row would be suspect, not realistic. What the record is for is catching the impossible — a +25% output gap, a bank lending one name more than its capital, a credit crunch in which no sale falls — because each of those is a broken mechanism. The mechanism rules (every number one of the four kinds above, no load-bearing rails) are where the standard stays strict.
 
 **These are a direction, not a target** (owner, 2026-11-05). Zero century FAILs over 3 × 100 years, every shock RIGHT on 5 seeds and zero rails may not all be reachable together, and a hard target is exactly what tempts tuning. A good mechanism that leaves one band failing ships, with the reason written down in the PR and in PROOF.md. The no-caps rule below is not part of this softening: no rail is ever added or kept to make a row pass.
 

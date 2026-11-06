@@ -173,7 +173,7 @@ function streetLoan(s: GameState, rec: ParcelRecord, cond: Condition, condIdx: n
 }
 
 export function dealView(
-  s: GameState, rec: ParcelRecord, bbl: string, pRef: number, cond?: Condition, condIdx?: number,
+  s: GameState, rec: ParcelRecord, bbl: string, pRef: number, cond?: Condition, condIdx?: number, steps = false,
 ): DealView | null {
   if (rec.class === "land" || !(rec.bldgArea > 0) || !(pRef > 0)) return null;
   const e = s.econ;
@@ -213,7 +213,14 @@ export function dealView(
   // THE LOAN, from the desks, for this building. Sized twice to learn its
   // shape: on the advance it grows with the price, on coverage or debt yield
   // it does not.
-  let desks = BANK_DESKS;
+  // ON THE COURTHOUSE STEPS THE MONEY IS CASH (2026-11-06). A foreclosure
+  // auction sells as-is for 10% down at the hammer and the balance in about
+  // thirty days, with no financing contingency — a permanent lender cannot
+  // underwrite, appraise and close in that time, so the buyer's money is its
+  // own and a bridge desk's (the hard-money lenders who fund these closings),
+  // refinanced onto permanent paper later. `steps` sizes the bid on the bridge
+  // sheet only.
+  let desks = steps ? BRIDGE_DESKS : BANK_DESKS;
   let q1 = streetLoan(s, rec, c, q, pRef, inP.noi, desks);
   if (!(q1.principal > 0)) { desks = BRIDGE_DESKS; q1 = streetLoan(s, rec, c, q, pRef, inP.noi, desks); }
   let debtA = 0, debtCap = 0;
@@ -363,7 +370,7 @@ export interface Bid { r: Rival; max: number; bid: number; uw: Underwriting }
  * the price is set by the runner-up, not by a sealed guess.
  */
 export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress"> & { listedM?: number; open?: boolean }): { bids: Bid[]; n: number; view: DealView | null } {
-  const view = dealView(s, rec, li.bbl, li.ask);
+  const view = dealView(s, rec, li.bbl, li.ask, undefined, undefined, !!li.open);
   if (!view) return { bids: [], n: 0, view };
   const seller = ownerOf(s, rec.bbl);
   const distress = !!li.distress;

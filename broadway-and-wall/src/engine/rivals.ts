@@ -259,6 +259,29 @@ const MARGIN_BAND: Record<RivalStyle, [number, number]> = {
   developer: [0.12, 0.20], merchant: [0.15, 0.22],
   opportunistic: [0.18, 0.28], pe: [0.18, 0.25], vulture: [0.25, 0.35],
 };
+/**
+ * A BUILDER THAT HOLDS UNDERWRITES A SPREAD, NOT A FLAT MARGIN (REAL_ECONOMY_PLAN
+ * 3.1, 2026-11-05). Core funds, REITs, offshore money and family offices that
+ * build to own do not need a merchant's profit on sale, but they do need the
+ * building's yield on cost to beat what they could buy the same income for:
+ * a development spread over the market cap rate, about 100-200bp in REIT and
+ * institutional practice (REIT investor presentations; Green Street; NAREIT
+ * T-Tracker development yields against implied caps) [S]. As a margin on value
+ * that is spread / cap — about 15-30% at a 6-7% cap, not the 0-12% these
+ * styles carried — and it rises when caps fall, which is when building to hold
+ * is least worth the risk. An owner-user builds for its own use and keeps its
+ * band; merchants, developers and opportunity money keep the trade's.
+ */
+const SPREAD_BAND: Partial<Record<RivalStyle, [number, number]>> = {
+  family: [0.0075, 0.0150], foreign: [0.0100, 0.0150], core: [0.0100, 0.0150], reit: [0.0125, 0.0200],
+};
+/** The market cap rate a builder reads its spread against, decimal: the class's, or the classes' mean. */
+export function capForSpread(e: { capRate?: Partial<Record<string, number>> }, cls?: string): number {
+  const c = cls ? e.capRate?.[cls] : undefined;
+  if (c && c > 0) return c / 100;
+  const v = Object.values(e.capRate ?? {}).filter((x): x is number => typeof x === "number" && x > 0);
+  return v.length ? v.reduce((a, x) => a + x, 0) / v.length / 100 : 0.065;
+}
 //
 // AN IDLE BUILDER DOES NOT LOWER ITS HURDLE (REAL_ECONOMY_PLAN 3.1,
 // 2026-11-05). This eroded the margin with the months since the firm's last
@@ -272,10 +295,12 @@ const MARGIN_BAND: Record<RivalStyle, [number, number]> = {
 // needs to earn less. The margin sits on top of the exit cap, which already
 // tracks the policy rate — so every firm's hurdle rises and falls with rates.
 // `month` is kept so callers need not change.
-export function firmMargin(r: { id: string; style: RivalStyle; lastBuildM?: number }, _month?: number): number {
+export function firmMargin(r: { id: string; style: RivalStyle; lastBuildM?: number }, _month?: number, exitCap?: number): number {
   let h = 2166136261;
   for (let i = 0; i < r.id.length; i++) h = Math.imul(h ^ r.id.charCodeAt(i), 16777619);
   const u = (h >>> 0) / 4294967296;
+  const sp = SPREAD_BAND[r.style];
+  if (sp && exitCap && exitCap > 0) return (sp[0] + (sp[1] - sp[0]) * u) / exitCap;
   const [lo, hi] = MARGIN_BAND[r.style] ?? [DEV_MARGIN, DEV_MARGIN];
   return lo + (hi - lo) * u;
 }
@@ -286,7 +311,7 @@ export function hurdleAt(plan: { yieldOnCost: number; exitCap: number }, margin:
 /** The most lenient margin among firms that build — what the street will accept. */
 export function streetMargin(s: GameState): number {
   let m = DEV_MARGIN;
-  for (const r of livingRivals(s)) if (buildAppetite(r) > 0) m = Math.min(m, firmMargin(r, s.month));
+  for (const r of livingRivals(s)) if (buildAppetite(r) > 0) m = Math.min(m, firmMargin(r, s.month, capForSpread(s.econ)));
   return m;
 }
 
@@ -372,7 +397,7 @@ function leanMult(s: GameState, lean: number, use: DevUse, months: number, who: 
 }
 /** The firm's own hurdle on a plan: its margin, its idle hunger, and (unless asked not to) its read of rent. */
 export function firmHurdle(s: GameState, r: Rival, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, withOutlook = true): number {
-  return hurdleAt(plan, firmMargin(r, s.month)) * (withOutlook ? outlookMult(s, r, use, plan.months) : 1);
+  return hurdleAt(plan, firmMargin(r, s.month, plan.exitCap)) * (withOutlook ? outlookMult(s, r, use, plan.months) : 1);
 }
 /** Whether this firm would break ground on the plan — financed its own way. */
 export function firmWouldBuild(s: GameState, r: Rival, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, financeable: boolean): boolean {
@@ -1406,7 +1431,7 @@ function frameBid(s: GameState, r: Rival, j: NonNullable<GameState["cityJobs"]>[
   if (!pf || !(pf.exitYieldPct > 0)) return 0;
   const value = pf.stabNoi / (pf.exitYieldPct / 100);
   const toFinish = Math.max(0, (j.cost ?? 0) - (j.spent ?? 0));
-  return Math.max(0, value / (1 + firmMargin(r, s.month)) - toFinish);
+  return Math.max(0, value / (1 + firmMargin(r, s.month, pf.exitYieldPct / 100)) - toFinish);
 }
 
 function orphanToTape(s: GameState, parcels: ParcelTable) {

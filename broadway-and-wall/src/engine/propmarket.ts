@@ -53,7 +53,7 @@ import { stabViewFor, streetRefiProceeds } from "./debt";
 import { TI_ASK, renewalRefreshShare } from "./leasing";
 import {
   livingRivals, paramsOf, fitOf, ownerOf, firmOutlook, deployPressure, contractedEquity, lineRoom,
-  minTicket, boughtLastYear, gainsTax, streetSaleCost, spreadAdj, firmMaxPrice, firmMargin, landBanker,
+  minTicket, boughtLastYear, gainsTax, streetSaleCost, spreadAdj, firmMaxPrice, firmMargin, capForSpread, landBanker,
 } from "./rivals";
 import { dealsPerYear, misreadPp } from "./competitorTraits";
 import { rowOn, deskWithRoom } from "./rivalDebt";
@@ -1282,7 +1282,7 @@ export function landMaxPrice(s: GameState, r: Rival, rec: ParcelRecord): number 
       // tenants. Measured on #571 (seed 22, year 10): every surveyed vacant
       // lot was bid at the no-queue residual, ~1.5x the appraiser's, with
       // 3.07M sf of industrial sites ahead at 87k sf a year (35 years).
-      own = Math.max(0, f * (value / (1 + (builds ? firmMargin(r, s.month) : DEV_MARGIN)) - nonLand));
+      own = Math.max(0, f * (value / (1 + (builds ? firmMargin(r, s.month, capForSpread(s.econ)) : DEV_MARGIN)) - nonLand));
     }
   }
   return builds ? own : Math.max(own, bankerHoldValue(s, r, rec));
@@ -1719,8 +1719,14 @@ export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
     const rec = recs[i];
     const maxes = firms.map((r) => landMaxPrice(s, r, rec)).filter((m) => m > 0).sort((a, b) => b - a);
     if (!maxes.length) continue;
-    // the best number, shaded for the room as a land round bids (landBidRound)
-    const px = maxes[0] * (1 - SHADE / maxes.length);
+    // WHAT THE LOT WOULD CLEAR AT: the second-best number, as the cap survey
+    // reads its room (capSurvey, `maxes[1] ?? maxes[0]`) — in an open round the
+    // best bidder pays what it takes to beat the runner-up (Vickrey 1961), not
+    // its own maximum. This printed the top of 40-60 firms' maxima shaded by
+    // 0.1/N, the extreme order statistic of the whole street, as the price of
+    // land (REAL_ECONOMY_PLAN 2.7; SHOCK_TESTS_PLAN run 2: land bids ~1.7x the
+    // residual). Two surveys of the same street, two rules: one answer now.
+    const px = maxes[1] ?? maxes[0];
     // per unit of the map's texture, whoever's number it is (a fixed sample,
     // not the lots the level itself makes texture-priced: see below)
     const mark = landRead(rec, s.econ).texture * rec.lotArea;

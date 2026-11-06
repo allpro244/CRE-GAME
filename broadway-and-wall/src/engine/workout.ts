@@ -111,9 +111,18 @@ export function extensionMonths(s: GameState): number {
  * so an extension is usually available and is not available in exactly the
  * years everybody needs one. That is the shape a refinancing cliff needs.
  */
-export function deskWillExtend(s: GameState, lenderName: string, rel = 20): boolean {
+export function deskWillExtend(s: GameState, lenderName: string, rel = 20, perf?: { noi: number; interest: number }): boolean {
   const l = lenderByName(s, lenderName);
   if (!l || l.failedM !== undefined) return false;   // a receiver liquidates; it does not extend
+  // A LOAN THAT DOES NOT PAY ITS COUPON IS NOT EXTENDED (2026-11-06). The
+  // extensions of 2009-12 ("extend and pretend") were for loans whose
+  // buildings still carried their interest; the ones that did not went to
+  // the workout desk and foreclosure, and that is where the charge-offs came
+  // from. A special servicer modifies when that beats foreclosing, which a
+  // building short of its coupon does not. This asked only about the desk and
+  // the relationship, never about the loan, so every maturity the desk could
+  // afford was extended and a credit crunch produced no defaults at all.
+  if (perf && !(perf.noi >= perf.interest)) return false;
   const { healthy, stretched } = deskCondition(l);
   // WHO IS ACROSS THE TABLE DECIDES WHAT THE FILE IS WORTH. A bank or a life
   // company with capital extends; a stretched one does it for a borrower it
@@ -231,9 +240,16 @@ export function workoutMood(s: GameState, lenderName: string, bbl?: string): {
   // A bank with capital would far rather extend than own a building. One that
   // is impaired has a regulator reading the same balance sheet you are. The
   // test itself is `deskWillExtend` above — one answer, two borrowers.
-  const willExtend = deskWillExtend(s, lenderName, rel);
+  // The same test every borrower faces: does the building carry its coupon?
+  const h = bbl ? s.holdings[bbl] : undefined;
+  const lastHist = h?.hist?.[h.hist.length - 1];
+  const perf = h?.loan && lastHist ? { noi: lastHist[3], interest: h.loan.balance * h.loan.ratePct / 100 } : undefined;
+  const willExtend = deskWillExtend(s, lenderName, rel, perf);
   const terms = extTerms(l);
-  const why = l.kind === "conduit"
+  const shortCoupon = !!perf && !(perf.noi >= perf.interest);
+  const why = shortCoupon
+    ? `The building's income (${Math.round(perf!.noi / 1000).toLocaleString()}k a year) does not cover the interest on the loan (${Math.round(perf!.interest / 1000).toLocaleString()}k). A lender extends a loan that pays its coupon; this one goes to the workout desk.`
+    : l.kind === "conduit"
     ? (willExtend
       ? `CMBS special servicer will modify for fees and a paydown. Relationship history does not count.`
       : `CMBS special servicer wants resolution, not extension. Relationship history does not count.`)

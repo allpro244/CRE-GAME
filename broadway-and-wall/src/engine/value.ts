@@ -4054,17 +4054,29 @@ function stabilisedIncome(rec: ParcelRecord, econ: Econ, condition: Condition, c
   // absorption). It was the CITY's excess over the city's absorption, so a
   // half-empty building in a market at its normal rate had no lease-up to
   // deduct, and one full building in a glut was charged the glut's.
+  const short = Math.max(0, useOccupancy(rec, econ, use, "natural") - useOccupancy(rec, econ, use, false));
+  const lossPv = leaseUpLossPv(econ, use, gap, short, capY);
+  return lossPv === null ? noiNow / capY : noiNat / capY - lossPv;
+}
+
+/**
+ * THE RENT LOST LEASING BACK UP, in today's money: a loss that starts at
+ * `gap` a year and falls linearly to zero over T years, where T is the
+ * building's shortfall from natural occupancy (`short`, a share of its feet)
+ * over the share of the class's stock the market absorbs a year
+ * (`landQueue.absYr`, five trailing years of gross absorption):
+ * gap * (1/r - (1 - e^{-rT}) / (r^2 T)). T -> infinity is gap / r (today's
+ * income capitalised); T -> 0 is nothing. Null when the market measures no
+ * absorption to lease up at.
+ */
+function leaseUpLossPv(econ: Econ, use: BuiltClass, gap: number, short: number, capY: number): number | null {
   const h = econ.history ?? [];
   const stock = h.length ? (h[h.length - 1].stock?.[use] ?? 0) : 0;
-  const absYr = econ.landQueue[use]?.absYr ?? 0;
-  // PV of a loss that starts at `gap` and falls linearly to zero over T years:
-  // gap * (1/r - (1 - e^{-rT}) / (r^2 T)). T -> infinity is gap / r, today's
-  // income capitalised; T -> 0 is nothing.
-  if (!(absYr > 0) || !(stock > 0)) return noiNow / capY;
-  const short = Math.max(0, useOccupancy(rec, econ, use, "natural") - useOccupancy(rec, econ, use, false));
+  const absYr = econ.landQueue?.[use]?.absYr ?? 0;
+  if (!(absYr > 0) || !(stock > 0)) return null;
+  const rc = Math.log(1 + capY);
   const T = short / (absYr / stock);
-  const lossPv = T > 0 ? gap * (1 / rc - (1 - Math.exp(-rc * T)) / (rc * rc * T)) : 0;
-  return noiNat / capY - lossPv;
+  return T > 0 ? gap * (1 / rc - (1 - Math.exp(-rc * T)) / (rc * rc * T)) : 0;
 }
 
 /**
@@ -4900,22 +4912,45 @@ export function renovationCost(rec: ParcelRecord, econ: Econ): number {
 }
 
 /**
- * WHAT A BUILDING IS WORTH THE DAY YOU TAKE IT OFF A RECEIVER.
+ * WHAT A BUILDING IS WORTH THE DAY YOU TAKE IT OFF A RECEIVER — the
+ * appraiser's as-is value of a worn building holding `occ` of its feet.
  *
- * Not assetValue. assetValue prices a building at MARKET occupancy in a stated
- * condition, and a building whose owner stopped paying the mortgage is neither
- * at market occupancy nor in stated condition — he stopped leasing a year
- * before he stopped paying, and he stopped fixing the roof a year before that.
+ * Not assetValue. A building whose owner stopped paying the mortgage is
+ * neither at market occupancy nor in stated condition — he stopped leasing a
+ * year before he stopped paying, and he stopped fixing the roof a year before
+ * that. So: the worn building's income at the market's natural occupancy,
+ * capitalised, less the rent lost while it leases from `occ` back up at the
+ * pace the market absorbs space (leaseUpLossPv, the same rule every as-is
+ * value in the engine uses — The Appraisal of Real Estate, ch. 22). A
+ * building fuller than natural is worth its stabilised value: the excess is
+ * held by leases a distressed roll does not carry far. Never below what the
+ * dirt appraises at.
  *
- * Measured (n=400 commercial parcels, month 120): assetValue(worn) is 0.69x
- * assetValue(standard); a worn building holding half its roll marks at 0.49x
- * assetValue(worn), a full one at 0.70x and an empty one at 0.18x. So a half-
- * let worn building is worth 0.43x a clean comparable, and that number is the
- * entire reason buying notes is a business rather than an arbitrage.
+ * This replaced assetValue(worn) x min(0.72, 0.18 + 0.74 x occ), a line
+ * fitted to marks (n=400, month 120) that sat at its 0.72 cap in 94% of
+ * calls, so most collateral was 72% of the worn mark whatever the roll.
+ * The receiver's time and costs are the note buyer's (its own discount and
+ * the sale's costs), not the building's value.
  */
 export function collateralAsIs(rec: ParcelRecord, econ: Econ, occ: number): number {
-  const o = Math.max(0.15, Math.min(0.95, occ));
-  return assetValue(rec, econ, "worn") * Math.max(0.18, Math.min(0.72, 0.18 + 0.74 * o));
+  const cond: Condition = "worn";
+  if (rec.class === "land" || !rec.bldgArea) return assetValue(rec, econ, cond);
+  const capY = capRateFor(rec, econ, cond) / 100 + taxRate(econ) * taxBorneShare(rec);
+  const noiNat = noiYr(rec, econ, cond, "natural");
+  const o = Math.max(0, Math.min(1, occ));
+  let gap = 0, shortSf = 0, sfAll = 0;
+  for (const use of uses(rec)) {
+    const sf = useRentableSf(rec, use);
+    const nat = useOccupancy(rec, econ, use, "natural");
+    const short = Math.max(0, nat - o);
+    gap += sf * short * useRentPsfYr(rec, econ, cond, use);
+    shortSf += sf * short; sfAll += sf;
+  }
+  const use = (rec.class as BuiltClass);
+  const lossPv = gap > 0 ? leaseUpLossPv(econ, use, gap, sfAll > 0 ? shortSf / sfAll : 0, capY) : 0;
+  // A market that absorbs nothing never leases up: the roll's income, capitalised.
+  const income = lossPv === null ? Math.max(0, noiNat - gap) / capY : noiNat / capY - lossPv;
+  return Math.max(Math.max(0, income), landAppraisalFloor(rec, econ, 0));
 }
 
 /**

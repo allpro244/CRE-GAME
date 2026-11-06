@@ -53,7 +53,7 @@ import { resolveRec, assetValue, noiAfterTaxYr } from "./value";
 import { gradeOf } from "./rivals";
 import { holderOf } from "./owners";
 import type { Holder } from "./owners";
-import { holderNoteTerms, holderCfads, HOLDER_AMORT_M } from "./ownership";
+import { holderNoteTerms, holderCfads, holderRefiAdvance, HOLDER_AMORT_M } from "./ownership";
 import { deskQuotes } from "./rivalDebt";
 import { productById, nameLimit } from "./debt";
 import { chargeLenderLoss, reoAsk, bookShareOf, targetCapital } from "./lenders";
@@ -363,12 +363,12 @@ function payMonth(s: GameState, parcels: ParcelTable) {
       foreclose(s, x, resolveRec(parcels, s, x.bbl)?.address ?? x.bbl);
       continue;
     }
-    if (s.month >= x.maturityM) rollBalloon(s, x);
+    if (s.month >= x.maturityM) rollBalloon(s, x, parcels);
   }
 }
 
 /** THE BALLOON: the best takeout in town, or the gap paid, or an extension, or a default. */
-function rollBalloon(s: GameState, x: StreetLoan) {
+function rollBalloon(s: GameState, x: StreetLoan, parcels: ParcelTable) {
   const cash = (s.holderCash ??= {});
   // A loan in arrears on its coupon is nobody's takeout; one whose only
   // default is the balloon itself keeps ringing round every month.
@@ -381,6 +381,23 @@ function rollBalloon(s: GameState, x: StreetLoan) {
     // ...and if no desk in town can carry the whole balance, the cheapest
     // that will write it leads a syndicate and keeps what its room allows
     // (CityLoan.share): the rest is sold to banks out of town.
+    // AN OWNER THAT LEVERS RE-LEVERS (ownership.ts holderRefiAdvance): a
+    // performing note is refinanced to its kind's advance on today's value,
+    // and the difference is the owner's cash-out — on a desk that will write
+    // the whole of it and has the room. Short of that it rolls what it owes.
+    if (x.arrearsMs === 0 && x.balloonM === undefined) {
+      const h = holderOf(s, parcels, x.bbl);
+      const adv = h && h.id === x.holderId ? holderRefiAdvance(h, x.bbl, x.klass === "land", `r${s.month}`) : 0;
+      const want = Math.round(x.value * adv);
+      if (want > x.balance) {
+        const co = all.find((q) => q.principal >= want * 0.98
+          && deskHasRoom(s, q.lender, x.holderId, want, none, q.lender === x.lender ? x.balance : 0));
+        if (co) {
+          cash[x.holderId] = Math.round((cash[x.holderId] ?? 0) + (want - x.balance));
+          x.balance = want;
+        }
+      }
+    }
     let full = qs.find((q) => q.principal >= x.balance * 0.98);
     let share = 1;
     if (!full) {

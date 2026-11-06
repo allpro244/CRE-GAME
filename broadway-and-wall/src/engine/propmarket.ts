@@ -417,6 +417,25 @@ export function forcedSalePrice(s: GameState, parcels: ParcelTable, rec: ParcelR
   return Math.min(mark, round.bids[0]?.bid ?? 0);
 }
 
+/**
+ * A FORECLOSURE SALE: the receiver or the creditors put the deed to the room,
+ * and it goes for the room's best bid (forcedSalePrice) — the named firms who
+ * can close, against a seller who must sell today. This replaced a formula
+ * (sponsor.ts distressPrice: 90 cents, less up to 22 for a credit crunch and
+ * 8 for the cycle, floored at 62), which priced a fire sale without asking
+ * whether anyone in town had the money.
+ *
+ * When nobody bids, the foreclosing lender takes the deed by credit bid, and
+ * the borrower is credited its fair value: a deficiency is the debt less the
+ * greater of the sale price and the property's fair market value (NY RPAPL
+ * 1371(2); most states have a fair-value rule). So an empty room clears at
+ * the mark — and it is no comp, because nothing traded at arm's length.
+ */
+export function foreclosureSale(s: GameState, parcels: ParcelTable, rec: ParcelRecord, bbl: string, mark: number): { px: number; bid: boolean } {
+  const best = forcedSalePrice(s, parcels, rec, bbl, mark);
+  return best > 0 ? { px: Math.round(best), bid: true } : { px: Math.round(Math.max(0, mark)), bid: false };
+}
+
 // ---------------------------------------------------------------- the seller
 
 /** Why a named firm is selling — what sets how low it will go. */

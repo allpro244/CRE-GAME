@@ -28,7 +28,7 @@ import { stampYearMark, recordMarks } from "./standing";
 import { splitMonthCf } from "./jv";
 import { tickTalks, reconcileContracts } from "./acquire";
 import { tickLoan, productById, loanLender, stackPayoff, balloonLadder, drawLeaseUpReserve, leaseUpRoom } from "./debt";
-import { distressPrice, markSponsor } from "./sponsor";
+import { markSponsor } from "./sponsor";
 import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow, fundCashNeed, parkedOnLine, monthlyDebtService } from "./credit";
 import { releaseCost, tickFacility, FACILITY_CURE_M } from "./facility";
 import { tickHolders } from "./owners";
@@ -41,7 +41,7 @@ import { tickDemand, isCivicLand } from "./demand";
 import { tickBeliefs } from "./beliefs";
 import { tickCorporate } from "./corporate";
 import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose, landFundBid } from "./rivals";
-import { openingCapSurvey, tickBrokerSurvey, tickLandSurvey, anchoredAsk, forcedSalePrice, BUY_CLOSING } from "./propmarket";
+import { openingCapSurvey, tickBrokerSurvey, tickLandSurvey, anchoredAsk, forcedSalePrice, foreclosureSale, BUY_CLOSING } from "./propmarket";
 import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { tickStreetLoans, retireFoldedLoans } from "./streetLoans";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
@@ -1364,7 +1364,8 @@ function tickMonth(
         // waterfall pays them their share first. The sponsor's creditors get
         // what the sponsor's interest was worth.
         const gpOut = !!s.syndications?.[pick.bbl];
-        const gross = Math.round(pickV * (gpOut ? 0.97 : Math.min(0.85, distressPrice(s))));
+        // Otherwise the creditors sell it to the room (foreclosureSale).
+        const gross = gpOut ? Math.round(pickV * 0.97) : foreclosureSale(s, parcels, rec, pick.bbl, pickV).px;
         // A SEIZURE IS STILL A SALE, AND A SALE HAS A WATERFALL.
         //
         // The whole gross used to land in the account. Measured on a

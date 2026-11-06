@@ -184,7 +184,11 @@ export function pickConstructionDesk(s: GameState, key: string): string | undefi
 const blendRent = (e: Econ, mix: UseMix) => overMix(mix, (u) => e.effRentIdx?.[u] ?? e.rentIdx[u]);
 const blendCap = (e: Econ, mix: UseMix) => overMix(mix, (u) => e.capRate?.[u] ?? 7);
 function merchantBook(s: GameState, bbl: string, startM: number, plan: DevPlan, ltc: number | undefined): MerchantBook {
-  const lev = Math.max(0, Math.min(0.85, ltc ?? 0.5));
+  // THE LOAN IS WHAT THE DESK WROTE (2026-11-06): the shop's own leverage,
+  // no more than the desk's advance on this scheme (plan.ltc is already
+  // min(wanted, ltcMax)). It was the leverage the shop wanted, whatever the
+  // desk would lend, so a halved advance never reached the loan.
+  const lev = Math.max(0, Math.min(0.85, ltc ?? 0.5, Number.isFinite(plan.ltc) ? plan.ltc : 0.85));
   const e = s.econ;
   return {
     basis: Math.round(plan.basisTotal), loan: Math.round(plan.basisTotal * lev),
@@ -5102,7 +5106,16 @@ function developerLook(
         // borrowed money and cannot get near the leverage it runs on does not
         // write the difference out of hope. Only the equity builders — about
         // a quarter of the street — can still back a scheme the bank will not.
-        if (dev.ltc > CASH_BUILDER_LTC && u.plan.ltcMax < dev.ltc - 0.05) continue;
+        // ...AND TAKES WHAT THE BANK WILL LEND (2026-11-06). This skipped any
+        // scheme whose advance came in more than five points under the shop's
+        // own leverage — usual in normal times, so the leveraged three-quarters
+        // of the trade sat out and the equity shops did the building (measured,
+        // seed 11 years 10-13: the median start borrowed 11% of cost), and a
+        // credit crunch had nothing left to cut (starts +5.5%, noise ±22%). A
+        // developer takes the desk's advance and covers the rest with equity —
+        // if it has it: its own cheque below is sized at the advance actually
+        // on offer, and has to fit its purse.
+        const ltcHere = u.plan.ltc;
         // SIZE AGAINST THE MARKET: no bigger than the share of the class's
         // stock this shop will put into one building.
         const ownSf = u.plan.sf * (u.plan.mix?.[lead] ?? 1);
@@ -5125,7 +5138,7 @@ function developerLook(
         if (!kids.length) nearV = Math.max(nearV, hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) / spreadFloor(dev));
         if (hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) < spreadFloor(dev)) continue;
         // ...and only what its own money can carry its share of.
-        const coInvest = builderCoInvest(u.plan.basisTotal, dev.ltc);
+        const coInvest = builderCoInvest(u.plan.basisTotal, ltcHere);
         if (coInvest > purse) continue;
         const h = hurdleAt(u.plan, DEV_MARGIN) * dev.outlook * momentumRead(s, lead, dev.momentum, firm) * exitRead(s, firm, lead);
         if (!best || h > best.h) best = { bbl, rec, use, floors: fl, plate, h, coInvest, kids, sf: ownSf };
@@ -5445,7 +5458,7 @@ function breakCityGround(
   const builder = builderById(s, opts?.builderId);
   (s.cityJobs ??= []).push({ bbl, use, sf, floors, startM, deliverM, mix: prog, ...(opts?.spec !== undefined ? { spec: opts.spec } : {}),
     merchant: merchantBook(s, bbl, startM, plan, opts?.ltc),
-    ...(builder ? { builderId: builder.id, coInvest: builderCoInvest(plan.basisTotal, opts?.ltc ?? 0.5) } : {}) });
+    ...(builder ? { builderId: builder.id, coInvest: builderCoInvest(plan.basisTotal, Math.min(opts?.ltc ?? 0.5, Number.isFinite(plan.ltc) ? plan.ltc : 1)) } : {}) });
   s.month = startM;
   noteRecordPlan(s, parcels, bbl, lead, sf, floors, builder?.name ?? "The city");
 

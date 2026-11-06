@@ -3247,6 +3247,8 @@ export interface Rival {
    * saves: the book then marks to market until its first January.
    */
   marks?: Record<string, { v: number; m: number; k: string }>;
+  /** When a mandate sale on each deed first fell due and was put off for a dislocated market (rivals.ts sellerCanWait). */
+  mandateDueM?: Record<string, number>;
   /**
    * THE FIRM'S SHEET — COMPETITORS_PLAN.md §2. Absent on the legacy roster and
    * on saves written before it: those firms act on their style row exactly as

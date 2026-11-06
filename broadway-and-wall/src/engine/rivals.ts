@@ -37,7 +37,7 @@ import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, Rival
 import { sweepApy, monthLabel, START_YEAR } from "./types";
 import { isCivicLand } from "./demand";
 import { dollarLevel, rng, newsChance, rrange, addStock, CITY_STOCK, underwrittenGrowthPct, cycleHot, cycleDown } from "./market";
-import { mergedTouched, DEV_MARGIN, holdingValue, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec, ownerAskPsf } from "./value";
+import { mergedTouched, DEV_MARGIN, capRateFor, holdingValue, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec, ownerAskPsf } from "./value";
 import type { DevPlan } from "./dev";
 import { lpNetIrr } from "./waterfall";
 import { BAND_TERMS, bandIdx, floorBand, inheritRecord, rivalBand, scoreOf, type Band } from "./reputation";
@@ -55,7 +55,7 @@ import { FUND_INVEST_M, FUND_MGMT_FEE, FUND_PREF, FUND_PROMOTE } from "./fund";
 import { observe, yearOfWatching } from "./competitorReads";
 import { logFirm, milestone } from "./firmLog";
 import { developmentProForma, marketConstructionQuote, underwritingEcon } from "./proforma";
-import { dealView, maxPrice, bidderOf, sellerTerms, bidRound, forcedSalePrice, bankerHoldValue, holdValueFor, entrantBankerView, landBidRound, listingReserve, BUY_CLOSING } from "./propmarket";
+import { dealView, maxPrice, bidderOf, sellerTerms, bidRound, forcedSalePrice, bankerHoldValue, holdValueFor, entrantBankerView, landBidRound, listingReserve, impliedCap, BUY_CLOSING } from "./propmarket";
 import { why } from "./why";
 import { beliefOf, beliefSignals } from "./beliefs";
 const CLASS_NOUN: Record<string, string> = { office: "office", multifamily: "apartments", retail: "retail", industrial: "industrial", land: "a site" };
@@ -2730,6 +2730,12 @@ const DISTRESS_PITCH = 0.3;
 // finish the fund, does not earn the promote, and does not raise a second one —
 // and his investors work that out before the first one closes.
 const DEPLOY_YR = 2;
+/**
+ * HOW LONG A FUND CAN PUT OFF A SALE AT THE END OF ITS HOLD: two one-year
+ * extensions, the common term in a closed-end real estate fund's agreement
+ * (ILPA; Preqin fund terms), each with the investors' consent.
+ */
+const FUND_EXTENSION_M = 24;
 
 /**
  * NEW CAPITAL ENTERS BECAUSE THERE IS MONEY TO BE MADE — AND STOPS WHEN THERE
@@ -5042,6 +5048,38 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         if (s.developments?.[bbl] || (s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
         smallest = v; forcedBbl = bbl; recycle = true;
       }
+    }
+    // A SELLER WHO CAN WAIT, WAITS (2026-11-06). A fund at the end of its
+    // hold and a platform tidying its tail are not compelled the way a
+    // covenant breach or a receiver is: a fund's agreement allows extensions
+    // (typically two of a year, with the investors' consent, and GPs used
+    // them across 2009-12 rather than sell into the hole), and a non-core
+    // disposal is discretionary. So when the room's best bid is worse than
+    // three in four of the class's recent deals — its cap over this
+    // building's own appraised cap wider than the tape's upper-quartile
+    // spread over its median (capRead p75 - med) — the sale waits: a fund
+    // for up to FUND_EXTENSION_M from when the sale first fell due, a
+    // non-core sale for as long as it takes. A merchant repaying its
+    // construction loan, money called home, a covenant, a receiver: those
+    // still sell. Without this a credit crunch moved deal volume +5% (it
+    // collapsed 70-80% in 2008-09), because forced sellers were most of the
+    // tape and none of them could wait.
+    if (forcedBbl && !calledHome && (recycle || r.style !== "merchant")) {
+      const rec = resolveRec(parcels, s, forcedBbl);
+      const due = (r.mandateDueM ??= {});
+      const firstDue = due[forcedBbl] ??= s.month;
+      const canWait = recycle || s.month - firstDue < FUND_EXTENSION_M;
+      if (rec && canWait && rec.class !== "land" && rec.bldgArea > 0) {
+        const k = rec.class as BuiltClass;
+        const read = s.econ.capRead?.[k];
+        const ask = Math.max(1, conveyedValue(s, rec, forcedBbl, false, assetGrade(r, rec)));
+        const best = bidRound(s, parcels, rec, { bbl: forcedBbl, ask }).bids[0]?.bid ?? 0;
+        const cond = assetGrade(r, rec);
+        const cBid = best > 0 ? impliedCap(s, rec, forcedBbl, best, cond) : null;
+        const cHere = capRateFor(rec, s.econ, cond);
+        if (read && read.p75 > read.med && (cBid === null || cBid - cHere > read.p75 - read.med)) forcedBbl = null;
+      }
+      if (forcedBbl) delete due[forcedBbl];
     }
     if (forcedBbl) {
       const rec = resolveRec(parcels, s, forcedBbl);

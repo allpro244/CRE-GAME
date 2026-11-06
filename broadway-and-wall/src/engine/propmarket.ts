@@ -357,7 +357,12 @@ export interface Bid { r: Rival; max: number; bid: number; uw: Underwriting }
  * underwriting it on its own books. Sorted best first. `n` is how many were
  * in the room — the broker's read the bidders shade against.
  */
-export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress"> & { listedM?: number }): { bids: Bid[]; n: number; view: DealView | null } {
+/**
+ * `open`: an open-outcry sale (the courthouse steps), where nobody shades —
+ * each bidder stays in up to what it can pay, so its "bid" is its limit and
+ * the price is set by the runner-up, not by a sealed guess.
+ */
+export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress"> & { listedM?: number; open?: boolean }): { bids: Bid[]; n: number; view: DealView | null } {
   const view = dealView(s, rec, li.bbl, li.ask);
   if (!view) return { bids: [], n: 0, view };
   const seller = ownerOf(s, rec.bbl);
@@ -381,7 +386,7 @@ export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
     const b = bidderOf(s, r, rec);
     const { max, uw } = maxPrice(s.econ, view, b, beliefSignals(s, r));
     if (!(max > 0)) continue;
-    let bid = Math.min(max * (1 - SHADE / Math.max(1, n)), affordable(s, r, view, b));
+    let bid = Math.min(li.open ? max : max * (1 - SHADE / Math.max(1, n)), affordable(s, r, view, b));
     bid = Math.round(bid / 1000) * 1000;
     if (!(bid > 0)) continue;
     // A firm already at its covenant, or with no desk that will take more of

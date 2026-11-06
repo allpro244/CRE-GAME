@@ -1151,6 +1151,8 @@ export interface Listing {
   // the bill for the rest. Buying one starts a development at that progress
   // rather than at a hole in the ground.
   halfBuilt?: { use: string; sf: number; floors: number; progress: number; costToComplete: number };
+  /** The month the player last put a number to this seller (actions.ts buyListing): one offer a month, as the round. */
+  offeredM?: number;
   /**
    * THE RENT ROLL, DISCLOSED BEFORE YOU BID — which is what due diligence IS.
    *

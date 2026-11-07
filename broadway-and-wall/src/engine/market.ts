@@ -1212,7 +1212,7 @@ const OKUN = 1.2;
  * 1/(1 + 2.2) = 0.31 rising. The 0.8 down/up ratio is the existing shape. At
  * 0.15/0.12 unemployment trailed the gap by five months against one to three.
  */
-const U_UP_SPEED = 0.31, U_DOWN_SPEED = 0.25;
+export const U_UP_SPEED = 0.31, U_DOWN_SPEED = 0.25;
 /*
  * Calibration (national block alone, 30 centuries, tools in the session notes):
  * unemployment mean 6.1 / p50 5.8 / p10 3.6 / p90 9.1 (US 1948-2024: 5.7 /

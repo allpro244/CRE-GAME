@@ -2221,13 +2221,35 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // firms that cut their heads this month, the most from the firms that cut
   // the most (a member's draw weighs 1 + 20 x its firm's cut); the firm's
   // name and why it cut are written to the cause ledger (below).
+  // ...AND A CUT LAYS PEOPLE OFF EVEN WHERE THE INDUSTRY HAS OPENINGS
+  // (2026-11-07). An industry's earners were let go only when they outnumbered
+  // its positions, so a cut was netted first against the openings it had
+  // posted and not filled: in a downturn the openings closed (3.4% of
+  // positions to 0.3%, seed 22, months 89-101, the nation's unemployment 4.3%
+  // to 8.7%) and step 1 laid off 0.12% of heads a year. In the record the
+  // openings sit at the growing establishments and the layoffs at the
+  // shrinking ones (Davis, Faberman & Haltiwanger 2006, JEP; 2013, QJE), and
+  // both move: in 2008-09 the openings rate fell from 3.3% to 1.7% while
+  // layoffs rose and payrolls fell 6.3% (BLS JOLTS, CES). So when the heads of
+  // an industry's live firms fall from last month, that share of its earners
+  // goes (`cutTo`), openings or not; what is left open is what its firms
+  // still post.
+  const cutTo = Float64Array.from(D.heads);
+  if (s.economy) {
+    const f = s.economy.f, nS = s.economy.L.slot.n, pH = new Float64Array(N_IND), nH = new Float64Array(N_IND);
+    for (let k = 0; k < nS; k++) {
+      const id = f.id[k], code = id >= 0 ? id : EMP_OFF + id, h = f.hc[k];
+      nH[f.ind[k]] += h; pH[f.ind[k]] += prev[code] ?? h;
+    }
+    for (let ind = 0; ind < N_IND; ind++) if (pH[ind] > nH[ind] && pH[ind] > 0) cutTo[ind] = Math.min(D.heads[ind], N[ind] * nH[ind] / pH[ind]);
+  }
   const laid = new Map<number, number>();
   for (let ind = 0; ind < N_IND; ind++) {
-    if (!(N[ind] > D.heads[ind])) continue;
+    if (!(N[ind] > cutTo[ind])) continue;
     const order = members[ind].map((sl) => ({ sl, key: Math.pow(R.u(), 1 / (1 + 20 * shrinkFrac(EMP()[sl % 3][(sl / 3) | 0]))) })).sort((p, q) => q.key - p.key);
     for (const { sl } of order) {
       const i = (sl / 3) | 0, k = sl % 3, w = a.wt[i];
-      if (N[ind] - D.heads[ind] < w / 2) continue;
+      if (N[ind] - cutTo[ind] < w / 2) continue;
       const code = EMP()[k][i];
       laid.set(code, (laid.get(code) ?? 0) + w);
       EMP()[k][i] = EMP_UNEMP; UN()[k][i] = 0; N[ind] -= w;

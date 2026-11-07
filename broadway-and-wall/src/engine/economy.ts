@@ -84,7 +84,7 @@ import {
 import {
   FIRM_PROFILE, LENDER_COVER, shortIndexOf, BUILD_MONTHS, SECTORS,
   NAT_TREND_SD, NAT_TREND_TAU_M, NAT_SALES_PER_GAP, RENT_BASE,
-  WAGE_CURVE, WAGE_GAP_HALF_M,
+  WAGE_CURVE, WAGE_GAP_HALF_M, U_UP_SPEED, U_DOWN_SPEED,
 } from "./market";
 import { HARD_COST_PSF, SOFT_COST, CONTINGENCY, constructionTypeMult } from "./value";
 import { householdMoney, registerPayroll, registerLabour, unpackHouseholds, whyHouseholdSpend } from "./households";
@@ -865,8 +865,16 @@ function tickOil(s: GameState, E: EconomyState): void {
  * caught a third of the swing its orders called for: measured (seed 550991,
  * 30 years), the heads the output needed fell 0.9% a year per point the
  * nation's unemployment rose, the heads kept 0.29%; now about 1.0 and 0.9.
+ * ONE LAW WITH THE NATION'S (2026-11-07): a town's firms staff at the speeds
+ * the nation's unemployment follows its output gap, 25% of the gap a month
+ * hiring and 31% cutting (market.ts U_DOWN_SPEED / U_UP_SPEED: Ball, Leigh &
+ * Loungani 2017, JMCB, a mean lag of 2.2 months) [S]. At 11% / 21% the town's
+ * positions trailed its orders two to four times as long as the nation's
+ * payrolls trail its output, and the month an opening takes to fill (Q_FILL)
+ * came on top: half of a downturn's fall in the heads the orders called for
+ * was absorbed by positions that never caught up (seeds 11/22, 30 years).
  */
-const HIRE_M = 0.11, FIRE_M = 0.21;
+// HIRE_M = U_DOWN_SPEED, FIRE_M = U_UP_SPEED, read where staffed (`staff`): one constant each
 
 /**
  * EACH INDUSTRY'S EMPLOYMENT, the labour demand the household register fills
@@ -888,7 +896,7 @@ function staff(E: EconomyState, persons: number): void {
   for (let i = 0; i < N_IND; i++) {
     if (i === IND_GOV) { emp[i] = (E.gov0 ?? emp[i]) * (persons / Math.max(1, E.persons0 ?? persons)) * Math.exp(E.swanLn ?? 0); continue; }
     const target = last.impliedHeads[i];
-    emp[i] += (target - emp[i]) * (target > emp[i] ? HIRE_M : FIRE_M);
+    emp[i] += (target - emp[i]) * (target > emp[i] ? U_DOWN_SPEED : U_UP_SPEED);
   }
 }
 

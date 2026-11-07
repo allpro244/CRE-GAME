@@ -1729,9 +1729,22 @@ export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
   recs.sort((a, b) => a.demandScore - b.demandScore || (a.bbl < b.bbl ? -1 : 1));
   const want = LAND_SURVEY_LOTS;
   const step = Math.max(1, Math.floor(recs.length / want));
-  let n = 0;
-  for (let i = Math.floor(step / 2); i < recs.length && n < want; i += step) {
+  // A LOT NOBODY BIDS ON IS A PRICE BELOW EVERY BID, NOT A LOT LEFT OUT
+  // (2026-11-07). The survey skipped it, so when the street's land banker was
+  // stressed or gone (one firm in sixty; 21 of 37 years on seed 11) the year
+  // printed only the 1-7 lots with a positive builder residual — a sample
+  // censored from below, reading +0.3 to +1.75 log over the years the banker
+  // bid on all 24 — and the town's land level jumped up in those years and
+  // back when a banker returned (landIdx Δlog sd 0.31, corr −0.30 with
+  // property). With the unbid lots ranked below the lowest bid, the sample's
+  // centre is identified only while at least half the lots drew one (a median
+  // under left-censoring: Kaplan & Meier 1958); a year with fewer prints
+  // nothing, and the land read goes stale as it does on a thin tape.
+  const prints: { L: number; x: ReturnType<typeof landX> }[] = [];
+  let tried = 0;
+  for (let i = Math.floor(step / 2); i < recs.length && tried < want; i += step) {
     const rec = recs[i];
+    tried++;
     const maxes = firms.map((r) => landMaxPrice(s, r, rec)).filter((m) => m > 0).sort((a, b) => b - a);
     if (!maxes.length) continue;
     // WHAT THE LOT WOULD CLEAR AT: the second-best number, as the cap survey
@@ -1746,8 +1759,10 @@ export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
     // not the lots the level itself makes texture-priced: see below)
     const mark = landRead(rec, s.econ).texture * rec.lotArea;
     const L = mark > 0 ? s.econ.landIdx * px / mark : NaN;
-    if (Number.isFinite(L) && L > 0) { pushLandPrint(s, { m: s.month, L, w: 0.5, kind: "s", x: landX(rec) }); n++; }
+    if (Number.isFinite(L) && L > 0) prints.push({ L, x: landX(rec) });
   }
+  if (2 * prints.length < tried) return;
+  for (const p of prints) pushLandPrint(s, { m: s.month, L: p.L, w: 0.5, kind: "s", x: p.x });
 }
 
 /** For the UI: the read's line, numbers first. */

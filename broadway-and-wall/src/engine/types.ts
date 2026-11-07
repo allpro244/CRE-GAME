@@ -40,6 +40,8 @@ export interface SupplyProject {
   status: "active" | "stalled" | "cancelled";
   /** Counted in this month's starts (econ.brokeMonth) and not yet read out (supply.ts cancelSupplyProject). */
   broke?: true;
+  /** Known to the market but not yet in the ground: counted as a start in its startM (supply.ts breakDueStarts). */
+  awaiting?: true;
 }
 export const BUILT_CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
 

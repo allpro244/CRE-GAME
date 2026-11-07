@@ -163,7 +163,7 @@ function steady(e: Econ): number { return Math.max(0, (e.crewSteady ?? 0) + (e.c
 function liveJobs(s: GameState): { job: Job; who: "player" | "firm" | "street" }[] {
   const out: { job: Job; who: "player" | "firm" | "street" }[] = [];
   for (const d of Object.values(s.developments ?? {})) out.push({ job: d as unknown as Job, who: "player" });
-  for (const j of s.cityJobs ?? []) if (!j.orphaned) out.push({ job: j as Job, who: (j as { firmId?: string }).firmId ? "firm" : "street" });
+  for (const j of s.cityJobs ?? []) if (!j.orphaned && j.startM <= s.month) out.push({ job: j as Job, who: (j as { firmId?: string }).firmId ? "firm" : "street" });
   return out;
 }
 const loadOf = (j: Job) => Math.max(0, j.sf ?? 0) / GC_JOB_SF;

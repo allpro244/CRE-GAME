@@ -62,11 +62,41 @@ It supersedes the open parts of `ECON_REALISM_PLAN.md` and `RENT_VACANCY_RESPONS
 | A start unwound in its month is not counted as a start (supply.ts `broke`) | done | #624 |
 | Measurement: the median of an even count (#623); lag rows read a lag that is there, or none — stationary series, Fisher-z pooled CCF, Bartlett floor (#625); charge-offs graded as a share of the book in points (#626); three land smoke detectors (#628); distressed sales against ordinary ones (#631) | done | #623, #625, #626, #628, #631 |
 | Recessions: the bank reading the gap through the economy's own Okun coefficient was refuted by its review and reverted. The cause is propagation (about 2× the VAR consensus) and the unemployment lag, not the gap's scale; a nation-only calibration is under way | reverted | #629, #630 |
+| Builders underwrite today's rent, untrended; the market's rent belief is formed on real rent (land yearly swing 49.7% → 24.6%) | done | #633 |
+| The nation propagates policy at a sourced strength: C_RATE 0.3 (Havranek 2015), unemployment speeds from Ball-Leigh-Loungani, two unexplained gains restored or de-duplicated, two bugs (recessions 1.95 → 0.96 a decade nation-only; just under the band — the impulse side, unsourced confidence shocks, is next) | done | #634 |
+| Crunch: a sponsor's margin pays the equity the desks no longer fund (developerLook, the order book, firms, the last look, teardowns; the exit reads capExp): crunch starts −6.6% → −45% on three seeds, normal credit unchanged | done | #635 |
+| Shock judge: e-commerce lands on the in-store share; the employer-leaves jobs row reads filled heads | done | #636 |
+| A market study counts demand shrinking as well as growing (a zero floor that bound in every downturn) | done | #637 |
+| A landlord screens on verifiable income (population-surge apartment vacancy +1.7 → +0.7pp, starts RIGHT; still BACKWARDS) | in review | #638 |
 
 ### Corrections to the audit
 - **3.3 loan spreads: mostly not a fake.** The playthrough's coupons 5.7 points over the index (p50) were the bot borrowing from a private-credit desk (Cordage Debt Partners), which in life does price 4-7 points over. The bank desks quoted about 2.5-3 points, high in the real range. Desk pricing is already built from funding, expected loss and running cost (`pricing.ts` `liveSpread`, `costFloor`). Lower priority; re-check against MBA/ACLI once caps are right.
 - **3.2 `deployPressure`: narrower than it looked.** It applies only to a raised fund with an empty book, so its cheaper equity can pull caps down, not up. It is still a rail to replace with fee drag on uncalled commitments, but it does not explain caps running high.
 - **4.3 demolition is not the valuation.** With 2.1's stabilisation in place, new office stock standing in years 3-8 of a +50% glut is still +31.8% (was +31.9%). The driver is the redevelopment bar (builders' margins, 3.1), not the appraisal.
+
+## The battery on main, 2026-11-07, and what is known about each wrong verdict
+
+The full battery (21 shocks × seeds 11/22/33) on main after #632: 3 BACKWARDS, 5 NO RESPONSE, 1 DID NOT LAND (down from about ten wrong-way shocks at #572). Each wrong row was diagnosed and adversarially verified (triage workflow; the scripts and numbers are in the session notes). Ranked root causes and their state:
+
+1. **Rates near zero for 10 years (BACKWARDS): the injector.** It pegs policy 2-7 points under the committee's own rule into a tight nation, and the engine answers with the 1970s record (CPI ×2.5 by year 10, the ten-year +22pp). Split it: keep today's injector as "policy held under the rule" (graded against US 1965-79 and Turkey 2021-23, every figure read from FRED/TurkStat, not memory), and rebuild the zero-rate decade as a fall in r* (Holston-Laubach-Williams). The verifier found that a 2-point r* cut alone gives about 30 months near zero, not 120: measure on three seeds before claiming the decade. Open.
+2. **+30% population (BACKWARDS): the landlord's screen read a jobless earner's lost wage.** #638 (vacancy +1.7 → +0.7pp). The rest: item 11.
+3. **−20% stock lost: no insurance claim.** The injector confiscated owners' buildings. A claim path (branch `claude/casualty-claims`: pays replacement cost, mortgagee first) fixes office and industrial starts but turns apartments starts BACKWARDS (−44%): owners keep cash and an empty lot. A replacement-cost policy pays full replacement only when the owner rebuilds (otherwise actual cash value), and owners mostly rebuild; the claim must start the rebuild. Open.
+4. **Rates +300bp held (NO RESPONSE on caps): the bond market prices any deviation from the rule as gone in 4-6 meetings.** But the published persistence of rule residuals is ρ = 0.62-0.67 a quarter (English, Nelson & Sack 2003, Table 3, 1987-2000; 0.84 with 2001), which adds only about 0.15pp to the ten-year for a held +3. A held three-point deviation for years is a regime, learned by the endpoint (Kozicki-Tinsley gain); the band (2022) describes a hike the rule wanted. Treat as a judge item like 1, not an engine fault to tune. Open.
+5. **Arrivals are absorbed by leaving, not hiring** (unemployment +12-14pp at year 5). Investigate new-hire wage flexibility with a source before building. Open.
+6. **Street retail clears by waiting and leaving, not by price** (willingness to pay never binds in `shop()`/`signAt`); behind −20% retail and e-commerce rent/vacancy NO RESPONSE and the century's weak retail rent-vacancy correlation. Open.
+7. **The foreign capital wave's money is no cheaper than core money** (cap NO RESPONSE): price the wave funds' debt off a home-market rate, sourced. Open.
+8. **Lost export orders come back**: a re-tender gives the town its opening share whatever it holds (65% back in 36 months, against Gathmann et al.'s persistent losses). Fixing it may expose a gap between named-firm closures and BDS entry/exit; check the century drift first. Open.
+9. A scheme decided on free cash is tested at groundbreak on a different funding rule. Open.
+10. **The region's home price has no rent channel** (user-cost arbitrage, Poterba 1984; Himmelberg-Mayer-Sinai 2005). Open.
+11. **A demand surge adds no occupied flats**: the flats landlord's expected wait at its chosen ask lengthens with demand, so a surge becomes rent. Investigate. Open.
+
+## Tried and dropped (so nobody tries them again the same way)
+
+- **A matched land-survey panel with floor prints** (branch `claude/land-survey-panel`). The texture floor scales with `landIdx`, so a lot at its floor reads exactly the level: no-bid lots hold the level, fringe lots bid below their floor print a RISE every year they go unbid, and the panel ratcheted (+4.5%/yr real; PASS 29/13/6). An earlier good result came from a bug that multiplied the floor in twice. Any survey redesign must never let a print read the level (a chained matched-pair median of the bids, with lost and gained bidders as censored ranks, is the candidate).
+- **A robust (Huber Proposal 2) volatility record for the appraisal filter** (`claude/robust-grid-q`): the prior entered as unclipped pseudo-steps matched to 1 while real steps were clipped and matched to ψ2, so the prior counted as ~13 steps, not 5, and pulled every class toward q0.
+- **A full building's concession package fading to the market's** (`claude/package-fades-to-market`): self-referential (the comps carry the package), so concessions never burned off; vacancy collapsed to ~2%. Office rents ignore business-cycle vacancy because on-market cuts (~1.2-1.4%/yr per point, realistic) are given back when space is re-offered; the fix needs a market-tightness input (months-to-let, or the landlord's learned expected vacancy `L.v`, written and never read).
+- **Builder equity from LPs** (design only): money conservation failed — LP payouts had no path back to households.
+- **Full-finance carry in the decision basis** (`claude/crunch-decision-side`): leaked into cash paths and shifted every land bid 7-21% in normal credit; replaced by #635's equity stretch.
 
 ## What "everything is real" means here
 

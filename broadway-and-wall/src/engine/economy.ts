@@ -1353,7 +1353,15 @@ export function tickEconomy(s: GameState): void {
         if (INDUSTRIES[INDUSTRY_IDS[j]].where !== "local" || !(rpc[j] > 0)) continue;
         // (staff carrying the nation's openings make what the nation's do: NAT_OPEN_RATE)
         const cap = pr.earners[j] * opw[j] / (1 - NAT_OPEN_RATE);
-        if (x[j] > cap * (1 + 1e-6)) { const k = Math.max(0, cap - X[j]) / Math.max(1e-9, x[j] - X[j]); rpc[j] *= k; served[j] *= k; cut = true; }
+        // ...ITS BUYERS AT HOME AND AWAY ALIKE (2026-11-07): a firm short of
+        // hands turns away orders without asking where they ship, so the cut
+        // falls pro rata on the town's purchases and the nation's. It fell on
+        // the town's alone (exports served first): an exporter short of staff
+        // — IT services sell 88-94% of their output out of town — sent its
+        // few local customers elsewhere, and a tenth of the town's orders for
+        // what it makes were bought out of town from the first year with its
+        // jobless rate at 4.5-7% (seeds 11/22).
+        if (x[j] > cap * (1 + 1e-6)) { const k = cap / x[j]; rpc[j] *= k; X[j] *= k; served[j] *= k; cut = true; }
       }
       if (!cut) break;
       ({ x, iters } = solve(rpc, fd, X, Array.from(x)));
@@ -1376,7 +1384,7 @@ export function tickEconomy(s: GameState): void {
       if (INDUSTRIES[INDUSTRY_IDS[j]].where !== "local" || !(E.rpc[j] > 0)) continue;
       const now = served[j], prev = was[j] ?? now;
       const use = now > prev ? prev + (now - prev) / TENDER_M : now;
-      if (use < now) { rpc[j] *= use / Math.max(1e-9, now); served[j] = use; slow = true; }
+      if (use < now) { const k = use / Math.max(1e-9, now); rpc[j] *= k; X[j] *= k; served[j] = use; slow = true; }
       was[j] = served[j];
     }
     if (slow) ({ x, iters } = solve(rpc, fd, X, Array.from(x)));

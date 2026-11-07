@@ -1449,6 +1449,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   econ.crewUtil = 1;
   econ.crewIdx = 1;
   econ.rentExp = { ...econ.rentIdx };
+  econ.rentExpCpi = 1;   // stated at the opening price level
   // The exit cap opens equal to the going-in cap and drifts from there.
   econ.capExp = { ...econ.capRate };
   // THE CITY HAS PEOPLE IN IT ON DAY ONE. These were seeded lazily inside the
@@ -1628,6 +1629,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     econ.pool[k] = econ.occupied[k];
   }
   econ.rentExp = { ...econ.rentIdx };
+  econ.rentExpCpi = 1;   // stated at the opening price level
   econ.effRentIdx = { ...econ.rentIdx };
   for (const k of BUILT_CLASSES) {
     econ.effRentIdx[k] = +(econ.rentIdx[k] * (1 - CONC_DEPTH * econ.concIdx[k])).toFixed(4);
@@ -4055,7 +4057,10 @@ export function tickEcon(s: GameState) {
     if (!e.rentExp) e.rentExp = { ...e.rentIdx };
     const cpiNow = e.cpi ?? 1, cpiWas = e.rentExpCpi ?? cpiNow;
     const realWas = e.rentExp[k] / Math.max(1e-9, cpiWas);
-    e.rentExp[k] = (realWas + 0.045 * (e.rentIdx[k] / Math.max(1e-9, cpiNow) - realWas)) * cpiNow;
+    // rentIdx still holds last month's read here (this month's comps are read
+    // later in the tick), stated at last month's price level, so it deflates by
+    // that month's CPI; the belief is then restated at today's.
+    e.rentExp[k] = (realWas + 0.045 * (e.rentIdx[k] / Math.max(1e-9, cpiWas) - realWas)) * cpiNow;
     // THE RATE EMA IS NOW READ BY NOTHING, and this comment used to claim it
     // was "a published market belief used by reports". It is not: grep finds
     // the write below, the reset in regime.ts, the declaration in types.ts, a

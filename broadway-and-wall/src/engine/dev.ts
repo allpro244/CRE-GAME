@@ -3890,7 +3890,8 @@ const TYPICAL_SF = 26_000;
  */
 function jobLoad(s: GameState): number {
   let load = 0;
-  for (const j of s.cityJobs ?? []) if (!j.orphaned) load += Math.max(0, j.sf ?? 0) / TYPICAL_SF;
+  // (a job whose groundbreak is still ahead holds no crew yet: casualty.ts)
+  for (const j of s.cityJobs ?? []) if (!j.orphaned && j.startM <= s.month) load += Math.max(0, j.sf ?? 0) / TYPICAL_SF;
   return load;
 }
 

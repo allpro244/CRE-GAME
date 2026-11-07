@@ -13,7 +13,7 @@ import { whyTrade, why, whyAt, whyMark, whyNation } from "./why";
 import { whyVacancy, noteReads } from "./whyReads";
 import { whyTown } from "./economy";
 import { tickCapRead, tickLandRead } from "./propmarket";
-import { settleSupplyDeliveries } from "./supply";
+import { settleSupplyDeliveries, breakDueStarts } from "./supply";
 import { readOut } from "./tenantMarket";
 import { tickContractors } from "./contractors";
 
@@ -4076,6 +4076,7 @@ export function tickEcon(s: GameState) {
   const monthDeliveries = settleSupplyDeliveries(s);
   // The month's starts are read out below; a start unwound after this point
   // was counted in a month already published (supply.ts cancelSupplyProject).
+  breakDueStarts(s);
   for (const p of e.deliveryQueue ?? []) delete p.broke;
   for (const k of BUILT_CLASSES) {
     const stk = e.stock?.[k] ?? CITY_STOCK[k];

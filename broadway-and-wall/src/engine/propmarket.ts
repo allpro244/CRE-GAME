@@ -805,18 +805,45 @@ function gridS2(ix: ApprIndex, beta: number[]): number {
  * comp is that comp, and one 38% industrial print against a 9.8% read
  * (measured, seed 55) taught the appraiser that the market moves a hundred
  * per cent a year.
+ *
+ * THE RECORD IS READ THE WAY THE APPRAISERS READ COMPS: robustly. A plain mean
+ * of squared steps lets one wild year speak for the whole record, and the
+ * record is kept for up to YRS_KEPT years. Measured (seed 33): one start-up
+ * step (a thin year-3 survey at L about 0.07 giving way to a full year-4 one,
+ * +3.11 log) was 9.43 of the record's 11.16, so the learned volatility was
+ * 1.14 a year, the filter's gain sat near 0.9 for decades, and every later
+ * survey moved the index almost one-for-one. Q is Huber's Proposal 2 scale
+ * (Huber 1964; Huber & Ronchetti, Robust Statistics, 2009, s. 6.4): each step
+ * standardised by its own variance (the market's move plus the two year
+ * means' sampling noise) counts at most HUBER_K, and the sum is matched to
+ * its expectation under normal steps (HUBER_PSI2 each). The prior is
+ * Q_PRIOR_YRS steps of the class's prior move q0, as before. With no wild
+ * step this is the old estimator; a market that really moves that far every
+ * year still reads as one, because then most steps are that size. Statistical
+ * constants only; nothing here is fitted.
  */
 function gridQ(ix: ApprIndex, beta: number[], s2: number, q0: number): number {
-  let acc = 0, n = 0;
+  const steps: { d2: number; nu: number }[] = [];
   const ys = ix.yrs;
   for (let i = 1; i < ys.length; i++) {
     const a = ys[i - 1], c = ys[i];
     if (c.yr !== a.yr + 1 || !(a.W >= MIN_EVIDENCE) || !(c.W >= MIN_EVIDENCE)) continue;
     const ya = (a.sy - dot(beta, a.sz)) / a.W, yc = (c.sy - dot(beta, c.sz)) / c.W;
-    acc += (yc - ya) ** 2 - (Number.isFinite(s2) ? s2 / a.W + s2 / c.W : 0);
-    n++;
+    steps.push({ d2: (yc - ya) ** 2, nu: Number.isFinite(s2) ? s2 / a.W + s2 / c.W : 0 });
   }
-  return (Q_PRIOR_YRS * q0 * q0 + Math.max(0, acc)) / (Q_PRIOR_YRS + n);
+  const q2 = q0 * q0;
+  if (!steps.length) return q2;
+  // sum_i min(d_i^2/(Q + nu_i), k^2) + P q0^2/Q = n psi2 + P: the left side
+  // falls as Q rises, so the root is unique; bisect it in log Q.
+  const k2 = HUBER_K * HUBER_K, rhs = steps.length * HUBER_PSI2 + Q_PRIOR_YRS;
+  const lhs = (Q: number) => steps.reduce((t, st) => t + Math.min(st.d2 / (Q + st.nu), k2), 0) + Q_PRIOR_YRS * q2 / Q;
+  let lo = q2 * 1e-6, hi = Math.max(q2, ...steps.map((st) => st.d2)) * 4 + q2;
+  while (lhs(hi) > rhs) hi *= 4;
+  for (let it = 0; it < 60; it++) {
+    const mid = Math.sqrt(lo * hi);
+    if (lhs(mid) > rhs) lo = mid; else hi = mid;
+  }
+  return Math.sqrt(lo * hi);
 }
 
 /** One comp, restated to the reference (log level y, weight w), weighed by the appraiser. */

@@ -1343,7 +1343,8 @@ export function tickEconomy(s: GameState): void {
       let cut = false;
       for (let j = 0; j < N_IND; j++) {
         if (INDUSTRIES[INDUSTRY_IDS[j]].where !== "local" || !(rpc[j] > 0)) continue;
-        const cap = pr.earners[j] * opw[j];
+        // (staff carrying the nation's openings make what the nation's do: NAT_OPEN_RATE)
+        const cap = pr.earners[j] * opw[j] / (1 - NAT_OPEN_RATE);
         if (x[j] > cap * (1 + 1e-6)) { const k = Math.max(0, cap - X[j]) / Math.max(1e-9, x[j] - X[j]); rpc[j] *= k; served[j] *= k; cut = true; }
       }
       if (!cut) break;
@@ -1729,6 +1730,18 @@ export function migrateEconomy(s: GameState): void {
  * them into the CPI at the share of the household basket bought in town.
  */
 const RENT_SHARE = 0.06, V_SLOPE = 0.5, PRICE_DUR_M = 9, PRICE_DEMAND = 0.1;
+/**
+ * THE NATION'S OPENINGS RATE: JOLTS total nonfarm job openings over openings
+ * plus employment, 2001-2019 mean 3.13% (FRED JTSJOR, monthly) [S]. The pay
+ * an industry posts and what its staff can make are both read against the
+ * nation's: output per head (opw) is national output over national filled
+ * employment, so it already carries the nation's openings, and the nation's
+ * pay is set at the nation's openings. With openings counted as JOLTS counts
+ * them (households.ts Q_FILL), reading them against zero paid every industry a
+ * permanent premium of V_SLOPE x 3.1% over the nation and cut every local
+ * trade's capacity by its openings — custom the nation's firms never lose.
+ */
+export const NAT_OPEN_RATE = 0.0313;
 export interface Posted { m: number; wage: number; payIdx: number[]; priceRel: number; localShare: number; openings: number; unemp: number; natW: number; wage12?: number }
 function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Array; earners: Float64Array } | null, spend: Float64Array): void {
   const e = s.econ, F = E.f, nF = E.L.slot.n, m = s.month;
@@ -1756,7 +1769,7 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
     // ---- pay
     const rel = Math.log(Math.max(1e-6, F.pay[n]) / prevNat);
     const margin = F.rev[n] > 0 ? F.ebitda[n] / F.rev[n] : I.gos;
-    const target = slack + V_SLOPE * open[i] + RENT_SHARE * (margin - I.gos);
+    const target = slack + V_SLOPE * (open[i] - NAT_OPEN_RATE) + RENT_SHARE * (margin - I.gos);
     let next = natW * Math.exp(rel + (target - rel) * close);
     if (next < F.pay[n]) { F.owe[n] += Math.log(F.pay[n] / next); next = F.pay[n]; }
     else if (F.owe[n] > 0) {

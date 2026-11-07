@@ -70,6 +70,7 @@ It supersedes the open parts of `ECON_REALISM_PLAN.md` and `RENT_VACANCY_RESPONS
 | A landlord screens on verifiable income (population-surge apartment vacancy +1.7 → +0.7pp, starts RIGHT; still BACKWARDS) | done | #638 |
 | The zero-rate decade is a fall in r* (2 points, Holston-Laubach-Williams), held 10 years; the old peg is its own shock, "policy held under the rule", graded on FRED 1965-80 (both RIGHT on the rows that grade them; distress after release reads BACKWARDS, −17%: an engine finding) | done | #640 |
 | A building lost to fire or storm is an insured loss and is rebuilt (replacement cost, the owner keeps deed and loan; median replacement about four years, Comerio & Blecher 2010): −20% office BACKWARDS → RIGHT; apartments rent +2.7% → +0.8% (the loss is now temporary; exposes item 11) | done | #641 |
+| A full flats block still has a door: landlords price their exposure (vacant + on notice, RealPage practice): −20% apartments rent +0.8% → +5.3% RIGHT; +30% population vacancy +0.7 → +0.4pp (NO RESPONSE, no longer BACKWARDS); century flats vacancy 7.3% → 8.7% (inside Census 5-11%, wider cycle) | done | #643 |
 
 ### Corrections to the audit
 - **3.3 loan spreads: mostly not a fake.** The playthrough's coupons 5.7 points over the index (p50) were the bot borrowing from a private-credit desk (Cordage Debt Partners), which in life does price 4-7 points over. The bank desks quoted about 2.5-3 points, high in the real range. Desk pricing is already built from funding, expected loss and running cost (`pricing.ts` `liveSpread`, `costFloor`). Lower priority; re-check against MBA/ACLI once caps are right.
@@ -90,7 +91,30 @@ The full battery (21 shocks × seeds 11/22/33) on main after #632: 3 BACKWARDS, 
 8. **Lost export orders come back**: a re-tender gives the town its opening share whatever it holds (65% back in 36 months, against Gathmann et al.'s persistent losses). Fixing it may expose a gap between named-firm closures and BDS entry/exit; check the century drift first. Open.
 9. A scheme decided on free cash is tested at groundbreak on a different funding rule. Open.
 10. **The region's home price has no rent channel** (user-cost arbitrage, Poterba 1984; Himmelberg-Mayer-Sinai 2005). Open.
-11. **A demand surge adds no occupied flats**: the flats landlord's expected wait at its chosen ask lengthens with demand, so a surge becomes rent. Investigate. Open.
+11. **A demand surge adds no occupied flats**: the flats landlord's expected wait at its chosen ask lengthens with demand, so a surge becomes rent. Investigate. Open. #643 fixed the frozen full-block ask; the surge's vacancy still does not fall (+0.4pp), so the remaining cause is on the arrivals' side (item 5: arrivals leave rather than rent).
+
+## Office rents and vacancy: what the measurements say (2026-11-07, open)
+
+The century's office Wheaton-Torto slope (yearly Δlog real effective rent on last year's vacancy) is −0.22%/yr per point on seed 11, against −2 to −3 in the record. A 40-year probe (scratchpad `offprobe.mjs`, `mosprobe.mjs`) located it:
+
+- **The face never falls.** Through ten years at 15-16% vacancy the real face held at about 23 and real effective at 19.5-20; signed packages rose only from 10-13% (tight) to 13-16% (soft). The face is cut only once the book's package is at `PKG_MAX` (35%), and space under patience is lifted *up* to the comps and passes CPI, so the real face ratchets up in booms and holds in busts.
+- **The landlord's own package stays small** (vacant books 2-6%): the vacancy clock is the average age of the space and patience is learned from the same clock, so in soft years space sits 15-18 months against a patience of about 12 and the sweetening push is about 0.5 a month. Signed packages come mostly from the tenant's bargain against its runner-up.
+- **`PKG_STEP`'s documented target is not what the code does**: the note says "space a year dark … adds about three points a month and reaches the deepest package within the year", but with patience 12 months (since #531) space a year dark adds nothing. Re-reading a [K] constant to a new pace would be tuning; it needs a sourced pace for an individual dark building.
+- **Months of supply is a sound tightness reading for office** (Little's law; office 11.1 months at 11.2% vacancy against the 12-month norm, +1.2 months a point, r 0.97), but **not for industrial** (11.7 months against a 6-month norm: the engine's industrial vacancy, 10.5%, sits well above the US 2010s) or retail (3.0 against 10).
+
+Tried on branches, measured on seed 11, none shipped:
+
+| change | WT slope |
+|---|---|
+| main | −0.22 |
+| a package floor from months of supply over the 12-month norm, spread over a mid-grade term (`claude/office-package-floor`) | −0.15 (noise; floor binds 28% of months, 1.2% mean) |
+| + patience capped at the class's months-on-market | −0.25 |
+| face takes 0.58 of each sweetening step (Reis national office Q4 2009: asking −1.1%, effective −1.9%) (`claude/office-face-split`) | −0.32 |
+| all three | −0.40 |
+
+The face share is contested by the code's own source (Manhattan 2020-24: asking −3.3%, net effective −17.3%, a share of about 0.2), so it is not settled. Next: a sourced pace for how fast an individual dark building cuts (not the market average), and whether space under patience should pass CPI in a market whose months of supply is above the norm.
+
+**Cap-rate pass-through is weak at any lag** (seen while landing #643): Δcap on Δ10Y correlates about 0.2 at lags 1-4 on main and the branch alike, so the "Cap rates lag the 10Y" row's best lag flips between 2 and 4 on noise. The finding is the weak pass-through, not the lag. Open.
 
 ## Tried and dropped (so nobody tries them again the same way)
 

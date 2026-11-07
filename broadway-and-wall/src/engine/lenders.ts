@@ -1617,6 +1617,28 @@ export function chargeLenderLoss(
   if (l.lossLog.length > 40) l.lossLog.length = 40;
 }
 
+/**
+ * THE REO SALE TRUES UP THE CHARGE-OFF (2026-11-07). A desk that takes a
+ * building books it at its ask and charges off the rest of the loan; what the
+ * building then fetches, less the closing costs of selling it, is what the
+ * desk actually recovers. It sells at down to 88% of the ask (propmarket.ts
+ * listingReserve), and that shortfall was booked nowhere: every foreclosure's
+ * loss was struck at the listing price. Severity is what the sale realises
+ * (Trepp: CMBS loss severities on liquidated loans ran about 40-60% in
+ * 2010-12, liquidation costs included), so a sale under the book is a further
+ * charge-off and one over it a recovery, up to the loss charged.
+ */
+const SELL_COSTS = 0.03;   // broker and closing, the same 3% a private sale nets (streetLoans.ts retire) [S~]
+export function settleReoSale(s: GameState, li: { bbl: string; receiverFor?: string; reoBook?: number; reoLoss?: number; reoShare?: number } | undefined, price: number): void {
+  if (!li?.receiverFor || !(li.reoBook && li.reoBook > 0)) return;
+  const l = lenderByName(s, li.receiverFor);
+  if (!l) return;
+  const share = li.reoShare ?? 1;
+  const gap = (li.reoBook - price * (1 - SELL_COSTS)) * share;
+  if (gap > 0) chargeLenderLoss(s, li.receiverFor, Math.round(gap), { borrower: `its own REO at ${li.bbl}`, bbl: li.bbl, how: "REO sale under the book" });
+  else if (gap < 0) l.capital = Math.round(l.capital + Math.min(-gap, (li.reoLoss ?? 0) * share));
+}
+
 // ---- WHAT A DESK CHARGES (2026-10-28) --------------------------------------
 //
 // pricing.ts says what the parts are; these are the facts behind them.

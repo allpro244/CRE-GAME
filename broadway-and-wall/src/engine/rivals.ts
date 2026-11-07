@@ -4412,7 +4412,7 @@ function deedInLieu(s: GameState, parcels: ParcelTable, r: Rival, why: string, o
   s.listings.push({
     bbl: worst.bbl, ask, listedM: s.month,
     expiresM: s.month + reoWindow(s, desk), distress: true, receiverFor: desk, reason: "receiver",
-    loanBasis, mark: Math.round(deedV),
+    loanBasis, mark: Math.round(deedV), reoBook: ask, reoLoss: Math.max(0, owed - ask), reoShare: held,
   });
   chargeLenderLoss(s, desk, Math.max(0, owed - ask) * held, { borrower: r.name, id: r.id, bbl: worst.bbl, cls: worst.rec.class === "land" ? "land" : "income", how: "foreclosure", why: loanWhy });
   const off = Math.max(0, 1 - ask / Math.max(1, deedV));

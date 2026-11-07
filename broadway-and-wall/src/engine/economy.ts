@@ -219,6 +219,8 @@ export interface EconomyState {
   natX?: number[]; natZ?: number;
   /** What the town's firms in each industry would win of a tender, quality and price, when their orders were first booked (`tickExports`); the orders they held after last month's tender. */
   xa0?: number[]; xoTot?: number[];
+  /** Each local trade's share of the town's orders it served last month: custom lost to out-of-town suppliers returns at the re-tender pace (step 4). */
+  servedM?: number[];
   /** The labour force, last thirteen months (tickExports: new firms where the workers are). */
   lfPast?: number[];
   /** The island's share of each industry at the opening: its named firms' heads over its heads. */
@@ -1347,6 +1349,28 @@ export function tickEconomy(s: GameState): void {
       if (!cut) break;
       ({ x, iters } = solve(rpc, fd, X, Array.from(x)));
     }
+    // ...AND A BUYER WHO WENT ELSEWHERE COMES BACK WHEN ITS CONTRACT COMES UP
+    // (2026-11-07). The cut above was struck afresh each month on the staff
+    // the trade had, so the month an exporter laid people off and they filled
+    // the local trades' standing openings, every order that had leaked out of
+    // town came straight back: firms' purchases in town rose 0.65% of output
+    // per point the national gap fell, cancelling about 77% of the export
+    // shock, and the town's filled heads moved 0.20% per point of gap against
+    // the 0.96% its orders called for (seed 11, 30 years; only 4 of 17
+    // national recessions made a town job-loss year). What a trade cannot
+    // make it cannot sell, at once; custom that moved to a supplier out of
+    // town returns as its contracts re-tender (TENDER_M, the same terms the
+    // town's export orders run on).
+    const was = (E.servedM ??= []);
+    let slow = false;
+    for (let j = 0; j < N_IND; j++) {
+      if (INDUSTRIES[INDUSTRY_IDS[j]].where !== "local" || !(E.rpc[j] > 0)) continue;
+      const now = served[j], prev = was[j] ?? now;
+      const use = now > prev ? prev + (now - prev) / TENDER_M : now;
+      if (use < now) { rpc[j] *= use / Math.max(1e-9, now); served[j] = use; slow = true; }
+      was[j] = served[j];
+    }
+    if (slow) ({ x, iters } = solve(rpc, fd, X, Array.from(x)));
   }
   const buy: number[][] = [];
   for (let j = 0; j < N_IND; j++) {

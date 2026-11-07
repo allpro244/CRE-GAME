@@ -2658,6 +2658,10 @@ export interface Econ {
    * difference of two large numbers.
    */
   capExp?: Record<BuiltClass, number>;
+  /** The market's construction advance on a standard scheme this month, the memory of it sponsors are used to, and the month it was read (dev.ts equityStretch). */
+  ltcNow?: number;
+  ltcUsual?: number;
+  ltcUsualM?: number;
   /**
    * THE REDEVELOPMENT QUEUE, per use (value.ts `refreshLandQueue`). A land
    * residual is what the lot is worth if its building could be delivered and

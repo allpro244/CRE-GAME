@@ -325,7 +325,10 @@ function natSwanAt(x: NatSwan, a: number, h: NatSwanHooks, sec: Partial<Record<S
       const e3 = env(a, 6, x.len, 18);
       h.p += IMPORT_SHARE * (x.tariff ?? 0) * e3;
       h.x -= (0.02 + 0.04 * v) * e3;
-      h.k -= (0.005 + 0.015 * v) * env(a, 3, x.len, 12);
+      // 1-2% off INVESTMENT, applied to desired capital, which the accelerator
+      // turns into about 2.5x that in investment (K/(TAU_K/12)/I0 =
+      // 1.167/3.33/0.14): so 0.4 of it.
+      h.k -= 0.4 * (0.005 + 0.015 * v) * env(a, 3, x.len, 12);
       add("apparel", -0.06 * v * e3);
       add("food", -0.05 * v * e3);
       add("logistics", -0.04 * v * e3);

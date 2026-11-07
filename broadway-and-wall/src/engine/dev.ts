@@ -5373,7 +5373,12 @@ function breakCommittedPlans(s: GameState, parcels: ParcelTable, adjacency: Reco
     // gone negative in the months of design and permits does not dig: the
     // deposit on the land and the drawings are written off and the site
     // waits (the shelved-scheme lists of 1990, 2008-09).
-    if (hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) < SHELVE_AT) { fail(); continue; }
+    // ...AND A SQUEEZE ON THE DESKS SINCE THE DECISION shelves it the same way:
+    // the job now needs more equity than it was decided on, and that equity
+    // wants its margin (equityStretch) on top of what the sunk deposit and
+    // drawings let the builder forgive. The lists of 2008-09 were schemes
+    // whose construction loan had shrunk or gone, not schemes whose rent had.
+    if (hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) < SHELVE_AT + DEV_MARGIN * Math.max(0, equityStretch(s) - 1)) { fail(); continue; }
     if (breakCityGround(s, parcels, adjacency, p.bbl, rec, p.use as DevUse, p.floors, p.plate, { spec: p.spec, ltc: p.ltc, decided: true, builderId: p.builderId, firmId: p.firmId, landBasis: landOv })) {
       syncSupplyViews(s.econ, true);
       const firm = kids.length ? ownerOf(s, p.bbl) : null;

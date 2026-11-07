@@ -27,7 +27,7 @@ export const MODULES = [
   "sim", "leasing", "actions", "credit", "value", "dev", "debt", "demand",
   "invariants", "rivals", "sponsor", "mix", "acquire", "comps", "propmarket", "market",
   "zoning", "landdev", "lotcode", "lotsplit", "lotsplitGeom", "products", "platdesign", "homes", "homeprice", "growth", "roads", "towngrowth", "unpack", "lenders", "proforma", "workout", "portfolio", "portfoliosale", "auction", "notes",
-  "privateCredit", "broker", "loanbook", "amortize", "pricing", "ledger", "rivalDebt", "strategy", "corporate", "firmLog",
+  "privateCredit", "broker", "loanbook", "casualty", "amortize", "pricing", "ledger", "rivalDebt", "strategy", "corporate", "firmLog",
   // streetLoans: the private owners' mortgages, loan by loan (ONE_ECONOMY_PLAN.md step 5).
   "streetLoans",
   // absorption carries staleDiscount and leasingOdds — how an owner's ask falls

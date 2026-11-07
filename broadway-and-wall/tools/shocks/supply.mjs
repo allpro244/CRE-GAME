@@ -109,18 +109,19 @@ function loss(k) {
       if (i !== 0) return;
       const target = 0.2 * (g.econ.stock?.[k] ?? 0);
       const bs = Object.keys(city.parcels).filter((b) => !g.holdings?.[b] && !g.developments?.[b]).sort((a, b) => hashB(a) - hashB(b));
-      let lost = 0, n = 0;
+      let lost = 0, n = 0, paid = 0, toLender = 0;
       for (const b of bs) {
         if (lost >= target) break;
         const r = E.resolveRec(city.parcels, g, b);
         if (!r || r.class !== k || !(r.bldgArea > 0)) continue;
-        g.built[b] = { class: "land", bldgArea: 0, floors: 0, yearBuilt: 0 };
-        const rent = E.rentableSf(r);
-        E.addStock(g.econ, k, -rent);
-        g.demolished = (g.demolished ?? 0) + 1;
-        lost += rent; n++;
+        // AN INSURED LOSS, NOT A CONFISCATION: the engine's own claim path
+        // (casualty.ts) takes the building down, pays replacement cost, retires
+        // the mortgage first and credits the owner with the rest.
+        const c = E.casualtyLoss(g, city.parcels, b);
+        if (!c) continue;
+        lost += c.lostSf; n++; paid += c.paid; toLender += c.toLender;
       }
-      ctx.notes.push(`${n} buildings, ${(lost / 1e6).toFixed(2)}M sf rentable lost`);
+      ctx.notes.push(`${n} buildings, ${(lost / 1e6).toFixed(2)}M sf rentable lost; insurers paid $${(paid / 1e6).toFixed(1)}M, $${(toLender / 1e6).toFixed(1)}M of it to mortgagees`);
     },
     probes: { built: (g, city, E) => (near(g, 120, [0, 1, 60]) ? builtSf(g, city, E, k) : NaN) },
     land(c, t) {

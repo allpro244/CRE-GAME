@@ -50,13 +50,18 @@ It supersedes the open parts of `ECON_REALISM_PLAN.md` and `RENT_VACANCY_RESPONS
 | 4.6 part 1: the debt fund's construction advance reads the window and its own book, without floors (no measured effect: the floored quote never decided a loan) | done | #600 |
 | 4.6 part 2: a builder takes the construction loan the desk will write | done | #606 |
 | Crunch: a seller who can wait (fund extensions, non-core holds) waits in a dislocated market; deal volume under a crunch −6.5% → −22.2% (5 seeds) | done | #610 |
-| Crunch: a lender extends only a loan whose building covers its coupon. With #610, all crunch rows right-signed on 5 seeds: deal volume −31.6%, charge-offs up, starts −22.9%, office −12.9% | measuring | branch `claude/real-economy-extend-performing` |
+| Crunch: a lender extends only a loan whose building covers its coupon. With #610, all crunch rows right-signed on 5 seeds: deal volume −31.6%, charge-offs up, starts −22.9%, office −12.9% | done | #614 |
 | Hotfix: the player's closing cost was NaN after #609 (circular import read at load) | done | #611 |
 | 8: rail audit #1 (a constant written as a rail) and #16 (a dead coin) | done | #595, #596 |
 | 8: rail audit #19, land capitulation runs to the builder's bid | done | #601 |
 | 3.4 follow-up: courthouse bidders finance on the bridge desk; the courthouse room is the distress specialists (open room's runner-up below the worn mark, p50: −8% → +8%) | done | #602, #603 |
 | 4.5 part 1: vacancy has no 45% ceiling | done | #604 |
 | 8 next: `marketAppetite` (an index of the room, rail audit #15) and the take-private premium (#8) should be the named bidders themselves | open | — |
+| Lenders lose money again: owners re-lever at their balloon (private owners #622, firms #627, the cash-out coin deleted). Charge-offs on a crunch book had read zero | done | #622, #627 |
+| A rent on the screen always has a cause chain (the read's mark is written every month) | done | #618 |
+| A start unwound in its month is not counted as a start (supply.ts `broke`) | done | #624 |
+| Measurement: the median of an even count (#623); lag rows read a lag that is there, or none — stationary series, Fisher-z pooled CCF, Bartlett floor (#625); charge-offs graded as a share of the book in points (#626); three land smoke detectors (#628); distressed sales against ordinary ones (#631) | done | #623, #625, #626, #628, #631 |
+| Recessions: the bank reading the gap through the economy's own Okun coefficient was refuted by its review and reverted. The cause is propagation (about 2× the VAR consensus) and the unemployment lag, not the gap's scale; a nation-only calibration is under way | reverted | #629, #630 |
 
 ### Corrections to the audit
 - **3.3 loan spreads: mostly not a fake.** The playthrough's coupons 5.7 points over the index (p50) were the bot borrowing from a private-credit desk (Cordage Debt Partners), which in life does price 4-7 points over. The bank desks quoted about 2.5-3 points, high in the real range. Desk pricing is already built from funding, expected loss and running cost (`pricing.ts` `liveSpread`, `costFloor`). Lower priority; re-check against MBA/ACLI once caps are right.

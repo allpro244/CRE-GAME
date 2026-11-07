@@ -91,6 +91,9 @@ async function run(SEEDS, YEARS, OUT) {
     const failedSeen = new Set((g.lenders ?? []).filter((l) => l.failedM !== undefined).map((l) => l.name));
     let coPrev = Object.fromEntries((g.lenders ?? []).map((l) => [l.name, l.chargeOffsTotal ?? 0]));
     let chargeOffs = 0;
+    // every building sale's price against the value the index gave it that
+    // day (comps.ts `mv`), distressed and ordinary marketed sales apart
+    let compM = g.month, distR = [], ordR = [];
     let fidsPrev = null, pulsePrev = null, frozenYrs = 0;
     const nanPaths = new Set();
     const why = {};
@@ -111,6 +114,15 @@ async function run(SEEDS, YEARS, OUT) {
         chargeOffs += Math.max(0, c - (coPrev[l.name] ?? 0));
         coPrev[l.name] = c;
       }
+      let cm = compM;
+      for (const c of g.comps ?? []) {
+        if (!(c.m > compM)) continue;
+        cm = Math.max(cm, c.m);
+        if (!(c.sf > 0) || !(c.mv > 0) || !(c.price > 0)) continue;
+        if (c.distress) distR.push(c.price / c.mv);
+        else if (!c.offMarket) ordR.push(c.price / c.mv);
+      }
+      compM = cm;
       if (m % 12 !== 0) continue;
 
       // ---- the year's reading
@@ -160,7 +172,7 @@ async function run(SEEDS, YEARS, OUT) {
         capTrades: Object.fromEntries(CLASSES.map((k) => [k, e.capRead?.[k]?.trades ?? 0])),
         landR: (e.landMkt ?? NaN) / cpi, landIdx: e.landIdx, landShare,
         starts: { ...starts }, stock: { ...e.stock }, absorb12: { ...e.absorb12 }, completions12: { ...e.completions12 },
-        recStarts, recMonths, failures, chargeOffs, book,
+        recStarts, recMonths, failures, chargeOffs, book, distR, ordR,
         hh: hs?.households, owners: hs?.owners, doubled: hs?.doubledUp, islandRenters: hs?.islandRenters, mainlandRenters: hs?.mainlandRenters,
         firms: fids.size, entry, exit, dark, left,
         nan: nan.length, frozen: pz === pulsePrev ? 1 : 0, resurrect,
@@ -172,7 +184,7 @@ async function run(SEEDS, YEARS, OUT) {
           .map((k) => [k.slice(1), E.whyChain(g, E.whyAt ? E.whyAt(g, k.slice(1)) : g.why.key[k], 4).map((ev) => `${ev.k}@${ev.m}: ${ev.t}`)]));
       }
       starts = Object.fromEntries(CLASSES.map((k) => [k, 0]));
-      recStarts = 0; recMonths = 0; dark = 0; left = 0; failures = 0; chargeOffs = 0; resurrect = 0;
+      recStarts = 0; recMonths = 0; dark = 0; left = 0; failures = 0; chargeOffs = 0; resurrect = 0; distR = []; ordR = [];
       fidsPrev = fids; pulsePrev = pz;
       if (y % 10 === 0) console.error(`  seed ${seed} year ${y}  jobs ${Math.round(e.jobs)}  u ${(100 * e.unemployment).toFixed(1)}%  ${((Date.now() - t0) / 60000).toFixed(1)} min`);
     }
@@ -369,7 +381,7 @@ function checks(runs) {
     const ma = mean(p.map((z) => z[0])), mb = mean(p.map((z) => z[1]));
     let s = 0, sa = 0, sb = 0; for (const [u, w] of p) { s += (u - ma) * (w - mb); sa += (u - ma) ** 2; sb += (w - mb) ** 2; }
     return s / Math.sqrt(sa * sb || 1);
-  }, 0.5, 1.0), nm, "Nichols, Oliner & Mulhall 2013; Bostic, Longhofer & Redfearn 2007 (land leverage): land prices are cointegrated with and move with property values");
+  }, 0.5, 1.0), nm, "Nichols, Oliner & Mulhall 2013; Bostic, Longhofer & Redfearn 2007 (land leverage): land prices are cointegrated with and move with property values. The 0.5 floor is a chosen threshold for 'moves with', not a published figure");
   add("Capital", "Real land price growth, trend %/yr", seedCheck(R, (r) => trendG(r.yr.map((x) => x.landR)), -0.01, 0.03), pc,
     "Davis-Heathcote / Knoll et al. (2017): real land prices ~0-3%/yr long-run, most of house-price growth");
   add("Capital", "Bank charge-offs %/yr of book", levelCheck(R, (x) => x.book > 0 ? x.chargeOffs / x.book : NaN, 0, 0.03), pc,
@@ -379,6 +391,16 @@ function checks(runs) {
   add("Capital", "Peak yearly charge-off rate", seedCheck(R, (r) => Math.max(...r.yr.map((x) => x.book > 0 ? x.chargeOffs / x.book : 0)), 0.01, 0.08), pc,
     "FDIC CRE charge-offs peak 2-4% (1991, 2010); C&D loans to ~8%");
 
+  // DISTRESSED SALES CLEAR BELOW ORDINARY ONES (REAL_ECONOMY_PLAN 3.4's
+  // "done when"): the median distressed sale's price over the value the index
+  // gave the building that day, against the same ratio for ordinary marketed
+  // sales, pooled over the century per seed. Runs recorded before this row
+  // carry no sales and read "—".
+  add("Capital", "Distressed sales vs ordinary (median price/value, ratio - 1)", seedCheck(R, (r) => {
+    const d = r.yr.flatMap((x) => x.distR ?? []), o = r.yr.flatMap((x) => x.ordR ?? []);
+    if (d.length < 5 || o.length < 5) return NaN;
+    return median(d) / median(o) - 1;
+  }, -0.30, -0.10), pc, "REAL_ECONOMY_PLAN 3.4: distressed discounts 10-30% of appraisal, larger in crunches (RCA distress reports 2009-11)");
   add("Cycle", "National recessions per decade", seedCheck(R, (r) => r.yr.reduce((s, x) => s + x.recStarts, 0) * 10 / r.yr.length, 1.0, 1.7), nm,
     "NBER 1945-2020: 12 in 75 years (1 per 6.3); post-1982: 1 per 8-10 years");
   add("Cycle", "Share of months in national recession", seedCheck(R, (r) => r.yr.reduce((s, x) => s + x.recMonths, 0) / (12 * r.yr.length), 0.08, 0.2), pc,

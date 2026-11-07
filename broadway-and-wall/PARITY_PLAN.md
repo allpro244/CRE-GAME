@@ -102,6 +102,9 @@ The player gains the AI-only abilities where they make sense: claiming a conceiv
 | P1 | #615 | one seller's settlement for every buyer (`firmSells`) |
 | P1 | #617 | the player's tape offer joins the firms' bid round: taken when it clears the seller's own floor and beats every bid that can close; the dice (`bidOdds`) and the appetite index are gone from that path |
 | P1 | #619 | the negotiation desk faces the same seller: its floor and the best closing bid this month, not a table of seller kinds |
-| P2 | in review | firms sell on a yearly hold/sell review (the tape's appraisal against what the building is worth to them to keep), not a coin |
+| P2 | #621 | firms sell on a yearly hold/sell review (the tape's appraisal against what the building is worth to them to keep), not a coin |
+| P3 | #614 | one extension rule for every borrower: a lender extends a loan whose building covers its coupon (`deskWillExtend` reads performance) |
+| P3 | #622 | private owners that lever re-lever at their balloon through the same desks (`holderRefiAdvance`, `rollBalloon`), not never |
+| P3 | #627 | firms re-lever at a covered balloon, a decision on the desk's quote; the cash-out coin (`cashOutRefi`) is deleted |
 
 Still open in P1: rivals choosing a desk by relationship, and rivals haggling and countering.

@@ -351,6 +351,38 @@ const UE_RATE = 0.25;
  */
 const MATCH_ETA = 0.3;
 /**
+ * AN OPENING TAKES ABOUT A MONTH TO FILL (2026-11-07). JOLTS counts the
+ * positions open on the last business day of the month and every hire made
+ * in it; their ratio is the rate an opening is filled at, q: hires over
+ * openings, 1.107 a month over 2001-2019 (FRED JTSHIL / JTSJOL, the sums of
+ * the monthly levels; 1.28 in 2001-07, 0.87 in 2015-19) [S] — a mean vacancy
+ * duration of about 0.9 of a month.
+ *
+ * The month here is one step: an opening open as the month's search begins
+ * is filled in it with odds p, and what is left is the month-end stock, so
+ * hires over the month-end openings is p / (1 - p) — set equal to q,
+ * p = q / (1 + q) = 0.525. Every hire draws on it, the jobless, the workers
+ * moving up, and the households moving in, so the openings left at the
+ * month's end are JOLTS's openings, like for like. Before this the month's
+ * matching filled whatever the searchers could reach: measured (seed 11, 30
+ * years), the openings left at a month's end ran 0.35-0.5% of positions
+ * after year 15 against JOLTS's 3.13% (FRED JTSJOR, 2001-2019), and the
+ * town's V/U ran 0.05 against the nation's 0.49 (JTSJOL over UNEMPLOY).
+ *
+ * q is held at its 2001-2019 mean. In the record it falls as the market
+ * tightens, with θ^(MATCH_ETA - 1) on the same matching function as the
+ * finding rate (2001-07 to 2015-19: V/U 0.52 -> 0.90, q 1.28 -> 0.87, which
+ * -0.7 predicts). Tried with this change (2026-11-07), not kept: against
+ * the town's own twenty-year normal (the
+ * finding rate's `thetaRef`) it ran away, the normal starting from the old
+ * near-empty openings; against the record's (both rates anchored at the
+ * nation's V/U, 0.49 over 2001-19 or 0.90 over 2015-19) the town's
+ * unemployment and growth were set by a migration side that does not answer
+ * openings — 8.4% and growing 1.0%/yr on one anchor, 4.9% and shrinking on
+ * the other (seed 11, 60 years). The elastic q waits on that.
+ */
+const Q_FILL = 1.107;
+/**
  * A household whose earners are all out of work leaves the region at about 5%
  * a year: interstate migration ran about 2.5% a year through the 2000s (Census
  * CPS; Molloy, Smith & Wozniak 2011, JEP), and the jobless move about twice as
@@ -731,6 +763,8 @@ export interface HouseholdFlows {
   formed?: number; rebought?: number;
   /** WORKERS (step 3): earners hired (from out of work or arriving), who quit for a better job, and who were laid off (weighted). */
   hires?: number; quits?: number; layoffs?: number;
+  /** Positions filled this month by anyone — the jobless, a worker moving up, a household moving in (weighted): JOLTS's hires (Q_FILL). */
+  filled?: number;
   /** LIFE (stage 4): people born and died, households that moved in together and couples that parted (weighted). */
   births?: number; deaths?: number; unions?: number; splits?: number;
   /** What Washington paid the households this month by their means: SNAP and the EITC (weighted; `fedTransfers`). */
@@ -2201,14 +2235,19 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
     }
   }
   const V = Float64Array.from(D.heads, (h, i) => h - N[i]);
+  // each industry's fills left this month (Q_FILL; set once the earners already in work are placed, step 2)
+  let F: Float64Array | null = null, Fu: Float64Array | null = null;
+  const pFill = Q_FILL / (1 + Q_FILL);
+  const room = (ind: number, w: number) => V[ind] >= w / 2 && (!F || F[ind] >= w * Fu![ind]);
+  const take = (ind: number, w: number) => { V[ind] -= w; if (F) { F[ind] -= w; r.flow.filled = (r.flow.filled ?? 0) + w; } };
   // an industry with room for an earner of weight w, by its vacancies (one draw)
   const pickInd = (w: number) => {
     let t = 0;
-    for (let i = 0; i < N_IND; i++) if (V[i] >= w / 2) t += V[i];
+    for (let i = 0; i < N_IND; i++) if (room(i, w)) t += V[i];
     let x = R.u() * t;
     if (!(t > 0)) return -1;
-    for (let i = 0; i < N_IND; i++) if (V[i] >= w / 2) { x -= V[i]; if (x < 0) return i; }
-    for (let i = N_IND - 1; i >= 0; i--) if (V[i] >= w / 2) return i;
+    for (let i = 0; i < N_IND; i++) if (room(i, w)) { x -= V[i]; if (x < 0) return i; }
+    for (let i = N_IND - 1; i >= 0; i--) if (room(i, w)) return i;
     return -1;
   };
   const med = Math.max(1, medianIncome(e));
@@ -2253,7 +2292,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   const place = (i: number, k: number, job: { ind: number; code: number; pay: number }) => {
     WAGE()[k][i] = job.pay;
     EMP()[k][i] = job.code; IND()[k][i] = job.ind; UN()[k][i] = 0;
-    V[job.ind] -= r.a!.wt[i];
+    take(job.ind, r.a!.wt[i]);
     r.flow.hires = (r.flow.hires ?? 0) + r.a!.wt[i];
   };
   // 2. the earners who came with work
@@ -2264,6 +2303,15 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
     if (job) place(i, k, job);
     else { EMP()[k][i] = EMP_UNEMP; UN()[k][i] = 1; }
   }
+  // EACH INDUSTRY'S OPENINGS THAT CAN BE FILLED THIS MONTH, p of those open
+  // (Q_FILL), drawn whole: a hire of weight w goes ahead while what is left
+  // covers w times the industry's draw for the month, so the hires an
+  // industry makes average p of its openings at any weight. (The earners
+  // placed in step 2 were already in work — the register before the firm
+  // books open, or a household that came with a job — so they are not the
+  // month's hires and draw nothing from it.)
+  F = Float64Array.from(V, (v) => pFill * Math.max(0, v));
+  Fu = Float64Array.from(V, () => R.u());
   // 3. QUITS (before the jobless: the employed look at the same openings): a worker who looks this month (OJS_M) and finds an opening
   // worth QUIT_GAIN more than its job after the commute moves; the job it
   // left is an opening (filled by the next searcher, or by an arrival)
@@ -2276,7 +2324,8 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
     const job = bestJob(i, k);
     if (!job || !(job.value > cur * (1 + QUIT_GAIN))) continue;
     const old = IND()[k][i];
-    V[old] += r.a!.wt[i];
+    // the job it left is posted this month, and fills at the month's odds like any other (Q_FILL)
+    V[old] += r.a!.wt[i]; F[old] += pFill * r.a!.wt[i];
     place(i, k, job);
     r.flow.hires = (r.flow.hires ?? 0) - r.a!.wt[i];
     r.flow.quits = (r.flow.quits ?? 0) + r.a!.wt[i];
@@ -2371,13 +2420,13 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   const V4 = V.slice();
   for (const ind of shuffle(slots)) {
     {
-      // (a partner placed below may already have taken this industry's opening)
-      if (V[ind] < wR / 2) continue;
+      // (a partner placed below may already have taken this industry's opening; or the month's fills of it are spent, Q_FILL)
+      if (!room(ind, wR)) continue;
       if (r.arriveAcc < wR / 2) break;
       // a local's application wins (`outsiders`, above): the opening goes to the town's own jobless
       if (stillAt < still.length && budget >= r.a!.wt[(still[stillAt] / 3) | 0] / 2 && !(R.u() < outsiders)) {
         const sl = still[stillAt++], i = (sl / 3) | 0, k = sl % 3, w = r.a!.wt[i];
-        if (V[ind] >= w / 2) {
+        if (room(ind, w)) {
           const job = bestJob(i, k, ind);
           if (job) { place(i, k, job); budget -= w; WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * R.n()); continue; }
         }
@@ -2393,11 +2442,11 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       drawKidAges(R, b, i);
       const f1 = Math.exp(WAGE_SIGMA * R.n() - WAGE_SIGMA * WAGE_SIGMA / 2);
       b.emp1[i] = firmIn(ind); b.ind1[i] = ind; b.wage1[i] = firmPay(D, ind, b.emp1[i]) * f1;
-      V[ind] -= wR;
+      take(ind, wR);
       if (b.partner[i] === 1 && R.u() < 0.70) {
         const j = pickInd(wR);
         const f2 = Math.exp(WAGE_SIGMA * R.n() - WAGE_SIGMA * WAGE_SIGMA / 2);
-        if (j >= 0) { b.emp2[i] = firmIn(j); b.ind2[i] = j; b.wage2[i] = firmPay(D, j, b.emp2[i]) * f2; V[j] -= wR; }
+        if (j >= 0) { b.emp2[i] = firmIn(j); b.ind2[i] = j; b.wage2[i] = firmPay(D, j, b.emp2[i]) * f2; take(j, wR); }
         // a partner who left a job to follow the household has no claim here (a voluntary quit: "AN ARRIVAL HAS NO CLAIM HERE", below)
         else { b.emp2[i] = EMP_UNEMP; b.un2[i] = UI_MONTHS + 1; b.wage2[i] = D.pay[ind] * f2; }
       }
@@ -2447,10 +2496,10 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   const left = Float64Array.from(open, (o, ind) => Math.min(V[ind], o - (V4[ind] - V[ind])));
   const pickLeft = (w: number) => {
     let t = 0;
-    for (let ind = 0; ind < N_IND; ind++) if (left[ind] >= w / 2 && V[ind] >= w / 2) t += left[ind];
+    for (let ind = 0; ind < N_IND; ind++) if (left[ind] >= w / 2 && room(ind, w)) t += left[ind];
     if (!(t > 0)) return -1;
     let x = R.u() * t;
-    for (let ind = 0; ind < N_IND; ind++) if (left[ind] >= w / 2 && V[ind] >= w / 2) { x -= left[ind]; if (x < 0) return ind; }
+    for (let ind = 0; ind < N_IND; ind++) if (left[ind] >= w / 2 && room(ind, w)) { x -= left[ind]; if (x < 0) return ind; }
     return -1;
   };
   for (; stillAt < still.length; stillAt++) {
@@ -2464,7 +2513,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       const c = bestJob(i, k, ind);
       if (c && (!job || c.value > job.value)) job = c;
     }
-    if (!job) { let any = false; for (let ind = 0; ind < N_IND; ind++) if (left[ind] >= 0.5) { any = true; break; } if (!any) break; continue; }
+    if (!job) { let any = false; for (let ind = 0; ind < N_IND; ind++) if (left[ind] >= 0.5 && F[ind] > 0) { any = true; break; } if (!any) break; continue; }
     place(i, k, job); left[job.ind] -= w; budget -= w;
     WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * R.n());
   }
@@ -2574,7 +2623,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   const B = readBlocks(s, parcels, r, byHH);
   r.flow = {
     movedOut: 0, movedIn: 0, evictions: 0, foreclosures: 0, spend: 0, income: 0, arrived: 0, left: 0, bought: 0, sold: 0,
-    out: zeroOut(), leaseEnds: 0, leaseMoves: 0, formed: 0, rebought: 0, hires: 0, quits: 0, layoffs: 0,
+    out: zeroOut(), leaseEnds: 0, leaseMoves: 0, formed: 0, rebought: 0, hires: 0, quits: 0, layoffs: 0, filled: 0,
     births: 0, deaths: 0, unions: 0, splits: 0, spendCat: zeroCat(), transfers: 0,
   };
   const med = medianIncome(e);

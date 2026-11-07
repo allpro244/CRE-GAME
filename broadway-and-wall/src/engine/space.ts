@@ -16,7 +16,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState } from "./types";
 import { BUILT_CLASSES } from "./types";
-import { normalVac, CITY_STOCK } from "./market";
+import { normalVac, openingVac, CITY_STOCK } from "./market";
 import { resolveRec, useOccupancy, useRentPsfYr, initialCondition, useRentableSf } from "./value";
 import { uses, districtLabel } from "./mix";
 
@@ -114,7 +114,7 @@ export function projectVacancy(e: Econ, k: BuiltClass, month: number, months = 3
   // — which is the honest naive projection, because whether it comes back off
   // the market or gets taken by a subtenant, it is a foot that has to be filled
   // before a new building's first floor is.
-  let occ = (e.occupied?.[k] ?? stock * (1 - normalVac(e, k))) - (e.sublet?.[k] ?? 0);
+  let occ = (e.occupied?.[k] ?? stock * (1 - openingVac(k))) - (e.sublet?.[k] ?? 0);
   // absorption decays toward zero over the horizon: assuming today's pace runs
   // forever is how every over-optimistic pro forma in the business is written
   const base = (e.absorb12?.[k] ?? 0) / 12;
@@ -143,7 +143,7 @@ export type Balance = "acute shortage" | "landlord's market" | "balanced" | "ten
  */
 export function availability(e: Econ, k: BuiltClass): number {
   const stock = e.stock?.[k] ?? CITY_STOCK[k];
-  return (e.cityVac?.[k] ?? normalVac(e, k)) + (e.sublet?.[k] ?? 0) / Math.max(1, stock);
+  return (e.cityVac?.[k] ?? openingVac(k)) + (e.sublet?.[k] ?? 0) / Math.max(1, stock);
 }
 
 /** The one-word verdict, and the sentence behind it. */

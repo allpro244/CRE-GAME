@@ -153,8 +153,6 @@ export const TASTE: Record<Comm, number> = { office: 0.10, retail: 0.08, industr
  *                landlord's usual wait [K].
  *   LET_MEMORY   lettings over which a landlord learns how long a vacancy
  *                takes: about twenty — patience is slow to change [K].
- *   VAC_MEMORY   months over which it learns the vacancy it carries: five
- *                years [K].
  *   STRESS       an owner whose mortgage is behind (or whose firm is under
  *                water) moves half as fast again, and takes less [K].
  */
@@ -165,7 +163,6 @@ const PKG_TAKE = 0.03;
 const CUT_DEEP = 0.0155;
 const RAISE = 0.06;
 const LET_MEMORY = 20;
-const VAC_MEMORY = 60;
 const STRESS_MOVE = 1.5, STRESS_RES = 0.96;
 
 /**
@@ -191,8 +188,6 @@ export interface LandlordAsk {
   c: number;
   /** months it expects a vacancy to take to let, learned from its lettings */
   t: number;
-  /** the vacancy it expects to carry, learned from its own record */
-  v: number;
   /** month the ask was last reviewed */
   m: number;
 }
@@ -210,8 +205,8 @@ export function compsFace(e: Econ, mkt: number, k: Comm): number {
 }
 
 /** A landlord's book, opened at the comps when it has none (or a fresh opening). */
-export function askOf(book: Partial<Record<Comm, LandlordAsk>>, k: Comm, e: Econ, mkt: number, vacNow: number, m: number): LandlordAsk {
-  const L = (book[k] ??= { a: NaN, c: compsPackage(e, k), t: searchMonths(k), v: vacNow, m });
+export function askOf(book: Partial<Record<Comm, LandlordAsk>>, k: Comm, e: Econ, mkt: number, _vacNow: number, m: number): LandlordAsk {
+  const L = (book[k] ??= { a: NaN, c: compsPackage(e, k), t: searchMonths(k), m });
   if (!(L.a > 0) || !Number.isFinite(L.a)) { L.a = +Math.max(0.01, compsFace(e, mkt, k)).toFixed(2); L.c = compsPackage(e, k); }
   if (!Number.isFinite(L.c)) L.c = compsPackage(e, k);
   return L;
@@ -247,7 +242,6 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
   if (L.m >= opts.m) return;
   const months = Math.max(1, Math.min(12, opts.m - L.m));
   L.m = opts.m;
-  L.v += (opts.vacNow - L.v) * Math.min(1, months / VAC_MEMORY);
   const comps = compsFace(e, mkt, k), pull = Math.min(1, months / COMPS_M);
   if (!(L.a > 0) || !Number.isFinite(L.a)) L.a = comps > 0 ? comps : 1;
   const toComps = comps > 0 ? (Math.log(comps) - Math.log(L.a)) * pull : 0;

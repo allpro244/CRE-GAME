@@ -766,6 +766,8 @@ export const CONC_DEPTH = 0.30;
  * was pulled toward, and the flats' MF_NATURAL_VAC.
  */
 export const OPENING_VAC = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07 } as const;
+/** The opening state for a class whose measured vacancy is not yet on the record (an initial condition, never a yardstick). */
+export function openingVac(k: BuiltClass): number { return OPENING_VAC[k]; }
 
 /**
  * WHAT THIS MARKET'S AVAILABILITY HAS RUN AT — the "normal" its landlords,
@@ -856,10 +858,6 @@ export function cycleHot(e: Econ): number {
  */
 export function cycleDown(e: Econ): number {
   return clamp(Math.max(-payrollGrowth12(e) / 0.015, labourSlack(e) / 0.03), 0, 1);
-}
-/** A class's availability (vacancy + sublet) over what it has normally run at (`normalVac`). */
-export function useGap(e: Econ, k: BuiltClass): number {
-  return (e.cityVac?.[k] ?? normalVac(e, k)) + (e.sublet?.[k] ?? 0) / Math.max(1, e.stock?.[k] ?? CITY_STOCK[k]) - normalVac(e, k);
 }
 
 
@@ -1082,17 +1080,6 @@ export function residenceVac(e: Econ, k: BuiltClass): number {
   return (darkSfOf(e, k) + betweenTenantsSf(e.occupied?.[k] ?? 0, k, e)) / stk;
 }
 
-/**
- * A CLASS THE CITY CANNOT HOUSE, on the same instruments densify already
- * reads. Vacancy on the frictional rail, or `structTight` saying desired
- * demand is already past housable. Used by the zoning map — a planning
- * board rezones land for a use that is short, not for one that is empty.
- */
-export function classIsShort(e: Econ, k: BuiltClass, slack = 0.02): boolean {
-  const vac = e.cityVac?.[k] ?? normalVac(e, k);
-  if (vac <= frictionFloor(k, e) + slack) return true;
-  return (e.structTight?.[k] ?? 0) > 0.06;
-}
 
 /**
  * NAMED TENANTS TOUCH THE CITY POOL. Micro lease events used to live in a
@@ -1457,7 +1444,6 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // the economy deciding for itself
   econ.inflExp = 0.02;
   econ.slackEma = 0;
-  econ.tightEma = 0;
   econ.buildEma = 0.02;
   // The trades open exactly fully employed and at their ordinary strength, so
   // the cost of building starts neutral and the town discovers the rest.
@@ -3773,59 +3759,6 @@ export function tickEcon(s: GameState) {
   // shortage with flat rents, which is not a market, it is a clamp. Routing
   // the overflow into rent closes the loop — price rises, price rations
   // demand, and eventually price makes building pencil again.
-  // HOW SHORT OF SPACE THIS CITY HAS CHRONICALLY BEEN. A twenty-year memory,
-  // which is the timescale on which a place actually earns the right to be
-  // expensive. Read by the income anchor as the sustainable rent-to-income
-  // ratio: a generation of tightness buys a premium, a permanent glut spends it.
-  //
-  // AND IT IS FED OFF AVAILABILITY, BECAUSE DIRECT VACANCY IS PINNED. This
-  // read `cityVac.office`, which rested on its frictional rail 26.9% of all
-  // months in runs of five to eight years. While it is pinned the input to
-  // this EMA is a CONSTANT — the city cannot report being any tighter than its
-  // floor — so a town that merely touched the floor earned the full Manhattan
-  // premium on rent-to-income and then carried it two decades into the bust,
-  // defeating the income anchor at exactly the moment the anchor was needed.
-  // Availability does not pin: when a city is that tight, rent pressure puts
-  // sublet space on the market, and the market can report the difference
-  // between short of space and desperately short of it.
-  //
-  // Feeding it off `unmet` instead was tried and REJECTED on measurement.
-  // `unmet` carries a large structural positive offset — median 0.030 of
-  // stock, 26% of natural vacancy, because the demand pool always leads
-  // occupancy — so a balanced city would have read as chronically tight and
-  // been handed a permanent premium, which is the opposite of the intent.
-  {
-    // A MANHATTAN PREMIUM IS EARNED BY DEMAND, NOT BY A SUPPLY FAILURE.
-    //
-    // Vacancy pinned at the frictional floor for decades used to mint a
-    // permanent `tightEma` premium — the income anchor then defended a rising
-    // rent-to-wage ratio because, by its own measure, the city was "genuinely
-    // tight." That is backwards when the floor is binding because stock cannot
-    // keep up with jobs (ECONOMY.md §F #3).
-    //
-    // A first cut faded only when `!supplyAnswering`. That bar is low (any
-    // thin pipeline), so a town glued to the rail with a few cranes still
-    // fed saturated `tightNow` into the EMA — measured avg tightEma WHILE
-    // pinned sat ABOVE the unconditional average, and seeds spent half a
-    // century on the rail at maxTE ≈ 0.53. The availability instrument is
-    // saturated on the rail; it cannot tell "desperately short" from "at
-    // the floor." Refuse to mint or renew premium from it. Growing unmet
-    // demand still prices through scarcity → rentPress; this EMA only stores
-    // chronic tightness read from an UNPINNED availability signal. Fade
-    // faster on the rail so a decade of supply failure does not defend a
-    // Manhattan ratio into the next cycle.
-    const stock = Math.max(1, e.stock?.office ?? CITY_STOCK.office);
-    const natO = normalVac(e, "office");
-    const availNow = (e.cityVac?.office ?? natO)
-      + (e.sublet?.office ?? 0) / stock;
-    const tightNow = (natO - availNow) / natO;
-    const friction = residenceVac(e, "office");
-    const pinned = (e.cityVac?.office ?? natO) <= friction + 1e-6;
-    const target = pinned ? 0 : tightNow;
-    const gain = pinned ? 0.012 : 0.004;
-    e.tightEma = (e.tightEma ?? 0) + gain * (target - (e.tightEma ?? 0));
-  }
-
   // SECULAR DEMAND ERAS — the slow tide under the business cycle, per class.
   //
   // This block replaces a single hardcoded decline. `industComp` shrank sheds'
@@ -4708,7 +4641,7 @@ export function tickEcon(s: GameState) {
     // about it — what availability has run at, over a long memory. The
     // national figures are where a town starts; from there each market's
     // normal is its own twenty-year history (half-life).
-    const avail = (e.cityVac?.[k] ?? normalVac(e, k))
+    const avail = (e.cityVac?.[k] ?? openingVac(k))
       + (e.sublet?.[k] ?? 0) / Math.max(1, e.stock?.[k] ?? CITY_STOCK[k]);
     const nv = (e.natVac ??= { ...OPENING_VAC });
     // ...BUT NOT FROM A SHORTAGE. A month the market spends on its
@@ -4967,7 +4900,7 @@ export function tickEcon(s: GameState) {
     // cannot pretend to add the same pressure as the first — a market that
     // cannot get any tighter stops minting a constant shortage tax.
     const friction = residenceVac(e, k);
-    const vacNow = e.cityVac?.[k] ?? normalVac(e, k);
+    const vacNow = e.cityVac?.[k] ?? openingVac(k);
     const pinned = vacNow <= friction + 1e-6;
     // Room above the frictional rail — 0 on the pin, rising as the market has
     // somewhere left to tighten. Same saturation the vacTerm shortage branch
@@ -5760,7 +5693,7 @@ export function addStock(e: Econ, k: keyof typeof CITY_STOCK, sf: number) {
  * other landlords with empty floors return every call first.
  */
 export function vacancyPull(e: Econ, use: BuiltClass): number {
-  const vac = e.cityVac?.[use] ?? normalVac(e, use);
+  const vac = e.cityVac?.[use] ?? openingVac(use);
   return Math.max(0.4, Math.min(1.7, Math.pow(normalVac(e, use) / Math.max(0.005, vac), 0.9)));
 }
 

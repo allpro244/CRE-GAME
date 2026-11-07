@@ -51,7 +51,7 @@ import { BUILT_CLASSES } from "./types";
 import { hash01 } from "./competitorTraits";
 import { houseBrokerName, brokerIdFor } from "./broker";
 import { resolveRec, streetLetShare, useRentableSf } from "./value";
-import { normalVac } from "./market";
+import { openingVac } from "./market";
 import { whyOnce } from "./why";
 
 /** Months a commercial survey lags the market [S~ 2-4 quarters; see the head]. */
@@ -124,7 +124,7 @@ function fromSurvey(s: GameState, k: BuiltClass): ClassBelief {
   return {
     seen, g: clamp(g, -G_RANGE, G_RANGE),
     dev: seen.length >= 12 && Number.isFinite(now) ? clamp(now / mean - 1, -0.6, 1.5) : 0,
-    vac: p?.vac?.[k] ?? normalVac(s.econ, k),
+    vac: p?.vac?.[k] ?? openingVac(k),
     dg, cap: p?.cap?.[k] ?? s.econ.capRate?.[k] ?? 0,
     nC: 0, ownSf: 0, lagM: L,
   };

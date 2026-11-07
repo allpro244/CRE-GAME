@@ -19,7 +19,7 @@ import { monthLabel, START_YEAR } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import { cityValueToReplacement } from "@/engine/dev";
 import { standardsWord, underwritingStandards } from "@/engine/debt";
-import { CITY_STOCK, normalVac, SECTOR_LABEL, shortIndexOf } from "@/engine/market";
+import { CITY_STOCK, normalVac, openingVac, SECTOR_LABEL, shortIndexOf } from "@/engine/market";
 import { availability, deliverySchedule, legDemand, legRent, legVacancy, marketBalance, monthsOfSupply, submarkets } from "@/engine/space";
 import { resolveRec, portfolioMark } from "@/engine/value";
 import { markRival, marketAppetite, rivalCondition } from "@/engine/rivals";
@@ -69,7 +69,7 @@ function classRows(g: GameState): ClassRow[] {
       const avail = availability(e, k);
       const bal = marketBalance(e, k);
       const stock = e.stock?.[k] ?? CITY_STOCK[k];
-      const direct = e.cityVac?.[k] ?? normalVac(e, k);
+      const direct = e.cityVac?.[k] ?? openingVac(k);
       const pipe = e.pipeline?.[k] ?? 0;
       const abs12 = e.absorb12?.[k] ?? 0;
       const then = hist.length > 12 ? (hist[hist.length - 13]?.avail?.[k] ?? hist[hist.length - 13]?.vac?.[k]) : undefined;

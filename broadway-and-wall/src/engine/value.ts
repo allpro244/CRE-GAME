@@ -8,7 +8,7 @@ export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, normalVac, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH, LEASE_TERM_M, forwardVacancy } from "./market";
+import { industryStress, normalVac, openingVac, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH, LEASE_TERM_M, forwardVacancy } from "./market";
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
 import { splitRule, coverageMax, MINOR_FIXED, MINOR_PER_LOT, CORNER_K } from "./lotcode";
@@ -1954,7 +1954,7 @@ export function scoreNatVac(econ: Econ, use: BuiltClass, score: number): number 
 /** The street's vacancy around a score (kernel over the bands); absent bands, the street's or the city's. */
 export function scoreVacOf(econ: Econ, use: BuiltClass, score: number): number {
   const bk = econ.bands?.[use];
-  const fallback = econ.streetVac?.[use] ?? econ.cityVac?.[use] ?? normalVac(econ, use);
+  const fallback = econ.streetVac?.[use] ?? econ.cityVac?.[use] ?? openingVac(use);
   if (!bk) return fallback;
   let st = 0, oc = 0;
   const k = bandKernel(score);

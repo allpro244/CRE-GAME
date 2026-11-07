@@ -59,6 +59,7 @@ import { productById, nameLimit } from "./debt";
 import { chargeLenderLoss, reoAsk, bookShareOf, targetCapital } from "./lenders";
 import { cityLoanBook, deskTotals } from "./loanbook";
 import { NOTICE_M, FORECLOSE_M } from "./workout";
+import { forcedSalePrice } from "./propmarket";
 import { shortIndexOf } from "./market";
 import { money } from "./money";
 import { bankRatePct, liveSpread } from "./pricing";
@@ -443,6 +444,22 @@ function rollBalloon(s: GameState, x: StreetLoan, parcels: ParcelTable) {
       n: { balance: x.balance, bestTakeout: Math.round(most), value: x.value, noiYr: x.noiYr, holderCash: Math.round(cash[x.holderId] ?? 0) },
       t: `${x.holder}'s balloon with ${x.lender} came due unpaid · owes ${usdK(x.balance)} · the most any desk will lend on it is ${usdK(most)} · building worth ${usdK(x.value)}`,
     });
+    // AN OWNER WITH EQUITY SELLS (2026-11-07). A building worth more than its
+    // note is not handed to the court: its owner lists it, at what its broker
+    // hears the street would pay today, and the sale pays the note at the
+    // closing — the deed leaves the register and the mortgage with it
+    // (readHolders) — with the surplus the owner's. The court's calendar runs
+    // meanwhile; a building nobody buys in time is foreclosed as before.
+    // Without this, every private balloon default went to the court, at LTV
+    // 0.21-0.75 in a credit crunch (median about 0.5): the owner's equity
+    // booked as nobody's.
+    const rec = resolveRec(parcels, s, x.bbl);
+    if (rec && !s.holdings[x.bbl] && !s.listings.some((l) => l.bbl === x.bbl)) {
+      const heard = forcedSalePrice(s, parcels, rec, x.bbl, x.value);
+      if (heard * 0.97 > x.balance) {
+        s.listings.push({ bbl: x.bbl, ask: Math.round(heard / 1000) * 1000, listedM: s.month, expiresM: s.month + NOTICE_M + FORECLOSE_M, distress: true });
+      }
+    }
   }
   x.status = "default";
   x.maturityM = s.month + 1;

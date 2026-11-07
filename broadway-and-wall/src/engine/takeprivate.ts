@@ -455,7 +455,7 @@ function runClose(
   r.aum = 0;
   r.stressMs = 0;
   r.heldSince = {};
-  delete r.extendedTo;
+  delete r.extendedTo; delete r.balloonSale;
   delete r.deliveredM;
   r.failedM = cur.month;
   r.endReason = "takenPrivate";
@@ -664,7 +664,7 @@ export function tickRivalTakeovers(s: GameState, parcels: ParcelTable) {
     t.distributed = (t.distributed ?? 0) + q.ask;
     t.bbls = []; t.debt = 0; t.cash = 0; t.uncalled = 0; t.aum = 0; t.stressMs = 0;
     t.heldSince = {};
-    delete t.extendedTo; delete t.deliveredM;
+    delete t.extendedTo; delete t.balloonSale; delete t.deliveredM;
     t.failedM = s.month;
     t.endReason = "absorbed";
     t.takenOverBy = raider.id;

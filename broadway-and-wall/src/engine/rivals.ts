@@ -41,7 +41,7 @@ import { mergedTouched, DEV_MARGIN, capRateFor, holdingValue, assetValue, demand
 import type { DevPlan } from "./dev";
 import { lpNetIrr } from "./waterfall";
 import { BAND_TERMS, bandIdx, floorBand, inheritRecord, rivalBand, scoreOf, type Band } from "./reputation";
-import { cityCoverage, cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, ownerRedevelopment, openConstructionDesks, planReuseAt, reuseZoneBar, projectedDevIrr } from "./dev";
+import { cityCoverage, cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, ownerRedevelopment, openConstructionDesks, planReuseAt, reuseZoneBar, projectedDevIrr, equityStretch } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
 import { streetRefiProceeds, stabViewFor } from "./debt";
 import { stampApproach, conveyedValue, conveyedDeed } from "./leasing";
@@ -397,7 +397,11 @@ function leanMult(s: GameState, lean: number, use: DevUse, months: number, who: 
 }
 /** The firm's own hurdle on a plan: its margin, its idle hunger, and (unless asked not to) its read of rent. */
 export function firmHurdle(s: GameState, r: Rival, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, withOutlook = true): number {
-  return hurdleAt(plan, firmMargin(r, s.month, plan.exitCap)) * (withOutlook ? outlookMult(s, r, use, plan.months) : 1);
+  // A firm that builds on the desk's money needs its margin on more equity when
+  // the desks write less (dev.ts equityStretch); a firm that builds on its own
+  // money does not.
+  const stretch = buildsWithoutBank(r.style) ? 1 : equityStretch(s);
+  return hurdleAt(plan, firmMargin(r, s.month, plan.exitCap) * stretch) * (withOutlook ? outlookMult(s, r, use, plan.months) : 1);
 }
 /** Whether this firm would break ground on the plan — financed its own way. */
 export function firmWouldBuild(s: GameState, r: Rival, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, financeable: boolean): boolean {
@@ -422,7 +426,9 @@ const ANON_LEANS = [-0.6, -0.2, 0.2, 0.6];
 /** The anonymous merchants' best read on a plan; they need the desk. */
 export function anonHurdle(s: GameState, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, financeable: boolean, withOutlook = true): number {
   if (!financeable) return -Infinity;
-  const base = hurdleAt(plan, DEV_MARGIN);
+  // They build on the desk's money: the trade margin pays more equity when the
+  // desks write less than the street is used to (dev.ts equityStretch).
+  const base = hurdleAt(plan, DEV_MARGIN * equityStretch(s));
   if (!withOutlook) return base;
   let best = -Infinity;
   for (const lean of ANON_LEANS) best = Math.max(best, base * leanMult(s, lean, use, plan.months, null));

@@ -96,7 +96,7 @@ export type { ConstructionQuote } from "./proforma";
 import {
   devMix, dominantOf, overMix, leaseUpMarketAt, specShare, constructionDesks, deskQuote, clamp01, farMaxFor, maxFloorsFor,
   withStreetRetail, capRetail, reserveFor,
-  developmentProForma, landCarryFactor, MAX_COVERAGE, MIN_COVERAGE, maxCoverageFor, wreckCost,
+  developmentProForma, landCarryFactor, MAX_COVERAGE, MIN_COVERAGE, maxCoverageFor, wreckCost, marketConstructionQuote,
 } from "./proforma";
 import type { ConstructionQuote } from "./proforma";
 import { money } from "./money";
@@ -4009,7 +4009,10 @@ function replacementSearch(
       // share of the class's standing stock.
       if (fl > 1 && u.plan.sf * (u.plan.mix?.[k] ?? 1) > rdev.maxShare * Math.max(1, e.stock?.[k] ?? 0)) continue;
       if (forwardVacancy(e, k, u.plan.sf * (u.plan.mix?.[k] ?? 1), u.plan.months, beliefOf(s, who, k)) > normalVac(e, k) + rdev.vacTol) continue;
-      const h = hurdleAt(u.plan, DEV_MARGIN) * rdev.outlook * momentumRead(s, k, rdev.momentum, who) * exitRead(s, who, k) / rdev.bar;
+      // A redeveloper that borrows needs its margin on the equity the desks
+      // leave it (equityStretch), like a builder on vacant dirt.
+      const m = DEV_MARGIN * (rdev.ltc > CASH_BUILDER_LTC ? equityStretch(s) : 1);
+      const h = hurdleAt(u.plan, m) * rdev.outlook * momentumRead(s, k, rdev.momentum, who) * exitRead(s, who, k) / rdev.bar;
       maxH = Math.max(maxH, h);
       if (h < 1) continue;
       if (!best || h > best.h) best = { u, use: k, h };
@@ -5031,6 +5034,7 @@ function developerLook(
 ): boolean {
   if (!s.cityJobs) s.cityJobs = [];
   const ownMoney = streetHasOwnMoney(s);
+  const stretch = equityStretch(s);
   // ONE OF THE TOWN'S DEVELOPERS is looking — with its own habits, and its
   // rent read moving a little from one look to the next.
   // The frames already standing when the game opens (a backdated look) are
@@ -5135,8 +5139,8 @@ function developerLook(
         // through their rent outlook and how they read the market's direction.
         // ...but only on a scheme that already clears its spread on today's
         // rent, whatever it believes about tomorrow's.
-        if (!kids.length) nearV = Math.max(nearV, hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) / spreadFloor(dev));
-        if (hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) < spreadFloor(dev)) continue;
+        if (!kids.length) nearV = Math.max(nearV, hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) / (1 + (spreadFloor(dev) - 1) * stretch));
+        if (hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) < 1 + (spreadFloor(dev) - 1) * stretch) continue;
         // ...and only what its own money can carry its share of.
         const coInvest = builderCoInvest(u.plan.basisTotal, ltcHere);
         if (coInvest > purse) continue;
@@ -5328,8 +5332,13 @@ function momentumRead(s: GameState, k: BuiltClass, momentum: number, who: { id: 
  * believed one.
  */
 function exitRead(s: GameState, who: { id: string } | null | undefined, k: BuiltClass): number {
-  const now = s.econ.capRate?.[k], b = beliefOf(s, who, k).cap;
-  return now && now > 0 && b > 0 ? now / b : 1;
+  // The plan exits at the expected cap (underwritingEcon: capExp); the shop
+  // swaps that for its broker's. This read the SPOT cap over the belief,
+  // which a crunch lifts faster than either, so the worse the tape the better
+  // every scheme and every teardown looked (crunch over control, months 1-12,
+  // seed 33: office spot cap x1.08, industrial x1.14).
+  const used = s.econ.capExp?.[k] ?? s.econ.capRate?.[k], b = beliefOf(s, who, k).cap;
+  return used && used > 0 && b > 0 ? used / b : 1;
 }
 
 /** Developers SITES_PER_LOOK examines in one look — a broker's shortlist. */
@@ -5372,7 +5381,12 @@ function breakCommittedPlans(s: GameState, parcels: ParcelTable, adjacency: Reco
     // gone negative in the months of design and permits does not dig: the
     // deposit on the land and the drawings are written off and the site
     // waits (the shelved-scheme lists of 1990, 2008-09).
-    if (hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) < SHELVE_AT) { fail(); continue; }
+    // ...AND A SQUEEZE ON THE DESKS SINCE THE DECISION shelves it the same way:
+    // the job now needs more equity than it was decided on, and that equity
+    // wants its margin (equityStretch) on top of what the sunk deposit and
+    // drawings let the builder forgive. The lists of 2008-09 were schemes
+    // whose construction loan had shrunk or gone, not schemes whose rent had.
+    if (hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) < SHELVE_AT + DEV_MARGIN * Math.max(0, equityStretch(s) - 1)) { fail(); continue; }
     if (breakCityGround(s, parcels, adjacency, p.bbl, rec, p.use as DevUse, p.floors, p.plate, { spec: p.spec, ltc: p.ltc, decided: true, builderId: p.builderId, firmId: p.firmId, landBasis: landOv })) {
       syncSupplyViews(s.econ, true);
       const firm = kids.length ? ownerOf(s, p.bbl) : null;
@@ -5396,6 +5410,46 @@ function breakCommittedPlans(s: GameState, parcels: ParcelTable, adjacency: Reco
  * how often the market is sampled: what gets built is decided by the pro
  * forma, and a hot market converts more of its looks.
  */
+/**
+ * THE EQUITY A SCHEME NEEDS AGAINST WHAT ITS SPONSOR IS USED TO (2026-11-07).
+ * A shop's spread floor is a profit on cost it needs at the leverage it has
+ * been getting; the profit pays its equity. When the desks write less, the
+ * same building needs more equity for the same profit, and the sponsor wants
+ * the return per equity dollar it is used to, so the profit it needs on cost
+ * scales with the equity share: (1 - advance now) / (1 - advance it is used
+ * to). Read on the market's own construction terms (marketConstructionQuote:
+ * the regional desk to a borrower with no history, which the credit cycle and
+ * the desks' own books move) for a standard office scheme. In ordinary credit
+ * the two are equal and nothing changes; in 2008-10 senior construction loans
+ * fell from 55-65% of cost to well under half (Fed SLOOS; the builder-equity
+ * research) and merchant building stopped while cash builders went on, which
+ * is the cross-section this gives (month-120 snapshots, halved desks: the
+ * patient 1.05 floor passes 12-15% fewer schemes, a 1.25 merchant 95-98%
+ * fewer; on main the halved desks passed 5-37% MORE, because the basis only
+ * carries interest on the loan).
+ *
+ * The memory is the span of a shop's last two or three financings, about
+ * three years (LTC_MEMORY_M, a shape parameter): after a long squeeze the new
+ * terms become the ones it is used to. The guard on the ratio is not meant
+ * to bind.
+ */
+const LTC_MEMORY_M = 36;
+const STRETCH_MIX = { office: 1 } as const;
+export function equityStretch(s: GameState): number {
+  const e = s.econ;
+  if (e.ltcUsualM !== s.month) {
+    const now = marketConstructionQuote(e, STRETCH_MIX).ltcMax;
+    if (Number.isFinite(now)) {
+      e.ltcNow = now;
+      e.ltcUsual = e.ltcUsual === undefined ? now : e.ltcUsual + (now - e.ltcUsual) / LTC_MEMORY_M;
+    }
+    e.ltcUsualM = s.month;
+  }
+  const now = e.ltcNow, usual = e.ltcUsual;
+  if (!(now !== undefined && usual !== undefined && usual < 0.98)) return 1;
+  return Math.max(0.5, Math.min(2.5, (1 - now) / (1 - usual)));
+}
+
 /** A shop's untrended value/cost floor; old saves derive it from leverage. */
 function spreadFloor(dev: { floor?: number; ltc: number }): number {
   return dev.floor ?? Math.max(1.0, Math.min(1.25, 1.05 + 0.10 * (dev.ltc / 0.8)));

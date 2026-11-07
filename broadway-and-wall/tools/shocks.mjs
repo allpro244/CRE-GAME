@@ -195,7 +195,8 @@ const getPath = (row, p) => p.startsWith("probe.") ? row.probe?.[p.slice(6)]
 // year1: the first year, for a repricing the record says is immediate (a tax
 // bill capitalising, a cost passing through a lease) before the town's own
 // answers and the twins' drift apart (the placebo's floor) pile on top of it
-const WINDOWS = { year1: [1, 12], impact: [1, 36], mid: [37, 96], late: [97, 180], all: [1, 180] };
+// post10: after a ten-year shock is released (the zero-rate decade's distress row, whose record is "when rates normalise")
+const WINDOWS = { year1: [1, 12], impact: [1, 36], mid: [37, 96], late: [97, 180], post10: [121, 180], all: [1, 180] };
 const meanOf = (a) => { const b = a.filter(Number.isFinite); return b.length ? b.reduce((x, y) => x + y, 0) / b.length : NaN; };
 /**
  * The twin difference of one observable over a window: in points (`pp`, for

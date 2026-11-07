@@ -109,19 +109,19 @@ function loss(k) {
       if (i !== 0) return;
       const target = 0.2 * (g.econ.stock?.[k] ?? 0);
       const bs = Object.keys(city.parcels).filter((b) => !g.holdings?.[b] && !g.developments?.[b]).sort((a, b) => hashB(a) - hashB(b));
-      let lost = 0, n = 0, paid = 0, toLender = 0;
+      let lost = 0, n = 0, paid = 0;
       for (const b of bs) {
         if (lost >= target) break;
         const r = E.resolveRec(city.parcels, g, b);
         if (!r || r.class !== k || !(r.bldgArea > 0)) continue;
         // AN INSURED LOSS, NOT A CONFISCATION: the engine's own claim path
-        // (casualty.ts) takes the building down, pays replacement cost, retires
-        // the mortgage first and credits the owner with the rest.
+        // (casualty.ts) takes the building down and the claim funds its rebuild on
+        // the owner's deed, the loan left on it.
         const c = E.casualtyLoss(g, city.parcels, b);
         if (!c) continue;
-        lost += c.lostSf; n++; paid += c.paid; toLender += c.toLender;
+        lost += c.lostSf; n++; paid += c.paid;
       }
-      ctx.notes.push(`${n} buildings, ${(lost / 1e6).toFixed(2)}M sf rentable lost; insurers paid $${(paid / 1e6).toFixed(1)}M, $${(toLender / 1e6).toFixed(1)}M of it to mortgagees`);
+      ctx.notes.push(`${n} buildings, ${(lost / 1e6).toFixed(2)}M sf rentable lost; insurers fund $${(paid / 1e6).toFixed(1)}M of rebuilding`);
     },
     probes: { built: (g, city, E) => (near(g, 120, [0, 1, 60]) ? builtSf(g, city, E, k) : NaN) },
     land(c, t) {
@@ -135,7 +135,8 @@ function loss(k) {
       { obs: `vac.${k}`, unit: "pp", win: "year1", sign: -1, lo: -12, hi: -1, label: `${LABEL[k]} vacancy, first year`, want: "falls 1-12pp (the displaced take the empty space)", trace: "do the displaced tenants relocate in town (toSeekers) or vanish?" },
       { obs: `vac.${k}`, unit: "pp", win: "impact", sign: -1, lo: -12, hi: -1, label: `${LABEL[k]} vacancy`, want: "falls 1-12pp (the displaced take the empty space)", trace: "do the displaced tenants relocate in town (toSeekers) or vanish?" },
       { obs: `eff.${k}`, unit: "rel", win: "impact", sign: +1, lo: 0.02, hi: 0.3, label: `${LABEL[k]} effective rent`, want: "rises 2-30%" },
-      { obs: `starts.${k}`, unit: "rel", win: "mid", sign: +1, lo: 0.2, hi: 5, tiny: 0.1, label: `${LABEL[k]} starts, years 3-8`, want: "rise: a construction answer 1-3 years on" },
+      // THE WINDOW ITS OWN RECORD NAMES (battery triage 2026-11-07): "1-3 years on" is years 0-3, not 3-8; and an insured loss is rebuilt from the start (casualty.ts).
+      { obs: `starts.${k}`, unit: "rel", win: "impact", sign: +1, lo: 0.2, hi: 5, tiny: 0.1, label: `${LABEL[k]} starts, years 0-3`, want: "rise: rebuilding, and a construction answer within 1-3 years (Wheaton 1999)" },
       // (no land row: the loss itself clears lots, so the town's land supply moves with the injection)
     ],
     charts: [

@@ -1,79 +1,57 @@
 /**
- * A BUILDING LOST TO FIRE OR STORM IS AN INSURED LOSS (2026-11-07).
+ * A BUILDING LOST TO FIRE OR STORM IS AN INSURED LOSS, AND IT IS REBUILT (2026-11-07).
  *
  * Owners carry replacement-cost property cover (ISO CP 00 10 with the
  * replacement-cost option; lenders require it under the mortgage clause), and
  * this engine already bills that cover as an operating cost (inputs.ts
- * opexIdx.ins). A loss with no claim confiscated the owner's equity and left
- * its mortgage owing on an empty lot: the supply-loss shocks wiped $67-142M of
- * builder capital per seed against $27-35M of builder cash, so the town's
- * builders shrank exactly when scarcity asked them to build, and office starts
- * FELL after a fifth of the stock was lost (battery triage, verified).
+ * opexIdx.ins). A replacement-cost policy pays the full cost to rebuild only
+ * when the owner rebuilds (otherwise actual cash value), and the mortgagee,
+ * named loss payee, releases the proceeds for restoration with its loan left
+ * on the rebuilt building. So a loss is a reconstruction: the improvements come
+ * down, the insurer funds the same building on the same lot, the owner keeps
+ * the deed and the loan, and the space is off the market for the build.
  *
- * A claim, in the order the policy pays it:
- * - the improvements come down, as a teardown takes them (the lot stays the owner's);
- * - the insurer pays what it costs to rebuild them today: the class's hard cost
- *   per gross foot on the pro forma's own path (HARD_COST_PSF x construction
- *   type x height x the cost index), the same number a builder underwrites;
- * - the mortgagee is paid first under the loss-payable clause (its loan is
- *   retired, and any shortfall is its loss, charged as such);
- * - the owner gets the rest.
- * A flat all-perils deductible ($10k-$250k on a commercial policy) is under 1%
- * of a total loss on a building of this size and is not modelled. The insurers'
- * capital index (opexIdx.insCap) is a share of a national insured base that one
- * town's loss does not move. The player's own buildings are not handled here.
+ * Without it a loss confiscated the owner's building and left the mortgage on
+ * an empty lot: the supply-loss shocks wiped $67-142M of builder capital per
+ * seed and office starts FELL after a fifth of the stock was lost (battery
+ * triage, verified). Paying the claim as cash instead (an earlier cut) turned
+ * flats starts backwards: owners kept the money and an empty lot.
+ *
+ * The rebuild runs on the class's ordinary build time (BUILD_MONTHS, upper
+ * end: a restoration waits on the adjuster and the permit) and is a
+ * construction start like any other. Business-interruption cover for the lost
+ * rent is not modelled; the owner carries its loan through the rebuild. The
+ * insurers' capital index (opexIdx.insCap) is a share of a national insured
+ * base one town's loss does not move. The player's own buildings are not
+ * handled here.
  */
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, GameState } from "./types";
 import { HARD_COST_PSF, heightPremium, constructionTypeMult, rentableSf, resolveRec } from "./value";
-import { addStock } from "./market";
-import { ownerFirm, rivalOf, PLAYER } from "./firms";
-import { holderOf } from "./owners";
-import { syncDebt, loanBookTouched } from "./rivalDebt";
-import { chargeLenderLoss } from "./lenders";
+import { addStock, BUILD_MONTHS } from "./market";
+import { ownerFirm, PLAYER } from "./firms";
+import { queueSupplyProject } from "./supply";
 
-export interface CasualtyClaim { bbl: string; owner: string; paid: number; toLender: number; toOwner: number; lostSf: number }
+export interface CasualtyClaim { bbl: string; paid: number; lostSf: number; deliverM: number }
 
 export function casualtyLoss(s: GameState, parcels: ParcelTable, bbl: string): CasualtyClaim | null {
   const rec = resolveRec(parcels, s, bbl);
   if (!rec || rec.class === "land" || !(rec.bldgArea > 0)) return null;
-  const firm = ownerFirm(s, bbl);
-  if (firm === PLAYER) return null;
+  if (ownerFirm(s, bbl) === PLAYER) return null;
   const k = rec.class as BuiltClass;
   const floors = Math.max(1, rec.floors || 1);
   const paid = Math.round(rec.bldgArea * (HARD_COST_PSF[k] ?? 0) * constructionTypeMult(k, floors) * (s.econ.costIdx ?? 1) * heightPremium(floors));
   const lostSf = rentableSf(rec);
-  let toLender = 0, toOwner = 0, owner = "nobody";
-  const r = firm ? rivalOf(s, firm) : undefined;
-  if (r) {
-    owner = r.name;
-    const x = s.cityLoans?.[bbl];
-    if (x && x.obligorId === r.id) {
-      toLender = Math.min(paid, x.balance);
-      if (x.balance > paid) chargeLenderLoss(s, x.lender, Math.round(x.balance - paid), { borrower: r.name, id: r.id, bbl, cls: "income", how: "uninsured shortfall" });
-      delete s.cityLoans![bbl];
-      loanBookTouched();
-      syncDebt(s, r);
-    }
-    toOwner = paid - toLender;
-    r.cash += toOwner;
-  } else {
-    const h = holderOf(s, parcels, bbl);
-    if (h) {
-      owner = h.name;
-      const x = s.streetLoans?.[bbl];
-      if (x) {
-        toLender = Math.min(paid, x.balance);
-        if (x.balance > paid) chargeLenderLoss(s, x.lender, Math.round((x.balance - paid) * (x.share ?? 1)), { borrower: x.holder, id: "h:" + x.holderId, bbl, cls: "income", how: "uninsured shortfall" });
-        delete s.streetLoans![bbl];
-        loanBookTouched();
-      }
-      toOwner = paid - toLender;
-      (s.holderCash ??= {})[h.id] = (s.holderCash[h.id] ?? 0) + toOwner;
-    }
-  }
+  const deliverM = s.month + (BUILD_MONTHS[k]?.[1] ?? 24);
   s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
   addStock(s.econ, k, -lostSf);
   s.demolished = (s.demolished ?? 0) + 1;
-  return { bbl, owner, paid: r || owner !== "nobody" ? paid : 0, toLender, toOwner, lostSf };
+  // the restoration: the same building, funded by the claim, on the owner's deed
+  (s.cityJobs ??= []).push({
+    bbl, use: k, sf: rec.bldgArea, floors, startM: s.month, deliverM,
+    ...(rec.mix ? { mix: { ...rec.mix } } : {}),
+    cost: paid, spent: paid, equityLeft: 0, debt: 0, commitment: 0,
+  });
+  queueSupplyProject(s, { bbl, source: "city", deliverM, sfByUse: rec.mix ? Object.fromEntries(Object.entries(rec.mix).map(([u, w]) => [u, lostSf * (w as number)])) : { [k]: lostSf } });
+  return { bbl, paid, lostSf, deliverM };
 }

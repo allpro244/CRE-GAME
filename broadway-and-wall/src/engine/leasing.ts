@@ -8,18 +8,41 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, AutoConcessions, AutoLeaseEntry, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, cloneState, CREDIT_LABEL } from "./types";
 import type { Econ, Tenant } from "./types";
-import { rng, rrange, recordDeal, normalVac, openingVac, OPENING_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, RENT_BASE, turnoverYr } from "./market";
+import { rng, rrange, recordDeal, openingVac, seekersPerVacantSf, CONC_DEPTH, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, RENT_BASE, turnoverYr } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 /** Bare clamp so tools/rails.mjs can see the block-premium guards. */
 function clamp(v: number, a: number, b: number) { return Math.max(a, Math.min(b, v)); }
 
-/** Same tightness the counter path uses — do not invent a second one. */
-function vacancyTight(s: GameState, use?: BuiltClass): number {
-  const vacHere = (s.econ.cityVac?.[use ?? "office"] ?? 0.1);
-  const natHere = use === "multifamily" ? 0.045 : use === "retail" ? 0.085 : use === "industrial" ? 0.07 : 0.115;
-  return Math.max(-0.3, Math.min(0.35, (natHere - vacHere) * 3));
+/**
+ * The package the tenant can get elsewhere, on the concession dial (0 = the
+ * comps signed with no package, 1 = the package at CONC_DEPTH): the market
+ * tick's `concIdx` (the comps read back), else the comps' own face over
+ * effective (`compsPackage`). Undefined when neither has been read.
+ */
+function signedPackageDial(e: GameState["econ"], k: BuiltClass): number | undefined {
+  const c = e.concIdx?.[k];
+  if (c !== undefined && Number.isFinite(c)) return c;
+  if (!((e.rentIdx?.[k] ?? 0) > 0)) return undefined;
+  return Math.min(1, compsPackage(e, k as Comm) / CONC_DEPTH);
 }
+
+/**
+ * Same tightness the counter path uses — do not invent a second one.
+ *
+ * The landlord's leverage is the package the comps signed at: none signed
+ * (dial 0) and a tenant has no better offer down the street (+0.35); the
+ * package at its full depth (dial 1) and every landlord is buying the deal
+ * (-0.30). Linear between those two ends, which are the guard range this
+ * read always had [K: shape, stated, not tuned]. It hard-coded a "natural"
+ * vacancy per class and read vacancy against it (retired 2026-11-07: there is
+ * no normal vacancy). No read yet: no lean either way (0).
+ */
+function vacancyTight(s: GameState, use?: BuiltClass): number {
+  const c = signedPackageDial(s.econ, use ?? "office");
+  return c === undefined ? 0 : TIGHT_AT_NO_PACKAGE + (TIGHT_AT_FULL_PACKAGE - TIGHT_AT_NO_PACKAGE) * Math.max(0, Math.min(1, c));
+}
+const TIGHT_AT_NO_PACKAGE = 0.35, TIGHT_AT_FULL_PACKAGE = -0.3;
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locOpexMult, taxRate, recoveryOf,
   condGrade, initialCondIdx, condCeiling, condWear, capPlanBillMo, CONDITION_RENT_MULT, ownedHoldingValue,
   physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, registerRolloverReader, flatsMarkPsf, flatsRollPsf, faceGrossUp, abatedShare } from "./value";
@@ -27,6 +50,7 @@ import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
 import { overallScore, scoreRentMult, N_BANDS } from "./value";
 import { recordLease, compsPackage } from "./tenantMarket";
+import type { Comm } from "./tenantMarket";
 import { tenantQualityTerms } from "./bands";
 import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook, operatingReserve, drawLineInPlace, parkedOnLine } from "./credit";
 import { drawLeaseUpReserve, leaseUpRoom } from "./debt";
@@ -1069,12 +1093,13 @@ function tiCreditMult(credit: Credit): number {
  * the label said "expansion" and the label knew nothing about that class.
  *
  * Free rent and fit-out are the first things to move when a market turns and
- * they move long before face rents do, so they belong on the vacancy gap for
- * the tenant's OWN class. Below natural, a tenant takes what is offered and is
- * glad of it; a few points above, the landlord is buying the deal.
+ * they move long before face rents do, so they belong on the package the
+ * tenant's OWN class is signing at. Where the comps sign with no package, a
+ * tenant takes what is offered and is glad of it; where they sign at the full
+ * depth, the landlord is buying the deal.
  *
- * Returns a multiplier on the asking concession: ~0.25 in a genuine squeeze,
- * 1 at natural, ~2.1 in a glut.
+ * Returns a multiplier on the asking concession: 0.22 where the comps signed
+ * no package, 2.1 at the package's full depth.
  */
 export function concessionPressure(e: GameState["econ"], use: string): number {
   // ONE SOURCE OF TRUTH (ECONOMY.md): the market tick maintains the
@@ -1086,11 +1111,12 @@ export function concessionPressure(e: GameState["econ"], use: string): number {
   // range — so the LOI terms, the tour depth, and the Economy tab can never
   // disagree about how much a tenant can extract this month.
   const k = (use === "office" || use === "retail" || use === "multifamily" || use === "industrial" ? use : "office") as BuiltClass;
-  const c = e.concIdx?.[k];
-  if (c !== undefined) return 0.22 + 1.88 * c;
-  const gap = (e.cityVac?.[k] ?? openingVac(k)) - normalVac(e, k);
-  // Same package rule as the market's (concessionTarget), not a label nudge.
-  return Math.max(0.22, Math.min(2.1, 1 + 11 * gap));
+  // Before the tick has written the dial, the comps' own face over effective
+  // (`compsPackage`) on the same dial; with no read at all, the asking
+  // concession as posted (1). It fell back to vacancy against a "normal"
+  // vacancy (retired 2026-11-07: there is no normal vacancy).
+  const c = signedPackageDial(e, k);
+  return c === undefined ? 1 : 0.22 + 1.88 * c;
 }
 
 /**
@@ -1325,13 +1351,6 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // actually paid for carrying — literally unrepresentable, because a job
       // that delivered at 10% was marked up to 40% the following month.
       //
-      // The walk itself is the mechanism and it always was: occupancy closes a
-      // share of the gap to the market each month. What that SHARE is depends
-      // on the market, because filling a building in a tight market and
-      // filling one in a glut are not the same job. At the natural vacancy the
-      // pace is ~9%/mo of the remaining gap, which stabilises a new building in
-      // about 18 months; in a soft market it halves, which is how a delivery
-      // into a glut ends up in front of a workout desk.
       // RENTERS ARE A FINITE FLOW, AND A NEW BUILDING HAS TO WIN THEM
       // (2026-10-09). This walked occupancy toward a formula target and
       // floored it at a fixed lease-up curve — a new block opened a fifth let
@@ -1357,18 +1376,20 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const resSf = useRentableSf(rec, "multifamily");
       const stab = useOccupancy(rec, e, "multifamily", true);
       const now = h.occ ?? (h.deliveredM !== undefined && q - h.deliveredM < 1 ? 0 : target);
-      // (what the flats usually run at is the market's own record, `normalVac`
-      // — the households' lettings — and the opening's only before there is one)
-      const usual = normalVac(e, "multifamily");
-      const occCity = e.occupied?.multifamily ?? (e.stock?.multifamily ?? 0) * (1 - OPENING_VAC.multifamily);
+      // Quality is this block's stabilised occupancy against the city's flats
+      // as they are let today. It read stabilised occupancy against what flats
+      // "usually" run at, and a matching friction cut the movers when vacancy
+      // ran above that usual -- both retired 2026-11-07 (there is no normal
+      // vacancy; in a glut renters find a flat faster, not slower: Wheaton
+      // 1990, and the macro tick dropped the same friction 2026-10-09).
+      const stockMF = e.stock?.multifamily ?? 0;
+      const occCity = e.occupied?.multifamily ?? stockMF * (1 - openingVac("multifamily"));
       const poolMF = e.pool?.multifamily ?? occCity;
-      const vacCity = e.cityVac?.multifamily ?? usual;
-      const match = (vacCity > usual && poolMF > occCity)
-        ? Math.max(0.55, Math.min(1, 1 - (vacCity - usual) * 2.2)) : 1;
-      const movers = occCity * flatTurnover(e) / 12 + Math.max(0, (poolMF - occCity) * 0.055 * match);
-      const vacantCity = Math.max(1, (e.stock?.multifamily ?? 0) - occCity);
+      const movers = occCity * flatTurnover(e) / 12 + Math.max(0, (poolMF - occCity) * 0.055);
+      const vacantCity = Math.max(1, stockMF - occCity);
       const mine = Math.max(0, resSf * (1 - now));
-      const quality = Math.max(0.3, stab / (1 - usual));
+      const occShare = stockMF > 0 ? occCity / stockMF : 1 - openingVac("multifamily");
+      const quality = Math.max(0.3, stab / Math.max(0.01, occShare));
       const askRatio = managedRentPsfYr(rec, e, h, "multifamily")
         / Math.max(0.01, managedRentPsfYr(rec, e, { ...h, stance: 0 }, "multifamily"));
       const weight = quality * Math.pow(Math.max(0.5, askRatio), -3);
@@ -2220,15 +2241,17 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // How deep the tour goes is the market's answer, not a constant. In a
         // squeeze you get to be picky; in a glut one party turns up and you had
         // better sign them.
-        // Written against the old per-building coin flip, this read `vacancyPull`
-        // directly. That helper still exists and still means the same thing —
-        // how tight this class's market is, natural vacancy over actual — so it
-        // is the right input here even though the arrival above no longer uses
-        // it. Depth of tour is a question about the MARKET, not about the odds
-        // this particular building drew.
-        const marketPull = vacancyPull(s.econ, use);
-        const pTwo = Math.max(0.05, Math.min(0.72, (marketPull - 0.55) * 0.62));
-        const nWant = 1 + (rng(s, "leasing") < pTwo ? 1 : 0) + (rng(s, "leasing") < pTwo * 0.45 ? 1 : 0);
+        // The depth is the town's seekers per vacant foot, theta
+        // (`seekersPerVacantSf`): parties whose need is this suite's size
+        // turn up as a Poisson count with mean theta, so a second party comes
+        // with P(>= 1 more) = 1 - e^-theta and a third with P(>= 2 more) =
+        // 1 - e^-theta (1 + theta). It read natural vacancy over actual
+        // (`vacancyPull`, retired 2026-11-07: there is no normal vacancy).
+        // Still two draws, so the leasing stream keeps its count.
+        const theta = seekersPerVacantSf(s.econ, use);
+        const pTwo = 1 - Math.exp(-theta);
+        const pThree = 1 - Math.exp(-theta) * (1 + theta);
+        const nWant = 1 + (rng(s, "leasing") < pTwo ? 1 : 0) + (rng(s, "leasing") < pThree ? 1 : 0);
         const bCond = h.condIdx ?? initialCondIdx(rec, s.month);
         const bScore = overallScore(rec, s.econ, use, bCond);
         // The other parties on the tour are other firms from the pool whose

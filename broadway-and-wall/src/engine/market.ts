@@ -5694,14 +5694,23 @@ export function addStock(e: Econ, k: keyof typeof CITY_STOCK, sf: number) {
 }
 
 /**
- * How hard the citywide space market pushes prospects at YOUR door for a
- * given class. Tight market: everyone else is full, so the tenant that would
- * rather be elsewhere ends up touring your building. Glutted market: three
- * other landlords with empty floors return every call first.
+ * SEEKERS PER VACANT FOOT: the feet the town's looking firms want of a class
+ * (every firm in `e.seekers`, housed or not) over the feet standing empty
+ * where they look (the street's rentable less let; the city's housable less
+ * occupied before the street has a count). Tight market: many seekers per
+ * empty foot, so a suite is shown to several at once. Glut: one party turns
+ * up, if any. It used to be vacancy compared with a "normal" vacancy,
+ * (normal / vacancy)^0.9 — retired 2026-11-07: there is no normal vacancy,
+ * only who is looking and what is empty.
  */
-export function vacancyPull(e: Econ, use: BuiltClass): number {
-  const vac = e.cityVac?.[use] ?? openingVac(use);
-  return Math.max(0.4, Math.min(1.7, Math.pow(normalVac(e, use) / Math.max(0.005, vac), 0.9)));
+export function seekersPerVacantSf(e: Econ, use: BuiltClass): number {
+  let want = 0;
+  for (const sk of e.seekers ?? []) if (sk.use === use) want += sk.want;
+  const sp = e.streetSpace?.[use];
+  const vacant = sp && sp.cap > 0
+    ? sp.cap - sp.let
+    : housableStock(e, use) - (e.occupied?.[use] ?? 0);
+  return want / Math.max(1, vacant);
 }
 
 function recordHistory(e: Econ, q: number, abs?: Record<string, number>, comp?: Record<string, number>) {

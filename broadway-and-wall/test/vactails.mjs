@@ -127,8 +127,8 @@ console.log("   before the capitulation clock; at 9pp it is -14.7%/yr, which mat
 //
 //   cap rate    vacRisk = clamp(CAP_VAC_BETA * vacGap * 100, -0.6, 2.0)
 //               office pins at 11.5% - 0.6/(0.12*100) = 6.5% vacancy
-//   lease-up    vacancyPull = clamp(pow(NATURAL/vac, 0.9), 0.4, 1.7)
-//               office pins at 11.5% / 1.7^(1/0.9) = 6.33% vacancy
+//   lease-up    vacancyPull (retired 2026-11-07: tour depth now reads
+//               seekers per vacant foot, which has no pin)
 //   vacancy     cityVac = clamp(1 - occupied/stock, friction, 0.45)
 //               office pins at 3.68%
 //

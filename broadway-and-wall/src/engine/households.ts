@@ -2398,7 +2398,8 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
         const j = pickInd(wR);
         const f2 = Math.exp(WAGE_SIGMA * R.n() - WAGE_SIGMA * WAGE_SIGMA / 2);
         if (j >= 0) { b.emp2[i] = firmIn(j); b.ind2[i] = j; b.wage2[i] = firmPay(D, j, b.emp2[i]) * f2; V[j] -= wR; }
-        else { b.emp2[i] = EMP_UNEMP; b.un2[i] = 1; b.wage2[i] = D.pay[ind] * f2; }
+        // a partner who left a job to follow the household has no claim here (a voluntary quit: "AN ARRIVAL HAS NO CLAIM HERE", below)
+        else { b.emp2[i] = EMP_UNEMP; b.un2[i] = UI_MONTHS + 1; b.wage2[i] = D.pay[ind] * f2; }
       }
       // its other adult (a grown child, a relative) looks for work here too, at the rate for everyone over 16
       if (othersOf(b, i) > 0 && R.u() < OTHER_LF) {
@@ -3128,6 +3129,19 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       const i = addAgent(r), b = r.a!;
       const income = r.renterInc * medianIncome(e) * Math.exp(INCOME_SIGMA * R.n());
       fillPeople(R, b, i, AGE_RENT.slice(0, 5).map((x) => x / 0.86).concat([0]), income, e, 1);
+      // AN ARRIVAL HAS NO CLAIM HERE (2026-11-07). fillPeople draws the opening's
+      // jobless a spell of 1-10 months, insured for the first UI_MONTHS; drawn
+      // for a mover, about 60% of them collected insurance on pay never earned
+      // in town (UI +$5.5M a month at the arrivals shock's month 24). A worker
+      // who quits to move has left work voluntarily, which disqualifies under
+      // every state's law without good cause connected with the work (US DOL,
+      // Comparison of State Unemployment Insurance Laws, "Nonmonetary
+      // Eligibility": voluntary leaving), and an immigrant has no base-period
+      // wages. Not modelled [K]: the few movers laid off elsewhere who carry a
+      // claim from the liable state, and the states that pay a trailing spouse.
+      if (b.emp1[i] === EMP_UNEMP) b.un1[i] = UI_MONTHS + 1;
+      if (b.emp2[i] === EMP_UNEMP) b.un2[i] = UI_MONTHS + 1;
+      if (b.emp3[i] === EMP_UNEMP) b.un3[i] = UI_MONTHS + 1;
       fillMoney(R, b, i, income, false, e);
       b.wt[i] = r.wRegion; b.ten[i] = TEN_MAINLAND; b.rent[i] = mainlandRent(R, r.mainRent, b, i);
       r.flow.arrived = (r.flow.arrived ?? 0) + r.wRegion;

@@ -219,6 +219,8 @@ export interface EconomyState {
   natX?: number[]; natZ?: number;
   /** What the town's firms in each industry would win of a tender, quality and price, when their orders were first booked (`tickExports`); the orders they held after last month's tender. */
   xa0?: number[]; xoTot?: number[];
+  /** The labour force, last thirteen months (tickExports: new firms where the workers are). */
+  lfPast?: number[];
   /** The island's share of each industry at the opening: its named firms' heads over its heads. */
   sigma?: number[];
   /** Output at the opening (the trades' sales read-out). */
@@ -632,6 +634,25 @@ function natRentPerHead(s: GameState, i: number, opwNat: Float64Array): number {
  */
 const ENTRY_YR = 0.0416;
 /**
+ * ...AND MORE OF THEM WHERE THE WORKERS ARE (2026-11-07). New firms start where
+ * labour is arriving: across US states 1979-2007, a point of labour-supply growth
+ * over the nation's (instrumented on 20-year-lagged births and historical
+ * migration) raised the startup rate 1.19 points (Karahan, Pugsley & Sahin,
+ * "Demographic Origins of the Startup Deficit", NY Fed SR 888 / AER 2024, §4).
+ * That is a share of FIRMS; a startup employs less than the average firm, and
+ * births' job creation runs 0.424 of their entry rate (Census BDS 2010-19:
+ * 4.16% against establishment entry 9.81%), so a point of excess labour-force
+ * growth adds about half a point a year to what new firms win [S].
+ *
+ * Until this, entry was the nation's rate whatever came to town, so every job
+ * was the export base times the local multiplier and a bigger labour force
+ * added none: in the arrivals shock (+30% people) hiring absorbed 14-26% of
+ * the new labour force and 87-106% of the rest left again; with the base
+ * grown alongside, jobs +25% and unemployment back to the control's within
+ * three years (twin probes, seed 22).
+ */
+const ENTRY_PER_LS = 1.19 * (4.16 / 9.81);
+/**
  * ...AND WHAT CLOSING FIRMS LOSE, for the firms the town's books do not name.
  * A named firm's closure is the street's (its orders leave with it, above);
  * the off-map sample stands for the rest of the industry, whose firms close
@@ -670,7 +691,12 @@ function tickExports(s: GameState, E: EconomyState, R: Rand): void {
   }
   E.natZ = Math.log(z);
   for (let i = 0; i < N_IND; i++) E.lnNat[i] += NAT_LABOUR_FORCE_GROWTH / 12 + natTrendNow(E, i, kept) / 12 - (E.natZ - z0);
-  tenderOrders(E);
+  // the town's labour force over the year, against the nation's (ENTRY_PER_LS)
+  const lfNow = e.eco?.lf;
+  const lfPast = (E.lfPast ??= []);
+  if (lfNow !== undefined && lfNow > 0) { lfPast.push(lfNow); if (lfPast.length > 13) lfPast.shift(); }
+  const gEx = lfPast.length === 13 && lfPast[0] > 0 ? Math.log(lfPast[12] / lfPast[0]) - NAT_LABOUR_FORCE_GROWTH : 0;
+  tenderOrders(E, Math.max(0, ENTRY_YR + ENTRY_PER_LS * gEx));
   E.swanLn = (E.swanLn ?? 0) + Math.log(Math.max(0.5, 1 + (e.bsJobPull ?? 0)));
   // ...and a national swan's orders for a trade (blackswans.ts swanSec: a
   // pandemic's restaurants, a war's defense electronics, a trade war's
@@ -715,7 +741,7 @@ function tickExports(s: GameState, E: EconomyState, R: Rand): void {
 function natTrendNow(E: EconomyState, i: number, kept: number): number {
   return (E.natTr?.[i] ?? 0) - (NAT_TREND[INDUSTRY_IDS[i]] - NAT_TREND_MEAN) * (1 - kept);
 }
-function tenderOrders(E: EconomyState): void {
+function tenderOrders(E: EconomyState, entryYr = ENTRY_YR): void {
   const F = E.f, nF = E.L.slot.n, sh = E.lnShare!;
   if (!nF) return;
   const H = new Float64Array(N_IND), S = new Float64Array(N_IND);
@@ -737,7 +763,7 @@ function tenderOrders(E: EconomyState): void {
   const r = 1 / TENDER_M;
   // the nation's routine re-tender, and what the town's new firms win of the
   // industry's orders; the closed firms' orders (tot - S) went to the nation
-  const pool = Float64Array.from(S, (v) => r + ENTRY_YR / 12 * v);
+  const pool = Float64Array.from(S, (v) => r + entryYr / 12 * v);
   S.fill(0);
   for (let n = 0; n < nF; n++) {
     const i = F.ind[n];

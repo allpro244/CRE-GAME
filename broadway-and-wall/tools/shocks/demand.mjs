@@ -79,6 +79,13 @@ const employer = {
     heads: (g, city, E) => { const f = largestFirm(g, E); return f && at(g, [0, 1, 2, 60]) ? headsOfFid(g, E, f.fid) : NaN; },
     // town jobs and the firm's class's occupied floor in units of the firm at the snapshot: twin differences read as "per direct job" and "per foot it held"
     jobsPerDirect: (g, city, E) => { const f = largestFirm(g, E); return f ? g.econ.jobs / Math.max(1, f.heads) : NaN; },
+    // WHAT EMPLOYERS LOST, not who is on the register: the town's filled heads
+    // (economyToEngine, econ.eco.heads). The register's employed residents are
+    // supply-limited when posted jobs outrun earners (seed 22: 1,700 more posts
+    // than earners), so laid-off workers fill openings that would otherwise have
+    // stayed empty and the register understates the loss (battery triage,
+    // verified: per direct job, register -105/+56/-85 against heads -123/-43/-183).
+    headsPerDirect: (g, city, E) => { const f = largestFirm(g, E); const h = g.econ.eco?.heads; return f && h > 0 ? h / Math.max(1, f.heads) : NaN; },
     occPerFloor: (g, city, E) => { const f = largestFirm(g, E); return f ? (g.econ.occupied?.[f.use] ?? NaN) / Math.max(1, f.sf) : NaN; },
   },
   land(c, t) {
@@ -94,7 +101,7 @@ const employer = {
   },
   expect: [
     { obs: "probe.demand-employer-leaves.occPerFloor", unit: "pp", win: "impact", sign: -1, lo: -150, hi: -50, tiny: 10, label: "the class's occupied floor, per foot the firm held (×100)", want: "about −100 (its floor comes empty), −50 to −150", trace: "do the suites re-let at once (streetRolls.ts new firms, `form`)?" },
-    { obs: "probe.demand-employer-leaves.jobsPerDirect", unit: "pp", win: "impact", sign: -1, lo: -250, hi: -150, tiny: 10, label: "town jobs lost per direct job (×100)", want: "−150 to −250: the direct job and 0.5-1.5 more (Moretti 2010)", trace: "is the industry hired back at once (economy.ts `staff`, the off-map sample `off`)?" },
+    { obs: "probe.demand-employer-leaves.headsPerDirect", unit: "pp", win: "impact", sign: -1, lo: -250, hi: -150, tiny: 10, label: "town jobs (employers' filled heads) lost per direct job (×100)", want: "−150 to −250: the direct job and 0.5-1.5 more (Moretti 2010)", trace: "is the industry hired back at once (economy.ts `staff`, the off-map sample `off`)?" },
     { obs: "vac.office", unit: "pp", win: "impact", sign: +1, lo: 0.2, hi: 3, tiny: 0.1, label: "office vacancy", want: "up by about the firm's floor (seed 11: ~0.9pp of stock)" },
     { obs: "pop", unit: "rel", win: "impact", sign: -1, lo: -0.03, hi: -0.001, tiny: 0.0005, label: "population", want: "some laid-off households leave town", trace: "households.ts moves (a job loss as a reason to leave)" },
     { obs: "vac.multifamily", unit: "pp", win: "impact", sign: +1, lo: 0.05, hi: 2, tiny: 0.05, label: "apartment vacancy", want: "rises over 1-2 years as leavers' flats come empty" },

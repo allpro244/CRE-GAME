@@ -3825,7 +3825,7 @@ function hash32(key: string): number {
  */
 const extendedTo = (r: Rival, bbl: string): number | undefined => r.extendedTo?.[bbl];
 const setExtended = (r: Rival, bbl: string, m: number) => { (r.extendedTo ??= {})[bbl] = m; };
-const clearExtended = (r: Rival, bbl: string) => { if (r.extendedTo) delete r.extendedTo[bbl]; };
+const clearExtended = (r: Rival, bbl: string) => { if (r.extendedTo) delete r.extendedTo[bbl]; if (r.balloonSale) delete r.balloonSale[bbl]; };
 
 /**
  * THE PAPER GOES WITH THE DEED — the one place that says so, called by every
@@ -4633,11 +4633,19 @@ function tickMaturities(s: GameState, parcels: ParcelTable, r: Rival, aum: numbe
     //    the commonest maturity workout there is). Without this rung the
     //    street handed lenders buildings with equity in them — "the $0 it is
     //    short is the bank's problem" — dozens a month in a credit crunch.
+    //
+    //    ...AND A DESK'S EXTENSION RUNNING OUT IS STILL A BUILDING WITH EQUITY IN IT (2026-11-07). The rung read
+    //    `ext === undefined` for "not yet listed", but `ext` is also set by the desk's one extension (rung 3), so a
+    //    firm whose extension expired went straight to the hand-back: in a credit crunch 19-42 extended loans a
+    //    seed, and the hand-backs that followed were at LTV 0.26-0.97 — the firm's equity given to its lender.
+    //    The sale holdover is tracked on its own (`balloonSale`).
     const onTape = s.listings.some((l) => l.bbl === bbl);
-    if (onTape && (ext === undefined || s.month < ext + 8)) continue;   // on the market; the desk waits
-    if (!onTape && ext === undefined && disposalNet(s, r, bbl, forcedSalePrice(s, parcels, rec, bbl, v)) > 0) {
+    const held = r.balloonSale?.[bbl];
+    if (onTape && (held !== undefined ? s.month < held + 8 : ext === undefined || s.month < ext + 8)) continue;   // on the market; the desk waits
+    if (!onTape && held === undefined && disposalNet(s, r, bbl, forcedSalePrice(s, parcels, rec, bbl, v)) > 0) {
       listUnderDuress(s, parcels, r, bbl, rec);
       setExtended(r, bbl, s.month + 6);
+      (r.balloonSale ??= {})[bbl] = s.month;
       continue;
     }
 

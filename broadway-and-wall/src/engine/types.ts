@@ -3358,6 +3358,8 @@ export interface Rival {
    * firm-months were held up by one of them.
    */
   extendedTo?: Record<string, number>;
+  /** Buildings listed to pay a balloon off (rivals.ts maturity ladder, rung 5): the month the sale holdover began. */
+  balloonSale?: Record<string, number>;
   id: string;
   name: string;
   style: RivalStyle;

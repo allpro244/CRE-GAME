@@ -43,7 +43,7 @@ function absorb(s: GameState, from: Rival, into: Rival) {
   syncDebt(s, into);
   from.bbls = []; from.debt = 0; from.cash = 0; from.uncalled = 0; from.aum = 0; from.stressMs = 0;
   from.heldSince = {};
-  delete from.extendedTo; delete from.deliveredM;
+  delete from.extendedTo; delete from.balloonSale; delete from.deliveredM;
   from.failedM = s.month;
   from.endReason = "absorbed";
   from.takenOverBy = into.id;

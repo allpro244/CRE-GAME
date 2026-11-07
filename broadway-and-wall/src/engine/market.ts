@@ -4042,8 +4042,20 @@ export function tickEcon(s: GameState) {
     // Keep the adaptive rent belief for the residual/land market. The decision
     // to order construction below now reads the same effective-rent pro forma
     // as the actual parcel desk, rather than a second optimism formula.
+    // THE BELIEF IS FORMED ON REAL RENT (2026-11-07). An adaptive average of
+    // the NOMINAL index lags every dollar of inflation: at 21 months' mean lag
+    // and about 3% a year of nominal rent growth it sat about 5% under today's
+    // rent in a perfectly steady market, so every pro forma underwrote a rent
+    // the town had not charged for two years, and the momentum developers read
+    // off the same gap (developerOptimism) was mostly inflation. Inflation is
+    // published; what a developer cannot see in advance is the real move. So
+    // the average runs on rent over the price level and is restated at today's
+    // price level: steady inflation leaves belief at today's rent, and a real
+    // boom still outruns it by the lag it always had.
     if (!e.rentExp) e.rentExp = { ...e.rentIdx };
-    e.rentExp[k] += 0.045 * (e.rentIdx[k] - e.rentExp[k]);
+    const cpiNow = e.cpi ?? 1, cpiWas = e.rentExpCpi ?? cpiNow;
+    const realWas = e.rentExp[k] / Math.max(1e-9, cpiWas);
+    e.rentExp[k] = (realWas + 0.045 * (e.rentIdx[k] / Math.max(1e-9, cpiNow) - realWas)) * cpiNow;
     // THE RATE EMA IS NOW READ BY NOTHING, and this comment used to claim it
     // was "a published market belief used by reports". It is not: grep finds
     // the write below, the reset in regime.ts, the declaration in types.ts, a
@@ -4595,6 +4607,8 @@ export function tickEcon(s: GameState) {
     monthAbs[k] = absorb;
     monthComp[k] = delivered;
   }
+  // the price level the rent beliefs above are now stated at
+  e.rentExpCpi = e.cpi ?? 1;
 
   // RENTS MOVE ON AVAILABILITY. The gap between the space a tenant can
   // actually go and lease — empty floors plus everything on the sublet market

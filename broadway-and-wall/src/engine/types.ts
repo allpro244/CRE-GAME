@@ -2657,6 +2657,8 @@ export interface Econ {
    * which is what actually causes overbuilding in every real cycle.
    */
   rentExp?: Record<BuiltClass, number>;
+  /** The price level `rentExp` was last stated at (market.ts: the belief is formed on real rent). */
+  rentExpCpi?: number;
   /**
    * THE EXIT CAP A DEVELOPER UNDERWRITES — a slow memory of the spot cap rate,
    * on about a four-year clock because that is the horizon a land buyer is

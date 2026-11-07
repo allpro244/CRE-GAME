@@ -288,9 +288,22 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
     // building chasing them up ratchets every good corner's raise onto the
     // whole town (measured: shop rents rising 3.5% a year over 18% vacancy).
     // The package — given to win a tenant for empty space — is not offered,
-    // and fades over the year a broker's opinion takes to refresh.
+    // and over the year a broker's opinion takes to refresh it comes to the
+    // package the market is giving (the town's concessions off the comps),
+    // not to nothing. It used to fade to zero whatever the market did, so a
+    // building that let its space in a glut put the next vacancy back on the
+    // market at its old face with no package: about 80% of the cutting done
+    // on space that sat was given back when space was offered again
+    // (measured, seeds 11/22: on-market cuts -1.24%/yr per point of vacancy,
+    // composition of what is offered +1.02; the package fell from 3.9% at
+    // letting to 0.6% at re-offer), and the office rent index moved 0.25-0.33%
+    // a year per point of vacancy against 1.8-2.8 in measured markets
+    // (Wheaton & Torto 1988; Hendershott, MacGregor & Tse 2002 Table 1;
+    // Englund et al. 2008 Table 5). Brokers quote free rent and fit-out as
+    // what the market is giving (CBRE and Cushman & Wakefield concession
+    // surveys), and that is what space offered again carries.
     d += (opts.infl12 / 12) * months;
-    L.c *= 1 - pull;
+    L.c += (compsPackage(e, k) - L.c) * pull;
   }
   L.c = Math.max(0, Math.min(PKG_MAX, L.c));
   L.a = +(L.a * Math.exp(Math.max(-0.2, Math.min(0.2, d)))).toFixed(2);

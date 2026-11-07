@@ -1530,10 +1530,10 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // Downtime is the expensive half of rollover and nobody underwrites it
       // honestly. A suite handed back in a soft office market is dark for the
       // better part of a year: demo, demise, permit, market, build out.
-      // How long a suite sits dark is how much else is on the market for its
-      // use: availability over natural, not the cycle's label. Three points
-      // tight reads the old expansion's 0.8; nine points soft the old
-      // recession's 1.7.
+      // How long a suite sits dark is how many tenants are looking per vacant
+      // foot of its use (reletLag: movers and the unhoused queue over the
+      // space actually empty), not the cycle's label and not a gap to any
+      // normal vacancy.
       const soft = reletLag(s.econ, dominantUse(rec));
       // Downtime is a property of the SPACE, not the building: a shop relets
       // faster than a floor, and each turns on its own clock.

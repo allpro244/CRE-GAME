@@ -5,7 +5,7 @@ import { useStore } from "@/state/store";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import type { BuiltClass, EconHistoryPoint } from "@/engine/types";
 import { capitalRatio, targetCapital } from "@/engine/lenders";
-import { normalVac, openingVac, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor, housableStock, islandResidents, PEOPLE_PER_HOME, chairStance } from "@/engine/market";
+import { normalVac, openingVac, RENT_BASE, SECTOR_LABEL, CITY_STOCK, residenceVac, housableStock, islandResidents, PEOPLE_PER_HOME, chairStance } from "@/engine/market";
 import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply, availability } from "@/engine/space";
 import { LineChart, BarChart, Gauge } from "@/ui/Chart";
 import { bandTable } from "@/engine/bands";
@@ -902,8 +902,8 @@ export function EconomyPage() {
         {Math.abs(vacNow - directNow) > 0.003 && (
           <Row
             k="Direct vacancy"
-            v={`${(directNow * 100).toFixed(1)}% · frictional floor ${(frictionFloor(focus, e) * 100).toFixed(1)}%`}
-            strong={directNow <= frictionFloor(focus, e) + 1e-6}
+            v={`${(directNow * 100).toFixed(1)}% · frictional floor ${(residenceVac(e, focus) * 100).toFixed(1)}%`}
+            strong={directNow <= residenceVac(e, focus) + 1e-6}
           />
         )}
         {(() => {

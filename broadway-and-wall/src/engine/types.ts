@@ -1204,6 +1204,8 @@ export interface Listing {
   loanBasis?: number;
   /** A bank-owned listing: what the deed was marked at when the desk took it, so the page can say how far under it the ask is. */
   mark?: number;
+  /** A bank-owned listing: what the desk booked the building at when it charged off the rest (its ask that day), the loss it charged, and its share of the note — the sale is trued up against them (lenders.ts settleReoSale). */
+  reoBook?: number; reoLoss?: number; reoShare?: number;
   /**
    * THE SELLER'S RESERVATION where the seller is a named firm (propmarket.ts
    * sellerTerms): the least it takes, from its own situation — the loan it

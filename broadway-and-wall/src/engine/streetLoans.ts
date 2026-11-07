@@ -184,7 +184,7 @@ function foreclose(s: GameState, x: StreetLoan, addr: string) {
   if (!s.holdings[x.bbl] && !s.listings.some((l) => l.bbl === x.bbl)) {
     s.listings.push({
       bbl: x.bbl, ask, listedM: s.month, expiresM: s.month + 12, distress: true, receiverFor: x.lender, reason: "receiver",
-      loanBasis: Math.min(x.value, x.balance), mark: Math.round(x.value),
+      loanBasis: Math.min(x.value, x.balance), mark: Math.round(x.value), reoBook: ask, reoLoss: loss, reoShare: x.share ?? 1,
     });
   }
   s.news.unshift({

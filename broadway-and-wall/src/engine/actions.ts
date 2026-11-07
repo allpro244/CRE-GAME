@@ -1,6 +1,7 @@
 // Player actions: buy listed or off-market (cash / fixed / floating IO),
 // approach owners with assemblage pressure, sell, renovate. Pure — each
 // returns a new state or an error string, never mutates the input.
+import { settleReoSale } from "./lenders";
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import type { Bid, BuiltClass, Condition, DevUse, Econ, Exit, GameState, GroundLease, GroundReview, Holding, Rival, RivalStyle, SaleInstructions } from "./types";
 import { logBooks, moveDeposit, moveFundCash, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger, autoLeaseOnClose } from "./types";
@@ -482,7 +483,9 @@ export function executePurchase(
   next.holdings[bbl] = holding;
   // A RECEIVER'S SITE MAY HAVE A BUILDING HALF ON IT. If it does, what you
   // just bought is a job, not a lot, and you take it on at the closing.
-  const halfBuilt = next.listings.find((l) => l.bbl === bbl)?.halfBuilt;
+  const soldLi = next.listings.find((l) => l.bbl === bbl);
+  const halfBuilt = soldLi?.halfBuilt;
+  if (!entity) settleReoSale(next, soldLi, price);
   next.listings = next.listings.filter((l) => l.bbl !== bbl);
   delete next.approaches[bbl];
   if (!entity) next.news.unshift({
@@ -3981,6 +3984,7 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
       // twenty-nine. Stamp the trade and it is somebody's building now.
       s.lastTradeM = s.lastTradeM ?? {};
       s.lastTradeM[li.bbl] = s.month;
+      settleReoSale(s, li, px);
       {
         // YOU DID NOT WATCH IT HAPPEN.
         //

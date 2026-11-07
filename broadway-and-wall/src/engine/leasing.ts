@@ -8,7 +8,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, AutoConcessions, AutoLeaseEntry, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, cloneState, CREDIT_LABEL } from "./types";
 import type { Econ, Tenant } from "./types";
-import { rng, rrange, recordDeal, normalVac, OPENING_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, RENT_BASE, turnoverYr } from "./market";
+import { rng, rrange, recordDeal, normalVac, openingVac, OPENING_VAC, vacancyPull, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, RENT_BASE, turnoverYr } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 /** Bare clamp so tools/rails.mjs can see the block-premium guards. */
@@ -1088,7 +1088,7 @@ export function concessionPressure(e: GameState["econ"], use: string): number {
   const k = (use === "office" || use === "retail" || use === "multifamily" || use === "industrial" ? use : "office") as BuiltClass;
   const c = e.concIdx?.[k];
   if (c !== undefined) return 0.22 + 1.88 * c;
-  const gap = (e.cityVac?.[k] ?? normalVac(e, k)) - normalVac(e, k);
+  const gap = (e.cityVac?.[k] ?? openingVac(k)) - normalVac(e, k);
   // Same package rule as the market's (concessionTarget), not a label nudge.
   return Math.max(0.22, Math.min(2.1, 1 + 11 * gap));
 }

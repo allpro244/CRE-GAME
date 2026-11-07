@@ -22,7 +22,7 @@
 // move.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, Holding } from "./types";
-import { CITY_STOCK, normalVac, rng } from "./market";
+import { CITY_STOCK, normalVac, openingVac, rng } from "./market";
 import { resolveRec, useOccupancy, demandIdx, managedRentPsfYr, useRentableSf, qualityCycle, overallScore, initialCondIdx } from "./value";
 import { scoreDraw } from "./bands";
 import { sizeMean, sizeScale } from "./plates";
@@ -125,7 +125,7 @@ export function marketRequirement(e: Econ, use: BuiltClass): number {
   // empty buildings do not generate move-outs, and a supply injection leaves
   // this number flat until real tenants actually occupy the new space. That
   // is the conservation leak fixed at the site the acceptance test names.
-  const occ = e.occupied?.[use] ?? (e.stock?.[use] ?? CITY_STOCK[use]) * (1 - normalVac(e, use));
+  const occ = e.occupied?.[use] ?? (e.stock?.[use] ?? CITY_STOCK[use]) * (1 - openingVac(use));
   const churn = (occ * (GROSS_TURNOVER[use] ?? 0)) / 12;
   // Growth is the pipe the macro tick fills at: the gap between what the
   // city's tenants want and what they occupy, signed at the same 5.5%/mo the
@@ -134,7 +134,7 @@ export function marketRequirement(e: Econ, use: BuiltClass): number {
   const pool = e.pool?.[use] ?? occ;
   // Matching friction: empty stock beside a looking queue is often the wrong
   // suite. Same shape as macro absorb — letters and the chart stay one number.
-  const vac = e.cityVac?.[use] ?? normalVac(e, use);
+  const vac = e.cityVac?.[use] ?? openingVac(use);
   const match = (vac > normalVac(e, use) && pool > occ)
     ? Math.max(0.55, Math.min(1, 1 - (vac - normalVac(e, use)) * 2.2))
     : 1;
@@ -244,7 +244,7 @@ export function localMarket(s: GameState, parcels: ParcelTable, rec: ParcelRecor
   // fitted out and at a discount by a firm that only wants to stop the
   // bleeding — that is the toughest competition a landlord faces and it was
   // invisible here.
-  const cityVac = (s.econ.cityVac?.[use] ?? normalVac(s.econ, use))
+  const cityVac = (s.econ.cityVac?.[use] ?? openingVac(use))
     + (s.econ.sublet?.[use] ?? 0) / Math.max(1, s.econ.stock?.[use] ?? CITY_STOCK[use]);
   const t = nbTable(s, parcels, use);
   const mean = t.get(CITY_KEY)!;

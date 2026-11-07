@@ -1208,8 +1208,6 @@ const CRED_PER_WINDOW = 0.004, CRED_PER_GAP = 0.03;
 const CRED_RECESSION_WRITEOFF = 0.0010;
 /** Months for the trend to catch up with the stock (a decade, as the BIS one-sided filter). */
 const CRED_TREND_M = 120;
-/** The spread a bank's margin is normal at: this economy's own average (~2.5 points). */
-const CURVE_NORMAL = 2.5;
 /** A fall of this much off the output peak is a contraction (2001's was ~0.3%). */
 const REC_DROP = 0.006;
 /** Share of corporate debt that floats, and the fixed ladder's average life in months. */
@@ -1219,8 +1217,15 @@ const CORP_FLOAT = 0.35, CORP_LADDER_M = 72;
  * recession-era ratio (1990-92: CBO gap +0.6 to -2.6, unemployment +2.6).
  */
 const OKUN = 1.2;
-/** Unemployment closes this share of its gap to Okun's level a month — faster up than down. */
-const U_UP_SPEED = 0.15, U_DOWN_SPEED = 0.12;
+/**
+ * Unemployment closes this share of its gap to Okun's level a month — faster up
+ * than down. The dynamic Okun's law puts the lag weights at 0.245/0.133/0.116
+ * at quarters 0/1/2 (Ball, Leigh & Loungani 2017, JMCB, Table 2, US 1948-2011),
+ * a mean lag of 0.74 quarter, 2.2 months: a monthly partial adjustment of
+ * 1/(1 + 2.2) = 0.31 rising. The 0.8 down/up ratio is the existing shape. At
+ * 0.15/0.12 unemployment trailed the gap by five months against one to three.
+ */
+const U_UP_SPEED = 0.31, U_DOWN_SPEED = 0.25;
 /*
  * Calibration (national block alone, 30 centuries, tools in the session notes):
  * unemployment mean 6.1 / p50 5.8 / p10 3.6 / p90 9.1 (US 1948-2024: 5.7 /
@@ -1459,6 +1464,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   econ.crewUtil = 1;
   econ.crewIdx = 1;
   econ.rentExp = { ...econ.rentIdx };
+  econ.rentExpCpi = 1;   // stated at the opening price level
   // The exit cap opens equal to the going-in cap and drifts from there.
   econ.capExp = { ...econ.capRate };
   // THE CITY HAS PEOPLE IN IT ON DAY ONE. These were seeded lazily inside the
@@ -1638,6 +1644,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     econ.pool[k] = econ.occupied[k];
   }
   econ.rentExp = { ...econ.rentIdx };
+  econ.rentExpCpi = 1;   // stated at the opening price level
   econ.effRentIdx = { ...econ.rentIdx };
   for (const k of BUILT_CLASSES) {
     econ.effRentIdx[k] = +(econ.rentIdx[k] * (1 - CONC_DEPTH * econ.concIdx[k])).toFixed(4);
@@ -2092,8 +2099,14 @@ const DEM = {
   WS_U: 1.0, WS_M: 18, PROF: 1.5,
   /** user-cost elasticity of capital (Chirinko 1993: 0.25-0.5) */
   SIGMA_K: 0.4,
-  /** consumption per point of real rate over neutral (intertemporal substitution, ~0.3-0.6) */
-  C_RATE: 0.6,
+  /**
+   * consumption per point of real rate over neutral: the elasticity of
+   * intertemporal substitution, 0.3-0.4 for asset holders once publication bias
+   * is corrected and about 0 in macro data, above 0.8 rejected (Havranek 2015,
+   * JEEA 13(6), 2,735 estimates), times about a year of expected real-rate
+   * duration (a shape choice). It was 0.6, the top of an uncorrected range.
+   */
+  C_RATE: 0.3,
   /** months over which households read the real rate */
   RR_M: 12,
   /** consumption pulled back per point of unemployment rise over six months */
@@ -2168,8 +2181,11 @@ function spendNation(
   d.Ye += (Yprev - d.Ye) / P.YE_M;
   const uc = Math.max(0.03, x.corpRate - infl + P.DELTA);
   const uc0 = Math.max(0.03, x.corpNeutral - infl + P.DELTA);
+  // A flat curve thins the banks' margin and tightens lending; that reaches
+  // capital once, through the national window (curveN x WIN_K). A second copy
+  // of the same spread, centred elsewhere and unsourced, was added with the
+  // doubling above and is gone.
   const fin = (1 + P.WIN_K * ((n.creditNat ?? 1) - 1))
-    * (1 + 0.02 * Math.max(-5, Math.min(1, (n.curveSm ?? CURVE_NORMAL) - CURVE_NORMAL)))
     * (1 - 0.2 * panic);
   // THE PROFIT SQUEEZE. A labour market held tight bids pay up faster than
   // output per worker, the wage share climbs and margins thin; firms that
@@ -2457,9 +2473,13 @@ export function tickNation(s: GameState) {
   const longRate = (e.indexRate ?? 5.4) / 100;
   const shortRate = n.policy / 100;
   n.corpFixed ??= longRate + 0.015;
-  n.corpFixed += (longRate + 0.015 - n.corpFixed) / CORP_LADDER_M;
-  // ...plus whatever a national swan has done to credit spreads (blackswans.ts natSw.sp: a foreign crisis).
-  const corpRate = CORP_FLOAT * (shortRate + 0.02) + (1 - CORP_FLOAT) * n.corpFixed + (e.natSw?.sp ?? 0);
+  // ...plus whatever a national swan has done to credit spreads (blackswans.ts
+  // natSw.sp: a foreign crisis), which, like policy, reaches the floating legs
+  // and the debt rolled this month, not the whole book at once (its own
+  // calibration, 1997-98 IG +80bp / HY +300bp, is about new issuance).
+  const swSp = e.natSw?.sp ?? 0;
+  n.corpFixed += (longRate + 0.015 + swSp - n.corpFixed) / CORP_LADDER_M;
+  const corpRate = CORP_FLOAT * (shortRate + 0.02 + swSp) + (1 - CORP_FLOAT) * n.corpFixed;
   n.corpRate = corpRate;
   // Against what that book would cost at neutral money: r* plus expected
   // inflation, plus the same blended spread.
@@ -2721,7 +2741,11 @@ export function tickNation(s: GameState) {
   // the disinflation afterwards mean anything.
   if (n.inflSm === undefined) n.inflSm = n.infl;
   n.inflSm += 0.085 * (n.infl - n.inflSm);
-  const seen = n.inflSm - 0.45 * shock;
+  // ...looking through the shock on the same clock it reads inflation on. It
+  // subtracted the raw shock from a smoothed reading, so the bank cut the month
+  // a supply shock hit and hiked when it ended.
+  n.shockSm = (n.shockSm ?? 0) + 0.085 * (shock - (n.shockSm ?? 0));
+  const seen = n.inflSm - 0.45 * n.shockSm;
 
   // AND IT DOES NOT KNOW WHERE FULL EMPLOYMENT IS. This is not a detail; it
   // is the largest single source of policy error in the historical record.
@@ -2926,7 +2950,13 @@ export function tickNation(s: GameState) {
   // hazard. The national window is the same equation as `stepCredit` on
   // national inputs only: the unemployment rise, the curve, a panic.
   {
-    const curveN = 0.08 * (((e.indexRate ?? 5.4) - n.policy) - 1.2);
+    // 0.04, stepCredit's own curve term. It was 0.04 when this window was
+    // written (2026-10-14) and doubled two days later with no reason given;
+    // stepCredit's value is itself sourced only for its sign and centre
+    // (Adrian-Estrella-Shin 2019; the SLOOS), so this is that value restored,
+    // not a new calibration (national calibration, 2026-11-07: the doubled
+    // term alone added 0.36 recessions a decade, 40 seeds x 110 years).
+    const curveN = 0.04 * (((e.indexRate ?? 5.4) - n.policy) - 1.2);
     const tgt = clamp(1.0 - 14 * Math.max(0, natUnempRise12(e)) + curveN - 0.7 * (e.panic?.force ?? 0), 0.4, 1.25);
     const cn = n.creditNat ?? 1;
     n.creditNat = clamp(cn + (tgt < cn ? 0.16 : 0.055) * (tgt - cn), 0.4, 1.25);
@@ -4052,8 +4082,23 @@ export function tickEcon(s: GameState) {
     // Keep the adaptive rent belief for the residual/land market. The decision
     // to order construction below now reads the same effective-rent pro forma
     // as the actual parcel desk, rather than a second optimism formula.
+    // THE BELIEF IS FORMED ON REAL RENT (2026-11-07). An adaptive average of
+    // the NOMINAL index lags every dollar of inflation: at 21 months' mean lag
+    // and about 3% a year of nominal rent growth it sat about 5% under today's
+    // rent in a perfectly steady market, so every pro forma underwrote a rent
+    // the town had not charged for two years, and the momentum developers read
+    // off the same gap (developerOptimism) was mostly inflation. Inflation is
+    // published; what a developer cannot see in advance is the real move. So
+    // the average runs on rent over the price level and is restated at today's
+    // price level: steady inflation leaves belief at today's rent, and a real
+    // boom still outruns it by the lag it always had.
     if (!e.rentExp) e.rentExp = { ...e.rentIdx };
-    e.rentExp[k] += 0.045 * (e.rentIdx[k] - e.rentExp[k]);
+    const cpiNow = e.cpi ?? 1, cpiWas = e.rentExpCpi ?? cpiNow;
+    const realWas = e.rentExp[k] / Math.max(1e-9, cpiWas);
+    // rentIdx still holds last month's read here (this month's comps are read
+    // later in the tick), stated at last month's price level, so it deflates by
+    // that month's CPI; the belief is then restated at today's.
+    e.rentExp[k] = (realWas + 0.045 * (e.rentIdx[k] / Math.max(1e-9, cpiWas) - realWas)) * cpiNow;
     // THE RATE EMA IS NOW READ BY NOTHING, and this comment used to claim it
     // was "a published market belief used by reports". It is not: grep finds
     // the write below, the reset in regime.ts, the declaration in types.ts, a
@@ -4605,6 +4650,8 @@ export function tickEcon(s: GameState) {
     monthAbs[k] = absorb;
     monthComp[k] = delivered;
   }
+  // the price level the rent beliefs above are now stated at
+  e.rentExpCpi = e.cpi ?? 1;
 
   // RENTS MOVE ON AVAILABILITY. The gap between the space a tenant can
   // actually go and lease — empty floors plus everything on the sublet market

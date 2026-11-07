@@ -2240,6 +2240,8 @@ export interface Econ {
     yTrough?: number;
     /** what the bank THINKS trend inflation is: smoothed, and it looks through shocks */
     inflSm?: number;
+    /** the supply shock on the same clock as inflSm, which the bank looks through */
+    shockSm?: number;
     /** how much easier than neutral money has been, smoothed — the 1970s in one number */
     easeEma?: number;
     /** months of elevated supply-shock hazard: shocks cluster, 1973 and 1979 did */
@@ -2650,6 +2652,8 @@ export interface Econ {
    * which is what actually causes overbuilding in every real cycle.
    */
   rentExp?: Record<BuiltClass, number>;
+  /** The price level `rentExp` was last stated at (market.ts: the belief is formed on real rent). */
+  rentExpCpi?: number;
   /**
    * THE EXIT CAP A DEVELOPER UNDERWRITES — a slow memory of the spot cap rate,
    * on about a four-year clock because that is the horizon a land buyer is
@@ -2658,6 +2662,10 @@ export interface Econ {
    * difference of two large numbers.
    */
   capExp?: Record<BuiltClass, number>;
+  /** The market's construction advance on a standard scheme this month, the memory of it sponsors are used to, and the month it was read (dev.ts equityStretch). */
+  ltcNow?: number;
+  ltcUsual?: number;
+  ltcUsualM?: number;
   /**
    * THE REDEVELOPMENT QUEUE, per use (value.ts `refreshLandQueue`). A land
    * residual is what the lot is worth if its building could be delivered and

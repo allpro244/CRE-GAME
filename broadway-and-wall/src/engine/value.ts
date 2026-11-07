@@ -1480,6 +1480,9 @@ function landLotMatches(m: LandMemoEntry, rec: ParcelRecord, heat: number | unde
     && Object.is(m.cornice, rec.cornice) && Object.is(m.maturity, rec.maturity);
 }
 
+/** The share of a lot's location texture its price will not fall below (landRead's floor): what dirt nobody builds on still fetches. */
+export const TEXTURE_FLOOR = 0.30;
+
 export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
   // THE SAME PURE-PERFORMANCE MEMO as `landPsfNow`, for the whole read (both
   // bids and the scheme): firms, the comps desk, the order book and the map
@@ -1597,7 +1600,7 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
   // pencils trades at the residual. Holder and texture still set the price
   // when today's residual is zero, which is most of the city, which is why
   // most dirt is still dirt.
-  const floor = texture * 0.30;
+  const floor = texture * TEXTURE_FLOOR;
   const heat = econ.districtHeat?.[rec.district ?? "—"] ?? 1;
   // THE APPRAISAL IS A RECONCILIATION, AND FOR LAND THE SALES COMPARISON
   // GOVERNS. The residual above is the income approach: what the maths says a

@@ -44,8 +44,7 @@ import { underwrittenGrowthPct, dollarLevel, RENT_BASE, CAP_BASE } from "./marke
 import {
   assetValue, capRateFor, initialCondIdx, demandLinear, incomeValueAsIs, initialCondition, inPlace, landValue,
   marketAppraisal, noiYr, resolveRec, specWearMult, taxBorneShare, taxRate, useOccupancy, useRentableSf,
-  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, residualScheme,
-} from "./value";
+  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, residualScheme, TEXTURE_FLOOR } from "./value";
 import { uses } from "./mix";
 import { catchUpCapex } from "./dev";
 import { productOf } from "./products";
@@ -1785,7 +1784,26 @@ export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
     const rec = resolveRec(parcels, s, bbl);
     if (!surveyLot(rec)) continue;
     const maxes = firms.map((r) => landMaxPrice(s, r, rec)).filter((m) => m > 0).sort((a, b) => b - a);
-    if (!maxes.length) continue;
+    if (!maxes.length) {
+      // A LOT THAT HAS LOST ITS LAST BIDDER HAS FALLEN, and saying nothing
+      // about it is a survivor bias: in a bust the lots that fall leave the
+      // matched sample and the ones still bid on set the level, which then
+      // ratchets up (measured: the panel without this rose 4.9% a year in
+      // real terms over a century, against 1.0% before it). Nobody bidding,
+      // the lot is worth what the town's land pricing gives dirt nobody
+      // builds on — its texture floor (value.ts TEXTURE_FLOOR) — so its
+      // indication is that floor, read against its own record like any
+      // other. The appraisers' Huber weighting (apprSee) bounds how far any
+      // one such print can pull the level. A lot with no record yet says
+      // nothing about a change and is left out.
+      const fe0 = sv.fe[bbl];
+      if (fe0 && fe0.n > 0) {
+        const Lf = s.econ.landIdx * TEXTURE_FLOOR;
+        pushLandPrint(s, { m: s.month, L: Lf * Math.exp(-fe0.sum / fe0.n), w: 0.5, kind: "s", x: [0.5, 0] });
+        n++;
+      }
+      continue;
+    }
     // WHAT THE LOT WOULD CLEAR AT: the second-best number, as the cap survey
     // reads its room (capSurvey, `maxes[1] ?? maxes[0]`) — in an open round the
     // best bidder pays what it takes to beat the runner-up (Vickrey 1961), not

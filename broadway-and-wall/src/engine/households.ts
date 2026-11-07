@@ -1329,8 +1329,22 @@ function screened(median: number, rentMo: number, z: (k: number) => number): num
   return income;
 }
 
-/** A household's pay a year as a landlord reads it: every slot's wage, pension or lost wage. */
+/** A household's pay a year: every slot's wage, pension or lost wage (what it spends from and expects to earn). */
 const payOf = (a: HouseholdArrays, i: number) => a.wage1[i] + a.wage2[i] + a.wage3[i];
+/**
+ * THE INCOME A LANDLORD CAN VERIFY, a year (2026-11-07): a working wage, a
+ * pension, and unemployment insurance only while it runs (grossOf). The move-in
+ * screens read payOf, which keeps a jobless earner's lost wage, so a household
+ * with no pay at all passed a 2.5-3x-income test on money it did not have: in
+ * a wave of arrivals the newcomers signed island flats, ran through about a
+ * month and a half of savings and were evicted in a cascade (island evictions
+ * 4-6x the control in years 2-3), so vacancy ROSE when demand arrived (the
+ * +30% population shock, BACKWARDS on three seeds). Screening practice checks
+ * current, documented income (NMHC/NAA, the surveys SCREEN already cites).
+ * Sitting tenants are not screened again at renewal, and spending still reads
+ * payOf.
+ */
+const verifiedPay = (a: HouseholdArrays, i: number) => 12 * grossOf(a, i);
 
 // ---------------------------------------------------------------- where a renter lives (stage 2)
 /** One earner's cost a month of crossing the water to work and back (homeprice.ts COMMUTE), at its pay. */
@@ -1376,7 +1390,7 @@ function wantsIsland(r: HouseholdRegister, a: HouseholdArrays, i: number, e: Eco
   // the landlord's screen is for a household moving in: a sitting tenant is
   // not screened again at renewal (a quarter of US renters pay over half
   // their income in rent, Harvard JCHS) — it stays while it can pay
-  const inc = payOf(a, i);
+  const inc = verifiedPay(a, i);
   if (move <= 0 && (!(inc > 0) || (12 * rentIsl) / inc > SCREEN)) return false;
   return Math.log(rentIsl / Math.max(1, r.mainRent)) <= islandPull(r, a, i, e) + move;
 }
@@ -1390,7 +1404,7 @@ function wantsIsland(r: HouseholdRegister, a: HouseholdArrays, i: number, e: Eco
  */
 function budgetOf(r: HouseholdRegister, a: HouseholdArrays, i: number, e: Econ): number | undefined {
   if (r.locMu === undefined) return undefined;
-  const inc = payOf(a, i);
+  const inc = verifiedPay(a, i);
   if (!(inc > 0)) return 0;
   return Math.min(Math.max(1, r.mainRent) * Math.exp(islandPull(r, a, i, e) - MOVE_LOG), (SCREEN * inc) / 12);
 }
@@ -1529,7 +1543,7 @@ function solveLocMu(r: HouseholdRegister, e: Econ, letOf: (i: number) => number)
     const t = a.ten[i];
     if (t !== TEN_RENT && t !== TEN_MAINLAND) continue;
     if (t === TEN_RENT) island += a.wt[i];
-    const rent = letOf(i), inc = payOf(a, i);
+    const rent = letOf(i), inc = verifiedPay(a, i);
     if (t === TEN_MAINLAND && (!(inc > 0) || (12 * rent) / inc > SCREEN)) continue;
     xs.push({ x: Math.log(rent / Math.max(1, r.mainRent)) - a.taste[i] - commuteSaving(a, i, e) / Math.max(1, r.mainRent), w: a.wt[i] });
   }
@@ -1625,7 +1639,7 @@ function moveIn(R: Rand, r: HouseholdRegister, b: Block, e: Econ, m: number, poo
     const c = pool[Math.floor(R.u() * pool.length)];
     const A = r.a!;
     if ((c < gone.length && gone[c]) || A.ten[c] !== TEN_MAINLAND || A.wt[c] < w) continue;
-    const inc = payOf(A, c);
+    const inc = verifiedPay(A, c);
     if (inc > 0 && (12 * b.let) / inc <= SCREEN) j = c;
     else if (k === SCREEN_TRIES - 1) j = c;
   }

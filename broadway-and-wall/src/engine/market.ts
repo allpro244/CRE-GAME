@@ -911,7 +911,17 @@ export function forwardVacancy(
   const queue = Math.max(0, e.structTight?.[k] ?? 0) * stkNow;
   // `monthsAhead`: 18 for a reader pricing the market in general; a developer
   // deciding whether to build reads to its own delivery date (`developerLook`).
-  const trendGrowth = Math.max(0, (view ? view.dg : e.classDrvTrend?.[k] ?? 0) * monthsAhead) * occNow;
+  //
+  // DEMAND CAN SHRINK IN THE STUDY AS IT DOES ON THE STREET (2026-11-07). The
+  // projection was floored at zero, so no market study ever counted tenants
+  // leaving: office occupied space fell year on year in 19-39% of years
+  // (median 26%) and twelve-month absorption was negative in 13-33% of them
+  // (sixteen centuries), and in every one of those years the floor bound and
+  // the study read the class as if demand were flat — a clamp holding up the
+  // supply decision in normal play, which is how cranes kept going up into a
+  // rising glut (seed 11: office starts 0.6-4.1% of stock a year while vacancy
+  // rose from 11% to 21%). The vacancy result keeps its 0-1 guard.
+  const trendGrowth = (view ? view.dg : e.classDrvTrend?.[k] ?? 0) * monthsAhead * occNow;
   return clamp((stkNow + pipe - occNow - queue - trendGrowth) / (stkNow + pipe), 0, 1);
 }
 

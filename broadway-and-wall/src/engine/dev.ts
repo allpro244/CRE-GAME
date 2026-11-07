@@ -4009,7 +4009,10 @@ function replacementSearch(
       // share of the class's standing stock.
       if (fl > 1 && u.plan.sf * (u.plan.mix?.[k] ?? 1) > rdev.maxShare * Math.max(1, e.stock?.[k] ?? 0)) continue;
       if (forwardVacancy(e, k, u.plan.sf * (u.plan.mix?.[k] ?? 1), u.plan.months, beliefOf(s, who, k)) > normalVac(e, k) + rdev.vacTol) continue;
-      const h = hurdleAt(u.plan, DEV_MARGIN) * rdev.outlook * momentumRead(s, k, rdev.momentum, who) * exitRead(s, who, k) / rdev.bar;
+      // A redeveloper that borrows needs its margin on the equity the desks
+      // leave it (equityStretch), like a builder on vacant dirt.
+      const m = DEV_MARGIN * (rdev.ltc > CASH_BUILDER_LTC ? equityStretch(s) : 1);
+      const h = hurdleAt(u.plan, m) * rdev.outlook * momentumRead(s, k, rdev.momentum, who) * exitRead(s, who, k) / rdev.bar;
       maxH = Math.max(maxH, h);
       if (h < 1) continue;
       if (!best || h > best.h) best = { u, use: k, h };
@@ -5329,8 +5332,13 @@ function momentumRead(s: GameState, k: BuiltClass, momentum: number, who: { id: 
  * believed one.
  */
 function exitRead(s: GameState, who: { id: string } | null | undefined, k: BuiltClass): number {
-  const now = s.econ.capRate?.[k], b = beliefOf(s, who, k).cap;
-  return now && now > 0 && b > 0 ? now / b : 1;
+  // The plan exits at the expected cap (underwritingEcon: capExp); the shop
+  // swaps that for its broker's. This read the SPOT cap over the belief,
+  // which a crunch lifts faster than either, so the worse the tape the better
+  // every scheme and every teardown looked (crunch over control, months 1-12,
+  // seed 33: office spot cap x1.08, industrial x1.14).
+  const used = s.econ.capExp?.[k] ?? s.econ.capRate?.[k], b = beliefOf(s, who, k).cap;
+  return used && used > 0 && b > 0 ? used / b : 1;
 }
 
 /** Developers SITES_PER_LOOK examines in one look — a broker's shortlist. */

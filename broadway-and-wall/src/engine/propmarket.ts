@@ -44,7 +44,7 @@ import { underwrittenGrowthPct, dollarLevel, RENT_BASE, CAP_BASE } from "./marke
 import {
   assetValue, capRateFor, initialCondIdx, demandLinear, incomeValueAsIs, initialCondition, inPlace, landValue,
   marketAppraisal, noiYr, resolveRec, specWearMult, taxBorneShare, taxRate, useOccupancy, useRentableSf,
-  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, residualScheme, TEXTURE_FLOOR } from "./value";
+  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, residualScheme } from "./value";
 import { uses } from "./mix";
 import { catchUpCapex } from "./dev";
 import { productOf } from "./products";
@@ -1791,15 +1791,16 @@ export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
       // ratchets up (measured: the panel without this rose 4.9% a year in
       // real terms over a century, against 1.0% before it). Nobody bidding,
       // the lot is worth what the town's land pricing gives dirt nobody
-      // builds on — its texture floor (value.ts TEXTURE_FLOOR) — so its
-      // indication is that floor, read against its own record like any
-      // other. The appraisers' Huber weighting (apprSee) bounds how far any
-      // one such print can pull the level. A lot with no record yet says
-      // nothing about a change and is left out.
+      // builds on — its texture floor — so its indication is that floor,
+      // read against its own record like any other. A print is quoted per
+      // unit of that same floor (`mark` below is landRead's `texture`, which
+      // is the floor: value.ts TEXTURE_FLOOR), so a lot at its floor reads
+      // exactly the level. The appraisers' Huber weighting (apprSee) bounds
+      // how far any one such print can pull the level. A lot with no record
+      // yet says nothing about a change and is left out.
       const fe0 = sv.fe[bbl];
       if (fe0 && fe0.n > 0) {
-        const Lf = s.econ.landIdx * TEXTURE_FLOOR;
-        pushLandPrint(s, { m: s.month, L: Lf * Math.exp(-fe0.sum / fe0.n), w: 0.5, kind: "s", x: [0.5, 0] });
+        pushLandPrint(s, { m: s.month, L: s.econ.landIdx * Math.exp(-fe0.sum / fe0.n), w: 0.5, kind: "s", x: [0.5, 0] });
         n++;
       }
       continue;

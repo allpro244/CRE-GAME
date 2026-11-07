@@ -2240,6 +2240,8 @@ export interface Econ {
     yTrough?: number;
     /** what the bank THINKS trend inflation is: smoothed, and it looks through shocks */
     inflSm?: number;
+    /** the supply shock on the same clock as inflSm, which the bank looks through */
+    shockSm?: number;
     /** how much easier than neutral money has been, smoothed — the 1970s in one number */
     easeEma?: number;
     /** months of elevated supply-shock hazard: shocks cluster, 1973 and 1979 did */

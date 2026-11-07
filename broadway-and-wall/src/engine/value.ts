@@ -1042,7 +1042,7 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
     const bbl = bbls[Math.min(n - 1, Math.floor(j * step) + off)];
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || !(rec.lotArea > 0)) continue;
-    { const p = landPsfNow(rec, e); if (p > 0) { mktSum += p; mktN++; } }
+    { const p = landPsfNow(rec, e); if (p > 0) { mktSum += Math.log(p); mktN++; } }
     const sch = residualScheme(rec, bare);
     if (!sch || !(sch.psf > 0)) continue;
     let sf = sch.usable * rec.lotArea;
@@ -1064,8 +1064,12 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
     q[use] = { psf, ahead, total: Math.round(cum), absYr: Math.round(absYr), r: rOf(use) };
   }
   e.landQueue = q;
+  // THE LAND MARKET'S LEVEL IS AN INDEX OF THE TYPICAL LOT, NOT THE MEAN DOLLAR (2026-11-07): the geometric
+  // mean of the panel's prices (a Jevons index; land indices are log-hedonic: Nichols, Oliner & Mulhall 2013).
+  // The arithmetic mean of $/sf was the few prime lots whose residuals swing hardest — real land read 107, 41,
+  // 53, 21 over nine years of flat property values on seed 11 — and every owner's ask scales by belief over it.
   if (mktN > 0) {
-    e.landMkt = mktSum / mktN;
+    e.landMkt = Math.exp(mktSum / mktN);
     if (e.landBelief === undefined) e.landBelief = e.landMkt;
   }
 }

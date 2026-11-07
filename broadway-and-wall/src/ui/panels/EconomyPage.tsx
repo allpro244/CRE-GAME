@@ -5,7 +5,7 @@ import { useStore } from "@/state/store";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import type { BuiltClass, EconHistoryPoint } from "@/engine/types";
 import { capitalRatio, targetCapital } from "@/engine/lenders";
-import { normalVac, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor, housableStock, islandResidents, PEOPLE_PER_HOME, chairStance } from "@/engine/market";
+import { normalVac, openingVac, RENT_BASE, SECTOR_LABEL, CITY_STOCK, frictionFloor, housableStock, islandResidents, PEOPLE_PER_HOME, chairStance } from "@/engine/market";
 import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply, availability } from "@/engine/space";
 import { LineChart, BarChart, Gauge } from "@/ui/Chart";
 import { bandTable } from "@/engine/bands";
@@ -504,7 +504,7 @@ export function EconomyPage() {
   // in a shortage — plotting that is how each class looked like a ruler
   // for twenty years while the market (sublet + empty) was the one that
   // moved, or failed to.
-  const directNow = e.cityVac?.[focus] ?? normalVac(e, focus);
+  const directNow = e.cityVac?.[focus] ?? openingVac(focus);
   const vacNow = availability(e, focus);
   const stock = e.stock?.[focus] ?? CITY_STOCK[focus];
   const mos = monthsOfSupply(e, focus);
@@ -573,8 +573,8 @@ export function EconomyPage() {
   const xFrom = `${START_YEAR + Math.floor((tail[0]?.q ?? game.month) / 12)}`;
   const xTo = `${START_YEAR + Math.floor(game.month / 12)}`;
   const spanYrs = Math.max(1, Math.round(((tail[tail.length - 1]?.q ?? game.month) - (tail[0]?.q ?? game.month)) / 12));
-  const vacSeries = tail.map((h) => (h.avail?.[focus] ?? h.vac?.[focus] ?? normalVac(e, focus)) * 100);
-  const directSeries = tail.map((h) => (h.vac?.[focus] ?? normalVac(e, focus)) * 100);
+  const vacSeries = tail.map((h) => (h.avail?.[focus] ?? h.vac?.[focus] ?? openingVac(focus)) * 100);
+  const directSeries = tail.map((h) => (h.vac?.[focus] ?? openingVac(focus)) * 100);
   const rentSeries = tail.map((h) => h.rent?.[focus] ?? e.rentIdx[focus]);
   // pre-v30 history has no effective series; fall back to asking so the two
   // lines simply overlap until the concession machinery has lived a month

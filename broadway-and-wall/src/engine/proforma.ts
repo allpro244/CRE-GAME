@@ -60,7 +60,7 @@ import type { ParcelRecord } from "@/data/types";
 import type { BtsCommitment, BuiltClass, Contract, DevUse, Econ, UseMix } from "./types";
 import { BUILT_CLASSES, CONSTRUCTION_LENDER } from "./types";
 import { productOf, layoutProduct, productHardCostBase, productBuildMonths, anchorShare, type ProductKey, type ProductSite } from "./products";
-import { normalVac, CITY_STOCK, BUILD_MONTHS, LEASE_TERM_M, forwardVacancy, concessionTarget, CONC_DEPTH } from "./market";
+import { normalVac, openingVac, CITY_STOCK, BUILD_MONTHS, LEASE_TERM_M, forwardVacancy, concessionTarget, CONC_DEPTH } from "./market";
 import {
   HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
   rentableRatio, marketRentPsfYr, opexPsf, locOpexMult, RECOVERY_RATE, MGMT_FEE, noiYr, capRateFor,
@@ -295,7 +295,7 @@ export function constructionSpaceTight(e: Econ, mix: UseMix): number {
   for (const u of BUILT_CLASSES) {
     const share = mix[u] ?? 0;
     if (share <= 0) continue;
-    const vac = e.cityVac?.[u] ?? normalVac(e, u);
+    const vac = e.cityVac?.[u] ?? openingVac(u);
     const gap = vac - normalVac(e, u); // negative = tight
     const struct = e.structTight?.[u] ?? 0;
     // Up to ~12% more advance when the class is short space; asymptotic cap
@@ -1089,7 +1089,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   const fillMonths = overMix(mix, (u) => {
     const net = econ.landQueue?.[u]?.absYr;
     if (net === undefined) return 0;
-    const occ = (econ.stock?.[u] ?? 0) * (1 - (econ.cityVac?.[u] ?? normalVac(econ, u)));
+    const occ = (econ.stock?.[u] ?? 0) * (1 - (econ.cityVac?.[u] ?? openingVac(u)));
     const a = Math.max(0, net) + occ / (LEASE_TERM_M[u] / 12);
     return a > 0 ? (rentable * (1 - preLet) * (u === "multifamily" ? 0.95 : 0.9)) / (a / 12) : 0;
   });

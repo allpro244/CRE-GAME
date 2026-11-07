@@ -2647,7 +2647,6 @@ export interface Econ {
    * higher sustainable rent-to-income ratio — this is the Manhattan premium,
    * and it has to be EARNED rather than assumed.
    */
-  tightEma?: number;
   /** Per class: a decade's memory of how short of space the city has been (-0.3 glut .. 1 fully short). */
   scarcity?: Record<BuiltClass, number>;
   /**

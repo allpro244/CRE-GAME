@@ -552,7 +552,6 @@ const KNOBS = [
   ["econ.unemployment", (g) => { g.econ.unemployment = Math.min(0.25, g.econ.unemployment * 1.8); }],
   ["econ.landIdx", (g) => { g.econ.landIdx *= 1.4; }],
   ["econ.cycleDev", (g) => { g.econ.cycleDev = -0.9; }],
-  ["econ.tightEma", (g) => { g.econ.tightEma = 0.5; }],
   ["econ.slackEma (derived)", (g) => { g.econ.slackEma = 0.08; }, true],
   ["econ.inflExp", (g) => { g.econ.inflExp = 0.09; }],
   ["econ.rateEma", (g) => { g.econ.rateEma = (g.econ.rateEma ?? 5) * 2; }],

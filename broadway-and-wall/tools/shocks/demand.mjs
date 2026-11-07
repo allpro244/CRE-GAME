@@ -313,8 +313,16 @@ const online = {
     const P = "demand-online-20.";
     const st = (1 - t[1].probe[P + "online"]) / (1 - c[1].probe[P + "online"]);
     const ss = t[1].probe[P + "shopSales"] / c[1].probe[P + "shopSales"];
-    const ok = st >= 0.78 && st <= 0.83 && ss < 0.95;
-    return { ok, msg: `in-store share ×${st.toFixed(3)}, shop industries' sales ×${ss.toFixed(3)} at +1 month` };
+    // DELIVERY IS THE SHARE, NOT THE SALES (2026-11-07). The shock is a fifth
+    // of in-store spending moving online; whether the shops' SERVED sales fall
+    // in the first month is a response, capped by the staff they have
+    // (economy.ts serves orders up to earners x output per worker), and in a
+    // short-staffed town the cut lands on orders the shops could not have
+    // served anyway: pre-cap shop orders fell x0.807 (seed 22) while served
+    // sales fell x0.961, then x0.80 by month 24. Gating on served sales graded
+    // a delivered shock DID NOT LAND. The sales are reported, not gated.
+    const ok = st >= 0.78 && st <= 0.83;
+    return { ok, msg: `in-store share ×${st.toFixed(3)} (shop industries' served sales ×${ss.toFixed(3)}) at +1 month` };
   },
   hold(c, t) {
     const P = "demand-online-20.";

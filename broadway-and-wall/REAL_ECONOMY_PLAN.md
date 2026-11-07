@@ -104,6 +104,17 @@ The full battery (21 shocks × seeds 11/22/33) on main after #632: 3 BACKWARDS, 
 
 22 shocks × seeds 11/22/33: **1 BACKWARDS** (zero-rate decade: distress after release, −27%), **1 DID NOT LAND** (largest employer leaves: seed 22 reads −0.50 jobs per direct job at +2 months against the gate's ≤ −0.5, seed 11 −0.62 — the gate's edge, not a broken injection), **8 NO RESPONSE** (rates +300bp caps and values; crunch charge-offs and distress; foreign wave caps; arrivals' flats vacancy; e-commerce shop vacancy and rent; −20% office rent at +1.6%, against +3.3% in #641's run; −20% retail), **3 WRONG SIZE** (construction +40% land −4.9%; +50% retail and apartments vacancy +9.5pp against ≥ +10), **1 SPILLS** (the placebo's noise floor). Down from 3 BACKWARDS / 5 NO RESPONSE / 1 DNL in the morning's battery, with the NO RESPONSE rows now concentrated in two themes: rents that do not answer vacancy (office, retail: see the office section) and capital pricing (cap rates, charge-offs).
 
+## Why a credit crunch charges off nothing (2026-11-07, diagnosed)
+
+A loan-by-loan probe over the crunch's 36 months (scratchpad `agent-crunch/`, seeds 11/22/33):
+
+- **The crunch reaches the balloon** (private owners shop the halved product sheets, `streetLoans.ts deskQuotes`; firms refinance through `streetRefiProceeds`): the median takeout ÷ balance falls from about 2.0 to about 0.9, and 110-128 private maturities a seed find no full takeout (control 1-9).
+- **The gaps are small, so cash closes them.** Maturing loans carry a median LTV of 0.33-0.37 (90th percentile 0.56-0.80); owners pay 73-88 gaps a seed ($5-12M), firms 83-116 (seed 22 $27.6M), and desks extend 33-36 private and 19-42 rival loans. No cash source is unlimited (owners' cash is capped at months of income). Plausible for this book: family and estate holders (advances 0.40-0.45) pay down and do not re-lever.
+- **The few defaults fall on buildings with equity** (private balloon defaults at LTV 0.21-0.75) and the loss is booked as balance − `reoAsk(mark, balance)`, which is zero while the mark covers the loan; the bank-owned sale then clears at 0.88× the ask with no true-up and no liquidation cost.
+- **The battery's 1-3% band is a GFC figure** (a 2005-07 vintage at about 70% LTV, a 35-40% value fall, and falling income), not a credit-only crunch on a seasoned book.
+
+Open, in order: (1) a private owner with equity sells at its balloon rather than defaulting (a duress listing and a sale holdover, as firms already do), and foreclosure surplus goes to the borrower; (2) a foreclosure's loss is the balance plus accrued interest, carry and liquidation costs less the REO sale's actual net (Trepp CMBS loss severities on liquidated loans, about 40-60% in 2010-12, with the cost split), reserved at default and trued up at the sale; (3) source the crunch's charge-off band to the shock it injects (a credit-only freeze — e.g. 1998's CMBS seizure, when losses stayed low — against the GFC's combined shock), or add the combined shock. Done: firms whose desk extension expired went straight to the hand-back, skipping the sale rung (`ext === undefined` read the desk's extension as "already listed"); the measurement's book omitted the private owners' notes (#649).
+
 ## Office rents and vacancy: what the measurements say (2026-11-07, open)
 
 The century's office Wheaton-Torto slope (yearly Δlog real effective rent on last year's vacancy) is −0.22%/yr per point on seed 11, against −2 to −3 in the record. A 40-year probe (scratchpad `offprobe.mjs`, `mosprobe.mjs`) located it:

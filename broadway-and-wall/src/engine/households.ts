@@ -256,6 +256,14 @@ const MATCH_SD = 0.15;
 /** The blocks a household looking for a flat sees: a broker's shortlist, about half a dozen (NMHC/Zillow renter surveys: renters tour a median of 4-6 homes before signing). [S~] */
 const SHORTLIST = 6;
 /**
+ * A LANDLORD PRICES ITS EXPOSURE, NOT ONLY WHAT STANDS EMPTY TODAY: the flats
+ * vacant plus those whose tenants have given notice to leave (RealPage
+ * YieldStar / LRO "exposure"; the usual US lease asks 30-60 days' notice, so
+ * two months ahead). An on-notice flat is listed "available soon", so it draws
+ * tours and guest cards before it falls empty [S~].
+ */
+const NOTICE_M = 2;
+/**
  * WORKING PAST SIXTY: the share of each age still in the labour force over
  * the prime-age rate (BLS CPS 2023 annual averages: 25-54 83.4%, 55-59 ~72%,
  * 60-61 ~64%, 62-64 ~51%, 65-69 ~33%, 70-74 ~19%, 75+ ~8%), log-linear between
@@ -2946,6 +2954,8 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   // it would pay for, up to each block's letting pace. A flat nobody chooses
   // stands empty, and its rent answers.
   const rooms: { b: Block; room: number; free: number }[] = [];
+  // the share of tenants at a lease end who leave: the notices a landlord expects (the street's own record)
+  const leaving = Math.max(0, Math.min(1, r.leaseMoveRate ?? 0.5));
   for (const b of B.list) {
     if (!(byHH && b.street)) continue;
     const l = inBlock.get(b.idx) ?? [];
@@ -2958,8 +2968,20 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       toMainland(R, r, i, pool, gone, true); extra--;
     }
     const room = Math.max(0, Math.min(cap - (atStart.get(b.idx) ?? 0), cap - l.length, Math.floor((b.limU ?? 2) / r.wIsland)));
-    // `room` is what the leasing office can sign this month (its pace); `free` is every flat standing empty, which is what its landlord prices against
-    if (room > 0) rooms.push({ b, room, free: Math.max(room, cap - l.length) });
+    // `room` is what the leasing office can sign this month (its pace); `free` is its exposure, which is what its landlord prices against:
+    // every flat standing empty and the ones expected on notice (NOTICE_M).
+    //
+    // A FULL BLOCK STILL HAS A DOOR (2026-11-07). Only blocks with a flat
+    // empty took guest cards, so a town let to the last flat had no door
+    // anywhere: no cards, no new lettings to comp against, and every ask held
+    // still in a shortage — measured after a fifth of the flats burned, 0.0%
+    // vacancy for two years and asks −3 to −5% against the control (#641's
+    // battery). A block whose flats are all let lists those coming free and
+    // reads the cards of the movers who tour them.
+    let soon = 0;
+    for (const i of l) if (a.leaseEnd[i] > m && a.leaseEnd[i] <= m + NOTICE_M) soon++;
+    const free = Math.max(room, cap - l.length) + leaving * soon;
+    if (room > 0 || free > 0) rooms.push({ b, room, free });
   }
   // WHO IS LOOKING THIS MONTH, AND WHAT EACH LANDLORD SEES AT ITS DOOR
   // (2026-10-30). This was every household across the water that wanted an
@@ -2982,6 +3004,10 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   if (rooms.length) {
     const wTot = rooms.reduce((t, x) => t + (x.b.w ?? 1), 0);
     const pickRoom = () => { let u = R.u() * wTot; for (const x of rooms) { u -= x.b.w ?? 1; if (u <= 0) return x; } return rooms[rooms.length - 1]; };
+    // ...and among the flats free to move into now (the broker's second look when the list had none)
+    const nowRooms = rooms.filter((x) => x.room > 0);
+    const wNow = nowRooms.reduce((t, x) => t + (x.b.w ?? 1), 0);
+    const pickNow = () => { let u = R.u() * wNow; for (const x of nowRooms) { u -= x.b.w ?? 1; if (u <= 0) return x; } return nowRooms[nowRooms.length - 1]; };
     const doors = (DOORS = new Map<number, { x: number[]; u: number }>());
     for (const x of rooms) doors.set(x.b.idx, { x: [], u: x.free });
     const seekers: { c: number; n: number }[] = [];
@@ -2999,6 +3025,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
         // the shortlist, toured whole: a renter compares before it signs
         const seen: typeof rooms = [];
         for (let k = 0; k < SHORTLIST; k++) { const x = pickRoom(); if (!seen.includes(x)) seen.push(x); }
+        if (nowRooms.length && !seen.some((x) => x.room > 0)) for (let k = 0; k < SHORTLIST; k++) { const x = pickNow(); if (!seen.includes(x)) seen.push(x); }
         // A RENTER BUYS VALUE, NOT THE LOWEST RENT (2026-11-03). It weighs
         // each flat's rent against what the flat is worth — its size, its
         // block, its street, which the market prices as the flat's market

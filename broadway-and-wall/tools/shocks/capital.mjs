@@ -17,8 +17,15 @@ function probesFor() {
     pol: (g) => (g.econ.nat?.policy ?? NaN) / 100,
     ten: (g) => (g.econ.indexRate ?? NaN) / 100,
     short: (g) => (g.econ.shortIndex ?? NaN) / 100,
-    // the street's mortgage book: every first mortgage on s.cityLoans (the rivals' and private owners' loans)
-    debt: (g) => { let x = 0; for (const k in g.cityLoans ?? {}) x += g.cityLoans[k]?.balance ?? 0; return x; },
+    // the street's mortgage book: every first mortgage — the rivals' (s.cityLoans) and the private owners'
+    // (s.streetLoans, the town's share of a syndicated note). It read cityLoans alone, so the crunch's
+    // charge-off share divided both books' losses by about half the book (battery triage 2026-11-07).
+    debt: (g) => {
+      let x = 0;
+      for (const k in g.cityLoans ?? {}) x += g.cityLoans[k]?.balance ?? 0;
+      for (const k in g.streetLoans ?? {}) { const l = g.streetLoans[k]; x += (l?.balance ?? 0) * (l?.share ?? 1); }
+      return x;
+    },
     trades: (g) => (g.capTape ?? []).filter((t) => t.m === g.month && t.kind === "t").length,
     starts: (g) => CLASSES.reduce((a, k) => a + (g.econ.starts?.[k] ?? 0), 0),
   };

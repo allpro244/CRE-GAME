@@ -243,8 +243,24 @@ export function postedEff(L: LandlordAsk, _e: Econ, _k: Comm, _mkt: number, _sit
  * patience — the package sweetened, then the face cut (both faster when its
  * loan is in trouble).
  */
-export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: { m: number; vacNow: number; darkM?: number; stressed: boolean; infl12: number; holdFace?: boolean }): void {
+export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: { m: number; vacNow: number; darkM?: number; stressed: boolean; infl12: number; holdFace?: boolean; supplyM?: number }): void {
   if (L.m >= opts.m) return;
+  // THE MARKET IT PRICES INTO. Its broker reports the class's months of
+  // supply (streetRolls: available feet over a month's new leasing). Above
+  // the months space ordinarily takes to let (MONTHS_ON_MARKET, the CoStar /
+  // CBRE series — the same yardstick `noteLetting` reads a fast letting
+  // against) it is a tenant's market, and no landlord's ask rises: not with
+  // costs, and not up to the comps. Asking rents fall in nominal terms in a
+  // soft market — US office asking -1.1% in Q4 2009 alone (Reis); Manhattan
+  // asking -3.3% over 2020-24 with net effective -17.3%. Without this every
+  // landlord whose own space was letting on time, and every full building,
+  // passed the CPI through and lifted to the comps, so the real face held
+  // through ten years at 15% vacancy (REAL_ECONOMY_PLAN, office rents). The yardstick is a
+  // fact about markets, not the landlord's own learned patience, which
+  // drifts to whatever the market has been doing and so cannot tell it the
+  // market is soft. Nothing new is chosen: the cuts that follow are the
+  // comps', at the pace an opinion of rent refreshes (COMPS_M).
+  const soft = opts.supplyM !== undefined && opts.supplyM > searchMonths(k);
   const months = Math.max(1, Math.min(12, opts.m - L.m));
   L.m = opts.m;
   L.v += (opts.vacNow - L.v) * Math.min(1, months / VAC_MEMORY);
@@ -270,7 +286,9 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
     // which is what sweetens it and then cuts it (below). Following them up
     // is not the ratchet the full building's rule avoids: this space is
     // tested by the market every month it sits.
-    d += (opts.infl12 / 12) * months + Math.max(0, toComps);
+    // In a soft market it does neither, and follows the comps down instead:
+    // the deals signing around it are what its space now has to beat.
+    d += soft ? Math.min(0, toComps) : (opts.infl12 / 12) * months + Math.max(0, toComps);
   } else if (opts.darkM !== undefined) {
     // SPACE THAT HAS SAT PAST ITS PATIENCE: the face holds — no rise with
     // costs, and no chasing the comps up — and follows them down; the package
@@ -288,8 +306,9 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
     // building chasing them up ratchets every good corner's raise onto the
     // whole town (measured: shop rents rising 3.5% a year over 18% vacancy).
     // The package — given to win a tenant for empty space — is not offered,
-    // and fades over the year a broker's opinion takes to refresh.
-    d += (opts.infl12 / 12) * months;
+    // and fades over the year a broker's opinion takes to refresh. In a soft
+    // market its costs are not passed on: its next tenant has options.
+    if (!soft) d += (opts.infl12 / 12) * months;
     L.c *= 1 - pull;
   }
   L.c = Math.max(0, Math.min(PKG_MAX, L.c));
@@ -331,9 +350,19 @@ export function noteLetting(L: LandlordAsk, k: Comm, tom: number, share: number,
  * tenant instead — its own expected months to let (plus the make-ready when
  * the tenant would leave a suite it is sitting in), spread over the term —
  * and less again when it needs the cash.
+ *
+ * Its expected months to let are the longer of its own patience and the
+ * market's months of supply (`supplyM`, streetRolls: available feet over a
+ * month's new leasing): its patience is learned from lettings already done,
+ * the market's months are where the space on offer now stands, and the
+ * downtime an owner, its lender and its appraiser put into a lease decision
+ * is the market's leasing assumption when that is the longer (the "months
+ * vacant" of a market leasing assumption, read off the broker's absorption
+ * and availability). In a glut that is what deepens the concession a
+ * landlord will give to sign a tenant now rather than wait.
  */
-export function reservation(L: LandlordAsk, k: Comm, post: number, termM: number, sitting: boolean, stressed: boolean): number {
-  const wait = L.t + (sitting ? MAKE_READY_M[k] : 0);
+export function reservation(L: LandlordAsk, k: Comm, post: number, termM: number, sitting: boolean, stressed: boolean, supplyM?: number): number {
+  const wait = Math.max(L.t, supplyM ?? 0) + (sitting ? MAKE_READY_M[k] : 0);
   return post * Math.max(0.4, 1 - wait / Math.max(12, termM)) * (stressed ? STRESS_RES : 1);
 }
 // ---------------------------------------------------------------- where firms are

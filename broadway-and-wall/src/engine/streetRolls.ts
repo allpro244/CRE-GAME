@@ -465,7 +465,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
     const mkt = b.mkt[k] ?? 0;
     const L = bookOf(b, roll, k);
     const post = postedEff(L, e, k, mkt, stay);
-    const res = reservation(L, k, post, termM, stay, b.stressed);
+    const res = reservation(L, k, post, termM, stay, b.stressed, e.supplyM?.[k]);
     const pc = placeCost(firm.fid !== undefined ? ctx.pts.get(firm.fid) : undefined, b.pos, hourCost(firm));
     const worth = worthOf(firm, k, mkt, b.sc[k] ?? 50, take, pc.cost, k === "retail" ? footRel(b.bbl) : undefined, rentCapacity(s.econ, firm, k));
     const move = !stay && moving ? moveCostPsfYr(e, k, termM) : 0;
@@ -670,11 +670,13 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   const m = s.month;
   e.seekers ??= [];
   const V = marketView(s, parcels);
-  const { owners, blds, bld, letOf, availOf, catchOf, ctx, recOf, bookOf, gTradeOf, termOf, value, shop, noteRoll, vacShare } = V;
+  const { owners, blds, bld, letOf, notReady, availOf, catchOf, ctx, recOf, bookOf, gTradeOf, termOf, value, shop, noteRoll, vacShare } = V;
   const seeking = new Map<number, Seeker>();
   for (const k of e.seekers) seeking.set(k.fid, k);
   const ratio = (k: Comm) => e.streetSpace?.[k] && (e.streetSpace[k] as { ratio?: number }).ratio || 1;
   const handed: Record<string, number> = { office: 0, retail: 0, industrial: 0 };
+  // the feet new leases took this month, by class: the street's leasing, for its months of supply
+  const letNow: Record<string, number> = { office: 0, retail: 0, industrial: 0 };
   const vacate = (roll: StreetRoll, t: Tenant) => {
     const k = useOf(t);
     handed[k] = (handed[k] ?? 0) + t.sf;
@@ -726,6 +728,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     lease.hcRef = want / lvlNow(s, k);
     roll.t.push(lease);
     noteRoll(roll);
+    letNow[k] += pick.take;
     const effSigned = face * (1 - freeM / Math.max(1, termM));
     // the comp, normalised to an ordinary building — a shop's walk-ins taken out with its address
     recordLease(e, k, m, face, effSigned, pick.mkt * pick.ff, pick.take, Math.max(0, Math.min(N_BANDS - 1, Math.floor(sc / 10))), scoreRentMult(e, k, sc));
@@ -1252,6 +1255,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   }
   if (signed.size) e.seekers = e.seekers.filter((k) => !signed.has(k.fid));
   // Where the street's empty space began, for the markdown it signs at.
+  const availNow: Record<string, number> = { office: 0, retail: 0, industrial: 0 };
   for (const [bbl, roll] of Object.entries(R)) {
     const b = blds.get(bbl);
     if (!b) continue;
@@ -1261,6 +1265,8 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       const vacNow = a >= minSfOf(b, k);
       roll.vac ??= {};
       roll.vsf ??= {};
+      // on the market: the free suites, and the suites being made ready (listed before they are free)
+      availNow[k] += (vacNow ? a : 0) + notReady(roll, k);
       if (vacNow && roll.vac[k] === undefined) { roll.vac[k] = m; roll.vsf[k] = Math.round(a); }
       else if (!vacNow) { delete roll.vac[k]; delete roll.vsf[k]; }
       else {
@@ -1280,6 +1286,22 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     if (roll.vac && !Object.keys(roll.vac).length) delete roll.vac;
     if (roll.vsf && !Object.keys(roll.vsf).length) delete roll.vsf;
   }
+  // THE MARKET'S MONTHS OF SUPPLY, as a broker reports it: the feet available
+  // to let — free suites, and suites handed back and being made ready, which
+  // are listed before they are free — over the feet that new leases take in
+  // a month, on the trailing year's leasing (Little's law: the months an
+  // available foot can expect to wait at the pace the market is letting,
+  // counted from listing, as the months-on-market series are). It tells a
+  // landlord whose own space has not yet sat past its patience whether the
+  // market it prices into is soft, and how long a tenant lost will take to
+  // replace (tenantMarket.ts reviewAsk, reservation). Kept through the
+  // opening too, so the leasing pace is known when the landlords first read
+  // it, at the opening's end.
+  for (const k of COMM) {
+    const fl = (e.letFlow ??= {}), was = fl[k];
+    fl[k] = was === undefined ? letNow[k] : was + (letNow[k] - was) / 12;
+    if (!opening) (e.supplyM ??= {})[k] = fl[k]! > 0 ? +(availNow[k] / fl[k]!).toFixed(2) : undefined;
+  }
   // THE LANDLORDS PRICE (tenantMarket.ts reviewAsk): each street owner reviews
   // its ask on each kind of space it has, from its own empty floors, how long
   // they have sat against how long it expected, its mortgage, and the comps.
@@ -1296,7 +1318,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       for (const k of COMM) {
         if (!b.cap[k] || !(b.mkt[k]! > 0)) continue;
         const since = roll.vac?.[k];
-        reviewAsk(bookOf(b, roll, k), e, k, b.mkt[k]!, { m, vacNow: vacShare(b, roll, k), darkM: since === undefined ? undefined : m - since, stressed: b.stressed, infl12, holdFace: opening });
+        reviewAsk(bookOf(b, roll, k), e, k, b.mkt[k]!, { m, vacNow: vacShare(b, roll, k), darkM: since === undefined ? undefined : m - since, stressed: b.stressed, infl12, holdFace: opening, supplyM: e.supplyM?.[k] });
       }
     }
   }

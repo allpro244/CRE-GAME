@@ -2444,6 +2444,8 @@ export interface Econ {
   migRate?: number; jobsPrevYr?: number;
   /** the share of let space handed back in a year, measured on the street, by class */
   turnMeas?: Partial<Record<string, number>>;
+  /** the street's new leasing by class, feet a month over the trailing year, and its available feet over that: the months of supply a broker reports (streetRolls, tenantMarket.ts reviewAsk) */
+  letFlow?: Partial<Record<string, number>>; supplyM?: Partial<Record<string, number>>;
   /** each market's normal availability, learned from its own history (market.ts rent gap) */
   natVac?: Record<BuiltClass, number>;
   /** the opening's rent per foot by class and price level: what sales per head are measured from (tenantBooks) */

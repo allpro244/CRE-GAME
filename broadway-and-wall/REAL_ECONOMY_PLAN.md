@@ -78,6 +78,7 @@ It supersedes the open parts of `ECON_REALISM_PLAN.md` and `RENT_VACANCY_RESPONS
 | The REO sale trues up the charge-off (net of 3% selling costs; recovery capped at the loss): century peak charge-off 0.8% → 3.7% (FDIC 2-4%), bank failures 0 → 1.8 a century; crunch charge-offs RIGHT | done | #652 |
 | A land-survey lot nobody bids on is censored, not dropped: a year with under half the lots bid prints nothing (Kaplan-Meier identification). Mechanism: panel probe 0.26 → 0.18; the century row cannot resolve it (8 seeds: 31.7% → 23.7%, a branch without it 23.1%) | done | #653 |
 | Custom a local trade lost out of town returns at the re-tender pace: town output answers the national gap 0.11% → 0.86% per point, jobs 0.14% → 0.29% (probe); century rows unresolved | done | #654 |
+| An arrival has no unemployment-insurance claim (a voluntary move disqualifies): arrivals' unemployment +10.6 → +9.6pp | done | #658 |
 
 ### Corrections to the audit
 - **3.3 loan spreads: mostly not a fake.** The playthrough's coupons 5.7 points over the index (p50) were the bot borrowing from a private-credit desk (Cordage Debt Partners), which in life does price 4-7 points over. The bank desks quoted about 2.5-3 points, high in the real range. Desk pricing is already built from funding, expected loss and running cost (`pricing.ts` `liveSpread`, `costFloor`). Lower priority; re-check against MBA/ACLI once caps are right.
@@ -119,6 +120,10 @@ A loan-by-loan probe over the crunch's 36 months (scratchpad `agent-crunch/`, se
 - **The battery's 1-3% band is a GFC figure** (a 2005-07 vintage at about 70% LTV, a 35-40% value fall, and falling income), not a credit-only crunch on a seasoned book.
 
 Open, in order: (1) [done with the balloon PR: a private owner with equity lists at its balloon default and the sale pays the note] foreclosure surplus to the borrower when the court does sell; (2) a foreclosure's loss is the balance plus accrued interest, carry and liquidation costs less the REO sale's actual net (Trepp CMBS loss severities on liquidated loans, about 40-60% in 2010-12, with the cost split), reserved at default and trued up at the sale; (3) source the crunch's charge-off band to the shock it injects (a credit-only freeze — e.g. 1998's CMBS seizure, when losses stayed low — against the GFC's combined shock), or add the combined shock. Done: firms whose desk extension expired went straight to the hand-back, skipping the sale rung (`ext === undefined` read the desk's extension as "already listed"), and private owners had no sale step at all (the balloon PR: private foreclosures on equity buildings in the crunch 2/0/0 → 0); the measurement's book omitted the private owners' notes (#649).
+
+## The battery on main after #659 (2026-11-07, evening)
+
+22 shocks × seeds 11/22/33: 1 BACKWARDS (+30% population: apartment vacancy +0.7pp, the flats demand item), 1 DID NOT LAND (the employer gate's edge), 6 NO RESPONSE, 4 WRONG SIZE, 9 RIGHT, 1 SPILLS (the placebo). Against the afternoon's: zero-rate decade BACKWARDS → NO RESPONSE, credit crunch NO RESPONSE → WRONG SIZE (charge-offs RIGHT, #652), −20% office NO RESPONSE → RIGHT; insurance ×2 RIGHT → WRONG SIZE (apartment starts −64%, now consistent across seeds), construction +40% WRONG SIZE → NO RESPONSE on land. The last was bisected (#650, #652, #654, main, main without #653): land in years 3-8 reads −18%, −2%, −7%, +2%, +2% with per-seed values from −33% to +33% — seed 11 falls 20-33% in every build — so the cost-to-land wire works and the row is the land index's own volatility (20-30% a year) through chaotically diverging twins, not a regression.
 
 ## Measurement: what a 3-seed century can and cannot see (2026-11-07)
 

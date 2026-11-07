@@ -88,12 +88,12 @@ const ratesUp = {
 };
 
 // ------------------------------------------------------------------ 3b
-const ZERO = "capital-rates-zero10y";
+const EASY = "capital-rates-easy10y";
 const ZERO_RATE = 0.25, ZERO_M = 120;
-const ratesZero = {
-  id: ZERO, group: "capital", title: "Rates near zero for 10 years",
+const ratesEasy = {
+  id: EASY, group: "capital", title: "Policy held under the committee's rule for 10 years",
   what: `The central bank's policy rate (econ.nat.policy, market.ts tickNation) set to ${ZERO_RATE}% before every month for ${ZERO_M} months, then released to the committee's own rule. Inside a month the committee still meets and steps from ${ZERO_RATE}% toward its rule (up a quarter to three-quarters of a point at a meeting); the peg is restored before the next month. The ten-year and the short index are the engine's.`,
-  sources: "2009-15 and 2020-21: policy at the zero bound; the ten-year near 2%; US cap rates compressed over years (about 8% to 5.5% 2009-2019); land prices and leverage rose; starts rose. When rates normalised (2022-24), the reverse, and distress concentrated in loans written at the top.",
+  sources: "THE SHOCK THIS INJECTOR IS (battery triage 2026-11-07): policy pegged 2-7 points under the committee's own rule into a nation running tight. The record for a rate held under the rule is the US 1965-80 (policy under any Taylor-type rule: Taylor 1999, 'A historical analysis of monetary policy rules'), FRED annual averages: CPI inflation 1.6% (1965), 5.9% (1970), 9.1% (1975), 13.5% (1980); the ten-year 4.28% (1965), 7.35% (1970), 7.99% (1975), 11.46% (1980): +3.1 points in five years and +3.7 in ten. Inflation accelerates, credibility goes, the long end rises.",
   inject(g, city, i, ctx) {
     const n = g.econ.nat;
     if (!n) return;
@@ -103,25 +103,72 @@ const ratesZero = {
     // held through the month (market.ts policyHold): before this the committee's in-month step climbed to 21% by year 10
     n.policyHold = { lo: ZERO_RATE, hi: ZERO_RATE };
   },
-  probes: probesFor(),
+  probes: { ...probesFor(), cpi: (g) => g.econ.cpi ?? NaN },
   land(c, t) {
-    const p1 = at(t, 1, ZERO, "pol"), d1 = p1 - at(c, 1, ZERO, "pol"), t1 = at(t, 1, ZERO, "ten") - at(c, 1, ZERO, "ten");
+    const p1 = at(t, 1, EASY, "pol"), d1 = p1 - at(c, 1, EASY, "pol"), t1 = at(t, 1, EASY, "ten") - at(c, 1, EASY, "ten");
     // the shock is "policy held near zero": that is what lands (the gap to the control is whatever the control's rate is)
     return { ok: p1 <= 0.0125, msg: `policy ${(100 * p1).toFixed(2)}% (${bp(d1)}) and ten-year ${bp(t1)} at +1 month` };
   },
   hold(c, t) {
-    const p = at(t, 60, ZERO, "pol"), avg = meanGap(c, t, ZERO, "pol", 1, 60), ten = meanGap(c, t, ZERO, "ten", 1, 60);
+    const p = at(t, 60, EASY, "pol"), avg = meanGap(c, t, EASY, "pol", 1, 60), ten = meanGap(c, t, EASY, "ten", 1, 60);
     // THE WHOLE PEG, not its first five years (audit 2026-11-05): read only to
     // +60 months the hold passed while the end-of-month rate climbed to 6-21%
     // in years 6-10, so everything after year 5 was graded as a zero-rate
     // decade that did not happen.
     let mx = 0, mxAt = 0, off = 0;
     for (let i = 1; i <= Math.min(ZERO_M, t.length - 1); i++) {
-      const v = at(t, i, ZERO, "pol");
+      const v = at(t, i, EASY, "pol");
       if (v > mx) { mx = v; mxAt = i; }
       if (v > 0.0125) off++;
     }
     return { ok: p <= 0.0125 && mx <= 0.0125, msg: `policy ${(100 * p).toFixed(2)}% at +5 years; over the ${ZERO_M}-month peg at most ${(100 * mx).toFixed(2)}% (month +${mxAt}), above 1.25% in ${off} months (${bp(avg)} against the control over years 0-5; ten-year ${bp(ten)})` };
+  },
+  expect: [
+    { obs: `probe.${EASY}.ten`, unit: "pp", win: "mid", sign: +1, lo: 1.0, hi: 8.0, label: "ten-year (loan index), years 3-8", want: "rises: US ten-year +3.1 points 1965-70 and +3.7 by 1975 (FRED GS10)" },
+    { obs: `probe.${EASY}.cpi`, unit: "rel", win: "mid", sign: +1, lo: 0.03, hi: 1.0, label: "price level, years 3-8", want: "inflation accelerates: US CPI inflation 1.6% (1965) to 5.9% (1970) and 9.1% (1975) (FRED CPIAUCSL)" },
+  ],
+  charts: [
+    { title: "policy rate, %", obs: `probe.${EASY}.pol`, scale: 100 },
+    { title: "office cap rate, %", obs: `probe.${EASY}.cap_office`, scale: 100 },
+    { title: "land value index", obs: "land" },
+  ],
+};
+
+// ------------------------------------------------------------------ 3b2
+// THE ZERO-RATE DECADE AS IT HAPPENED (battery triage 2026-11-07): the neutral
+// real rate fell and the committee's own rule took policy to the floor. The
+// peg above is a different shock (policy held under the rule).
+const ZERO = "capital-rates-zero10y";
+/** The fall in the US natural real rate from the mid-2000s to the 2010s: about 2 points (Holston, Laubach & Williams 2017, JIE 108; Laubach-Williams). */
+const RSTAR_FALL = 0.02;
+const ratesZero = {
+  id: ZERO, group: "capital", title: "Rates near zero for 10 years (the neutral rate falls)",
+  what: `The nation's neutral real rate (econ.nat.neutralAnchor and neutralReal, market.ts tickNation) lowered by ${100 * RSTAR_FALL} points at the snapshot and held there for ${ZERO_M} months by cancelling the anchor's own reversion each month, then released. Policy is not pegged: the committee follows its own rule, which now wants a lower rate.`,
+  sources: "2009-15 and 2020-21: policy at the zero bound because the rule itself wanted it (r* about 2 points lower: Holston, Laubach & Williams 2017); the ten-year near 2%; US cap rates compressed over years (about 8% to 5.5% 2009-2019); land prices and leverage rose; starts rose. When rates normalised (2022-24), the reverse, and distress concentrated in loans written at the top.",
+  inject(g, city, i, ctx) {
+    const n = g.econ.nat;
+    if (!n) return;
+    if (i === 0) {
+      n.neutralAnchor = (n.neutralAnchor ?? n.neutralReal) - RSTAR_FALL;
+      n.neutralReal -= RSTAR_FALL;
+      ctx.notes.push(`neutral real rate lowered ${100 * RSTAR_FALL} points (anchor ${(100 * n.neutralAnchor).toFixed(2)}%) for ${ZERO_M} months`);
+      return;
+    }
+    if (i < ZERO_M) n.neutralAnchor -= 0.0023 * RSTAR_FALL;   // cancel the anchor's reversion toward 1.4% (market.ts tickNation, 0.0023 a month)
+    // released whole, the neutral rate as well as its anchor: the normalisation
+    // of 2022-24 was abrupt (policy +5 points in eighteen months), not a drift
+    else if (i === ZERO_M) { n.neutralAnchor += RSTAR_FALL; n.neutralReal += RSTAR_FALL; }
+  },
+  probes: { ...probesFor(), rstar: (g) => g.econ.nat?.neutralReal ?? NaN, rule: (g) => (g.econ.nat?.ruleRate ?? NaN) / 100 },
+  land(c, t) {
+    const d = at(t, 1, ZERO, "rstar") - at(c, 1, ZERO, "rstar");
+    return { ok: d <= -0.9 * RSTAR_FALL, msg: `neutral real rate ${bp(d)} against the control at +1 month` };
+  },
+  hold(c, t) {
+    const d = at(t, 60, ZERO, "rstar") - at(c, 60, ZERO, "rstar");
+    let low = 0, n = 0;
+    for (let i = 1; i <= Math.min(ZERO_M, t.length - 1); i++) { const v = at(t, i, ZERO, "pol"); if (Number.isFinite(v)) { n++; if (v <= 0.0125) low++; } }
+    return { ok: d <= -0.75 * RSTAR_FALL, msg: `neutral real rate ${bp(d)} at +5 years; policy at or under 1.25% in ${low} of ${n} months of the decade` };
   },
   expect: [
     { obs: `probe.${ZERO}.ten`, unit: "pp", win: "mid", sign: -1, lo: -3.5, hi: -0.75, label: "ten-year (loan index), years 3-8", want: "falls 0.75-3.5 points as the market learns the bank rests at zero" },
@@ -130,7 +177,7 @@ const ratesZero = {
     { obs: `probe.${ZERO}.debt`, unit: "rel", win: "mid", sign: +1, lo: 0.1, hi: 1.0, label: "the street's mortgage book, years 3-8", want: "leverage builds up (10-100%)" },
     { obs: `probe.${ZERO}.starts`, unit: "rel", win: "mid", sign: +1, lo: 0.1, hi: 1.5, tiny: 0.05, label: "starts, all classes, years 3-8", want: "rise" },
     { obs: "val.office", unit: "rel", win: "mid", sign: +1, lo: 0.1, hi: 0.8, label: "office values, years 3-8", want: "rise" },
-    { obs: "distress", unit: "rel", win: "late", sign: +1, lo: 0.1, hi: 5, label: "distressed listings, years 8-15 (after release at year 10)", want: "rise when rates normalise: loans written at the top" },
+    { obs: "distress", unit: "rel", win: "post10", sign: +1, lo: 0.1, hi: 5, label: "distressed listings, years 10-15 (after release at year 10)", want: "rise when rates normalise: loans written at the top" },
   ],
   charts: [
     { title: "policy rate, %", obs: `probe.${ZERO}.pol`, scale: 100 },
@@ -267,4 +314,4 @@ const wave = {
   ],
 };
 
-export const SHOCKS = [ratesUp, ratesZero, crunch, wave];
+export const SHOCKS = [ratesUp, ratesZero, ratesEasy, crunch, wave];

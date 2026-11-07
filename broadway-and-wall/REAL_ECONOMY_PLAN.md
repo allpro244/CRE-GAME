@@ -71,6 +71,8 @@ It supersedes the open parts of `ECON_REALISM_PLAN.md` and `RENT_VACANCY_RESPONS
 | The zero-rate decade is a fall in r* (2 points, Holston-Laubach-Williams), held 10 years; the old peg is its own shock, "policy held under the rule", graded on FRED 1965-80 (both RIGHT on the rows that grade them; distress after release reads BACKWARDS, −17%: an engine finding) | done | #640 |
 | A building lost to fire or storm is an insured loss and is rebuilt (replacement cost, the owner keeps deed and loan; median replacement about four years, Comerio & Blecher 2010): −20% office BACKWARDS → RIGHT; apartments rent +2.7% → +0.8% (the loss is now temporary; exposes item 11) | done | #641 |
 | A full flats block still has a door: landlords price their exposure (vacant + on notice, RealPage practice): −20% apartments rent +0.8% → +5.3% RIGHT; +30% population vacancy +0.7 → +0.4pp (NO RESPONSE, no longer BACKWARDS); century flats vacancy 7.3% → 8.7% (inside Census 5-11%, wider cycle) | done | #643 |
+| The land market's level is a Jevons index of the panel (geometric mean), not the mean dollar: real land yearly swing 25.5% → 16.8% | done | #645 |
+| New firms start where the workers are: entrants' orders +0.50 a point of labour-force growth over the nation's (KPS 2024 1.19 × BDS 0.424): arrivals jobs years 3-8 +6.7% → +10.0%, century unchanged | done | #646 |
 
 ### Corrections to the audit
 - **3.3 loan spreads: mostly not a fake.** The playthrough's coupons 5.7 points over the index (p50) were the bot borrowing from a private-credit desk (Cordage Debt Partners), which in life does price 4-7 points over. The bank desks quoted about 2.5-3 points, high in the real range. Desk pricing is already built from funding, expected loss and running cost (`pricing.ts` `liveSpread`, `costFloor`). Lower priority; re-check against MBA/ACLI once caps are right.
@@ -97,6 +99,11 @@ The full battery (21 shocks × seeds 11/22/33) on main after #632: 3 BACKWARDS, 
 10. **The region's home price has no rent channel** (user-cost arbitrage, Poterba 1984; Himmelberg-Mayer-Sinai 2005). Open.
 11. **A demand surge adds no occupied flats**: the flats landlord's expected wait at its chosen ask lengthens with demand, so a surge becomes rent. Investigate. Open. #643 fixed the frozen full-block ask; the surge's vacancy still does not fall (+0.4pp), so the remaining cause is on the arrivals' side (item 5: arrivals leave rather than rent).
 
+
+## The battery on main after #646 (2026-11-07, afternoon)
+
+22 shocks × seeds 11/22/33: **1 BACKWARDS** (zero-rate decade: distress after release, −27%), **1 DID NOT LAND** (largest employer leaves: seed 22 reads −0.50 jobs per direct job at +2 months against the gate's ≤ −0.5, seed 11 −0.62 — the gate's edge, not a broken injection), **8 NO RESPONSE** (rates +300bp caps and values; crunch charge-offs and distress; foreign wave caps; arrivals' flats vacancy; e-commerce shop vacancy and rent; −20% office rent at +1.6%, against +3.3% in #641's run; −20% retail), **3 WRONG SIZE** (construction +40% land −4.9%; +50% retail and apartments vacancy +9.5pp against ≥ +10), **1 SPILLS** (the placebo's noise floor). Down from 3 BACKWARDS / 5 NO RESPONSE / 1 DNL in the morning's battery, with the NO RESPONSE rows now concentrated in two themes: rents that do not answer vacancy (office, retail: see the office section) and capital pricing (cap rates, charge-offs).
+
 ## Office rents and vacancy: what the measurements say (2026-11-07, open)
 
 The century's office Wheaton-Torto slope (yearly Δlog real effective rent on last year's vacancy) is −0.22%/yr per point on seed 11, against −2 to −3 in the record. A 40-year probe (scratchpad `offprobe.mjs`, `mosprobe.mjs`) located it:
@@ -122,6 +129,7 @@ The face share is contested by the code's own source (Manhattan 2020-24: asking 
 
 ## Tried and dropped (so nobody tries them again the same way)
 
+- **The re-tender bid with capacity against the opening's heads** (`claude/retender-capacity`, for item 8's snap-back): runaway growth — jobs and population +2.2%/yr over 60 years (main 0.5-0.6), real land +8.6%/yr, retail vacancy 38%, because heads serving local demand count as bidding capacity and growth compounds (with #646's entry on top). The snap-back is the engine's stabiliser; a fix needs export-serving capacity only, or Blanchard-Katz convergence through wages and migration.
 - **A matched land-survey panel with floor prints** (branch `claude/land-survey-panel`). The texture floor scales with `landIdx`, so a lot at its floor reads exactly the level: no-bid lots hold the level, fringe lots bid below their floor print a RISE every year they go unbid, and the panel ratcheted (+4.5%/yr real; PASS 29/13/6). An earlier good result came from a bug that multiplied the floor in twice. Any survey redesign must never let a print read the level (a chained matched-pair median of the bids, with lost and gained bidders as censored ranks, is the candidate).
 - **A robust (Huber Proposal 2) volatility record for the appraisal filter** (`claude/robust-grid-q`): the prior entered as unclipped pseudo-steps matched to 1 while real steps were clipped and matched to ψ2, so the prior counted as ~13 steps, not 5, and pulled every class toward q0.
 - **A full building's concession package fading to the market's** (`claude/package-fades-to-market`): self-referential (the comps carry the package), so concessions never burned off; vacancy collapsed to ~2%. Office rents ignore business-cycle vacancy because on-market cuts (~1.2-1.4%/yr per point, realistic) are given back when space is re-offered; the fix needs a market-tightness input (months-to-let, or the landlord's learned expected vacancy `L.v`, written and never read).

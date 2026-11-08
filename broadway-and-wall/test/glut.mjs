@@ -25,19 +25,19 @@ let fails = 0;
 const ok = (cond, msg) => { console.log(`${cond ? "PASS" : "FAIL"}  ${msg}`); if (!cond) fails++; };
 
 // --- 1. the pro forma reads the market's vacancy ----------------------------
+// No "natural" vacancy to be under or over (owner, 2026-11-07): the pencil
+// falls as the vacancy the scheme opens into rises — lower occupancy and a
+// longer lease-up at the market's own lettings — every step of the way, and a
+// deep glut is well under half of a tight market.
 {
   const g = E.firstListings(E.newGame(550991, parcels), parcels, bbls);
-  const at = (vac) => { const e = structuredClone(g.econ); e.cityVac.office = vac; return E.devPencils(e, "office"); };
-  const nat = E.OPENING_VAC.office;
-  // The pencil reads FORWARD vacancy (today's plus the pipeline), so "mild"
-  // is the highest of 1.4x/1.3x/1.2x today that keeps the forward read
-  // under 1.4x natural — the claim is about the forward, not the opening's
-  // particular pipeline.
-  const fwdAt = (vac) => { const e = structuredClone(g.econ); e.cityVac.office = vac; return E.forwardVacancy(e, "office"); };
-  const mildM = [1.4, 1.3, 1.2, 1.1].find((m) => fwdAt(nat * m) <= 1.4 * nat) ?? 1.0;
-  const base = at(nat), mild = at(nat * mildM), glut = at(nat * 3), worse = at(nat * 4);
-  ok(Math.abs(mild / base - 1) < 0.01, `up to 1.4× natural forward vacancy the pencil is untouched (${mildM}× today: ${base.toFixed(3)} → ${mild.toFixed(3)})`);
-  ok(glut < base * 0.5 && worse <= glut, `at 3× natural it is under half (${glut.toFixed(3)}); at 4× no better (${worse.toFixed(3)})`);
+  const at = (vac) => { const e = structuredClone(g.econ); e.cityVac.office = vac; return { p: E.devPencils(e, "office"), f: E.forwardVacancy(e, "office") }; };
+  const pts = [0.03, 0.06, 0.09, 0.12, 0.16, 0.20, 0.25, 0.30, 0.35].map(at);
+  let mono = true;
+  for (let i = 1; i < pts.length; i++) if (!(pts[i].f >= pts[i - 1].f && pts[i].p < pts[i - 1].p)) mono = false;
+  ok(mono, `the pencil falls monotonically in forward vacancy: ${pts.map((x) => `${(x.f * 100).toFixed(0)}%:${x.p.toFixed(2)}`).join(" ")}`);
+  const tight = pts[0].p, glut = pts[pts.length - 1].p;
+  ok(glut < tight * 0.5, `a deep glut (${(pts[pts.length - 1].f * 100).toFixed(0)}% forward) pencils under half a tight market (${glut.toFixed(3)} vs ${tight.toFixed(3)})`);
 }
 
 // --- 2. the local phase alone does not bleed a city out ---------------------

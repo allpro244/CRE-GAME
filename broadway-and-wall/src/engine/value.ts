@@ -8,9 +8,9 @@ export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, normalVac, openingVac, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH, LEASE_TERM_M, forwardVacancy } from "./market";
+import { industryStress, normalVac, openingVac, CAP_BASE, developerOptimism, LEASE_TERM_M, forwardVacancy } from "./market";
 import { gpInterestInFund } from "./fund";
-import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
+import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE, leaseUpMonthsOf, stabilisedVacancy } from "./proforma";
 import { splitRule, coverageMax, MINOR_FIXED, MINOR_PER_LOT, CORNER_K } from "./lotcode";
 import { productOf, PRODUCT_TYPES, PRODUCT_KEYS, layoutProduct, type ProductKey } from "./products";
 import { homeLotBidPsf } from "./homeprice";
@@ -1252,26 +1252,26 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   // What the market can absorb by delivery is the unhoused queue plus the
   // tenant base's trend growth over a typical build (18 months), at its own
   // demand elasticity.
-  const nat = normalVac(e, k);
-  const vacNow = e.cityVac?.[k] ?? nat;
-  const vac = forwardVacancy(e, k);
-  // ...and the concession package that vacancy will command, against the one
-  // today's vacancy commands. Both read off the same schedule, so with
-  // nothing in the pipeline and nothing to absorb the rent is untouched.
-  const effAt = (1 - CONC_DEPTH * concessionTarget(vac - nat))
-    / Math.max(0.05, 1 - CONC_DEPTH * concessionTarget(vacNow - nat));
-  const rent = (e.effRentIdx?.[k] ?? e.rentIdx?.[k] ?? 0) * effAt * locMult * (1 + developerOptimism(e, k));
+  // The rent is what the comps signed at (the effective index: the package
+  // already off). This used to multiply in the package a "natural" schedule
+  // gave at delivery vacancy over today's — a norm; the supply side is the
+  // occupancy and the lease-up clock below.
+  const rent = (e.effRentIdx?.[k] ?? e.rentIdx?.[k] ?? 0) * locMult * (1 + developerOptimism(e, k));
   if (!(rent > 0)) return 0;
   // THE PRO FORMA READS THE MARKET'S VACANCY. This underwrote 90% (95% for
   // flats) whatever the market was doing, so the pipeline kept starting into
   // a glut: seed 20603 delivered 78 buildings while office vacancy sat at 30%
-  // and the city lost a fifth of its people. A developer's lease-up
-  // assumption is the market's, with a margin: untouched up to one and a
-  // half times the natural vacancy, then down to half at three times it —
-  // at which point nothing pencils, which is what a glut is for.
-  const excess = Math.max(0, vac - 1.5 * nat);
-  const leaseUp = Math.max(0.5, 1 - excess / (1.5 * nat));
-  const occ = (k === "multifamily" ? 0.95 : 0.90) * leaseUp;
+  // and the city lost a fifth of its people. Then it read a haircut against
+  // one and a half times a "natural" vacancy. Now (2026-11-07) it reads what
+  // the market shows, as the site pro forma does: stabilised at the vacancy
+  // the scheme opens into (`forwardVacancy`; never fuller than its own
+  // turnover allows, `stabilisedVacancy`), and the rent the lease-up loses —
+  // the months the market's own lettings take to let it at fair share
+  // (`leaseUpMonthsOf`) — charged to its cost, as the reserve charges it.
+  const ownSf = rentableFromSpec(45_000, 3);
+  const vac = forwardVacancy(e, k, ownSf);
+  const occ = 1 - stabilisedVacancy(e, k, vac);
+  const leaseUpLoss = leaseUpMonthsOf(e, k, ownSf, 0, vac) / 12 * rent * occ;
   // the P90 site's opex, not the mean's — same station as its rent
   const opex = opexPsf(k, e, false) * Math.pow(locMult, OPEX_LOC_ELASTICITY);
   const recov = RECOVERY_RATE[k] ?? 0;
@@ -1284,7 +1284,7 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   // low-rise apartments are wood frame (constructionTypeMult).
   const costPsf = HARD_COST_PSF[k] * constructionTypeMult(k, 3) * e.costIdx * (1 + SOFT_COST) * (1 + CONTINGENCY);
   // per gross foot, like the cost (REAL_ECONOMY_PLAN 2.6): the NOI is per rentable foot, the hard cost per gross
-  const yoc = noiPsf * rentableFromSpec(45_000, 3) / 45_000 / Math.max(1, costPsf);
+  const yoc = noiPsf * ownSf / 45_000 / Math.max(1, costPsf + leaseUpLoss * ownSf / 45_000);
   const hurdle = developmentHurdle(yoc, (e.capRate?.[k] ?? CAP_BASE[k]) / 100);
   // THE RESPONSE CURVE WAS CALIBRATED FOR INPUTS THIS FUNCTION NO LONGER HAS.
   //
@@ -1401,6 +1401,10 @@ let LAND_MKT: unknown[] | null = null;
 const LAND_DICTS = [
   "locIdxMeanBy", "cityVac", "structTight", "sublet", "stock", "pipeline", "classDrvTrend", "landQueue",
   "rentIdx", "effRentIdx", "rentExp", "capRate", "capExp",
+  // the lease-up clock (proforma.ts leaseUpMonths: gross lettings and the
+  // between-tenants floor read the occupied stock, its measured turnover, net
+  // take-up, the looking pool and the dark floors)
+  "occupied", "absorb12", "turnMeas", "pool", "darkSf",
 ] as const;
 const LAND_SCALARS = [
   "locIdxMean", "landIdx", "cpi", "infillShare", "costIdx", "indexRate",
@@ -3485,7 +3489,11 @@ export function appraise(bbl: string, value: number): { lo: number; mid: number;
 
 // market-implied NOI before property tax (unowned parcels; also the
 // stabilized case for owned). Tax is capitalized in assetValue.
-export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition, stabilised: boolean | "natural" = false, condIdx?: number): number {
+export function noiYr(
+  rec: ParcelRecord, econ: Econ, condition: Condition, stabilised: boolean | "natural" = false, condIdx?: number,
+  /** A forecast occupancy by use in place of the market read (a pro forma's: proforma.ts `developmentProForma`). */
+  occOf?: (use: BuiltClass) => number,
+): number {
   if (rec.class === "land" || !rec.bldgArea) {
     // carry: taxes and insurance bleed on idle land (idleLandCarryRate)
     return -landValue(rec, econ) * idleLandCarryRate(econ);
@@ -3513,7 +3521,7 @@ export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition, stabi
     // number still standing — every rent, NOI and cap rate ~17% high.
     const sf = useRentableSf(rec, use);
     if (sf <= 0) continue;
-    const occ = useOccupancy(rec, econ, use, stabilised);
+    const occ = occOf ? occOf(use) : useOccupancy(rec, econ, use, stabilised);
     const op = sf * opexPsf(use, econ, false) * locOpexMult(rec, econ, use);
     rent += sf * useRentPsfYr(rec, econ, condition, use, condIdx) * occ;
     opex += op;

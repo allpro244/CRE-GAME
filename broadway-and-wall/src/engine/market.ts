@@ -2140,8 +2140,24 @@ const DEM = {
    * engine spent a third of a one-off dollar in its first year.
    */
   C_NOW: 0.42,
-  /** months over which firms read the output they plan for; to close a capital gap; investment plans lag */
-  YE_M: 12, TAU_K: 40, I_LAG: 6,
+  /**
+   * months over which firms read the output they plan for; to close a
+   * capital gap; for an investment plan to become spending.
+   * I_LAG is time to build: a project's spending is put in place evenly over
+   * about four quarters (Kydland & Prescott 1982, Econometrica), so a dollar
+   * planned is spent on average two quarters later — six months [S].
+   * TAU_K: plants close about 15% of the gap between the capital they want
+   * and the capital they have in a year (Caballero, Engel & Haltiwanger
+   * 1995, BPEA, US manufacturing equipment, λ = 0.15 annual; Caballero &
+   * Engel 2003, NBER w9898, Table 7, show the faster speeds that linear
+   * aggregate regressions return are biased up by 80% or more) [S]. A gap
+   * closing at 15% a year has a mean lag of 1/-ln(0.85) = 74 months, six of
+   * which are the time to build above: TAU_K = 68. It was 40 (no source),
+   * which made business investment swing 4.9 times output (HP 1600) against
+   * about 3 on the record (King & Rebelo 1999) and turned every investment
+   * boom into its own bust two years on.
+   */
+  YE_M: 12, TAU_K: 68, I_LAG: 6,
   /**
    * how far the output firms plan capital for follows recent output rather
    * than the trend: one for one. Desired capital moves with output — the

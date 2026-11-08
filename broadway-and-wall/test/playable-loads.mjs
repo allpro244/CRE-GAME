@@ -62,6 +62,9 @@ const errors = [];
 ws.onmessage = (m) => {
   const msg = JSON.parse(m.data);
   if (msg.id && pending.has(msg.id)) { pending.get(msg.id)(msg.result ?? msg); pending.delete(msg.id); }
+  if (msg.method === "Runtime.consoleAPICalled" && /worker failed/i.test(JSON.stringify(msg.params.args ?? []))) {
+    errors.push("worker: " + (msg.params.args ?? []).map((a) => a.value ?? a.description ?? "").join(" ").slice(0, 200));
+  }
   if (msg.method === "Runtime.exceptionThrown") {
     const d = msg.params.exceptionDetails;
     errors.push((d.exception?.description ?? d.text ?? "exception").split("\n").slice(0, 2).join(" | "));
@@ -88,4 +91,18 @@ await send("Runtime.evaluate", { expression: `[...document.querySelectorAll("but
 const t1 = Date.now();
 while (Date.now() - t1 < WAIT_MS && !errors.length) await sleep(250);
 if (errors.length) done(1, `playable-loads: FAIL — the page threw after Break ground:\n  ${errors.join("\n  ")}`);
-done(0, `playable-loads: ok — setup screen in ${setupS} s, no exception through ${WAIT_MS / 1000} s of a new game`);
+// THE MONTH RUNS OFF THE PAGE'S THREAD (2026-11-08). After #678 both web
+// workers threw on load (a module cycle read in its temporal dead zone) and
+// the page quietly ran every month itself: the game froze while the clock ran
+// and every check stayed green. Advance one month and ask where it ran.
+await send("Runtime.evaluate", { expression: `[...document.querySelectorAll("button")].find((b) => /^\\s*(\\+1 mo|Advance)/.test(b.textContent))?.click()` });
+let where = "none";
+const t2 = Date.now();
+while (Date.now() - t2 < WAIT_MS && !errors.length) {
+  where = (await send("Runtime.evaluate", { expression: "window.__sim?.where?.() ?? 'none'", returnByValue: true }))?.result?.value ?? "none";
+  if (where !== "none") break;
+  await sleep(250);
+}
+if (errors.length) done(1, `playable-loads: FAIL — after a month:\n  ${errors.join("\n  ")}`);
+if (where !== "worker") done(1, `playable-loads: FAIL — the month ran on the ${where === "page" ? "page's thread (the sim worker failed)" : "page: no month closed"}`);
+done(0, `playable-loads: ok — setup screen in ${setupS} s, no exception through ${WAIT_MS / 1000} s of a new game, the month ran in the sim worker`);

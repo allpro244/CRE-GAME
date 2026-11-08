@@ -1817,8 +1817,13 @@ export interface MerchantBook {
   basis: number; loan: number; lender?: string;
   /** The underwriting the start was decided on: stabilised NOI, exit yield (decimal), lease-up budget. */
   noi: number; yld: number; leaseUp: number;
-  /** The market it was decided in: blended effective rent and cap rate, lease-up multiplier at forecast vacancy. */
-  rent0: number; cap0: number; lum0: number;
+  /**
+   * The market it was decided in: blended effective rent and cap rate, and the
+   * lease-up clock at forecast delivery vacancy, months (proforma.ts
+   * `leaseUpMonths`). `lum0` is a save's old multiplier against a "natural"
+   * vacancy, read by nothing (a book without `lu0` settles at the clock it opens to).
+   */
+  rent0: number; cap0: number; lu0?: number; lum0?: number;
   mix: UseMix;
 }
 

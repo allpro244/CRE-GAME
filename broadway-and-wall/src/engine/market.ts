@@ -865,8 +865,7 @@ export function cycleDown(e: Econ): number {
  * VACANCY AT DELIVERY — what a building started today leases into: today's
  * vacancy, plus everything already in the ground, plus `extraSf` (the
  * developer's own building), less what the market absorbs meanwhile (the
- * unhoused queue and the tenant base's trend growth over a typical 18-month
- * build). A developer's market study counts the competing pipeline and the
+ * tenant base's trend growth over a typical 18-month build). A developer's market study counts the competing pipeline and the
  * project itself; so does every reader of this — the class pencil, the site
  * pro forma and the land residual (2026-10-12).
  */
@@ -879,14 +878,33 @@ export function forwardVacancy(
    * public (the assessor's roll, the permits) and stay the town's.
    */
   view?: { vac: number; dg: number },
+  /**
+   * The builders' vacancy-tolerance gates only (dev.ts `vacTol`): they compare
+   * this forecast with a "normal" vacancy, and were set against the
+   * forecast WITH the looking queue subtracted. They keep reading it so until
+   * they are deleted (no-normal-vacancy step 6); nothing else may pass it.
+   */
+  gateQueue = false,
 ): number {
-  const nat = normalVac(e, k);
-  const vacNow = view ? view.vac : e.cityVac?.[k] ?? nat;
+  const vacNow = view ? view.vac : e.cityVac?.[k] ?? openingVac(k);
   if (!e.stock?.[k]) return vacNow;
   const stkNow = Math.max(1, e.stock[k]);
   const pipe = Math.max(0, e.pipeline?.[k] ?? 0) + Math.max(0, extraSf);
   const occNow = stkNow * (1 - vacNow);
-  const queue = Math.max(0, e.structTight?.[k] ?? 0) * stkNow;
+  // NO QUEUE SUBTRACTED (2026-11-07). `structTight` is the tenants looking
+  // that the empty space did not take: for the flats `flatSpace.seek`, every
+  // household across the water that would like an island flat at the average
+  // rent; for shops, the firms still searching. Both coexist with vacancy —
+  // households turned away at cheap blocks while dearer blocks stand empty
+  // (0.8-1.05M sf a year against a flat stock of ~3M), shops' seekers of
+  // 400-850k sf against 3-9k sf a year of absorption — a mismatch of price,
+  // place and size, not space they are about to fill. Subtracted as if it
+  // would, it read the flats' forward vacancy as 0% at an actual 5-9% and the
+  // shops' as 0% at 15-19%. What seekers actually take is in the market's
+  // gross lettings, which the lease-up clock reads (proforma.ts
+  // `leaseUpMonths`); counting the queue here too would count that
+  // absorption twice. Net demand growth is the trend term below.
+  const queue = gateQueue ? Math.max(0, e.structTight?.[k] ?? 0) * stkNow : 0;
   // `monthsAhead`: 18 for a reader pricing the market in general; a developer
   // deciding whether to build reads to its own delivery date (`developerLook`).
   //
@@ -1553,7 +1571,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
         const gap = (econ.cityVac[k] ?? OPENING_VAC[k]) - OPENING_VAC[k];
         econ.effRentIdx = econ.effRentIdx ?? { ...econ.rentIdx };
         econ.effRentIdx[k] = econ.rentIdx[k] * (1 - CONC_DEPTH * concessionTarget(gap, econ.phase));
-        const a = devPencils(econ, k);
+        const a = devPencils(econ, k, false);
         return a > 0 ? Math.pow(a, 1 / 1.2) : 0;
       };
       // Secant on log rent: q rises with rent but not proportionally (opex,

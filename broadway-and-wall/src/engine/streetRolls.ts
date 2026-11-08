@@ -535,7 +535,26 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
       let take = Math.min(want, c.avail);
       if (c.avail - take < floor) take = c.avail <= want * 1.4 ? c.avail : Math.max(floor, c.avail - floor);
       if (take < floor) continue;
-      out.push(value(firm, k, c.b, c.roll, take, termM, false, moving));
+      // NO LEASE AT A LOSS (2026-11-08). A firm's surplus in a suite at rent r
+      // is joint + post - r (`bargain`); the least the landlord will take is
+      // its reservation, res. If even that leaves the firm worse off than not
+      // signing, the suite is not an option: a firm's alternative is always to
+      // sign nothing (the participation constraint every bargaining model in
+      // tenantMarket.ts assumes, `bidCeiling`, and the signing step never
+      // applied). Without it 96-100% of the shops' signings were above the
+      // firm's own value of the space every year, so rents never answered what
+      // shops could pay: the asking index rose 52 -> 74 while retail vacancy
+      // went 12% -> 37% (seed 11, years 31-41), shops' occupancy cost reached
+      // ~43% of sales (ICSC/NRF: 8-12% is what shops sustain), new shops
+      // stopped forming for a decade and a decade's backlog then formed in a
+      // year (vacancy 33% -> 7% in twelve months).
+      const o = value(firm, k, c.b, c.roll, take, termM, false, moving);
+      // Applied to shops (2026-11-08). Applied to offices and sheds too it
+      // took office vacancy to 4-5% and doubled firm entry and exit (7% ->
+      // 14% a year, BDS ~8%) on seeds 11/22/33: their value-of-space terms
+      // need the same audit before the constraint can bind there.
+      if (k === "retail" && o.joint + o.post - o.res < 0) continue;
+      out.push(o);
     }
     out.sort((a, b) => b.joint - a.joint);
     return out;
@@ -712,7 +731,10 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     const termM = rrange(s, band.loM, band.hiM, "leasing") * qt.term * Math.max(0.6, Math.min(1.4, Math.exp(-4 * gTradeOf(firm.sector))));
     // a contested suite signs at the price its best-and-final set (`contestPrice`),
     // on the face when that is above the ask: no free months then
-    const eff = contest ? contest.eff : bargain(pick, second);
+    // ...and never above the most the firm would pay (its surplus at zero,
+    // post + joint), nor below what the landlord will take
+    const eff0 = contest ? contest.eff : bargain(pick, second);
+    const eff = k === "retail" ? Math.max(pick.res, Math.min(eff0, pick.post + pick.joint)) : eff0;
     const face = Math.max(pick.ask, eff);
     const freeM = freeMonthsFor(face, eff, termM);
     const carry: Partial<Tenant> = {

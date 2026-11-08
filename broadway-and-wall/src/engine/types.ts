@@ -2109,30 +2109,13 @@ export interface Econ {
    *  package (1 − effective / asking) has sat at the deepest it has reached
    *  this episode. Read by the demolition valves (dev.ts). */
   pkgDeepM?: Record<BuiltClass, number>;
-  /** Old saves: the retired clock against a "natural" vacancy. Never read. */
-  vacOverM?: Record<BuiltClass, number>;
-  /** EMA of vacTerm+scarcity that feeds the rent index — lease-quote lag.
-   *  Market pressure forms instantly; landlords adjust asking rents only after
-   *  trailing vacancy and unmet demand have sat on the quote sheet for months. */
-  rentPress?: Record<BuiltClass, number>;
   /**
-   * LAST MONTH'S RENT PATH, per class — vacTerm, EMA, clamp, drift pieces.
-   * Instrumentation for the vacancy-response harness. Not a price; not saved
-   * as a decision. A test that cannot see the rail cannot say whether the
-   * rail is load-bearing.
+   * LAST MONTH'S RENT MOVE, per class: the log-free month-on-month change in
+   * the asking index (`nomCh`, = `drift` now that the index is read off the
+   * leases and the blocks' asks) and the flats' escalation. Instrumentation;
+   * not a price.
    */
-  rentPath?: Record<BuiltClass, {
-    gap: number;
-    vacTerm: number;
-    instant: number;
-    pressEma: number;
-    pressClamped: number;
-    clampBound: boolean;
-    escalation: number;
-    anchor: number;
-    drift: number;
-    nomCh: number;
-  }>;
+  rentPath?: Record<BuiltClass, { escalation: number; drift: number; nomCh: number }>;
   /** EFFECTIVE rent = asking x (1 - 0.14 x concIdx). Everything that PRICES a
    *  deal or VALUES an asset reads this; everything that reports the market
    *  headline reads rentIdx. */
@@ -2453,8 +2436,6 @@ export interface Econ {
   migRate?: number; jobsPrevYr?: number;
   /** the share of let space handed back in a year, measured on the street, by class */
   turnMeas?: Partial<Record<string, number>>;
-  /** each market's normal availability, learned from its own history (market.ts rent gap) */
-  natVac?: Record<BuiltClass, number>;
   /** the opening's rent per foot by class and price level: what sales per head are measured from (tenantBooks) */
   revAnchor?: { cpi: number; rent: Partial<Record<string, number>>; eff?: Partial<Record<string, number>>; prod?: Partial<Record<string, number>> };
   /** The street's let space, rentable space and unhoused seekers' wants by class, this month (streetRolls.ts). */

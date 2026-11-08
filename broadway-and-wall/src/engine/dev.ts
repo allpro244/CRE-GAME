@@ -688,8 +688,8 @@ export function replacementCost(rec: { class: string; mix?: UseMix; floors: numb
  * WHAT THE WHOLE CITY'S FINISHED PRODUCT TRADES AT, against what it would cost
  * to build it. Above 1.0 the town builds; below it, the town stops.
  *
- * Value per foot is derived the way a developer would: stabilised rent at
- * natural vacancy, capitalised at the class's current cap rate. Weighted by
+ * Value per foot is derived the way a developer would: rent at the class's
+ * current vacancy (value.ts classValuePsf), capitalised at the class's current cap rate. Weighted by
  * how much of the pipeline each class represents, because a glut in offices
  * does not stop anyone building sheds.
  */
@@ -1467,7 +1467,7 @@ export function refreshDevelopmentFeasibility(
       // `siteHurdle` — the rent at which new space comes, which caps rent in
       // the rent rule (the equilibrium pull) — was read off vacant dirt only.
       // When the dirt ran out the hurdle list went empty, the cap switched
-      // off, and a class held under natural vacancy compounded its shortage
+      // off, and a class held in a shortage compounded its shortage
       // slope for decades: office at 5% vacancy rose ~5%/yr real with nothing
       // to stop it (seed 1 Metropolis-Frontier, $36 -> $125 real by year 75).
       // Where land is full, the next building is a replacement — bought at
@@ -5709,7 +5709,7 @@ export function seedOpeningPipeline(s: GameState, parcels: ParcelTable, bbls: st
   const e = s.econ;
   // As many frames as the trades can carry, if that many schemes pencil: each
   // look below starts only what clears its own pro forma, which reads the
-  // vacancy it would lease into. (A "slack" over a natural vacancy cut the
+  // vacancy it would lease into. (A "slack" over a vacancy yardstick cut the
   // crews here until 2026-11-08.)
   const want = Math.round(crewCapacity(bbls, e));
   // THE TOWN'S BUILDERS ARE ON THE STREET FROM THE FIRST DAY. They were

@@ -86,7 +86,7 @@ const x1 = (v) => (Number.isFinite(v) ? v.toFixed(2) + "x" : "  — ");
 const cloneCity = () => JSON.parse(JSON.stringify(P0));
 
 // The floor is the engine's residence vacancy (dark floor + movers x relet
-// clock), read month by month — no share of a normal vacancy (2026-11-07).
+// clock), read month by month — no share of a vacancy norm (2026-11-07).
 function floorOf(k, e) {
   return E.residenceVac(e, k);
 }

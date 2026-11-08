@@ -42,10 +42,6 @@ const { loadCity } = await import(join(HERE, "city.mjs"));
 const K = ["office", "retail", "multifamily", "industrial"];
 const SEEDS = (process.env.SEEDS ?? "4242,550991,12007").split(",").map(Number);
 const YEARS = Number(process.env.YEARS ?? 50);
-// Natural vacancy per class — mirrors NATURAL_VAC in market.ts; used only to
-// turn an asking index into a crude value index, so a drift there cannot fail
-// this report, only shade it.
-const NV = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07 };
 
 const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
 const sd = (a) => { const m = mean(a); return Math.sqrt(mean(a.map((x) => (x - m) ** 2))); };
@@ -120,8 +116,10 @@ for (const seed of SEEDS) {
   const cpiW = b.cpi / a.cpi;
   const vLift = {};
   for (const k of K) {
-    const v0 = a.rent[k] * (1 - NV[k]) / (a.cap[k] / 100);
-    const v1 = b.rent[k] * (1 - NV[k]) / (b.cap[k] / 100);
+    // A crude value index, rent over cap: an occupancy factor held fixed
+    // would cancel in the ratio below, so none is applied.
+    const v0 = a.rent[k] / (a.cap[k] / 100);
+    const v1 = b.rent[k] / (b.cap[k] / 100);
     vLift[k] = (v1 / v0) / cpiW - 1;
   }
   const bestThroughSpike = Math.max(...K.map((k) => vLift[k]));

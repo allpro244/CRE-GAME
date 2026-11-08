@@ -19,7 +19,7 @@ import { monthLabel, START_YEAR } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import { cityValueToReplacement } from "@/engine/dev";
 import { standardsWord, underwritingStandards } from "@/engine/debt";
-import { CITY_STOCK, normalVac, openingVac, SECTOR_LABEL, shortIndexOf } from "@/engine/market";
+import { CITY_STOCK, openingVac, SECTOR_LABEL, shortIndexOf } from "@/engine/market";
 import { availability, deliverySchedule, legDemand, legRent, legVacancy, marketBalance, monthsOfSupply, submarkets } from "@/engine/space";
 import { resolveRec, portfolioMark } from "@/engine/value";
 import { markRival, marketAppetite, rivalCondition } from "@/engine/rivals";
@@ -53,7 +53,7 @@ const head = (t: string) => <div className="nx-box-head nx-sec">{t}</div>;
 // ==================================================================== MARKETS
 
 interface ClassRow {
-  k: BuiltClass; label: string; avail: number; nat: number; direct: number; state: string; gap: number;
+  k: BuiltClass; label: string; avail: number; ago: number; direct: number; state: string; soft: boolean;
   rent: number; eff: number; realYoy: number; cap: number; stock: number; occ: number; pipe: number; pipePct: number;
   sched: number[]; abs12: number; comp12: number; dmd: number; mos: number | null; conc: number; phase: string;
   vacYr: number | null; availS: number[]; rentS: number[]; capS: number[];
@@ -74,11 +74,11 @@ function classRows(g: GameState): ClassRow[] {
       const abs12 = e.absorb12?.[k] ?? 0;
       const then = hist.length > 12 ? (hist[hist.length - 13]?.avail?.[k] ?? hist[hist.length - 13]?.vac?.[k]) : undefined;
       return {
-        k, label: SECTOR_LABEL[k], avail, nat: normalVac(e, k), direct, state: bal.state, gap: bal.gap,
+        k, label: SECTOR_LABEL[k], avail, ago: avail - bal.availCh, direct, state: bal.state, soft: bal.soft,
         rent: e.rentIdx[k], eff: e.effRentIdx?.[k] ?? e.rentIdx[k], realYoy: realRentYoy(e, k), cap: e.capRate[k],
         stock, occ: e.occupied?.[k] ?? stock * (1 - direct), pipe, pipePct: stock > 0 ? pipe / stock : 0,
         sched: sched[k], abs12, comp12: e.completions12?.[k] ?? 0, dmd: stock > 0 ? abs12 / stock : 0,
-        mos: monthsOfSupply(e, k), conc: (e.concIdx?.[k] ?? 0) * 0.14, phase: e.sectorPhase?.[k] ?? "steady",
+        mos: monthsOfSupply(e, k), conc: bal.pkg, phase: e.sectorPhase?.[k] ?? "steady",
         vacYr: then === undefined ? null : (avail - then) * 1e4,
         availS: tail.map((h) => (h.avail?.[k] ?? h.vac?.[k] ?? NaN)),
         rentS: tail.map((h) => h.rent?.[k] ?? NaN),
@@ -90,17 +90,16 @@ function classRows(g: GameState): ClassRow[] {
 
 const classCols: Col<ClassRow>[] = [
   { id: "label", label: "Market", get: (r) => r.label, cell: (r) => <span className="nx-strong-cell">{r.label}</span> },
-  { id: "avail", label: "Avail", get: (r) => r.avail, fmt: "pct", tone: (r) => (r.gap > 0.018 ? "neg" : undefined) },
+  { id: "avail", label: "Avail", get: (r) => r.avail, fmt: "pct", tone: (r) => (r.soft ? "neg" : undefined) },
   { id: "availS", label: "Avail 20y", get: (r) => r.avail, num: false, cell: (r) => sparkCell(r.availS) },
-  { id: "nat", label: "Natural", get: (r) => r.nat, fmt: "pct", hidden: true },
   { id: "direct", label: "Direct", get: (r) => r.direct, fmt: "pct", hidden: true },
   { id: "vacYr", label: "Δ 12m", get: (r) => r.vacYr, fmt: "bp", tone: (r) => ((r.vacYr ?? 0) >= 200 ? "neg" : undefined) },
-  { id: "state", label: "Balance", get: (r) => r.state, tone: (r) => (r.gap > 0.018 ? "neg" : undefined) },
+  { id: "state", label: "Balance", get: (r) => r.state, tone: (r) => (r.soft ? "neg" : undefined) },
   { id: "rent", label: "Rent", get: (r) => r.rent, fmt: "psf" },
   { id: "rentS", label: "Rent 20y", get: (r) => r.rent, num: false, cell: (r) => sparkCell(r.rentS) },
   { id: "eff", label: "Effective", get: (r) => r.eff, fmt: "psf", hidden: true },
   { id: "realYoy", label: "Real 12m", get: (r) => r.realYoy, fmt: "pct", tone: (r) => (r.realYoy < -0.025 ? "neg" : r.realYoy > 0.025 ? "pos" : undefined) },
-  { id: "conc", label: "Concession", get: (r) => r.conc, fmt: "pct", tone: (r) => (r.conc > 0.098 ? "neg" : undefined), hidden: true },
+  { id: "conc", label: "Concession", get: (r) => r.conc, fmt: "pct", tone: (r) => (r.conc > 0.12 ? "neg" : undefined), hidden: true },
   { id: "cap", label: "Cap", get: (r) => r.cap, fmt: "pctv" },
   { id: "capS", label: "Cap 20y", get: (r) => r.cap, num: false, cell: (r) => sparkCell(r.capS) },
   { id: "stock", label: "Stock", get: (r) => r.stock, fmt: "sf", hidden: true },
@@ -167,7 +166,7 @@ const seriesCols: Col<SeriesRow>[] = [
   { id: "pts", label: "20y", get: (r) => r.now, cell: (r) => sparkCell(r.pts) },
 ];
 
-interface SubRow { key: string; district: string; name: string; k: BuiltClass; use: string; sf: number; vac: number; vs: number; rent: number; demand: number; lots: number; vacantLots: number; nat: number }
+interface SubRow { key: string; district: string; name: string; k: BuiltClass; use: string; sf: number; vac: number; vs: number; rent: number; demand: number; lots: number; vacantLots: number }
 
 function subRows(g: GameState, p: ParcelTable, bbls: string[]): SubRow[] {
   return derive(g, "next.city.subs", () => {
@@ -180,7 +179,7 @@ function subRows(g: GameState, p: ParcelTable, bbls: string[]): SubRow[] {
         const v = legVacancy(leg);
         out.push({
           key: `${m.district}:${k}`, district: m.district, name: m.name, k, use: SECTOR_LABEL[k], sf: leg.sf, vac: v,
-          vs: (v - availability(e, k)) * 1e4, rent: legRent(leg), demand: legDemand(leg), lots: leg.lots, vacantLots: m.vacantLots, nat: normalVac(e, k),
+          vs: (v - availability(e, k)) * 1e4, rent: legRent(leg), demand: legDemand(leg), lots: leg.lots, vacantLots: m.vacantLots,
         });
       }
     }
@@ -193,7 +192,7 @@ const subCols: Col<SubRow>[] = [
   { id: "use", label: "Use", get: (r) => r.use },
   { id: "sf", label: "Inventory", get: (r) => r.sf, fmt: "sf" },
   { id: "lots", label: "Lots", get: (r) => r.lots, fmt: "n", hidden: true },
-  { id: "vac", label: "Vacancy", get: (r) => r.vac, fmt: "pct", tone: (r) => (r.vac > r.nat + 0.03 ? "neg" : r.vac < r.nat - 0.02 ? "pos" : undefined) },
+  { id: "vac", label: "Vacancy", get: (r) => r.vac, fmt: "pct", tone: (r) => (r.vs > 300 ? "neg" : r.vs < -200 ? "pos" : undefined) },
   { id: "vs", label: "vs city", get: (r) => r.vs, fmt: "bp" },
   { id: "rent", label: "Avg rent", get: (r) => r.rent, fmt: "psf" },
   { id: "demand", label: "Demand", get: (r) => r.demand, fmt: "n" },
@@ -370,7 +369,7 @@ export function MarketsOverview() {
                 <div><small>Real 12m</small><Figure value={r.realYoy} fmt="pct" tone={r.realYoy < 0 ? "neg" : "pos"} /></div>
                 <div><small>Cap</small><Figure value={r.cap} fmt="pctv" /></div>
               </div>
-              <Gauge value={r.avail} natural={r.nat} lo={0} hi={Math.max(0.3, r.avail * 1.2)} fmt={(v) => `${(v * 100).toFixed(1)}%`} />
+              <Gauge value={r.avail} mark={r.ago} markLabel="a year ago" lo={0} hi={Math.max(0.3, r.avail * 1.2)} fmt={(v) => `${(v * 100).toFixed(1)}%`} />
               <div className="mk-note">{bal.note}</div>
             </div>
           );

@@ -186,6 +186,18 @@ Tried on branches, measured on seed 11, none shipped:
 
 The face share is contested by the code's own source (Manhattan 2020-24: asking −3.3%, net effective −17.3%, a share of about 0.2), so it is not settled. Next: a sourced pace for how fast an individual dark building cuts (not the market average), and whether space under patience should pass CPI in a market whose months of supply is above the norm.
 
+**Step 9a, landlords pricing on their own tours (2026-11-08, not shipped; branch `claude/landlords-tours-wip`).** The ladder (patience seeded from `MONTHS_ON_MARKET`, `noteLetting`'s yardstick, package-then-face) replaced by the flats' rule on a commercial landlord's door: each shortlist a firm takes is a tour card at every building on it, and the landlord posts the effective rent maximising p·(T − F/W(p)) over a year of cards (40-year probe `offprobe.mjs`/`allprobe.mjs`, seed 11 unless noted; main: office WT −0.31, vacancy 11.7%, real effective 16-19):
+
+| variant | result |
+|---|---|
+| card = the firm's ceiling against its runner-up (`bidCeiling`) | Bertrand with no cost under it: office effective −55% in two years at unchanged 10% vacancy (five of six tours report a ceiling below the building's own post) |
+| card = the firm's absolute ceiling (worth − move + taste), capacity read against the face (the anchor bug below) | WT −1.05 but vacancy 5.2%, effective −25% |
+| same, capacity fixed | WT −0.17, vacancy 6.0% |
+| + the landlord's own conversion (lettings over toured feet) scales W | effective 11-13 (−30%), vacancy falls to 5%, signed packages stuck at 25-35% while tight |
+| + face at the top of the book | packages still ~25% at 4% vacancy; industrial effective −40% |
+
+What blocks it: a building sees one or two tours a year in this town (`tours/q` ~1), so a landlord with two cards almost always prices to the lower (a 12-month window makes the wait F·M/W long), and the level ends up set by how `worth` is defined rather than by the market. The competitive channel the record shows (more alternatives in a glut) lives in `bargain`, not the ask. Next: a demand estimate a thin door can support without a comps anchor, or more tours per building (a shortlist that reflects how many buildings a broker actually shows in a glut).
+
 **Cap-rate pass-through is weak at any lag** (seen while landing #643): Δcap on Δ10Y correlates about 0.2 at lags 1-4 on main and the branch alike, so the "Cap rates lag the 10Y" row's best lag flips between 2 and 4 on noise. The finding is the weak pass-through, not the lag. Open.
 
 ## Tried and dropped (so nobody tries them again the same way)

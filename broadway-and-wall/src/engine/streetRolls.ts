@@ -549,11 +549,12 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
       // stopped forming for a decade and a decade's backlog then formed in a
       // year (vacancy 33% -> 7% in twelve months).
       const o = value(firm, k, c.b, c.roll, take, termM, false, moving);
-      // Applied to shops (2026-11-08). Applied to offices and sheds too it
-      // took office vacancy to 4-5% and doubled firm entry and exit (7% ->
-      // 14% a year, BDS ~8%) on seeds 11/22/33: their value-of-space terms
-      // need the same audit before the constraint can bind there.
-      if (k === "retail" && o.joint + o.post - o.res < 0) continue;
+      // Every class (2026-11-08): it first applied to shops alone, since on
+      // offices and sheds it took office vacancy to 4-5% and doubled firm
+      // entry and exit — because their firms' value of space was read 16%
+      // low (tenantBooks.ts rentCapacity, the effective anchor), not because
+      // the constraint does not hold for them.
+      if (o.joint + o.post - o.res < 0) continue;
       out.push(o);
     }
     out.sort((a, b) => b.joint - a.joint);
@@ -734,7 +735,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     // ...and never above the most the firm would pay (its surplus at zero,
     // post + joint), nor below what the landlord will take
     const eff0 = contest ? contest.eff : bargain(pick, second);
-    const eff = k === "retail" ? Math.max(pick.res, Math.min(eff0, pick.post + pick.joint)) : eff0;
+    const eff = Math.max(pick.res, Math.min(eff0, pick.post + pick.joint));
     const face = Math.max(pick.ask, eff);
     const freeM = freeMonthsFor(face, eff, termM);
     const carry: Partial<Tenant> = {

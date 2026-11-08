@@ -178,6 +178,8 @@ Three faults in the holder's option (`holdValueFor`), measured on seed 11 at +6 
 
 Branch result (fixes 1 and 2 only), cost shock at seeds 11/22/33: land impact −9.5% (−9.5 / −8.6 / −14.2) RIGHT, years 3-8 −25.6% RIGHT, office and apartment values RIGHT; but office starts −55.9% → −14.6% (WRONG SIZE) and office rent +5.0% → +0.7% (NO RESPONSE). Part of the land change may come from the different town, not the mechanism: the two fixes change land funds' bids and when they are founded from month 0, so the snapshot town differs (seed 33's land index is 0.18 against main's 0.91, frozen since year 2 with no print). The silent survey stays the general disease in both builds.
 
+**Re-measured after merging #669-#672** (cost shock, 11/22/33, main → branch): land impact +5.4% → +2.4% (BACKWARDS both), years 3-8 +30.8% → +1.9% (BACKWARDS → NO RESPONSE), office values +1.2% → +4.0% (NO RESPONSE → RIGHT); every other row RIGHT in both. So the earlier RIGHT on land was mostly the different town. The two option fixes are correct but do not fix the land row: the survey's silence (no firm in the room bids the option) is the fault, and fault 3 blocks the obvious fix.
+
 ## Office rents and vacancy: what the measurements say (2026-11-07, open)
 
 The century's office Wheaton-Torto slope (yearly Δlog real effective rent on last year's vacancy) is −0.22%/yr per point on seed 11, against −2 to −3 in the record. A 40-year probe (scratchpad `offprobe.mjs`, `mosprobe.mjs`) located it:

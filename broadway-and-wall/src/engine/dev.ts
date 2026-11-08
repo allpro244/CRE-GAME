@@ -13,9 +13,9 @@ import { BUILT_CLASSES, cloneState, raiseAlert } from "./types";
 import { abatementAtStart } from "./citygov";
 import { logBooks, moveDeposit, moveFundCash, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
-import { rng, rrange, normalVac, openingVac, forwardVacancy, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, residenceVac, housableStock, payrollGrowth12 } from "./market";
+import { rng, rrange, normalVac, openingVac, forwardVacancy, CITY_STOCK, SECTOR_LABEL, addStock, REF_PIPE_SHARE, residenceVac, housableStock, payrollGrowth12 } from "./market";
 import { firmShort } from "./firm";
-import { classValuePsf, resolveRec, marketRentPsfYr, landValue, landRead, assetValue, ownedHoldingValue, demandLinear, condGrade, condCeiling, openingCondIdx,
+import { classValuePsf, resolveRec, marketRentPsfYr, landValue, landRead, assetValue, ownedHoldingValue, condGrade, condCeiling, openingCondIdx,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
   mergedTouched, rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal, demandIdx, buildTier, tradeAreaDemand, HOMES_ONLY_ZONES } from "./value";
 import { isHoaBbl } from "./landdev";
@@ -94,7 +94,7 @@ export {
 } from "./proforma";
 export type { ConstructionQuote } from "./proforma";
 import {
-  devMix, dominantOf, overMix, leaseUpMarketAt, specShare, constructionDesks, deskQuote, clamp01, farMaxFor, maxFloorsFor,
+  devMix, dominantOf, overMix, leaseUpMonths, grossLettingsMo, specShare, constructionDesks, deskQuote, clamp01, farMaxFor, maxFloorsFor,
   withStreetRetail, capRetail, reserveFor,
   developmentProForma, landCarryFactor, MAX_COVERAGE, MIN_COVERAGE, maxCoverageFor, wreckCost, marketConstructionQuote,
 } from "./proforma";
@@ -195,7 +195,7 @@ function merchantBook(s: GameState, bbl: string, startM: number, plan: DevPlan, 
     lender: lev > 0 ? pickConstructionDesk(s, `${bbl}:${startM}:merchant`) : undefined,
     noi: plan.stabNoi, yld: Math.max(0.01, plan.exitYield / 100), leaseUp: plan.leaseUp,
     rent0: blendRent(e, plan.mix), cap0: blendCap(e, plan.mix),
-    lum0: leaseUpMarketAt(e, plan.mix, (u) => forwardVacancy(e, u, plan.rentable * (plan.mix[u] ?? 0))),
+    lu0: leaseUpMonths(e, plan.mix, plan.rentable, 0, (u) => forwardVacancy(e, u, plan.rentable * (plan.mix[u] ?? 0))),
     mix: plan.mix,
   };
 }
@@ -221,10 +221,13 @@ function settleMerchant(s: GameState, parcels: ParcelTable, bbl: string, m: Merc
   // forecast. In a market that did what the developer expected this is its
   // own stabilised value, which cleared its margin; it falls short only when
   // the market moved against the scheme.
-  const lum1 = leaseUpMarketAt(e, m.mix, (u) => e.cityVac?.[u] ?? openingVac(u));
+  // The clock it opens to: the building is in the stock now (its empty
+  // floors are in the vacancy), and the market lets what it lets this month.
+  const lu1 = leaseUpMonths(e, m.mix, 0, 0, (u) => e.cityVac?.[u] ?? openingVac(u), false);
+  const lu0 = m.lu0 ?? lu1;
   const noi1 = m.noi * blendRent(e, m.mix) / Math.max(1e-6, m.rent0);
   const yld1 = m.yld * blendCap(e, m.mix) / Math.max(0.1, m.cap0);
-  const worth = Math.max(0, Math.round(noi1 / Math.max(0.01, yld1) - m.leaseUp * Math.max(0, lum1 / Math.max(0.05, m.lum0) - 1)));
+  const worth = Math.max(0, Math.round(noi1 / Math.max(0.01, yld1) - m.leaseUp * Math.max(0, lu1 / Math.max(0.5, lu0) - 1)));
   e.merchantTotals ??= { delivered: 0, underBasis: 0, handedBack: 0, lossToLenders: 0, equityLost: 0 };
   e.merchantTotals.delivered += 1;
   // The last hundred, for the economy probes: how the street's own builders
@@ -2776,9 +2779,10 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
  * not, and it produced an office market where spec towers open two-thirds
  * full. Real spec office opens 0-30% pre-let.
  *
- * `rate` scales the monthly odds a prospect signs. `ceiling` is the share of
- * the building that can be spoken for at delivery, and it is a fact about how
- * each product is actually let:
+ * The monthly odds a prospect signs are the market's own lettings at fair
+ * share (`tickConstructionLeasing`). `ceiling` is the share of the building
+ * that can be spoken for at delivery, and it is a fact about how each product
+ * is actually let:
  *
  *   retail      Anchors sign before ground breaks — that is what an anchor IS,
  *               and it is how the centre gets financed. An anchored scheme is
@@ -2795,11 +2799,12 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
  *               a trailer thirty days out, which arrives as h.occ at delivery
  *               rather than as signed leases. Nearly nothing here.
  */
-const PRELET: Record<BuiltClass, { rate: number; ceiling: number }> = {
-  retail: { rate: 1.15, ceiling: 0.62 },
-  office: { rate: 0.55, ceiling: 0.32 },
-  industrial: { rate: 0.45, ceiling: 0.22 },
-  multifamily: { rate: 0.10, ceiling: 0.08 },
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+const PRELET: Record<BuiltClass, { ceiling: number }> = {
+  retail: { ceiling: 0.62 },
+  office: { ceiling: 0.32 },
+  industrial: { ceiling: 0.22 },
+  multifamily: { ceiling: 0.08 },
 };
 
 export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
@@ -2837,13 +2842,25 @@ export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
     const floorSf = minLettableSf(asBuilt, lead);
     if (openSf < floorSf) continue;
 
-    // a tight market lets a building before it opens; a glut does not
-    const appetite = classAppetite(s, lead);
+    // A TIGHT MARKET LETS A BUILDING BEFORE IT OPENS; A GLUT DOES NOT — and
+    // which one it is, is what the market lets (2026-11-07). A tenant shopping
+    // picks among the space on offer, standing and coming, so the frame wins
+    // lettings in proportion to its share of it (fair share, B8): expected
+    // pre-let feet a month = gross lettings a month (`grossLettingsMo`) x its
+    // open feet / (vacant + sublet + pipeline). A letter is a draw of 16-50%
+    // of the open feet (mean a third), so the month's odds are three times
+    // that share of the lettings. This read the class's vacancy against a
+    // "natural" rate, the pipeline, the credit window and the class pencil,
+    // at a per-class rate.
+    const e = s.econ;
+    const stk = Math.max(1, e.stock?.[lead] ?? 0);
+    const onOffer = (e.cityVac?.[lead] ?? openingVac(lead)) * stk + Math.max(0, e.sublet?.[lead] ?? 0) + Math.max(0, e.pipeline?.[lead] ?? 0);
+    const fair = grossLettingsMo(e, lead) / Math.max(openSf, onOffer);
     const months = Math.max(1, d.deliverM - s.month);
     // interest builds as the date approaches — the risk a tenant is taking
     // shrinks, and so does what they will hold out for
     const near = clamp(1.35 - months / 18, 0.35, 1.35);
-    const p = clamp(0.055 * pre.rate * appetite * near * (0.55 + demandLinear(rec.demandScore) / 130), 0, 0.42);
+    const p = clamp(3 * fair * near, 0, 0.42);
     if (rng(s, "dev") >= p) continue;
 
     // The building is plates. A construction letter is a size, not a bite of
@@ -3580,36 +3597,6 @@ export function useForZone(zone: string, demand: number, r: number, e?: Econ): D
                ["industrial", zonePermits(zone, "industrial", demand, e) ? 0.25 * here("industrial") : 0]]);
 }
 
-/**
- * Would anybody sensibly break ground in this class right now?
- *
- * Vacancy against its natural rate, softened by what is already coming. A
- * class three points tight gets built hard; a class in a glut with a full
- * pipeline does not get built at all, which is what stops the city cheerfully
- * paving itself through a downturn.
- */
-const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
-
-// Split from `classAppetite` so `useForZone` can read it: the whole computation
-// only ever touched `s.econ`, and the use-picker has the Econ but not the state.
-// Same function, one caller deeper — nothing about the number changed.
-function classAppetiteE(e: Econ, k: BuiltClass): number {
-  const vac = e.cityVac?.[k] ?? openingVac(k);
-  const gap = vac - normalVac(e, k);
-  const stk = e.stock?.[k] ?? CITY_STOCK[k];
-  const coming = (e.pipeline?.[k] ?? 0) / Math.max(1, stk);   // pipeline as a share of stock
-  const tight = clamp(1 - gap * 13 - coming * 5, 0, 2.1);
-  // ...AND WHETHER IT PENCILS. The city's own infill read vacancy, the
-  // pipeline and the credit window, and never once read what money cost — so
-  // a three-hundred-basis-point shock left the municipal cranes turning at
-  // exactly the same rate. See market.devPencils: one hurdle, read by the
-  // quota, by the street, and by the city.
-  return tight * clamp(e.creditIdx ?? 1, 0.25, 1.25) * devPencils(e, k);
-}
-
-function classAppetite(s: GameState, k: BuiltClass): number {
-  return classAppetiteE(s.econ, k);
-}
 
 /**
  * A RECORD GOES ON THE TAPE, AND THE TAPE TAKES YOU THERE.
@@ -4009,7 +3996,7 @@ function replacementSearch(
       // Same size discipline as on vacant dirt: no bigger than this shop's
       // share of the class's standing stock.
       if (fl > 1 && u.plan.sf * (u.plan.mix?.[k] ?? 1) > rdev.maxShare * Math.max(1, e.stock?.[k] ?? 0)) continue;
-      if (forwardVacancy(e, k, u.plan.sf * (u.plan.mix?.[k] ?? 1), u.plan.months, beliefOf(s, who, k)) > normalVac(e, k) + rdev.vacTol) continue;
+      if (forwardVacancy(e, k, u.plan.sf * (u.plan.mix?.[k] ?? 1), u.plan.months, beliefOf(s, who, k), true) > normalVac(e, k) + rdev.vacTol) continue;
       // A redeveloper that borrows needs its margin on the equity the desks
       // leave it (equityStretch), like a builder on vacant dirt.
       const m = DEV_MARGIN * (rdev.ltc > CASH_BUILDER_LTC ? equityStretch(s) : 1);
@@ -5135,7 +5122,7 @@ function developerLook(
         // over the real horizon, is what fills a market faster than demand
         // turns out to grow (Wheaton 1999). Read over 18 months, every shop
         // was more cautious than any real one and no market overshot.
-        if (forwardVacancy(s.econ, lead, ownSf, u.plan.months + PLAN_LEAD_M[lead], beliefOf(s, firm, lead)) > normalVac(s.econ, lead) + dev.vacTol) continue;
+        if (forwardVacancy(s.econ, lead, ownSf, u.plan.months + PLAN_LEAD_M[lead], beliefOf(s, firm, lead), true) > normalVac(s.econ, lead) + dev.vacTol) continue;
         // THEIR OWN READ: yield on cost over the exit cap at the trade margin,
         // through their rent outlook and how they read the market's direction.
         // ...but only on a scheme that already clears its spread on today's

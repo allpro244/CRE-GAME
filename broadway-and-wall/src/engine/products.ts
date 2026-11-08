@@ -160,7 +160,7 @@ export interface ProductType {
   tradeRadiusM?: number;
   /** Cap-rate spread against the class's base cap, percentage points [CBRE-C] [BG]. */
   capSpread: number;
-  /** Months for the spec / inline space to fill at natural vacancy [ABS]. */
+  /** Months for the spec / inline space to fill at an ordinary market [ABS] — the desk's reference only: since 2026-11-07 the pro forma's lease-up is the market's own lettings (proforma.ts `leaseUpMonths`). */
   leaseUpM: number;
   /** Construction months at the bottom and top of the size range [BUILD]. */
   buildM: [number, number];

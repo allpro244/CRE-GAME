@@ -2456,7 +2456,7 @@ export interface Econ {
   /** each market's normal availability, learned from its own history (market.ts rent gap) */
   natVac?: Record<BuiltClass, number>;
   /** the opening's rent per foot by class and price level: what sales per head are measured from (tenantBooks) */
-  revAnchor?: { cpi: number; rent: Partial<Record<string, number>>; prod?: Partial<Record<string, number>> };
+  revAnchor?: { cpi: number; rent: Partial<Record<string, number>>; eff?: Partial<Record<string, number>>; prod?: Partial<Record<string, number>> };
   /** The street's let space, rentable space and unhoused seekers' wants by class, this month (streetRolls.ts). */
   streetSpace?: Partial<Record<BuiltClass, { let: number; cap: number; seek: number; ratio?: number; byBand?: { stock: number[]; occ: number[] };
     /** the feet the town's firms hold beyond what their heads need (FORMULA_LEDGER #10: the sublet market's source) */

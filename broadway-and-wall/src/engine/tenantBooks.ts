@@ -88,8 +88,9 @@ function tradeProd(e: Econ, t: Tenant): number {
 }
 
 /** The opening's rent per foot and price level, which sales per head are measured from. */
-export function revAnchor(e: Econ): { cpi: number; rent: Partial<Record<string, number>>; prod?: Partial<Record<string, number>> } {
-  return (e.revAnchor ??= { cpi: e.cpi ?? 1, rent: { office: e.rentIdx?.office, retail: e.rentIdx?.retail, industrial: e.rentIdx?.industrial } });
+export function revAnchor(e: Econ): { cpi: number; rent: Partial<Record<string, number>>; eff?: Partial<Record<string, number>>; prod?: Partial<Record<string, number>> } {
+  return (e.revAnchor ??= { cpi: e.cpi ?? 1, rent: { office: e.rentIdx?.office, retail: e.rentIdx?.retail, industrial: e.rentIdx?.industrial },
+    eff: { office: e.effRentIdx?.office ?? e.rentIdx?.office, retail: e.effRentIdx?.retail ?? e.rentIdx?.retail, industrial: e.effRentIdx?.industrial ?? e.rentIdx?.industrial } });
 }
 
 /**
@@ -107,7 +108,21 @@ export function revAnchor(e: Econ): { cpi: number; rent: Partial<Record<string, 
  */
 export function rentCapacity(e: Econ, t: { sector?: Tenant["sector"] }, k: "office" | "retail" | "industrial"): number {
   const A = revAnchor(e);
-  const idx = e.rentIdx?.[k], r0 = A.rent[k];
+  // EFFECTIVE AGAINST EFFECTIVE (2026-11-08): the capacity multiplies the
+  // building's market rent, which is effective (value.ts useRentPsfYr), so it
+  // is read against the effective index and the effective rent the trade paid
+  // at the anchor. Read against the asking index, a firm's worth of a suite
+  // carried the town's concession level — a firm valued its space 10-20% less
+  // whenever landlords gave more free rent, so every glut's packages cut what
+  // every firm would pay for space (a firm's value of space set by its
+  // landlords' marketing, not by what it sells). The anchor is read at the
+  // new game, before the town's first lease, so it is the opening's rent
+  // before any package: against the asking index the opening's growth then
+  // set (19.3 against an anchor of 16.3 on office, seed 11), every office firm
+  // started at 84% of what its space was worth to it. A save without the
+  // effective anchor takes the asking one, read at the same moment.
+  const idx = e.effRentIdx?.[k] ?? e.rentIdx?.[k];
+  const r0 = (A.eff ??= {})[k] ??= A.rent[k];
   if (!(idx && idx > 0) || !(r0 && r0 > 0) || !t.sector) return 1;
   const prod = tradeProd(e, t as Tenant);
   const p0 = ((A.prod ??= {})[t.sector] ??= prod);

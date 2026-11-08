@@ -2282,6 +2282,8 @@ export interface Econ {
      * path, the way a real one reads the dot plot and the data.
      */
     ruleRate?: number;
+    /** Where the committee would be had nothing outside it held the rate (only while a hold is on; `expectedPolicyAvg` prices the gap). */
+    ruleShadow?: number;
     /**
      * Where the bank BELIEVES full employment is. Wrong, drifting, and the
      * single largest source of policy error in the historical record — the Fed

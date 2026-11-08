@@ -1767,6 +1767,8 @@ const INDEX_HORIZON_M = 120;
 // bond market expected every move to be undone inside a few months, so the
 // ten-year moved 0.14 points per point of policy over a year (US 0.32).
 const RULE_GAP_RHO = 0.90;
+/** A departure from the rule's monthly persistence: 0.91 a quarter (see expectedPolicyAvg). */
+const RULE_DEV_RHO = Math.pow(0.91, 1 / 3);
 
 /**
  * WHAT THE BOND MARKET THINKS POLICY WILL AVERAGE over the index's life.
@@ -1789,6 +1791,23 @@ const RULE_GAP_RHO = 0.90;
 export function expectedPolicyAvg(
   n: NonNullable<Econ["nat"]>, want: number, restoring: boolean, month: number,
 ): number {
+  // ...AND A DEPARTURE FROM THE RULE IS EXPECTED TO LAST (2026-11-08). When
+  // something outside the committee holds the rate away from where its own
+  // rule would have walked it (`ruleShadow`, kept only while a hold is on),
+  // the market prices that gap to decay as departures from the rule have:
+  // the Taylor (1993) rule's residual on the fed funds rate has a quarterly
+  // autocorrelation of 0.91 over 1960-2007 (0.95 over 1987-2007 and to 2019;
+  // FRED FEDFUNDS, PCEPILFE, GDPC1/GDPPOT) [S], 0.969 a month. The 0.95 of
+  // the Greenspan-Bernanke years is the smoothed Fed's, whose residual
+  // carries its gradualism, which `bankStep` already walks (at 0.95 a held
+  // +300bp moved the ten-year +3.1 at impact, over the record's +1 to +2.5).
+  // Before this the market assumed the committee would walk back to its rule
+  // at its full meeting pace from the next meeting, so a rate held three
+  // points over it moved the ten-year +0.3 at a month and +0.6 over three
+  // years (2022: +2.5 on +4.25 of policy). With no hold the gap is zero and
+  // the forecast is what it was.
+  const dev0 = n.ruleShadow !== undefined ? n.policy - n.ruleShadow : 0;
+  let devDecay = 1;
   const tgt = n.inflTarget ?? 0.02;
   const cred = n.credibility;
   // ...plus whatever the market has learned about where this bank actually
@@ -1799,8 +1818,9 @@ export function expectedPolicyAvg(
   const pressure = n.pressureM ?? 0;
   for (let h = 1; h <= INDEX_HORIZON_M; h++) {
     decay *= RULE_GAP_RHO;
+    devDecay *= RULE_DEV_RHO;
     if (isMeetingMonth(month + h)) {
-      const gap = longRun + gap0 * decay - p;
+      const gap = longRun + gap0 * decay + dev0 * devDecay - p;
       // The expected cut below zero is the cut times its odds (see the
       // committee's own lower bound in tickNation) — no floor here either.
       let st = bankStep(gap, restoring && Math.abs(gap) > 3, h < pressure);
@@ -2931,6 +2951,9 @@ export function tickNation(s: GameState) {
     // month: a "zero peg" read 6-21% by its fifth to tenth year. No engine code sets policyHold.
     const hold = (n as { policyHold?: { lo?: number; hi?: number } }).policyHold;
     if (hold) n.policy = Math.min(hold.hi ?? Infinity, Math.max(hold.lo ?? -Infinity, n.policy));
+    // where the committee's own steps would have taken it, while the hold lasts (no draw: the shadow takes no odds below zero)
+    if (hold) { const sh = n.ruleShadow ?? was; n.ruleShadow = sh + bankStep(want - sh, restore > 0, n.pressureM > 0, uRise6); }
+    else if (n.ruleShadow !== undefined) delete n.ruleShadow;
     // A RATE DECISION IS NEWS. It once stopped the game like a new chair and
     // a swan (the policy rate is what every floater resets on next month and
     // what the bond market prices the fixed index off); see below for why it

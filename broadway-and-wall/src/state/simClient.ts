@@ -86,7 +86,7 @@ export async function monthOffThread(s: GameState, parcels: ParcelTable, bbls: s
     try {
       const r = await send(w, parcels, bbls, adjacency, (town, id) => ({ type: "month", id, town, s }));
       if (r.s) { where = "worker"; return r.s; }
-    } catch { /* fall through: the same tick, here */ }
+    } catch (e) { console.warn("Sim worker failed; this month runs on the page:", String((e as Error)?.message ?? e)); }
   }
   where = "page";
   return advanceMonth(s, parcels, bbls, adjacency);

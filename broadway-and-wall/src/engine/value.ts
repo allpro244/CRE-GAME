@@ -4736,7 +4736,16 @@ export function ownedHoldingValueFromRec(
  * rather than imported. Absent (a bundle that never loaded leasing.ts) the
  * mark is the plain capitalised contract, as before.
  */
-let rolloverReader: ((s: GameState, rec: ParcelRecord, h: Holding) => number) | null = null;
+// `var` with no initialiser, not `let ... = null` (2026-11-08): leasing.ts
+// registers the reader as it loads, and when the bundle's import cycle loads
+// leasing.ts before this line has run, a `let` is still in its temporal dead
+// zone and the registration throws ("Cannot access 'rolloverReader' before
+// initialization"). That killed the sim worker on load (#678 moved the load
+// order), and every month then ran on the page's thread: the game froze while
+// playing. A hoisted `var` is undefined until registered, and this line never
+// resets it.
+// eslint-disable-next-line no-var
+var rolloverReader: ((s: GameState, rec: ParcelRecord, h: Holding) => number) | undefined;
 export function registerRolloverReader(fn: (s: GameState, rec: ParcelRecord, h: Holding) => number): void {
   rolloverReader = fn;
 }

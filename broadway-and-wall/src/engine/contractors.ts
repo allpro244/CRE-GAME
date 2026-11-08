@@ -126,8 +126,8 @@ function hashNormal(key: string): number {
 }
 function hash01(key: string): number { return 0.5 + 0.5 * Math.tanh(hashNormal(key)); }
 
-/** The hard share of an all-in construction budget. */
-const HARD_SHARE = 1 / ((1 + SOFT_COST) * (1 + CONTINGENCY));
+/** The hard share of an all-in construction budget. A function, not a module-level const: value.ts sits in an import cycle with this module, and reading its constants while the bundle loads threw in the sim worker (2026-11-08). */
+const hardShare = () => 1 / ((1 + SOFT_COST) * (1 + CONTINGENCY));
 
 function book(s: GameState): ContractorBook {
   const e = s.econ;
@@ -331,7 +331,7 @@ function awardFirm(j: Job & { cost?: number; spent?: number }, bm: number, idx: 
   const ref = reTender ? (prevBid ?? idx) : idx;
   if (!Number.isFinite(ref)) return;
   const toFinish = Math.max(0, j.cost! - (j.spent ?? 0));
-  j.cost = Math.round((j.spent ?? 0) + toFinish * (1 + HARD_SHARE * ((1 + bm) / (1 + ref) - 1)));
+  j.cost = Math.round((j.spent ?? 0) + toFinish * (1 + hardShare() * ((1 + bm) / (1 + ref) - 1)));
 }
 
 /** The trades' month as a cause: how booked they are and the index markup. */

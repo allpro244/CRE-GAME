@@ -60,7 +60,7 @@ import type { ParcelRecord } from "@/data/types";
 import type { BtsCommitment, BuiltClass, Contract, DevUse, Econ, UseMix } from "./types";
 import { BUILT_CLASSES, CONSTRUCTION_LENDER } from "./types";
 import { productOf, layoutProduct, productHardCostBase, productBuildMonths, anchorShare, type ProductKey, type ProductSite } from "./products";
-import { openingVac, CITY_STOCK, BUILD_MONTHS, forwardVacancy, turnoverYr, reletMonths, betweenTenantsSf } from "./market";
+import { openingVac, CITY_STOCK, BUILD_MONTHS, forwardVacancy, turnoverYr, reletMonths, betweenTenantsSf, CONC_DEPTH } from "./market";
 import {
   HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
   rentableRatio, marketRentPsfYr, opexPsf, locOpexMult, RECOVERY_RATE, MGMT_FEE, noiYr, capRateFor,
@@ -257,6 +257,33 @@ export function leaseUpMonths(
   e: Econ, mix: UseMix, ownSf: number, preLet: number, vacOf: (u: BuiltClass) => number, ahead = true,
 ): number {
   return overMix(mix, (u) => leaseUpMonthsOf(e, u, ownSf * (mix[u] ?? 0), preLet, vacOf(u), ahead));
+}
+
+/**
+ * THE PACKAGE WHEN IT LETS, against today's (2026-11-07). Today's package is
+ * what the comps signed at — the gap between the asking and effective indices
+ * (tenantMarket.ts `readOut`; the flats' blocks' asks and leases). A
+ * landlord's free months and fit-out buy down the time its space would sit,
+ * so the package a market gives scales with the space on offer for each
+ * letting — months of supply: at delivery, the forward vacancy over the stock
+ * then (the pipeline in it) plus sublet space; today, today's. Proportional is
+ * the stated shape [K]; the market's own lettings cancel out of the ratio.
+ * Returns the effective-rent multiplier: (1 - D P_at) / (1 - D P_now), with
+ * P_at = min(1, P_now x supply at delivery / supply today). A market signing
+ * at face (no package) forecasts none; nothing in the pipeline, nothing moves.
+ * This replaced the package a "natural" vacancy schedule gave at delivery
+ * vacancy over the one it gave today.
+ */
+export function packageAtDelivery(e: Econ, u: BuiltClass, extraSf = 0): number {
+  const face = e.rentIdx?.[u], eff = e.effRentIdx?.[u];
+  if (!(face && face > 0 && eff && eff > 0) || !e.stock?.[u]) return 1;
+  const pNow = clamp01((1 - eff / face) / CONC_DEPTH);
+  if (!(pNow > 0)) return 1;
+  const stk = Math.max(1, e.stock[u]), sub = Math.max(0, e.sublet?.[u] ?? 0);
+  const now = (e.cityVac?.[u] ?? openingVac(u)) * stk + sub;
+  const at = forwardVacancy(e, u, extraSf) * (stk + Math.max(0, e.pipeline?.[u] ?? 0) + Math.max(0, extraSf)) + sub;
+  const pAt = Math.min(1, pNow * at / Math.max(1, now));
+  return (1 - CONC_DEPTH * pAt) / Math.max(0.05, 1 - CONC_DEPTH * pNow);
 }
 
 /**
@@ -745,17 +772,15 @@ export function underwritingEcon(econ: Econ, rentMult = 1): Econ {
   for (const u of BUILT_CLASSES) {
     const belief = econ.rentExp?.[u] && econ.rentIdx?.[u]
       ? clampP(econ.rentExp[u] / econ.rentIdx[u], 0.55, 1.75) : 1;
-    // THE PACKAGE IS TODAY'S (2026-11-07). The effective index already is
-    // what the comps signed at this half-year (tenantMarket.ts `readOut`),
-    // free months and fit-out taken off. This used to multiply in the package
-    // a "natural" vacancy schedule gave at delivery vacancy over the one it
-    // gave today — a norm read twice. What the market will do to the scheme
-    // between now and its last letting is the lease-up clock in the reserve
-    // (`leaseUpMonths`: the space on offer at delivery against what the
-    // market actually lets).
+    // ...and the package the market will be giving when it lets: today's
+    // package (the effective index is what the comps signed at) carried to
+    // the months of supply at delivery (`packageAtDelivery`). Nothing in the
+    // pipeline, nothing changes. (It read a "natural" vacancy schedule until
+    // 2026-11-07.)
+    const conc = packageAtDelivery(econ, u);
     // THE RENT IS TODAY'S MARKET RENT, UNTRENDED (2026-11-07). The rent
     // belief above (rentExp) is the market's own adaptive expectation, and
-    // the lease-up clock carries the supply side forward. A
+    // the package at delivery carries the supply side forward. A
     // developer's yield on cost is quoted untrended — at today's rent, not at
     // a rent projected from last year's move — which is how a scheme is
     // judged in practice. This used to multiply in the last twelve months'
@@ -770,7 +795,7 @@ export function underwritingEcon(econ: Econ, rentMult = 1): Econ {
     // most of the land panel's quarterly swing (58% in the diagnosis probe).
     const k = belief * rentMult;
     if (rentIdx[u] !== undefined) rentIdx[u] = rentIdx[u] * k;
-    if (effRentIdx && effRentIdx[u] !== undefined) effRentIdx[u] = effRentIdx[u] * k;
+    if (effRentIdx && effRentIdx[u] !== undefined) effRentIdx[u] = effRentIdx[u] * k * conc;
     const capBelief = econ.capExp?.[u] && econ.capRate?.[u]
       ? clampP(econ.capExp[u] / econ.capRate[u], 0.6, 1.7) : 1;
     if (capRate[u] !== undefined) capRate[u] = capRate[u] * capBelief;

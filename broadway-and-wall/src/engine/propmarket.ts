@@ -1356,7 +1356,7 @@ function rentVol(e: Econ, k: BuiltClass): number {
   return Math.sqrt(xs.reduce((a, x) => a + (x - m) ** 2, 0) / xs.length);
 }
 
-let bankMemo: { e: Econ | null; m: number; scheme: Map<string, number>; val: Map<string, number>; vol: Map<BuiltClass, number> } = { e: null, m: -1, scheme: new Map(), val: new Map(), vol: new Map() };
+let bankMemo: { e: Econ | null; m: number; scheme: Map<string, Partial<Record<BuiltClass, number>>>; val: Map<string, number>; vol: Map<BuiltClass, number> } = { e: null, m: -1, scheme: new Map(), val: new Map(), vol: new Map() };
 
 /**
  * WHAT A LOT IS WORTH TO SOMEBODY WHO WILL HOLD IT FOR A BUILDER.
@@ -1393,26 +1393,40 @@ export function holdValueFor(s: GameState, bv: BankerView, rec: ParcelRecord, wa
   const vk = `${bv.id}|${rec.bbl}|${waitOnly ? 1 : 0}`;
   const hit = bankMemo.val.get(vk);
   if (hit !== undefined) return hit;
-  const schemeAt = (mult: number): { psf: number; use?: BuiltClass } => {
+  // each permitted use's residual at a rent multiple (one scheme run serves all of them)
+  const schemeAt = (mult: number, use: BuiltClass): number => {
     const sk = `${rec.bbl}|${mult.toFixed(3)}`;
-    const c = bankMemo.scheme.get(sk);
-    if (c !== undefined) return { psf: c };
-    const sc = residualScheme(rec, e, mult);
-    const psf = sc?.psf ?? 0;
-    bankMemo.scheme.set(sk, psf);
-    return { psf, use: sc?.use as BuiltClass | undefined };
+    let c = bankMemo.scheme.get(sk);
+    if (c === undefined) {
+      c = {};
+      for (const x of residualScheme(rec, e, mult)?.all ?? []) c[x.use] = Math.max(c[x.use] ?? -Infinity, x.psf);
+      bankMemo.scheme.set(sk, c);
+    }
+    return c[use] ?? 0;
   };
-  // the lot's natural use: today's best scheme, or the use closest to covering its cost
-  const now = residualScheme(rec, e, 1);
-  let use: BuiltClass | undefined = now?.psf && now.psf > 0 ? now.use as BuiltClass : undefined;
-  if (!use && now?.all?.length) use = [...now.all].sort((a, b) => b.psf - a.psf)[0].use;
-  const k: BuiltClass = use && (K as string[]).includes(use) ? use : "multifamily";
-  let belief = e.growthExp?.[k] ?? 0;
-  if (bv.lean !== 0) {
-    const sig = beliefSignals(s, { id: bv.id })[k]; // the fund's own belief (beliefs.ts), not the town's true trend
-    belief += bv.lean > 0 ? bv.lean * sig.g : -bv.lean * (1 / (1 + sig.dev) - 1) * GAP_CLOSE_YR;
-  }
-  belief = clamp(belief, -0.06, 0.06);
+  // THE LOT IS AN OPTION ON ITS BEST USE, NOT ON ONE USE PICKED TODAY
+  // (2026-11-08). The holder priced every lot on one class's rent drift and
+  // spread: today's best scheme, or, when nothing pencilled, the use closest
+  // to covering its cost. So the option jumped when today's residual crossed
+  // zero: on seed 11 a construction-cost rise of 40% flipped the fringe lots
+  // from industrial (real rent volatility 0.04) to flats (0.10) and tripled
+  // what a land fund would pay for them ($7 -> $22/sf) — a cost rise RAISED
+  // land. An owner of vacant land holds the option to build whichever use is
+  // permitted, and that is worth at least the best of the single-use options
+  // (Geltner, Riddiough & Stojanovic 1996, JUE 39: land as an option on the
+  // best of two uses). So each permitted use is valued on its own rents,
+  // drift and spread, and the lot is worth the best of them — a lower bound
+  // on the best-of option, stated. Each falls when cost rises, so their best
+  // does too.
+  const signals = bv.lean !== 0 ? beliefSignals(s, { id: bv.id }) : null; // the fund's own belief (beliefs.ts), not the town's true trend
+  const beliefOf = (k: BuiltClass): number => {
+    let belief = e.growthExp?.[k] ?? 0;
+    if (signals) {
+      const sig = signals[k];
+      belief += bv.lean > 0 ? bv.lean * sig.g : -bv.lean * (1 / (1 + sig.dev) - 1) * GAP_CLOSE_YR;
+    }
+    return clamp(belief, -0.06, 0.06);
+  };
   // its cost of capital, real: the equity target and the land desk's loan at its leverage
   const i = e.indexRate ?? 5;
   const rE = (bentIndex(i) + bv.eqPrem) / 100;
@@ -1422,7 +1436,17 @@ export function holdValueFor(s: GameState, bv: BankerView, rec: ParcelRecord, wa
   const k$ = w * rd + (1 - w) * rE;
   const infl = e.nat?.inflExp ?? 0.02;
   const kr = Math.max(0.01, (1 + k$) / (1 + infl) - 1);
-  const taxYr = taxRate(e) * landValue(rec, e);
+  // THE TAX IS ON WHAT THE LOT IS WORTH TO THE BUYER, NOT ON THE APPRAISER'S
+  // LAST READ (2026-11-08). The carry was the property tax on `landValue`,
+  // whose texture floor scales with the town's land level: the one input
+  // here that read the level, against this function's own rule. When the
+  // land read goes stale (a survey year nobody bids prints nothing) a stale
+  // high level kept the carry up while the option under it fell. A lot is
+  // assessed at its market value, which is the price being solved here, so
+  // the tax capitalises into it: V = PV - tau V A(T), i.e. V = PV / (1 +
+  // tau A(T)) (Oates 1969, JPE 77; Yinger, Bloom, Boersch-Supan & Ladd 1988,
+  // Property Taxes and House Values).
+  const tau = taxRate(e);
   // RENTS ARE UNCERTAIN, AND THAT IS WHAT DIRT NOBODY CAN BUILD ON IS WORTH.
   // A lot that pencils only if rents rise a third is worth something even to a
   // holder who expects them flat, because it is sold to the builder only in
@@ -1433,24 +1457,28 @@ export function holdValueFor(s: GameState, bv: BankerView, rec: ParcelRecord, wa
   // integrated through the growth persistence the street already assumes
   // (rho 0.6, GROWTH_DECAY): sd(T) = sigma sqrt(T) / (1 - rho). Expected
   // residual by five-point Gauss-Hermite quadrature.
-  let vol = bankMemo.vol.get(k);
-  if (vol === undefined) { vol = rentVol(e, k); bankMemo.vol.set(k, vol); }
-  const sig = vol / (1 - Math.exp(-GROWTH_DECAY));
   let best = 0;
-  for (const T of BANK_HORIZONS) {
-    if (waitOnly && T === 0) continue;
-    const G = T === 0 ? 0 : belief * (1 - Math.exp(-GROWTH_DECAY * T)) / GROWTH_DECAY;
-    const sd = sig * Math.sqrt(T);
-    let ev = 0;
-    for (let q = 0; q < GH_Z.length; q++) {
-      if (T === 0 && q > 0) break;
-      const psf = schemeAt(Math.exp(G - 0.5 * sd * sd + sd * GH_Z[q])).psf;
-      if (psf > 0) ev += (T === 0 ? 1 : GH_W[q]) * psf;
+  // (a use the zoning does not permit has no residual at any rent: schemeAt reads 0)
+  for (const k of K) {
+    const belief = beliefOf(k);
+    let vol = bankMemo.vol.get(k);
+    if (vol === undefined) { vol = rentVol(e, k); bankMemo.vol.set(k, vol); }
+    const sig = vol / (1 - Math.exp(-GROWTH_DECAY));
+    for (const T of BANK_HORIZONS) {
+      if (waitOnly && T === 0) continue;
+      const G = T === 0 ? 0 : belief * (1 - Math.exp(-GROWTH_DECAY * T)) / GROWTH_DECAY;
+      const sd = sig * Math.sqrt(T);
+      let ev = 0;
+      for (let q = 0; q < GH_Z.length; q++) {
+        if (T === 0 && q > 0) break;
+        const psf = schemeAt(Math.exp(G - 0.5 * sd * sd + sd * GH_Z[q]), k);
+        if (psf > 0) ev += (T === 0 ? 1 : GH_W[q]) * psf;
+      }
+      if (!(ev > 0)) continue;
+      const annuity = T === 0 ? 0 : (1 - Math.pow(1 + kr, -T)) / kr;
+      const v = ev * rec.lotArea / Math.pow(1 + kr, T) / (1 + tau * annuity);
+      if (v > best) best = v;
     }
-    if (!(ev > 0)) continue;
-    const carry = T === 0 ? 0 : taxYr * (1 - Math.pow(1 + kr, -T)) / kr;
-    const v = ev * rec.lotArea / Math.pow(1 + kr, T) - carry;
-    if (v > best) best = v;
   }
   best = Math.max(0, Math.round(best));
   bankMemo.val.set(vk, best);

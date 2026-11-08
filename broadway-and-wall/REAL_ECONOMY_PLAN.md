@@ -88,6 +88,7 @@ It supersedes the open parts of `ECON_REALISM_PLAN.md` and `RENT_VACANCY_RESPONS
 | No normal vacancy, steps 2 and 4: frictional vacancy from search (theta^-0.5); the leasing desk reads the signed package and seekers per vacant foot | done | #669 |
 | The brokers' survey runs every quarter for every class: +300bp held office cap -0.2 -> +0.3pp, office values +0.6% -> -4.3%; cap-lag row 3 -> 1 year | done | #670 |
 | Shops do not sign a lease at a loss (participation constraint): the year 28-44 retail-vacancy surge to 31-37% is gone (peaks 16-19%) | #671 | #671 |
+| The land holder's option: on its best use, each use on its own rents (a cost rise flipped the fringe lots' class and tripled the option); its tax capitalised, not charged on the stale land level. Cost +40% land, impact +2.8% (BACKWARDS) → −9.5% (RIGHT); century real land trend 1.8 → 4.6%/yr (each half alone 1.9 / −0.2: chaotic at 3 seeds). Not merged: see the section below | open | claude/cost-moves-land |
 
 ### Corrections to the audit
 - **3.3 loan spreads: mostly not a fake.** The playthrough's coupons 5.7 points over the index (p50) were the bot borrowing from a private-credit desk (Cordage Debt Partners), which in life does price 4-7 points over. The bank desks quoted about 2.5-3 points, high in the real range. Desk pricing is already built from funding, expected loss and running cost (`pricing.ts` `liveSpread`, `costFloor`). Lower priority; re-check against MBA/ACLI once caps are right.
@@ -164,6 +165,20 @@ Walk probe (scratchpad `walk-probe/probe2.mjs` + `dec2.py`; 12-month changes on 
 4. **Construction cost to land** (a separate session, branch `claude/cost-moves-land`): +40% cost moved land −1.6% (record: falls 5-80%).
 5. **The ten-year under a held off-rule policy** moves +0.6pp against +1 to +2.5 in the record; no engine code holds a rate off its rule, so this is a harness question, not an engine one.
 6. **Investment volatility** 4.9x output (record ~3): source `TAU_K` and `I_LAG`.
+## Construction cost +40% and land: what the 2026-11-08 trace found
+
+On main (seed 11) the shock does reach the bidders: with cost up 40%, **no firm bids on any of the July survey's 24 lots** (control: 23 of 24). The survey then prints nothing (fewer than half bid, #653), `landIdx` stays where it was, and every texture-priced lot's floor (`0.3 × texture`, which scales with `landIdx`) holds the land price up. On today's main the land row reads +2.8% at impact (seeds +32.0 / +2.8 / −15.3%) and +7.6% in years 3-8: BACKWARDS, and set by whether a survey year happens to print.
+
+Why nobody bids: all four `landBanker` firms (land sheet 70+) also build, and `landMaxPrice` gives a firm that builds only today's build residual (`builds ? own : max(own, hold)`). The option to wait is bid only by pure land funds, and seed 11 has none at year 10. So once cost kills the residual, nobody in town prices the lot.
+
+Three faults in the holder's option (`holdValueFor`), measured on seed 11 at +6 months:
+1. **The class flip (fixed on the branch).** The option took one class's rent drift and spread: today's best scheme, or the use closest to covering its cost. The cost shock moved the fringe lots from industrial (real rent vol 0.04) to flats (0.10), and the option went **up** 3× ($7 → $22/sf). On its best use, each use on its own numbers: $27 → $20/sf.
+2. **The tax carry read the land level (fixed on the branch).** `taxRate × landValue` includes the texture floor, so a stale high level kept the carry up. Now capitalised: V = PV / (1 + τA).
+3. **The tail (open).** `sd(T) = σ√T / (1 − ρ)` applies the measured year-on-year volatility as if it were the growth innovation. With flats at 0.08-0.10 that gives sd 1.04 at 15 years: the 2.86σ node is ~20× today's real rent, and it carries about half of a fringe lot's option value. Letting the land-banking builders bid the option (`builds && !landBanker(r)`) put that tail into prices. The control's land index went 2.47 → 8.86 in three years and then crashed, and apartment starts under the shock turned BACKWARDS (+89%). Before any firm that builds bids the option, the long-horizon spread needs a mean-reverting real rent level (real rents revert toward replacement cost) rather than a unit root.
+
+Branch result (fixes 1 and 2 only), cost shock at seeds 11/22/33: land impact −9.5% (−9.5 / −8.6 / −14.2) RIGHT, years 3-8 −25.6% RIGHT, office and apartment values RIGHT; but office starts −55.9% → −14.6% (WRONG SIZE) and office rent +5.0% → +0.7% (NO RESPONSE). Part of the land change may come from the different town, not the mechanism: the two fixes change land funds' bids and when they are founded from month 0, so the snapshot town differs (seed 33's land index is 0.18 against main's 0.91, frozen since year 2 with no print). The silent survey stays the general disease in both builds.
+
+**Re-measured after merging #669-#672** (cost shock, 11/22/33, main → branch): land impact +5.4% → +2.4% (BACKWARDS both), years 3-8 +30.8% → +1.9% (BACKWARDS → NO RESPONSE), office values +1.2% → +4.0% (NO RESPONSE → RIGHT); every other row RIGHT in both. So the earlier RIGHT on land was mostly the different town. The two option fixes are correct but do not fix the land row: the survey's silence (no firm in the room bids the option) is the fault, and fault 3 blocks the obvious fix.
 
 ## Office rents and vacancy: what the measurements say (2026-11-07, open)
 

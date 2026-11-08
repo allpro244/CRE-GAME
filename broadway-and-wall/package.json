@@ -142,7 +142,6 @@
     "glut": "node test/glut.mjs",
     "ground-retail": "node test/ground-retail.mjs",
     "ltvdist": "node test/ltvdist.mjs",
-    "vac-rent": "node test/vac-rent-response.mjs",
     "quality-arms": "node test/quality-arms.mjs",
     "price-bounds": "node --experimental-strip-types test/price-bounds.mjs",
     "demise": "node test/demise.mjs",

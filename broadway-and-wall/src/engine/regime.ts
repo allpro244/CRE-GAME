@@ -36,8 +36,8 @@
  * WHY THE CITY IS NOT SIMULATED TOO. The city's space market is a function of
  * the map: its stock grows only when somebody builds on a real parcel, so a
  * city run for forty years with nobody developing it runs out of space
- * (measured: office vacancy pinned at 5.4% within ten years, against 11.5%
- * natural). So the city opens positioned on the nation's recent history —
+ * (measured: office vacancy pinned at 5.4% within ten years, against the
+ * 11.5% US office has averaged). So the city opens positioned on the nation's recent history —
  * vacancy on the last three years of unemployment, rents on that vacancy,
  * cap rates at the target tickEcon itself chases — and from month one the
  * full model runs both.
@@ -99,7 +99,7 @@ export function nationPhase(n: NonNullable<Econ["nat"]>): MarketPhase {
   return "expansion";
 }
 
-/** Vacancy as a multiple of each class's natural rate, on three years' mean national unemployment (calibration in simulateHistory). */
+/** Opening vacancy as a multiple of each class's long-run US average (OPENING_VAC), on three years' mean national unemployment (calibration in simulateHistory). */
 export function vacMultOf(uTrail: number): number {
   return Math.max(0.65, Math.min(1.8, 0.835 + 15 * (uTrail - 0.0475)));
 }
@@ -130,7 +130,7 @@ export interface History {
  * spent by the model from there). The length of the history is drawn too, so
  * the same start does not always arrive at the same point in its own cycle.
  */
-export function simulateHistory(econ: Econ, seed: number, natural: Record<string, number>): History {
+export function simulateHistory(econ: Econ, seed: number, longRun: Record<string, number>): History {
   let k = 0;
   const d = (lo: number, hi: number) => pick(rrng(seed, k++), lo, hi);
   const anchor = d(0.004, 0.032);
@@ -195,10 +195,11 @@ export function simulateHistory(econ: Econ, seed: number, natural: Record<string
   // THE SPACE MARKET, ON THE LABOUR MARKET IT HAS BEEN LIVING THROUGH.
   // Vacancy lags employment by a year or two — tenants give space back at
   // their lease ends, not at the layoff — so it reads three years of national
-  // unemployment, as a multiple of each class's own natural rate so a glut is
+  // unemployment, as a multiple of each class's long-run US average (an
+  // initial condition, OPENING_VAC — never a yardstick afterwards) so a glut is
   // a glut everywhere. CALIBRATED, not tuned: the line runs through the five
   // historical openings this file used to draw from (unemployment / vacancy
-  // as a multiple of natural): 1950s-60s 4.8% / 0.84, 1970s 6.7% / 1.00,
+  // as a multiple of the long-run average): 1950s-60s 4.8% / 0.84, 1970s 6.7% / 1.00,
   // 1982 9.2% / 1.50, 1990s 6.0% / 1.23, 2010 8.4% / 1.40 — about fifteen
   // points of vacancy multiple per point of unemployment. The 1990s sit
   // furthest off it (vacancy left over from the overbuilt eighties), which is
@@ -206,10 +207,10 @@ export function simulateHistory(econ: Econ, seed: number, natural: Record<string
   const vacMult = vacMultOf(uTrail);
   for (const cls of Object.keys(econ.cityVac) as (keyof typeof econ.cityVac)[]) {
     const jitter = d(0.88, 1.12);
-    econ.cityVac[cls] = Math.max(0.02, Math.min(0.40, (natural[cls] ?? 0.11) * vacMult * jitter));
+    econ.cityVac[cls] = Math.max(0.02, Math.min(0.40, (longRun[cls] ?? 0.11) * vacMult * jitter));
   }
   // Rents follow the vacancy — the same five openings: a long expansion at
-  // 0.84x natural vacancy ran rents ~9% over the long-run base, 1982 at 1.5x
+  // 0.84x the long-run average vacancy ran rents ~9% over the long-run base, 1982 at 1.5x
   // ran them ~28% under, about 0.55 of rent per unit of vacancy multiple.
   const rentMult = rentMultOf(vacMult);
   for (const cls of Object.keys(econ.rentIdx) as (keyof typeof econ.rentIdx)[]) {

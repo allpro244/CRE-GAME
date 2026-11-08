@@ -18,8 +18,8 @@ import { BUILT_CLASSES, monthLabel } from "./types";
 import { why, whyAt, whyGet, whyMark, whyNation, whyOnce } from "./why";
 import { whyTown, whyIndustry, industryOfFirm } from "./economy";
 import { whyTrades } from "./contractors";
-import { availability } from "./space";
-import { normalVac, SECTOR_LABEL } from "./market";
+import { availability, availYoy, packageOf, monthsOfSupply } from "./space";
+import { SECTOR_LABEL } from "./market";
 
 const sgnPct = (x: number, d = 1) => `${x >= 0 ? "+" : "−"}${Math.abs(x * 100).toFixed(d)}%`;
 const k$ = (sf: number) => sf >= 1e6 ? `${(sf / 1e6).toFixed(1)}M` : `${Math.round(sf / 1000)}k`;
@@ -33,21 +33,23 @@ function prevOf(s: GameState, mark: string, field: string): { v: number; m: numb
 
 /**
  * A CLASS'S AVAILABILITY this month (once a month, made when first cited): the
- * rate against its normal, what was delivered since it was last written, and
+ * rate against a year ago, the package the leases give away, the months of
+ * supply, what was delivered since it was last written, and
  * the town's month — the jobs that fill space or empty it.
  */
 export function whyVacancy(s: GameState, k: BuiltClass): number {
   return whyOnce(s, `vac:${k}:${s.month}`, () => {
     const e = s.econ;
-    const vac = availability(e, k), nv = normalVac(e, k), stock = e.stock?.[k] ?? 0;
+    const vac = availability(e, k), stock = e.stock?.[k] ?? 0;
+    const yoy = availYoy(e, k), pkg = packageOf(e, k), mos = monthsOfSupply(e, k);
     const p = prevOf(s, `vac:${k}`, "vac"), ps = prevOf(s, `vac:${k}`, "stock");
     const since = p ? `, ${vac - p.v >= 0 ? "+" : "−"}${Math.abs((vac - p.v) * 100).toFixed(1)} pts since ${monthLabel(p.m)}` : "";
     const built = ps && stock - ps.v > 0 ? ` · ${k$(stock - ps.v)} sf delivered since` : "";
     const pipe = (e.pipeline?.[k] ?? 0) > 0 ? ` · ${k$(e.pipeline[k])} sf being built` : "";
     return {
       k: "market.vacancy", a: "trade", aid: k, name: SECTOR_LABEL[k],
-      n: { vac, normal: nv, stock, pipeline: e.pipeline?.[k] ?? 0 },
-      t: `${SECTOR_LABEL[k]} availability ${(vac * 100).toFixed(1)}% (normal ${(nv * 100).toFixed(1)}%)${since}${built}${pipe}`,
+      n: { vac, yoy, pkg, mos: mos ?? -1, stock, pipeline: e.pipeline?.[k] ?? 0 },
+      t: `${SECTOR_LABEL[k]} availability ${(vac * 100).toFixed(1)}% (${yoy >= 0 ? "+" : "−"}${Math.abs(yoy * 100).toFixed(1)} pts on a year · package ${(pkg * 100).toFixed(1)}% of face · ${mos === null ? "space coming back" : `${Math.round(mos)} months of supply`})${since}${built}${pipe}`,
     };
   }, () => [whyTown(s), whyNation(s)]);
 }

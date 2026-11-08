@@ -22,7 +22,6 @@ import { monthLabel, START_YEAR } from "./types";
 import { money } from "./money";
 import { firmShort } from "./firm";
 import { districtLabelOf } from "./mix";
-import { normalVac } from "./market";
 
 export type StorySection = "yours" | "market" | "deeds" | "street" | "skyline" | "places";
 
@@ -834,27 +833,34 @@ function supplyStories(g: GameState): Story[] {
     const stock = now.stock[c], vacSf = Math.max(0, stock - now.occupied[c]);
     const absorb = g.econ.absorb12?.[c] ?? 0;
     if (!(stock > 0)) continue;
-    const vac = vacSf / stock, natural = normalVac(g.econ, c);
+    const vac = vacSf / stock;
     const after = Math.max(0, vacSf + coming - absorb * (horizon / 12)) / (stock + coming);
-    if (coming >= stock * 0.03 && after >= Math.max(vac + 0.02, natural * 1.25)) {
+    // Read against the market's own path, not a "healthy" norm (there is no
+    // vacancy norm): a glut is deliveries that leave more empty than today
+    // at the pace the city has been taking space; a squeeze is the empty
+    // space plus what is coming used up before the cranes are down.
+    const takenUp = absorb * (horizon / 12);
+    if (coming >= stock * 0.03 && after >= vac + 0.02) {
       out.push({
         id: `glut:${c}:${Math.floor(g.month / 6)}`, section: "market",
         kicker: "Glut warning",
         head: `${cap(count(rows.length))} ${CLASS_NOUN[c]} project${rows.length === 1 ? "" : "s"} open in the next ${horizon} months — into ${pc(vac)} vacancy`,
         body: `${msf(coming)} of new ${CLASS_PLURAL[c]} is due by ${monthLabel(g.month + horizon)}. `
           + `The city ${absorb >= 0 ? `took up ${msf(absorb)}` : `gave back ${msf(-absorb)}`} of ${CLASS_PLURAL[c]} in the last twelve months. `
-          + `If demand keeps that pace, vacancy is ${pc(after)} when the cranes come down — against the ${pc(natural)} a healthy ${CLASS_NOUN[c]} market runs at. `
+          + `If demand keeps that pace, vacancy is ${pc(after)} when the cranes come down, against ${pc(vac)} today. `
           + `Landlords with space to let will be competing with buildings that have never had a tenant.`,
-        m: g.month, score: 3.5 + Math.min(2, (after - natural) * 20),
+        m: g.month, score: 3.5 + Math.min(2, (after - vac) * 20),
       });
-    } else if (vac < natural * 0.7 && absorb > 0 && coming < absorb * (horizon / 12) * 0.5) {
+    } else if (absorb > 0 && coming < takenUp * 0.5 && vacSf + coming < takenUp) {
+      const monthsLeft = (vacSf + coming) / (absorb / 12);
       out.push({
         id: `short:${c}:${Math.floor(g.month / 6)}`, section: "market",
         kicker: "Running out of room",
         head: `Only ${pc(vac)} of the city's ${CLASS_PLURAL[c]} are empty, and almost nothing is coming`,
-        body: `A healthy ${CLASS_NOUN[c]} market runs at ${pc(natural)}. The city absorbed ${msf(absorb)} last year, and only ${msf(coming)} opens in the next ${horizon} months. `
+        body: `The city absorbed ${msf(absorb)} last year, and only ${msf(coming)} opens in the next ${horizon} months. `
+          + `At that pace the empty space and everything coming are taken in ${Math.max(1, Math.round(monthsLeft))} months. `
           + `Tenants will pay up or go without; whoever has space has the leverage.`,
-        m: g.month, score: 3 + Math.min(2, (natural - vac) * 30),
+        m: g.month, score: 3 + Math.min(2, ((takenUp - vacSf - coming) / stock) * 30),
       });
     }
   }

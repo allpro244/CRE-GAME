@@ -428,8 +428,8 @@ const WAVE_GAIN = 0.03 / 0.18;
  * `SECTOR_CLASSES` says a shop is let to apparel, food or medical. Read
  * literally, that made a trade exodus land on retail at a THIRD weight against
  * office's SIXTH — twice as hard on the class with the smaller inventory and
- * the tighter natural vacancy — and the glut branch of the rent term in
- * market.ts is superlinear, so twice the shock is rather more than twice the
+ * the tighter opening vacancy — and the glut branch of the rent term then in
+ * market.ts was superlinear, so twice the shock is rather more than twice the
  * damage. Measured over twenty-four paired centuries that came to real retail
  * rent growth 1.13pp/yr lower with swans on than off, t = -4.2, while every
  * other class was statistically dead. One class in four carrying a permanent

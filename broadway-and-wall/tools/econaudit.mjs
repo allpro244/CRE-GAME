@@ -570,7 +570,7 @@ const KNOBS = [
   //
   // These three are recomputed from other state at the TOP of every tick,
   // before anything reads them: slackEma from the stock-weighted vacancy gap,
-  // supplyPress from deliveries over stock, vacOverM from the vacancy gap.
+  // supplyPress from deliveries over stock, pkgDeepM from the signed package.
   // Perturbing them is overwritten before it can influence a single decision,
   // which is why they came back at exactly 0.00% even when the perturbation
   // was HELD for three years. That is not a dead wire, it is a value that
@@ -579,7 +579,7 @@ const KNOBS = [
   // testing is the input each is computed from, and each of those is tested
   // elsewhere in this battery: vacancy in experiments 2 and 3, deliveries in
   // 4 and 5. Marked so the sweep reports them honestly instead of loudly.
-  ["econ.vacOverM.office (derived)", (g) => { g.econ.vacOverM.office = 24; }, true],
+  ["econ.pkgDeepM.office (derived)", (g) => { if (g.econ.pkgDeepM) g.econ.pkgDeepM.office = 24; }, true],
   ["econ.supplyPress (derived)", (g) => { if (g.econ.supplyPress) for (const u of USES) g.econ.supplyPress[u] = 0.5; }, true],
   ["econ.affordEff", (g) => { if (g.econ.affordEff) for (const u of USES) g.econ.affordEff[u] = 0.6; }],
   ["econ.pool", (g) => { if (g.econ.pool) for (const u of USES) g.econ.pool[u] *= 1.5; }],

@@ -1792,7 +1792,7 @@ export interface Builder {
   /** Habits, fixed for life — the same traits the anonymous draw produced (dev.ts DeveloperProfile). */
   prof: {
     bar: number; minDemand: number; spec: number; maxFloors: number; ltc: number; uses: DevUse[];
-    floor?: number; outlook: number; momentum: number; vacTol: number; maxShare: number;
+    floor?: number; outlook: number; momentum: number; maxShare: number;
   };
   /** The firm's own money, and how much of it is in schemes still building. */
   capital: number;
@@ -2105,9 +2105,11 @@ export interface Econ {
   /** Concession dial 0..1 — how much of the maximum giveaway (free rent +
    *  funded TI) the market currently hands tenants. Moves in months. */
   concIdx?: Record<BuiltClass, number>;
-  /** Months vacancy has sat >1.5pp over natural — the capitulation clock.
-   *  Asking rents do not fall until the landlord has stared at the empty
-   *  floor for half a year. */
+  /** The capitulation clock (market.ts tickCapitulation): months the signed
+   *  package (1 − effective / asking) has sat at the deepest it has reached
+   *  this episode. Read by the demolition valves (dev.ts). */
+  pkgDeepM?: Record<BuiltClass, number>;
+  /** Old saves: the retired clock against a "natural" vacancy. Never read. */
   vacOverM?: Record<BuiltClass, number>;
   /** EMA of vacTerm+scarcity that feeds the rent index — lease-quote lag.
    *  Market pressure forms instantly; landlords adjust asking rents only after
@@ -2412,7 +2414,7 @@ export interface Econ {
   /** Every street block of flats and the flats let in it (streetRolls.ts). */
   flatRolls?: Record<string, import("./streetRolls").FlatRoll>;
   /** The street's flats by quality band, measured off the blocks each month (streetRolls.ts; bands.ts reads it). */
-  flatBands?: { stock: number[]; occ: number[] };
+  flatBands?: { stock: number[]; occ: number[]; /** each band's blocks' mean log ask over market (streetRolls.ts measureFlatBands) */ px?: number[] };
   /** The player's flats' occupancy last month, so a block sold carries its households. */
   heldFlats?: Record<string, number>;
   /** The space a worker takes, by class: its structural level after a swan (remote work; market.ts, swans.ts), and that level at the opening. Every firm's need moves with their ratio. */
@@ -2605,16 +2607,9 @@ export interface Econ {
    * cannot go stale.
    */
   crewUtil?: number;
-  /**
-   * THE WORST THIS GLUT HAS BEEN, per class, while it lasts.
-   *
-   * A capitulation is renewed when the market deteriorates materially past
-   * anything it has already repriced for. Without this the clock only knew how
-   * LONG a glut had run, and gluts build slowly — measured, the deepest gap
-   * arrives 43 to 117 months in, by which time the repricing window has closed
-   * and the market takes its worst quarter with no reaction at all. Cleared
-   * with `vacOverM` when the class comes back inside its threshold.
-   */
+  /** The deepest signed package this episode, per class (market.ts tickCapitulation). */
+  pkgDeepest?: Record<BuiltClass, number>;
+  /** Old saves: the retired worst gap over a "natural" vacancy. Never read. */
   vacWorst?: Record<BuiltClass, number>;
   /**
    * The size of the town's construction workforce against what a place this

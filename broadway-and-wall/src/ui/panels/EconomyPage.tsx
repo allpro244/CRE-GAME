@@ -1058,14 +1058,13 @@ export function EconomyPage() {
                   );
                 })()}
                 <table className="mini-table mono" style={{ width: "100%", fontSize: 12 }}>
-                  <thead><tr><th style={{ textAlign: "left" }}>Score</th><th>Floor</th><th>Vacant</th><th>Normal</th><th>Rent vs class</th></tr></thead>
+                  <thead><tr><th style={{ textAlign: "left" }}>Score</th><th>Floor</th><th>Vacant</th><th>Rent vs class</th></tr></thead>
                   <tbody>
                     {rows.map((r) => (
                       <tr key={r.lo}>
                         <td style={{ textAlign: "left" }}>{r.lo}–{r.lo + 10}</td>
                         <td style={{ textAlign: "right" }}>{sfFmt(r.stock)}</td>
-                        <td style={{ textAlign: "right" }} className={r.vac > r.nat + 0.03 ? "neg" : ""}>{(r.vac * 100).toFixed(1)}%</td>
-                        <td style={{ textAlign: "right" }}>{(r.nat * 100).toFixed(1)}%</td>
+                        <td style={{ textAlign: "right" }} className={r.vac > (game.econ.cityVac?.[focus] ?? 0) + 0.03 ? "neg" : ""}>{(r.vac * 100).toFixed(1)}%</td>
                         <td style={{ textAlign: "right" }}>{pctSigned(r.rent - 1)}</td>
                       </tr>
                     ))}

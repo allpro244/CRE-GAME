@@ -3996,7 +3996,11 @@ function replacementSearch(
       // Same size discipline as on vacant dirt: no bigger than this shop's
       // share of the class's standing stock.
       if (fl > 1 && u.plan.sf * (u.plan.mix?.[k] ?? 1) > rdev.maxShare * Math.max(1, e.stock?.[k] ?? 0)) continue;
-      if (forwardVacancy(e, k, u.plan.sf * (u.plan.mix?.[k] ?? 1), u.plan.months, beliefOf(s, who, k), true) > normalVac(e, k) + rdev.vacTol) continue;
+      // No vacancy-tolerance gate against a "normal" vacancy (2026-11-08):
+      // the pro forma already reads the market this building would lease
+      // into — stabilised occupancy at the forward vacancy, its own feet in,
+      // and the lease-up clock on the market's own lettings
+      // (proforma.ts `leaseUpMonths`) — so a glut prices itself out there.
       // A redeveloper that borrows needs its margin on the equity the desks
       // leave it (equityStretch), like a builder on vacant dirt.
       const m = DEV_MARGIN * (rdev.ltc > CASH_BUILDER_LTC ? equityStretch(s) : 1);
@@ -4034,8 +4038,7 @@ function replacementSearch(
  * building is worth as a building (`redevelopmentBasis`). A builder firm uses
  * its own habits; any other owner the middle of the developer population
  * (`drawDeveloper`: spec 0.5, 60% loan-to-cost, no tilt in outlook or
- * momentum, 6 points of vacancy tolerance, 2% of the class's stock in one
- * building — the medians of the stated spreads there), at its own margin.
+ * momentum, 2% of the class's stock in one building — the medians of the stated spreads there), at its own margin.
  */
 export function ownerRedevelopment(
   s: GameState, parcels: ParcelTable, r: Rival, bbl: string, rec: NonNullable<ReturnType<typeof resolveRec>>,
@@ -4044,7 +4047,7 @@ export function ownerRedevelopment(
   const prof: DeveloperProfile = r.builderProf
     ? { ...r.builderProf, minDemand: 0 }
     : { bar: (1 + firmMargin(r, s.month, capForSpread(s.econ, rec.class))) / (1 + DEV_MARGIN), minDemand: 0, spec: 0.5, maxFloors: Infinity, ltc: 0.6,
-        uses: ["office", "multifamily", "industrial", "retail"], outlook: 1, momentum: 0, vacTol: 0.06, maxShare: 0.02 };
+        uses: ["office", "multifamily", "industrial", "retail"], outlook: 1, momentum: 0, maxShare: 0.02 };
   const oc = redevelopmentBasis(rec, s.econ, gradeOf(s, rec));
   const found = replacementSearch(s, parcels, bbl, rec, rec, rec.class, rec.bldgArea, oc, prof, r);
   return found.best ? { use: found.best.use, plan: found.best.u.plan, h: found.best.h } : null;
@@ -5112,17 +5115,16 @@ function developerLook(
         // stock this shop will put into one building.
         const ownSf = u.plan.sf * (u.plan.mix?.[lead] ?? 1);
         if (ownSf > dev.maxShare * Math.max(1, s.econ.stock?.[lead] ?? 0) && fl > 1) continue;
-        // VACANCY AT DELIVERY THIS SHOP WILL LEASE INTO, its own building
-        // and everything already in the ground included.
-        // TO ITS OWN DELIVERY DATE (2026-10-13). The tenant base's trend
-        // growth was extrapolated over a fixed 18 months, but a scheme decided
-        // today opens after its lead time and its build — three to five years
-        // for a tower. Every developer in a boom underwrites the boom running
-        // to the day its own building opens; that shared extrapolation, read
-        // over the real horizon, is what fills a market faster than demand
-        // turns out to grow (Wheaton 1999). Read over 18 months, every shop
-        // was more cautious than any real one and no market overshot.
-        if (forwardVacancy(s.econ, lead, ownSf, u.plan.months + PLAN_LEAD_M[lead], beliefOf(s, firm, lead), true) > normalVac(s.econ, lead) + dev.vacTol) continue;
+        // NO "DO NOT BUILD INTO A GLUT" GATE (2026-11-08). Each shop skipped
+        // any scheme whose forecast vacancy at delivery ran over the class's
+        // "normal" vacancy plus its own tolerance (-3 to +15 points) — a
+        // yardstick no market publishes. What a glut costs a builder is in
+        // its pro forma: the stabilised occupancy is the forward vacancy to
+        // its own delivery date (its own feet and the pipeline in), and the
+        // lease-up it carries is the market's own lettings set against the
+        // space on offer ahead of it (proforma.ts `leaseUpMonths`). A shop's
+        // optimism is its outlook and momentum below, not a vacancy it
+        // forgives.
         // THEIR OWN READ: yield on cost over the exit cap at the trade margin,
         // through their rent outlook and how they read the market's direction.
         // ...but only on a scheme that already clears its spread on today's
@@ -5221,7 +5223,7 @@ type DeveloperProfile = {
   bar: number; minDemand: number; spec: number; maxFloors: number; ltc: number; uses: DevUse[];
   /** The value/cost this shop needs on TODAY's numbers, before any outlook — see spreadFloor. */
   floor?: number;
-  outlook: number; momentum: number; vacTol: number; maxShare: number;
+  outlook: number; momentum: number; maxShare: number;
 };
 function drawDeveloper(s: GameState): DeveloperProfile {
   const u = () => rng(s, "dev");
@@ -5283,9 +5285,10 @@ function drawDeveloper(s: GameState): DeveloperProfile {
   // trades are cheap and it will deliver into the recovery) .. +1 a trend
   // follower (extrapolates where rent is heading).
   const momentum = 2 * u() - 1;
-  // VACANCY TOLERANCE: how far over the class's natural vacancy at delivery
-  // they will still lease into — from needing a tight market to not caring.
-  const vacTol = -0.03 + 0.18 * u();
+  // (A vacancy-tolerance draw against a "normal" vacancy stood here until
+  // 2026-11-08; the draw is still taken so every later trait reads the
+  // same random stream and the change is the gate's alone.)
+  u();
   // WHAT: random weights over the four types, keeping those that carry real
   // weight — most shops do one or two things.
   const types: DevUse[] = ["multifamily", "office", "industrial", "retail"];
@@ -5293,7 +5296,7 @@ function drawDeveloper(s: GameState): DeveloperProfile {
   const w = types.map((_, i) => base[i] * -Math.log(Math.max(1e-9, u())));
   const top = Math.max(...w);
   const uses = types.filter((_, i) => w[i] >= 0.45 * top);
-  return { bar, floor, minDemand, spec, maxFloors, ltc, uses, outlook, momentum, vacTol, maxShare };
+  return { bar, floor, minDemand, spec, maxFloors, ltc, uses, outlook, momentum, maxShare };
 }
 
 /**

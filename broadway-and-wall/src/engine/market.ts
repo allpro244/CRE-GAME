@@ -878,13 +878,6 @@ export function forwardVacancy(
    * public (the assessor's roll, the permits) and stay the town's.
    */
   view?: { vac: number; dg: number },
-  /**
-   * The builders' vacancy-tolerance gates only (dev.ts `vacTol`): they compare
-   * this forecast with a "normal" vacancy, and were set against the
-   * forecast WITH the looking queue subtracted. They keep reading it so until
-   * they are deleted (no-normal-vacancy step 6); nothing else may pass it.
-   */
-  gateQueue = false,
 ): number {
   const vacNow = view ? view.vac : e.cityVac?.[k] ?? openingVac(k);
   if (!e.stock?.[k]) return vacNow;
@@ -904,7 +897,6 @@ export function forwardVacancy(
   // gross lettings, which the lease-up clock reads (proforma.ts
   // `leaseUpMonths`); counting the queue here too would count that
   // absorption twice. Net demand growth is the trend term below.
-  const queue = gateQueue ? Math.max(0, e.structTight?.[k] ?? 0) * stkNow : 0;
   // `monthsAhead`: 18 for a reader pricing the market in general; a developer
   // deciding whether to build reads to its own delivery date (`developerLook`).
   //
@@ -918,7 +910,7 @@ export function forwardVacancy(
   // rising glut (seed 11: office starts 0.6-4.1% of stock a year while vacancy
   // rose from 11% to 21%). The vacancy result keeps its 0-1 guard.
   const trendGrowth = (view ? view.dg : e.classDrvTrend?.[k] ?? 0) * monthsAhead * occNow;
-  return clamp((stkNow + pipe - occNow - queue - trendGrowth) / (stkNow + pipe), 0, 1);
+  return clamp((stkNow + pipe - occNow - trendGrowth) / (stkNow + pipe), 0, 1);
 }
 
 /**

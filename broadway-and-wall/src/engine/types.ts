@@ -1792,7 +1792,7 @@ export interface Builder {
   /** Habits, fixed for life — the same traits the anonymous draw produced (dev.ts DeveloperProfile). */
   prof: {
     bar: number; minDemand: number; spec: number; maxFloors: number; ltc: number; uses: DevUse[];
-    floor?: number; outlook: number; momentum: number; vacTol: number; maxShare: number;
+    floor?: number; outlook: number; momentum: number; maxShare: number;
   };
   /** The firm's own money, and how much of it is in schemes still building. */
   capital: number;

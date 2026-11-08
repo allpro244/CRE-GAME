@@ -17,6 +17,10 @@ if (rival) {
   rival.heldSince[`ext|${bbl}`] = 36;
 }
 
+// an old save carries the retired learned vacancy norm and the rent equation's memory
+g.econ.natVac = { office: 0.11, retail: 0.08, multifamily: 0.05, industrial: 0.07 };
+g.econ.rentPress = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+
 console.log("\nSAVE MIGRATION\n");
 let bad = 0;
 const check = (ok, msg) => {
@@ -31,6 +35,8 @@ if (rival) {
   check(mr.extendedTo?.[bbl] === 36 && mr.heldSince?.[`ext|${bbl}`] === undefined,
     "legacy extension record moves out of heldSince");
 }
+check(migrated.econ.natVac === undefined && migrated.econ.rentPress === undefined,
+  "old saves drop the retired vacancy norm (natVac) and rentPress");
 const twice = E.migrateSaveState(structuredClone(migrated));
 check(JSON.stringify(twice) === JSON.stringify(migrated), "migration is idempotent");
 

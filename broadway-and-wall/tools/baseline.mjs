@@ -283,8 +283,8 @@ function rails(g, acc) {
     // then the floor is setting the vacancy rather than bounding it, and every
     // rent, cap rate and appraisal downstream is reading a constant.
     // Read from the engine, never mirrored. The floor was `frictionFloor`, a
-    // share of the normal vacancy, retired 2026-11-07 (there is no normal
-    // vacancy): it is the residence vacancy now, the mechanism's own floor.
+    // share of a vacancy norm, retired 2026-11-07 (there is no such norm):
+    // it is the residence vacancy now, the mechanism's own floor.
     const fr = E.residenceVac(g.econ, k);
     if (Number.isFinite(v) && v <= fr * 1.001) acc[`rail.vac.${k}.lo`] = (acc[`rail.vac.${k}.lo`] ?? 0) + 1;
     // THE CAPACITY CLAMP (MDGA F1). Not the frictional floor: the point where

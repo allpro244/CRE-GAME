@@ -93,8 +93,8 @@ if (growing.length) {
 }
 
 // The floor is the mechanism's (dark floor + movers x relet clock), not a
-// share of a normal vacancy that could be hiked to fake the result.
-check(E.frictionFloor === undefined, "no normal-vacancy friction floor exists to hike (residenceVac is the floor)");
+// share of a vacancy norm that could be hiked to fake the result.
+check(E.frictionFloor === undefined, "no vacancy-norm friction floor exists to hike (residenceVac is the floor)");
 
 if (bad) {
   console.error(`\n${bad} check(s) failed\n`);

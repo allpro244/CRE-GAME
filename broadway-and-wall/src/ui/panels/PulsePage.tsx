@@ -5,7 +5,7 @@ import type { BuiltClass } from "@/engine/types";
 import { monthLabel } from "@/engine/types";
 import { cityValueToReplacement } from "@/engine/dev";
 import { standardsWord, underwritingStandards } from "@/engine/debt";
-import { normalVac, SECTOR_LABEL } from "@/engine/market";
+import { SECTOR_LABEL } from "@/engine/market";
 import { availability, marketBalance } from "@/engine/space";
 import { resolveRec } from "@/engine/value";
 import { sf, pct, pctSigned } from "@/ui/format";
@@ -104,7 +104,7 @@ export function PulsePage() {
         <thead>
           <tr>
             <th>Market</th>
-            <th className="num" title="Vacant + sublet / what it usually runs at">Available</th>
+            <th className="num" title="Vacant + sublet, and its change in points over twelve months">Available</th>
             <th>Balance</th>
             <th className="num">Rent $/sf</th>
             <th className="num" title="Real effective rent, year-on-year">Real rent · 12m</th>
@@ -125,13 +125,13 @@ export function PulsePage() {
             const stk = e.stock?.[k] ?? 0;
             const dmd = stk > 0 ? abs12 / stk : 0;
             const pipe = e.pipeline?.[k] ?? 0;
-            const soft = bal.gap > 0.018;
+            const soft = bal.soft;
             return (
               <tr key={k} className="pulse-row" tabIndex={0} title={`${bal.note} · open ${SECTOR_LABEL[k]}`}
                 onClick={() => goMarkets(k)} onKeyDown={(ev) => { if (ev.key === "Enter") goMarkets(k); }}>
                 <td>{SECTOR_LABEL[k]}</td>
                 <td className={"num" + (soft ? " neg" : "")}>
-                  {(v * 100).toFixed(1)}% <span className="dim">/ {(normalVac(e, k) * 100).toFixed(1)}</span>
+                  {(v * 100).toFixed(1)}% <span className="dim" title="Change over twelve months">{bal.availCh >= 0 ? "+" : "−"}{Math.abs(bal.availCh * 100).toFixed(1)}</span>
                 </td>
                 <td className={soft ? "neg" : "dim"}>{bal.state}</td>
                 <td className="num">${e.rentIdx[k].toFixed(0)}</td>

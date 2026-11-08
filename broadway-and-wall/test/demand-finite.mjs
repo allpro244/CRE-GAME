@@ -50,7 +50,7 @@ console.log("\nFINITE DEMAND — letters come from a pool, not from empty floors
   check(req <= churn + growth + struct + 1,
     `requirement ${Math.round(req)} ≤ churn ${Math.round(churn)} + growth ${Math.round(growth)} + struct ${Math.round(struct)}`);
   // The search fringe is the tenants actually in search (movers x how long a
-  // move takes, Little's law) — no share of a normal vacancy (2026-11-07).
+  // move takes, Little's law) — no share of a vacancy norm (2026-11-07).
   const housable = E.housableStock(e, use);
   const fringe = E.tenantsInSearchSf(e, use);
   check(pool <= housable + fringe + 1,

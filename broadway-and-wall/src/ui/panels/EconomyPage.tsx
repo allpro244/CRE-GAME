@@ -5,7 +5,7 @@ import { useStore } from "@/state/store";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import type { BuiltClass, EconHistoryPoint } from "@/engine/types";
 import { capitalRatio, targetCapital } from "@/engine/lenders";
-import { normalVac, openingVac, RENT_BASE, SECTOR_LABEL, CITY_STOCK, residenceVac, housableStock, islandResidents, PEOPLE_PER_HOME, chairStance } from "@/engine/market";
+import { openingVac, RENT_BASE, SECTOR_LABEL, CITY_STOCK, residenceVac, housableStock, islandResidents, PEOPLE_PER_HOME, chairStance } from "@/engine/market";
 import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply, availability } from "@/engine/space";
 import { LineChart, BarChart, Gauge } from "@/ui/Chart";
 import { bandTable } from "@/engine/bands";
@@ -306,7 +306,7 @@ export function CentralBankBox() {
  * report is: the cycle at the top, then — for each asset class — the four
  * questions that decide whether to buy, hold, or build.
  *
- *   How tight is it?      vacancy against its natural rate
+ *   How tight is it?      availability, its year's move, and the package
  *   Which way is it going? rents and vacancy over the last twenty years, or
  *                          over the whole run — one switch, every chart
  *   What is coming?        the construction pipeline, by the year it lands
@@ -678,8 +678,8 @@ export function EconomyPage() {
       {/* ---- the four markets, at a glance ---- */}
       <div className="page-section">Space market</div>
       <div className="mkt-cards">
-        {/* The pseudo-card. No gauge, because the city has no natural rate to
-            sit against — its numbers are the level everything else is read
+        {/* The pseudo-card. No gauge, because the city has no availability
+            to track — its numbers are the level everything else is read
             off. Clicking it swaps the class detail below for six city charts. */}
         <button
           className={"mkt-card" + (sel === "general" ? " mkt-card-on" : "")}
@@ -718,7 +718,7 @@ export function EconomyPage() {
                 <span className="mkt-card-name">{SECTOR_LABEL[k]}</span>
                 <span className="mono">{(v * 100).toFixed(1)}%</span>
               </div>
-              <Gauge value={v} natural={normalVac(e, k)} lo={0} hi={0.28} fmt={(x) => `${(x * 100).toFixed(1)}%`} />
+              <Gauge value={v} mark={v - b.availCh} markLabel="a year ago" lo={0} hi={0.28} fmt={(x) => `${(x * 100).toFixed(1)}%`} />
               <div className="mkt-card-state">{b.state}</div>
               <div className={"mkt-card-sub" + (rentYoy < -0.025 ? " neg" : "")}>
                 effective rents {rentWord} · {pctSigned(rentYoy)} real / 12m
@@ -753,7 +753,7 @@ export function EconomyPage() {
       <div className="mkt-cards mkt-cards-aux">
         {/* THE TWO MARKETS THAT ARE NOT SPACE MARKETS, on the same rail as the
             four that are — because they are read the same way and at the same
-            moment. Land has no vacancy and no natural rate to gauge against;
+            moment. Land has no vacancy to gauge;
             the twelve-month move is its state. The banks have no rent; the
             credit window IS their state, and it is the multiplier on the next
             advance rate anybody in this town gets quoted. */}
@@ -897,7 +897,7 @@ export function EconomyPage() {
       <div className="hint">{bal.note}</div>
       <div className="grid" style={{ marginTop: 6 }}>
         <Row k="Inventory" v={`${(stock / 1e6).toFixed(1)}M sf`} />
-        <Row k="Vacant space" v={`${((stock * vacNow) / 1e6).toFixed(2)}M sf · ${(vacNow * 100).toFixed(1)}% available · usual ${(normalVac(e, focus) * 100).toFixed(1)}%`} bad={bal.gap > 0.025} strong
+        <Row k="Vacant space" v={`${((stock * vacNow) / 1e6).toFixed(2)}M sf · ${(vacNow * 100).toFixed(1)}% available · ${bal.availCh >= 0 ? "+" : "−"}${Math.abs(bal.availCh * 100).toFixed(1)} pts on a year · package ${(bal.pkg * 100).toFixed(1)}% of face`} bad={bal.soft} strong
           why={<WhyButton id={vacWhy(game, focus)} />} />
         {Math.abs(vacNow - directNow) > 0.003 && (
           <Row
@@ -1030,7 +1030,6 @@ export function EconomyPage() {
                   }]
                 : []),
             ]}
-            bands={[{ at: normalVac(e, focus) * 100, label: "usual" }]}
             yFmt={pctFmt}
             split={vacSeries.length}
             xLabels={[xFrom, `${START_YEAR + Math.floor((game.month + 36) / 12)}`]}
@@ -1299,15 +1298,15 @@ export function EconomyPage() {
               <tr key={m.district} style={{ cursor: "default" }}>
                 <td>{m.name}</td>
                 <td className="num">{(leg.sf / 1e6).toFixed(2)}M sf</td>
-                <td className={"num" + (v > normalVac(e, focus) + 0.03 ? " neg" : "")}>{(v * 100).toFixed(1)}%</td>
+                <td className={"num" + (d > 0.03 ? " neg" : "")}>{(v * 100).toFixed(1)}%</td>
                 <td className="num dim">{d >= 0 ? "+" : ""}{(d * 100).toFixed(1)} pts</td>
                 <td className="num">${legRent(leg).toFixed(2)}</td>
                 <td className="num">{legDemand(leg).toFixed(0)}</td>
                 <td className="num">{m.vacantLots}</td>
                 <td className="dim">
-                  {v < normalVac(e, focus) - 0.02 ? "tight"
-                    : v > normalVac(e, focus) + 0.04 ? "soft"
-                    : "balanced"}
+                  {d < -0.02 ? "tighter than town"
+                    : d > 0.04 ? "softer than town"
+                    : "with the town"}
                 </td>
               </tr>
             );

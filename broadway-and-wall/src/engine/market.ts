@@ -252,21 +252,6 @@ const SUBLET_MAX: Record<BuiltClass, number> = {
  *  quarters for an office, two for a shop or a shed operator. A household
  *  that arrives in town is looking the same month and has signed inside two.
  *  Shape parameters, from the length of the process; stated, not fitted. */
-/** Shortage-side rent sensitivity relative to office (see `vacTerm`). */
-// OFFICE REPRICES AT THE DEAL MARKET'S SPEED, NOT THE LEASE ROLL'S (2026-10-13).
-// Office sat at 1.0 on the argument that eight-year leases move asking rent
-// slowly — but lease length sets how fast IN-PLACE rent rolls, and this index
-// is the rent new deals sign at, which reprices as fast as the deals do. The
-// record: Manhattan 1997-2000, vacancy ~5 points under natural, real asking
-// +~11%/yr (~2.2%/yr per point); San Francisco 1998-2000, vacancy 1-2%, rents
-// about doubled in two years (~5%/yr per point). At 1.0 (0.84%/yr per point)
-// a growing city could only raise office rent toward its supply price by
-// holding vacancy ~3 points under natural for decades — measured, office
-// averaged 8-10% against 11.5% natural and sat under it 65-82% of months, so
-// downturns started tight and rarely produced a real repricing. 3.0, as flats:
-// ~2.5%/yr per point, the low end of that record. Retail stays at 1.0 for
-// want of a comparable source.
-const SHORT_SENS: Record<BuiltClass, number> = { office: 3.0, retail: 1.0, industrial: 2.4, multifamily: 3.0 };
 const DEMAND_FORM_M: Record<BuiltClass, number> = { office: 9, retail: 6, industrial: 6, multifamily: 2 };
 /** MONTHS TO MOVE IN once searching: office tour-to-occupancy including
  *  fit-out ~6 months, a shop ~4, a shed ~3, a flat ~6 weeks. */
@@ -280,8 +265,6 @@ const MOVE_OUT_M: Record<BuiltClass, number> = { office: 24, retail: 18, industr
 /** The typical lease term by class, months — eight years of office paper,
  *  seven of retail, six of industrial, one of housing. */
 export const LEASE_TERM_M: Record<BuiltClass, number> = { office: 96, retail: 84, industrial: 72, multifamily: 12 };
-/** Months before a building not yet started can deliver: six of planning and the middle of its build (BUILD_MONTHS). */
-const SUPPLY_LAG_M: Record<BuiltClass, number> = { office: 27, retail: 29, industrial: 22, multifamily: 30 };
 /** The share of a class's leases that roll in a month: what the in-place rent moves at. */
 const LEASE_ROLL: Record<BuiltClass, number> = {
   office: 1 / LEASE_TERM_M.office,
@@ -294,7 +277,7 @@ const LEASE_ROLL: Record<BuiltClass, number> = {
  *  headcount times feet per head, so this multiplier is sized to the
  *  EMPLOYMENT swing it stands for. Measured, `sectorMom` runs about -0.0117 to
  *  +0.0131, so at the old 11 the sector clock ALONE swung demand for space 27%
- *  peak to trough — against a natural vacancy of 11.5 points, a swing that big
+ *  peak to trough — against office's long-run 11.5 points, a swing that big
  *  is not an input to the cycle, it is the cycle. Real sector employment
  *  cycles are far smaller: US financial-activities employment fell about 8%
  *  peak to trough over 2008-10, information about 10% over 2001-03, and most
@@ -319,8 +302,6 @@ const HEADSHIP_JOBS = 0.5;
 // The nation's payroll growth a year: the trades' 1990-2019 mean less the
 // labour-force slowdown (LABOUR_FORCE_SLOWDOWN, below).
 const NAT_JOB_TREND = 0.003;
-/** A market's normal availability: monthly weight on this month's (twenty-year half-life). */
-export const NATVAC_RATE = 1 - Math.exp(-Math.LN2 / 240);
 
 
 /**
@@ -499,7 +480,7 @@ export { devPencils };
 
 // Each rebased DOWN by the average value of the new vacancy term below, so
 // CAP_BASE keeps meaning "the class's long-run average cap" rather than "its
-// cap at natural vacancy, which this city rarely sits at". Without the rebase
+// cap at its long-run vacancy, which this city rarely sits at". Without the rebase
 // an uncentred risk term silently widens every cap by 15-30bp forever.
 // THE CAP RATE HAS TO CLEAR THE COST OF DEBT, OR LEVERAGE IS A LAW AGAINST
 // ITSELF.
@@ -529,80 +510,6 @@ export const CAP_BASE = { office: 8.50, retail: 7.00, multifamily: 5.60, industr
 // class-blind BASE_YOC or debt-index hurdle in the market loop anymore.
 
 /**
- * VACANCY IS THE RISK, AND THE RISK IS PRICED.
- *
- * Cap rates were driven by the loan index, the cycle, a credit-crunch term and
- * sector momentum — and not at all by how empty the class was. An office
- * market at 25% vacancy capitalised the same as one at 8%. Measured over
- * 4,800 observations per class, corr(vacancy, cap rate) was 0.10 for office
- * and 0.07 for multifamily, and even that vanished once the rate was
- * regressed out: the residual correlation was 0.09 for office and NEGATIVE
- * for industrial. Vacancy was noise. The rate was the whole model.
- *
- * A class sitting six points over its natural rate is a class whose next roll
- * gets re-let at a concession, and a buyer capitalises exactly that. Office
- * carries the most because its income is the least defensible; flats the
- * least, because people always need somewhere to live.
- *
- * Points of cap rate added per 100bp of vacancy above natural.
- */
-/**
- * A MARKET REPRICES ONCE PER GLUT, AND THEN IT IS DONE.
- *
- * `vacOverM` counts the months a class has been over natural. It used to enter
- * the glut term as `min(1, over / 6)` — ramp the capitulation in over half a
- * year and then hold it at FULL STRENGTH for as long as the glut lasts. So rent
- * fell for the entire duration of the oversupply, and the duration of an
- * oversupply is a decade.
- *
- * Measured, 12 seeds x 50 years, office:
- *
- *   glut episodes                     median 6.1 years, longest 17.5
- *   longest unbroken real-rent fall   median 8.4 years, longest 18.5
- *   vacOverM at its peak              median 116 months
- *
- * The first of those is RIGHT — US office vacancy took seven to ten years to
- * clear after 1990, after 2001 and after 2008. The second is not. Rents fell
- * 1990-92, 2001-03, 2008-10 and 2020-23: two to three years each time, and then
- * they sat at the bottom for years while the vacancy ground down. Nothing
- * repriced twice.
- *
- * The reason is not a mystery and it is not a coefficient. Rent stops falling
- * when it reaches the number deals sign at. Below that a landlord would rather
- * hold the floor empty than lock a fifteen-year lease at the bottom of a cycle
- * — which is why shadow space exists — and space starts leaving the market
- * altogether through conversion and mothballing. Meanwhile the tenants who were
- * going to trade down have already trade down. The price adjustment is a
- * FIXED TOTAL that a glut extracts, not a rate it applies forever; how long the
- * glut then lasts decides how long the vacancy takes to clear, not how much
- * further the rent falls.
- *
- * So the clock is a hump. It ramps in over the same six months, holds through
- * the repricing, and then fades.
- *
- * The two numbers are the empirical shape of a capitulation rather than a fit:
- * markets reprice over about two years, and the tail is worth about another
- * fifteen months at full strength. Together that is 39 months of the calibrated
- * rate — at nine points over natural, -40% real, which is Manhattan 1990-92
- * (-35 to -40%) as closely as this can be stated.
- *
- * A DEPTH-SCALED WINDOW WAS TRIED HERE AND REMOVED, and the reason is worth
- * keeping. The argument for it is sound — Houston repriced for five years
- * because at the end of each one the surplus was still there — but it was added
- * to reach a stated frequency of sixty-per-cent collapses, and measured, it
- * pushed the MEDIAN city's worst fifty-year fall from 36.6% to 47.8% of real
- * effective rent. The median town's worst crash in half a century should not be
- * worse than the worst New York has ever had. It was a coefficient sized to an
- * outcome, which is the thing this file is not allowed to contain, and the
- * catastrophes it was reaching for belong in the swan machinery where a
- * structural demand collapse can be modelled as what it is.
- *
- * And it RESETS when the market comes back inside 1.5 points, because a second
- * glut is a second repricing. That is the mechanism, not an exception to it.
- */
-const REPRICE_M = 24;    // how long a capitulation runs at full strength
-const REPRICE_TAU = 15;  // and the exponential tail after it
-/**
  * THE CAPITULATION CLOCK (no-normal-vacancy step 8, 2026-11-08): months the
  * package the class's leases sign at — the share of face given away in free
  * rent and allowances, 1 − effective / asking, off the comps — has sat at the
@@ -614,8 +521,7 @@ const REPRICE_TAU = 15;  // and the exponential tail after it
  *
  * This replaced `vacOverM`/`vacWorst`: months vacancy had sat over a
  * "natural" vacancy and the worst gap over it — a yardstick no market
- * publishes. Read by the demolition valves (dev.ts) and by the bare-economy
- * rent equation below.
+ * publishes. Read by the demolition valves (dev.ts).
  */
 export function tickCapitulation(e: Econ, k: BuiltClass): void {
   const face = e.rentIdx?.[k] ?? 0, eff = e.effRentIdx?.[k] ?? face;
@@ -639,11 +545,6 @@ export function tickCapitulation(e: Econ, k: BuiltClass): void {
  */
 const PKG_EASE = 0.025;
 
-function capitulation(over: number): number {
-  const rampIn = Math.min(1, over / 6);
-  const past = Math.max(0, over - REPRICE_M);
-  return rampIn * Math.exp(-past / REPRICE_TAU);
-}
 
 // Rough citywide inventory by class, in sf — the denominator that turns other
 // people's construction into a rent effect you can feel.
@@ -793,9 +694,8 @@ export const CONC_DEPTH = 0.30;
  * WHERE A TOWN'S MARKETS OPEN: availability by class as US markets have run it
  * over the long run (CBRE / CoStar national series: office ~11.5%, shops
  * ~8.5%, flats ~4.5%, sheds ~7%) [S]. An INITIAL CONDITION — the opening's
- * occupied stock, the pre-game history's starting point, and the normal the
- * town's people carry in their heads before the town has a record of its
- * own (`normalVac`). Nothing reads it after the opening as a cause: since ONE
+ * occupied stock and the pre-game history's starting point. Nothing reads it
+ * after the opening as a cause, and nothing compares a market with it: since ONE
  * ECONOMY step 4 office, shop and shed rents are the leases landlords and
  * firms sign (tenantMarket.ts), and since FORMULA_LEDGER #4/#5 the flats' are
  * what each block's landlord asks from its own lettings (streetRolls.ts
@@ -805,32 +705,6 @@ export const CONC_DEPTH = 0.30;
 export const OPENING_VAC = { office: 0.115, retail: 0.085, multifamily: 0.045, industrial: 0.07 } as const;
 /** The opening state for a class whose measured vacancy is not yet on the record (an initial condition, never a yardstick). */
 export function openingVac(k: BuiltClass): number { return OPENING_VAC[k]; }
-
-/**
- * WHAT THIS MARKET'S AVAILABILITY HAS RUN AT — the "normal" its landlords,
- * lenders, developers and appraisers have in their heads, learned from the
- * town's own record (the market tick's `natVac`, a twenty-year memory),
- * from where the town opened. A belief, read by whoever compares today with
- * usual; nothing prices off it (ONE ECONOMY step 4: rents are the leases).
- */
-export function normalVac(e: Econ | undefined, k: BuiltClass): number {
-  return e?.natVac?.[k] ?? OPENING_VAC[k];
-}
-
-/**
- * WHERE THE CONCESSION DIAL IS HEADING, for an availability gap over natural
- * and a phase of the cycle. One function, read by the monthly tick and by the
- * opening of a game, so the town a player walks into is already at the
- * package its own vacancy implies — see `createEcon`.
- */
-export function concessionTarget(gap: number, _phase?: Econ["phase"]): number {
-  // The package is what a tenant can extract, and that is availability. The
-  // label nudge (+0.22 in a recession, -0.10 in an expansion) priced the
-  // same slack a second time and stepped when the label flipped. Weighted by
-  // how often each label occurred (4 worlds x 50 years) the nudge averaged
-  // about -0.01, so dropping it moves the typical package by nothing.
-  return clamp(gap * 11, 0, 1);
-}
 
 // --- THE CYCLE AS MEASURED (2026-10-09) --------------------------------------
 //
@@ -1064,7 +938,7 @@ export function betweenTenantsSf(occupied: number, k: BuiltClass, e?: Econ): num
  * (Petrongolo & Pissarides 2001, constant returns; Wheaton 1990 for office).
  * Its length is set by how many tenants are looking per vacant foot, never by
  * how that compares with some usual vacancy (owner, 2026-11-07: there is no
- * normal vacancy).
+ * vacancy norm).
  *
  * Searchers are the tenants who are moving this month plus demand the city
  * is not housing (the looking pool above occupied space); vacancies are the
@@ -1114,8 +988,8 @@ export function reletLag(e: Econ | undefined, k: BuiltClass): number {
  * floor plus turnover still in re-let — the floor every "is this class
  * pinned?" test reads (the rent mute in the market tick, the redevelopers'
  * shortage tests in dev.ts). Those tests used to read `frictionFloor`, a
- * share of the normal vacancy, retired 2026-11-07: there is no normal
- * vacancy, only the space a market's own movers keep dark.
+ * share of a vacancy norm, retired 2026-11-07: there is no such norm,
+ * only the space a market's own movers keep dark.
  */
 export function residenceVac(e: Econ, k: BuiltClass): number {
   const stk = Math.max(1, e.stock?.[k] ?? 0);
@@ -1129,7 +1003,7 @@ export function residenceVac(e: Econ, k: BuiltClass): number {
  * handed back by a tenant who is, for that turn, looking — so this is the
  * between-tenants book read from the tenants' side, the same flow and the
  * same clock. The looking pool's room above housable space (the "search
- * fringe") is this, not a quarter of a normal vacancy (retired 2026-11-07).
+ * fringe") is this, not a quarter of a vacancy norm (retired 2026-11-07).
  */
 export function tenantsInSearchSf(e: Econ, k: BuiltClass): number {
   return betweenTenantsSf(e.occupied?.[k] ?? 0, k, e);
@@ -1596,10 +1470,12 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
       const u2 = mulberry32Step(((s.seed ^ (0x2545f491 + BUILT_CLASSES.indexOf(k) * 977)) >>> 0) || 11).value;
       const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
       const target = Math.exp(OPEN_Q_SIGMA * z);
+      // At no package: the opening's rents are face, and what the town
+      // gives away is what its first leases sign at (tenantMarket.ts,
+      // streetRolls.ts), not a dial set from its vacancy against a norm.
       const qAt = (): number => {
-        const gap = (econ.cityVac[k] ?? OPENING_VAC[k]) - OPENING_VAC[k];
         econ.effRentIdx = econ.effRentIdx ?? { ...econ.rentIdx };
-        econ.effRentIdx[k] = econ.rentIdx[k] * (1 - CONC_DEPTH * concessionTarget(gap, econ.phase));
+        econ.effRentIdx[k] = econ.rentIdx[k];
         const a = devPencils(econ, k, false);
         return a > 0 ? Math.pow(a, 1 / 1.2) : 0;
       };
@@ -1667,22 +1543,13 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
     const servicesGap = econ.wage0 / Math.max(1e-6, P) - 1;
     econ.col0 = +(1 + 0.33 * shelterGap + 0.25 * servicesGap).toFixed(4);
   }
-  // THE TOWN OPENS MID-CYCLE, SO ITS CONCESSIONS DO TOO.
-  //
-  // The dial used to open at zero — effective rent equal to face in every
-  // class — and then chase its target at a quarter a month. The target at an
-  // ordinary opening is not zero: retail at 13% against 8.5% natural in a
-  // recovery wants ~0.6, eighteen points of net effective. So every game spent
-  // its first year marking the whole city down for a concession package the
-  // market already had on the day it opened: measured in the playable, a
-  // retail building bought in January at the lender's appraisal was marked 9%
-  // under it by May, in a recovery, with vacancy falling. Nothing happened in
-  // the market; the dial was spinning up. Seeded here at its own target, from
-  // the same function the tick reads, the first months move only on news.
+  // THE TOWN OPENS AT NO PACKAGE (2026-11-08). The dial used to be seeded
+  // from the opening's vacancy against a "natural" rate (`concessionTarget`,
+  // retired: there is no vacancy norm). A concession is what a lease signs
+  // at, so the town opens at face and its first leases set the package.
   for (const k of BUILT_CLASSES) {
-    const gap = (econ.cityVac[k] ?? OPENING_VAC[k]) - OPENING_VAC[k];
-    econ.concIdx[k] = concessionTarget(gap, econ.phase);
-    econ.effRentIdx[k] = +(econ.rentIdx[k] * (1 - CONC_DEPTH * econ.concIdx[k])).toFixed(4);
+    econ.concIdx[k] = 0;
+    econ.effRentIdx[k] = +econ.rentIdx[k].toFixed(4);
   }
   // Land tracks the rent that actually opened (era-adjusted), not the pre-era
   // density scale alone — same identity the monthly landIdx step chases.
@@ -4409,7 +4276,7 @@ export function tickEcon(s: GameState) {
     // Desired demand may still be huge (jobs outran floors). The LOOKING pool
     // only holds what the city can house plus the tenants actually in search
     // — this month's movers times how long a move takes (Little's law,
-    // `tenantsInSearchSf`; this was a quarter of the normal vacancy, retired
+    // `tenantsInSearchSf`; this was a quarter of a vacancy norm, retired
     // 2026-11-07). Beyond that, unhousable demand has already left for the mainland; it does
     // not keep refilling from a headcount that assumes infinite floors.
     // Housable is standing floor that is actually a suite — not new
@@ -4770,56 +4637,9 @@ export function tickEcon(s: GameState) {
     e.cityIntensity = clamp(i0 * (built / built0), 0.15, 6);
   }
   for (const k of BUILT_CLASSES) {
-    const vol = k === "multifamily" ? 0.002 : k === "office" ? 0.004 : k === "industrial" ? 0.0024 : 0.003;
-    // ...AND ON AVAILABILITY, NOT ON DIRECT VACANCY. A prospective tenant does
-    // not choose from the space landlords have empty, it chooses from the space
-    // it can move into, and a quarter of that in a bad office market is
-    // somebody else's lease. Direct vacancy is the landlord's accounting;
-    // availability is the market. Quoting off the first is how the model ended
-    // up with real rent compounding at double digits for eight straight years
-    // while its vacancy sat welded to a frictional floor — the floor is a
-    // statement about DIRECT vacancy and it was never a statement about how
-    // much space you could go and lease.
-    // ...AGAINST THE RATE THIS MARKET IS USED TO (2026-10-16). The natural
-    // rate was one number per class for every town and every decade. It is
-    // not one number: it differs across metros by several points and drifts
-    // within one (Voith & Crone 1988; Gabriel & Nothaft 2001), and the way
-    // the people in a market know it is the way they know anything else
-    // about it — what availability has run at, over a long memory. The
-    // national figures are where a town starts; from there each market's
-    // normal is its own twenty-year history (half-life).
-    const avail = (e.cityVac?.[k] ?? openingVac(k))
-      + (e.sublet?.[k] ?? 0) / Math.max(1, e.stock?.[k] ?? CITY_STOCK[k]);
-    const nv = (e.natVac ??= { ...OPENING_VAC });
-    // ...BUT NOT FROM A SHORTAGE. A month the market spends on its
-    // between-tenants floor with tenants still queueing (`structTight`) is not
-    // evidence of what normal is: it is the shortage itself, and learning from
-    // it taught a market short for eighty years that short was normal (natural
-    // vacancy 4.3% → 3.1%, the gap that should have raised rents erased).
-    if (!((e.structTight?.[k] ?? 0) > 0.005)) nv[k] += (avail - nv[k]) * NATVAC_RATE;
-    const gap = avail - nv[k];
-
-    // WHERE THE VACANCY-TO-RENT LAG IS NOT (OBSERVATION). `pnpm leadlag` says
-    // this leg runs SIMULTANEOUS (0 months) where a real one runs 3 to 24, and
-    // lagging the vacancy OBSERVATION — feeding `vacTerm` a trailing average
-    // instead of this month's gap — was built, measured and is WRONG.
-    // Identification test: driving the observation lag from 0 months to 24
-    // moved the measured leg from 0mo to MINUS 3, not toward positive at all,
-    // while the total loop fell from 5.7 years to 4.7. If a 24-month lag on
-    // what landlords SEE cannot move the leg, the lag is not in the print — it
-    // is in the APPLICATION of pressure into rentIdx. See `rentPress` below:
-    // vacTerm+scarcity form instantly; asking rents move only after that
-    // pressure has sat on the quote sheet for months (lease-quote lag, not
-    // capitulation and not a data delay).
-    // The vacancy gap has to be able to OVERPOWER the cycle's sentiment, or a
-    // glut politely coexists with rising rents forever. Six points of excess
-    // availability takes rents down about 8.4% a year, which is what a real
-    // oversupply does.
-    // STICKY ASKING, MOVING EFFECTIVE (ECONOMY.md). A shortage pushes asking
-    // up immediately; cuts ramp in only after the landlord has stared at the
-    // empty floor for half a year — the capitulation clock. Meanwhile the
-    // concession dial moves in months, so what deals actually sign at falls
-    // long before the face rate admits anything.
+    // THE RENT INDICES ARE READ, NOT SET. The equation that lived here —
+    // rent pulled by availability against a learned rate, and a concession
+    // dial chasing a target set by the same gap — is gone (2026-11-08).
     if (!e.concIdx) e.concIdx = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     if (!e.effRentIdx) e.effRentIdx = { ...e.rentIdx };
     tickCapitulation(e, k);
@@ -4833,10 +4653,9 @@ export function tickEcon(s: GameState) {
     // #4/#5). The households choose the blocks (households.ts); each block's
     // landlord re-marks its ask from its own lettings against the vacancy it
     // has learned to expect, and the flats' indices are read off the blocks'
-    // asks and the leases signed (streetRolls.ts `tickStreetFlats`). The
-    // vacancy equation below never prices a flat.
+    // asks and the leases signed (streetRolls.ts `tickStreetFlats`).
     if (k === "multifamily") continue;
-    if (e.streetRolls) {
+    {
       const before = e.rentIdx[k];
       const ro = readOut(e, k, s.month);
       if (ro) {
@@ -4846,7 +4665,7 @@ export function tickEcon(s: GameState) {
       }
       const nomCh = before > 0 ? e.rentIdx[k] / before - 1 : 0;
       if (!e.rentPath) e.rentPath = {} as NonNullable<Econ["rentPath"]>;
-      e.rentPath[k] = { gap, vacTerm: 0, instant: 0, pressEma: 0, pressClamped: 0, clampBound: false, escalation: 0, anchor: 0, drift: nomCh, nomCh };
+      e.rentPath[k] = { escalation: 0, drift: nomCh, nomCh };
       // THE CAUSE LEDGER: the read, its leases, and the market they signed in.
       // Written every month there is a read, not only on a move of 0.6%: a
       // rent on a screen always has a chain behind it, and a quiet market's
@@ -4863,559 +4682,6 @@ export function tickEcon(s: GameState) {
         if (Math.abs(nomCh) >= 0.012 || (ownsClass(s, k) && newsChance(s, `rentwhy:${k}`, 0.22))) {
           s.news.unshift({ q: s.month, kind: nomCh < 0 ? "warn" : "info", text: line, why: rid });
         }
-      }
-      continue;
-    }
-    const concTarget = concessionTarget(gap, e.phase);
-    // A CONCESSION IS GIVEN IN A MONTH AND TAKEN BACK OVER A LEASE.
-    //
-    // This chased its target at 0.25/month in BOTH directions, so the giveaway
-    // evaporated as fast as it arrived — and because `concTarget` is a level
-    // function of TODAY's availability, it returned to zero the moment vacancy
-    // normalised. Measured with `pnpm glut`: at a 10% office glut the dial is
-    // back to 0.00 by month 60 with availability still 5.7pp above the paired
-    // control, and effective rent has re-converged on asking exactly. The
-    // consequence is that the ASKING index ends up carrying 74-86% of the whole
-    // effective-rent adjustment at three years, across every class and every
-    // dose — twelve readings out of twelve — because `rentIdx` integrates the
-    // same pressure permanently while this dial forgets it.
-    //
-    // Real markets are not symmetric here and the record is unusually clear.
-    // Opening: US gateway free rent went 9.7 months (Q1 2020) to 12.5 (Q1 2021),
-    // +29% in four quarters. Closing: Manhattan went 13 months (2019) to 17
-    // (2022) to 16 (Q1 2023) and was still near 17 in Midtown in 2024 — five
-    // years and essentially nothing given back. Four years after the shock,
-    // Manhattan asking was -3.3% while net effective was -17.3%.
-    //
-    // The mechanism behind that asymmetry is not sentiment. A landlord can
-    // concede this month, but he cannot UN-concede until the paper rolls: the
-    // giveaway is written into leases that run for years, and the comparables
-    // the next tenant's broker points at are those same signed deals. So the
-    // market's concession level decays at the rate its leases turn over, not at
-    // the rate its vacancy does. These are the classes' own lease terms — the
-    // same numbers `rollRecovery`/term draws already work from, roughly five
-    // years of office and retail paper, three of industrial, one of housing.
-    const CONC_DECAY: Record<BuiltClass, number> = {
-      office: 1 / 60, retail: 1 / 60, multifamily: 1 / 12, industrial: 1 / 36,
-    };
-    //
-    // WHAT THIS DID AND DID NOT DO, measured with `pnpm glut`, office, 10% of
-    // stock, five paired seeds, nominal, at fixed horizons:
-    //   the dial now persists          m120 treatment 0.00 -> 0.17
-    //   the BALANCED market now has a package at all, which it did not:
-    //                                  control dial 0.00 -> 0.38 at the drop,
-    //                                  0.15 at five years
-    //   the concession lead improved    m6 3.03x -> 4.99x, m12 2.10x -> 2.27x
-    //   THE FAULT IT WAS AIMED AT DID NOT MOVE MUCH:
-    //     face's share of the adjustment  m36 84.1% -> 78.7%, m60 99.9% -> 90.6%
-    //     against a pre-registered <=35%, so this is not the fix for that.
-    //   and asking fell FURTHER          m36 -16.7% -> -23.5%, m60 -13.9% -> -33.2%
-    //
-    // Kept anyway, because the mechanism is right on its own terms and the
-    // balanced-market package is a separately measured fault it does close: a
-    // landlord cannot un-give a concession, and this engine had him doing it
-    // every month. The face-share fault has a different cause and needs a
-    // different mechanism — `rentIdx` INTEGRATES pressure permanently while
-    // this dial is bounded at 1, so once it saturates every further month of
-    // distress goes into the headline by construction. Slowing the decay
-    // cannot fix that, and the measurement above is the proof.
-    const opening = concTarget > e.concIdx[k];
-    const concWas = e.concIdx[k];
-    e.concIdx[k] += (opening ? 0.25 : CONC_DECAY[k]) * (concTarget - e.concIdx[k]);
-    // What this month's move in the package did to net effective rent, as a
-    // log change: positive when concessions deepened (effective fell).
-    const concCut = Math.log((1 - CONC_DEPTH * concWas) / (1 - CONC_DEPTH * e.concIdx[k]));
-    // EMPTY SPACE IS NEVER FREE. This term was capped at -0.9%/month, so at
-    // ten points over natural it saturated and EVERY FURTHER POINT OF VACANCY
-    // COST NOTHING — a 45% glut was priced exactly like a 20% one, which is
-    // most of why rents went flat at $31 through a depression instead of
-    // collapsing. Superlinear now: the second ten points hurt more than the
-    // first ten, the way a real capitulation works.
-    //
-    // THE SHORTAGE SIDE DISAGREED WITH THE PARAGRAPH ABOVE IT, and the
-    // paragraph was right. The header on this block says five points of
-    // shortage moves rents about three per cent a year; 0.090 delivered 5.5%,
-    // (that target predates `railSat`; the branch now tops out near 1.45%/yr
-    //  for office — see the corrected paragraph above the vacTerm definition),
-    // and it is on the shortage branch that the whole of this loop's gain sits
-    // — the glut coefficients were measured and halving either of them moved
-    // amplitude by nothing. So this is a correction to a calibration RECORD,
-    // not a new constant: the code now says what the comment always said it
-    // said. The clamp moves with it and remains what it was, a guard that has
-    // never bound (the deepest shortage this model can reach is the frictional
-    // floor, 7.8 points, which is 0.0035/month at this coefficient).
-    //
-    // The glut branch is left exactly as it was, and its arithmetic is written
-    // down here because it is NOT what the header claims either — at five
-    // points over it delivers -6.5%/yr, at nine points -14.7%/yr. Reality is
-    // closer to the code than to the comment on this side: US office 2020-23
-    // ran about seven points over natural and lost 10-15% of nominal effective
-    // rent in three years, and 1990-92 ran about nine points over and lost
-    // 35-40% real in three. The shallow end is a little hot and the deep end
-    // is right, which is not worth moving a coefficient over.
-    // ...AND A FIT IS NOT A LAW OUTSIDE THE RANGE IT WAS FITTED ON.
-    //
-    // Every anchor in the paragraph above lives between five and nine points
-    // over natural, and the quadratic is right there — -14.7%/yr at nine points
-    // is 1990-92 to the digit. It was then being evaluated wherever the market
-    // went, and once the crew wall stopped truncating the supply cycle the
-    // market went a very long way: measured over 12 seeds x 50 years, office
-    // availability reaches 23.5 points over natural and spends 12.2% of all
-    // months past nine. At 23.5 points the quadratic asks for -76%/yr.
-    //
-    // Nothing has ever done that. The worst overbuilds on record are Houston
-    // 1983-87, which hit about thirty per cent office vacancy and lost 50-60%
-    // of real effective rent over four years, and Manhattan 1990-92 at 35-40%
-    // over three — call it -15 to -18%/yr at the very bottom of the worst
-    // markets anyone has measured. The quadratic term carries a fifth of the
-    // decline at nine points and three quarters of it at twenty-three, so past
-    // the fit it stops being a calibration and becomes an artefact of the
-    // curve's shape.
-    //
-    // WHAT THE RECORD ACTUALLY SAYS PAST NINE POINTS, and it is not a curve
-    // going anywhere. There are two deep overbuilds measured well enough to
-    // use, and between them the decline barely steepens:
-    //
-    //   Manhattan 1990-92   ~9pp over natural    -35 to -40% real over 3y   ~-14%/yr
-    //   Houston  1983-87    ~15-20pp over        -50 to -55% real over 5y   ~-16%/yr
-    //
-    // Twice the glut, a tenth more decline. A market that deep is not falling
-    // faster, it is falling for LONGER — which is a statement about duration
-    // and this term is a rate. So the honest shape saturates, and the quadratic
-    // asking for -76%/yr at 23.5 points is not a deep-end calibration, it is a
-    // curve evaluated 2.6x outside the range anything was measured on.
-    //
-    // Below nine points nothing moves: the fit is untouched where its anchors
-    // live, and the continuation leaves it at exactly the slope it already had,
-    // so there is no kink. Past that it approaches the Houston rate. The only
-    // new number is that rate, and it is a measurement with a source rather
-    // than a coefficient that made a median look better.
-    //
-    // A straight tangent past the fit was tried first and REJECTED on the
-    // record, not on the outcome — it reaches -45%/yr at 23.5 points, which is
-    // still nearly three times Houston. Measured paired over 24 seeds it also
-    // did nothing at all (drawdown delta median -1.07pp, 10 seeds up and 13
-    // down), because it only bites past twelve points and the drawdown
-    // accumulates between five and twelve.
-    const FIT_MAX = 0.09;                                  // the deepest anchor above
-    const glut = (gp: number) => gp * 0.070 + gp * gp * 0.85;
-    const SLOPE_AT_FIT = 0.070 + 2 * 0.85 * FIT_MAX;       // d/dgap of the same curve
-    const DEEP_RATE = 0.0155;   // -18.6%/yr, the Houston 1983-87 asymptote
-    const atFit = glut(FIT_MAX);
-    const span = DEEP_RATE - atFit;
-    // PINNED FLOOR ⇒ MUTE THE GAP. Direct vacancy cannot go below friction, so
-    // once it rests on that rail the gap is a constant (~−7.8pp for office) and
-    // a linear shortage term becomes a permanent monthly rent tax — the mirror
-    // of the saturating-glut bug, and the named fault in ECONOMY.md §F #1.
-    // Near the floor, saturation also bites: the last points of tightening
-    // cannot pretend to add the same pressure as the first — a market that
-    // cannot get any tighter stops minting a constant shortage tax.
-    const friction = residenceVac(e, k);
-    const vacNow = e.cityVac?.[k] ?? openingVac(k);
-    const pinned = vacNow <= friction + 1e-6;
-    // Room above the frictional rail — 0 on the pin, rising as the market has
-    // somewhere left to tighten. Same saturation the vacTerm shortage branch
-    // already uses; scarcity level must share it (below).
-    const roomAboveFriction = Math.max(0, vacNow - friction);
-    const railSat = roomAboveFriction / (roomAboveFriction + 0.025);
-    // Within ~1.2pp of the rail, availability is practically saturated — the
-    // same economics as pinned for asking escalators / stored press. Measured
-    // after pin-only mute: "firm" months at vac∈(friction, friction+2pp) still
-    // printed +4–5%/yr real and were the late-century hockey stick.
-    const railBound = vacNow <= friction + 0.012;
-    // SUPPLY SHUT ≠ SATURATED AVAILABILITY. Muting vacTerm on the pin is
-    // right when the city can still break ground — frictional tightness, the
-    // desk is open, asking should not mint a permanent shortage tax. It is
-    // wrong when the pin is a supply failure: sitePencil has examined the
-    // town and found ZERO lots that clear the same pro forma the crane will
-    // be judged on, while jobs still want more floors than housable.
-    //
-    // Measured, seed 550991, years 7–30: office vacancy welded to 3.68%
-    // every month, pipeline 0, startOwed 0, sitePencil.office 0, 1,230
-    // office pro formas run at year 30 and the best hurdle was 0.86. Jobs
-    // +37%, office stock −3% (teardowns converting the short class to
-    // housing, the one use that still penciled). The Economy tape is a
-    // ruler because nothing delivered.
-    //
-    // Asking has to walk toward the clearing hurdle or the mute is
-    // load-bearing. The walk TURNS OFF the moment a site clears
-    // (sitePencil > 0) — self-limiting, not a new rail. First-year
-    // `undefined` is unconstrained (refresh has not run); that is not shut.
-    const siteP = e.sitePencil?.[k];
-    const supplyShut = pinned
-      && (e.structTight?.[k] ?? 0) > 0.06
-      && siteP !== undefined
-      && siteP <= 0;
-    // A SHORTAGE PRICES UNTIL IT ENDS (2026-10-08). The shortage branch was
-    // muted to zero on the frictional floor and scaled by `railSat` (room
-    // above it) near the floor, on the argument that a pinned gap is a
-    // constant and so a "permanent rent tax". It is permanent only if nothing
-    // answers it, and two things do: firms priced out of a dear floor
-    // do not start or do not stay (their own books and shopping) and
-    // builders build once the residual clears (`startCityJob`). Muted, the
-    // engine ran a class on its vacancy floor in 55-67% of months over four
-    // 50-year worlds with real asking up 0.2-2.5%/yr — no faster than a
-    // balanced market — and with 10-25% of desired demand unhoused. The
-    // coefficient is this block's own documented one (five points of
-    // shortage ≈ 2.7%/yr, the header above), now applied wherever the
-    // market is short, including on the floor. The income anchor below still
-    // bounds the LEVEL against what tenants earn.
-    void railSat; void supplyShut;
-    // THE QUEUE IS NEGATIVE AVAILABILITY, AND IT BIDS (2026-10-09).
-    //
-    // Once direct vacancy reaches its frictional floor it cannot fall further,
-    // and the excess demand went into `structTight` — tenants the city cannot
-    // house — which reached rent only through a ten-year EMA (`scarcity`) and
-    // a shortage slope of 0.045/mo per unit of gap, clamped at 0.45%/mo. That
-    // is a queue, and a queue is quantity rationing: measured over 4 worlds x
-    // 50 years, office sat on its floor 33-55% of months and flats 52-72%,
-    // real rents rose only ~3%/yr while pinned, and the best vacant site in
-    // the city could not pay for its building even on FREE land (office P97
-    // 6-68% of the required yield). In a market the people in the queue are
-    // bidders. Unhoused demand is exactly availability below zero, so it
-    // joins the gap, and the rent moves until enough of it is priced out
-    // (migration, starts, firms leaving) or until a building pencils.
-    //
-    // ONE SLOPE THROUGH ZERO. The glut side's linear term is 0.070/mo per
-    // unit of gap (0.84%/yr of rent per point of vacancy), fitted to the
-    // overbuilds in the notes above; the shortage side was 0.045 with a clamp,
-    // so the curve had a kink at natural vacancy and a ceiling on one side.
-    // Wheaton & Torto (1988) estimate the rent adjustment as symmetric and
-    // linear in the vacancy deviation, so the shortage side takes the glut
-    // side's linear slope and no ceiling of its own. The quadratic and the
-    // capitulation hump stay where they were fitted: on gluts.
-    const effGap = gap - (e.structTight?.[k] ?? 0);
-    // ...AND HOW HARD A SHORTAGE BITES DEPENDS ON HOW OFTEN THE CLASS REPRICES
-    // (2026-10-09). 0.070 is the office fit; with eight-year leases a tight
-    // office market moves asking about 0.84%/yr per point of vacancy. Flats
-    // reprice every twelve months under revenue management: apartment rent
-    // growth runs about 2.5%/yr per point of occupancy around its neutral
-    // level (RealPage / Axiometrics, 2010-2023), ~3x office. Sheds sat
-    // 3-4 points under natural through 2015-22 with real rent growth of
-    // 5-10%/yr (CBRE / Cushman), ~2%/yr per point, ~2.4x. Measured before
-    // this, flats sat on their vacancy floor 75-83% of months with real rent
-    // rising only ~0.7%/yr — the office slope applied to a market that
-    // reprices every year. Shortage side only: on the soft side apartment and
-    // shed landlords answer with concessions first, which `effRentIdx`
-    // already carries, and the glut curve is fitted on the record as it is.
-    const vacTerm = effGap <= 0
-      ? -effGap * 0.070 * SHORT_SENS[k]
-      : -(effGap <= FIT_MAX
-        ? glut(effGap)
-        // C1-continuous at FIT_MAX: same value, same slope, asymptote DEEP_RATE.
-        : atFit + span * (1 - Math.exp(-SLOPE_AT_FIT * (effGap - FIT_MAX) / span)))
-        * capitulation(e.pkgDeepM?.[k] ?? 0);
-    // Scarcity from CAPACITY shortage (jobs/floors), not the absorption queue.
-    if (!e.structTightPrev) {
-      e.structTightPrev = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
-    }
-    const st = e.structTight?.[k] ?? 0;
-    const stPrev = e.structTightPrev[k] ?? st;
-    const dSt = st - stPrev;
-    e.structTightPrev[k] = st;
-    // Level scarcity scales with room above friction (`railSat`). On the pin,
-    // sat=0 → mostly flow plus a thin city-class level tax. Near the pin, sat
-    // is small → mostly flow. Far from the rail (still tight vs natural),
-    // full level rations. Paying full `st×0.045` in the last points above the
-    // floor was the firm-near-rail hockey stick: +5%/yr real at 4–5% vac.
-    //
-    // SECONDARY FABRIC GETS A THINNER ON-RAIL LEVEL TAX. The same 0.010 on
-    // every map let mid-rung procedural towns spend half a century on the rail
-    // and graduate into primary real $/sf. Dense cities still ration at the
-    // full rate; Landing/Village ration enough to clear without minting Midtown.
-    const classF = cityClassFactor(e.cityIntensity ?? e.cityIntensity0 ?? 1);
-    const onRailLevel = 0.0035 + 0.0065 * classF;
-    // (The capped `scarcity` term computed here was dead — read by nothing
-    // since the queue moved into `effGap` — and showed up in the rails audit
-    // as a bound on rent growth that bound nothing. Removed 2026-10-13.)
-    void dSt; void onRailLevel; void pinned;
-
-    // Lease-quote lag: market pressure (vacancy gap + unmet demand) forms this
-    // month; landlords adjust asking rents only after it has sat on the quote
-    // sheet. Not the rejected observation lag above — that delayed the INPUT;
-    // this delays the OUTPUT into rentIdx.
-    if (!e.rentPress) e.rentPress = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
-    const RENT_PRESS_TAU: Record<BuiltClass, number> = {
-      office: 8, retail: 6, multifamily: 5, industrial: 10,
-    };
-    // `scarcity` (the on-rail level tax and the flow of new tightness) priced
-    // the same queue a second time; the queue is in `effGap` now.
-    // ...AND THE GAP TO EQUILIBRIUM RENT (2026-10-11). The rent adjustment
-    // literature this block cites has TWO terms, and only the first was here:
-    //
-    //   d ln r = a (v* - v) + b (ln r* - ln r)
-    //
-    // the vacancy gap and the gap between rent and the equilibrium rent r* —
-    // the rent at which new space is supplied (Hendershott 1996; Hendershott,
-    // MacGregor & Tse 2002, who estimate b at roughly 0.15-0.30 a year on
-    // office markets; 0.20 is the middle of that range, a shape parameter
-    // taken from it, not fitted here). Without it, a class sitting on its
-    // vacancy floor priced its full ten-point shortage every month for as long
-    // as the boom lasted: measured on map 2002, real office rent rose 8-9% a
-    // year for eight years and ended 1.6-1.8x the rent at which the city's
-    // best sites already penciled, while 12-14% of the stock was in the ground.
-    // Everybody in the market can see that pipeline and that pencil; the rent
-    // a tenant will sign for ten years stops running away from the price at
-    // which the building next door is coming. The reverse holds too, with the
-    // ONE-SIDED, BECAUSE STOCK IS DURABLE. The supply price is a ceiling, not
-    // a floor: rent above it brings cranes, rent below it brings nothing,
-    // because buildings already standing do not disappear when their rent
-    // falls under what it would cost to build them again — which is the
-    // normal state of most of the stock in most of a century (Glaeser &
-    // Gyourko 2005; the kinked supply curve of DiPasquale & Wheaton). Pulled
-    // both ways, measured over five towns, the term lifted rents ~14% a year
-    // in markets where nothing penciled, priced tenants and firms out, and
-    // three towns of five shrank to 21-25k people. Below the supply price
-    // rent answers vacancy alone.
-    //
-    // r* is read off `siteHurdle` — how far rent stands from the level at
-    // which the best sites the city examines clear (1/hurdle) — so it carries
-    // the cost of building, of money and of land, and it is absent (no pull)
-    // for a use no vacant site permits.
-    const siteHk = e.siteHurdle?.[k];
-    const eqGap = siteHk !== undefined && siteHk > 1 ? -Math.log(siteHk) : 0;   // ln(r*/r), only when r > r*
-    const RENT_EQ_PULL = 0.20 / 12;
-    // ...WEIGHTED BY HOW MUCH OF THE LEASE THE NEXT BUILDING CAN REACH
-    // (2026-10-17). The pull toward the supply price is the tenant pricing in
-    // the building that is coming: a lease prices the rent it expects over its
-    // term, and a building not yet started arrives a planning period plus a
-    // build away (SUPPLY_LAG_M). Of an eight-year office lease most of the term
-    // lies after that, so most of the pull applies; a one-year apartment lease
-    // ends before any crane now unstarted can deliver, so its rent is today's
-    // scarcity and nothing else. Applied at full weight to flats it held their
-    // rents at the cost of building through 80 years of shortage — vacancy
-    // pinned at the between-tenants floor while builders ran flat out at
-    // twice the supply price (measured, metro Frontier, seed 655720).
-    const leaseReach = Math.max(0, (LEASE_TERM_M[k] - SUPPLY_LAG_M[k]) / LEASE_TERM_M[k]);
-    const instant = vacTerm + RENT_EQ_PULL * eqGap * leaseReach;
-    const tau = RENT_PRESS_TAU[k];
-    e.rentPress[k] += (instant - e.rentPress[k]) / tau;
-    const pressEma = e.rentPress[k];
-    // Near/on the frictional rail, bleed stored POSITIVE shortage pressure so
-    // the lag EMA cannot keep paying real rent after availability has
-    // saturated. Soft-side (negative) press is left to the ordinary tau chase
-    // so gluts still clear through the quote sheet.
-    // Bleed stored shortage press on a saturated rail — unless the rail is
-    // a supply failure. Bleeding then is how asking never reaches the
-    // hurdle that would reopen the desk (550991: 23 years, pencil 0).
-    //
-    // RETIRED (2026-10-08). Draining a shortage out of the quote sheet while
-    // the shortage is still there is the reason a class sat on its vacancy
-    // floor for decades with asking rents flat in real terms: measured over
-    // four 50-year worlds, real asking growth on the pin was 0-1%/yr for
-    // office, retail and flats, no faster than in a balanced market, while
-    // soft markets fell 1-6%/yr. A landlord with no vacancy and a queue at
-    // the door does not mark his quote DOWN. The bleed was added because a
-    // rising pin rent compounded when supply never came; supply now answers
-    // (startCityJob builds the scheme that pencils), and the level is held
-    // by the income anchor below and by tenants economising on dear space
-    // (their own choices), which is where a shortage really stops.
-    // Hard rail on the EMA itself — see the press clamp at the drift line.
-    // A GUARD, NOT THE ADJUSTMENT SPEED (2026-10-09). This was -0.8%/+0.75% a
-    // month — the speed limit on how fast a market may reprice, and with the
-    // queue joining the gap it would have been the number doing the work.
-    // At 3%/mo either way it is a statement that no asking sheet moves 40% in
-    // a year, which none has.
-    // (The 3%-a-month guard on the press is gone, 2026-10-16: it bound in no
-    // month of 3 towns x 60 years.)
-
-    // THE INCOME ANCHOR AND ITS EARNED PREMIUM — RETIRED (2026-10-09).
-    //
-    // A rent-to-income ratio, measured against the town's opening print and
-    // an "earned" premium built from a ten-year memory of shortage
-    // (`scarcity`, up to +60%), pulled asking down up to 3.6%/mo when rent
-    // outran it and up toward a 0.65 floor on the rail. It held the LEVEL of
-    // rent by rule. The level is now held by what holds it in life: tenants
-    // shop elsewhere, start less and fail more (their own books), households leave a town whose
-    // rent eats its real pay (migration, with rent inside the price level),
-    // firms hire elsewhere (`wageDemand`), and builders build once rent
-    // clears replacement cost. See `anchor` below for the measurement.
-    //
-    // Soft weight fades asking's CPI/cycle lift over the first ~3pp of surplus
-    // availability (ECONOMY.md soft-market escalator).
-    const softW = clamp(gap / 0.03, 0, 1);   // 0 at natural, 1 by +3pp soft
-    const firmW = 1 - softW;
-    // Cheap-side pull is weak off-rail (supply is what clears a glut of cheap
-    // space). Near/on the rail, do NOT pull all the way to earned sustain —
-    // that reminted pin-month real growth once scarcity was muted. Pull only
-    // toward a floor RTI, hard enough to track wages (partial CPI alone
-    // cannot hold a ratio against ~1.4%/yr real pay), then stop once there.
-    // RETIRED (2026-10-09): the income anchor as a force on the price. It
-    // pulled rent down up to 3.6%/mo whenever rent-to-income outran an
-    // "earned" ratio, and pushed it up toward a 0.65 floor on the rail — a
-    // second price rule on top of a demand side that already prices the same
-    // thing: firms shop cheaper floors, start less and fail more, households leave
-    // a town whose rent eats its pay (the real-wage premium in migration, now
-    // that rent is in the price level), firms hire elsewhere (`wageDemand`),
-    // and builders build into a rent that clears replacement cost. A level
-    // held by those is discovered; a level held by this was asserted. Measured
-    // before removal (counterfactual X1, 4 worlds x 50 years): taking away its
-    // downward pull moved nothing, because the shortage slope was so slow that
-    // rent never reached it — once the queue bids, it would have been the
-    // ceiling. (The earned-ratio memory `scarcity`, its `sustain`, the 0.65
-    // floor and the deviation they produced are gone with it.)
-    const anchor = 0;
-
-    // AND RENT CARRIES THE PRICE LEVEL — BUT ONLY WHEN THE MARKET IS FIRM.
-    //
-    // Every other term above is REAL — a sentiment, a vacancy, a job — and
-    // none of them knows what a dollar is worth. The moment the price level
-    // became a national object, rent had to carry CPI explicitly or it
-    // outran wages by a point a year for fifty years. That escalation stays.
-    //
-    // What it must NOT do is escalate ASKING while availability is soft
-    // (ECONOMY.md §F remainder / soft-market escalator). In-place leases
-    // already step in leasing.ts; putting inflExp into the asking index on
-    // a soft sheet is a fake escalator — capitulation dies after ~24 months,
-    // press→0, and asking then compounds at ~CPI forever with empty floors
-    // still on the shelf. Real CRE asking sits flat-to-down in a soft market;
-    // CPI keeps rising, so REAL rents fall until space clears.
-    //
-    // Exception: when rent is already far below earned pay (dev deeply
-    // negative), keep a partial CPI carry even while soft. Full soft-mute
-    // plus the vacTerm hump dying produced a rent-to-income death spiral on
-    // some seeds (~0.2x RTI) — asking cannot forget the price level entirely
-    // once it has already under-shot wages by that much.
-    // RAIL-BOUND ESCALATOR. Soft markets already refuse full CPI in asking.
-    // On/near the frictional rail, firmW=1 (gap≤0) used to keep full inflExp
-    // forever on practically saturated availability. In-place leases keep
-    // escalating in leasing.ts; the asking index carries only a lease-roll
-    // fraction of CPI — more if rent is already cheap against pay.
-    // On the rail at/above the RTI floor: lease-roll fraction of CPI only.
-    // Below the floor: track the price level (and a bit more) so the floor is
-    // reachable against rising wages; once restored, the mute returns.
-    // RETIRED (2026-10-08): the rail escalator. Asking carried 35% of CPI on
-    // or near the frictional floor, which made a tight market the one place
-    // where a dollar's falling value was NOT passed on — real asking fell in
-    // a shortage. A firm market passes on the price level in full (it is the
-    // soft market that cannot, and `softW` above already says so). The level
-    // risk this guarded against is the income anchor's job.
-    const railEscal = 1;
-    // RETIRED (2026-10-09): the cheap-rent carry (`cheapFloor`, up to 75% of
-    // CPI on a soft sheet whenever rent sat under the income anchor's
-    // parity). It was the soft-market escalator this block calls fake,
-    // re-admitted through an exception, and it was load-bearing (at its 0.75
-    // ceiling in 75% of calls): nominal effective rent ROSE in 61-76% of
-    // office and industrial months with availability five points over
-    // natural. The anchor it served is gone; a glut now holds asking flat
-    // or cuts it while CPI runs, which is how real rents fall, and the
-    // glut clears through cheap space being taken up (firms choosing it) and
-    // through supply leaving — not through a floor under the quote.
-    // ONE GAP, ONE TERM (2026-10-15). This was `firmW * railEscal`: a market
-    // one point over natural passed on two-thirds of inflation, three points
-    // over none — and the same gap was already cutting rent through `vacTerm`.
-    // The gap priced twice. Measured: a town sitting 1-2 points soft (no glut
-    // at all) lost 2.5%/yr of real office rent for seventeen years, and a
-    // long glut kept bleeding the full rate of inflation every year after
-    // `capitulation` had finished repricing it (real effective -76% and
-    // still falling at year 16). The rent adjustment literature has REAL
-    // rent answer the vacancy gap (Wheaton & Torto 1988; Hendershott 1996):
-    // nominal = inflation + the gap term. So asking carries the price level
-    // and `vacTerm` alone decides whether the real rent falls — in a glut it
-    // falls hard and then sits at the bottom until the space is taken up,
-    // which is the shape of Houston 1983-90 and Manhattan 1990-96.
-    void firmW;
-    const escalGate = railEscal;
-    // THE PRICE LEVEL THE RENT IS PAID IN, AS IT WAS (2026-10-08). This read
-    // EXPECTED inflation, which the central bank anchors near 2%, while the
-    // city's own price level ran 0.3-0.8 points a year faster (measured over
-    // four 50-year worlds: realised CPI 1.9-3.8%/yr against expectations of
-    // 1.6-2.4%). So even a firm market's asking lost ground to its own
-    // currency every year, rent-to-income fell to 0.4-0.9 of the opening, and
-    // new space at an average address stayed at replacement cost for decades.
-    // A lease's CPI clause reads the published index for the trailing year,
-    // and a landlord re-marking an asking sheet reads the same number; so
-    // does this. The soft-market gate is unchanged: empty floors still do not
-    // escalate.
-    // Prices LESS SHELTER (see the CPI block): `priceLevel12`.
-    const realised12 = priceLevel12(e);
-    const escalation = (realised12 / 12) * escalGate;
-    // Cap the lagged pressure term: chronic shortage was holding ~+1.6%/mo of
-    // scarcity in rentPress and overpowering the income anchor for a decade.
-    // THE CURVE IS A NET EFFECTIVE CURVE, SO ASKING CARRIES ONLY THE REST
-    // (2026-10-11). Every anchor the glut curve was fitted to is a decline in
-    // EFFECTIVE rent — Manhattan 1990-92 35-40% real, Houston 1983-87 50-55%
-    // real — and it was applied to the ASKING index, with the concession dial
-    // then cutting effective by up to another 30% on top. The same fall was
-    // taken twice. Measured over five 100-year towns: real office asking fell
-    // 70% peak to trough and effective 79% (map 2002), worse than Houston in
-    // the typical run, and the face rate carried 80-90% of every adjustment
-    // where the record has it carrying a fifth (Manhattan four years on:
-    // asking -3.3%, net effective -17.3%). So the package moves first, as it
-    // does in life, and the face rate takes only what the package has not
-    // already delivered — never moving against the market: a deepening package
-    // does not lift asking in a glut, and a package burning off in a recovery
-    // does not cut it.
-    const press = e.rentPress[k] < 0
-      ? Math.min(0, e.rentPress[k] + concCut)
-      : Math.max(0, e.rentPress[k] + concCut);
-    const clampBound = pressEma <= -0.03 + 1e-12;
-    // Phase / job / sector sentiment must not LIFT asking while soft, on/near
-    // the frictional rail, or once rent is already near earned pay. Soft:
-    // empty floors on the shelf. Rail-bound: availability is saturated (same
-    // reason tightEma refuses to mint Manhattan from "can't build"). Near
-    // parity: further weather lift is what made every sim compound ~1.4%+
-    // real on top of CPI — cycle may help a CHEAP market recover, not keep
-    // marking up a clearing one. Growing unmet demand still prices through
-    // scarcity → rentPress. Negative cycle terms still cut in every state.
-    // (The "near parity" clause read the retired income anchor's parity.)
-    const liftGate = (railBound || softW > 0) ? 0 : 1;
-    // The label's own rent drift (+0.37%/mo in an "expansion", -0.47% in a
-    // "recession") is gone: the jobs behind the label are already in
-    // `cycleJobs`, and the vacancy they leave behind in `vacTerm`.
-    const cycleRent = 0;
-    // RENT MOVES ON THE BALANCE OF SPACE, NOT ON THE NEWS (2026-10-09). Job
-    // growth (x0.28) and the class's demand momentum (x0.42) were added to
-    // the rent directly, on top of the vacancy and queue they produce — the
-    // same demand priced twice — and gated one way: a positive lift only in
-    // a firm market off its floor, a negative one always, which is a
-    // downward bias over any cycle. The rent adjustment literature (Wheaton &
-    // Torto 1988; Hendershott 1996) has rent answer the vacancy gap and the
-    // gap to equilibrium rent, not employment directly; demand reaches rent
-    // here the same way, through absorption, the queue and `effGap`.
-    void liftGate;
-    const cycleJobs = 0;
-    const cycleMom = 0;
-    const drift = cycleRent + cycleMom + press + anchor + cycleJobs + escalation;
-    // THE HALF-OF-BASE FLOOR IS NOW A GUARD AGAIN, WHICH IS ALL IT WAS EVER
-    // MEANT TO BE. It used to be load-bearing and it used to be the reason the
-    // amplitude above looked survivable: removing it took office peak-to-trough
-    // from 12.5x to 94x, and it bound 9.5% of all months with 16 of 17 careers
-    // touching it — a rail holding up the model. Measured after the sublet
-    // channel: it binds 0.0% of months in every class over 6 seeds x 50 years,
-    // and deleting it entirely reproduces every statistic in this file to the
-    // digit. Left in place because a guard that never fires is a guard.
-    const noise = rrange(s, -vol, vol);
-    const beforeRent = e.rentIdx[k];
-    // (The floor at half the base rent is gone, 2026-10-16: measured over
-    // 3 towns x 60 years it bound in no month.)
-    e.rentIdx[k] = e.rentIdx[k] * (1 + drift + noise);
-    if (!e.rentPath) e.rentPath = {} as NonNullable<Econ["rentPath"]>;
-    e.rentPath[k] = {
-      gap, vacTerm, instant, pressEma, pressClamped: press, clampBound,
-      escalation, anchor, drift,
-      nomCh: beforeRent > 0 ? e.rentIdx[k] / beforeRent - 1 : 0,
-    };
-    e.effRentIdx[k] = +(e.rentIdx[k] * (1 - CONC_DEPTH * e.concIdx[k])).toFixed(4);
-    // EXPLAIN THE MOVE. Defaults, tenant exits and district shifts already
-    // write a cause. Asking rent did not — the Economy page showed a chart
-    // with no sentence tying the month's move to vacancy, incomes or jobs.
-    const pctMove = beforeRent > 0 ? (e.rentIdx[k] - beforeRent) / beforeRent : 0;
-    if (Math.abs(pctMove) >= 0.006) {
-      const supply = e.supplyPress?.[k] ?? 0;
-      const candidates: { w: number; why: string }[] = [
-        { w: Math.abs(press), why: press < 0 ? "vacancy and soft absorption" : "tight space and unmet demand" },
-        { w: Math.abs(anchor), why: anchor < 0 ? "rents outrunning local incomes" : "rents cheap against local pay" },
-        { w: Math.abs(cycleJobs), why: cycleJobs < 0 ? "employment slipping in the tenant base" : "employment supporting tenant demand" },
-        { w: Math.abs(supply) * 0.5, why: supply > 0.004 ? "new deliveries pressing the market" : "a thin delivery calendar" },
-      ];
-      candidates.sort((a, b) => b.w - a.w);
-      const dir = pctMove < 0 ? "fell" : "rose";
-      const line = `${SECTOR_LABEL[k]} asking rents ${dir} this month — ${candidates[0].why}.`;
-      e.rentWhy = { ...(e.rentWhy ?? {}), [k]: line };
-      // Sparse news: material moves, or a coin that does not touch the RNG stream.
-      if (Math.abs(pctMove) >= 0.012 || (ownsClass(s, k) && newsChance(s, `rentwhy:${k}`, 0.22))) {
-        s.news.unshift({ q: s.month, kind: pctMove < 0 ? "warn" : "info", text: line });
       }
     }
   }
@@ -5804,7 +5070,7 @@ export function addStock(e: Econ, k: keyof typeof CITY_STOCK, sf: number) {
  * occupied before the street has a count). Tight market: many seekers per
  * empty foot, so a suite is shown to several at once. Glut: one party turns
  * up, if any. It used to be vacancy compared with a "normal" vacancy,
- * (normal / vacancy)^0.9 — retired 2026-11-07: there is no normal vacancy,
+ * (norm / vacancy)^0.9 — retired 2026-11-07: there is no vacancy norm,
  * only who is looking and what is empty.
  */
 export function seekersPerVacantSf(e: Econ, use: BuiltClass): number {

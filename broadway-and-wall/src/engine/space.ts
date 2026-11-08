@@ -16,7 +16,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState } from "./types";
 import { BUILT_CLASSES } from "./types";
-import { normalVac, openingVac, CITY_STOCK } from "./market";
+import { openingVac, CITY_STOCK } from "./market";
 import { resolveRec, useOccupancy, useRentPsfYr, initialCondition, useRentableSf } from "./value";
 import { uses, districtLabel } from "./mix";
 
@@ -136,8 +136,7 @@ export type Balance = "acute shortage" | "landlord's market" | "balanced" | "ten
 /**
  * WHAT A TENANT CAN ACTUALLY GO AND LEASE, as a share of the stock — direct
  * vacancy plus everything sitting on the sublet market. This is the number a
- * broker quotes and the number the rent equation in market.ts prices off, and
- * it is not the vacancy rate: in a bad office market a quarter of what is
+ * broker quotes, and it is not the vacancy rate: in a bad office market a quarter of what is
  * available is somebody else's lease, and the two figures come apart by ten
  * points at exactly the moment a player most needs to know which is which.
  */
@@ -146,22 +145,49 @@ export function availability(e: Econ, k: BuiltClass): number {
   return (e.cityVac?.[k] ?? openingVac(k)) + (e.sublet?.[k] ?? 0) / Math.max(1, stock);
 }
 
-/** The one-word verdict, and the sentence behind it. */
-export function marketBalance(e: Econ, k: BuiltClass): { state: Balance; gap: number; note: string } {
-  const vac = availability(e, k);
-  const gap = vac - normalVac(e, k);
+/**
+ * THE PACKAGE: the share of face the leases signing now give away in free
+ * rent and allowances, 1 − effective / asking, off the town's own comps. What
+ * a tenant can extract is the market's own price of slack; no vacancy norm
+ * stands behind it.
+ */
+export function packageOf(e: Econ, k: BuiltClass): number {
+  const face = e.rentIdx?.[k] ?? 0, eff = e.effRentIdx?.[k] ?? face;
+  return face > 0 ? Math.max(0, 1 - eff / face) : 0;
+}
+
+/** Availability now less availability twelve months ago (0 before a year of record). */
+export function availYoy(e: Econ, k: BuiltClass): number {
+  const h = e.history ?? [];
+  const then = h.length >= 13 ? h[h.length - 13]?.avail?.[k] : undefined;
+  return then === undefined ? 0 : availability(e, k) - then;
+}
+
+/**
+ * The one-word verdict, and the sentence behind it — read off what the market
+ * is doing, never off a "normal" vacancy (there is none, 2026-11-08): the
+ * package the leases give away (`packageOf`) and which way availability has
+ * moved over twelve months (`availYoy`). The bands are display words for a
+ * package size, stated in the trade's own unit — months of free rent on a
+ * ten-year lease: under ~2½ months (0.02) landlords give little away, 7
+ * months (0.06) is a working package, 14 months and up (0.12) is a glut's
+ * (US gateway free rent ran 10-17 months through 2020-24; CBRE / JLL
+ * concession surveys). Availability moving a point either way over a year
+ * tips the middle band.
+ */
+export function marketBalance(e: Econ, k: BuiltClass): { state: Balance; soft: boolean; pkg: number; availCh: number; note: string } {
+  const pkg = packageOf(e, k), availCh = availYoy(e, k);
   const state: Balance =
-    gap < -0.035 ? "acute shortage" :
-    gap < -0.012 ? "landlord's market" :
-    gap <= 0.018 ? "balanced" :
-    gap <= 0.055 ? "tenant's market" : "glut";
+    pkg < 0.02 ? (availCh < 0 ? "acute shortage" : "landlord's market") :
+    pkg < 0.06 ? (availCh < -0.01 ? "landlord's market" : availCh > 0.01 ? "tenant's market" : "balanced") :
+    pkg < 0.12 ? "tenant's market" : "glut";
   const note =
-    state === "acute shortage" ? "There is nowhere to put a tenant. Rents run and every site pencils — which is precisely when the next glut gets started."
-    : state === "landlord's market" ? "Tighter than normal. You can push rents and hold back on concessions; a new building here has a market waiting for it."
+    state === "acute shortage" ? "Leases give almost nothing away and space keeps getting scarcer. Rents run and every site pencils — which is precisely when the next glut gets started."
+    : state === "landlord's market" ? "Landlords are giving little away. You can push rents and hold back on concessions; a new building here has a market waiting for it."
     : state === "balanced" ? "Neither side has the whip hand. Rents track inflation and a development has to earn its spread the hard way."
     : state === "tenant's market" ? "Tenants have choices. Expect concessions, longer voids and slower lease-up; a spec building is a bet on a turn."
     : "Too much space chasing too few tenants. Face rents hold and then break; nothing should break ground until the excess is absorbed.";
-  return { state, gap, note };
+  return { state, soft: state === "tenant's market" || state === "glut", pkg, availCh, note };
 }
 
 /**

@@ -69,7 +69,7 @@
 // they are a shape parameter, stated as such (CLAUDE.md).
 import type { ParcelTable } from "@/data/types";
 import type { Econ, GameState } from "./types";
-import { HH_RENT_SHARE0, shortIndexOf, recordDeal, NATVAC_RATE } from "./market";
+import { HH_RENT_SHARE0, shortIndexOf, recordDeal } from "./market";
 import { resolveRecBare, useRentableSf } from "./value";
 import { flatUnitSf, priceFlats, flatComps } from "./streetRolls";
 import { HH_SIZE, INCOME_SIGMA, TAX_INS, DTI, COMMUTE, REF_HOME, medianIncome, mortgageRate, fundamentalHomePsf } from "./homeprice";
@@ -362,8 +362,8 @@ const UE_RATE = 0.238;
  * through a matching function: f = UE_RATE x (θ / θ_ref)^MATCH_ETA, with
  * MATCH_ETA about 0.3 (Shimer 2005, AER: 0.28 on CPS flows and the help-
  * wanted index; Petrongolo & Pissarides 2001, JEL, survey 0.3-0.5) [S], and
- * θ_ref the town's own normal tightness, learned over twenty years
- * (market.ts NATVAC_RATE's clock) — the long-run mean the finding rate is
+ * θ_ref the town's own long-run labour-market tightness, learned over twenty
+ * years (THETA_MEMORY_RATE) — the long-run mean the finding rate is
  * calibrated at, as Shimer calibrates his. Before this the rate was 0.25
  * whenever there was an opening at all, so a town whose firms cut their heads
  * only took the openings away from the households that would have moved in:
@@ -371,6 +371,13 @@ const UE_RATE = 0.238;
  * the nation's unemployment rise and the town's own rate rose 0.12 points.
  */
 const MATCH_ETA = 0.3;
+/**
+ * The labour market's memory of its own tightness: the monthly weight θ_ref
+ * puts on this month's openings per jobless worker, a twenty-year half-life
+ * (the span Shimer's calibration averages over). [K: a stated shape
+ * parameter, not tuned.]
+ */
+const THETA_MEMORY_RATE = 1 - Math.exp(-Math.LN2 / 240);
 /**
  * ...AND FEWER LOSE THEIR JOB WHEN THE OPENINGS ARE MANY (2026-11-08). The
  * E-to-U rate moves with the market against the finding rate: regressed on
@@ -2421,7 +2428,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   let find = UE_RATE;
   if (uW > 0 && vW > 0) {
     const theta = vW / uW;
-    r.thetaRef = r.thetaRef === undefined ? theta : r.thetaRef + (theta - r.thetaRef) * NATVAC_RATE;
+    r.thetaRef = r.thetaRef === undefined ? theta : r.thetaRef + (theta - r.thetaRef) * THETA_MEMORY_RATE;
     find = Math.min(1, UE_RATE * Math.pow(theta / r.thetaRef, MATCH_ETA));
     r.theta = theta;
   }

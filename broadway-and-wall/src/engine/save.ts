@@ -288,6 +288,19 @@ function migrateDropJev(state: GameState): void {
   for (const r of state.rivals ?? []) delete (r as typeof r & { jev?: unknown }).jev;
 }
 
+/**
+ * There is no vacancy norm (2026-11-08): the learned "natural" availability
+ * (`econ.natVac`), the rent equation's pressure memory (`rentPress`) and the
+ * retired clock against it (`vacOverM`) are dropped from old saves.
+ */
+function migrateDropVacancyNorm(state: GameState): void {
+  const e = state.econ as (GameState["econ"] & { natVac?: unknown; rentPress?: unknown; vacOverM?: unknown }) | undefined;
+  if (!e) return;
+  delete e.natVac;
+  delete e.rentPress;
+  delete e.vacOverM;
+}
+
 /** Did this save predate the plat its own island now stands on? */
 function groundMovedUnder(state: { v?: unknown; cityIsland?: string }): boolean {
   const mark = GROUND_MOVED_AT[state.cityIsland ?? PROCEDURAL_ISLAND];
@@ -316,6 +329,7 @@ export function migrateSaveState(state: GameState): GameState {
   migratePlanRows(state);
   migrateFloatingBench(state);
   migrateDropJev(state);
+  migrateDropVacancyNorm(state);
   if ((state.agent || state.renewalMgmt) && !state.leasingPlan) {
     ensureLeasingPlan(state);
   }

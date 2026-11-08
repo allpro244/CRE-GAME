@@ -153,7 +153,7 @@ body {
   background: rgba(43, 37, 26, 0.12); overflow: visible;
 }
 .gauge-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
-.gauge-natural {
+.gauge-mark {
   position: absolute; top: -3px; bottom: -3px; width: 2px;
   background: #2b251a; opacity: 0.65; transform: translateX(-1px);
 }

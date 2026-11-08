@@ -393,7 +393,7 @@ export function lenderChase(s: GameState, name: string): number {
  *
  * Income capitalised — the same way every other price in this engine is
  * discovered. Stock by class, at that class's opening rent net of a typical
- * operating load and its natural vacancy, divided by that class's opening cap
+ * operating load and its opening vacancy (OPENING_VAC), divided by that class's opening cap
  * rate. It is an order-of-magnitude figure and it only ever has to be one:
  * nothing is priced off it, it only sets how big the banks are.
  */

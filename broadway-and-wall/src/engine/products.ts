@@ -75,12 +75,6 @@
 //             anchors and big boxes 10-15 years at 50-65% of inline; bulk
 //             industrial 5-10 years NNN with 3.5-4.5%/yr bumps and about half
 //             a month free per year of term; flex 3-5 years.
-//   [ABS]     Lease-up: spec big-box industrial averaged 9-15 months on the
-//             market after completion in 2023-24 (CBRE / Cushman industrial
-//             reports); lenders underwrite 12-24 months for inline retail and
-//             flex. These are the base durations at natural vacancy; the pro
-//             forma scales them by the vacancy the scheme will open into, the
-//             same way it scales every other class.
 //   [BUILD]   Construction durations: a pad 6-9 months, a strip 9-12, a
 //             neighbourhood centre 12-15, a community or power centre 14-18;
 //             a tilt-up warehouse 9-14 months by size, flex 9-12, a plant
@@ -160,8 +154,6 @@ export interface ProductType {
   tradeRadiusM?: number;
   /** Cap-rate spread against the class's base cap, percentage points [CBRE-C] [BG]. */
   capSpread: number;
-  /** Months for the spec / inline space to fill at an ordinary market [ABS] — the desk's reference only: since 2026-11-07 the pro forma's lease-up is the market's own lettings (proforma.ts `leaseUpMonths`). */
-  leaseUpM: number;
   /** Construction months at the bottom and top of the size range [BUILD]. */
   buildM: [number, number];
   /** Typical suite the spec / inline space is demised into, sf. */
@@ -188,7 +180,7 @@ export const PRODUCT_TYPES: Record<ProductKey, ProductType> = {
     shellPsf: 240, powerPsf: 0, pavePsf: 11, openPsf: 3, tiPsf: 0, lcPct: 0.04,
     lease: { recovery: "nnn", termY: 15, bumpPct: 2.0, freeMPerYr: 0 },
     anchors: [{ label: "single tenant", n: 1, share: 1, rentRatio: 1.0, termY: 15, bumpPct: 2.0, tiPsf: 40, freeM: 3, credit: 2 }],
-    shopDepthFt: 60, capSpread: -0.5, leaseUpM: 0, buildM: [6, 9], suiteSf: 15_000,
+    shopDepthFt: 60, capSpread: -0.5, buildM: [6, 9], suiteSf: 15_000,
     blurb: "One credit tenant on a 15-year NNN lease; trades tightest of the retail types.",
   },
   strip: {
@@ -200,7 +192,7 @@ export const PRODUCT_TYPES: Record<ProductKey, ProductType> = {
     shellPsf: 165, powerPsf: 0, pavePsf: 10, openPsf: 3, tiPsf: 45, lcPct: 0.06,
     lease: { recovery: "nnn", termY: 5, bumpPct: 3.0, freeMPerYr: 0.5 },
     anchors: [],
-    shopDepthFt: 60, capSpread: 0.4, leaseUpM: 18, buildM: [9, 12], suiteSf: 1_800,
+    shopDepthFt: 60, capSpread: 0.4, buildM: [9, 12], suiteSf: 1_800,
     blurb: "Unanchored small shops on short leases: lets on the street's own footfall, and nothing else.",
   },
   neighborhood: {
@@ -211,7 +203,7 @@ export const PRODUCT_TYPES: Record<ProductKey, ProductType> = {
     shellPsf: 150, powerPsf: 0, pavePsf: 10, openPsf: 3, tiPsf: 45, lcPct: 0.06,
     lease: { recovery: "nnn", termY: 5, bumpPct: 3.0, freeMPerYr: 0.5 },
     anchors: [{ label: "grocer", n: 1, share: 0.45, rentRatio: 0.5, termY: 20, bumpPct: 1.0, tiPsf: 40, freeM: 6, credit: 2 }],
-    shopDepthFt: 70, tradeRadiusM: 4_800, capSpread: -0.1, leaseUpM: 15, buildM: [12, 15], suiteSf: 2_000,
+    shopDepthFt: 70, tradeRadiusM: 4_800, capSpread: -0.1, buildM: [12, 15], suiteSf: 2_000,
     blurb: "A grocer at half the inline rent for twenty years; its shoppers are what the shops pay for.",
   },
   community: {
@@ -222,7 +214,7 @@ export const PRODUCT_TYPES: Record<ProductKey, ProductType> = {
     shellPsf: 140, powerPsf: 0, pavePsf: 10, openPsf: 3, tiPsf: 40, lcPct: 0.06,
     lease: { recovery: "nnn", termY: 5, bumpPct: 3.0, freeMPerYr: 0.5 },
     anchors: [{ label: "junior anchor", n: 3, share: 0.5, rentRatio: 0.6, termY: 12, bumpPct: 1.5, tiPsf: 30, freeM: 4, credit: 1 }],
-    shopDepthFt: 75, tradeRadiusM: 8_000, capSpread: 0.1, leaseUpM: 18, buildM: [14, 18], suiteSf: 2_500,
+    shopDepthFt: 75, tradeRadiusM: 8_000, capSpread: 0.1, buildM: [14, 18], suiteSf: 2_500,
     blurb: "Three junior anchors pull from five miles out; more inline space to fill behind them.",
   },
   power: {
@@ -233,7 +225,7 @@ export const PRODUCT_TYPES: Record<ProductKey, ProductType> = {
     shellPsf: 125, powerPsf: 0, pavePsf: 10, openPsf: 3, tiPsf: 35, lcPct: 0.06,
     lease: { recovery: "nnn", termY: 5, bumpPct: 3.0, freeMPerYr: 0.5 },
     anchors: [{ label: "big box", n: 4, share: 0.8, rentRatio: 0.55, termY: 10, bumpPct: 1.5, tiPsf: 25, freeM: 4, credit: 2 }],
-    shopDepthFt: 80, tradeRadiusM: 12_000, capSpread: 0.5, leaseUpM: 15, buildM: [14, 18], suiteSf: 3_000,
+    shopDepthFt: 80, tradeRadiusM: 12_000, capSpread: 0.5, buildM: [14, 18], suiteSf: 3_000,
     blurb: "Four category killers on ten-year leases; little inline, a regional draw, a wider cap.",
   },
   // THE GROCER'S OWN STORE: a free-standing supermarket built to suit for the
@@ -255,7 +247,7 @@ export const PRODUCT_TYPES: Record<ProductKey, ProductType> = {
     lease: { recovery: "nnn", termY: 20, bumpPct: 1.0, freeMPerYr: 0 },
     anchors: [{ label: "grocer", n: 1, share: 1, rentRatio: 0.5, termY: 20, bumpPct: 1.0, tiPsf: 40, freeM: 6, credit: 2 }],
     // [BG] single-tenant net lease trades ~6.4-6.6% against grocery-anchored centres' 6.8-7.1% [CBRE-C]
-    capSpread: -0.5, leaseUpM: 0, buildM: [9, 12], suiteSf: 70_000,
+    capSpread: -0.5, buildM: [9, 12], suiteSf: 70_000,
     blurb: "A supermarket built for its grocer on a twenty-year lease, its rent what its sales carry.",
   },
   flex: {
@@ -269,7 +261,7 @@ export const PRODUCT_TYPES: Record<ProductKey, ProductType> = {
     // 30% office at ~$65 of finish plus warehouse lighting: [LEASE]
     tiPsf: 22, lcPct: 0.05,
     lease: { recovery: "nnn", termY: 4, bumpPct: 3.5, freeMPerYr: 0.5 },
-    anchors: [], capSpread: 0.4, leaseUpM: 15, buildM: [9, 12], suiteSf: 5_000,
+    anchors: [], capSpread: 0.4, buildM: [9, 12], suiteSf: 5_000,
     blurb: "Small bays with office up front for trades and light assembly; short leases, many tenants.",
   },
   bulk: {
@@ -283,7 +275,7 @@ export const PRODUCT_TYPES: Record<ProductKey, ProductType> = {
     // 3% office at ~$120 plus dock equipment and LED: [LEASE]
     tiPsf: 6, lcPct: 0.04,
     lease: { recovery: "nnn", termY: 7, bumpPct: 4.0, freeMPerYr: 0.5 },
-    anchors: [], capSpread: -0.4, leaseUpM: 12, buildM: [9, 14], suiteSf: 1_000_000,
+    anchors: [], capSpread: -0.4, buildM: [9, 14], suiteSf: 1_000_000,
     blurb: "A low-cost tilt-up shell and a truck court, let whole to one user on a long NNN lease.",
   },
   manufacturing: {
@@ -297,7 +289,7 @@ export const PRODUCT_TYPES: Record<ProductKey, ProductType> = {
     // A plant is built for its user: the one tenant signs before the slab.
     anchors: [{ label: "manufacturer", n: 1, share: 1, rentRatio: 1.0, termY: 15, bumpPct: 3.0, tiPsf: 35, freeM: 3, credit: 1 }],
     // single-purpose, a narrow buyer pool: 50-100 bp over distribution [CBRE-C]
-    capSpread: 0.7, leaseUpM: 0, buildM: [12, 18], suiteSf: 500_000,
+    capSpread: 0.7, buildM: [12, 18], suiteSf: 500_000,
     blurb: "Heavy power and a thick slab, built for one manufacturer: a narrow resale market.",
   },
 };

@@ -1875,11 +1875,18 @@ export function tickStreetFlats(s: GameState, parcels: ParcelTable, housed?: num
   });
 }
 function measureFlatBands(e: GameState["econ"], fs: { roll: FlatRoll; cap: number; sc: number }[]) {
-  const byBand = { stock: new Array(N_BANDS).fill(0), occ: new Array(N_BANDS).fill(0) };
+  const byBand: NonNullable<GameState["econ"]["flatBands"]> = { stock: new Array(N_BANDS).fill(0), occ: new Array(N_BANDS).fill(0) };
+  // ...and what each band's landlords ask over its market rent (the log of
+  // ask / market, by rentable feet: a survey of asking rents by quality), the
+  // band's rent swing follows (bands.ts tickBands) as the class index follows
+  // the same survey over every block (`readFlats`); 0 for a band with no block.
+  const pxW = new Array(N_BANDS).fill(0);
   for (const f of fs) {
     const b = Math.max(0, Math.min(N_BANDS - 1, Math.floor(f.sc / 10)));
     byBand.stock[b] += f.cap; byBand.occ[b] += Math.min(f.cap, f.roll.occ);
+    pxW[b] += f.cap * (f.roll.px ?? 0);
   }
+  byBand.px = byBand.stock.map((st, b) => (st > 0 ? +(pxW[b] / st).toFixed(5) : 0));
   e.flatBands = byBand;
 }
 

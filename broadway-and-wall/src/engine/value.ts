@@ -8,7 +8,7 @@ export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, normalVac, openingVac, CAP_BASE, developerOptimism, LEASE_TERM_M, forwardVacancy } from "./market";
+import { industryStress, openingVac, CAP_BASE, developerOptimism, LEASE_TERM_M, forwardVacancy } from "./market";
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE, leaseUpMonthsOf, stabilisedVacancy } from "./proforma";
 import { splitRule, coverageMax, MINOR_FIXED, MINOR_PER_LOT, CORNER_K } from "./lotcode";
@@ -1823,24 +1823,6 @@ export function openingCondIdx(spec = 0.5): number {
 }
 
 /**
- * HOW THE MARKET TREATS QUALITY RIGHT NOW. Flight to quality is not a level,
- * it is a beta: when a market is soft, good space comes down to where tenants
- * in lesser space can afford to trade up, and they do — lesser space empties
- * first and refills last. When it is tight, the good space is full and
- * tenants settle. Washington trophy office ~10% vacant against ~26% for B/C,
- * Houston trophy 21% against 27.5% Class A (Q4 2024), both at ~25% overall;
- * CBRE: Class A/trophy rents +3%/yr since 2021, everything else −1%/yr.
- * 1.0 at the natural vacancy rate, so across a cycle the level the
- * "Specification" factor was set at is kept; rising in a glut, falling below
- * one when the market is tight. A shape parameter, stated as one.
- */
-export function qualityCycle(econ: Econ, use: BuiltClass): number {
-  const nat = normalVac(econ, use);
-  const vac = econ.cityVac?.[use] ?? nat;
-  return Math.max(0.6, Math.min(1.9, 0.4 + 0.6 * (vac / Math.max(0.01, nat))));
-}
-
-/**
  * THE BUILDING SCORE, 0-100, and the letter the street uses for it.
  *
  * The BUILDING only — location is priced on its own (`locationRentMult`,
@@ -1948,27 +1930,6 @@ function bandKernel(score: number): Float64Array {
     KERNEL_AT = score; KERNEL_SET = true;
   }
   return KERNEL;
-}
-/**
- * THE NATURAL VACANCY AT A SCORE. The best space runs tighter than the class
- * and the worst looser, at every point in the cycle: US office Class A has
- * sat roughly 1-3 points under B/C through most cycles and trophy well under
- * both (CBRE / JLL quarterly); the bottom of the stock carries the
- * structural vacancy — floors nobody wants at any rent. 1.45x the class's
- * natural rate at score 0 falling to 0.7x at 100, renormalised on this
- * street's own stock so the scale averages to the class. A shape parameter.
- */
-export function scoreNatVac(econ: Econ, use: BuiltClass, score: number): number {
-  const nat = normalVac(econ, use);
-  const raw = (sc: number) => nat * (1.45 - 0.75 * sc / 100);
-  const st = econ.bands?.[use]?.stock;
-  let mean = nat;
-  if (st) {
-    let a = 0, w = 0;
-    for (let b = 0; b < N_BANDS; b++) { a += raw(bandCenter(b)) * st[b]; w += st[b]; }
-    if (w > 0) mean = a / w;
-  }
-  return raw(score) * nat / Math.max(1e-9, mean);
 }
 /** The street's vacancy around a score (kernel over the bands); absent bands, the street's or the city's. */
 export function scoreVacOf(econ: Econ, use: BuiltClass, score: number): number {
@@ -2968,8 +2929,8 @@ export function flatsRollPsf(rec: ParcelRecord, econ: Econ, h: Holding): number 
 //              of who left it and who would not come.
 // RETIRED. This was the level occupancy sat at, and it disagreed with
 // 1 - the natural rate by 1.5-6.0pp per class — see the derivation at `base` in
-// useOccupancy. The level now comes from the natural rate (market.ts normalVac), which is the same number
-// the city's own vacancy model is calibrated to, so there is one answer to
+// useOccupancy. The level then came from a natural rate, and since 2026-11-08
+// from the market's own vacancy (the tier's), so there is one answer to
 // "how full is this class" instead of two. Kept only as a record of what the
 // numbers used to be: office 0.84, retail 0.89, multifamily 0.94, industrial
 // 0.87, against 0.885 / 0.915 / 0.955 / 0.930.
@@ -3033,11 +2994,11 @@ export function streetLetShare(rec: ParcelRecord, econ: Econ, use: BuiltClass): 
 
 /**
  * `stabilised`: false — as is (a street building's own roll; else the model's read with the lease-up);
- * true — the occupancy it runs at once no longer new, the cycle mostly kept (85% of the market's gap);
- * "natural" — the building's band at the market's own natural vacancy, the cycle and the roll both out:
- * what an appraiser capitalises before deducting the lease-up (stabilisedIncome).
+ * true — the occupancy it runs at once no longer new: its tier's vacancy today, its location kept, its
+ * own roll and calendar out — what an appraiser capitalises before deducting the lease-up
+ * (stabilisedIncome). There is no "natural" mode: no market publishes a normal vacancy.
  */
-export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, stabilised: boolean | "natural" = false): number {
+export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, stabilised = false): number {
   // THE STREET'S BUILDINGS HAVE TENANTS NOW (streetRolls.ts). As-is, a
   // standing building the player does not own is exactly as full as its own
   // roll — the tenants a listing discloses and an appraiser counts. What
@@ -3087,61 +3048,34 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, sta
   // of 0.23%. The market was a set of numbers on a page about a city it could
   // not touch.
   //
-  // The wire is a DIFFERENCE from natural vacancy, not a level, so that at the
-  // frictional rate this term is exactly zero and the whole existing
-  // calibration is untouched — what is new is only the response. It is damped
-  // to 0.85 because a building does not reprice the instant the market does:
-  // the paper in it has years to run, and that is what stops citywide vacancy
-  // from arriving as a step change on every roll in the city.
+  // THE LEVEL IS THE MARKET'S OWN OCCUPANCY (no-normal-vacancy step 7,
+  // 2026-11-08). This was a DIFFERENCE from a "natural" vacancy — 1 − natural
+  // at the tier, plus 85% of the gap between natural and today's — so a
+  // building with no roll read most of the cycle and a fixed yardstick for
+  // the rest, and the appraisers' "natural" mode read the yardstick alone.
+  // Now it is the vacancy the building's own tier runs at today
+  // (`scoreVacOf`, the street's bands by quality: a Class C building reads
+  // the C market, where a glut of new towers lands), with its location on
+  // top. Damping toward a norm is gone with the norm: a building that does
+  // not reprice the moment the market does is one with a roll, and that is
+  // read off the roll above.
   // The street's own vacancy (market.ts streetVac): the player's empty floors
   // are not an incumbent's, and the tenants the player takes from it are.
-  //
-  // ...AND OF ITS OWN TIER (TENANT_TIERS_PLAN.md). A Class C building does not
-  // read the office market, it reads the C market: in a glut of new towers
-  // the prime tier fills out of the tier below and the vacancy lands on the
-  // oldest, cheapest floors. With the tiers live, the tier's own vacancy
-  // against the tier's own natural rate replaces the class's, and the vintage
-  // tilt below — which was standing in for exactly this — stands down.
   const tierLive = !!econ.bands?.[use];
   const sc = tierLive ? overallScore(rec, econ, use) : 50;
-  const natHere = tierLive ? scoreNatVac(econ, use, sc) : normalVac(econ, use);
-  const vacNow = tierLive ? scoreVacOf(econ, use, sc) : (econ.streetVac?.[use] ?? econ.cityVac?.[use]);
-  let mktDelta = stabilised !== "natural" && Number.isFinite(vacNow) ? (natHere - (vacNow as number)) * 0.85 : 0;
-  // QUALITY SEGMENTS THE MARKET (ECONOMY.md): when the market sheds tenants,
-  // the 1928 building sheds ~3x what last year's does — flight to quality is
-  // the pain of new supply landing on the oldest competing stock. Applied
-  // only on the DOWNSIDE (a tight market does not favour old bones), and
-  // renormalised by the city's measured vintage mean so the books reconcile.
-  if (mktDelta < 0 && !tierLive) {
+  const vacNow = tierLive ? scoreVacOf(econ, use, sc) : (econ.streetVac?.[use] ?? econ.cityVac?.[use] ?? openingVac(use));
+  // QUALITY SEGMENTS THE MARKET (ECONOMY.md) where the tiers are not live
+  // (a scratch economy): the 1928 building carries ~3x the vacancy last
+  // year's does, renormalised by the city's measured vintage mean so the
+  // books reconcile. With the tiers live their own vacancy carries this.
+  let vacHere = vacNow;
+  if (!tierLive) {
     const age = Math.max(0, 2000 - (rec.yearBuilt || 1960));
     const vintage = Math.min(1.7, Math.max(0.5, 0.5 + age / 80));
-    mktDelta *= vintage / (econ.vintageMean ?? 1.0);
+    vacHere *= vintage / (econ.vintageMean ?? 1.0);
   }
-  // THE LEVEL IS 1 - NATURAL VACANCY, AND THE SHAPE TERMS DO NOT MOVE IT.
-  //
-  // `mktDelta` is deliberately written as a DIFFERENCE from natural vacancy so
-  // that at the natural rate it is exactly zero and the calibration underneath
-  // is untouched. That intent was defeated by the thing it is a difference
-  // from: OCC_BASE was a free constant sitting 1.5-6.0pp BELOW 1 - the natural rate
-  // (office 0.84 against 0.885, industrial 0.87 against 0.930), so at the very
-  // moment the city model said a class was exactly at its natural rate, this
-  // function said its buildings were several points emptier than that.
-  //
-  // On top of it both shape terms have non-zero means and were spending the
-  // level rather than describing a spread: E[idio] = k*(0.5-0.62) = -0.12k and
-  // E[trouble] = k*0.06 (integrating k*(1-u/0.12) over u in [0,0.12]), so
-  // together they cost commercial 4.32pp and residential 2.28pp of LEVEL for
-  // shape nobody asked to pay for. They are still exactly as skewed as they
-  // were — one building in eight is still troubled, the tail is still a tail of
-  // pain — the mean is simply added back so the skew describes the spread
-  // around the market rather than pulling the market down with it.
-  //
-  // Measured before, sf-weighted over the built stock at month 300: the model
-  // ran 9-16pp under 1 - cityVac depending on class and seed, with no mechanism
-  // between the two and nothing asserting they should agree. They are the same
-  // quantity — how full this city's buildings are — and CLAUDE.md fake number 3
-  // says one of two answers to that is fiction.
-  const base = clamp((1 - natHere) + mktDelta + loc, 0.28, 0.99);
+  // The 0.28-0.99 band is a guard, not a level.
+  const base = clamp(1 - vacHere + loc, 0.28, 0.99);
   // AS-IF-STABILISED IS THE SAME BUILDING WITHOUT THE CALENDAR. `stabilised`
   // asks for the occupancy this building runs at once it is no longer new —
   // which is what an appraiser means by the phrase, and what the stabilised
@@ -3432,13 +3366,13 @@ const IDLE_LAND_INS = 0.001;
 export const idleLandCarryRate = (econ?: { taxMult?: number }) => taxRate(econ) + IDLE_LAND_INS;
 
 /**
- * WHAT A FOOT OF EACH CLASS IS WORTH, citywide: stabilised (or, given `occ`,
- * actual) NOI the way this engine computes NOI, capitalised at the class's cap
+ * WHAT A FOOT OF EACH CLASS IS WORTH, citywide: NOI at the class's occupancy
+ * today (or at `occ`) the way this engine computes NOI, capitalised at the class's cap
  * rate with the tax solve V = NOI / (cap + t(1 - recovery)). One copy, read by
  * the build brake (dev.ts cityValueToReplacement) and by the assessor's roll
  * (citygov.ts) — the city taxes the same value the market builds against.
  */
-export function classValuePsf(e: Econ, k: BuiltClass, occ: number = 1 - normalVac(e, k)): number {
+export function classValuePsf(e: Econ, k: BuiltClass, occ: number = 1 - (e.cityVac?.[k] ?? openingVac(k))): number {
   const rent = e.effRentIdx?.[k] ?? e.rentIdx[k];
   const opex = opexPsf(k, e, false);
   const recov = RECOVERY_RATE[k] ?? 0;
@@ -3505,7 +3439,7 @@ export function appraise(bbl: string, value: number): { lo: number; mid: number;
 // market-implied NOI before property tax (unowned parcels; also the
 // stabilized case for owned). Tax is capitalized in assetValue.
 export function noiYr(
-  rec: ParcelRecord, econ: Econ, condition: Condition, stabilised: boolean | "natural" = false, condIdx?: number,
+  rec: ParcelRecord, econ: Econ, condition: Condition, stabilised = false, condIdx?: number,
   /** A forecast occupancy by use in place of the market read (a pro forma's: proforma.ts `developmentProForma`). */
   occOf?: (use: BuiltClass) => number,
 ): number {
@@ -4047,28 +3981,30 @@ export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition, 
  * The appraiser's answer is the as-is value: capitalise the income at
  * STABILISED occupancy, then subtract the rent lost while the market leases
  * back up (Appraisal Institute, The Appraisal of Real Estate, ch. 22, "as is"
- * vs "as stabilized"). Stabilised here is this building at the market's
- * natural vacancy — its own character, troubles and location kept, only the
- * cycle taken out. The lease-up runs as long as the market's own measured
+ * vs "as stabilized"). Stabilised here is this building at its tier's
+ * vacancy today — its location kept, its own roll and calendar taken out
+ * (useOccupancy, stabilised): no-normal-vacancy step 7, 2026-11-08; it was
+ * the market's "natural" vacancy, a yardstick no market publishes. The lease-up runs as long as the market's own measured
  * gross absorption (`landQueue.absYr`, five trailing years) takes to soak up
  * the excess vacant feet, and the loss shrinks linearly as it does. A market
  * absorbing nothing never leases up, and the value is today's income
  * capitalised, exactly as before; a fast market is through it in a year.
  *
- * The other side is the same rule: occupancy above the natural rate is held
+ * The other side is the same rule: occupancy above the market's is held
  * by leases, not by the market, and it is worth its excess for the half-term
  * the average lease has left — then the building is a stabilised building.
  */
 function stabilisedIncome(rec: ParcelRecord, econ: Econ, condition: Condition, capY: number, condIdx?: number): number {
   const noiNow = noiYr(rec, econ, condition, false, condIdx);
   if (!econ.cityVac || !econ.landQueue) return noiNow / capY;
-  // THE BUILDING AT THE MARKET'S NATURAL OCCUPANCY (REAL_ECONOMY_PLAN 2.1,
-  // 2026-11-05). This swapped the city's vacancy for its normal rate — but a
+  // THE BUILDING AT ITS TIER'S OCCUPANCY (REAL_ECONOMY_PLAN 2.1,
+  // 2026-11-05; the market's own, not a "natural" one, since 2026-11-08). This
+  // swapped the city's vacancy for a normal rate — but a
   // street building's as-is occupancy is its own roll (useOccupancy), which
   // that swap never touched: noiNat equalled noiNow on 292 of 292 sampled
   // buildings (seed 11, year 10), so every street building was valued as if
   // today's roll lasted forever — a 60%-let office (the street's p10) at 60%.
-  const noiNat = noiYr(rec, econ, condition, "natural", condIdx);
+  const noiNat = noiYr(rec, econ, condition, true, condIdx);
   const gap = noiNat - noiNow;
   if (!(Math.abs(gap) > 0)) return noiNow / capY;
   const rc = Math.log(1 + capY);
@@ -4078,12 +4014,12 @@ function stabilisedIncome(rec: ParcelRecord, econ: Econ, condition: Condition, c
     return noiNat / capY - gap * (1 - Math.exp(-rc * yrs)) / rc;
   }
   // THE LEASE-UP IS THIS BUILDING'S, at the pace the market lets space: its
-  // own shortfall from natural occupancy over the share of the class's stock
+  // own shortfall from its tier's occupancy over the share of the class's stock
   // the market absorbs a year (`landQueue.absYr`, five trailing years of gross
   // absorption). It was the CITY's excess over the city's absorption, so a
   // half-empty building in a market at its normal rate had no lease-up to
   // deduct, and one full building in a glut was charged the glut's.
-  const short = Math.max(0, useOccupancy(rec, econ, use, "natural") - useOccupancy(rec, econ, use, false));
+  const short = Math.max(0, useOccupancy(rec, econ, use, true) - useOccupancy(rec, econ, use, false));
   const lossPv = leaseUpLossPv(econ, use, gap, short, capY);
   return lossPv === null ? noiNow / capY : noiNat / capY - lossPv;
 }
@@ -4091,7 +4027,7 @@ function stabilisedIncome(rec: ParcelRecord, econ: Econ, condition: Condition, c
 /**
  * THE RENT LOST LEASING BACK UP, in today's money: a loss that starts at
  * `gap` a year and falls linearly to zero over T years, where T is the
- * building's shortfall from natural occupancy (`short`, a share of its feet)
+ * building's shortfall from its tier's occupancy (`short`, a share of its feet)
  * over the share of the class's stock the market absorbs a year
  * (`landQueue.absYr`, five trailing years of gross absorption):
  * gap * (1/r - (1 - e^{-rT}) / (r^2 T)). T -> infinity is gap / r (today's
@@ -4947,11 +4883,11 @@ export function renovationCost(rec: ParcelRecord, econ: Econ): number {
  * Not assetValue. A building whose owner stopped paying the mortgage is
  * neither at market occupancy nor in stated condition — he stopped leasing a
  * year before he stopped paying, and he stopped fixing the roof a year before
- * that. So: the worn building's income at the market's natural occupancy,
+ * that. So: the worn building's income at its tier's occupancy today,
  * capitalised, less the rent lost while it leases from `occ` back up at the
  * pace the market absorbs space (leaseUpLossPv, the same rule every as-is
  * value in the engine uses — The Appraisal of Real Estate, ch. 22). A
- * building fuller than natural is worth its stabilised value: the excess is
+ * building fuller than its tier is worth its stabilised value: the excess is
  * held by leases a distressed roll does not carry far. Never below what the
  * dirt appraises at.
  *
@@ -4965,12 +4901,12 @@ export function collateralAsIs(rec: ParcelRecord, econ: Econ, occ: number): numb
   const cond: Condition = "worn";
   if (rec.class === "land" || !rec.bldgArea) return assetValue(rec, econ, cond);
   const capY = capRateFor(rec, econ, cond) / 100 + taxRate(econ) * taxBorneShare(rec);
-  const noiNat = noiYr(rec, econ, cond, "natural");
+  const noiNat = noiYr(rec, econ, cond, true);
   const o = Math.max(0, Math.min(1, occ));
   let gap = 0, shortSf = 0, sfAll = 0;
   for (const use of uses(rec)) {
     const sf = useRentableSf(rec, use);
-    const nat = useOccupancy(rec, econ, use, "natural");
+    const nat = useOccupancy(rec, econ, use, true);
     const short = Math.max(0, nat - o);
     gap += sf * short * useRentPsfYr(rec, econ, cond, use);
     shortSf += sf * short; sfAll += sf;

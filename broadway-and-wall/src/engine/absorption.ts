@@ -23,7 +23,7 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, Holding } from "./types";
 import { CITY_STOCK, openingVac, rng } from "./market";
-import { resolveRec, useOccupancy, demandIdx, managedRentPsfYr, useRentableSf, qualityCycle, overallScore, initialCondIdx } from "./value";
+import { resolveRec, useOccupancy, demandIdx, managedRentPsfYr, useRentableSf, overallScore, initialCondIdx } from "./value";
 import { scoreDraw } from "./bands";
 import { sizeMean, sizeScale } from "./plates";
 import { demandModel } from "./demand";
@@ -385,21 +385,19 @@ export function leaseFactors(s: GameState, rec: ParcelRecord, h: Holding, use: B
   // tours ~1.26x, Box ~0.88x. A shape parameter, set against that pattern,
   // not tuned to an arm.
   //
-  // AND IT IS A BETA, NOT A LEVEL (BUILD_CLASS_PLAN.md). The tilt is that
-  // level at the natural vacancy rate, wider in a glut — when good space gets
-  // cheap enough for everyone to trade up — and narrower when the market is
-  // tight and tenants take what is free. qualityCycle averages ~1 across a
-  // cycle, so the level above is what it was set at. It moves WHICH building
-  // a tenant takes, not whether they take one: the city's take-up is decided
-  // upstream of this desk.
+  // NO CYCLE BETA ON IT (no-normal-vacancy step 7, 2026-11-08). The tilt was
+  // scaled by 0.4 + 0.6 x vacancy / a "natural" vacancy, so it widened in a
+  // glut and narrowed when tight. The swing is already the market's: the
+  // tenants rolling each month weigh every empty floor's quality against its
+  // rent (bands.ts scoreDraw, in `leasingOdds` below), so a glut of cheap
+  // good space pulls them up the scale there. Read twice it was counted
+  // twice, and once against a yardstick no market publishes.
   const bones = rec.buildSpec;
   if (bones !== undefined && Math.abs(bones - 0.5) > 0.01 && rec.bldgArea > 0) {
-    const cyc = qualityCycle(s.econ, use);
     out.push({
       label: "Specification",
-      detail: (bones > 0.5 ? "built above the market — tenants tour it first" : "built to a budget — tenants tour it last")
-        + (cyc > 1.15 ? ", and in a soft market they are trading up" : cyc < 0.85 ? ", though in a tight market they take what is free" : ""),
-      mult: +Math.exp(0.6 * (bones - 0.5) * cyc).toFixed(3),
+      detail: bones > 0.5 ? "built above the market — tenants tour it first" : "built to a budget — tenants tour it last",
+      mult: +Math.exp(0.6 * (bones - 0.5)).toFixed(3),
     });
   }
   const st = h.stance ?? 0;

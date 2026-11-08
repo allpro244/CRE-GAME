@@ -2412,7 +2412,7 @@ export interface Econ {
   /** Every street block of flats and the flats let in it (streetRolls.ts). */
   flatRolls?: Record<string, import("./streetRolls").FlatRoll>;
   /** The street's flats by quality band, measured off the blocks each month (streetRolls.ts; bands.ts reads it). */
-  flatBands?: { stock: number[]; occ: number[] };
+  flatBands?: { stock: number[]; occ: number[]; /** each band's blocks' mean log ask over market (streetRolls.ts measureFlatBands) */ px?: number[] };
   /** The player's flats' occupancy last month, so a block sold carries its households. */
   heldFlats?: Record<string, number>;
   /** The space a worker takes, by class: its structural level after a swan (remote work; market.ts, swans.ts), and that level at the opening. Every firm's need moves with their ratio. */

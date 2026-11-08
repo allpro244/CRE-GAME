@@ -28,11 +28,10 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState } from "./types";
 import { BUILT_CLASSES } from "./types";
-import { normalVac } from "./market";
 import { bandReadOut } from "./tenantMarket";
 import { GROSS_TURNOVER } from "./turnover";
 import {
-  N_BANDS, bandCenter, overallScore, scoreNatVac, locationRentMult, plateRentMult,
+  N_BANDS, bandCenter, overallScore, locationRentMult, plateRentMult,
   condMultAt, specRentMult, initialCondIdx, scoreRentMult,
 } from "./value";
 
@@ -131,9 +130,7 @@ export function staticPremOf(e: Econ, rec: ParcelRecord, k: BuiltClass, condIdx:
 
 /** Who leaves first when the class sheds tenants: the bottom of the scale (weak credits, worst floors). */
 const outWeight = (b: number) => 1.6 - 1.0 * bandCenter(b) / 100;
-/** How hard a band's rent leans on its vacancy gap against the class's (10 points softer, ~15% cheaper). */
-const BAND_RENT_BETA = 1.5;
-/** Months for a band's rent to close half its gap — the same order as the class rent's own press term. */
+/** Months for a band's rent to close half its gap to what its blocks ask — the same order as the class rent's own press term. */
 const BAND_RENT_TAU = 12;
 
 /** A band's rent relative to the class: its static premium times the market's swing on it. */
@@ -152,13 +149,13 @@ export function tickBands(e: Econ, k: BuiltClass) {
   const share = stamp?.share ?? DEFAULT_SHARE;
   if (!e.bands) e.bands = {} as NonNullable<Econ["bands"]>;
   let bk = e.bands[k];
-  const nat = Array.from({ length: N_BANDS }, (_, b) => scoreNatVac(e, k, bandCenter(b)));
   if (!bk) {
-    // Open each band at its own natural rate, scaled so the bands hold the street's tenants.
+    // Open every band at the street's own occupancy: the rolls (below) say
+    // which floors are let as soon as the street keeps them. (Each band
+    // opened at a "natural" rate by score until 2026-11-08.)
     const stock = share.map((x) => x * streetStock);
-    const want = stock.map((x, b) => x * (1 - nat[b]));
-    const f = streetOcc / Math.max(1, want.reduce((a, v) => a + v, 0));
-    bk = e.bands[k] = { stock, occ: want.map((v, b) => Math.min(stock[b], v * f)), rent: new Array(N_BANDS).fill(1), prem: [...(stamp?.prem ?? share.map((_, b) => 0.6 + 0.8 * bandCenter(b) / 100))] };
+    const f = streetOcc / streetStock;
+    bk = e.bands[k] = { stock, occ: stock.map((v) => Math.min(v, v * f)), rent: new Array(N_BANDS).fill(1), prem: [...(stamp?.prem ?? share.map((_, b) => 0.6 + 0.8 * bandCenter(b) / 100))] };
   }
   if (stamp) bk.prem = [...stamp.prem];
 
@@ -273,8 +270,12 @@ export function tickBands(e: Econ, k: BuiltClass) {
   // 4. RENT. Offices, shops and sheds: each band's swing is what its leases
   //    signed at against the class (tenantMarket.ts bandReadOut, ONE ECONOMY
   //    step 4) — a band with no lease in the window keeps its swing. Flats:
-  //    each band's swing chases its vacancy gap against the class's. Then the
-  //    set is re-centred so the occupied-weighted mean is one.
+  //    each band's swing follows what its blocks' landlords ask over the
+  //    band's market rent (streetRolls.ts `measureFlatBands`, a survey of
+  //    asking rents by quality, the class index's own rule one level down);
+  //    it chased the band's vacancy gap against a "natural" rate by score
+  //    until 2026-11-08. Then the set is re-centred so the occupied-weighted
+  //    mean is one.
   //
   //    ONLY THE SWINGS SET THIS MONTH ARE RE-CENTRED (2026-10-29, PROOF.md
   //    #5). Every band used to be divided by the occupied mean every month,
@@ -292,11 +293,10 @@ export function tickBands(e: Econ, k: BuiltClass) {
     const ro = bandReadOut(e, k, N_BANDS);
     for (let b = 0; b < N_BANDS; b++) { const v = ro[b]; if (v !== undefined && v > 0) { bk.rent[b] = Math.max(0.2, v); fresh[b] = true; } }
   } else {
-    const gapClass = normalVac(e, k) - (1 - streetOcc / streetStock);
+    const px = k === "multifamily" ? e.flatBands?.px : undefined;
     for (let b = 0; b < N_BANDS; b++) {
-      if (!(bk.stock[b] > 0)) continue;
-      const vac = 1 - bk.occ[b] / bk.stock[b];
-      const want = Math.max(0.2, 1 + BAND_RENT_BETA * ((nat[b] - vac) - gapClass));
+      if (!(bk.stock[b] > 0) || px?.[b] === undefined) continue;
+      const want = Math.max(0.2, bk.rent[b] * Math.exp(px[b]));
       bk.rent[b] += (want - bk.rent[b]) / BAND_RENT_TAU;
       fresh[b] = true;
     }
@@ -354,14 +354,13 @@ export function tenantQualityTerms(q: number, score: number): { rent: number; te
   };
 }
 
-/** For the economy page and probes: each band's stock, vacancy, natural rate and rent vs the class. */
-export function bandTable(e: Econ, k: BuiltClass): { lo: number; stock: number; vac: number; nat: number; rent: number }[] {
+/** For the economy page and probes: each band's stock, vacancy and rent vs the class. */
+export function bandTable(e: Econ, k: BuiltClass): { lo: number; stock: number; vac: number; rent: number }[] {
   const bk = e.bands?.[k];
   if (!bk) return [];
   return bk.stock.map((st, b) => ({
     lo: b * 10, stock: Math.round(st),
     vac: +(st > 0 ? 1 - bk.occ[b] / st : 0).toFixed(4),
-    nat: +scoreNatVac(e, k, bandCenter(b)).toFixed(4),
     rent: +bandRent(bk, b).toFixed(3),
   }));
 }

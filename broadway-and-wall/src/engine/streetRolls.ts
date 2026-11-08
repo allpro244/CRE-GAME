@@ -60,7 +60,7 @@ import { whyFirmDark, whyIndustry } from "./economy";
 import { why, whyTenantBooks } from "./why";
 import { tenantFin } from "./tenantBooks";
 import {
-  type LandlordAsk, type Option, SHORTLIST, TASTE, askOf, postedEff, compsFace, compsPackage, reviewAsk, noteTour, tourBudget, reservation, locCtx, posOf, hourCost,
+  type LandlordAsk, type Option, SHORTLIST, TASTE, askOf, postedEff, compsFace, compsPackage, reviewAsk, noteTour, noteLet, tourBudget, reservation, locCtx, posOf, hourCost,
   placeCost, worthOf, footFactor, moveCostPsfYr, bargain, bidCeiling, contestPrice, noteContest, freeMonthsFor, gumbel, recordLease, movedLine, fmtPct, creditOfSize, readOut, tenantHeads,
 } from "./tenantMarket";
 
@@ -760,7 +760,8 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     const effSigned = face * (1 - freeM / Math.max(1, termM));
     // the comp, normalised to an ordinary building — a shop's walk-ins taken out with its address
     recordLease(e, k, m, face, effSigned, pick.mkt * pick.ff, pick.take, Math.max(0, Math.min(N_BANDS - 1, Math.floor(sc / 10))), scoreRentMult(e, k, sc));
-    // when it turned firms away, the landlord learns what the space fetched (tenantMarket.ts noteContest)
+    // the landlord notes the letting (tenantMarket.ts noteLet), and — when it turned firms away — what the space fetched (noteContest)
+    noteLet(bookOf(b, roll, k), pick.take, effSigned);
     if (contest && contest.turned > 0) noteContest(bookOf(b, roll, k), effSigned, opening);
     // WHY IT MOVED: where it went, what it pays against what it paid, and how much nearer its partners and people it is.
     if ((fromBbl || fromPlayer) && !opening) {

@@ -146,9 +146,14 @@ export const TASTE: Record<Comm, number> = { office: 0.10, retail: 0.08, industr
  * takes the package back before it raises the face. That is the record: four
  * years after the 2020 shock Manhattan asking was −3.3% while net effective was
  * −17.3%, and US gateway free rent went 9.7 to 12.5 months in a year (market.ts
- * CONC_DEPTH). So the effective rent it chooses is posted as its face less a
- * package; above the face, the face rises to it with no package; and only past
- * the deepest package is the face cut.
+ * CONC_DEPTH). So its face is what the best prospect on its book would pay —
+ * the top of its tours — and the rent it chooses is posted as that face less
+ * a package: in a shortage it takes the top of the book and the package burns
+ * off; in a glut it reaches down its book and the package deepens, the face
+ * moving only with the best prospects. Past the deepest package the face is
+ * cut to carry the rest. (Holding the face until the package was at its
+ * deepest, as the ladder did, left offices at 5% vacancy carrying 30%
+ * packages for a decade: a face set in another market never came back down.)
  *
  *   PKG_MAX          the deepest package: 15-20 months free on a ten-year office
  *                    lease and $100-150/sf of fit-out in a glut, 30-40% of face
@@ -171,8 +176,13 @@ const STRESS_MOVE = 1.5, STRESS_RES = 0.96;
 
 // ---------------------------------------------------------------- the landlord's book
 
-/** A month of tours, compressed: the month, the CPI then, the feet-weighted term, and up to TOUR_Q [ceiling, feet] points. */
-export interface TourMonth { m: number; i: number; T: number; q: number[] }
+/**
+ * A month of the landlord's door, compressed: the month, the CPI then, the
+ * feet-weighted term and up to TOUR_Q [ceiling, feet] points of the firms that
+ * toured; `f` when it had space to let at the month's end, and the feet it let
+ * (`l`) at their mean effective rent (`e`).
+ */
+export interface TourMonth { m: number; i: number; T: number; q: number[]; f?: 1; l?: number; e?: number }
 
 /** A landlord's book on one kind of space in one building. */
 export interface LandlordAsk {
@@ -186,6 +196,8 @@ export interface LandlordAsk {
   m: number;
   /** this month's tours so far, flattened [ceiling $/sf/yr, feet, term months] */
   tn?: number[];
+  /** this month's lettings so far, flattened [feet, effective $/sf/yr] */
+  ln?: number[];
   /** the earlier months' tours (`TourMonth`), the last COMPS_M months */
   tc?: TourMonth[];
 }
@@ -259,11 +271,22 @@ export function noteTour(L: LandlordAsk, ceiling: number, sf: number, termM: num
   (L.tn ??= []).push(+ceiling.toFixed(3), Math.round(sf), Math.round(termM));
 }
 
-/** Fold this month's tours into the book's months, compressed to TOUR_Q points; forget what is older than COMPS_M. */
-function foldTours(L: LandlordAsk, m: number, cpi: number): void {
-  const tn = L.tn;
-  delete L.tn;
+/** The landlord notes a letting of its free space: the feet and the effective rent it signed at. */
+export function noteLet(L: LandlordAsk, sf: number, eff: number): void {
+  if (!(sf > 0) || !(eff > 0)) return;
+  (L.ln ??= []).push(Math.round(sf), +eff.toFixed(3));
+}
+
+/** Fold this month's door into the book's months, its tours compressed to TOUR_Q points; forget what is older than COMPS_M. */
+function foldTours(L: LandlordAsk, m: number, cpi: number, free: boolean): void {
+  const tn = L.tn, ln = L.ln;
+  delete L.tn; delete L.ln;
   const hist = (L.tc ?? []).filter((h) => h.m > m - COMPS_M);
+  let let_ = 0, letE = 0;
+  if (ln) for (let i = 0; i + 1 < ln.length; i += 2) { let_ += ln[i]; letE += ln[i] * ln[i + 1]; }
+  const rec: TourMonth = { m, i: +cpi.toFixed(5), T: 0, q: [] };
+  if (free) rec.f = 1;
+  if (let_ > 0) { rec.l = let_; rec.e = +(letE / let_).toFixed(3); }
   if (tn && tn.length) {
     const cards: [number, number, number][] = [];
     for (let i = 0; i + 2 < tn.length; i += 3) cards.push([tn[i], tn[i + 1], tn[i + 2]]);
@@ -276,40 +299,64 @@ function foldTours(L: LandlordAsk, m: number, cpi: number): void {
       for (let j = Math.floor(g * cards.length / n); j < Math.floor((g + 1) * cards.length / n); j++) { gs += cards[j][1]; gb += cards[j][0] * cards[j][1]; }
       if (gs > 0) q.push(+(gb / gs).toFixed(3), gs);
     }
-    if (sf > 0) hist.push({ m, i: +cpi.toFixed(5), T: +(T / sf).toFixed(1), q });
+    if (sf > 0) { rec.T = +(T / sf).toFixed(1); rec.q = q; }
   }
+  if (rec.q.length || rec.f || rec.l) hist.push(rec);
   if (hist.length) L.tc = hist; else delete L.tc;
 }
 
 /**
- * THE ASK THAT EARNS MOST over a lease, on the book's tours: the effective
- * rent p and the months its `free` feet would wait at it. Null when nobody has
+ * THE ASK THAT EARNS MOST over a lease, on the book's door: the effective rent
+ * p and the months its `free` feet would wait at it. Null when nobody has
  * toured in COMPS_M months — it has nothing to go on.
+ *
+ * The feet a month that would sign at p are the toured feet whose ceilings
+ * reach p, times the share of the toured demand that has actually signed with
+ * it: its own lettings over the months it had space, against the toured feet
+ * whose ceilings reached what those lettings signed at. A firm that toured
+ * and signed down the street was a lead the landlord did not convert — in a
+ * glut most of them, since every firm has a runner-up as good; in a shortage
+ * few. (The tours alone take every lead for a signer: on seed 11 that left
+ * the office cycle in the rent at a fifth of the record's.) With no letting
+ * yet in the months it had space it counts half a typical tour's feet — the
+ * usual half-count for a rate observed at zero — and with no month of space
+ * on the book (space just come to market) the tours stand alone.
  */
-export function priceOnTours(L: LandlordAsk, free: number, m: number, cpi: number, stressed: boolean): { p: number; wait: number } | null {
+export function priceOnTours(L: LandlordAsk, free: number, m: number, cpi: number, stressed: boolean): { p: number; wait: number; top: number } | null {
   const hist = L.tc ?? [];
   if (!hist.length || !(free > 0)) return null;
   const from = m - COMPS_M + 1, months = COMPS_M;
   const pts: { x: number; w: number }[] = [];
-  let W = 0, T = 0;
+  let W = 0, T = 0, nCard = 0, mS = 0, let_ = 0, letE = 0;
   for (const h of hist) {
     if (h.m < from) continue;
     const shift = cpi / Math.max(1e-9, h.i);
-    for (let j = 0; j + 1 < h.q.length; j += 2) { pts.push({ x: h.q[j] * shift, w: h.q[j + 1] }); W += h.q[j + 1]; T += h.T * h.q[j + 1]; }
+    for (let j = 0; j + 1 < h.q.length; j += 2) { pts.push({ x: h.q[j] * shift, w: h.q[j + 1] }); W += h.q[j + 1]; T += h.T * h.q[j + 1]; nCard++; }
+    if (h.f || h.l) mS++;
+    if (h.l) { let_ += h.l; letE += h.l * (h.e ?? 0) * shift; }
   }
   if (!pts.length || !(W > 0)) return null;
   T /= W;
   pts.sort((p, q) => q.x - p.x);
+  // the share of toured demand it converts, at what its lettings signed for (or its post, with none)
+  let conv = 1;
+  if (mS > 0) {
+    const ref = let_ > 0 ? letE / let_ : L.a * (1 - L.c);
+    let reach = 0;
+    for (const p of pts) if (p.x >= ref) reach += p.w;
+    const rate = Math.max(let_, 0.5 * W / nCard) / mS;
+    conv = reach > 0 ? rate / (reach / months) : 0;
+  }
   const sw = stressed ? STRESS_MOVE : 1;
   let acc = 0, best = -Infinity, bx = pts[pts.length - 1].x, bw = W;
   for (const p of pts) {
     acc += p.w;
-    const v = p.x * (T - sw * free * months / acc);
+    const v = conv > 0 ? p.x * (T - sw * free * months / (acc * conv)) : -Infinity;
     if (v > best) { best = v; bx = p.x; bw = acc; }
   }
   // where even every firm that came would leave its space empty longer than a lease, it prices to the lowest ceiling that came
   if (!(best > 0)) { bx = pts[pts.length - 1].x; bw = W; }
-  return { p: bx, wait: free * months / bw };
+  return { p: bx, wait: conv > 0 ? free * months / (bw * conv) : T, top: pts[0].x };
 }
 
 /**
@@ -330,17 +377,16 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
   const months = Math.max(1, Math.min(12, opts.m - L.m));
   L.m = opts.m;
   const cpi = e.cpi ?? 1;
-  foldTours(L, opts.m, cpi);
+  foldTours(L, opts.m, cpi, opts.free > 0);
   if (!(L.a > 0) || !Number.isFinite(L.a)) { const comps = compsFace(e, mkt, k); L.a = comps > 0 ? comps : 1; }
   if (opts.free > 0) {
     const r = priceOnTours(L, opts.free, opts.m, cpi, opts.stressed);
     if (!r) return;                                   // nobody toured in a year: nothing to go on, the ask stands
     L.t = +r.wait.toFixed(2);
-    const c = 1 - r.p / L.a;
-    if (opts.holdFace) L.c = Math.max(0, Math.min(PKG_MAX, c));
-    else if (c < 0) { L.a = +r.p.toFixed(2); L.c = 0; }
-    else if (c > PKG_MAX) { L.a = +(r.p / (1 - PKG_MAX)).toFixed(2); L.c = PKG_MAX; }
-    else L.c = c;
+    if (opts.holdFace) { L.c = Math.max(0, Math.min(PKG_MAX, 1 - r.p / L.a)); return; }
+    const c = 1 - r.p / r.top;
+    if (c > PKG_MAX) { L.a = +(r.p / (1 - PKG_MAX)).toFixed(2); L.c = PKG_MAX; }
+    else { L.a = +r.top.toFixed(2); L.c = c; }
     return;
   }
   L.c = Math.max(0, L.c * (1 - Math.min(1, months / COMPS_M)));

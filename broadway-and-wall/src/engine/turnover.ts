@@ -22,7 +22,7 @@ import type { BuiltClass } from "./types";
  */
 // Rebased for the churn base moving stock -> OCCUPIED (ECONOMY.md): empty
 // buildings do not generate move-outs, and the rebase keeps citywide letter
-// volume bit-identical at natural vacancy (old x stock = new x occupied).
+// volume bit-identical at the opening's vacancy (old x stock = new x occupied).
 export const GROSS_TURNOVER: Record<BuiltClass, number> = {
   office: 0.099, retail: 0.079, industrial: 0.091, multifamily: 0,
 };

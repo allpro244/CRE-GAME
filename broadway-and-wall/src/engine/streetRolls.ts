@@ -49,7 +49,7 @@ import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, 
 import { isCommercial, bumpOf, minLettableSf, streetLease, pickSector, pickName, termBandM, depositFor } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
 import { tickTenantFin, tenantFailOdds, entrantMargin, rentCapacity } from "./tenantBooks";
-import { rng, rrange, reletMonths, recordDeal, FIRM_PROFILE, turnoverYr, normalVac, priceLevel12, CONC_DEPTH, SECTOR_LABEL, SF_PER_JOB } from "./market";
+import { rng, rrange, reletMonths, recordDeal, FIRM_PROFILE, turnoverYr, priceLevel12, CONC_DEPTH, SECTOR_LABEL, SF_PER_JOB } from "./market";
 import { staleDiscount } from "./absorption";
 import { tenantQualityTerms } from "./bands";
 import { drawTenantSf, sizeScale } from "./plates";
@@ -1555,7 +1555,7 @@ export interface FlatRoll { occ: number; vac?: number; l?: { sf: number; rent: n
  * at an ask p, the leads that would sign are the k whose budgets reach it,
  * a free flat waits about free/k months for one, and earns p for the rest of
  * the year — so it picks the budget that maximises p·(LEASE_M − free/k).
- * No gain, no normal vacancy, no bound and no price level: a shortage is a
+ * No gain, no vacancy yardstick, no bound and no price level: a shortage is a
  * door with more budgets above the ask than flats, a glut one with fewer,
  * and inflation arrives in the budgets (the households' pay and the
  * mainland's rents). Where even every lead would leave a flat empty longer
@@ -1647,9 +1647,9 @@ function readFlats(s: GameState, fs: { roll: FlatRoll; cap: number; mkt: number 
   const face = e.rentIdx.multifamily, eff = sf > 0 ? face * Math.exp(c / sf) : face;
   e.effRentIdx = { ...(e.effRentIdx ?? e.rentIdx), multifamily: +eff.toFixed(4) };
   (e.concIdx ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 }).multifamily = +Math.max(0, Math.min(1, (1 - eff / face) / CONC_DEPTH)).toFixed(4);
-  const nomCh = face / before - 1, usual = normalVac(e, "multifamily");
+  const nomCh = face / before - 1;
   e.rentPath ??= {} as NonNullable<typeof e.rentPath>;
-  e.rentPath.multifamily = { gap: (e.cityVac?.multifamily ?? usual) - usual, vacTerm: 0, instant: 0, pressEma: 0, pressClamped: 0, clampBound: false, escalation: esc, anchor: 0, drift: mu, nomCh };
+  e.rentPath.multifamily = { escalation: esc, drift: mu, nomCh };
   if (Math.abs(nomCh) >= 0.006) {
     const line = `${SECTOR_LABEL.multifamily} asking rents ${nomCh < 0 ? "fell" : "rose"} ${Math.abs(nomCh * 100).toFixed(1)}% this month — ${fs.length} blocks re-marked their asks on their own lettings; flats let at $${eff.toFixed(2)} over the last six months.`;
     e.rentWhy = { ...(e.rentWhy ?? {}), multifamily: line };

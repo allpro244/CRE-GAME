@@ -36,7 +36,7 @@ function signedPackageDial(e: GameState["econ"], k: BuiltClass): number | undefi
  * (-0.30). Linear between those two ends, which are the guard range this
  * read always had [K: shape, stated, not tuned]. It hard-coded a "natural"
  * vacancy per class and read vacancy against it (retired 2026-11-07: there is
- * no normal vacancy). No read yet: no lean either way (0).
+ * no vacancy norm). No read yet: no lean either way (0).
  */
 function vacancyTight(s: GameState, use?: BuiltClass): number {
   const c = signedPackageDial(s.econ, use ?? "office");
@@ -1114,7 +1114,7 @@ export function concessionPressure(e: GameState["econ"], use: string): number {
   // Before the tick has written the dial, the comps' own face over effective
   // (`compsPackage`) on the same dial; with no read at all, the asking
   // concession as posted (1). It fell back to vacancy against a "normal"
-  // vacancy (retired 2026-11-07: there is no normal vacancy).
+  // vacancy (retired 2026-11-07: there is no vacancy norm).
   const c = signedPackageDial(e, k);
   return c === undefined ? 1 : 0.22 + 1.88 * c;
 }
@@ -1554,7 +1554,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // How long a suite sits dark is how many tenants are looking per vacant
       // foot of its use (reletLag: movers and the unhoused queue over the
       // space actually empty), not the cycle's label and not a gap to any
-      // normal vacancy.
+      // vacancy norm.
       const soft = reletLag(s.econ, dominantUse(rec));
       // Downtime is a property of the SPACE, not the building: a shop relets
       // faster than a floor, and each turns on its own clock.
@@ -2245,8 +2245,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // (`seekersPerVacantSf`): parties whose need is this suite's size
         // turn up as a Poisson count with mean theta, so a second party comes
         // with P(>= 1 more) = 1 - e^-theta and a third with P(>= 2 more) =
-        // 1 - e^-theta (1 + theta). It read natural vacancy over actual
-        // (`vacancyPull`, retired 2026-11-07: there is no normal vacancy).
+        // 1 - e^-theta (1 + theta). It read a "natural" vacancy over actual
+        // (`vacancyPull`, retired 2026-11-07: there is no vacancy norm).
         // Still two draws, so the leasing stream keeps its count.
         const theta = seekersPerVacantSf(s.econ, use);
         const pTwo = 1 - Math.exp(-theta);

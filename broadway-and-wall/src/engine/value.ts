@@ -2996,7 +2996,7 @@ export function streetLetShare(rec: ParcelRecord, econ: Econ, use: BuiltClass): 
  * `stabilised`: false — as is (a street building's own roll; else the model's read with the lease-up);
  * true — the occupancy it runs at once no longer new: its tier's vacancy today, its location kept, its
  * own roll and calendar out — what an appraiser capitalises before deducting the lease-up
- * (stabilisedIncome). There is no "natural" mode: no market publishes a normal vacancy.
+ * (stabilisedIncome). There is no "natural" mode: no market publishes a vacancy norm.
  */
 export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, stabilised = false): number {
   // THE STREET'S BUILDINGS HAVE TENANTS NOW (streetRolls.ts). As-is, a

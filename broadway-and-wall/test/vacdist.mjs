@@ -48,7 +48,7 @@ const NAT = E.OPENING_VAC;
 // ONE FLOOR, THE ENGINE'S: residenceVac, read each sampled month (dark floor
 // plus movers x relet clock). A watcher that mirrors the number it is
 // watching is the third kind of fake. Read the function. (frictionFloor, a
-// share of the normal vacancy, retired 2026-11-07.)
+// share of a vacancy norm, retired 2026-11-07.)
 const floorBag = { office: [], retail: [], multifamily: [], industrial: [] };
 const q = (xs, p) => { const a = [...xs].sort((x, y) => x - y); return a.length ? a[Math.min(a.length - 1, Math.floor(p * a.length))] : NaN; };
 const pct = (v) => (v * 100).toFixed(1) + "%";

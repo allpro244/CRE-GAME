@@ -70,7 +70,7 @@ const TERMS: Record<string, { def: string; primerHint?: string }> = {
     def: "A leftover bite of a plate too small for a standard suite. Priced at a discount; often a must-take for the sitting neighbour, because nobody else can lease it.",
   },
   "stabilised pro-forma": {
-    def: "What the building would earn full at market rent and normal vacancy — the income after lease-up, not the income you buy.",
+    def: "What the building would earn let up at market rent and the market's current vacancy — the income after lease-up, not the income you buy.",
   },
   "net effective": {
     def: "The rent a lease is really worth once free months and the fit-out you pay for are spread over its term — below the face rent it quotes.",

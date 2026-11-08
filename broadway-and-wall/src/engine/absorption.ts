@@ -22,7 +22,7 @@
 // move.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState, Holding } from "./types";
-import { CITY_STOCK, normalVac, openingVac, rng } from "./market";
+import { CITY_STOCK, openingVac, rng } from "./market";
 import { resolveRec, useOccupancy, demandIdx, managedRentPsfYr, useRentableSf, qualityCycle, overallScore, initialCondIdx } from "./value";
 import { scoreDraw } from "./bands";
 import { sizeMean, sizeScale } from "./plates";
@@ -132,13 +132,11 @@ export function marketRequirement(e: Econ, use: BuiltClass): number {
   // pool absorbs at — so the letters on your desk and the absorption chart
   // are one number.
   const pool = e.pool?.[use] ?? occ;
-  // Matching friction: empty stock beside a looking queue is often the wrong
-  // suite. Same shape as macro absorb — letters and the chart stay one number.
-  const vac = e.cityVac?.[use] ?? openingVac(use);
-  const match = (vac > normalVac(e, use) && pool > occ)
-    ? Math.max(0.55, Math.min(1, 1 - (vac - normalVac(e, use)) * 2.2))
-    : 1;
-  const growth = Math.max(0, (pool - occ) * 0.055 * match);
+  // No matching friction: it cut the growth leg by up to 45% when vacancy ran
+  // above a "normal" vacancy — retired 2026-11-07 (there is no normal
+  // vacancy; in a glut tenants find space faster, Wheaton 1990, and the macro
+  // absorb dropped the same friction 2026-10-09).
+  const growth = Math.max(0, (pool - occ) * 0.055);
   // The old `mood` multiplier died here: sectorMom is already inside the
   // pool and the phase is already inside employment. It was counting the
   // cycle twice.

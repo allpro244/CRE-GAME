@@ -85,8 +85,10 @@ const pct = (v) => (Number.isFinite(v) ? (v * 100).toFixed(1) + "%" : "  —  ")
 const x1 = (v) => (Number.isFinite(v) ? v.toFixed(2) + "x" : "  — ");
 const cloneCity = () => JSON.parse(JSON.stringify(P0));
 
-function floorOf(k) {
-  return E.frictionFloor(k);
+// The floor is the engine's residence vacancy (dark floor + movers x relet
+// clock), read month by month — no share of a normal vacancy (2026-11-07).
+function floorOf(k, e) {
+  return E.residenceVac(e, k);
 }
 
 function snap(e) {
@@ -96,9 +98,10 @@ function snap(e) {
     const occ = e.occupied?.[k] ?? 0;
     const pool = e.pool?.[k] ?? 0;
     const vac = e.cityVac?.[k] ?? NAT[k];
-    const fl = floorOf(k);
+    const fl = floorOf(k, e);
     out[k] = {
       vac,
+      fl,
       stock,
       occ,
       pool,
@@ -169,7 +172,7 @@ function walk(seed, months, shockAt, dose) {
         // occ/stock the month new floor appears. Instant fill at 1-friction
         // is the pool-cap fingerprint: new supply raises the cap and occupies
         // it in the same tick.
-        fillOnGrowth.push({ k, grew, fill: s[k].fill, vac: s[k].vac, fl: floorOf(k) });
+        fillOnGrowth.push({ k, grew, fill: s[k].fill, vac: s[k].vac, fl: s[k].fl });
       }
     }
   }
@@ -219,7 +222,7 @@ function printCensus(runs, label, pred) {
   for (const k of CLASSES) {
     const rows = bagOf(runs, k, pred);
     const vacs = rows.map((x) => x.vac);
-    const fl = floorOf(k);
+    const fl = med(rows.map((x) => x.fl));
     const near = share(rows, (x) => x.near);
     const pin = share(rows, (x) => x.pinned);
     const flood = share(rows, (x) => x.flood);
@@ -336,7 +339,7 @@ console.log(`\n  A market that can overshoot goes soft after the pipeline delive
 console.log(`  This one, month 36 after a ${pct(DOSE)} jobs shock:`);
 console.log(`    vacancy  treatment ${pct(vacT36)}   control ${pct(vacC36)}   natural ${pct(NAT[KLASS])}`);
 console.log(`    stock    treatment ${(stockT36 / 1e6).toFixed(2)}M   control ${(stockC36 / 1e6).toFixed(2)}M   extra ${pct(stockT36 / Math.max(1, stockC36) - 1)}`);
-console.log(`    occ/stock treatment ${pct(fillT36)}   (friction fill is ${pct(1 - floorOf(KLASS))})`);
+console.log(`    occ/stock treatment ${pct(fillT36)}   (friction fill is ${pct(1 - (med(pairs.map((p) => at(p.t, m36)?.[KLASS].fl)) ?? NaN))})`);
 console.log(`    months on the floor after the shock: ${pct(pinT)}`);
 console.log(`    months vacancy above natural from year 3 on: ${pct(overshoot)}`);
 

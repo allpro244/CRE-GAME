@@ -19,7 +19,6 @@ const { loadCity } = await import(join(HERE, "city.mjs"));
 
 const SEEDS = (process.env.SEEDS ?? "550991,12007,73303,11,22,7").split(",").map(Number);
 const HZ = Number(process.env.HZ ?? 1200);
-const fr = E.frictionFloor("office");
 const nat = E.OPENING_VAC.office;
 
 let bad = 0;
@@ -57,6 +56,7 @@ for (const seed of SEEDS) {
       + (g.econ.sublet?.office ?? 0) / Math.max(1, g.econ.stock?.office ?? 1);
     const gap = avail - nat;
     const vac = g.econ.cityVac.office ?? 0;
+    const fr = E.residenceVac(g.econ, "office");
     const pinned = vac <= fr + 1e-6;
     const railBound = vac <= fr + 0.012;
     const te = 0;   // tightEma retired 2026-11-07

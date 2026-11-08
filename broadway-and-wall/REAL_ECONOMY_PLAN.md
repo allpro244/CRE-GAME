@@ -84,6 +84,10 @@ It supersedes the open parts of `ECON_REALISM_PLAN.md` and `RENT_VACANCY_RESPONS
 | The nation's spending follows income at measured strengths (first-year MPC 0.5, accelerator 1, no unsourced profit squeeze): nation-only gap sd 1.52 → 1.97%, recessions 0.96 → 1.13 a decade; city job-loss years 0.93 → 1.30 | done | #664 |
 | A cutting industry lays off even where it has openings (Davis-Faberman-Haltiwanger); town firms staff at the nation's speeds (Ball-Leigh-Loungani): local unemployment per point of gap −0.08 → −0.19 (probe), job growth 0.6 → 0.8%/yr | done | #665 |
 | A trade short of hands turns away home and export orders pro rata (exports were served first): served share 0.91 → 0.97; century FAILs 4 → 2 (construction-follows-demand lag 4 → 2 years; land moves with property 0.23 → 0.44) | done | #666 |
+| Corporate credit spreads widen in a slump (Baa-10Y = 2.16 + 0.24 x unemployment gap, FRED 1986-2019): nation-only gap sd 1.97 -> 2.17%, recessions 1.13 -> 1.24 a decade | done | #668 |
+| No normal vacancy, steps 2 and 4: frictional vacancy from search (theta^-0.5); the leasing desk reads the signed package and seekers per vacant foot | done | #669 |
+| The brokers' survey runs every quarter for every class: +300bp held office cap -0.2 -> +0.3pp, office values +0.6% -> -4.3%; cap-lag row 3 -> 1 year | done | #670 |
+| Shops do not sign a lease at a loss (participation constraint): the year 28-44 retail-vacancy surge to 31-37% is gone (peaks 16-19%) | #671 | #671 |
 | The land holder's option: on its best use, each use on its own rents (a cost rise flipped the fringe lots' class and tripled the option); its tax capitalised, not charged on the stale land level. Cost +40% land, impact +2.8% (BACKWARDS) → −9.5% (RIGHT); century real land trend 1.8 → 4.6%/yr (each half alone 1.9 / −0.2: chaotic at 3 seeds). Not merged: see the section below | open | claude/cost-moves-land |
 
 ### Corrections to the audit
@@ -153,6 +157,14 @@ Walk probe (scratchpad `walk-probe/probe2.mjs` + `dec2.py`; 12-month changes on 
 - The national cycle still reverses too fast: a confidence shock turns negative in about quarter 6 (Smets-Wouters: never), two-year gap autocorrelation 0.02 against the US +0.26. Next to source: the investment speeds `TAU_K` and `I_LAG` (tuned), and a countercyclical credit spread (Gilchrist-Zakrajšek 2012; corporate spreads are constant at shortRate + 2%). Investment sd / output sd is 4.5 against about 3.
 - `test/demand-finite`'s "+12% office stock conjures 95% of itself as new occupants" fails on main and measures nothing about demand: `addStock` adds off-map stock, which market.ts (~4364) imputes let at the on-map occupancy. The test needs an on-map injection (an empty building); the supply shocks are the real check.
 
+## Where the night of 2026-11-07 left off (open, in order)
+
+1. **No normal vacancy, steps 5-9.** Step 5 (lease-up from actual absorption; flats demand at the rent a new building needs) is unverified WIP on `claude/no-normal-vacancy-step5-wip` (two copies of the step agent edited one worktree; its measurements before that: flats starts 1.35/0.72/0.82% of stock, office vacancy 15.0%, retail 12.3%, sheds 13.8%, partly an opening-rent shift from devPencils it then removed). Steps 6 (builders' glut gate), 7 (appraisal reads observed vacancy), 8 (demolition valves), 9a (commercial landlords price on their own tours: the office Wheaton-Torto slope, −0.22 against −2 to −3) and 9b (delete normalVac/natVac and the words) are designed in the chain script (`remove-normal-vacancy` workflow) and not started.
+2. **The participation constraint for offices and sheds** (#671 binds on shops only): applied to all classes it took office vacancy to 4-5% and doubled firm turnover — audit offices' and sheds' value-of-space terms (`value` in streetRolls.ts) first.
+3. **Firm turnover 13.5% a year after #671** (BDS 8-10%): shop formation now runs every year; check the formation pace and the shortfall it releases (streetRolls.ts ~1017, ~1114), and make the shop industries' employment follow the shops that exist (`islandFill` 18-40% on main).
+4. **Construction cost to land** (a separate session, branch `claude/cost-moves-land`): +40% cost moved land −1.6% (record: falls 5-80%).
+5. **The ten-year under a held off-rule policy** moves +0.6pp against +1 to +2.5 in the record; no engine code holds a rate off its rule, so this is a harness question, not an engine one.
+6. **Investment volatility** 4.9x output (record ~3): source `TAU_K` and `I_LAG`.
 ## Construction cost +40% and land: what the 2026-11-08 trace found
 
 On main (seed 11) the shock does reach the bidders: with cost up 40%, **no firm bids on any of the July survey's 24 lots** (control: 23 of 24). The survey then prints nothing (fewer than half bid, #653), `landIdx` stays where it was, and every texture-priced lot's floor (`0.3 × texture`, which scales with `landIdx`) holds the land price up. On today's main the land row reads +2.8% at impact (seeds +32.0 / +2.8 / −15.3%) and +7.6% in years 3-8: BACKWARDS, and set by whether a survey year happens to print.

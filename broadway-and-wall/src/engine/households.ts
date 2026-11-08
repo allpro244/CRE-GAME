@@ -331,10 +331,31 @@ function enterLabourForce(a: HouseholdArrays, i: number, e: Econ) {
  * years, and the young households the town's ages need never formed.)
  */
 const FORM_M = 0.138 / 12;
-/** Monthly employed-to-unemployed flow, about 1.4% (BLS CPS labour-force flows, 2015-19 average). [S] */
-const SEP_RATE = 0.014;
-/** Monthly unemployed-to-employed flow, about a quarter of the jobless a month (BLS CPS labour-force flows, 2015-19 average) — when there is a vacancy to take. [S] */
-const UE_RATE = 0.25;
+/**
+ * THE MONTH'S FLOWS BETWEEN WORK AND UNEMPLOYMENT, from the CPS gross flows
+ * (BLS, seasonally adjusted; FRED LNS17400000 employed-to-unemployed over
+ * last month's employed, CE16OV; LNS17100000 unemployed-to-employed over last
+ * month's unemployed, UNEMPLOY), 2001-2019 means [S]:
+ *
+ * SEP_RATE: 1.32% of the employed become unemployed in a month (1.06% in
+ * 2015-19, 1.32% in 2001-07). It is the E-to-U flow only. The register has
+ * no flows out of the labour force but retirement and moving away, and its
+ * entrants (a child of eighteen, an arrival's other adult) come in looking
+ * for work, so the CPS's N-to-U (1.5% of employment a month) and U-to-N
+ * (22% of the unemployed) are left out both ways — at the 2001-19 mean
+ * unemployment they nearly cancel (net 0.11% of employment a month
+ * into unemployment). UE_RATE: 23.8% of the jobless find
+ * work in a month (26.2% in 2015-19), when there is a vacancy to take.
+ *
+ * The window is 2001-2019, the full cycle the rest of the labour market is
+ * calibrated on (Q_FILL, the JOLTS openings rate), because both rates are the
+ * town's at its normal tightness, `thetaRef`, a twenty-year mean (MATCH_ETA,
+ * SEP_ETA). This was 1.4% and 25% labelled "2015-19": the E-to-U flow in
+ * those years was 1.06%. The steady state s / (s + f) is 5.3% either way
+ * (the 2001-19 mean unemployment rate was 6.0%).
+ */
+const SEP_RATE = 0.0132;
+const UE_RATE = 0.238;
 /**
  * ...AND THE RATE FALLS WHEN THE OPENINGS DO (2026-10-30). A jobless worker's
  * odds of a job in a month follow the openings per jobless worker, θ = V/U,
@@ -350,6 +371,29 @@ const UE_RATE = 0.25;
  * the nation's unemployment rise and the town's own rate rose 0.12 points.
  */
 const MATCH_ETA = 0.3;
+/**
+ * ...AND FEWER LOSE THEIR JOB WHEN THE OPENINGS ARE MANY (2026-11-08). The
+ * E-to-U rate moves with the market against the finding rate: regressed on
+ * openings per unemployed (JOLTS JTSJOL over UNEMPLOY), the log of the CPS
+ * E-to-U rate (SEP_RATE's series) has an elasticity of -0.30 over 2001-2019
+ * (r = -0.92; -0.20 in 2001-07, -0.40 in 2015-19), the mirror of the finding
+ * rate's +0.30 on the same data [S] — the "ins" of cyclical unemployment,
+ * which account for about a third to a half of its swings (Fujita & Ramey
+ * 2009, IER; Elsby, Michaels & Solon 2009, AEJ Macro). So the month's
+ * separations are SEP_RATE x (θ / θ_ref)^-SEP_ETA, on last month's θ and the
+ * same normal θ_ref as the finding rate. Before this the rate was fixed, and
+ * the town's jobless answered the nation's cycle only through the finding
+ * rate: measured (12-month changes on the 12-month change in the nation's
+ * output gap, seeds 11/22/33, 30 years) the town's unemployment moved -0.16
+ * points per point of gap (-0.12 to -0.22; US metros about -0.3 to -0.5),
+ * and -0.28 with it (-0.24 to -0.36); its slope on the nation's rate rose
+ * from 0.58 to 1.04. Payrolls barely moved with it (0.13% -> 0.17% a point,
+ * against 0.5-0.7%): that fault is in the labour force, which does not grow
+ * with a national boom (arrivals, participation), and is open. A firm that
+ * cuts its heads lays people off as well (matchJobs step 1): those layoffs
+ * are the net contraction, this the churn around it.
+ */
+const SEP_ETA = 0.3;
 /**
  * AN OPENING TAKES ABOUT A MONTH TO FILL (2026-11-07). JOLTS counts the
  * positions open on the last business day of the month and every hire made
@@ -830,6 +874,8 @@ export interface HouseholdRegister {
   vacLeft?: number[];
   /** The town's normal labour-market tightness (openings per jobless at the month's matching), learned over twenty years (MATCH_ETA). */
   thetaRef?: number;
+  /** Last month's openings per jobless worker at the matching (SEP_ETA). */
+  theta?: number;
   /** The nation's consumption mood (market.ts dem.cMood) the register opened in: its households' spending moves with the mood against it. */
   mood0?: number;
   /** The region's households (weighted) last month, what the mainland's rent moves with (HOUSING_SUPPLY_ELAST). */
@@ -2377,6 +2423,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
     const theta = vW / uW;
     r.thetaRef = r.thetaRef === undefined ? theta : r.thetaRef + (theta - r.thetaRef) * NATVAC_RATE;
     find = Math.min(1, UE_RATE * Math.pow(theta / r.thetaRef, MATCH_ETA));
+    r.theta = theta;
   }
   // THE MONTH'S HIRES OUT OF UNEMPLOYMENT ARE THE MATCHING FUNCTION'S: the
   // finding rate times the jobless looking. A jobless worker passed over
@@ -2674,10 +2721,12 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   let lf = 0, un = 0;
   {
     const a = r.a!;
+    // the month's separation rate at last month's tightness (SEP_ETA)
+    const sep = r.theta !== undefined && r.thetaRef !== undefined && r.theta > 0 && r.thetaRef > 0 ? SEP_RATE * Math.pow(r.theta / r.thetaRef, -SEP_ETA) : SEP_RATE;
     const lose = (emp: Int32Array, un_: Uint16Array, i: number) => {
       const x = emp[i];
       if (x === EMP_NONE || x === EMP_RETIRED) return;
-      if (x !== EMP_UNEMP && ((D && isPlaced(x) && !D.live.has(x)) || R.u() < SEP_RATE)) { emp[i] = EMP_UNEMP; un_[i] = 0; r.flow.layoffs! += a.wt[i]; }
+      if (x !== EMP_UNEMP && ((D && isPlaced(x) && !D.live.has(x)) || R.u() < sep)) { emp[i] = EMP_UNEMP; un_[i] = 0; r.flow.layoffs! += a.wt[i]; }
       lf += a.wt[i];
       if (emp[i] === EMP_UNEMP) un += a.wt[i];
     };

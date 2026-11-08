@@ -60,16 +60,12 @@ import { whyFirmDark, whyIndustry } from "./economy";
 import { why, whyTenantBooks } from "./why";
 import { tenantFin } from "./tenantBooks";
 import {
-  type LandlordAsk, type Option, SHORTLIST, TASTE, askOf, postedEff, compsFace, compsPackage, reviewAsk, noteLetting, reservation, locCtx, posOf, hourCost,
+  type LandlordAsk, type Option, SHORTLIST, TASTE, askOf, postedEff, compsFace, compsPackage, reviewAsk, noteTour, tourBudget, reservation, locCtx, posOf, hourCost,
   placeCost, worthOf, footFactor, moveCostPsfYr, bargain, bidCeiling, contestPrice, noteContest, freeMonthsFor, gumbel, recordLease, movedLine, fmtPct, creditOfSize, readOut, tenantHeads,
 } from "./tenantMarket";
 
 export interface StreetRoll {
   t: Tenant[];
-  /** Month each use's empty space came on the market, if it has any. */
-  vac?: Partial<Record<BuiltClass, number>>;
-  /** The feet of each use on the market when its age (`vac`) was last brought up to date. */
-  vsf?: Partial<Record<BuiltClass, number>>;
   /** Space handed back and being made ready — not yet showable. */
   ready?: { use: BuiltClass; sf: number; readyM: number }[];
   /** The landlord's asking rent and what it has learned, by use (tenantMarket.ts). */
@@ -689,7 +685,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   const m = s.month;
   e.seekers ??= [];
   const V = marketView(s, parcels);
-  const { owners, blds, bld, letOf, availOf, catchOf, ctx, recOf, bookOf, gTradeOf, termOf, value, shop, noteRoll, vacShare } = V;
+  const { owners, blds, bld, letOf, availOf, catchOf, ctx, recOf, bookOf, gTradeOf, termOf, value, shop, noteRoll } = V;
   const seeking = new Map<number, Seeker>();
   for (const k of e.seekers) seeking.set(k.fid, k);
   const ratio = (k: Comm) => e.streetSpace?.[k] && (e.streetSpace[k] as { ratio?: number }).ratio || 1;
@@ -706,6 +702,23 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   indNow = indOf;
   const dzAcc: Record<string, [number, number]> = {};
 
+  /**
+   * THE TOURS A LANDLORD SEES (tenantMarket.ts `noteTour`): every street
+   * building on a looking firm's shortlist notes the firm — the most it would
+   * pay for the suite (`tourBudget`), the feet it would
+   * take there and the term it would sign. Its own suite, for a firm weighing
+   * its renewal, is not space to let and is not a tour.
+   */
+  const tour = (firm: Tenant, k: Comm, opts: Option[]) => {
+    const termM = termOf(firm);
+    for (let i = 0; i < opts.length; i++) {
+      const o = opts[i];
+      if (o.stay) continue;
+      const b = blds.get(o.bbl), roll = R[o.bbl];
+      if (!b || !roll) continue;
+      noteTour(bookOf(b, roll, k), tourBudget(o), o.take, termM);
+    }
+  };
   /** What the firm would renew for in its own building (`premises`). */
   const renewTake = (b: Bld, roll: StreetRoll, t: Tenant, need: number) => premises(b, roll, t, need);
   /**
@@ -751,14 +764,8 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     const effSigned = face * (1 - freeM / Math.max(1, termM));
     // the comp, normalised to an ordinary building — a shop's walk-ins taken out with its address
     recordLease(e, k, m, face, effSigned, pick.mkt * pick.ff, pick.take, Math.max(0, Math.min(N_BANDS - 1, Math.floor(sc / 10))), scoreRentMult(e, k, sc));
-    const since = roll.vac?.[k];
-    const left = availOf(b, roll, k);
-    const full = left < minSfOf(b, k);
-    // what the letting took of what it had to let: all of it, when it filled the building
-    noteLetting(bookOf(b, roll, k), k, since === undefined ? 0 : Math.max(0, m - since), full ? 1 : pick.take / Math.max(1, pick.take + left), opening);
-    // ...and, when it turned firms away, from what the space fetched (tenantMarket.ts noteContest)
+    // when it turned firms away, the landlord learns what the space fetched (tenantMarket.ts noteContest)
     if (contest && contest.turned > 0) noteContest(bookOf(b, roll, k), effSigned, opening);
-    if (full) { roll.vac ??= {}; delete roll.vac[k]; if (roll.vsf) delete roll.vsf[k]; }
     // WHY IT MOVED: where it went, what it pays against what it paid, and how much nearer its partners and people it is.
     if ((fromBbl || fromPlayer) && !opening) {
       const oldRec = recOf((fromBbl ?? fromPlayer)!);
@@ -865,6 +872,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
           const outgrown = need > t.sf * 1.25 && room < need - t.sf;
           const stayOpt = outgrown ? null : value(t, kk, b, roll, renewTake(b, roll, t, need), termOf(t), true, true);
           const opts = shop(t, kk, Math.round(need), bbl, stayOpt, true);
+          tour(t, kk, opts);
           const best = opts[0];
           if (best && !best.stay) {
             const lease = signAt(t, kk, best, opts[1], Math.round(need), bbl, undefined, mine.was, mine.whyId);
@@ -901,6 +909,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
         const outgrown = need > t.sf * 1.25 && room < need - t.sf;
         const stayOpt = outgrown ? null : value(t, kk, b, roll, renewTake(b, roll, t, need), termOf(t), true, true);
         const opts = shop(t, kk, Math.round(need), bbl, stayOpt, true);
+        tour(t, kk, opts);
         const best = opts[0];
         if (outgrown || (best && !best.stay)) {
           const sk: Seeker = { fid: t.fid!, use: kk, want: Math.round(need), since: m, why: outgrown ? "grow" : "move", from: bbl,
@@ -911,12 +920,6 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
         } else {
           renewInPlace(s, b, roll, t, need, stayOpt ? { face: stayOpt.ask, eff: bargain(stayOpt, opts.find((o) => !o.stay)), ff: stayOpt.ff } : undefined, bookOf(b, roll, kk));
           noteRoll(roll);
-          // A SITTING TENANT WITH NOWHERE ELSE TO GO is the landlord's read of
-          // a tight market: its broker could show it nothing. The landlord
-          // learns what a letting at once teaches — the package back, then
-          // the face up (tenantMarket.ts noteLetting) — when it has nothing else
-          // of the kind to let.
-          if (!opts.some((o) => !o.stay) && availOf(b, roll, kk) < minSfOf(b, kk)) noteLetting(bookOf(b, roll, kk), kk, 0, 1, opening);
         }
       } else if (need > t.sf * 1.5 && rng(s, "leasing") < 0.03) {
         // Outgrown mid-lease: next door if the building has it, else go looking.
@@ -1205,6 +1208,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       const firm = sk.from ? R[sk.from]?.t.find((t) => t.fid === sk.fid) : sk.t;
       if (!firm) continue;
       const opts = shop(firm, k, sk.want, sk.from, null, !!(sk.from || sk.fromPlayer));
+      tour(firm, k, opts);
       if (!opts.length) continue;
       if (signAt(firm, k, opts[0], opts[1], sk.want, sk.from, sk.fromPlayer, sk.was, sk.whyId)) landed(sk, firm);
     }
@@ -1232,6 +1236,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       const firm = sk.from ? R[sk.from]?.t.find((t) => t.fid === sk.fid) : sk.t;
       if (!firm) continue;
       const opts = shop(firm, k, sk.want, sk.from, null, !!(sk.from || sk.fromPlayer));
+      tour(firm, k, opts);
       if (opts.length) live.push({ sk, firm, k, opts, at: 0 });
     }
     const roomFor = (o: Option, k: Comm) => {
@@ -1273,42 +1278,11 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     }
   }
   if (signed.size) e.seekers = e.seekers.filter((k) => !signed.has(k.fid));
-  // Where the street's empty space began, for the markdown it signs at.
-  for (const [bbl, roll] of Object.entries(R)) {
-    const b = blds.get(bbl);
-    if (!b) continue;
-    for (const k of COMM) {
-      if (!b.cap[k]) continue;
-      const a = availOf(b, roll, k);
-      const vacNow = a >= minSfOf(b, k);
-      roll.vac ??= {};
-      roll.vsf ??= {};
-      if (vacNow && roll.vac[k] === undefined) { roll.vac[k] = m; roll.vsf[k] = Math.round(a); }
-      else if (!vacNow) { delete roll.vac[k]; delete roll.vsf[k]; }
-      else {
-        // HOW LONG ITS SPACE HAS BEEN ON THE MARKET is the age of the space,
-        // not of the building's last full month. Space that comes on (a
-        // tenant gone, a suite made ready) is new to the market and brings
-        // the average age down by its share; a letting takes space of the
-        // average age and leaves it. A clock that started when the building
-        // was last full counted a tower letting a suite a month off a floor
-        // that never quite emptied as dark for years: its landlord cut, and
-        // its lettings were never "fast".
-        const prev = roll.vsf[k] ?? Math.round(a);
-        if (a > prev) roll.vac[k] = +(roll.vac[k]! + (m - roll.vac[k]!) * (a - prev) / a).toFixed(2);
-        roll.vsf[k] = Math.round(a);
-      }
-    }
-    if (roll.vac && !Object.keys(roll.vac).length) delete roll.vac;
-    if (roll.vsf && !Object.keys(roll.vsf).length) delete roll.vsf;
-  }
   // THE LANDLORDS PRICE (tenantMarket.ts reviewAsk): each street owner reviews
-  // its ask on each kind of space it has, from its own empty floors, how long
-  // they have sat against how long it expected, its mortgage, and the comps.
-  // In the opening's years the town is grown on its opening economy held
-  // still, demand and all: the landlords sweeten their packages for space
-  // that sits, but do not cut faces against a demand that cannot answer —
-  // that would only ever cut.
+  // its ask on each kind of space it has, from the firms that toured it this
+  // quarter, the feet it has to let and its mortgage. In the opening's years
+  // the town is grown on its opening economy held still, demand and all: the
+  // landlords move their packages, but not their faces.
   {
     const h12 = e.history?.length >= 12 ? e.history[e.history.length - 12] : undefined;
     const infl12 = h12?.cpiXS ? (e.cpiXS ?? 1) / h12.cpiXS - 1 : h12?.cpi ? (e.cpi ?? 1) / h12.cpi - 1 : (e.inflExp ?? 0.02);
@@ -1317,8 +1291,8 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       if (!b) continue;
       for (const k of COMM) {
         if (!b.cap[k] || !(b.mkt[k]! > 0)) continue;
-        const since = roll.vac?.[k];
-        reviewAsk(bookOf(b, roll, k), e, k, b.mkt[k]!, { m, vacNow: vacShare(b, roll, k), darkM: since === undefined ? undefined : m - since, stressed: b.stressed, infl12, holdFace: opening });
+        const a = availOf(b, roll, k);
+        reviewAsk(bookOf(b, roll, k), e, k, b.mkt[k]!, { m, free: a >= minSfOf(b, k) ? a : 0, stressed: b.stressed, infl12, holdFace: opening });
       }
     }
   }

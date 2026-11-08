@@ -331,10 +331,31 @@ function enterLabourForce(a: HouseholdArrays, i: number, e: Econ) {
  * years, and the young households the town's ages need never formed.)
  */
 const FORM_M = 0.138 / 12;
-/** Monthly employed-to-unemployed flow, about 1.4% (BLS CPS labour-force flows, 2015-19 average). [S] */
-const SEP_RATE = 0.014;
-/** Monthly unemployed-to-employed flow, about a quarter of the jobless a month (BLS CPS labour-force flows, 2015-19 average) — when there is a vacancy to take. [S] */
-const UE_RATE = 0.25;
+/**
+ * THE MONTH'S FLOWS BETWEEN WORK AND UNEMPLOYMENT, from the CPS gross flows
+ * (BLS, seasonally adjusted; FRED LNS17400000 employed-to-unemployed over
+ * last month's employed, CE16OV; LNS17100000 unemployed-to-employed over last
+ * month's unemployed, UNEMPLOY), 2001-2019 means [S]:
+ *
+ * SEP_RATE: 1.32% of the employed become unemployed in a month (1.06% in
+ * 2015-19, 1.32% in 2001-07). It is the E-to-U flow only. The register has
+ * no flows out of the labour force but retirement and moving away, and its
+ * entrants (a child of eighteen, an arrival's other adult) come in looking
+ * for work, so the CPS's N-to-U (1.5% of employment a month) and U-to-N
+ * (22% of the unemployed) are left out both ways — at the 2001-19 mean
+ * unemployment they nearly cancel (net 0.11% of employment a month
+ * into unemployment). UE_RATE: 23.8% of the jobless find
+ * work in a month (26.2% in 2015-19), when there is a vacancy to take.
+ *
+ * The window is 2001-2019, the full cycle the rest of the labour market is
+ * calibrated on (Q_FILL, the JOLTS openings rate), because both rates are the
+ * town's at its normal tightness, `thetaRef`, a twenty-year mean (MATCH_ETA,
+ * SEP_ETA). This was 1.4% and 25% labelled "2015-19": the E-to-U flow in
+ * those years was 1.06%. The steady state s / (s + f) is 5.3% either way
+ * (the 2001-19 mean unemployment rate was 6.0%).
+ */
+const SEP_RATE = 0.0132;
+const UE_RATE = 0.238;
 /**
  * ...AND THE RATE FALLS WHEN THE OPENINGS DO (2026-10-30). A jobless worker's
  * odds of a job in a month follow the openings per jobless worker, θ = V/U,

@@ -8,7 +8,7 @@ export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, openingVac, CAP_BASE, developerOptimism, LEASE_TERM_M, forwardVacancy } from "./market";
+import { industryStress, openingVac, CAP_BASE, developerOptimism, LEASE_TERM_M, forwardVacancy, RENT_BASE } from "./market";
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE, leaseUpMonthsOf, stabilisedVacancy } from "./proforma";
 import { splitRule, coverageMax, MINOR_FIXED, MINOR_PER_LOT, CORNER_K } from "./lotcode";
@@ -3366,6 +3366,64 @@ const IDLE_LAND_INS = 0.001;
 export const idleLandCarryRate = (econ?: { taxMult?: number }) => taxRate(econ) + IDLE_LAND_INS;
 
 /**
+ * WHAT A VACANT LOT EARNS WHILE IT WAITS, $/sf of land a year, net of what it
+ * costs to run: a surface car park (2026-11-08).
+ *
+ * The engine gave a waiting lot no income at all — only the farm tracts had
+ * one — so a lot nobody can build on was worth exactly its option, and once
+ * the option was priced on a rent that reverts (propmarket.ts holdValueFor) a
+ * fringe lot's option went to nothing, the broker's land survey printed
+ * 0.0001-0.09 of the opening texture, and land-backed credit came apart
+ * (60-year centuries, seeds 22/33). Vacant urban land in life is not idle:
+ * the commonest interim use is a pay car park, run "as a temporary use of
+ * land being held for future development" (VTPI, Transportation Cost and
+ * Benefit Analysis 5.4, Parking, 2022), and the lot as an option to build
+ * that pays a holding return while it waits is the textbook model of vacant
+ * land (Titman 1985; Capozza & Helsley 1990). One rule for every holder: the
+ * player books it as the lot's NOI (holdingNOIYr), a rival through its mark
+ * (noiYr), and a land bidder counts it as the dividend of the option.
+ *
+ *   Spaces: off-street lots need 250-350 sf a space with aisles, 125-175 an
+ *   acre by design; six surveyed lots averaged 85 an acre (VTPI 5.4) [S].
+ *   Price: the US median monthly unreserved rate across 44 downtowns,
+ *   $166.26 (Colliers International, North America Parking Rate Survey 2012)
+ *   [S], in table dollars by CPI-U (229.6 -> 313.7, 2012 -> 2024) [S]. A town's
+ *   downtown is its ninth-decile building site (locIdxDevP90, where devPencils
+ *   prices the city's pro forma); away from it, and as the town's offices
+ *   rise and fall, the rate moves with the office rent at the lot — parking
+ *   is priced off the same commuters' demand. That proportionality is a
+ *   stated shape [K], not a measured elasticity.
+ *   Fill: the share of the town's offices let — a lot fills with the jobs
+ *   around it [K].
+ *   Cost: a simple suburban-standard surface lot, $436 a space a year of
+ *   annualised paving and $400 of operation and maintenance (VTPI Table
+ *   5.4.3-8, 2022 dollars; CPI-U 292.7 -> 313.7) [S], at the town's
+ *   construction cost (costIdx). Property tax and the liability policy are
+ *   the carry already charged (idleLandCarryRate).
+ *
+ * Zero where it does not pay, on farm and plat land (they have their own
+ * income and buyers), and in a houses-only district (a pay lot is a
+ * commercial use).
+ */
+const PARK_SF_PER_SPACE = 43_560 / 85;
+const PARK_RATE_MO = 166.26 * (313.7 / 229.6);
+const PARK_COST_YR = (436 + 400) * (313.7 / 292.7);
+export function interimUsePsfYr(rec: ParcelRecord, econ: Econ): number {
+  if (!(rec.lotArea > 0) || rec.ag || rec.homeLot || rec.tract) return 0;
+  if (rec.class !== "land" && rec.bldgArea > 0) return 0;
+  if (rec.zoneDist === "AG" || rec.zoneDist === "OS" || (rec.zoneDist !== undefined && HOMES_ONLY_ZONES.has(rec.zoneDist))) return 0;
+  const office = econ.effRentIdx?.office ?? econ.rentIdx?.office ?? 0;
+  if (!(office > 0)) return 0;
+  const pivot = econ.locIdxMeanBy?.office ?? econ.locIdxMean ?? 0.62;
+  const shape = LOC_SPREAD.office;
+  const cbd = Math.min(shape.max, Math.max(shape.min, Math.pow((econ.locIdxDevP90 ?? econ.locIdxMean ?? 0.62) / Math.max(0.01, pivot), shape.exp)));
+  const rateMo = PARK_RATE_MO * (office / RENT_BASE.office) * locationRentMult(rec, econ, "office") / cbd;
+  const fill = 1 - clamp(econ.cityVac?.office ?? openingVac("office"), 0, 1);
+  const net = rateMo * 12 * fill - PARK_COST_YR * (econ.costIdx ?? 1);
+  return net > 0 ? net / PARK_SF_PER_SPACE : 0;
+}
+
+/**
  * WHAT A FOOT OF EACH CLASS IS WORTH, citywide: NOI at the class's occupancy
  * today (or at `occ`) the way this engine computes NOI, capitalised at the class's cap
  * rate with the tax solve V = NOI / (cap + t(1 - recovery)). One copy, read by
@@ -3444,8 +3502,9 @@ export function noiYr(
   occOf?: (use: BuiltClass) => number,
 ): number {
   if (rec.class === "land" || !rec.bldgArea) {
-    // carry: taxes and insurance bleed on idle land (idleLandCarryRate)
-    return -landValue(rec, econ) * idleLandCarryRate(econ);
+    // carry: taxes and insurance bleed on idle land (idleLandCarryRate),
+    // against what the lot earns as a car park while it waits (interimUsePsfYr)
+    return interimUsePsfYr(rec, econ) * rec.lotArea - landValue(rec, econ) * idleLandCarryRate(econ);
   }
   // ONE OPERATING-COST MODEL.
   //
@@ -3819,7 +3878,7 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
   // insurance, operating cost and vacancy despite the ground lease explicitly
   // putting every one of them on the lessee.
   if (h.groundLeased) return 0;
-  if (rec.class === "land" || !rec.bldgArea) return -landValue(rec, econ) * idleLandCarryRate(econ);
+  if (rec.class === "land" || !rec.bldgArea) return interimUsePsfYr(rec, econ) * rec.lotArea - landValue(rec, econ) * idleLandCarryRate(econ);
   return operatingStatement(rec, econ, h, currentQ).noi;
 }
 

@@ -1838,12 +1838,30 @@ export function priceDesks(s: GameState) {
     // Half a year of the tape before a desk reads a share off it: two
     // months of a small town's lending is a coin toss, not a market.
     if (!(tot > 0) || (s.loanTape?.length ?? 0) < 6) continue;
-    let w = 0, r = 0;
+    // WHERE ITS RIVALS ARE PITCHING IS WHERE THE LOANS ARE BEING WRITTEN
+    // (2026-11-08): each rival's pitch weighted by the term lending it won
+    // over the tape, not by the share it was built to write. Weighted by the
+    // usual share, a desk that had stopped lending still set the benchmark:
+    // Alden Savings, near failure, carried an expected loss of 19 points
+    // (dEl) over its sheet and wrote nothing, but its 19 points went into
+    // every rival's "rivals" at its usual share each month, while its own
+    // pitch held (the in-between branch) and never gave the step back. The
+    // average pitch pumped: every desk's competitive charge went from
+    // 0.0-0.5 to 10-13 points in two years and stayed for twenty — healthy
+    // desks with capital to spare (Pelican Life, $90M; Cordage, $110M)
+    // quoting 16-20% against a 4.5-5% index, cap rates 10.5-13% from year
+    // 37 to 60 (seed 11, 60-year century). A borrower compares the quotes it
+    // can get: a desk that writes nothing is not one of them. Before any
+    // rival has written a loan on the tape, the usual shares stand in.
+    let w = 0, r = 0, wu = 0, ru = 0;
     for (const o of live) {
       if (o === l) continue;
-      const wt = usualOf(o);
-      w += wt; r += wt * (own(o) + (o.chase ?? 0));
+      const p = own(o) + (o.chase ?? 0);
+      const wt = won[o.name] ?? 0;
+      w += wt; r += wt * p;
+      wu += usualOf(o); ru += usualOf(o) * p;
     }
+    if (!(w > 0)) { w = wu; r = ru; }
     const rivals = w > 0 ? r / w : 0;
     const share = (won[l.name] ?? 0) / tot;
     const behind = share / Math.max(1e-6, usual) - 1;

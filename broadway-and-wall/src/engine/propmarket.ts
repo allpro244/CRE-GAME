@@ -43,7 +43,7 @@ import { CAP_PLAN_RATE } from "./types";
 import { underwrittenGrowthPct, dollarLevel, RENT_BASE, CAP_BASE } from "./market";
 import {
   assetValue, capRateFor, initialCondIdx, demandLinear, incomeValueAsIs, initialCondition, inPlace, landValue,
-  marketAppraisal, noiYr, resolveRec, specWearMult, taxBorneShare, taxRate, useOccupancy, useRentableSf,
+  marketAppraisal, noiYr, resolveRec, specWearMult, taxBorneShare, taxRate, interimUsePsfYr, useOccupancy, useRentableSf,
   useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, residualScheme,
 } from "./value";
 import { uses } from "./mix";
@@ -1267,7 +1267,7 @@ export function packageBids(s: GameState, parcels: ParcelTable, bbls: string[], 
  *   with the margin taken at THIS firm's number (firmMargin) instead of the
  *   trade's. The scheme's own wait and carry are kept: they are facts about
  *   the lot, not the firm.
- *   A LAND BANKER, which does not build, bids the option: the residual at the
+ *   A LAND BANKER, whether or not it also builds, bids the option: the residual at the
  *   rents a holder expects at the next peak, discounted for the wait
  *   (landRead's holder bid), or the builder's residual where that is higher.
  *
@@ -1307,7 +1307,18 @@ export function landMaxPrice(s: GameState, r: Rival, rec: ParcelRecord): number 
       own = Math.max(0, f * (value / (1 + (builds ? firmMargin(r, s.month, capForSpread(s.econ)) : DEV_MARGIN)) - nonLand));
     }
   }
-  return builds ? own : Math.max(own, bankerHoldValue(s, r, rec));
+  // A FIRM THAT BANKS LAND HOLDS IT, WHETHER OR NOT IT ALSO BUILDS
+  // (2026-11-08). Only a firm that does not build bid the option, so on a
+  // street whose land bankers all build (seed 11: all four land-sheet-70+
+  // firms) a construction-cost rise of 40% that killed today's residual left
+  // no bid on any of the survey's 24 lots, the survey printed nothing, and
+  // the stale land level held every lot's floor up: land read +2.5% at
+  // impact, a cost rise raising land. A builder with a land bank (Land 70+)
+  // carries lots for years before it breaks ground (public homebuilders
+  // report four to six years of lots owned or controlled in their 10-Ks; the
+  // lot as an option to wait: Titman 1985, Capozza & Helsley 1990), so its
+  // number for a lot is the better of building now and holding it.
+  return builds && !landBanker(r) ? own : Math.max(own, bankerHoldValue(s, r, rec));
 }
 
 // ---------------------------------------------------------------- the land banker's number
@@ -1423,6 +1434,10 @@ export function holdValueFor(s: GameState, bv: BankerView, rec: ParcelRecord, wa
   const infl = e.nat?.inflExp ?? 0.02;
   const kr = Math.max(0.01, (1 + k$) / (1 + infl) - 1);
   const taxYr = taxRate(e) * landValue(rec, e);
+  // AND WHAT IT EARNS WHILE IT WAITS: the car park on it (value.ts
+  // interimUsePsfYr), the option's dividend — the holder collects it every
+  // year until it sells to the builder, and for ever if it never does.
+  const dividendYr = interimUsePsfYr(rec, e) * rec.lotArea;
   // RENTS ARE UNCERTAIN, AND THAT IS WHAT DIRT NOBODY CAN BUILD ON IS WORTH.
   // A lot that pencils only if rents rise a third is worth something even to a
   // holder who expects them flat, because it is sold to the builder only in
@@ -1430,17 +1445,35 @@ export function holdValueFor(s: GameState, bv: BankerView, rec: ParcelRecord, wa
   // measured the option premium on Seattle land at ~6% of its value). The
   // rent level in year T is lognormal about the banker's expectation, its
   // spread the class's own year-on-year real rent volatility (rentVol),
-  // integrated through the growth persistence the street already assumes
-  // (rho 0.6, GROWTH_DECAY): sd(T) = sigma sqrt(T) / (1 - rho). Expected
-  // residual by five-point Gauss-Hermite quadrature.
+  // about the holder's drift. Expected residual by five-point Gauss-Hermite
+  // quadrature.
+  //
+  // THE RENT LEVEL REVERTS; IT DOES NOT WANDER (2026-11-08). The spread was
+  // sd(T) = sigma sqrt(T) / (1 - rho): the year-on-year volatility applied as
+  // a growth innovation, so the level had a unit root and its spread grew
+  // without bound — sd 1.04 at fifteen years for flats (vol 0.08-0.10), the
+  // top node twenty times today's rent, carrying about half of a fringe lot's
+  // value. Real rents do not do that: a rent away from what it costs to build
+  // and let closes about a quarter of the gap a year (Wheaton & Torto 1988;
+  // GAP_CLOSE_YR, the same speed every buyer and builder here reads), and a
+  // century of real values has no trend to wander on (Wheaton, Baranski &
+  // Templeton 2009, Manhattan 1899-1999; Eichholtz 1997, the Herengracht).
+  // So the deviation of log real rent from the holder's expected path is
+  // AR(1) with phi = 1 - GAP_CLOSE_YR a year. Its year-on-year change has
+  // variance 2 sigma_x^2 (1 - phi), which is the measured vol^2, so
+  // sigma_x^2 = vol^2 / (2 (1 - phi)) and the spread at T years is
+  // sd(T) = sigma_x sqrt(1 - phi^(2T)): for flats at 0.10, 0.09 at one year
+  // and 0.14 at fifteen.
   let vol = bankMemo.vol.get(k);
   if (vol === undefined) { vol = rentVol(e, k); bankMemo.vol.set(k, vol); }
-  const sig = vol / (1 - Math.exp(-GROWTH_DECAY));
-  let best = 0;
+  const phi = 1 - GAP_CLOSE_YR;
+  const sigX = vol / Math.sqrt(2 * (1 - phi));
+  // the lot kept as a car park for good: what it earns, less its tax, for ever
+  let best = (dividendYr - taxYr) / kr;
   for (const T of BANK_HORIZONS) {
     if (waitOnly && T === 0) continue;
     const G = T === 0 ? 0 : belief * (1 - Math.exp(-GROWTH_DECAY * T)) / GROWTH_DECAY;
-    const sd = sig * Math.sqrt(T);
+    const sd = sigX * Math.sqrt(1 - Math.pow(phi, 2 * T));
     let ev = 0;
     for (let q = 0; q < GH_Z.length; q++) {
       if (T === 0 && q > 0) break;
@@ -1448,7 +1481,7 @@ export function holdValueFor(s: GameState, bv: BankerView, rec: ParcelRecord, wa
       if (psf > 0) ev += (T === 0 ? 1 : GH_W[q]) * psf;
     }
     if (!(ev > 0)) continue;
-    const carry = T === 0 ? 0 : taxYr * (1 - Math.pow(1 + kr, -T)) / kr;
+    const carry = T === 0 ? 0 : (taxYr - dividendYr) * (1 - Math.pow(1 + kr, -T)) / kr;
     const v = ev * rec.lotArea / Math.pow(1 + kr, T) - carry;
     if (v > best) best = v;
   }

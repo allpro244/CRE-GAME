@@ -876,7 +876,7 @@ function tickMonth(
   tickLandComps(s, parcels);
   tickBrokerCalls(s, parcels, bbls);
   tickListingAbsorption(s, parcels); // other buyers work the tape too
-  tickBrokerSurvey(s, parcels);     // a class with no print in a year gets the brokers' indications
+  tickBrokerSurvey(s, parcels);     // every class, each quarter: the brokers' indications
   tickLandSurvey(s, parcels);       // ...and so does dirt
   tickPortfolios(s, parcels);        // and the package market, where books trade whole
   tickTakePrivateApproach(s, parcels); // and a board that wants out rings the buyers who could close

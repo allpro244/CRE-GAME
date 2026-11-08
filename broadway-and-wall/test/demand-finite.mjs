@@ -49,8 +49,10 @@ console.log("\nFINITE DEMAND — letters come from a pool, not from empty floors
   // ceiling is still churn + raw growth + struct — never a second market.
   check(req <= churn + growth + struct + 1,
     `requirement ${Math.round(req)} ≤ churn ${Math.round(churn)} + growth ${Math.round(growth)} + struct ${Math.round(struct)}`);
-  const housable = e.stock[use] * (1 - E.frictionFloor(use));
-  const fringe = e.stock[use] * E.OPENING_VAC[use] * 0.25;
+  // The search fringe is the tenants actually in search (movers x how long a
+  // move takes, Little's law) — no share of a normal vacancy (2026-11-07).
+  const housable = E.housableStock(e, use);
+  const fringe = E.tenantsInSearchSf(e, use);
   check(pool <= housable + fringe + 1,
     `looking pool ${Math.round(pool)} ≤ housable + search fringe (${Math.round(housable + fringe)})`);
 }

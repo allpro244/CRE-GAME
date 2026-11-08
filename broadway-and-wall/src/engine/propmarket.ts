@@ -1167,18 +1167,25 @@ export function openingCapSurvey(s: GameState, parcels: ParcelTable): void {
 }
 
 /**
- * A CLASS NOTHING HAS PRINTED IN FOR A YEAR gets the broker's survey once a
- * year (sim.ts, monthly; each class on its own month): six indications, half
- * weight each — about one and a half trades' worth of evidence. So a thin
- * market reads stale for a year and then moves on what the bidders say,
- * rather than holding a crunch's number through a decade of nothing. The
- * prints are the bidders' own numbers; nothing here is a formula for a cap.
+ * THE BROKERS' SURVEY, EVERY QUARTER, EVERY CLASS (sim.ts, monthly; each
+ * class on its own month of the quarter): six indications, half weight each
+ * — about one and a half trades' worth of evidence. The investor surveys the
+ * appraisers read (PwC Real Estate Investor Survey, RERC, CBRE's cap rate
+ * survey) are quarterly or half-yearly and cover every major class whether
+ * or not it traded [S]. The prints are the bidders' own numbers; nothing
+ * here is a formula for a cap.
+ * WHY EVERY CLASS (2026-11-07): the survey ran only for a class with no
+ * print in a year, so a class that traded read only its tape — the closed
+ * trades cut off at the sellers' reserves (the high-bid tail) and the failed
+ * rounds printed at the midpoint of bid and the seller's ask, which is the
+ * read itself. Held at +1.85pp on the ten-year, the bidders' prices fell
+ * 19-20% while the office read fell 0.4-0.6pp over three years (seeds
+ * 11/22): backwards. With the survey every quarter the read moves +0.5-1.1pp,
+ * about 0.3-0.6 of the ten-year's move (Chervachidze & Wheaton 2013).
  */
 export function tickBrokerSurvey(s: GameState, parcels: ParcelTable): void {
-  const tape = s.capTape ?? [];
   K.forEach((k, i) => {
-    if ((s.month + 3 * i) % 12 !== 0) return;
-    if (tape.some((p) => p.k === k && p.m > s.month - 12)) return;
+    if ((s.month + i) % 3 !== 0) return;
     for (const p of surveyClass(s, parcels, k, 6)) {
       pushPrint(s, { m: s.month, k, bbl: p.bbl, kind: "s", c: p.c, x: p.x, w: 0.5 });
     }

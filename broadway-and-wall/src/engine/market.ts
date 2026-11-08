@@ -862,26 +862,6 @@ export function cycleDown(e: Econ): number {
 
 
 /**
- * THE FLOOR UNDER VACANCY, and the one rail in this engine that actually binds.
- *
- * Frictional vacancy is space empty purely because tenants are moving in and
- * out, so it scales with how often that happens — and that is not the same in
- * every class. A shed is let whole to one operator who stays a decade; an
- * office floor is carved into suites that churn constantly. Roughly a third of
- * the natural rate, less for industrial.
- *
- * EXPORTED BECAUSE IT IS WATCHED. `tools/baseline.mjs` counts how often each
- * class rests on this floor, and a watcher that mirrors the number it is
- * watching is the third kind of fake — two copies of one quantity, free to
- * drift, with the drift invisible precisely because the watcher is the thing
- * that would have caught it. One definition, two readers.
- */
-export function frictionFloor(k: BuiltClass, e?: Econ): number {
-  const ratio = k === "industrial" ? 0.22 : k === "multifamily" ? 0.30 : 0.32;
-  return normalVac(e, k) * ratio;
-}
-
-/**
  * VACANCY AT DELIVERY — what a building started today leases into: today's
  * vacancy, plus everything already in the ground, plus `extraSf` (the
  * developer's own building), less what the market absorbs meanwhile (the
@@ -1035,8 +1015,9 @@ export function betweenTenantsSf(occupied: number, k: BuiltClass, e?: Econ): num
  * a matching process: the rate at which a vacancy meets a tenant rises with
  * the number of tenants looking per vacancy, with an elasticity of about 0.5
  * (Petrongolo & Pissarides 2001, constant returns; Wheaton 1990 for office).
- * Its ordinary length is `reletMonths` at searchers-per-vacancy in balance —
- * the tenants who are moving anyway, against natural vacancy.
+ * Its length is set by how many tenants are looking per vacant foot, never by
+ * how that compares with some usual vacancy (owner, 2026-11-07: there is no
+ * normal vacancy).
  *
  * Searchers are the tenants who are moving this month plus demand the city
  * is not housing (the looking pool above occupied space); vacancies are the
@@ -1051,33 +1032,60 @@ export function betweenTenantsSf(occupied: number, k: BuiltClass, e?: Econ): num
  * for apartments, 1-3% for primary office in 2000 and 0.6-1% for industrial
  * (Inland Empire, 2022). Rent rations the queue long before then.
  *
- * The glut side is bounded at twice an ordinary turn — searchers per vacancy
- * at a quarter of balance — which is the old rule's ceiling; past it a suite
- * is simply vacant, which the vacancy already says.
+ * THE MATCHING EFFICIENCY, `SEARCH_AT_PARITY` [K]: the months a vacant suite
+ * waits for a tenant when one searcher is looking per vacant foot (search
+ * months = SEARCH_AT_PARITY x theta^-0.5). There is no clean US measurement
+ * of a commercial-space matching efficiency (Wheaton 1990 and the
+ * search literature estimate the elasticity, not the level), so it is a
+ * stated shape parameter, calibrated once so a game opens with the relet
+ * times it opened with before (2026-11-07): each class's search part of
+ * `reletMonths` at the opening's searchers per vacancy (national turnover,
+ * TURNOVER_YR, over the opening availability, OPENING_VAC). After the
+ * opening the wait reads only who is actually looking: the street's measured
+ * turnover and the unhoused queue, over the space actually empty.
+ *
+ * The glut side is bounded at twice the ordinary search (`reletMonths` less
+ * make-ready) — the old rule's ceiling; past it a suite is simply vacant,
+ * which the vacancy already says.
  */
+export const SEARCH_AT_PARITY: Record<BuiltClass, number> = { office: 0.5698, retail: 0.3962, multifamily: 0.5470, industrial: 0.2790 };
 export function reletLag(e: Econ | undefined, k: BuiltClass): number {
   if (!e?.stock || !e.occupied) return 1;
   const stk = Math.max(1, e.stock[k] ?? 0);
   const occ = Math.max(0, e.occupied[k] ?? 0);
-  const nat = normalVac(e, k);
   const movers = occ * (turnoverYr(e, k) / 12);
   const unhoused = Math.max(0, (e.pool?.[k] ?? occ) - occ);
   const vacant = Math.max(stk * 0.001, housableStock(e, k) - occ);
-  const theta = (movers + unhoused) / vacant;
-  const theta0 = (stk * (1 - nat) * (turnoverYr(e, k) / 12)) / (stk * nat);
-  const ratio = Math.max(theta, theta0 / 4) / theta0;
+  const theta = Math.max(1e-9, (movers + unhoused) / vacant);
   const d0 = reletMonths(k), dm = Math.min(d0, MAKE_READY_M[k]);
-  return (dm + (d0 - dm) * Math.pow(ratio, -0.5)) / d0;
+  const search = Math.min(2 * (d0 - dm), SEARCH_AT_PARITY[k] * Math.pow(theta, -0.5));
+  return (dm + search) / d0;
 }
 
 /**
  * How empty the city is when every suite that can be let, is. Dark new
- * floor plus turnover still in re-let. The rent mute and tightEma used to
- * treat `frictionFloor` as that point; that number is now only a watcher.
+ * floor plus turnover still in re-let — the floor every "is this class
+ * pinned?" test reads (the rent mute in the market tick, the redevelopers'
+ * shortage tests in dev.ts). Those tests used to read `frictionFloor`, a
+ * share of the normal vacancy, retired 2026-11-07: there is no normal
+ * vacancy, only the space a market's own movers keep dark.
  */
 export function residenceVac(e: Econ, k: BuiltClass): number {
   const stk = Math.max(1, e.stock?.[k] ?? 0);
   return (darkSfOf(e, k) + betweenTenantsSf(e.occupied?.[k] ?? 0, k, e)) / stk;
+}
+
+/**
+ * TENANTS ACTUALLY IN SEARCH, by Little's law: the tenants leaving space a
+ * month (the street's measured turnover, `turnoverYr`) times how long a move
+ * takes (`reletMonths` x today's `reletLag`). Every suite in re-let was
+ * handed back by a tenant who is, for that turn, looking — so this is the
+ * between-tenants book read from the tenants' side, the same flow and the
+ * same clock. The looking pool's room above housable space (the "search
+ * fringe") is this, not a quarter of a normal vacancy (retired 2026-11-07).
+ */
+export function tenantsInSearchSf(e: Econ, k: BuiltClass): number {
+  return betweenTenantsSf(e.occupied?.[k] ?? 0, k, e);
 }
 
 
@@ -1097,10 +1105,8 @@ export function noteTenantSfChange(s: GameState, use: BuiltClass, deltaSf: numbe
   if (use === "multifamily") return; // flats are aggregate, not named suites
   const e = s.econ;
   if (!e.pool) e.pool = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
-  const stk = Math.max(1, e.stock?.[use] ?? 1);
   const housable = housableStock(e, use);
-  const fringe = stk * normalVac(e, use) * 0.25;
-  const cap = housable + fringe;
+  const cap = housable + tenantsInSearchSf(e, use);
   const occ = e.occupied?.[use] ?? 0;
   // +deltaSf = space returned to market (departure); −deltaSf = space taken.
   e.pool[use] = clamp((e.pool[use] ?? occ) + deltaSf, occ * 0.85, cap);
@@ -4315,9 +4321,10 @@ export function tickEcon(s: GameState) {
     // never will. Real asking rents compounded to ~5× real over a century.
     //
     // Desired demand may still be huge (jobs outran floors). The LOOKING pool
-    // only holds what the city can house plus a normal fringe of active
-    // searchers — about a quarter of natural vacancy, the share between leases.
-    // Beyond that, unhousable demand has already left for the mainland; it does
+    // only holds what the city can house plus the tenants actually in search
+    // — this month's movers times how long a move takes (Little's law,
+    // `tenantsInSearchSf`; this was a quarter of the normal vacancy, retired
+    // 2026-11-07). Beyond that, unhousable demand has already left for the mainland; it does
     // not keep refilling from a headcount that assumes infinite floors.
     // Housable is standing floor that is actually a suite — not new
     // deliveries still in lease-up. Capping the pool on `stock × (1 -
@@ -4326,7 +4333,7 @@ export function tickEcon(s: GameState) {
     // last pour as already let.
     if (!e.darkSf) e.darkSf = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     const housable = housableStock(e, k);
-    const searchFringe = e.stock[k] * normalVac(e, k) * 0.25;
+    const searchFringe = tenantsInSearchSf(e, k);
     const poolTarget = Math.min(targetRaw, housable + searchFringe);
     if (!e.pool) e.pool = { ...e.occupied };
     // HOW FAST DEMAND TURNS INTO A SEARCH, BY CLASS (2026-10-09). One rate
@@ -5741,14 +5748,23 @@ export function addStock(e: Econ, k: keyof typeof CITY_STOCK, sf: number) {
 }
 
 /**
- * How hard the citywide space market pushes prospects at YOUR door for a
- * given class. Tight market: everyone else is full, so the tenant that would
- * rather be elsewhere ends up touring your building. Glutted market: three
- * other landlords with empty floors return every call first.
+ * SEEKERS PER VACANT FOOT: the feet the town's looking firms want of a class
+ * (every firm in `e.seekers`, housed or not) over the feet standing empty
+ * where they look (the street's rentable less let; the city's housable less
+ * occupied before the street has a count). Tight market: many seekers per
+ * empty foot, so a suite is shown to several at once. Glut: one party turns
+ * up, if any. It used to be vacancy compared with a "normal" vacancy,
+ * (normal / vacancy)^0.9 — retired 2026-11-07: there is no normal vacancy,
+ * only who is looking and what is empty.
  */
-export function vacancyPull(e: Econ, use: BuiltClass): number {
-  const vac = e.cityVac?.[use] ?? openingVac(use);
-  return Math.max(0.4, Math.min(1.7, Math.pow(normalVac(e, use) / Math.max(0.005, vac), 0.9)));
+export function seekersPerVacantSf(e: Econ, use: BuiltClass): number {
+  let want = 0;
+  for (const sk of e.seekers ?? []) if (sk.use === use) want += sk.want;
+  const sp = e.streetSpace?.[use];
+  const vacant = sp && sp.cap > 0
+    ? sp.cap - sp.let
+    : housableStock(e, use) - (e.occupied?.[use] ?? 0);
+  return want / Math.max(1, vacant);
 }
 
 function recordHistory(e: Econ, q: number, abs?: Record<string, number>, comp?: Record<string, number>) {

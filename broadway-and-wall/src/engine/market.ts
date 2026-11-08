@@ -1206,6 +1206,24 @@ const REC_DROP = 0.006;
 /** Share of corporate debt that floats, and the fixed ladder's average life in months. */
 const CORP_FLOAT = 0.35, CORP_LADDER_M = 72;
 /**
+ * CREDIT SPREADS WIDEN IN A SLUMP (2026-11-07). What companies pay over
+ * Treasuries rises with unemployment: Moody's Baa over the 10-year Treasury
+ * is 2.16 + 0.24 x (unemployment - CBO's natural rate) points, monthly,
+ * 1986-2019 (FRED BAA10Y, UNRATE, NROU; 0.23 over 1990-2019, 0.21 through
+ * 2024; corr 0.50) [S]. Baa is the median rating of the corporate book. The
+ * spread on new borrowing — the floating legs and the debt rolled this month
+ * — moves 0.0024 per point of unemployment above or below the average rate of
+ * the same years, 5.86% (FRED UNRATE mean 1986-2019) [S]: the base spreads
+ * (2% floating, 1.5% fixed) are the book's average, which is the spread at
+ * the sample's average unemployment, not at the natural rate (the gap
+ * averaged +0.69 points; read against NAT_U_STAR the engine's spreads ran
+ * 0.3 points over their mean for a century). Before this the spread
+ * was constant (shortRate + 2%, long + 1.5%), so the cost of capital carried
+ * none of the financial accelerator the record shows (Gilchrist & Zakrajsek
+ * 2012, AER: credit spreads lead and amplify the cycle).
+ */
+const SPREAD_U = 0.24, SPREAD_U_MEAN = 0.0586;
+/**
  * Okun's coefficient: points of output per point of unemployment. 1.2 is the
  * recession-era ratio (1990-92: CBO gap +0.6 to -2.6, unemployment +2.6).
  */
@@ -1218,7 +1236,7 @@ const OKUN = 1.2;
  * 1/(1 + 2.2) = 0.31 rising. The 0.8 down/up ratio is the existing shape. At
  * 0.15/0.12 unemployment trailed the gap by five months against one to three.
  */
-const U_UP_SPEED = 0.31, U_DOWN_SPEED = 0.25;
+export const U_UP_SPEED = 0.31, U_DOWN_SPEED = 0.25;
 /*
  * Calibration (national block alone, 30 centuries, tools in the session notes):
  * unemployment mean 6.1 / p50 5.8 / p10 3.6 / p90 9.1 (US 1948-2024: 5.7 /
@@ -2072,6 +2090,14 @@ const ROW = {
  * length 13 months, unemployment up 3.0 points (p25 1.4, p75 5.0), the
  * longest expansion in a century 17 years at the median and 23 at the 90th
  * percentile, inflation above 6% in 8% of months.
+ * SINCE (2026-11-07): those dampers were tuned against a policy loop twice
+ * today's gain, and #634 removed the amplifiers they balanced. Spending now
+ * follows income at measured strengths: a first-year MPC of one half
+ * (C_NOW), desired capital one for one with output (YE_W), and no unsourced
+ * profit squeeze (PROF). Nation alone, 80 seeds x 100 years with swans: gap
+ * sd 1.52% -> 1.97% (CBO 1949-2019 2.3%, 1984-2019 1.6%), recessions 0.96 ->
+ * 1.13 a decade (NBER 1.59 postwar, 1.05 since 1982), months in recession
+ * 7.4% -> 10.5% (13.8%), mean length 9.2 -> 11.2 months (9.6).
  */
 const DEM = {
   C0: 0.68, I0: 0.14, IH0: 0.04, G0: 0.17, IMP: 0.15, TAX: 0.25,
@@ -2081,14 +2107,42 @@ const DEM = {
   DELTA: 0.10, GROW: 0.02,
   /** months for consumption to follow its target; for perceived income to follow income */
   TAU_C: 3, YP_M: 48,
-  /** share of spending that follows this year's income rather than what households expect to earn (hand-to-mouth, Campbell-Mankiw ~0.2-0.3) */
-  C_NOW: 0.2,
+  /**
+   * share of spending that follows this year's income rather than what
+   * households expect to earn (hand-to-mouth). Set so a one-off dollar of
+   * income is half spent within a year — the measured first-year MPC, ~0.5
+   * (Fagereng, Holm & Natvik 2021, AEJ:Macro, Norwegian lottery winners;
+   * Jappelli & Pistaferri 2014 average 0.48) [S]: C0/(1-TAX) x [λ + (1-λ) x
+   * 0.224] = 0.5, where 0.224 is the part of a one-off dollar that enters
+   * perceived income within 12 months at YP_M = 48, gives λ = 0.42 — inside
+   * Campbell & Mankiw's (1989) estimate of about one half [S]. It was 0.2,
+   * citing Campbell-Mankiw as "0.2-0.3", which is not what they found; the
+   * engine spent a third of a one-off dollar in its first year.
+   */
+  C_NOW: 0.42,
   /** months over which firms read the output they plan for; to close a capital gap; investment plans lag */
   YE_M: 12, TAU_K: 40, I_LAG: 6,
-  /** how far the output firms plan capital for follows recent output rather than the trend (Survey of CFOs: plans are mostly trend) */
-  YE_W: 0.3,
-  /** wage share per unit of unemployment under natural, months to get there, capital wanted per unit of wage share */
-  WS_U: 1.0, WS_M: 18, PROF: 1.5,
+  /**
+   * how far the output firms plan capital for follows recent output rather
+   * than the trend: one for one. Desired capital moves with output — the
+   * capital-output ratio is stationary (BEA Fixed Assets; Jorgenson 1963, the
+   * flexible accelerator) — and CFOs' expectations extrapolate recent growth
+   * rather than revert to trend (Gennaioli, Ma & Shleifer 2016, NBER Macro
+   * Annual) [S]. It was 0.3 ("plans are mostly trend", no figure), which
+   * left business investment flat or falling while output rose.
+   */
+  YE_W: 1.0,
+  /**
+   * wage share per unit of unemployment under natural, months to get there,
+   * capital wanted per unit of wage share. PROF is 0: the profit squeeze was
+   * an unsourced tuned value ("three-quarters as hard") that took ~1.25% off
+   * desired capital per point of gap within 18 months, cancelling the
+   * accelerator; its timing also runs against the record, where the labour
+   * share is countercyclical and profits lead (Rios-Rull & Santaeulalia-
+   * Llopis 2010, JME). The wage share is kept; nothing reads it into capital
+   * until a sourced, correctly timed squeeze exists.
+   */
+  WS_U: 1.0, WS_M: 18, PROF: 0,
   /** user-cost elasticity of capital (Chirinko 1993: 0.25-0.5) */
   SIGMA_K: 0.4,
   /**
@@ -2148,7 +2202,7 @@ function spendNation(
   // CONFIDENCE. What households and firms believe about the years ahead is
   // the one input to spending no model of this economy can derive — news
   // about the future, a war, an election — so it is drawn, but persistent
-  // (monthly 0.97: a mood lasts a few years) and it works only through the
+  // (monthly CONF_RHO 0.85: a half-life of four months) and it works only through the
   // spending decisions above: what households set aside, what capital firms
   // plan for. Smets & Wouters (2007) need the same two shocks to fit the US.
   const zc = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "nation")))) * Math.cos(2 * Math.PI * rng(s, "nation"));
@@ -2469,7 +2523,7 @@ export function tickNation(s: GameState) {
   // natSw.sp: a foreign crisis), which, like policy, reaches the floating legs
   // and the debt rolled this month, not the whole book at once (its own
   // calibration, 1997-98 IG +80bp / HY +300bp, is about new issuance).
-  const swSp = e.natSw?.sp ?? 0;
+  const swSp = (e.natSw?.sp ?? 0) + SPREAD_U * (n.unemp - SPREAD_U_MEAN);
   n.corpFixed += (longRate + 0.015 + swSp - n.corpFixed) / CORP_LADDER_M;
   const corpRate = CORP_FLOAT * (shortRate + 0.02 + swSp) + (1 - CORP_FLOAT) * n.corpFixed;
   n.corpRate = corpRate;

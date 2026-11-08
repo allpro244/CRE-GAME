@@ -1200,6 +1200,24 @@ const REC_DROP = 0.006;
 /** Share of corporate debt that floats, and the fixed ladder's average life in months. */
 const CORP_FLOAT = 0.35, CORP_LADDER_M = 72;
 /**
+ * CREDIT SPREADS WIDEN IN A SLUMP (2026-11-07). What companies pay over
+ * Treasuries rises with unemployment: Moody's Baa over the 10-year Treasury
+ * is 2.16 + 0.24 x (unemployment - CBO's natural rate) points, monthly,
+ * 1986-2019 (FRED BAA10Y, UNRATE, NROU; 0.23 over 1990-2019, 0.21 through
+ * 2024; corr 0.50) [S]. Baa is the median rating of the corporate book. The
+ * spread on new borrowing — the floating legs and the debt rolled this month
+ * — moves 0.0024 per point of unemployment above or below the average rate of
+ * the same years, 5.86% (FRED UNRATE mean 1986-2019) [S]: the base spreads
+ * (2% floating, 1.5% fixed) are the book's average, which is the spread at
+ * the sample's average unemployment, not at the natural rate (the gap
+ * averaged +0.69 points; read against NAT_U_STAR the engine's spreads ran
+ * 0.3 points over their mean for a century). Before this the spread
+ * was constant (shortRate + 2%, long + 1.5%), so the cost of capital carried
+ * none of the financial accelerator the record shows (Gilchrist & Zakrajsek
+ * 2012, AER: credit spreads lead and amplify the cycle).
+ */
+const SPREAD_U = 0.24, SPREAD_U_MEAN = 0.0586;
+/**
  * Okun's coefficient: points of output per point of unemployment. 1.2 is the
  * recession-era ratio (1990-92: CBO gap +0.6 to -2.6, unemployment +2.6).
  */
@@ -2499,7 +2517,7 @@ export function tickNation(s: GameState) {
   // natSw.sp: a foreign crisis), which, like policy, reaches the floating legs
   // and the debt rolled this month, not the whole book at once (its own
   // calibration, 1997-98 IG +80bp / HY +300bp, is about new issuance).
-  const swSp = e.natSw?.sp ?? 0;
+  const swSp = (e.natSw?.sp ?? 0) + SPREAD_U * (n.unemp - SPREAD_U_MEAN);
   n.corpFixed += (longRate + 0.015 + swSp - n.corpFixed) / CORP_LADDER_M;
   const corpRate = CORP_FLOAT * (shortRate + 0.02 + swSp) + (1 - CORP_FLOAT) * n.corpFixed;
   n.corpRate = corpRate;

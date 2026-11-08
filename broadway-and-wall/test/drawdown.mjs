@@ -70,7 +70,7 @@ for (let i = 0; i < N; i++) {
     if (lot) land.push(E.landPsfNow(parcels[lot], e) / cpi);
     const avail = (e.cityVac?.[K] ?? 0) + (e.sublet?.[K] ?? 0) / Math.max(1, e.stock?.[K] ?? 1);
     gapS.push(avail - E.OPENING_VAC[K]);
-    overS.push(e.vacOverM?.[K] ?? 0);
+    overS.push(e.pkgDeepM?.[K] ?? 0);
   }
   const an = anatomy(val);
   R.rent.push(ddOf(rent)); R.eff.push(ddOf(eff)); R.val.push(ddOf(val));
@@ -104,7 +104,7 @@ row("cap rate high/low (x)", R.cap, (v) => v.toFixed(2) + "x");
 console.log(`\nHOW LONG THE MARKET FALLS\n`);
 console.log(`  glut episodes (gap > 1.5pp), years:    p25 ${(q(gluts, 0.25) / 12).toFixed(1)}  median ${(q(gluts, 0.5) / 12).toFixed(1)}  p75 ${(q(gluts, 0.75) / 12).toFixed(1)}  longest ${(Math.max(...gluts) / 12).toFixed(1)}`);
 console.log(`  longest UNBROKEN real-rent fall, yrs:  p25 ${q(declineYrs, 0.25).toFixed(1)}  median ${q(declineYrs, 0.5).toFixed(1)}  p75 ${q(declineYrs, 0.75).toFixed(1)}  longest ${Math.max(...declineYrs).toFixed(1)}`);
-console.log(`  vacOverM peak, months:                 median ${q(overM, 0.5)} — the clock ramps in over 6, holds through`);
+console.log(`  pkgDeepM peak, months:                 median ${q(overM, 0.5)} — the clock ramps in over 6, holds through`);
 console.log(`                                         the repricing, then fades. See \`capitulation\`.`);
 console.log(`  worst value fall took ${q(R.fall, 0.5)} months; ${R.rec.filter((x) => x >= 0).length}/${N} seeds recovered it`);
 

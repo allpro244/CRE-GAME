@@ -2105,9 +2105,11 @@ export interface Econ {
   /** Concession dial 0..1 — how much of the maximum giveaway (free rent +
    *  funded TI) the market currently hands tenants. Moves in months. */
   concIdx?: Record<BuiltClass, number>;
-  /** Months vacancy has sat >1.5pp over natural — the capitulation clock.
-   *  Asking rents do not fall until the landlord has stared at the empty
-   *  floor for half a year. */
+  /** The capitulation clock (market.ts tickCapitulation): months the signed
+   *  package (1 − effective / asking) has sat at the deepest it has reached
+   *  this episode. Read by the demolition valves (dev.ts). */
+  pkgDeepM?: Record<BuiltClass, number>;
+  /** Old saves: the retired clock against a "natural" vacancy. Never read. */
   vacOverM?: Record<BuiltClass, number>;
   /** EMA of vacTerm+scarcity that feeds the rent index — lease-quote lag.
    *  Market pressure forms instantly; landlords adjust asking rents only after
@@ -2605,16 +2607,9 @@ export interface Econ {
    * cannot go stale.
    */
   crewUtil?: number;
-  /**
-   * THE WORST THIS GLUT HAS BEEN, per class, while it lasts.
-   *
-   * A capitulation is renewed when the market deteriorates materially past
-   * anything it has already repriced for. Without this the clock only knew how
-   * LONG a glut had run, and gluts build slowly — measured, the deepest gap
-   * arrives 43 to 117 months in, by which time the repricing window has closed
-   * and the market takes its worst quarter with no reaction at all. Cleared
-   * with `vacOverM` when the class comes back inside its threshold.
-   */
+  /** The deepest signed package this episode, per class (market.ts tickCapitulation). */
+  pkgDeepest?: Record<BuiltClass, number>;
+  /** Old saves: the retired worst gap over a "natural" vacancy. Never read. */
   vacWorst?: Record<BuiltClass, number>;
   /**
    * The size of the town's construction workforce against what a place this

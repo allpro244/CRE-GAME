@@ -13,7 +13,7 @@ import { BUILT_CLASSES, cloneState, raiseAlert } from "./types";
 import { abatementAtStart } from "./citygov";
 import { logBooks, moveDeposit, moveFundCash, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
-import { rng, rrange, normalVac, openingVac, forwardVacancy, CITY_STOCK, SECTOR_LABEL, addStock, REF_PIPE_SHARE, residenceVac, housableStock, payrollGrowth12 } from "./market";
+import { rng, rrange, openingVac, forwardVacancy, CITY_STOCK, SECTOR_LABEL, addStock, REF_PIPE_SHARE, residenceVac, housableStock, payrollGrowth12 } from "./market";
 import { firmShort } from "./firm";
 import { classValuePsf, resolveRec, marketRentPsfYr, landValue, landRead, assetValue, ownedHoldingValue, condGrade, condCeiling, openingCondIdx,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
@@ -4465,6 +4465,31 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
 }
 
 /**
+ * Months a class's landlords must have sat at their deepest package before
+ * its empty stock starts to leave (market.ts tickCapitulation): two years —
+ * owners wait out a soft patch, then concede. The same two years the valves
+ * waited on the retired vacancy clock. [K: a stated shape parameter.]
+ */
+const CAPITULATED_M = 24;
+
+/** Empty feet past what the class's own churn keeps empty (dark floors plus suites between tenants: `residenceVac`). */
+function surplusSf(e: Econ, k: BuiltClass): number {
+  const stock = e.stock?.[k] ?? 0;
+  const empty = Math.max(0, stock - (e.occupied?.[k] ?? 0));
+  return Math.max(0, empty - residenceVac(e, k) * stock);
+}
+
+/**
+ * A BUILDING WORTH MORE AS A CLEARED LOT: its income, as is, capitalised
+ * (`incomeValueAsIs`) under what the dirt sells for less the cost of taking
+ * it down. The owner's carrying decision — not a development hurdle; nothing
+ * need be built.
+ */
+function worthMoreCleared(s: GameState, rec: NonNullable<ReturnType<typeof resolveRec>>, cond: ReturnType<typeof gradeOf>): boolean {
+  return incomeValueAsIs(rec, s.econ, cond) < landValue(rec, s.econ) - demolitionCost(rec, s);
+}
+
+/**
  * STRUCTURAL INDUSTRIAL EXIT — the mothballing half of manufacturing's leave.
  *
  * `industComp` (market.ts) declines at the NY/SF/London manufacturing
@@ -4492,10 +4517,12 @@ function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) 
   // town's own trades leaving (a logistics or apparel base in decline) had no
   // door at all: one seed sat on the 0.45 vacancy clamp for fifteen years
   // with composition at 0.94-0.81 and the shed stock 18% down from opening.
-  // A deep glut that has lasted two years now qualifies whatever emptied it;
-  // a shallower soft patch still needs the secular signal.
-  const deepOld = (e.cityVac?.industrial ?? 0) > normalVac(e, "industrial") + 0.05
-    && (e.vacOverM?.industrial ?? 0) >= 24;
+  // A glut the landlords have capitulated to for two years (the package
+  // signed at its deepest for 24 months: market.ts tickCapitulation) now
+  // qualifies whatever emptied it; otherwise it still needs the secular
+  // signal. (It read 5 points over a "natural" vacancy for 24 months until
+  // 2026-11-08.)
+  const deepOld = (e.pkgDeepM?.industrial ?? 0) >= CAPITULATED_M;
   if (ic > 0.92 && !deepOld) return;
   // DEFER TO EMPLOYMENT SHORTAGE, DON'T FREEZE. Clearing sheds onto the plat
   // while office cannot house its jobs hands vacant M-lots to multifamily
@@ -4507,18 +4534,13 @@ function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) 
   const officeShort = (e.structTight?.office ?? 0) > 0.08
     && (e.cityVac?.office ?? openingVac("office")) <= residenceVac(e, "office") + 0.015;
   const stock = e.stock?.industrial ?? 0;
-  const occ = e.occupied?.industrial ?? 0;
-  const vac = e.cityVac?.industrial ?? openingVac("industrial");
-  if (vac <= normalVac(e, "industrial") + 0.015) return;
-  // Envelope from OCCUPIED demand: stock that would put vacancy at natural
-  // given today's tenants. Composition has already cut the looking pool;
-  // what remains empty above natural is the surplus floor space that left
-  // with manufacturing. (An absolute `stock0 × industComp` envelope ignored
-  // job growth and aimed at a level the residual logistics market still
-  // needed — clearance then either stalled or overshot.)
-  const need = occ / Math.max(0.5, 1 - normalVac(e, "industrial"));
-  const empty = Math.max(0, stock - occ);
-  const surplus = Math.min(Math.max(0, stock - need * 1.03), empty);
+  // SURPLUS: the empty floor beyond what the class's own churn keeps empty
+  // (`residenceVac`: dark floors plus suites between tenants). Composition
+  // has already cut the looking pool; what remains empty past that is the
+  // surplus floor space that left with manufacturing. (It was the stock past
+  // what would put vacancy at a "natural" rate, until 2026-11-08; an absolute
+  // `stock0 × industComp` envelope before that ignored job growth.)
+  const surplus = surplusSf(e, "industrial");
   if (surplus < 4000) return;
   // Clearance is lumpy (one building). Own RNG channel — must not steal
   // draws from teardown densify (`dev`).
@@ -4551,7 +4573,9 @@ function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) 
     const condW = cond === "obsolete" ? 1.4 : cond === "worn" ? 1.15 : 1.0;
     const mZone = (rec.zoneDist ?? "").startsWith("M") ? 1.25 : 1.0;
     const score = condW * mZone * age * (1.15 - Math.min(1, rec.demandScore / 80));
-    if (!worst || score > worst.score) worst = { bbl, rec, score };
+    if (worst && score <= worst.score) continue;
+    if (!worthMoreCleared(s, rec, cond)) continue;
+    worst = { bbl, rec, score };
   }
   if (!worst) return;
   const { bbl, rec } = worst;
@@ -4603,11 +4627,13 @@ function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) 
  * that has been deep over natural for years, one worn old low-demand building
  * at a time, on its own RNG channel so the main dice never re-roll.
  *
- * Gates, in order: the glut must be DEEP (5pp over natural — nobody clears a
- * cyclical soft patch) and OLD (two years past the capitulation clock's last
- * renewal — owners wait, then concede), and the surplus must survive the same
- * occupied-demand envelope the industrial valve uses, so clearance can never
- * cut into space tenants are using. The pace scales with how much of the
+ * Gates, in order: the landlords must have CAPITULATED, and for years (the
+ * signed package at its deepest for two years, market.ts tickCapitulation —
+ * owners wait, then concede); the surplus is the empty floor past the class's
+ * own churn (`residenceVac`), so clearance can never cut into space tenants
+ * are using; and the building cleared is one worth more as a cleared lot than
+ * as a building (`worthMoreCleared`). Until 2026-11-08 the first two read 5
+ * points over a "natural" vacancy and the stock past it. The pace scales with how much of the
  * stock is surplus — a 50%-empty market clears ~5–6 buildings a year, a
  * marginally-soft one almost none — which is the historical range, cited
  * above, not a balance choice.
@@ -4632,17 +4658,11 @@ function tickSurplusExit(s: GameState, parcels: ParcelTable, bbls: string[]) {
   // seed, 40% of the shed stock gone and real industrial rent still fell
   // from 1.36x to 0.59x. Industrial has its own valve.
   for (const use of ["office", "retail", "multifamily"] as BuiltClass[]) {
-    const natural = normalVac(e, use);
-    const vac = e.cityVac?.[use] ?? natural;
-    if (vac <= natural + 0.05) continue;                    // deep, not cyclical
-    if ((e.vacOverM?.[use] ?? 0) < 24) continue;            // old, not new
+    if ((e.pkgDeepM?.[use] ?? 0) < CAPITULATED_M) continue;  // capitulated, and for years
     const stock = e.stock?.[use] ?? 0;
-    const occ = e.occupied?.[use] ?? 0;
-    // Stock that would put vacancy at natural given today's tenants — same
-    // envelope as the industrial valve. Clearance never touches occupied space.
-    const need = occ / Math.max(0.5, 1 - natural);
-    const empty = Math.max(0, stock - occ);
-    const surplus = Math.min(Math.max(0, stock - need * 1.03), empty);
+    // Empty past the class's own churn — same surplus as the industrial
+    // valve. Clearance never touches occupied space.
+    const surplus = surplusSf(e, use);
     if (surplus < 8000) continue;
     cand.push({ use, surplus, stock });
   }
@@ -4677,7 +4697,9 @@ function tickSurplusExit(s: GameState, parcels: ParcelTable, bbls: string[]) {
       if (cond !== "obsolete" && cond !== "worn" && cond !== "standard") continue;
       const condW = cond === "obsolete" ? 1.4 : cond === "worn" ? 1.15 : 1.0;
       const score = condW * age * (1.15 - Math.min(1, rec.demandScore / 80));
-      if (!worst || score > worst.score) worst = { bbl, rec, score };
+      if (worst && score <= worst.score) continue;
+      if (!worthMoreCleared(s, rec, cond)) continue;
+      worst = { bbl, rec, score };
     }
     if (!worst) return;
     const { bbl, rec } = worst;
@@ -4716,9 +4738,9 @@ function tickSurplusExit(s: GameState, parcels: ParcelTable, bbls: string[]) {
  * and converted like any others — SoHo and Tribeca lofts, Brooklyn's
  * waterfront, the Rust Belt's land banks.
  *
- * Same gates as the all-class valve (deep and two years old) and the same
- * envelope (never into occupied space), on the off-map share of the surplus
- * only. The pace is proportional to how empty the class is: a market 40%
+ * Same gates as the all-class valve (capitulated for two years) and the same
+ * surplus (empty past the class's own churn, never into occupied space), on
+ * the off-map share of it only; no building to weigh against its lot. The pace is proportional to how empty the class is: a market 40%
  * empty retires ~5%/yr of its off-map stock, the clearance rate of a city in
  * genuine decline (Detroit, Youngstown); a shallow glut almost none. No dice.
  */
@@ -4740,13 +4762,9 @@ function retireOffMapSurplus(s: GameState, parcels: ParcelTable, bbls: string[])
   for (const k of BUILT_CLASSES) {
     const off = e.offMapSf[k] ?? 0;
     if (off < 1000) continue;
-    const natural = normalVac(e, k);
-    if ((e.cityVac?.[k] ?? natural) <= natural + 0.05) continue;
-    if ((e.vacOverM?.[k] ?? 0) < 24) continue;
+    if ((e.pkgDeepM?.[k] ?? 0) < CAPITULATED_M) continue;
     const stock = Math.max(1, e.stock?.[k] ?? 0);
-    const occ = e.occupied?.[k] ?? 0;
-    const need = occ / Math.max(0.5, 1 - natural);
-    const surplus = Math.min(Math.max(0, stock - need * 1.03), Math.max(0, stock - occ));
+    const surplus = surplusSf(e, k);
     if (surplus <= 0) continue;
     const share = surplus / stock;
     const cut = Math.min(surplus * (off / stock), off * Math.min(0.004, share * 0.01));
@@ -5689,11 +5707,11 @@ export function seedOpeningPipeline(s: GameState, parcels: ParcelTable, bbls: st
   s.openingPipelineSeeded = true;
   if (!s.cityJobs) s.cityJobs = [];
   const e = s.econ;
-  let slack = 0;
-  for (const k of BUILT_CLASSES) slack += Math.max(0, (e.cityVac?.[k] ?? openingVac(k)) - normalVac(e, k));
-  slack /= BUILT_CLASSES.length;
-  const util = Math.max(0.18, Math.min(1, 1 - slack * 7));
-  const want = Math.round(crewCapacity(bbls, e) * util);
+  // As many frames as the trades can carry, if that many schemes pencil: each
+  // look below starts only what clears its own pro forma, which reads the
+  // vacancy it would lease into. (A "slack" over a natural vacancy cut the
+  // crews here until 2026-11-08.)
+  const want = Math.round(crewCapacity(bbls, e));
   // THE TOWN'S BUILDERS ARE ON THE STREET FROM THE FIRST DAY. They were
   // founded on the first tick, so the opening Players list had no developers
   // on it and the frames already standing had nobody's name on them.

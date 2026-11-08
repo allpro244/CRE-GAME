@@ -602,6 +602,43 @@ export const CAP_BASE = { office: 8.50, retail: 7.00, multifamily: 5.60, industr
  */
 const REPRICE_M = 24;    // how long a capitulation runs at full strength
 const REPRICE_TAU = 15;  // and the exponential tail after it
+/**
+ * THE CAPITULATION CLOCK (no-normal-vacancy step 8, 2026-11-08): months the
+ * package the class's leases sign at — the share of face given away in free
+ * rent and allowances, 1 − effective / asking, off the comps — has sat at the
+ * deepest it has reached this episode. A landlord who has handed out the most
+ * it has handed out and is still handing it out has capitulated; when the
+ * package eases off that by `PKG_EASE` the episode is over and the clock
+ * starts again from where the package stands. A market giving nothing away
+ * has no clock.
+ *
+ * This replaced `vacOverM`/`vacWorst`: months vacancy had sat over a
+ * "natural" vacancy and the worst gap over it — a yardstick no market
+ * publishes. Read by the demolition valves (dev.ts) and by the bare-economy
+ * rent equation below.
+ */
+export function tickCapitulation(e: Econ, k: BuiltClass): void {
+  const face = e.rentIdx?.[k] ?? 0, eff = e.effRentIdx?.[k] ?? face;
+  const pkg = face > 0 ? Math.max(0, 1 - eff / face) : 0;
+  const m = (e.pkgDeepM ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 });
+  const deep = (e.pkgDeepest ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 });
+  if (pkg > 0 && pkg >= (deep[k] ?? 0) - PKG_EASE) {
+    deep[k] = +Math.max(deep[k] ?? 0, pkg).toFixed(5);
+    m[k] = (m[k] ?? 0) + 1;
+  } else {
+    deep[k] = +pkg.toFixed(5);
+    m[k] = 0;
+  }
+}
+/**
+ * How far the package must ease off its deepest before the episode counts as
+ * over: three months' free rent on a ten-year lease (3/120 of the effective
+ * rent), about the smallest move in a package the brokers' quarterly reports
+ * call a turn (CBRE / JLL concession surveys quote free rent in months on a
+ * ten-year deal). [K: a stated shape parameter, not tuned.]
+ */
+const PKG_EASE = 0.025;
+
 function capitulation(over: number): number {
   const rampIn = Math.min(1, over / 6);
   const past = Math.max(0, over - REPRICE_M);
@@ -1511,7 +1548,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
                neutralReal: 0.019, shockM: 0, shockSev: 0, credibility: 0.8,
                recM: 0, expM: 0, deep: false, pressureM: 0 };
   econ.concIdx = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
-  econ.vacOverM = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+  econ.pkgDeepM = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
   econ.effRentIdx = { ...econ.rentIdx };
   // THE ECONOMY HAS A PAST. The national model runs twenty to sixty years
   // before month one on a private generator, and the town opens on whatever
@@ -4783,45 +4820,9 @@ export function tickEcon(s: GameState) {
     // empty floor for half a year — the capitulation clock. Meanwhile the
     // concession dial moves in months, so what deals actually sign at falls
     // long before the face rate admits anything.
-    if (!e.vacOverM) e.vacOverM = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     if (!e.concIdx) e.concIdx = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     if (!e.effRentIdx) e.effRentIdx = { ...e.rentIdx };
-    // ...AND A CAPITULATION IS RENEWED WHEN IT GETS WORSE.
-    //
-    // The clock only ever knew how LONG a glut had run, and it reset only when
-    // the market came back to balance. But gluts BUILD: measured over 10 seeds
-    // x 100 years, the deepest gap of an episode arrives 43 to 117 months in,
-    // by which time the repricing window has closed and the exponential tail
-    // has taken the term to nothing. So the market took its very worst quarter
-    // with no price reaction whatsoever, which is the opposite of what happens.
-    //
-    // Houston 1983-87 was not one slide. It was five successive rounds of cuts,
-    // each set off by the market being worse again than the last time anybody
-    // had repriced for. That is this: when availability makes a new high for
-    // this episode by a material margin — a point and a half, enough that it is
-    // a fresh shock and not drift — the capitulation starts again, past the
-    // ramp-in because the landlords have done this before and know the drill.
-    // A glut that builds to nine points and stabilises still reprices once.
-    if (!e.vacWorst) e.vacWorst = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
-    if (gap > 0.015) {
-      // THREE POINTS, NOT ONE AND A HALF. Gluts build slowly, so a small
-      // threshold fires on the drift itself — a market walking from five points
-      // to fifteen over five years crosses a 1.5-point step six times and
-      // reprices six times, which is the fall-forever behaviour arriving by a
-      // new road. Three points is a step somebody notices: a wave of deliveries
-      // landing, a tenant of size leaving. Measured, it renews once or twice in
-      // an ordinary glut and more in a bad one, which is the shape Houston had.
-      if (gap > (e.vacWorst[k] ?? 0) + 0.03) {
-        e.vacWorst[k] = gap;
-        e.vacOverM[k] = Math.min(e.vacOverM[k] ?? 0, 6);
-      } else {
-        e.vacWorst[k] = Math.max(e.vacWorst[k] ?? 0, gap);
-        e.vacOverM[k] = (e.vacOverM[k] ?? 0) + 1;
-      }
-    } else {
-      e.vacOverM[k] = 0;
-      e.vacWorst[k] = 0;
-    }
+    tickCapitulation(e, k);
     // OFFICES, SHOPS AND SHEDS: THE RENT IS WHAT THE LEASES SAY (ONE ECONOMY
     // step 4, tenantMarket.ts). Where the town's firms are the market, each
     // landlord prices its own space and each firm shops; the indices below —
@@ -5103,7 +5104,7 @@ export function tickEcon(s: GameState) {
         ? glut(effGap)
         // C1-continuous at FIT_MAX: same value, same slope, asymptote DEEP_RATE.
         : atFit + span * (1 - Math.exp(-SLOPE_AT_FIT * (effGap - FIT_MAX) / span)))
-        * capitulation(e.vacOverM[k] ?? 0);
+        * capitulation(e.pkgDeepM?.[k] ?? 0);
     // Scarcity from CAPACITY shortage (jobs/floors), not the absorption queue.
     if (!e.structTightPrev) {
       e.structTightPrev = { office: 0, retail: 0, multifamily: 0, industrial: 0 };

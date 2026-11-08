@@ -13,7 +13,7 @@ import { BUILT_CLASSES, cloneState, raiseAlert } from "./types";
 import { abatementAtStart } from "./citygov";
 import { logBooks, moveDeposit, moveFundCash, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
-import { rng, rrange, normalVac, openingVac, forwardVacancy, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, frictionFloor, housableStock, payrollGrowth12 } from "./market";
+import { rng, rrange, normalVac, openingVac, forwardVacancy, CITY_STOCK, SECTOR_LABEL, devPencils, addStock, REF_PIPE_SHARE, residenceVac, housableStock, payrollGrowth12 } from "./market";
 import { firmShort } from "./firm";
 import { classValuePsf, resolveRec, marketRentPsfYr, landValue, landRead, assetValue, ownedHoldingValue, demandLinear, condGrade, condCeiling, openingCondIdx,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
@@ -3934,7 +3934,7 @@ function redevelopmentBasis(rec: NonNullable<ReturnType<typeof resolveRec>>, e: 
 
 function classPinnedOwed(e: Econ, k: BuiltClass, slack = 0.02): boolean {
   const vac = e.cityVac?.[k] ?? openingVac(k);
-  if (vac > frictionFloor(k, e) + slack) return false;
+  if (vac > residenceVac(e, k) + slack) return false;
   return (e.structTight?.[k] ?? 0) > 0.06;
 }
 
@@ -4077,7 +4077,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
   // a pinned class with unpaid orders — both mean the wrecking ball is how a
   // built-out city answers. Not a vac-coefficient hike.
   const chronicShort = BUILT_CLASSES.some((k) => {
-    const pinned = (e.cityVac?.[k] ?? openingVac(k)) <= frictionFloor(k, e) + 0.015;
+    const pinned = (e.cityVac?.[k] ?? openingVac(k)) <= residenceVac(e, k) + 0.015;
     return pinned && ((e.structTight?.[k] ?? 0) > 0.08 || (e.startOwed?.[k] ?? 0) > 0);
   });
   // ONE CANDIDATE A MONTH, which is what the comment above has always said.
@@ -4515,7 +4515,7 @@ function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) 
   // industrial soft 61% of months. Trickle clearance (~1/8 the ordinary rate)
   // still retires surplus floor space; densify keeps the crane priority.
   const officeShort = (e.structTight?.office ?? 0) > 0.08
-    && (e.cityVac?.office ?? openingVac("office")) <= frictionFloor("office", e) + 0.015;
+    && (e.cityVac?.office ?? openingVac("office")) <= residenceVac(e, "office") + 0.015;
   const stock = e.stock?.industrial ?? 0;
   const occ = e.occupied?.industrial ?? 0;
   const vac = e.cityVac?.industrial ?? openingVac("industrial");
@@ -4783,7 +4783,7 @@ export function tickCityGrowth(
     const e2 = s.econ;
     const bookShort = BUILT_CLASSES.some((k) => classPinnedOwed(e2, k, 0.015));
     const shortOf = (th: number) => BUILT_CLASSES.some((k) => (e2.structTight?.[k] ?? 0) > th
-      && (e2.cityVac?.[k] ?? openingVac(k)) <= frictionFloor(k, e2) + 0.015);
+      && (e2.cityVac?.[k] ?? openingVac(k)) <= residenceVac(e2, k) + 0.015);
     if (bookShort || shortOf(0.08)) tickTeardowns(s, parcels, bbls, adjacency);
     if (shortOf(0.16)) tickTeardowns(s, parcels, bbls, adjacency);
   }

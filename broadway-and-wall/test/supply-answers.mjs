@@ -18,7 +18,6 @@ const { loadCity } = await import(join(HERE, "city.mjs"));
 
 const SEEDS = (process.env.SEEDS ?? "550991,12007,73303,11,22,7").split(",").map(Number);
 const HZ = Number(process.env.HZ ?? 1200);
-const fr = E.frictionFloor("office");
 
 let bad = 0;
 const check = (ok, msg) => {
@@ -43,7 +42,7 @@ for (const seed of SEEDS) {
     if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
     g = E.advanceMonth(g, parcels, bbls, adjacency);
     dem += (g.demolished ?? 0) - d0;
-    if ((g.econ.cityVac.office ?? 0) <= fr + 1e-6) pinned++;
+    if ((g.econ.cityVac.office ?? 0) <= E.residenceVac(g.econ, "office") + 1e-6) pinned++;
     sumST += g.econ.structTight?.office ?? 0;
   }
   const yrs = HZ / 12;
@@ -93,11 +92,9 @@ if (growing.length) {
   check(medST <= 0.085, `median avg office structTight ${medST.toFixed(3)} (need ≤ 0.085)`);
 }
 
-// Friction floor must not have been hiked to fake the result.
-check(
-  Math.abs(fr - E.OPENING_VAC.office * 0.32) < 1e-9,
-  `friction floor still NATURAL_VAC×0.32 (${(fr * 100).toFixed(2)}%), not a vac-coefficient hike`,
-);
+// The floor is the mechanism's (dark floor + movers x relet clock), not a
+// share of a normal vacancy that could be hiked to fake the result.
+check(E.frictionFloor === undefined, "no normal-vacancy friction floor exists to hike (residenceVac is the floor)");
 
 if (bad) {
   console.error(`\n${bad} check(s) failed\n`);

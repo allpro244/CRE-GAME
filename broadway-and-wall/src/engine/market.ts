@@ -1704,7 +1704,7 @@ const RULE_DEV_RHO = Math.pow(0.91, 1 / 3);
  * bank is still more than three points behind its own rule.
  */
 export function expectedPolicyAvg(
-  n: NonNullable<Econ["nat"]>, want: number, restoring: boolean, month: number,
+  n: NonNullable<Econ["nat"]>, want: number, restoring: boolean, month: number, out?: { m12?: number },
 ): number {
   // ...AND A DEPARTURE FROM THE RULE IS EXPECTED TO LAST (2026-11-08). When
   // something outside the committee holds the rate away from where its own
@@ -1743,6 +1743,8 @@ export function expectedPolicyAvg(
       p += st;
     }
     sum += p;
+    // the coming year of that path, which households borrow and save against (spendNation)
+    if (h === 12 && out) out.m12 = sum / 12;
   }
   return sum / INDEX_HORIZON_M;
 }
@@ -2104,8 +2106,6 @@ const DEM = {
    * duration (a shape choice). It was 0.6, the top of an uncorrected range.
    */
   C_RATE: 0.3,
-  /** months over which households read the real rate */
-  RR_M: 12,
   /** consumption pulled back per point of unemployment rise over six months */
   PREC: 0.4,
   /** inventory to annual sales (~6 weeks), months to restock */
@@ -2122,7 +2122,7 @@ const DEM = {
 
 function spendNation(
   s: GameState, e: Econ, n: NonNullable<Econ["nat"]>,
-  x: { rAvg: number; rStar: number; corpRate: number; corpNeutral: number; shock: number; lbTools: number },
+  x: { rStar: number; corpRate: number; corpNeutral: number; shock: number; lbTools: number },
 ): number {
   const P = DEM;
   const X0 = 1 - (P.C0 + P.I0 + P.IH0 + P.G0) * (1 - P.IMP);
@@ -2160,9 +2160,24 @@ function spendNation(
   const zk = Math.sqrt(-2 * Math.log(Math.max(1e-9, rng(s, "nation")))) * Math.cos(2 * Math.PI * rng(s, "nation"));
   d.cc = P.CONF_RHO * (d.cc ?? 0) + P.CONF_SIG * zc;
   d.kc = P.CONF_RHO * (d.kc ?? 0) + P.INV_SIG * zk;
-  // Households answer the real rate over the year or two it takes to show up
-  // in what they borrow and save — car loans, card balances, deposits.
-  d.rr = (d.rr ?? 0) + ((x.rAvg - x.rStar) - (d.rr ?? 0)) / P.RR_M;
+  // HOUSEHOLDS ANSWER THE REAL RATE THEY EXPECT, NOT THE ONE THEY HAD
+  // (2026-11-09). The consumption Euler equation prices today's spending
+  // against the expected path of real rates (Smets & Wouters 2007, AER; Galí
+  // 2008 ch. 3), and markets carry that path into the rates households borrow
+  // at the day it changes: a surprise in expected policy moves yields at
+  // impact (Gürkaynak, Sack & Swanson 2005, IJCB). The path is the one the
+  // bond market here already computes from the committee's own rule
+  // (`expectedPolicyAvg`): its coming year, last month's forecast, less
+  // expected inflation. Households read it over a year, as C_RATE's duration
+  // says. It was the TRAILING year (`rAvg`), smoothed again over RR_M = 12
+  // months — a mean lag of about a year — so the hikes a boom provoked bit
+  // as it ended and pushed the economy through zero: a consumer-confidence
+  // shock's gap peaked at q2 (+0.388 per unit) and troughed at q8 (−0.160,
+  // 0.41 of the peak); now −0.093 (0.25). The rest of the reversal is
+  // structural and measured: the accelerator (capital built for a boom), the
+  // inventory cycle and the dollar's delayed overshoot (Eichenbaum & Evans
+  // 1995). With policy frozen the gap stays positive for 18+ quarters.
+  d.rr = (n.expPol12 ?? n.policy) / 100 - infl - x.rStar;
   // THE PART OF THIS EQUATION EVERY HOUSEHOLD IN THE COUNTRY SHARES
   // (2026-10-30): the mood, the real rate, a panic and a national swan —
   // not income, home prices or the jobless rate, which the town's households
@@ -2490,7 +2505,7 @@ export function tickNation(s: GameState) {
   // under the floor, at most five.
   const lbTools = n.policy <= 0.5 ? Math.min(5, Math.max(0, n.policy - (n.ruleRate ?? n.policy) - 1)) : 0;
   n.gap1 = y1;
-  n.gap = spendNation(s, e, n, { rAvg, rStar, corpRate, corpNeutral, shock, lbTools });
+  n.gap = spendNation(s, e, n, { rStar, corpRate, corpNeutral, shock, lbTools });
   // THE CREDIT CYCLE (2026-10-15). Private credit against its trend, as a
   // share of output (the BIS credit-to-GDP gap; US range roughly -10 to +12
   // points, +12 at the 2007 top). It builds while money is cheap against
@@ -2978,7 +2993,9 @@ export function tickNation(s: GameState) {
     const modelLR = 100 * (n.neutralReal + cr * tg + (1 - cr) * n.inflExp);
     n.endShift = (n.endShift ?? 0) + (n.policy - modelLR - (n.endShift ?? 0)) / 144;
   }
-  const path = expectedPolicyAvg(n, want, restore > 0, s.month);
+  const nearYear: { m12?: number } = {};
+  const path = expectedPolicyAvg(n, want, restore > 0, s.month, nearYear);
+  n.expPol12 = nearYear.m12;
   e.indexRate = path + n.termPrem;
   e.shortIndex = shortIndexFor(n.policy, e.creditIdx ?? 1);
   // the era, for anything that still reads it — now an OUTPUT of the nation

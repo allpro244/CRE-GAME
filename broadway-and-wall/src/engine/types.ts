@@ -2228,6 +2228,8 @@ export interface Econ {
     /** what the corporate sector pays on its debt: the fixed ladder, and the blend with floating */
     corpFixed?: number;
     corpRate?: number;
+    /** The bond market's expected policy rate averaged over the next twelve months (`expectedPolicyAvg`): the real rate households spend against. */
+    expPol12?: number;
     /** log real output, its last peak and this recession's trough — how a recession is dated */
     lnY?: number;
     yPeak?: number;

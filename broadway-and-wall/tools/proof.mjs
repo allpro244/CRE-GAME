@@ -95,6 +95,7 @@ async function run(SEEDS, YEARS, OUT) {
     // day (comps.ts `mv`), distressed and ordinary marketed sales apart
     let compM = g.month, distR = [], ordR = [];
     let fidsPrev = null, pulsePrev = null, frozenYrs = 0;
+    const housedEver = new Set();
     const nanPaths = new Set();
     const why = {};
     for (let m = 1; m <= YEARS * 12; m++) {
@@ -128,9 +129,15 @@ async function run(SEEDS, YEARS, OUT) {
       // ---- the year's reading
       const y = m / 12;
       const hs = E.householdStats(g);
+      // FIRMS WITH SPACE, as BDS counts establishments (2026-11-09): a firm
+      // enters the first year it holds a floor and exits the year it is
+      // gone. Before, every seeker counted, so firms that formed, never found
+      // a floor and gave up after PATIENCE_M read as an entry and an exit
+      // each (13-16%/yr against 5-7% for housed firms). A housed firm between
+      // moves (a seeker that held space) stays in the count.
       const fids = new Set();
-      for (const r of Object.values(e.streetRolls ?? {})) for (const t of r.t ?? []) if (t.fid !== undefined) fids.add(t.fid);
-      for (const sk of e.seekers ?? []) if (sk.fid !== undefined) fids.add(sk.fid);
+      for (const r of Object.values(e.streetRolls ?? {})) for (const t of r.t ?? []) if (t.fid !== undefined) { fids.add(t.fid); housedEver.add(t.fid); }
+      for (const sk of e.seekers ?? []) if (sk.fid !== undefined && housedEver.has(sk.fid)) fids.add(sk.fid);
       let entry = NaN, exit = NaN;
       if (fidsPrev) {
         let inn = 0, out = 0;

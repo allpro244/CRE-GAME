@@ -209,6 +209,17 @@ What blocks it: a building sees one or two tours a year in this town (`tours/q` 
 
 What it shows: the engine's office market runs at M ≈ 22 months at 10% vacancy (turnover ≈ 6% of stock a year), while its tenants make a landlord's lettings answer its post with ε ≈ 11.6 — measured causally too (a randomised ±5% on half the vacant books at years 12-16, seeds 11 and 22: ε 6-10, noisy). Priced honestly against that elasticity, a landlord wants M ≈ 8, so office vacancy runs down to 4-6%, the same place 9a's absolute-ceiling variant landed (5.2%). The record is consistent with ε ≈ 4.5 from two independent facts: US office months of supply of 20-25 at a structural vacancy near 11% gives N/(ε − 1) ≈ 22 → ε ≈ 4.8, and the same ε gives a Wheaton-Torto slope of −(1/ε)/v ≈ −2%/yr a point, the record's −2 to −3. So the trade is the right mechanism and the engine's tenants are about 2.5 times too price-sensitive: TASTE (0.10 of rent, a Gumbel sd of 13%) is fitted to renewal rates alone, where moving costs (MOVE_PSF, $50/sf ≈ 20% of a year's rent over a term) do the work. Next: re-fit TASTE (and look at the (mkt/post)³ tour weight, a [K]) jointly against retention and the record's months of supply, then land the trade. Choosing ε to hit 11% vacancy directly would be a natural vacancy by another name.
 
+**Step 9a, take 3: the tenants' price sensitivity recalibrated, the trade on office only (2026-11-09, PR `claude/office-rents-taste`).** Office TASTE 0.10 → 0.19 and the broker's (mkt/post)³ draw dropped for office (`KEEN_POW` office 0), so office ε = (1/0.19)·6/7 ≈ 4.5 — the figure the record's months of supply (~20-25 at ~11% vacancy) and the Wheaton-Torto slope both imply — and M* = 84/3.5 = 24 months. Renewals, the fact TASTE was fitted to, agree: office renewals in test/tenantmarket.mjs go 78% → 65% against the studies' 55%. The trade, tried on every book with this calibration (3 seeds × 60 years), sent shop rents rising with vacancy (WT +1.5 / 0.0 / +2.3) and shed vacancy to 17%, so shops and sheds keep the patience ladder (`reviewAskByPatience`), the cube and their TASTE.
+
+| century, 3 seeds × 60 years (WT from yearly vacancy and real effective rent, years 6-60) | office WT | office vac | report |
+|---|---|---|---|
+| main (6aa5ee33 engine) | −0.13 / −0.66 / −0.17 | 12.2 / 7.5 / 8.0 | PASS 31 · WATCH 15 · FAIL 2 |
+| the trade on every book, recalibrated | −0.23 / −0.39 / −0.62 | 15.8 / 14.4 / 13.7 | PASS 34 · WATCH 12 · FAIL 2 (shops' WT positive, sheds' vacancy 17%) |
+| **office only (shipped)** | −0.56 / −0.66 / −0.49 | 16.0 / 15.6 / 13.7 | PASS 32 · WATCH 14 · FAIL 2 |
+
+Still open: the office slope is about −0.6, not −2 to −3; office real effective drifts down (−0.7%/yr, WATCH) from a jump in the first five years (16 → 20-24) as landlords first find M < M*; land's 5-year co-movement with property fell to 0.29 (FAIL).
+
+
 **Cap-rate pass-through is weak at any lag** (seen while landing #643): Δcap on Δ10Y correlates about 0.2 at lags 1-4 on main and the branch alike, so the "Cap rates lag the 10Y" row's best lag flips between 2 and 4 on noise. The finding is the weak pass-through, not the lag. Open.
 
 ## Tried and dropped (so nobody tries them again the same way)

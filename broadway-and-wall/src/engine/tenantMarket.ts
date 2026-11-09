@@ -6,12 +6,15 @@
 // the town. Two kinds of agent meet:
 //
 //   LANDLORDS PRICE THEIR OWN SPACE. Each street building's owner holds an
-//   asking rent for each kind of space it has, in dollars. It cuts the ask
-//   when its space has sat longer than it expected to wait for a tenant — and
-//   cuts harder when its loan is in trouble — raises it when space lets faster
-//   than it expected, and keeps it within reach of the comparable deals its
-//   broker shows it. Its patience (the months it expects a vacancy to take) is
-//   learned from its own lettings, and so is the vacancy it expects to carry.
+//   asking rent for each kind of space it has, in dollars. An office
+//   landlord trades rent against months dark: when the market's space takes
+//   longer to let than the months at which a cut gains as much in months as
+//   it gives up in rent, it cuts — harder when its loan is in trouble — and
+//   when space lets faster, it raises. A shop or shed landlord cuts when its
+//   space has sat past its patience (learned from its own lettings) and
+//   raises when space lets fast. Both keep within reach of the comparable
+//   deals their brokers show them when their own space says they are out of
+//   line.
 //
 //   TENANTS SHOP. A firm looking for space — new, growing, or at the end of a
 //   lease — gets a broker's shortlist of buildings with room, and weighs each
@@ -110,72 +113,161 @@ const LINKS_EXPECTED = 3;
  * THE REASONS A FIRM MOVES THAT ARE NOT IN ITS BOOKS — a merger, a new partner
  * who hates the commute, a landlord it has fallen out with — as a taste for
  * each building, Gumbel-distributed with this scale against the building's
- * rent (the logit of discrete-choice location models). Calibrated so that,
- * with moving costs as above and ordinary landlords, about 55% of expiring
- * office space renews in place, 65% of shops and 75% of sheds (CBRE and JLL
- * lease-expiry studies; Prologis retention) [K: shape parameter, fitted to
- * those retention rates, measured in test/tenantmarket.mjs].
+ * rent (the logit of discrete-choice location models). It sets two things at
+ * once, and is calibrated against both (2026-11-09):
+ *
+ *   HOW HARD A BUILDING'S LETTINGS ANSWER ITS POST. A building chosen with
+ *   odds P answers its post with elasticity (post / scale)·(1 - P), about
+ *   (1/TASTE)·6/7 with a shortlist of six and the firm's own suite, plus the
+ *   broker's tour-book weight (KEEN_POW, zero for office) (`askElasticity`). The record puts the office figure near 4.5, from two
+ *   independent facts: (a) US office space on the market takes ~20-25 months
+ *   to absorb at ~11% vacancy (CBRE / CoStar availability over trailing
+ *   net absorption, 2010s; Cushman & Wakefield months of supply) [S~], and a
+ *   landlord trading rent against months dark lets at N/(ε-1) months with
+ *   N = 84 (`bestMonthsToLet`), so ε = 1 + 84/22 ≈ 4.8; (b) the Wheaton-Torto
+ *   rent adjustment, real office rent growth falling 2-3% a year for each
+ *   point of vacancy (Wheaton & Torto 1988; Hendershott 1996) [S], which with
+ *   the landlord's step ln(Mbest/M)/ε and M rising with vacancy gives ε ≈ 4-5 (REAL_ECONOMY_PLAN, "Office rents and vacancy", step 9a take 2).
+ *   So office TASTE = (6/7)/4.5 ≈ 0.19. It was 0.10, fitted to renewals
+ *   alone, which with the broker's price cube (KEEN_POW 3) gave ε ≈ 11.6 —
+ *   measured 6-10 in an ask test — 2.5 times the record.
+ *
+ *   HOW OFTEN A FIRM RENEWS IN PLACE, with moving costs as above and ordinary
+ *   landlords: about 55% of expiring office space, 65% of shops and 75% of
+ *   sheds (CBRE and JLL lease-expiry studies; Prologis retention) [S~],
+ *   measured in test/tenantmarket.mjs. Renewals answer the taste's scale
+ *   against the move (a larger scale, more firms find a reason to go). At
+ *   0.10 office renewed 78% of expiring space in the test, over the studies'
+ *   55%; at 0.19 it renews 65% — the two facts agree in direction, and the
+ *   elasticity is the one that sets the number.
+ *
+ * Shops and sheds keep their renewal fits and the broker's cube (no
+ * months-of-supply fact is read for them here) [K: shape parameter, fitted to
+ * the facts stated above, not to a vacancy].
  */
-export const TASTE: Record<Comm, number> = { office: 0.10, retail: 0.08, industrial: 0.07 };
+export const TASTE: Record<Comm, number> = { office: 0.19, retail: 0.08, industrial: 0.07 };
 
 /**
- * THE LANDLORD'S PRICING RULE: THE PACKAGE FIRST, THE FACE SECOND.
+ * THE LANDLORD'S PRICING RULE: WHAT A MONTH DARK COSTS, AND THE PACKAGE FIRST.
  *
  * A landlord posts two things for its space: an asking (face) rent and a
  * package — free rent and fit-out, as a share of the face over the term.
- * Faces are sticky and packages move: a landlord whose space sits past its
- * patience sweetens the package before it cuts the face (its lender and its
- * valuer read the face), and one whose space lets at once takes the package
- * back before it raises the face. That is the record: four years after the
- * 2020 shock Manhattan asking was -3.3% while net effective was -17.3%, and
- * US gateway free rent went 9.7 to 12.5 months in a year (market.ts CONC_DEPTH
- * and the concession notes there).
+ * Faces are sticky and packages move: a landlord cutting what it takes
+ * sweetens the package before it cuts the face (its lender and its valuer
+ * read the face), and one raising it takes the package back before it raises
+ * the face. That is the record: four years after the 2020 shock Manhattan
+ * asking was -3.3% while net effective was -17.3%, and US gateway free rent
+ * went 9.7 to 12.5 months in a year (market.ts CONC_DEPTH).
  *
- *   COMPS_M      months for an ask to close on the comps its broker shows it,
- *                and for a package to fade once there is nothing left to
- *                let: an opinion of rent is refreshed about once a year [K].
+ * HOW MUCH AN OFFICE LANDLORD TAKES is a trade between rent and months dark
+ * (2026-11-09, REAL_ECONOMY_PLAN "Office rents and vacancy"). Shops and sheds
+ * still price by patience (below, `reviewAskByPatience`): the trade, tried on
+ * them too, sent shop rents rising with vacancy and doubled shed vacancy
+ * (measured, 3 seeds x 60 years), and the months-of-supply fact it is
+ * calibrated to (TASTE) is read for office only. A suite earns its effective
+ * rent p for a lease term N, then sits dark for the months M(p) it takes to
+ * let again, so over the cycle it earns p·N/(N + M(p)). A lower post lets
+ * faster: M(p) ∝ p^ε, where ε is how a building's share of the town's
+ * lettings answers its post (`askElasticity`). The landlord's best post is
+ * where a cut gains as much in months dark as it gives up in rent:
+ * d ln[p·N/(N+M)]/d ln p = 1 - ε·M/(N+M) = 0, at Mbest = N/(ε - 1)
+ * (`bestMonthsToLet`). Its evidence for M is the market's own clock — the
+ * space on offer over the lettings a month (proforma.ts leaseUpMonthsOf, the
+ * clock a developer's lease-up reads): a suite at the market's going rent
+ * wins its fair share. So when space takes longer to let than Mbest, every
+ * month dark costs more than the rent a cut gives up, and the landlord moves
+ * its post down by the step that would bring its own months to Mbest,
+ * ln(Mbest/M)/ε; when space lets faster, up. No vacancy or months on market is
+ * normal: M is what the town's tenants did this year, and Mbest moves with the
+ * lease a tenant signs and with how many places the tenant has to go. Each
+ * landlord takes the others' posts as given, so in a glut all of them cut
+ * and keep cutting until the tenants the lower rents bring (firms entering,
+ * expanding, the participation constraint easing) take the months back
+ * down: the rate of change answers the months of supply, which is the
+ * Wheaton-Torto shape (Wheaton & Torto 1988; Grenadier 1995: a landlord's
+ * rent trades against its expected vacancy).
+ *
+ *   COMPS_M      months for an opinion of rent to refresh — the share of a
+ *                year's move a month's review makes, and the months for an
+ *                ask to close on the comps its broker shows it: about once a
+ *                year [K].
  *   PKG_MAX      the deepest package: 15-20 months free on a ten-year office
  *                lease and $100-150/sf of fit-out in a glut, 30-40% of face
- *                (market.ts CONC_DEPTH) [S].
- *   PKG_STEP     how fast a package sweetens while space sits past patience:
- *                a point a month for each patience it has sat past, up to
- *                three — so space a year dark in an office market adds about
- *                three points a month and reaches the deepest package within
- *                the year, which is the pace gateway free rent moved in 2020-21
- *                (9.7 to 12.5 months in four quarters, with fit-out on top) [K].
+ *                (market.ts CONC_DEPTH) [S]. A cut past it comes off the face.
  *   PKG_TAKE     how much of the package one quick letting takes back [K].
- *   CUT_DEEP     the steepest a face falls in a month, once the package is at
- *                its deepest and the space has sat three patiences past: -18.6%
- *                a year, the Houston 1983-87 office rate [S]; a third of it for
- *                each patience past, before.
  *   RAISE        the step a face rises by when space lets at once with no
  *                package left to take back, scaled down to nothing at the
- *                landlord's usual wait [K].
- *   LET_MEMORY   lettings over which a landlord learns how long a vacancy
- *                takes: about twenty — patience is slow to change [K].
+ *                market's months to let [K].
  *   STRESS       an owner whose mortgage is behind (or whose firm is under
- *                water) moves half as fast again, and takes less [K].
+ *                water) cuts half as fast again, and takes less [K].
  */
 const COMPS_M = 12;
 const PKG_MAX = 0.35;
-const PKG_STEP = 0.01;
 const PKG_TAKE = 0.03;
-const CUT_DEEP = 0.0155;
 const RAISE = 0.06;
-const LET_MEMORY = 20;
 const STRESS_MOVE = 1.5, STRESS_RES = 0.96;
 
 /**
- * HOW LONG A LANDLORD EXPECTS EMPTY SPACE TO TAKE TO LET — its patience, before
- * its own lettings teach it otherwise: the months available space spends on
- * the market in an ordinary US market, about a year for office, ten months
- * for shops and six for sheds (CoStar and CBRE months-on-market series,
- * 2010s) [S~]. Not the months a suite sits between two tenants who were lined
- * up (market.ts reletMonths): most empty space is not that.
+ * SHOPS AND SHEDS: PRICING BY PATIENCE (the rule office used before the
+ * month-dark trade). Space sitting past the landlord's patience sweetens the
+ * package, then cuts the face; space letting fast takes it back.
+ *   PKG_STEP     a point a month for each patience past, up to three — so
+ *                space a year dark reaches the deepest package within the
+ *                year, the pace gateway free rent moved in 2020-21 [K].
+ *   CUT_DEEP     the steepest a face falls in a month, once the package is at
+ *                its deepest and the space has sat three patiences past:
+ *                -18.6% a year, the Houston 1983-87 office rate [S]; a third
+ *                of it for each patience past, before.
+ *   LET_MEMORY   lettings over which a landlord learns how long a vacancy
+ *                takes: about twenty — patience is slow to change [K].
+ *   MONTHS_ON_MARKET  the patience before its own lettings teach it: the
+ *                months available space spends on the market in an ordinary
+ *                US market, ten months for shops and six for sheds (CoStar and
+ *                CBRE months-on-market series, 2010s) [S~]; office's entry (a
+ *                year) opens a book and is otherwise unread.
  */
+const PKG_STEP = 0.01;
+const CUT_DEEP = 0.0155;
+const LET_MEMORY = 20;
 const MONTHS_ON_MARKET: Record<Comm, number> = { office: 12, retail: 10, industrial: 6 };
 export function searchMonths(k: Comm): number {
   return MONTHS_ON_MARKET[k];
+}
+
+/**
+ * THE TERM THE NEXT TENANT SIGNS, months: the middle of each covenant's band
+ * (leasing.ts termBandM: 84-144, 60-108, 36-60) weighted by the share of a
+ * class's let space each covenant holds (tenantBooks.ts STREET_GRADE_SF:
+ * 0.30, 0.45, 0.25): 0.30·114 + 0.45·84 + 0.25·48 = 84 [D].
+ */
+const NEXT_TERM_M = 84;
+/**
+ * HOW A BROKER'S TOUR BOOK ANSWERS A POST: a building is drawn onto the
+ * shortlist with weight (market rent / post)^KEEN_POW (streetRolls.ts shop).
+ * For shops and sheds the cube of the old stale-space weight, unsourced [K];
+ * for office nothing — the firm weighs price once, in its own choice (TASTE,
+ * where the office figure is calibrated with this at zero).
+ */
+export const KEEN_POW: Record<Comm, number> = { office: 0, retail: 3, industrial: 3 };
+/**
+ * HOW A BUILDING'S LETTINGS ANSWER ITS POST, as an elasticity: the tour book
+ * (KEEN_POW) and, once toured, the firm's logit choice among the shortlist
+ * and its own suite — its taste for each is Gumbel with scale TASTE x the
+ * market rent, so a building chosen with odds P answers its post with
+ * elasticity (post / scale)·(1 - P), at P = 1 / (SHORTLIST + 1) [D: the
+ * engine's own choice rule, nothing fitted here].
+ */
+export function askElasticity(k: Comm, post: number, mkt: number): number {
+  return KEEN_POW[k] + (post / Math.max(1e-9, TASTE[k] * mkt)) * (SHORTLIST / (SHORTLIST + 1));
+}
+/** The months to let at which a cut gains in months dark what it gives up in rent: N / (ε - 1). */
+export function bestMonthsToLet(eps: number, termM = NEXT_TERM_M): number {
+  return termM / Math.max(1e-6, eps - 1);
+}
+/** The log step that would bring a post's months to let to the best: ln(Mbest / M) / ε. */
+export function darkCostStep(k: Comm, post: number, mkt: number, monthsToLet: number): number {
+  const eps = askElasticity(k, post, mkt);
+  return Math.log(bestMonthsToLet(eps) / Math.max(1e-6, monthsToLet)) / eps;
 }
 
 // ---------------------------------------------------------------- the landlord's book
@@ -186,7 +278,7 @@ export interface LandlordAsk {
   a: number;
   /** the package it posts: free rent and fit-out as a share of the face over the term */
   c: number;
-  /** months it expects a vacancy to take to let, learned from its lettings */
+  /** months it expects a vacancy to take to let, learned from its lettings (shops and sheds; office reads the market's clock) */
   t: number;
   /** month the ask was last reviewed */
   m: number;
@@ -233,102 +325,122 @@ export function postedEff(L: LandlordAsk, _e: Econ, _k: Comm, _mkt: number, _sit
 }
 
 /**
- * ONE MONTH OF A LANDLORD'S BOOK on one kind of space: costs passed through,
- * face and package pulled toward the comps, and — space sitting past its
- * patience — the package sweetened, then the face cut (both faster when its
- * loan is in trouble).
+ * ONE MONTH OF A LANDLORD'S BOOK on one kind of space: its costs passed
+ * through (the town's CPI over the year — the others' posts it prices
+ * against move with it), the month-dark trade (above) and, for space it has
+ * to let, its own evidence against the comps.
+ *
+ * `monthsToLet` is the market's clock (proforma.ts leaseUpMonthsOf for a
+ * standing building: space on offer over lettings a month).
  */
-export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: { m: number; vacNow: number; darkM?: number; stressed: boolean; infl12: number; holdFace?: boolean }): void {
+export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: { m: number; monthsToLet: number; darkM?: number; stressed: boolean; infl12: number; holdFace?: boolean }): void {
+  if (k !== "office") return reviewAskByPatience(L, e, k, mkt, opts);
   if (L.m >= opts.m) return;
   const months = Math.max(1, Math.min(12, opts.m - L.m));
   L.m = opts.m;
   const comps = compsFace(e, mkt, k), pull = Math.min(1, months / COMPS_M);
   if (!(L.a > 0) || !Number.isFinite(L.a)) L.a = comps > 0 ? comps : 1;
   const toComps = comps > 0 ? (Math.log(comps) - Math.log(L.a)) * pull : 0;
-  let d = 0;
-  if (opts.darkM !== undefined && opts.darkM <= L.t) {
-    // SPACE TO LET, NOT YET PAST ITS PATIENCE: priced like any space that is
-    // letting as expected — its costs passed through (the town's CPI over the
-    // year) and its face brought up to the comps when they have passed it.
-    // It held flat in dollars, so in a market where space lets as fast as its
-    // landlords expect, every new lease signed at last year's nominal rent
-    // and the read-out index fell in real terms by the rate of inflation,
-    // tight market or not (measured: office 1.24x over ten years against
-    // CPI 1.40x, at 10-13% vacancy). It does not follow the comps DOWN while
-    // its own space is letting as expected: the comps are the deals that
-    // signed, and a firm signs where the deal is best for it, so they are the
-    // cheap end of what was on offer — a landlord chasing them down with no
-    // evidence of its own ratchets the whole town toward its keenest
-    // landlord (measured, office -30% against the old rule at 6% vacancy).
-    // The evidence that it is dear is its space sitting past its patience,
-    // which is what sweetens it and then cuts it (below). Following them up
-    // is not the ratchet the full building's rule avoids: this space is
-    // tested by the market every month it sits.
-    d += (opts.infl12 / 12) * months + Math.max(0, toComps);
-  } else if (opts.darkM !== undefined) {
-    // SPACE THAT HAS SAT PAST ITS PATIENCE: the face holds — no rise with
-    // costs, and no chasing the comps up — and follows them down; the package
-    // is sweetened, the longer past the faster (up to three patiences' worth),
-    // and once the package is as deep as packages go, the face is cut.
-    d += Math.min(0, toComps);
-    const push = Math.min(3, (opts.darkM - L.t) / Math.max(1, L.t)) * (opts.stressed ? STRESS_MOVE : 1) * months;
-    if (L.c < PKG_MAX) L.c = Math.min(PKG_MAX, L.c + PKG_STEP * push);
-    else if (!opts.holdFace) d -= CUT_DEEP * push / 3;
+  let d = (opts.infl12 / 12) * months;
+  // THE MONTH-DARK TRADE: the share of the year's step a month's review makes.
+  let step = mkt > 0 ? darkCostStep(k, L.a * (1 - L.c), mkt, opts.monthsToLet) * pull : 0;
+  if (step < 0 && opts.stressed) step *= STRESS_MOVE;
+  if (opts.darkM !== undefined) {
+    // SPACE TO LET. Its own evidence: space that has sat longer than the
+    // market's months to let is dearer than the market at fair share, and
+    // follows the comps down; space letting as fast follows them up when they
+    // have passed it. It does not follow them down otherwise: the comps are
+    // the deals that signed, the cheap end of what was on offer, and chasing
+    // them with no evidence of its own ratchets the town toward its keenest
+    // landlord (measured, office -30% at 6% vacancy).
+    d += opts.darkM > opts.monthsToLet ? Math.min(0, toComps) : Math.max(0, toComps);
+    // The trade moves the package first; past the deepest package (or with
+    // none left to take back) the face.
+    const keep = (1 - L.c) * Math.exp(step);
+    let c = 1 - keep;
+    if (c > PKG_MAX) { if (!opts.holdFace) d += Math.log(keep / (1 - PKG_MAX)); c = PKG_MAX; }
+    else if (c < 0) { if (!opts.holdFace) d += Math.log(keep); c = 0; }
+    L.c = c;
   } else {
-    // NOTHING TO LET: the face passes its costs through (the town's CPI over
-    // the year) and otherwise waits for its own leasing to say more — a
-    // renewal with nowhere else for the tenant to go (`noteLetting`). It does
-    // not chase the comps: the comps are the buildings that let, and a full
-    // building chasing them up ratchets every good corner's raise onto the
-    // whole town (measured: shop rents rising 3.5% a year over 18% vacancy).
-    // The package — given to win a tenant for empty space — is not offered,
-    // and fades over the year a broker's opinion takes to refresh.
-    d += (opts.infl12 / 12) * months;
+    // NOTHING TO LET. The package — given to win a tenant for empty space —
+    // is not offered, and fades over the year a broker's opinion takes to
+    // refresh. The face is what its tenants will renew at, and the same trade
+    // prices it: a tenant that leaves leaves a suite to let on the market's
+    // clock. It does not chase the comps: they are the buildings that let,
+    // and a full building chasing them up ratchets every good corner's raise
+    // onto the whole town (measured: shop rents rising 3.5% a year over 18%
+    // vacancy).
     L.c *= 1 - pull;
+    if (!opts.holdFace) d += step;
   }
   L.c = Math.max(0, Math.min(PKG_MAX, L.c));
   L.a = +(L.a * Math.exp(Math.max(-0.2, Math.min(0.2, d)))).toFixed(2);
 }
 
 /**
- * The landlord learns from a letting: how long the space was on the market,
- * and — let faster than space ordinarily takes — that it gave too much (the
- * package back first, then the face up), in proportion to the share of what it
- * had to let that went (`share`: 1 when the letting fills it, or when a sitting
- * tenant with nowhere else to go renews).
- *
- * Two changes, both measured. It learned only from a letting that FILLED the
- * building, so a tower letting a suite a month off a floor that was never all
- * gone never learned that it was cheap. And "fast" was measured against its
- * own patience, which it learns from the same lettings: in a market that
- * stays tight, a landlord whose space lets in two months comes to expect two
- * months, and the signal that it is under-priced fades to nothing however
- * tight the market stays. The yardstick is now the longer of its patience and
- * the months space ordinarily takes to let in its class (MONTHS_ON_MARKET, the
- * CoStar / CBRE series): space that lets in a fraction of an ordinary market's
- * time is priced under the market, however used to it its landlord is. Its
- * patience — what it waits before it sweetens — is still its own.
+ * The landlord learns from a letting: let faster than the market's months to
+ * let say space takes at fair share, it gave too much (the package back
+ * first, then the face up), in proportion to the share of what it had to let
+ * that went (`share`: 1 when the letting fills it, or when a sitting tenant
+ * with nowhere else to go renews). Its yardstick was its own learned patience
+ * floored at an ordinary market's months on market (MONTHS_ON_MARKET, the last
+ * norm, deleted 2026-11-09); it is now the market's clock.
  */
-export function noteLetting(L: LandlordAsk, k: Comm, tom: number, share: number, holdFace = false) {
-  const yard = Math.max(L.t, searchMonths(k));
+export function noteLetting(L: LandlordAsk, k: Comm, tom: number, share: number, monthsToLet: number, holdFace = false) {
+  // shops and sheds: the yardstick is the longer of the landlord's patience
+  // and its class's ordinary months on market, and the patience is learned
+  const yard = k === "office" ? Math.max(1e-6, monthsToLet) : Math.max(L.t, searchMonths(k));
   if (tom < yard && share > 0) {
     const f = (1 - tom / yard) * Math.min(1, share);
     if (L.c > 0) L.c = Math.max(0, L.c - PKG_TAKE * f);
     else if (!holdFace) L.a = +(L.a * Math.exp(RAISE * f)).toFixed(2);
   }
-  L.t += (Math.max(0.5, tom) - L.t) / LET_MEMORY;
+  if (k !== "office") L.t += (Math.max(0.5, tom) - L.t) / LET_MEMORY;
 }
 
 /**
  * WHAT THE LANDLORD WILL GO TO for a tenant with somewhere else to go: its
  * posted effective rent less what it expects to lose by waiting for the next
- * tenant instead — its own expected months to let (plus the make-ready when
- * the tenant would leave a suite it is sitting in), spread over the term —
- * and less again when it needs the cash.
+ * tenant instead — the months to let (the market's clock for office, its own
+ * learned patience for shops and sheds; plus the make-ready when the tenant
+ * would leave a suite it is sitting in), spread over the term — and less
+ * again when it needs the cash.
  */
-export function reservation(L: LandlordAsk, k: Comm, post: number, termM: number, sitting: boolean, stressed: boolean): number {
-  const wait = L.t + (sitting ? MAKE_READY_M[k] : 0);
+export function reservation(L: LandlordAsk, k: Comm, post: number, termM: number, sitting: boolean, stressed: boolean, monthsToLet: number): number {
+  const wait = (k === "office" ? monthsToLet : L.t) + (sitting ? MAKE_READY_M[k] : 0);
   return post * Math.max(0.4, 1 - wait / Math.max(12, termM)) * (stressed ? STRESS_RES : 1);
+}
+
+/**
+ * ONE MONTH OF A SHOP OR SHED LANDLORD'S BOOK: costs passed through, face and
+ * package pulled toward the comps, and — space sitting past its patience —
+ * the package sweetened, then the face cut (both faster when its loan is in
+ * trouble). Space to let within its patience follows the comps up, not down
+ * (the comps are the cheap end of what was on offer); a full building passes
+ * its costs through and does not chase the comps.
+ */
+function reviewAskByPatience(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: { m: number; darkM?: number; stressed: boolean; infl12: number; holdFace?: boolean }): void {
+  if (L.m >= opts.m) return;
+  const months = Math.max(1, Math.min(12, opts.m - L.m));
+  L.m = opts.m;
+  const comps = compsFace(e, mkt, k), pull = Math.min(1, months / COMPS_M);
+  if (!(L.a > 0) || !Number.isFinite(L.a)) L.a = comps > 0 ? comps : 1;
+  if (!(L.t > 0)) L.t = searchMonths(k);
+  const toComps = comps > 0 ? (Math.log(comps) - Math.log(L.a)) * pull : 0;
+  let d = 0;
+  if (opts.darkM !== undefined && opts.darkM <= L.t) {
+    d += (opts.infl12 / 12) * months + Math.max(0, toComps);
+  } else if (opts.darkM !== undefined) {
+    d += Math.min(0, toComps);
+    const push = Math.min(3, (opts.darkM - L.t) / Math.max(1, L.t)) * (opts.stressed ? STRESS_MOVE : 1) * months;
+    if (L.c < PKG_MAX) L.c = Math.min(PKG_MAX, L.c + PKG_STEP * push);
+    else if (!opts.holdFace) d -= CUT_DEEP * push / 3;
+  } else {
+    d += (opts.infl12 / 12) * months;
+    L.c *= 1 - pull;
+  }
+  L.c = Math.max(0, Math.min(PKG_MAX, L.c));
+  L.a = +(L.a * Math.exp(Math.max(-0.2, Math.min(0.2, d)))).toFixed(2);
 }
 // ---------------------------------------------------------------- where firms are
 

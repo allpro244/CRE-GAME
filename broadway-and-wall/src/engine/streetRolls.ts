@@ -51,6 +51,7 @@ import { gradeOf, paramsOf } from "./rivals";
 import { tickTenantFin, tenantFailOdds, entrantMargin, rentCapacity } from "./tenantBooks";
 import { rng, rrange, reletMonths, recordDeal, FIRM_PROFILE, turnoverYr, priceLevel12, CONC_DEPTH, SECTOR_LABEL, SF_PER_JOB } from "./market";
 import { staleDiscount } from "./absorption";
+import { leaseUpMonthsOf } from "./proforma";
 import { tenantQualityTerms } from "./bands";
 import { drawTenantSf, sizeScale } from "./plates";
 import { noteTenantMove } from "./history";
@@ -60,7 +61,7 @@ import { whyFirmDark, whyIndustry } from "./economy";
 import { why, whyTenantBooks } from "./why";
 import { tenantFin } from "./tenantBooks";
 import {
-  type LandlordAsk, type Option, SHORTLIST, TASTE, askOf, postedEff, compsFace, compsPackage, reviewAsk, noteLetting, reservation, locCtx, posOf, hourCost,
+  type LandlordAsk, type Option, SHORTLIST, TASTE, KEEN_POW, askOf, postedEff, compsFace, compsPackage, reviewAsk, noteLetting, reservation, locCtx, posOf, hourCost,
   placeCost, worthOf, footFactor, moveCostPsfYr, bargain, bidCeiling, contestPrice, noteContest, freeMonthsFor, gumbel, recordLease, movedLine, fmtPct, creditOfSize, readOut, tenantHeads,
 } from "./tenantMarket";
 
@@ -448,6 +449,11 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
   };
   const vacShare = (b: Bld, roll: StreetRoll, k: Comm) => Math.max(0, 1 - letOf(roll, k) / Math.max(1, b.cap[k] ?? 1));
   const bookOf = (b: Bld, roll: StreetRoll, k: Comm) => askOf((roll.ask ??= {}), k, e, b.mkt[k] ?? 0, vacShare(b, roll, k), m);
+  // THE MARKET'S CLOCK: the months a suite at the going rent takes to let —
+  // the space on offer over the lettings a month (proforma.ts leaseUpMonthsOf,
+  // a standing building's). What every landlord prices its months dark on.
+  const mtlMemo: Partial<Record<Comm, number>> = {};
+  const monthsToLet = (k: Comm) => (mtlMemo[k] ??= leaseUpMonthsOf(e, k, 0, 0, e.cityVac?.[k] ?? 0, false));
   // each trade's payroll, this month against last: the term a firm signs reads it (see THE TERM IS CHOSEN TOO)
   const gTradeOf = (sec: string) => {
     const bk = e.firmBooks?.[sec as Tenant["sector"]], prevE = e.tradeEmpPrev?.[sec];
@@ -465,7 +471,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
     const mkt = b.mkt[k] ?? 0;
     const L = bookOf(b, roll, k);
     const post = postedEff(L, e, k, mkt, stay);
-    const res = reservation(L, k, post, termM, stay, b.stressed);
+    const res = reservation(L, k, post, termM, stay, b.stressed, monthsToLet(k));
     const pc = placeCost(firm.fid !== undefined ? ctx.pts.get(firm.fid) : undefined, b.pos, hourCost(firm));
     const worth = worthOf(firm, k, mkt, b.sc[k] ?? 50, take, pc.cost, k === "retail" ? footRel(b.bbl) : undefined, rentCapacity(s.econ, firm, k));
     const move = !stay && moving ? moveCostPsfYr(e, k, termM) : 0;
@@ -500,11 +506,14 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
   /**
    * THE BROKER'S SHORTLIST: up to SHORTLIST street buildings with room for
    * the firm, drawn by how close each is to the quality it shops for, how much
-   * room it has, how keen its posted rent is against the market for it (a
-   * broker shows what is priced to let — the cube is the old stale-space
-   * weight's, `staleDiscount`^-3, now read off the landlord's actual post), how
-   * hard its owner lets and how dark its lobby is; each valued, with the
-   * firm's own suite (when it has one to renew) beside them. Best first.
+   * room it has, how hard its owner lets and how dark its lobby is; each
+   * valued, with the firm's own suite (when it has one to renew) beside them.
+   * Best first. For shops and sheds the draw also weighs how keen the post is
+   * against the market, by (market / post)^KEEN_POW (the old stale-space
+   * weight's cube). For office it does not: the firm weighs price once, in
+   * its choice among what it is shown (`value`, TASTE); the cube counted it
+   * twice and made a building's lettings answer its post about 2.5 times as
+   * hard as the record says (tenantMarket.ts TASTE, 2026-11-09).
    */
   const shop = (firm: Tenant, k: Comm, want: number, from: string | undefined, stay: Option | null, moving: boolean): Option[] => {
     const q = firm.quality ?? 50;
@@ -520,7 +529,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
       if (avail < Math.max(floor, Math.min(want * 0.5, avail + 1))) continue;
       const letShare = 1 - avail / (b.cap[k] ?? 1);
       const mkt = b.mkt[k] ?? 0;
-      const keen = mkt > 0 ? Math.min(4, Math.pow(mkt / Math.max(0.01, postedEff(bookOf(b, roll, k), e, k, mkt, false)), 3)) : 1;
+      const keen = mkt > 0 && KEEN_POW[k] ? Math.min(4, Math.pow(mkt / Math.max(0.01, postedEff(bookOf(b, roll, k), e, k, mkt, false)), KEEN_POW[k])) : 1;
       const w = Math.sqrt(avail) * Math.exp(-Math.abs((b.sc[k] ?? 50) - q) / FIT_W) * keen * b.care * (0.85 + 0.15 * letShare);
       if (!(w > 0)) continue;
       cands.push({ b, roll, avail, w }); tot += w;
@@ -560,7 +569,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
     out.sort((a, b) => b.joint - a.joint);
     return out;
   };
-  return { R, m, owners, blds, bld, letOf, notReady, availOf, catchOf, foot, ctx, recOf, footRel, vacShare, bookOf, gTradeOf, termOf, value, shop, availIn, noteRoll, rollList };
+  return { R, m, owners, blds, bld, letOf, notReady, availOf, catchOf, foot, ctx, recOf, footRel, vacShare, bookOf, monthsToLet, gTradeOf, termOf, value, shop, availIn, noteRoll, rollList };
 }
 /** The street as the player's leasing desk's prospects see it this month (one view a month). */
 const DESK_VIEW = new WeakMap<GameState, { m: number; v: ReturnType<typeof marketView> }>();
@@ -654,7 +663,7 @@ export function stayOdds(s: GameState, parcels: ParcelTable | null | undefined, 
     // the landlord's post, or — with no book yet — the comps, read and not opened
     const L = roll.ask?.[k];
     const post = L && L.a > 0 ? postedEff(L, e, k, mkt, false) : compsFace(e, mkt, k) * (1 - compsPackage(e, k));
-    const keen = Math.min(4, Math.pow(mkt / Math.max(0.01, post), 3));
+    const keen = KEEN_POW[k] ? Math.min(4, Math.pow(mkt / Math.max(0.01, post), KEEN_POW[k])) : 1;
     const letShare = 1 - avail / (b.cap[k] ?? 1);
     const w = Math.sqrt(avail) * Math.exp(-Math.abs((b.sc[k] ?? 50) - q) / FIT_W) * keen * b.care * (0.85 + 0.15 * letShare);
     if (!(w > 0)) continue;
@@ -690,7 +699,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   const m = s.month;
   e.seekers ??= [];
   const V = marketView(s, parcels);
-  const { owners, blds, bld, letOf, availOf, catchOf, ctx, recOf, bookOf, gTradeOf, termOf, value, shop, noteRoll, vacShare } = V;
+  const { owners, blds, bld, letOf, availOf, catchOf, ctx, recOf, bookOf, gTradeOf, termOf, value, shop, noteRoll } = V;
   const seeking = new Map<number, Seeker>();
   for (const k of e.seekers) seeking.set(k.fid, k);
   const ratio = (k: Comm) => e.streetSpace?.[k] && (e.streetSpace[k] as { ratio?: number }).ratio || 1;
@@ -756,7 +765,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     const left = availOf(b, roll, k);
     const full = left < minSfOf(b, k);
     // what the letting took of what it had to let: all of it, when it filled the building
-    noteLetting(bookOf(b, roll, k), k, since === undefined ? 0 : Math.max(0, m - since), full ? 1 : pick.take / Math.max(1, pick.take + left), opening);
+    noteLetting(bookOf(b, roll, k), k, since === undefined ? 0 : Math.max(0, m - since), full ? 1 : pick.take / Math.max(1, pick.take + left), V.monthsToLet(k), opening);
     // ...and, when it turned firms away, from what the space fetched (tenantMarket.ts noteContest)
     if (contest && contest.turned > 0) noteContest(bookOf(b, roll, k), effSigned, opening);
     if (full) { roll.vac ??= {}; delete roll.vac[k]; if (roll.vsf) delete roll.vsf[k]; }
@@ -917,7 +926,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
           // learns what a letting at once teaches — the package back, then
           // the face up (tenantMarket.ts noteLetting) — when it has nothing else
           // of the kind to let.
-          if (!opts.some((o) => !o.stay) && availOf(b, roll, kk) < minSfOf(b, kk)) noteLetting(bookOf(b, roll, kk), kk, 0, 1, opening);
+          if (!opts.some((o) => !o.stay) && availOf(b, roll, kk) < minSfOf(b, kk)) noteLetting(bookOf(b, roll, kk), kk, 0, 1, V.monthsToLet(kk), opening);
         }
       } else if (need > t.sf * 1.5 && rng(s, "leasing") < 0.03) {
         // Outgrown mid-lease: next door if the building has it, else go looking.
@@ -1319,7 +1328,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       for (const k of COMM) {
         if (!b.cap[k] || !(b.mkt[k]! > 0)) continue;
         const since = roll.vac?.[k];
-        reviewAsk(bookOf(b, roll, k), e, k, b.mkt[k]!, { m, vacNow: vacShare(b, roll, k), darkM: since === undefined ? undefined : m - since, stressed: b.stressed, infl12, holdFace: opening });
+        reviewAsk(bookOf(b, roll, k), e, k, b.mkt[k]!, { m, monthsToLet: V.monthsToLet(k), darkM: since === undefined ? undefined : m - since, stressed: b.stressed, infl12, holdFace: opening });
       }
     }
   }

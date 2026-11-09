@@ -1,6 +1,7 @@
 // The market: mean-reverting rate walk, rate-linked cap rates, cyclical
 // rents, and a phase machine whose turns are rumored before they land.
 // Randomness creates situations, never verdicts.
+import { leaseUpMonthsOf } from "./proforma";
 import { tickBands } from "./bands";
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, FirmBook, GameState, MarketPhase, NewsItem, Sector } from "./types";
@@ -4339,7 +4340,9 @@ export function tickEcon(s: GameState) {
     if (firmsOnly) {
       const before = e.occupied[k];
       const onMap = firms!.cap + (e.playerNow?.sf?.[k] ?? 0), letMap = firms!.let + (pNow ?? 0);
-      e.occupied[k] = Math.min(e.stock[k], letMap + Math.max(0, e.stock[k] - onMap) * Math.min(1, letMap / Math.max(1, onMap)));
+      // the off-map stock is let at the on-map rate, except its dark feet:
+      // space delivered or converted that no tenant has taken yet (darkSf)
+      e.occupied[k] = Math.min(e.stock[k], letMap + Math.max(0, e.stock[k] - onMap - darkSfOf(e, k)) * Math.min(1, letMap / Math.max(1, onMap)));
       absorb = e.occupied[k] - before;
       e.pool[k] = e.occupied[k] + firms!.seek;
       if (pNow !== undefined) (e.playerOcc ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] = pNow;
@@ -4449,9 +4452,15 @@ export function tickEcon(s: GameState) {
     }
     // ...and the street by quality (bands.ts): which of its floors the vacancy is in.
     tickBands(e, k);
-    // New deliveries age out of lease-up on the same clock a vacated suite
-    // does. No draw: the months are a property of the use, already named.
-    e.darkSf[k] = Math.max(0, (e.darkSf[k] ?? 0) * (1 - 1 / Math.max(1, reletMonths(k))));
+    // NEW SPACE LETS AT THE MARKET'S OWN PACE (2026-11-09). Dark feet leave
+    // lease-up at the rate the market lets space — its gross lettings over the
+    // space on offer (proforma.ts leaseUpMonthsOf, the clock builders and
+    // lenders underwrite) — not on a vacated suite's relet clock (under a
+    // month), and they are not counted as let until then (the off-map
+    // imputation above). Before, new off-map space read as occupied the month
+    // it arrived and its dark marker faded within weeks: +12% office stock
+    // became 95% new occupants in 30 months (test/demand-finite).
+    e.darkSf[k] = Math.max(0, (e.darkSf[k] ?? 0) * (1 - 1 / Math.max(1, leaseUpMonthsOf(e, k, 0, 0, e.cityVac?.[k] ?? openingVac(k), false))));
     // Demand that cannot be housed nets off the sublet market first, because a
     // tenant who needs space this year takes a sublease — that is what the
     // sublet market is FOR, and it is why a shortage with sublet inventory

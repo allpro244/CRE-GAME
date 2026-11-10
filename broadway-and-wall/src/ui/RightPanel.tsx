@@ -352,7 +352,7 @@ function DeskTabs({ desk, page }: { desk: Desk; page: Page }) {
  * Refinance entry opens Debt and lands on "Loan by loan" — and is consumed
  * here, once, after the first scan finds it.
  */
-const OWN_VIEWS = new Set<Page>(["players", "news", "buildings"]);
+const OWN_VIEWS = new Set<Page>(["players", "news", "buildings", "economy"]);
 const HEAD_SEL = ".page-section-head, .deal-head, .page-section";
 type Sec = { el: HTMLElement; label: string };
 

@@ -129,6 +129,7 @@
     "jv": "node test/jv.mjs",
     "standing": "node test/standing.mjs",
     "rails": "node tools/rails.mjs",
+    "mechanism": "node tools/mechanism-audit.mjs",
     "rail-audit": "node tools/rail-audit.mjs",
     "capvsrate": "node tools/capvsrate.mjs",
     "engine": "node test/mkengine.mjs",

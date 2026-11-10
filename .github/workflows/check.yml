@@ -42,3 +42,6 @@ jobs:
       - name: rng audit
         working-directory: broadway-and-wall
         run: node tools/rng-audit.mjs
+      - name: mechanism audit (no new coins, draws, unsourced constants or ledger rows)
+        working-directory: broadway-and-wall
+        run: node tools/mechanism-audit.mjs --check

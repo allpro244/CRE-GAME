@@ -17,6 +17,13 @@
 // Nothing here fails the build. A band is a reading of history, not a target:
 // never tune a coefficient until a row turns green (CLAUDE.md).
 //
+// A REFERENCE AND A SMOKE ALARM, NOT THE SCOREBOARD (owner, 2026-11-10: "I
+// don't necessarily need it to reflect what has happened in the real world").
+// The town's history is its own; matching America's proves nothing. Use a
+// FAIL to go looking for a broken mechanism or an impossible outcome. The
+// scoreboard is `pnpm mechanism` (tools/mechanism-audit.mjs): what is still
+// dice, unsourced or set from the top.
+//
 // Probe rules kept (CLAUDE.md): the bundle must be fresh; the world is
 // resurrected on gameOver (no player — an un-resurrected run freezes and every
 // later month copies the month it died in); every series is read off the same
@@ -465,7 +472,7 @@ function report(runs) {
   const tally = { PASS: 0, WATCH: 0, FAIL: 0 };
   for (const x of rows) tally[x.grade]++;
   lines.push("");
-  lines.push(`PASS ${tally.PASS} · WATCH ${tally.WATCH} · FAIL ${tally.FAIL}`);
+  lines.push(`PASS ${tally.PASS} · WATCH ${tally.WATCH} · FAIL ${tally.FAIL}  (against the historical record — a reference, not a target; the scoreboard is \`pnpm mechanism\`)`);
   // per seed, per decade digest
   lines.push("");
   lines.push("Per seed, every 20 years: jobs · u · pop · real pay rel · CPI · vac O/R/I/M · real rent O/R/I/M · cap O/R/I/M vs 10Y · real land · own · firms");

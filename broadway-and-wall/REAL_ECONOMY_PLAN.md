@@ -195,6 +195,7 @@ Century after #702 (3×60): PASS 34 · WATCH 11 · FAIL 3, with the FAILs on lan
 - #708 lenders ration on their own break-even margin (opex + own expected loss + CAPM cost of equity × capital target; Damodaran Jan 2026 betas, ERP 4.49), not NORMAL_NIM. 6 seeds: PASS 33/14/1 → 35/10/3; the land rows got noisier (swing ratio 2.70 → 4.34, ranges overlapping).
 
 **Not started / still open (in priority order):**
+0. **The scoreboard is `pnpm mechanism`** (2026-11-10 baseline: 135 coins · 274 draws · 425 unsourced constants · 6 ledger rows). Work it down file by file, coins first (`--list coin`; the most are in actions.ts, dev.ts, leasing.ts, rivals.ts, notes.ts). The items below are the largest single mechanisms; each should lower the counts.
 1. **Land price formation (fails or flips on nearly every change).** A lot's price is today's development residual (levered: near-zero residuals swing hardest) or a holder bid at a hand-set peak (`PEAK_RENT_MULT` 1.25) discounted by a hand-set wait (`WAIT_DISCOUNT` 0.567). Replace both with the development option (McDonald & Siegel 1986; Williams 1991; Capozza & Helsley 1990): build when the finished value V reaches V* = β/(β−1)·K; below it land = (V/V*)^β·(V* − K). β from the engine's own measured property volatility, the cap rate as the payout yield and the underwriting discount rate; check the option premium against Quigg (1993, Seattle: ~6% of land value). Then measure land's swing, swing ratio and co-movement on 6 seeds.
 2. The tape's supply is a quota (`sim.ts refreshListings` tops the tape up to `targetListings` with random parcels, distress on a coin `pDistress`). Owners should review hold/sell on their own numbers (the street's best bid against their value-in-use plus the round trip's costs); distress only from real defaults (cityLoans in workout).
 3. Office WT slope: decompose a year's office rent change (trade, comps pull, CPI, bargains, composition) on 6 seeds.
@@ -205,7 +206,7 @@ Century after #702 (3×60): PASS 34 · WATCH 11 · FAIL 3, with the FAILs on lan
 8. Town payrolls in booms: heads grow slower than the nation's; labour demand, not hiring, is the remaining gap.
 9. Stale tests failing on main: refi-broken, products, deed-goes, mezz-sale, visible-buyers, tenantmarket retail renewals.
 
-**How to work:** small PRs to main with before/after numbers; 3-seed 60-year century (`tools/proof.mjs`), conserve on any money change, `pnpm -s package:playable && node test/playable-loads.mjs` (the month must run in the sim worker — no module-level reads of imported constants across the engine's import cycles). Probes from the second run are committed in `tools/probes/` (README there).
+**How to work:** small PRs to main; the before/after that matters is `pnpm mechanism` (coins, draws, unsourced constants, ledger rows — lower the baseline with `--update` when they fall); the century (`tools/proof.mjs`) is a smoke alarm for broken mechanisms and impossible outcomes, read per seed, conserve on any money change, `pnpm -s package:playable && node test/playable-loads.mjs` (the month must run in the sim worker — no module-level reads of imported constants across the engine's import cycles). Probes from the second run are committed in `tools/probes/` (README there).
 
 ## Which class rents highest must be an outcome (owner, 2026-11-10, open)
 
@@ -342,10 +343,13 @@ Anything else is a fault. The plan is done when all of these hold:
 | Physical and accounting bounds | Feet, people, money held and shares cannot go negative or above the whole. A bound of this kind **binds 0%** in a run, and a bind is logged as a bug: the model produced an impossible number upstream |
 | Real actors' and laws' limits | A lender's maximum LTV or minimum DSCR, a zoning FAR, a tenant's lease term, a statute. Each cites its source, sits in the rail audit as `behaviour`, and binds only where the real limit would |
 | `tools/shocks.mjs` on 5 seeds | No row BACKWARDS or NO RESPONSE: every shock moves what it causes in the direction any real economy does. Magnitudes are graded against the record loosely; a WRONG SIZE starts an investigation, not a tuning pass |
-| `tools/proof.mjs` on 3 seeds × 100 years | No row outside what comparable economies have shown (bands from the G7 / OECD record, not US post-war history alone). A FAIL is a smoke detector: trace it to a broken mechanism and fix that, or, if none is found, widen the band with a source and say so |
+| `pnpm mechanism` (`tools/mechanism-audit.mjs`) | **0 coins and 0 draws** outside the allowed outside world (nation, swans, weather) and agents' own taste draws; **0 unsourced constants**. The ratchet in CI stops any count rising; each PR that lowers one lowers the baseline. **This is the scoreboard** (owner, 2026-11-10) |
+| `tools/proof.mjs` | **A reference and a smoke alarm only.** No impossible outcome (negative space, a bank lending more than it has, a crunch in which no price falls, a frozen year). Its history bands are not targets: the town's history is its own |
 | `test/conserve.mjs` + the economy-wide identity (Phase 7) | $0 unexplained, for every agent, not only the player |
 | `tools/deepplay.mjs` on 3 seeds × 20 years | 0 BUG, 0 REALISM lines |
 | One-valuation identity (Phase 2) | The same building valued by any two functions differs only by a named, real role difference |
+
+**Not even a range — a reference** (owner, 2026-11-10: *"The goal is that everything is simulated and there's no fake numbers; I don't necessarily need it to reflect what has happened in the real world"*). Real-world numbers belong on the input side, sourced; the outputs are whatever the agents make. Progress is the mechanism audit going down (`pnpm mechanism`), not proof rows going green.
 
 **The record is a range, not a script** (owner, 2026-11-06: *"it doesn't have to be exactly like history right?"*). US history is one draw of a random process; a simulation that matched it row for row would be suspect, not realistic. What the record is for is catching the impossible — a +25% output gap, a bank lending one name more than its capital, a credit crunch in which no sale falls — because each of those is a broken mechanism. The mechanism rules (every number one of the four kinds above, no load-bearing rails) are where the standard stays strict.
 

@@ -90,6 +90,37 @@ sit in between. They are legitimate when they are calibrated against something
 real and stated as such, and fakes when they were turned until the test passed.
 Say which, in the comment, every time.
 
+## THE GOAL IS SIMULATION, NOT HISTORY (owner, 2026-11-10)
+
+*"The goal is that everything is simulated and there's no fake numbers; I
+don't necessarily need it to reflect what has happened in the real world."*
+
+Real-world numbers belong on the INPUT side — a hard cost, a tax rate, feet a
+worker, a lender's running cost — sourced in the comment. The OUTPUTS (rents,
+vacancy, land, cycles) are whatever the agents produce, and a town whose
+history looks nothing like America's is not wrong for that. A fake economy can
+be tuned to match 1980-2024 row for row; matching proves nothing, and chasing
+it is exactly the tuning fake number one forbids.
+
+So progress is measured on the mechanism, not on the outputs:
+
+- **`pnpm mechanism`** (`tools/mechanism-audit.mjs`, ~0.4 s) counts what is
+  still not simulated, from the source: **coins** (a random draw compared
+  against a probability — a decision taken by dice), other **draws** (random
+  magnitudes, picks, timings), **unsourced constants** (no citation, year or
+  [S]/[D]/[K] tag in the comment) and open **FORMULA_LEDGER** rows. The
+  outside world (nation, swans, weather) and agents' own taste draws
+  (random utility) are counted but allowed. It writes MECHANISM_AUDIT.md.
+- **The ratchet**: CI runs `--check` against MECHANISM_BASELINE.json, so no PR
+  may raise any count. A PR that removes some lowers the baseline
+  (`--update`) and says by how much. That number going down is the progress
+  report.
+- **`tools/proof.mjs` is a reference and a smoke alarm**, not a scoreboard:
+  its bands are read off history, so a FAIL is a prompt to look for a broken
+  mechanism (or an impossible outcome — negative space, a bank lending more
+  than it has, a crunch where no price falls), never a target. Do not report
+  "PASS n · FAIL m" as progress.
+
 ## How this is enforced
 
 Four tiers, by what they can catch and what they cost. Run the cheap one

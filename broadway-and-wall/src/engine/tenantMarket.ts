@@ -690,9 +690,21 @@ export function footFactor(k: Comm, footRel?: number): number {
   return k === "retail" && footRel !== undefined && footRel > 0 ? Math.pow(Math.max(0.25, Math.min(4, footRel)), 0.5) : 1;
 }
 
-/** Moving cost, $/sf/yr over the term. */
-export function moveCostPsfYr(e: Econ, k: Comm, termM: number): number {
-  return MOVE_PSF[k] * (e.costIdx ?? 1) / Math.max(1, termM / 12);
+/**
+ * Moving cost, $/sf/yr over the term. An office firm pays its move up front
+ * and has the term to earn it back, so it spreads the cost as a loan would:
+ * the level payment at what it borrows at (its books' rate, tenantBooks.ts
+ * `fin.fixed`: the long rate plus its trade's and grade's spread; with no
+ * books yet, the long rate) [D: the annuity, no new number]. Spread without
+ * interest it read 30-60% light over the 7-14-year office terms. Shops and
+ * sheds keep the straight line until their move costs are re-read.
+ */
+export function moveCostPsfYr(e: Econ, k: Comm, termM: number, firm?: Tenant): number {
+  const yrs = Math.max(1, termM / 12);
+  const cost = MOVE_PSF[k] * (e.costIdx ?? 1);
+  if (k !== "office") return cost / yrs;
+  const r = Math.max(0, firm?.fin?.fixed ?? (e.indexRate ?? 5.4) / 100);
+  return r > 1e-6 ? cost * r / (1 - Math.pow(1 + r, -yrs)) : cost / yrs;
 }
 
 /**

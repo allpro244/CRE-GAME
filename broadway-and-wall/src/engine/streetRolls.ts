@@ -511,7 +511,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
     const res = reservation(L, k, post, termM, stay, b.stressed, monthsToLet(k));
     const pc = placeCost(firm.fid !== undefined ? ctx.pts.get(firm.fid) : undefined, b.pos, hourCost(firm));
     const worth = worthOf(firm, k, mkt, b.sc[k] ?? 50, take, pc.cost, k === "retail" ? footRel(b.bbl) : undefined, rentCapacity(s.econ, firm, k));
-    const move = !stay && moving ? moveCostPsfYr(e, k, termM) : 0;
+    const move = !stay && moving ? moveCostPsfYr(e, k, termM, firm) : 0;
     const joint = worth - post - move + TASTE[k] * goingRent(k, mkt, going(k)) * gumbel(rng(s, "leasing"));
     // a sitting tenant is offered its landlord's ask, like anyone (tenantMarket.ts postedEff)
     const ask = L.a;
@@ -646,7 +646,7 @@ export function offerForPlayer(s: GameState, parcels: ParcelTable, firm: Tenant,
   const worth = worthOf(firm, k, mktHere, score, sf, pc.cost, k === "retail" ? V.footRel(rec.bbl) : undefined, rentCapacity(s.econ, firm, k));
   const taste = TASTE[k] * goingRent(k, mktHere, V.going(k)) * gumbel(rng(s, "leasing"));
   // a sitting tenant renewing does not move; every street option costs it the move
-  const rMax = worth - (sitting ? 0 : moveCostPsfYr(s.econ, k, termM)) + taste - c.joint - (c.post - c.res);
+  const rMax = worth - (sitting ? 0 : moveCostPsfYr(s.econ, k, termM, firm)) + taste - c.joint - (c.post - c.res);
   return { bid: Math.max(0.4, Math.min(1, rMax / postEff)), alt: c.bbl };
 }
 
@@ -685,7 +685,7 @@ export function stayOdds(s: GameState, parcels: ParcelTable | null | undefined, 
   const here = placeCost(pts, posOf(rec), hour);
   const vStay = worthOf(firm, k, mktHere, score, sf, here.cost, k === "retail" ? V.footRel(rec.bbl) : undefined, rentCapacity(e, firm, k)) - postEff;
   const q = firm.quality ?? score;
-  const move = moveCostPsfYr(e, k, termM);
+  const move = moveCostPsfYr(e, k, termM, firm);
   const cands: { w: number; v: number; bbl: string }[] = [];
   let tot = 0;
   for (const [bbl, roll] of V.rollList) {

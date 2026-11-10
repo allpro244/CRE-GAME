@@ -26,6 +26,66 @@
 import type { Credit, Econ, Tenant } from "./types";
 import { FIRM_PROFILE, LENDER_COVER, SF_PER_JOB } from "./market";
 import { hashNormal } from "./value";
+import { INDUSTRIES, INDUSTRY_IDS, TRADE_TO_INDUSTRY, type IndustryId } from "./industries";
+
+/**
+ * A SHED TENANT KEEPS A SHED BUSINESS'S BOOKS (2026-11-10). The trade
+ * profiles (market.ts FIRM_PROFILE) are the office and shop trades': a food
+ * or apparel firm there is a restaurant or a clothes shop, paying ~9% of its
+ * sales in rent. The street's shed firms are in those trades too — a food
+ * plant, a garment works, a wholesaler — and kept the shop's books, so a shed
+ * firm sold a shop's sales on its floor (revenue per foot = rent per foot over
+ * the rent share), three times the rent's weight on its margin; every point
+ * shed rents outran its trade's sales took ~0.1 points of margin, not ~0.03.
+ * Measured, seed 11, years 3-8: shed tenants went dark at 15% of shed stock a
+ * year (offices 2.7%, shops 4.7%), food plants 15%, garment works 42%; the
+ * record for industrial tenants is ~1-3% (Prologis bad debt ~0.3-0.5% of
+ * revenue, retention 69-87%; BDS establishment exits in manufacturing and
+ * wholesale ~6-8% a year counting moves and lease-end closures).
+ *
+ * A shed firm's books are its industry's, renting its floor:
+ *   rent share  US industrial rent 2023 (~$9.8/sf a year NNN, Cushman &
+ *               Wakefield MarketBeat: $9.59 Q2 2023, +10% over the year) [S~]
+ *               times the industry's feet a worker over its output a worker
+ *               (industries.ts sfPerWorker, BEA output over CES heads) [D].
+ *               It reproduces the BEA rent row where the floor is mostly
+ *               rented — wholesale 3.2% against BEA 3.8%, trucking 3.5%
+ *               against 2.3% — and gives the renter's share where plants
+ *               are mostly owned (food plants 1.5% against BEA's 0.5%).
+ *   margin      the industry's EBITDA over sales, US listed firms, January
+ *               2026 (Damodaran, NYU Stern, margin.html) [S]: distributors
+ *               11.4%, food processing 15.3%, apparel 11.5%, trucking 15.6%,
+ *               transportation 9.8%. The grade still scales it (`GRADE`).
+ * Leverage, floating share and spread stay the trade's (FINANCE_LIKE).
+ */
+const SHED_RENT_PSF_2023 = 9.8;
+const SHED_MARGIN: Partial<Record<IndustryId, number>> = {
+  wholesale: 0.114, warehousing: 0.098, transportsup: 0.098, trucking: 0.156,
+  food: 0.153, textiles: 0.115, apparel: 0.115,
+};
+function shedBook(ind: IndustryId): { margin: number; rent: number } {
+  const I = INDUSTRIES[ind];
+  const rent = SHED_RENT_PSF_2023 * I.sfPerWorker / Math.max(1, I.outPerWorkerK * 1000);
+  return { margin: SHED_MARGIN[ind] ?? I.gos, rent: Math.max(0.005, Math.min(0.15, rent)) };
+}
+const SHED_BOOK: Partial<Record<IndustryId, { margin: number; rent: number }>> = {};
+/**
+ * The margin and rent share a tenant's books are built on: its trade's
+ * (FIRM_PROFILE), or on a shed floor its industry's (`shedBook`) — the one
+ * the city's books hold it in, else its trade's shed industries weighted by
+ * US employment (TRADE_TO_INDUSTRY).
+ */
+export function bookProfile(t: { sector: Tenant["sector"]; use?: string; ind?: number }): { margin: number; rent: number } {
+  const P = FIRM_PROFILE[t.sector];
+  if (t.use !== "industrial") return P;
+  const id = t.ind !== undefined ? INDUSTRY_IDS[t.ind] : undefined;
+  if (id && INDUSTRIES[id]?.space.startsWith("industrial")) return (SHED_BOOK[id] ??= shedBook(id));
+  const opts = TRADE_TO_INDUSTRY.industrial[t.sector];
+  if (!opts?.length) return P;
+  let w = 0, mg = 0, rt = 0;
+  for (const [k, x] of opts) { const b = (SHED_BOOK[k] ??= shedBook(k)); w += x; mg += x * b.margin; rt += x * b.rent; }
+  return { margin: mg / w, rent: rt / w };
+}
 
 export interface TenantFin {
   /** revenue at signing, $/yr, and the trade's sales per worker then */
@@ -150,6 +210,7 @@ export function entrantMargin(e: Econ, sector: Tenant["sector"], k: "office" | "
 export function tenantFin(e: Econ, t: Tenant): TenantFin {
   if (t.fin) return t.fin as TenantFin;
   const P = FIRM_PROFILE[t.sector];
+  const B = bookProfile(t);
   const g = GRADE[t.credit];
   const key = `${t.name}|${t.startM}|${t.sector}`;
   const z1 = hashNormal(key + "|m"), z2 = hashNormal(key + "|r"), z3 = hashNormal(key + "|l");
@@ -171,12 +232,12 @@ export function tenantFin(e: Econ, t: Tenant): TenantFin {
   const mkt = Math.max(0.01, e.rentIdx?.[k] ?? t.rentPsf);
   const rel = Math.max(0.2, Math.min(5, t.rentPsf / mkt));
   const heads = (t.hcRef ?? t.sf) / Math.max(0.2, t.staffSign ?? 1) / Math.max(1, SF_PER_JOB[k] || 230);
-  const perHead = (A.rent[k] ?? mkt) * (SF_PER_JOB[k] || 230) / P.rent
+  const perHead = (A.rent[k] ?? mkt) * (SF_PER_JOB[k] || 230) / B.rent
     * ((e.cpi ?? 1) / Math.max(1e-6, A.cpi)) * tradeProd(e, t) * rel;
   void z2;
   const rev0 = Math.max(rentYr * 1.05, heads * perHead);
   const rentShare = rentYr / rev0;
-  const margin = Math.min(0.45, P.margin * g.margin * Math.exp(0.25 * z1)) + P.rent - rentShare;
+  const margin = Math.min(0.45, B.margin * g.margin * Math.exp(0.25 * z1)) + B.rent - rentShare;
   const n = e.nat;
   const long = (e.indexRate ?? 5.4) / 100;
   // Leverage as the trade carries it, adjusted for the grade — but no more

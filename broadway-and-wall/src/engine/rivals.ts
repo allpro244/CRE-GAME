@@ -41,7 +41,7 @@ import { mergedTouched, DEV_MARGIN, capRateFor, holdingValue, assetValue, demand
 import type { DevPlan } from "./dev";
 import { lpNetIrr } from "./waterfall";
 import { BAND_TERMS, bandIdx, floorBand, inheritRecord, rivalBand, scoreOf, type Band } from "./reputation";
-import { cityCoverage, cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, ownerRedevelopment, openConstructionDesks, planReuseAt, reuseZoneBar, projectedDevIrr, equityStretch } from "./dev";
+import { cityCoverage, cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, ownerRedevelopment, openConstructionDesks, planReuseAt, reuseZoneBar, projectedDevIrr, equityStretch, streetOccupancy, REUSE_MAX_OCC } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
 import { streetRefiProceeds, stabViewFor } from "./debt";
 import { stampApproach, conveyedValue, conveyedDeed } from "./leasing";
@@ -3554,20 +3554,24 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
     if (!rec.bldgArea) continue;
     if (s.landmarks?.[bbl] !== undefined || s.cityGroundLeases?.[bbl]) continue;
     const room = rec.lotArea * farMaxFor(rec) / rec.bldgArea;
-    if (room < 1.15) continue;
-    redevs.push({ bbl, rec, w: room - 1 });
-    redevW += room - 1;
+    // ...or an office it has mostly emptied, which it may convert to homes
+    // (dev.ts replacementSearch): asked first about its emptiest
+    const occ = rec.class === "office" ? streetOccupancy(s, rec) : 1;
+    const w = Math.max(room >= 1.15 ? room - 1 : 0, occ <= REUSE_MAX_OCC ? 1 - occ : 0);
+    if (!(w > 0)) continue;
+    redevs.push({ bbl, rec, w });
+    redevW += w;
   }
   // THE OWNER'S QUESTION about one of its buildings: hold it, or build what
   // the site now pays for. Asked when none of its dirt pencils first.
-  let redev: { bbl: string; rec: ParcelRecord; use: DevUse; plan: DevPlan; appetite: number } | null = null;
+  let redev: { bbl: string; rec: ParcelRecord; use: DevUse; plan: DevPlan; appetite: number; reuse?: boolean } | null = null;
   if (!bestFirst && redevs.length) {
     let roll = rng(s, "rivals") * redevW;
     let pick = redevs[redevs.length - 1];
     for (const c of redevs) { roll -= c.w; if (roll <= 0) { pick = c; break; } }
     const o = ownerRedevelopment(s, parcels, r, pick.bbl, pick.rec);
     // the same appetite the shared underwriting reads off a clearing plan
-    if (o) redev = { bbl: pick.bbl, rec: pick.rec, use: o.use, plan: o.plan, appetite: Math.min(3, Math.pow(o.h, 1.2)) };
+    if (o) redev = { bbl: pick.bbl, rec: pick.rec, use: o.use, plan: o.plan, appetite: Math.min(3, Math.pow(o.h, 1.2)), ...(o.reuse ? { reuse: true } : {}) };
   }
   if (!redev && !best) return;
   const redevB = !!redev;
@@ -3652,7 +3656,8 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   // ...and its construction lender has a house limit on one name, like every
   // acquisition desk (deskWithRoom): no desk with room, no start.
   if (plan.commitment > 0 && !deskWithRoom(s, r.id, plan.commitment)) return;
-  if (redevB && plan.sf < rec.bldgArea * 1.08) return;
+  const reuse = !!redev?.reuse;
+  if (redevB && !reuse && plan.sf < rec.bldgArea * 1.08) return;
   const cost = plan.costTotal;
   if (cost > (r.aum ?? 0) * 0.9 + r.cash * 5) return;
   // Dirt is already theirs — first equity draw only (loan follows over the job).
@@ -3663,7 +3668,7 @@ function startOwnJob(s: GameState, parcels: ParcelTable, r: Rival, ci: number) {
   const formerDurationRoll = rng(s, "rivals");
   void formerDurationRoll;
   drawLine(s, r, draw);
-  breakGround(s, parcels, r, bbl, rec, use, plan, redevB);
+  breakGround(s, parcels, r, bbl, rec, use, plan, redevB, reuse);
 }
 
 /**

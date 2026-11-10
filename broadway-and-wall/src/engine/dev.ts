@@ -3952,6 +3952,19 @@ function teardownScope(parcels: ParcelTable, bbls: string[]): string[] {
   return SCOPE.list;
 }
 
+/** The most of a building that may still be let when its owner converts it (`adaptiveReuseEligibility`: a fifth). */
+export const REUSE_MAX_OCC = 0.20;
+/** The share of a street building's office floor its roll has let. */
+export function streetOccupancy(s: GameState, rec: NonNullable<ReturnType<typeof resolveRec>>): number {
+  const roll = s.econ.streetRolls?.[rec.bbl];
+  if (!roll) return 1;
+  const cap = useRentableSf(rec, "office");
+  if (!(cap > 0)) return 1;
+  let let_ = 0;
+  for (const t of roll.t) if ((t.use ?? "office") === "office") let_ += t.sf;
+  return let_ / cap;
+}
+
 /**
  * THE BEST BUILDING THIS SITE WILL TAKE, AGAINST WHAT STANDS ON IT (2026-10-30).
  *
@@ -3969,10 +3982,35 @@ function replacementSearch(
   s: GameState, parcels: ParcelTable, bbl: string,
   rec: NonNullable<ReturnType<typeof resolveRec>>, site: NonNullable<ReturnType<typeof resolveRec>>,
   cls: string, oldAll: number, oc: number, rdev: DeveloperProfile, who: { id: string } | null,
-): { best: { u: NonNullable<ReturnType<typeof underwriteDevelopment>>; use: BuiltClass; h: number } | null; maxH: number } {
+): { best: { u: NonNullable<ReturnType<typeof underwriteDevelopment>>; use: BuiltClass; h: number; reuse?: boolean } | null; maxH: number } {
   const e = s.econ;
-  let best: { u: NonNullable<ReturnType<typeof underwriteDevelopment>>; use: BuiltClass; h: number } | null = null;
+  let best: { u: NonNullable<ReturnType<typeof underwriteDevelopment>>; use: BuiltClass; h: number; reuse?: boolean } | null = null;
   let maxH = 0;
+  // ...AND THE SHELL ITSELF AS FLATS (2026-11-10). An office building whose
+  // income has fallen under what its floors would earn as homes is converted,
+  // not torn down: the structure stays and interiors, risers and services are
+  // replaced (`planReuseAt`, the desk the player's reuse and the converter
+  // firms price on). It is how surplus office has left the stock in the
+  // record — Lower Manhattan converted roughly 16-19M sf of office to homes
+  // from 1995 to 2006, some fifth of its stock, after its vacancy and rents
+  // collapsed (Alliance for Downtown New York) — and it carries a lower bar
+  // than a teardown, so a glut that will not pay for a new building can
+  // still pay for a conversion. The building must be mostly empty (a fifth
+  // occupied at most, the rule the player's conversion follows:
+  // `adaptiveReuseEligibility`), the zoning must host housing, and the
+  // conversion must clear the same hurdle as any replacement, with what the
+  // building is worth standing (`oc`) as its price.
+  if (cls === "office" && site === rec && rec.class === "office" && streetOccupancy(s, rec) <= REUSE_MAX_OCC
+    && !reuseZoneBar(s, parcels, bbl, "multifamily")) {
+    const plan = planReuseAt(s, parcels, bbl, oc, "multifamily");
+    const financeable = !!plan && plan.ltcMax > 0 && plan.commitment > 0;
+    if (plan && (financeable || rdev.ltc <= CASH_BUILDER_LTC)) {
+      const m = DEV_MARGIN * (rdev.ltc > CASH_BUILDER_LTC ? equityStretch(s) : 1);
+      const h = hurdleAt(plan, m) * rdev.outlook * momentumRead(s, "multifamily", rdev.momentum, who) * exitRead(s, who, "multifamily") / rdev.bar;
+      maxH = Math.max(maxH, h);
+      if (h >= 1) best = { u: { plan, clears: financeable && plan.hurdleRatio >= 1, financeable, appetite: Math.min(3, Math.pow(plan.hurdleRatio, 1.2)) }, use: "multifamily", h, reuse: true };
+    }
+  }
   for (const k of BUILT_CLASSES) {
     if (!zonePermits(rec.zoneDist, k, rec.demandScore, e)) continue;
     const plate = cityCoverage(k);
@@ -4042,7 +4080,7 @@ function replacementSearch(
  */
 export function ownerRedevelopment(
   s: GameState, parcels: ParcelTable, r: Rival, bbl: string, rec: NonNullable<ReturnType<typeof resolveRec>>,
-): { use: BuiltClass; plan: DevPlan; h: number } | null {
+): { use: BuiltClass; plan: DevPlan; h: number; reuse?: boolean } | null {
   if (rec.class === "land" || !(rec.bldgArea > 0)) return null;
   const prof: DeveloperProfile = r.builderProf
     ? { ...r.builderProf, minDemand: 0 }
@@ -4050,7 +4088,7 @@ export function ownerRedevelopment(
         uses: ["office", "multifamily", "industrial", "retail"], outlook: 1, momentum: 0, maxShare: 0.02 };
   const oc = redevelopmentBasis(rec, s.econ, gradeOf(s, rec));
   const found = replacementSearch(s, parcels, bbl, rec, rec, rec.class, rec.bldgArea, oc, prof, r);
-  return found.best ? { use: found.best.use, plan: found.best.u.plan, h: found.best.h } : null;
+  return found.best ? { use: found.best.use, plan: found.best.u.plan, h: found.best.h, ...(found.best.reuse ? { reuse: true } : {}) } : null;
 }
 
 function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null = null) {
@@ -4206,7 +4244,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
   const chosen: {
     rec: TearCand["rec"]; ratio: number; bbl: string; oldSf: number;
     nextUse: DevUse; lead: BuiltClass; nsf: number; nfl: number;
-    opportunityCost: number; plan: DevPlan; ltc: number; kids: string[];
+    opportunityCost: number; plan: DevPlan; ltc: number; kids: string[]; reuse: boolean;
   }[] = [];
   // Lots spoken for this pass: a site, or a neighbour folded into one.
   const taken = new Set<string>();
@@ -4287,6 +4325,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
     const rdev = drawDeveloper(s);
     if (demandIdx(rec.demandScore) < rdev.minDemand) continue;
     let bestU: ReturnType<typeof underwriteDevelopment> = null;
+    let bestReuse = false;
     let bestH = -Infinity;
     let bestKids: string[] = [];
     let bestOc = opportunityCost;
@@ -4321,7 +4360,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
     const site = kids.length ? resolveRec(parcels, s, bbl)! : rec;
     const found = replacementSearch(s, parcels, bbl, rec, site, cls, oldAll, oc, rdev, null);
     if (!kids.length) nearH = Math.max(nearH, found.maxH);
-    if (found.best && (!bestU || found.best.h > bestH)) { bestU = found.best.u; bestH = found.best.h; nextUse = found.best.use; lead = found.best.use; bestKids = kids; bestOc = oc; }
+    if (found.best && (!bestU || found.best.h > bestH)) { bestU = found.best.u; bestH = found.best.h; nextUse = found.best.use; lead = found.best.use; bestKids = kids; bestOc = oc; bestReuse = !!found.best.reuse; }
     s.merged = before;
     }
     if (!bestU) continue;
@@ -4333,12 +4372,12 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
     const nfl = plan.floors;
     chosen.push({
       rec, ratio: cand.ratio, bbl, oldSf, nextUse, lead, nsf, nfl,
-      opportunityCost: bestOc, plan, ltc: rdev.ltc, kids: bestKids,
+      opportunityCost: bestOc, plan, ltc: rdev.ltc, kids: bestKids, reuse: bestReuse,
     });
     if (chosen.length >= crewRoom) break;
   }
   for (const pick of chosen) {
-  const { rec, ratio, bbl, oldSf, nextUse, lead, nsf, nfl, opportunityCost, plan, ltc, kids } = pick;
+  const { rec, ratio, bbl, oldSf, nextUse, lead, nsf, nfl, opportunityCost, plan, ltc, kids, reuse } = pick;
   // THE PICKS WERE MADE BEFORE ANY OF THEM RAN. One month chose 1000740001
   // as a teardown of its own AND 1000740002 with 1000740001 folded into its
   // site; both went ahead, and an eight-storey office was built on a lot of
@@ -4393,12 +4432,13 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
   if (stoodAs && (CITY_STOCK as Record<string, number>)[stoodAs] !== undefined) {
     addStock(e, stoodAs as keyof typeof CITY_STOCK, -rentableSf(rec));
   }
-  s.demolished = (s.demolished ?? 0) + 1;
+  // A conversion keeps its shell, so it is not a demolition (as rivals.ts breakGround).
+  if (!reuse) s.demolished = (s.demolished ?? 0) + 1;
   recordPropertyEvent(s, bbl, {
-    kind: "demolished",
+    kind: reuse ? "converted" : "demolished",
     sf: oldSf,
     use: stoodAs ?? undefined,
-    outcome: `${rec.yearBuilt || "Older"} building cleared for ${nextUse}`,
+    outcome: reuse ? `${rec.yearBuilt || "Older"} office being converted to ${nextUse}` : `${rec.yearBuilt || "Older"} building cleared for ${nextUse}`,
   });
 
   // A teardown is a developer's scheme like any other — one of the town's.
@@ -4456,6 +4496,8 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
       text: kids.length && teardownFirm
         ? `${teardownFirm.name} bought ${rec.address} and ${kids.length} adjacent lot${kids.length > 1 ? "s" : ""}; clearing for one building. `
           + `${(nsf / 1000).toFixed(0)}k sf of ${nextUse}, ${nfl} floors, opening ${monthLabel(s.month + months)}.`
+        : reuse ? `Conversion · ${rec.address} (built ${rec.yearBuilt}): the empty office is worth more as homes. `
+          + `${(nsf / 1000).toFixed(0)}k sf of ${nextUse}, opening ${monthLabel(s.month + months)}.`
         : `Teardown · ${rec.address} (built ${rec.yearBuilt}): ${why}. `
           + `${(nsf / 1000).toFixed(0)}k sf of ${nextUse} replaces it, opening ${monthLabel(s.month + months)}.`,
     });

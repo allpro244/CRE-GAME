@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Spark } from "@/ui/next/Figure";
+import "@/ui/cleanup-city.css";
 import { useMasonry } from "@/ui/useMasonry";
 import type { Econ } from "@/engine/types";
 import { useStore } from "@/state/store";
@@ -7,19 +9,19 @@ import type { BuiltClass, EconHistoryPoint } from "@/engine/types";
 import { capitalRatio, targetCapital } from "@/engine/lenders";
 import { openingVac, RENT_BASE, SECTOR_LABEL, CITY_STOCK, residenceVac, housableStock, islandResidents, PEOPLE_PER_HOME, chairStance } from "@/engine/market";
 import { submarkets, legVacancy, legRent, legDemand, deliverySchedule, projectVacancy, marketBalance, monthsOfSupply, availability } from "@/engine/space";
-import { LineChart, BarChart, Gauge } from "@/ui/Chart";
+import { LineChart, BarChart } from "@/ui/Chart";
 import { bandTable } from "@/engine/bands";
 import { sizeMean } from "@/engine/plates";
 import type { BarGroup } from "@/ui/Chart";
 import { pctSigned } from "@/ui/format";
 import { TheBanks } from "@/ui/panels/BanksDesk";
 import { LandValueChart } from "@/ui/panels/MarketPage";
-import { creditWord, real, workStage, Row, useDeskView } from "@/ui/panels/shared";
+import { creditWord, real, workStage, Row, useDeskView, ViewSwitch } from "@/ui/panels/shared";
 import { Employers, Districts, boardClimate, pendingHearings } from "@/ui/panels/CityStances";
 import { Industries } from "@/ui/panels/IndustriesView";
 import { economyByIndustry } from "@/engine/economy";
 import { capReadLine } from "@/engine/propmarket";
-import { CityHallBox } from "@/ui/panels/CityHall";
+import { CityHallBox, CityHallRecord } from "@/ui/panels/CityHall";
 import { WhyButton } from "@/ui/WhyChain";
 import { capWhy, rentWhy, vacWhy, landWhy, wageWhy, rateWhy, taxWhy, costWhy } from "@/ui/whyLinks";
 
@@ -88,7 +90,7 @@ export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; sp
   // density premium x price level, 0.26 on one measured town), not at 1, so
   // "1.00 = year 2000" needs them divided by where they started (2026-10-13).
   const w0 = useStore((s) => s.game?.econ.wage0) ?? 1;
-  if (tail.length < 2) return <div className="hint">Not enough history.</div>;
+  if (tail.length < 2) return <div className="dim">None</div>;
   const x: [string, string] = [monthLabel(tail[0].q), monthLabel(tail[tail.length - 1].q)];
   const kFmt = (v: number) => `${v.toFixed(0)}k`;
   const idxFmt = (v: number) => v.toFixed(2);
@@ -149,7 +151,7 @@ export function CityEconCharts({ tail, spanYrs }: { tail: EconHistoryPoint[]; sp
       </div>
       <CityFigures />
       <CentralBankBox />
-      <CityHallBox />
+      <CityHallBox record={false} />
     </>
   );
 }
@@ -365,8 +367,7 @@ function StockVsLeased({ tail, live, xFrom, xTo, spanYrs }: {
   const xl: [string, string] = [xFrom, xTo];
   return (
     <>
-      <div className="page-section">Stock vs leased · {spanYrs} yr{spanYrs === 1 ? "" : "s"}</div>
-      <div className="hint">Solid: total stock · dashed: leased · gap: vacancy</div>
+      <div className="page-section" title="Solid: total stock · dashed: leased · gap: vacancy">Stock vs leased · {spanYrs} yr{spanYrs === 1 ? "" : "s"}</div>
       <div className="chart-grid">
         {STOCK_CLASSES.map((k) => {
           const liveStk = live.stock?.[k] ?? tail[tail.length - 1]?.stock?.[k] ?? 0;
@@ -399,6 +400,7 @@ function StockVsLeased({ tail, live, xFrom, xTo, spanYrs }: {
 const CLASSES_ALL = ["office", "retail", "multifamily", "industrial"] as const;
 type Stance = BuiltClass | "general" | "land" | "banks" | "employers" | "industries" | "districts";
 const STANCES: readonly Stance[] = ["general", ...CLASSES_ALL, "land", "banks", "employers", "industries", "districts"];
+type Group = "sectors" | "rates" | "city" | "record";
 
 /**
  * THE REST OF THE STAT STRIP, WITH ITS HISTORY. The credit window, employment,
@@ -424,7 +426,7 @@ function MacroCharts({ hist }: { hist: EconHistoryPoint[] }) {
       <div className="chart-cell">
         <div className="chart-title">{title}</div>
         {pts.length < 2 ? (
-          <div className="hint">Not enough history.</div>
+          <div className="dim">None</div>
         ) : (
           <LineChart
             height={108}
@@ -480,7 +482,12 @@ export function EconomyPage() {
   // the envelope the board lets out or pulls in. Same reasoning — read beside
   // the rent and vacancy they move, not a desk away. The stance can be asked
   // for from outside (Pulse's rows, its Employers and Board cards).
-  const [sel, setSel] = useDeskView<Stance>("economy", "general", STANCES);
+  const [sel, setSel, linked] = useDeskView<Stance>("economy", "general", STANCES);
+  // FOUR TABS (CLEANUP_PLAN §3): the sector cards and their detail, the
+  // rates, the city's own books, and the record. A stance asked for from
+  // outside (Pulse, an industry link) lands on the sector cards.
+  const [grp, setGrp] = useState<Group>("sectors");
+  useEffect(() => { if (linked > 0) setGrp("sectors"); }, [linked]);
   // The class charts are of very different heights (a chart plus three
   // paragraphs beside a chart and a line), and a plain two-column grid left a
   // screen of blank beside the tall ones. Masonry drops each into whichever
@@ -647,7 +654,7 @@ export function EconomyPage() {
           decides whether it is orbiting 3% or 13%. */}
       {hist.length > 8 && (
         <div className="page-section" style={{ marginTop: 12 }}>
-          <div className="page-section-head">Rates</div>
+          <div className="page-section-head" title="Solid: base rate (loans price off it) · dashed: long-run rate">Rates</div>
           {spanSwitch("Range")}
           <LineChart
             height={132}
@@ -662,7 +669,6 @@ export function EconomyPage() {
             xLabels={[monthLabel(tail[0].q), monthLabel(tail[tail.length - 1].q)]}
             xAt={(i) => monthLabel(tail[i]?.q ?? 0)}
           />
-          <div className="hint">Solid: base rate (loans price off it) · dashed: long-run rate</div>
           <MacroCharts hist={tail} />
         </div>
       )}
@@ -675,8 +681,38 @@ export function EconomyPage() {
       {/* The headline strip — cycle, base rate, credit, costs, land — moved to
           City → Pulse, which is the one-screen read. This page is the depth
           behind it: pick a market, read it. */}
+      <ViewSwitch<Group>
+        label="Markets"
+        on={grp}
+        set={setGrp}
+        views={[
+          { id: "sectors", label: "Sectors", title: "Space market by sector, stock against leased" },
+          { id: "rates", label: "Rates", title: "Base rate, credit window, employment, build costs, land" },
+          { id: "city", label: "City", title: "City economy, the city today, budget, debt and policy" },
+          { id: "record", label: "Record", title: "City Hall's record and the model" },
+        ]}
+      />
+      {grp === "rates" && (hist.length > 8 ? rateChart : <div className="dim">None</div>)}
+      {grp === "city" && <>
+        {spanSwitch("Range")}
+        {/* WHAT MOVED THE CITY'S PRICES, each with its chain (whyReads.ts). */}
+        <div className="grid" style={{ marginTop: 6 }}>
+          <Row k="Base rate" v={`${e.indexRate.toFixed(2)}%`} why={<WhyButton id={rateWhy(game)} />} />
+          <Row k="Pay in town" v={`index ${(e.wageIdx ?? 1).toFixed(2)} · ${((e.unemployment ?? 0) * 100).toFixed(1)}% jobless`} why={<WhyButton id={wageWhy(game)} />} />
+          <Row k="Construction cost" v={`index ${(e.costIdx ?? 1).toFixed(2)}`} why={<WhyButton id={costWhy(game)} />} />
+          {e.gov && <Row k="City taxes" v={`property ${(e.gov.policy.propRate * 100).toFixed(2)}% · payroll ${(e.gov.policy.wageRate * 100).toFixed(2)}%`} why={<WhyButton id={taxWhy(game)} />} />}
+        </div>
+        <CityEconCharts tail={tail} spanYrs={spanYrs} />
+      </>}
+      {grp === "record" && <>
+        <CityHallRecord />
+        <div className="page-section">Model</div>
+        <div className="hint">
+          Employment → space demand (lagged) · offices, shops and sheds: rents are the leases signed, landlords price their own space · starts follow rent vs build cost · your deliveries count as supply
+        </div>
+      </>}
+      {grp === "sectors" && <>
       {/* ---- the four markets, at a glance ---- */}
-      <div className="page-section">Space market</div>
       <div className="mkt-cards">
         {/* The pseudo-card. No gauge, because the city has no availability
             to track — its numbers are the level everything else is read
@@ -708,44 +744,54 @@ export function EconomyPage() {
           // the same fact about the city.
           const stockSf = e.stock?.[k] ?? CITY_STOCK[k];
           const pipe = (e.pipeline?.[k] ?? 0) / stockSf;
+          // Each class runs its own cycle, and which part of it you are
+          // standing in changes what the same vacancy means.
+          const phase = e.sectorPhase?.[k] && e.sectorPhase[k] !== "steady"
+            ? `tenants ${e.sectorPhase[k] === "boom" ? "expanding" : "contracting"}` : null;
+          // THE SENTENCES, ON HOVER (CLEANUP_PLAN §3): the tile carries the
+          // four figures; the generated reads — the month's rent move and the
+          // cap rate's closed deals (propmarket.ts) — are its tooltip.
+          const why = [
+            `${SECTOR_LABEL[k]} · ${b.state} · availability ${(v * 100).toFixed(1)}% (a year ago ${((v - b.availCh) * 100).toFixed(1)}%)`,
+            `effective rents ${rentWord} · ${pctSigned(rentYoy)} real / 12m`,
+            phase,
+            `${sfFmt(stockSf)} sf stock · pipeline ${(pipe * 100).toFixed(1)}%`,
+            e.rentWhy?.[k],
+            capReadLine(e, k),
+          ].filter(Boolean).join("\n");
+          const at = (get: (h: EconHistoryPoint) => number | undefined) => tail.map((h) => get(h) ?? NaN);
           return (
             <button
               key={k}
               className={"mkt-card" + (sel === k ? " mkt-card-on" : "")}
               onClick={() => setSel(k)}
+              title={why}
             >
               <div className="mkt-card-head">
                 <span className="mkt-card-name">{SECTOR_LABEL[k]}</span>
-                <span className="mono">{(v * 100).toFixed(1)}%</span>
               </div>
-              <Gauge value={v} mark={v - b.availCh} markLabel="a year ago" lo={0} hi={0.28} fmt={(x) => `${(x * 100).toFixed(1)}%`} />
-              <div className="mkt-card-state">{b.state}</div>
-              <div className={"mkt-card-sub" + (rentYoy < -0.025 ? " neg" : "")}>
-                effective rents {rentWord} · {pctSigned(rentYoy)} real / 12m
+              <div className={"mkt-card-state" + (phase && e.sectorPhase?.[k] === "bust" ? " neg" : "")}>{b.state}</div>
+              <div className="cl-figs">
+                <div className="cl-fig">
+                  <span className="cl-fig-k">Vacancy</span>
+                  <span className={"cl-fig-v mono" + (b.soft ? " neg" : "")}>{(v * 100).toFixed(1)}%</span>
+                  <Spark pts={at((h) => h.avail?.[k] ?? h.vac?.[k])} w={56} h={14} />
+                </div>
+                <div className="cl-fig">
+                  <span className="cl-fig-k">Rent /sf</span>
+                  <span className={"cl-fig-v mono" + (rentYoy < -0.025 ? " neg" : "")}>${e.rentIdx[k].toFixed(0)}</span>
+                  <Spark pts={at((h) => h.rent?.[k])} w={56} h={14} />
+                </div>
+                <div className="cl-fig">
+                  <span className="cl-fig-k">Cap</span>
+                  <span className="cl-fig-v mono">{e.capRate[k].toFixed(2)}%</span>
+                  <Spark pts={at((h) => h.cap?.[k])} w={56} h={14} />
+                </div>
+                <div className="cl-fig">
+                  <span className="cl-fig-k">Pipeline</span>
+                  <span className={"cl-fig-v mono" + (pipe > 0.05 ? " neg" : "")}>{(pipe * 100).toFixed(1)}%</span>
+                </div>
               </div>
-              {/* Each class runs its own cycle now, and which part of it you
-                  are standing in is the single most useful thing on this card:
-                  the same vacancy means opposite things on the way up and on
-                  the way down. */}
-              {e.sectorPhase?.[k] && e.sectorPhase[k] !== "steady" && (
-                <div className={"mkt-card-sub" + (e.sectorPhase[k] === "bust" ? " neg" : "")}>
-                  tenants {e.sectorPhase[k] === "boom" ? "expanding" : "contracting"}
-                </div>
-              )}
-              <div className="mkt-card-sub mono">
-                ${e.rentIdx[k].toFixed(0)}/sf · {e.capRate[k].toFixed(2)}% cap · {sfFmt(stockSf)} sf · pipeline {(pipe * 100).toFixed(1)}%
-              </div>
-              {e.rentWhy?.[k] && (
-                <div className="mkt-card-sub" title={e.rentWhy[k]}>
-                  {e.rentWhy[k]}
-                </div>
-              )}
-              {/* where the cap comes from: the class's closed deals (propmarket.ts) */}
-              {capReadLine(e, k) && (
-                <div className="mkt-card-sub" title={capReadLine(e, k) ?? undefined}>
-                  {capReadLine(e, k)}
-                </div>
-              )}
             </button>
           );
         })}
@@ -872,29 +918,18 @@ export function EconomyPage() {
       {sel === "general" && (
         <StockVsLeased tail={tail} live={e} xFrom={xFrom} xTo={xTo} spanYrs={spanYrs} />
       )}
-      {sel === "general" && (
-        // WHAT MOVED THE CITY'S PRICES, each with its chain (whyReads.ts).
-        <div className="grid" style={{ marginTop: 6 }}>
-          <Row k="Base rate" v={`${e.indexRate.toFixed(2)}%`} why={<WhyButton id={rateWhy(game)} />} />
-          <Row k="Pay in town" v={`index ${(e.wageIdx ?? 1).toFixed(2)} · ${((e.unemployment ?? 0) * 100).toFixed(1)}% jobless`} why={<WhyButton id={wageWhy(game)} />} />
-          <Row k="Construction cost" v={`index ${(e.costIdx ?? 1).toFixed(2)}`} why={<WhyButton id={costWhy(game)} />} />
-          {e.gov && <Row k="City taxes" v={`property ${(e.gov.policy.propRate * 100).toFixed(2)}% · payroll ${(e.gov.policy.wageRate * 100).toFixed(2)}%`} why={<WhyButton id={taxWhy(game)} />} />}
-        </div>
-      )}
-      {sel === "general" && <>{rateChart}<CityEconCharts tail={tail} spanYrs={spanYrs} /></>}
       {sel === "land" && (
         <div className="grid" style={{ marginTop: 6 }}>
           <Row k="Land index" v={(e.landIdx * 100).toFixed(0)} why={<WhyButton id={landWhy(game)} />} />
         </div>
       )}
       {sel === "land" && <LandValueChart />}
-      {sel === "banks" && <>{rateChart}<TheBanks /></>}
+      {sel === "banks" && <TheBanks />}
       {sel === "employers" && <Employers />}
       {sel === "industries" && <Industries />}
       {sel === "districts" && <Districts />}
       {isClass && <>
-      <div className="page-section">{SECTOR_LABEL[focus]} · {bal.state}</div>
-      <div className="hint">{bal.note}</div>
+      <div className="page-section" title={bal.note}>{SECTOR_LABEL[focus]} · {bal.state}</div>
       <div className="grid" style={{ marginTop: 6 }}>
         <Row k="Inventory" v={`${(stock / 1e6).toFixed(1)}M sf`} />
         <Row k="Vacant space" v={`${((stock * vacNow) / 1e6).toFixed(2)}M sf · ${(vacNow * 100).toFixed(1)}% available · ${bal.availCh >= 0 ? "+" : "−"}${Math.abs(bal.availCh * 100).toFixed(1)} pts on a year · package ${(bal.pkg * 100).toFixed(1)}% of face`} bad={bal.soft} strong
@@ -1078,7 +1113,7 @@ export function EconomyPage() {
           <div className="chart-title">Pipeline by delivery year</div>
           {sched.some((v) => v > 0)
             ? <BarChart groups={pipeGroups} yFmt={sfFmt} />
-            : <div className="hint" style={{ padding: "26px 0" }}>Nothing under construction.</div>}
+            : <div className="dim" style={{ padding: "26px 0" }}>None</div>}
           <div className="chart-note">SF under construction by delivery year</div>
           {/* THE CRANES BEHIND THE BARS. "400k sf is coming" is a different
               fact when one tower is most of it than when twenty infills are —
@@ -1338,7 +1373,10 @@ export function EconomyPage() {
             </div>
             {(game.lines ?? []).length > 0 && (
               <>
-                <div className="mini-list" style={{ marginTop: 8 }}>
+                {/* "one in four" mirrors SHELVE_ODDS in engine/demand.ts, which
+                    is not exported — if the hearing gets kinder, so must this. */}
+                <div className="mini-list" style={{ marginTop: 8 }}
+                  title="Land prices in a work at rumour, funding, construction and opening · pts = full demand lift · ~1 in 4 rumours fail at hearing · demand is zero-sum across blocks">
                   {/* EVERY WORK, WITH ITS STAGE AND ITS PRICE. "Rumoured" alone
                       was the whole readout, and the trade lives in the rest of
                       the sentence: what the work is worth to the ground under
@@ -1368,23 +1406,13 @@ export function EconomyPage() {
                     );
                   })}
                 </div>
-                <div className="hint">
-                  Land prices in a work at rumour, funding, construction and opening · pts = full demand lift · ~1 in 4 rumours fail at hearing
-                  {/* "one in four" mirrors SHELVE_ODDS in engine/demand.ts, which
-                      is not exported — if the hearing gets kinder, so must this. */}
-                </div>
               </>
             )}
-            <div className="hint">Demand is zero-sum across blocks.</div>
+            
           </>
         );
       })()}
 
-      {(sel === "general" || isClass) && <>
-      <div className="page-section">Model</div>
-      <div className="hint">
-        Employment → space demand (lagged) · offices, shops and sheds: rents are the leases signed, landlords price their own space · starts follow rent vs build cost · your deliveries count as supply
-      </div>
       </>}
     </div>
   );

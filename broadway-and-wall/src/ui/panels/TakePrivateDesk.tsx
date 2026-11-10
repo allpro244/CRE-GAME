@@ -50,11 +50,9 @@ export function TakePrivateDesk({ firmId }: { firmId: string }) {
         </div>
       ) : (
         <div onClick={(e) => e.stopPropagation()}>
-          <div className="hint">
-            {q.situationWhy} Debt repaid at par (due-on-sale) · new loans per deed · cash at par · premium on property equity only
-          </div>
           <div className="grid" style={{ margin: "6px 0" }}>
-            <Row k="Situation" v={SIT_WORD[q.situation]} bad={q.situation === "distressed"} />
+            <Row k="Situation" v={SIT_WORD[q.situation]} bad={q.situation === "distressed"}
+              title={`${q.situationWhy} Debt repaid at par (due-on-sale) · new loans per deed · cash at par · premium on property equity only`} />
             <Row k="Properties" v={`${q.deeds.length} · ${usd(q.gross)}`}
               title="Valued on each rent roll and condition" />
             {Math.abs(q.bookMark - q.gross) > q.gross * 0.01 && (

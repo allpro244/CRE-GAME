@@ -31,7 +31,7 @@ export function Industries() {
   const [shown, setShown] = useState<Record<string, boolean>>({});
   const rows = economyByIndustry(game);
   if (!rows) {
-    return <div className="hint">The town's firm books open the month after its households are counted. Advance a month.</div>;
+    return <div className="dim" title="The town's firm books open the month after its households are counted. Advance a month.">None</div>;
   }
   const yours = yourTenantsByIndustry(game);
   const jobs = rows.reduce((a, r) => a + r.heads, 0);
@@ -40,7 +40,7 @@ export function Industries() {
   const firms = rows.reduce((a, r) => a + r.firms, 0);
   return (
     <div>
-      <div className="page-section">Industries · {k(jobs)} jobs · {usd(out * 12)} sales a year · {(ex / (out || 1) * 100).toFixed(0)}% sold out of town · {firms.toLocaleString()} firms</div>
+      <div className="page-section" title="Click a type to see its industries, and an industry to see who it buys from and sells to. Sales are last month's at a yearly rate; margin is before interest.">Industries · {k(jobs)} jobs · {usd(out * 12)} sales a year · {(ex / (out || 1) * 100).toFixed(0)}% sold out of town · {firms.toLocaleString()} firms</div>
       <table className="tbl">
         <thead>
           <tr>
@@ -91,7 +91,6 @@ export function Industries() {
           })}
         </tbody>
       </table>
-      <div className="hint">Click a type to see its industries, and an industry to see who it buys from and sells to. Sales are last month's at a yearly rate; margin is before interest.</div>
       {focus && INDUSTRY_IDS.includes(focus) && <SupplyChain id={focus} />}
     </div>
   );
@@ -138,7 +137,7 @@ function SupplyChain({ id }: { id: IndustryId }) {
   const shown = [...yourFirms, ...named.filter((f) => !places.get(f.fid)?.own)].slice(0, 10);
   return (
     <div className="page-section" style={{ marginTop: 14 }}>
-      <div className="page-section-head">
+      <div className="page-section-head" title={`Dollar flows from the national input-output table on this town's output last month; "local" is the share bought from firms in town.`}>
         {INDUSTRIES[id].label} · {usd(sc.output * 12)} sales a year
         {y && <span className="ind-yours"> · your tenants: {y.firms} firm{y.firms === 1 ? "" : "s"}, {k(y.sf)} sf, {usd(y.rentYr)} rent a year</span>}
       </div>
@@ -167,10 +166,9 @@ function SupplyChain({ id }: { id: IndustryId }) {
               </tr>
             );
           })}
-          {!shown.length && <tr><td colSpan={4} className="dim">No firms on the map in this industry; off-map firms carry it.</td></tr>}
+          {!shown.length && <tr><td colSpan={4} className="dim" title="Off-map firms carry this industry">None</td></tr>}
         </tbody>
       </table>
-      <div className="hint">Dollar flows from the national input-output table on this town's output last month; "local" is the share bought from firms in town.</div>
     </div>
   );
 }

@@ -1,0 +1,23 @@
+/* City clean-up (CLEANUP_PLAN §3): the Markets sector tiles as four figures,
+   each with its history as a sparkline under the number. */
+.mkt-card .cl-figs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 10px;
+  margin-top: 6px;
+}
+.mkt-card .cl-fig {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  overflow: hidden;
+}
+.mkt-card .cl-fig-k {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+}
+.mkt-card .cl-fig-v { font-size: 14px; font-weight: 600; }
+.mkt-card .cl-fig .nx-spark { display: block; max-width: 100%; }

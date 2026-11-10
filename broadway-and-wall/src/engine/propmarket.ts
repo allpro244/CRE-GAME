@@ -44,7 +44,7 @@ import { underwrittenGrowthPct, dollarLevel, RENT_BASE, CAP_BASE } from "./marke
 import {
   assetValue, capRateFor, initialCondIdx, demandLinear, incomeValueAsIs, initialCondition, inPlace, landValue,
   marketAppraisal, noiYr, resolveRec, specWearMult, taxBorneShare, taxRate, interimUsePsfYr, useOccupancy, useRentableSf,
-  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, residualScheme,
+  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, residualScheme, GAP_CLOSE_YR, gapDuration,
 } from "./value";
 import { uses } from "./mix";
 import { catchUpCapex } from "./dev";
@@ -98,13 +98,6 @@ const bentIndex = (i: number) => i + BEND * (Math.exp(-i / BEND) - Math.exp(-BEN
 export const BUY_CLOSING = 0.02;
 /** Points on the acquisition loan (streetLoanCost charges about one). */
 const LOAN_POINTS = 0.01;
-/**
- * HOW FAST AN IN-PLACE INCOME GAP CLOSES: rent and vacancy gaps close about a
- * quarter a year (Wheaton & Torto; the same REVERT_PER_YR builders read in
- * rivals.ts). A lease-up buyer with harder leasing (CARE.lease) closes it
- * faster, which is the value-add trade.
- */
-const GAP_CLOSE_YR = 0.25;
 /**
  * RENT GROWTH MEAN-REVERTS: annual rent-growth autocorrelation runs 0.5-0.7 in
  * US office and industrial series, so a growth surprise decays at
@@ -329,8 +322,10 @@ export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<ty
     w = V > 0 ? D / V : 0;
   }
   const r = w * rd + (1 - w) * rE;
-  const kappa = GAP_CLOSE_YR * (v.noiPre < v.stabPre ? b.lease : 1);
-  const dur = 1 / Math.max(0.05, 1 - (1 - kappa) / (1 + r));
+  // the gap closes at the market's pace (value.ts GAP_CLOSE_YR, the appraiser's
+  // too); a lease-up buyer with harder leasing (CARE.lease) closes it faster,
+  // which is the value-add trade
+  const dur = gapDuration(r, GAP_CLOSE_YR * (v.noiPre < v.stabPre ? b.lease : 1));
   V += (v.noiPre - v.stabPre) * dur;
   V -= v.catchUp;
   if (b.builds) V = Math.max(V, v.land);

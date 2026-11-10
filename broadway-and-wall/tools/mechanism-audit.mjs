@@ -49,7 +49,7 @@ const ENGINE = join(ROOT, "src", "engine");
 const BASE = join(ROOT, "MECHANISM_BASELINE.json");
 
 /** Files that ARE the outside world (the nation's cycle, black swans, weather). */
-const OUTSIDE_FILES = new Set(["blackswans.ts", "swans.ts", "nation.ts", "weather.ts"]);
+const OUTSIDE_FILES = new Set(["blackswans.ts", "swans.ts", "nation.ts", "weather.ts", "opening.ts"]);
 /** Channels that are the outside world wherever they are drawn. */
 const OUTSIDE_CHANNELS = new Set(["nation", "shock"]);
 /** The random primitives themselves are defined here; their bodies are not draws. */

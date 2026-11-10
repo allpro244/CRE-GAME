@@ -18,6 +18,7 @@ import { tickCapRead, tickLandRead } from "./propmarket";
 import { settleSupplyDeliveries, breakDueStarts } from "./supply";
 import { readOut } from "./tenantMarket";
 import { tickContractors } from "./contractors";
+import { openingLabour } from "./opening";
 
 /** Construction materials' real price per log point of real oil (see the cost index) [D]. */
 const MATERIALS_OIL = 0.15;
@@ -757,7 +758,8 @@ export function payrollGrowth12(e: Econ): number {
 }
 /** Local unemployment over the town's own natural rate (the matching steady state). */
 export function labourSlack(e: Econ): number {
-  return (e.unemployment ?? OPENING_UNEMP) - OPENING_UNEMP;
+  const uN = e.uStar ?? OPENING_UNEMP;
+  return (e.unemployment ?? uN) - uN;
 }
 /** How far national unemployment has risen over the last year — the national credit signal. */
 export function natUnempRise12(e: Econ): number {
@@ -1126,13 +1128,14 @@ export const SF_PER_JOB: Record<BuiltClass, number> = { office: 230, industrial:
  *  year of the record gives, so the opening town had a sixth fewer residents
  *  for its jobs than an American town does (2026-11-10). */
 const PARTICIPATION = 0.50;
-/** The rate the city opens at, which is what makes the opening state consistent:
- *  the opening year's (START_YEAR 2000) US rate, BLS UNRATE annual average 4.0%
- *  (FRED UNRATE) [S]. It read 5.2%, which no year near the opening gives. */
+/** The opening rate for a save made before the town drew its opening year
+ *  (opening.ts): 2000's, BLS UNRATE annual average 4.0% (FRED UNRATE) [S]. A
+ *  new game opens on the year it draws. */
 const OPENING_UNEMP = 0.040;
-/** The nation's natural rate — the Phillips curve's u* in tickNation, and the pivot for national pay.
- *  CBO's noncyclical rate for the opening year, 2000: 5.07-5.12% by quarter
- *  (FRED NROU, by vintage), 5.08% mean 1990-2019 [S]. It read 4.8%. */
+/** The nation's natural rate — the Phillips curve's u* in tickNation, and the pivot for national pay —
+ *  for a save made before the opening year was drawn: 2000's, CBO's
+ *  noncyclical rate 5.07-5.12% by quarter (FRED NROU) [S]. A new game reads
+ *  its opening year's (`nat.uStar`, opening.ts). */
 const NAT_U_STAR = 0.051;
 /** How far below zero the price level can fall a year, asymptotically (pay is not cut). [K: judgement, no source found] */
 const DEFLATION_FLOOR = 0.02;
@@ -1201,7 +1204,7 @@ export const U_UP_SPEED = 0.31, U_DOWN_SPEED = 0.25;
  * WAS this arithmetic — done once, by hand, for one island size, and then left
  * behind when the map became a choice.
  */
-export function citySize(stock: Record<BuiltClass, number>): { jobs0: number; pop0: number } {
+export function citySize(stock: Record<BuiltClass, number>, uOpen = OPENING_UNEMP): { jobs0: number; pop0: number } {
   let jobs = 0;
   for (const k of BUILT_CLASSES) {
     const per = SF_PER_JOB[k];
@@ -1220,7 +1223,7 @@ export function citySize(stock: Record<BuiltClass, number>): { jobs0: number; po
   // A town with no commercial stock at all is still a town — the floor keeps
   // every ratio downstream finite rather than pretending the place is empty.
   jobs = Math.max(2_000, Math.round(jobs));
-  const pop0 = Math.round(jobs / (1 - OPENING_UNEMP) / PARTICIPATION);
+  const pop0 = Math.round(jobs / (1 - uOpen) / PARTICIPATION);
   return { jobs0: jobs, pop0 };
 }
 
@@ -1300,7 +1303,11 @@ export function cityClassFactor(intensity: number): number {
 
 export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   const CITY = parcels ? stockFromParcels(parcels) : { ...CITY_STOCK };
-  const SIZE = citySize(CITY);
+  // THE YEAR IT OPENS IN (opening.ts): its natural rate of unemployment. The
+  // nation's history is then simulated around it (regime.ts simulateHistory),
+  // so where unemployment stands on the opening day is the history's outcome.
+  const OPEN = openingLabour(s.seed);
+  const SIZE = citySize(CITY, OPEN.uStar);
   const dens = parcels ? densityPriceScales(cityFloorIntensity(parcels)) : densityPriceScales(REF_CITY_FAR);
   const econ: Econ = {
     indexRate: 5.4,
@@ -1426,7 +1433,8 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // a NaN in the year-zero column of the null-player table, and which anything
   // reading population before the first tick would have inherited.
   econ.jobs0 = SIZE.jobs0; econ.pop0 = SIZE.pop0;
-  econ.population = SIZE.pop0; econ.jobs = SIZE.jobs0; econ.unemployment = OPENING_UNEMP;
+  econ.population = SIZE.pop0; econ.jobs = SIZE.jobs0; econ.unemployment = OPEN.uStar;
+  econ.openYear = OPEN.year; econ.uStar = OPEN.uStar;
   // Wage (and cost) open at the density premium; output follows jobs × wage.
   econ.wageIdx = dens.wage; econ.outputIdx = dens.wage; econ.cpi = 1;
   // The opening REAL income per worker, stored so the income term is exactly
@@ -1440,7 +1448,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   econ.cityIntensity = dens.intensity;
   econ.cityIntensity0 = dens.intensity;
   econ.builtSf0 = BUILT_CLASSES.reduce((a, k) => a + (econ.stock[k] ?? 0), 0);
-  econ.nat = { infl: 0.021, inflExp: 0.02, unemp: 0.052, policy: 4.2,
+  econ.nat = { infl: 0.021, inflExp: 0.02, unemp: OPEN.uStar, uStar: OPEN.uStar, policy: 4.2,
                neutralReal: 0.019, shockM: 0, shockSev: 0, credibility: 0.8,
                recM: 0, expM: 0, deep: false, pressureM: 0 };
   econ.concIdx = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
@@ -2161,7 +2169,7 @@ function spendNation(
   const u = n.unemp;
   const infl = n.inflExp ?? 0.02;
   // HOUSEHOLDS
-  const Yd = Yprev * (1 - P.TAX) + P.TR_U * (u - NAT_U_STAR);
+  const Yd = Yprev * (1 - P.TAX) + P.TR_U * (u - (n.uStar ?? NAT_U_STAR));
   d.Yp += (Yd - d.Yp) / P.YP_M;
   d.uH.push(u); if (d.uH.length > 7) d.uH.shift();
   const du6 = u - d.uH[0];
@@ -2216,7 +2224,7 @@ function spendNation(
   // three years of unemployment under its natural rate (BEA NIPA; Kalecki,
   // Goodwin). Labour's share drifts up about a point of output per point of
   // unemployment held under natural, over a year and a half.
-  d.ws = (d.ws ?? 0) + (P.WS_U * (NAT_U_STAR - u) - (d.ws ?? 0)) / P.WS_M;
+  d.ws = (d.ws ?? 0) + (P.WS_U * ((n.uStar ?? NAT_U_STAR) - u) - (d.ws ?? 0)) / P.WS_M;
   const kStar = K0 * (1 + P.YE_W * (d.Ye - 1)) * Math.pow(uc0 / uc, P.SIGMA_K) * fin * Math.exp(d.kc - P.PROF * d.ws + (sw?.k ?? 0));
   const dep = (P.DELTA + P.GROW) * d.K;
   // Capital is easier to stop buying than to sell: gross investment does not fall below a third of replacement.
@@ -2506,7 +2514,7 @@ export function tickNation(s: GameState) {
   // Against what that book would cost at neutral money: r* plus expected
   // inflation, plus the same blended spread.
   const corpNeutral = rStar + (n.inflExp ?? 0.02) + CORP_FLOAT * 0.02 + (1 - CORP_FLOAT) * 0.015;
-  if (n.gap === undefined) { n.gap = -2 * (n.unemp - NAT_U_STAR); n.gap1 = n.gap; }
+  if (n.gap === undefined) { n.gap = -2 * (n.unemp - (n.uStar ?? NAT_U_STAR)); n.gap1 = n.gap; }
   const y1 = n.gap;
   // THE OTHER TOOLS. A bank at its floor whose rule wants far lower does not
   // sit still and neither does the government: asset purchases, forward
@@ -2533,7 +2541,7 @@ export function tickNation(s: GameState) {
     // Defaults follow the labour market: about 1.5% of output a year per two
     // points of unemployment over its natural rate (US charge-offs 2009-10
     // ran ~2.5-3% of loans, loans ~1.5x GDP... less recoveries).
-    const writeOff = CRED_RECESSION_WRITEOFF * Math.max(0, n.unemp - NAT_U_STAR - 0.01) / 0.02;
+    const writeOff = CRED_RECESSION_WRITEOFF * Math.max(0, n.unemp - (n.uStar ?? NAT_U_STAR) - 0.01) / 0.02;
     n.credGap = g0 + build - writeOff - g0 / CRED_TREND_M;
   }
   tickHouseholds(e, n, y1);
@@ -2568,7 +2576,7 @@ export function tickNation(s: GameState) {
   // post-war lows were 2.5% (1953) and 3.4-3.5% (1969, 2000, 2019). Below
   // 3.5% Okun's level approaches 2.5% and never passes it; the excess demand
   // goes into pay and prices instead (the Phillips curve already sees it).
-  const okunRaw = NAT_U_STAR - n.gap / OKUN;
+  const okunRaw = (n.uStar ?? NAT_U_STAR) - n.gap / OKUN;
   const uTarget = okunRaw >= 0.035 ? okunRaw : 0.025 + 0.01 * Math.exp((okunRaw - 0.035) / 0.01);
   const uMove = (uTarget - n.unemp) * (uTarget > n.unemp ? U_UP_SPEED : U_DOWN_SPEED);
   n.unemp = clamp(n.unemp + uMove
@@ -2594,7 +2602,7 @@ export function tickNation(s: GameState) {
   // no record (natUnempRise12).
   (n.uHist ??= []).push(n.unemp);
   if (n.uHist.length > 13) n.uHist.shift();
-  const uStar = NAT_U_STAR;
+  const uStar = n.uStar ?? NAT_U_STAR;
   const nGap = uStar - n.unemp;
   const phillips = nGap > 0 ? 0.38 * nGap + 4.5 * nGap * nGap : 0.20 * nGap;
   // AND MONEY ITSELF IS A CHANNEL. A labour-market gap of a point or two can
@@ -2645,7 +2653,7 @@ export function tickNation(s: GameState) {
   // depth. Its pass-through now falls with slack: e^(-slack / 2 points),
   // which leaves 2009-15 (about three points of slack) near target, and the
   // 1970s and 2021 — easy money into a tight labour market — at full force.
-  const passThrough = Math.exp(-Math.max(0, n.unemp - NAT_U_STAR) / 0.02);
+  const passThrough = Math.exp(-Math.max(0, n.unemp - (n.uStar ?? NAT_U_STAR)) / 0.02);
   // ...AND THE STICKINESS IS ABOUT NOMINAL CUTS, SO IT FADES WITH INFLATION
   // (REAL_ECONOMY_PLAN Phase 1, 2026-11-05). Dear money disinflates at half
   // strength because pay and contract rents are rarely cut in nominal terms —
@@ -3762,7 +3770,7 @@ export function tickEcon(s: GameState) {
     const natPrev = e.natWageIdx ?? e.wageIdx!;
     {
       const n = e.nat;
-      const natTight = n ? Math.max(-0.06, Math.min(0.055, NAT_U_STAR - n.unemp)) : 0;
+      const natTight = n ? Math.max(-0.06, Math.min(0.055, (n.uStar ?? NAT_U_STAR) - n.unemp)) : 0;
       const natGrowth = (0.42 * (n?.inflExp ?? e.inflExp) + 0.58 * natCpi12) / 12 + productivity / 12 + natTight * 0.012;
       e.natWageIdx = natPrev * (1 + Math.max(0, natGrowth));
     }

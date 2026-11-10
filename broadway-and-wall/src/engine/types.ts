@@ -2296,6 +2296,8 @@ export interface Econ {
      * of the 1970s thought the natural rate was 4% when it was nearly 6%.
      */
     uStarBelief?: number;
+    /** The natural rate this economy actually reverts to: the opening year's CBO estimate (opening.ts). */
+    uStar?: number;
     /**
      * Months the bank is not free to act. Both of the century's real
      * inflations happened to a central bank under political and fiscal
@@ -2796,6 +2798,9 @@ export interface Econ {
    * and then frozen. Everything downstream runs on INDEXES against these, so
    * the dynamics are unchanged and only the levels now describe the town.
    */
+  /** The year of the US record this town opened in, and its natural rate of unemployment (opening.ts). */
+  openYear?: number;
+  uStar?: number;
   jobs0?: number;
   pop0?: number;
   /**

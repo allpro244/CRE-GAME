@@ -121,8 +121,9 @@ export interface History {
  * on it. Called from initEcon after the long-run baseline is laid down.
  *
  * Where the history STARTS is the model's own steady state: inflation at a 2%
- * target, unemployment at the 4.8% the rule calls full, policy where the rule
- * sits there. Two slow variables are drawn because nothing in a twenty-year
+ * target, unemployment at the natural rate of the year the town opens in
+ * (opening.ts: CBO's estimate for a year of the 1990-2024 record, 4.42-5.73%),
+ * policy where the rule sits there. Two slow variables are drawn because nothing in a twenty-year
  * window would move them far enough to forget a fixed start: the neutral real
  * rate's anchor (anywhere inside the 0.4-3.2% band market.ts lets it wander —
  * Laubach-Williams puts r* near 3.5% in the 1960s and 0.5% after 2010) and how
@@ -146,11 +147,12 @@ export function simulateHistory(econ: Econ, seed: number, longRun: Record<string
   const scratchEcon = {
     ...econ,
     nat: {
-      infl: 0.02, inflExp: 0.02, inflSm: 0.02, unemp: 0.048, policy: +(100 * (anchor + 0.02)).toFixed(2),
+      // around the natural rate of the year the town opens in (opening.ts; 4.8% for an older save)
+      infl: 0.02, inflExp: 0.02, inflSm: 0.02, unemp: econ.uStar ?? 0.048, uStar: econ.uStar, policy: +(100 * (anchor + 0.02)).toFixed(2),
       neutralReal: anchor, neutralAnchor: anchor, inflTarget: 0.02, credibility: cred,
       shockM: 0, shockSev: 0, recM: 0, expM: 60, deep: false, pressureM: 0,
     },
-    creditIdx: 1, phase: "expansion" as MarketPhase, unemployment: 0.048,
+    creditIdx: 1, phase: "expansion" as MarketPhase, unemployment: econ.uStar ?? 0.048,
     // The history's first month must not read the town it is about to make:
     // the corporate debt ladder (tickNation) remembers the long rate it opens on.
     indexRate: +(100 * (anchor + 0.02) + 1).toFixed(2),

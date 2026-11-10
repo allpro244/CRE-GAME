@@ -19,7 +19,7 @@ import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/ac
 import { currentAskPsfYr } from "@/engine/absorption";
 import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, avgUnitSf, renewalIntent, minLettableSf, unlettableRemainderSf, planIsLive, autoLeaseRule, autoTiCapToday } from "@/engine/leasing";
 import { StackingList } from "@/ui/panels/StackingList";
-import { stacksOf } from "@/engine/plates";
+import { assignTenantFloors, stacksOf } from "@/engine/plates";
 import { supportableOcc } from "@/engine/absorption";
 import { dscr, ltv, payOffDue, rateCapCost, capStrikeFor, prepayPenalty, equityCureNeed } from "@/engine/debt";
 import { fundableNow } from "@/engine/credit";
@@ -462,7 +462,9 @@ function ParcelPanelInner({
   // header above it by the premium on every corner, waterfront and high street
   // lot, and the sale desk below priced your listing against it.
   const value = marketAppraisal(game, rec, selectedBBL, cond);
-  const dupe = embedded && !!holding;
+  // The property page's header carries the appraisal, NOI, occupancy, size,
+  // FAR, demand and WALT for every building (UI clean-up, 2026-11), owned or not.
+  const dupe = embedded;
   const builtFar = rec.lotArea > 0 ? rec.bldgArea / rec.lotArea : 0;
   const farMax = Math.max(rec.farMaxComm, rec.farMaxRes);
   // A ground lessee's building stands on your deed — it is not yours to let.
@@ -470,6 +472,8 @@ function ParcelPanelInner({
   const renovating = holding?.renovatingUntilM !== undefined && game.month < (holding.renovatingUntilM ?? 0);
   const commercial = isCommercial(rec);
   const leasedSf = holding && commercial ? holding.tenants.reduce((s2, t) => s2 + t.sf, 0) : 0;
+  // which floors each lease sits on, for the rent roll (StackingList does the same)
+  if (holding && commercial) assignTenantFloors(rec, holding.tenants);
   const d = holding ? dscr(rec, game, holding) : null;
   const l = holding ? ltv(rec, game, holding) : null;
   const taxAppeal = holding ? taxAppealQuote(game, parcels, selectedBBL) : null;
@@ -555,9 +559,9 @@ function ParcelPanelInner({
           {([
             ["leasing", "Rent roll", isBuilt],
             ["money", "Money", isBuilt || !!holding.loan || !!holding.groundLeased],
-            ["ops", "Operations", isBuilt],
             ["deal", "Sell", true],
-            ["build", isBuilt ? "Convert / Build" : "Build", true],
+            // Operations and Build are one click further, on the full view
+            ["build", "Build", !isBuilt],
           ] as const).filter(([, , show]) => show).map(([t, label]) => (
             <button key={t} type="button" className="btn-mini"
               title={`Open ${label}`}
@@ -569,7 +573,8 @@ function ParcelPanelInner({
       )}
 
       {on("summary") && holding && !dev && <AssembleCard bbl={selectedBBL} />}
-      {(on("summary") || on("build")) && holding && !dev && !parcels?.[selectedBBL]?.tract && <SplitCard key={selectedBBL} bbl={selectedBBL} />}
+      {/* only dirt can be split: on a standing building the card said so and nothing else */}
+      {(on("summary") || on("build")) && holding && !dev && !parcels?.[selectedBBL]?.tract && (rec.class === "land" || !rec.bldgArea) && <SplitCard key={selectedBBL} bbl={selectedBBL} />}
       {on("summary") && holding && !dev && (() => {
         const read = landRead(rec, game.econ);
         const room = farMax > 0 ? Math.max(0, 1 - builtFar / farMax) : 0;
@@ -808,7 +813,7 @@ function ParcelPanelInner({
         })()}
         {/* DISCLOSED, not estimated, whenever the seller has shown a roll. The
             label drops "(mkt)" with it, because it is no longer an opinion. */}
-        {isBuilt && !holding && (() => {
+        {isBuilt && !holding && !dupe && (() => {
           const ip = goingIn(game, selectedBBL, value);
           // ONE BASIS WITH THE HEADER. The property page's strip reads let
           // over LETTABLE feet ("fully let · 1,209 sf unlettable"); this row
@@ -903,13 +908,13 @@ function ParcelPanelInner({
             bad={u.leased < u.total * 0.6}
           />
         ))}
-        {holding && isBuilt && commercial && holding.tenants.length > 0 && (
+        {holding && isBuilt && commercial && holding.tenants.length > 0 && !dupe && (
           <Row
             k="Rent roll"
             v={`${holding.tenants.length} lease${holding.tenants.length === 1 ? "" : "s"} · ${sf(holding.tenants.reduce((a, t) => a + t.sf, 0))}`}
           />
         )}
-        {holding && isBuilt && commercial && (
+        {holding && isBuilt && commercial && !dupe && (
           <Row k={<Gloss term="WALT">WALT</Gloss>} v={walt(holding, game.month).toFixed(1) + " yrs avg remaining"} />
         )}
         {/* One building must not quote two different NOIs on one panel. In
@@ -1020,7 +1025,7 @@ function ParcelPanelInner({
       })()}
 
       {on("leasing") && holding && commercial && (
-        <StackingList rec={rec} holding={holding} game={game} canHold={planIsLive(game)} />
+        <StackingList rec={rec} holding={holding} game={game} canHold={planIsLive(game)} vacantOnly />
       )}
       {on("leasing") && holding && commercial && holding.tenants.length > 0 && (
         <div className="deal">
@@ -1072,6 +1077,7 @@ function ParcelPanelInner({
                       {yrsIn >= 5 && <span className="dim"> · since {START_YEAR + Math.floor(t.startM / 12)}</span>}
                     </span>
                     <span className="roll-meta mono">
+                      {t.floorLo != null && t.floorHi != null && <>{t.floorLo === t.floorHi ? `Fl ${t.floorLo}` : `Fl ${t.floorLo}–${t.floorHi}`} · </>}
                       {sf(t.sf)} · ${t.rentPsf.toFixed(0)} {recoveryOf(t) === "gross" ? "G" : recoveryOf(t).toUpperCase()} · exp {monthLabel(t.endM)}
                       {" "}· {termLeft(t.endM, game.month)}
                       {outgrown && (noRoom
@@ -1290,7 +1296,12 @@ function ParcelPanelInner({
               {contract
                 ? <Row k="Agreed price" v={usd(contract.agreedPrice ?? contract.theirPrice)} strong />
                 : <>
-                    <Row k="Ask" v={usd(listing.ask)} strong />
+                    {/* the cap at ask rides on the ask; the offer desk below
+                        prints NOI, going-in and stabilised at YOUR price */}
+                    <Row k="Ask" v={(() => {
+                      const ip = isBuilt ? goingIn(game, selectedBBL, listing.ask) : null;
+                      return ip && ip.noi > 0 ? `${usd(listing.ask)} · ${((ip.noi / Math.max(1, listing.ask)) * 100).toFixed(2)}% cap` : usd(listing.ask);
+                    })()} strong />
                     {listing.loanBasis !== undefined && listing.loanBasis > 0 && (
                       <Row k="Loan basis" v={usd(listing.loanBasis)} title="Outstanding debt; ask anchored to it, not appraisal." />
                     )}
@@ -1307,6 +1318,7 @@ function ParcelPanelInner({
                 const stab = proFormaNOIYr(rec, game.econ, ip.h?.condition ?? cond, px);
                 return (
                   <>
+                    {contract && <>
                     <Row k={ip.disclosed ? "In-place NOI / yr" : "NOI / yr (mkt est.)"} v={usd(ip.noi)} bad={ip.noi < 0} />
                     <Row
                       k="Going-in cap"
@@ -1317,6 +1329,7 @@ function ParcelPanelInner({
                     {/* The seller's other number, and it is labelled as the
                         forecast it is. What you buy is the line above. */}
                     <Row k="Stabilised pro-forma" v={`${usd(stab)} · ${((stab / Math.max(1, px)) * 100).toFixed(2)}%`} />
+                    </>}
                     {(() => {
                       const r = ip.h ? occRead(rec, ip.h) : null;
                       return (

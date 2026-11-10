@@ -4,6 +4,8 @@ import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { initialCondition, marketAppraisal, ownedHoldingNoiYr, resolveRec, rollQualitySpread, operatingStatement, remainingAbatement, inPlace } from "@/engine/value";
 import { farMaxFor, maxBuildable, replacementCost } from "@/engine/dev";
+import { dscr } from "@/engine/debt";
+import "@/ui/cleanup-building.css";
 import { demandNow } from "@/engine/demand";
 import { walt, unitStatus } from "@/engine/leasing";
 import { taxAppealQuote } from "@/engine/tax";
@@ -115,6 +117,9 @@ export function PropertyPage() {
   const active = shown.some((t) => t.key === tab) ? tab : "summary";
   return (
     <div className="prop-page">
+      {/* SIX TILES, THEN ONE LINE (UI clean-up, 2026-11). The header was twelve
+          tiles and a facts column, 560px before any tab; the secondary reads are
+          the same numbers, smaller, each with its tooltip. */}
       <div className="stat-strip">
         <Big label="Appraisal" value={band(bbl, value)}
           why={built ? <WhyButton id={capWhy(game, dominantUse(rec))} lead={valueLead(game, dominantUse(rec), value, noi)} /> : undefined} />
@@ -123,135 +128,101 @@ export function PropertyPage() {
           value={(built || leasedFee) ? usd(noi) : "—"}
           bad={noi < 0}
         />
-        <Big label="Debt service / yr" value={dsYr ? usd(-dsYr) : "—"} />
-        <Big label="Cash flow / yr" value={usd(noi - dsYr)} bad={noi - dsYr < 0} />
         {leasedFee ? (
           <Big label="Your role" value="leased fee" />
         ) : (
-          // ONE BASIS, THE ONE EVERY OTHER SCREEN USES. This printed physical
-          // occupancy — let feet over all rentable feet — while the card below,
-          // Leasing and the top bar read lettable feet, so one building with an
-          // unlettable remainder showed 88% here, "fully let" underneath and
-          // 100.0% at the top of the screen.
+          // ONE BASIS, THE ONE EVERY OTHER SCREEN USES: lettable feet.
           (() => {
             const r = ipHdr.h ? occRead(rec, ipHdr.h) : null;
             const v = r ? r.lettableOcc : occ;
             return <Big label="Occupancy" value={!built ? "—" : r ? occLabel(r) : (v * 100).toFixed(0) + "%"} bad={built && v < 0.75} title={r ? occTitle(r) : undefined} />;
           })()
         )}
-        {leasedFee && rec.bldgArea > 0 && game.groundLeases?.[bbl] && (
-          <>
-            <Big label="Lessee building" value={`${game.groundLeases[bbl].floors ?? rec.floors} fl · ${sf(rec.bldgArea)}`} />
-            <Big label="Lessee" value={game.groundLeases[bbl].tenant} />
-          </>
+        {h && <Big label="Cash flow / yr" value={usd(noi - dsYr)} bad={noi - dsYr < 0} />}
+        {h && (h.loan || h.mezz) && (
+          <Big label="Debt" value={usd((h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0))}
+            title={`Debt service ${usd(dsYr)} / yr${h.mezz ? ` · mezz ${usd(h.mezz.balance)}` : ""}`} />
         )}
-        {built && h && (() => {
-          const u = unitStatus(rec, h, game.month);
-          return <Big label="Spaces leased" value={`${u.leased} / ${u.total}`} bad={u.leased < u.total * 0.6} />;
+        {h && h.loan && (() => {
+          const d = dscr(rec, game, h);
+          return <Big label="DSCR" value={d === null ? "—" : `${d.toFixed(2)}×`} bad={d !== null && d < (h.loan.minDSCR ?? 1.2)}
+            title={`NOI / debt service${h.loan.minDSCR ? ` · covenant ${h.loan.minDSCR.toFixed(2)}×` : ""}`} />;
         })()}
-        {built && h && h.tenants.length > 0 && (
-          <Big label="WALT" value={`${walt(h, game.month).toFixed(1)} yrs avg`} bad={walt(h, game.month) < 3} />
-        )}
-        {built && h && (
-          <Big
-            label="Expense leakage"
-            title="Opex and tax not recovered from tenants."
-            value={`${(operatingStatement(rec, game.econ, h, game.month).leakage * 100).toFixed(0)}%`}
-            bad={operatingStatement(rec, game.econ, h, game.month).leakage > 0.45}
-          />
-        )}
-        {built && h && (
-          <Big
-            label="Roll quality"
-            title="Cap rate spread from term, credit and vacancy. Positive = price discount."
-            value={`${rollQualitySpread(rec, h, game.month, game.econ) >= 0 ? "+" : ""}${(rollQualitySpread(rec, h, game.month, game.econ) * 100).toFixed(0)} bps`}
-            bad={rollQualitySpread(rec, h, game.month, game.econ) > 0.15}
-          />
-        )}
-        {/* Concessions already granted and not yet burned off. A buyer credits
-            this off the price at closing, so it moves the appraisal directly —
-            and there was nowhere to see it. */}
-        {built && h && remainingAbatement(h, game.month) > 0 && (
-          <Big label="Free rent owed" value={usd(-remainingAbatement(h, game.month))} bad />
-        )}
-        {/* THE SANITY CHECK EVERY DEVELOPER RUNS AND THIS GAME COULD NOT.
-            Above replacement cost, somebody will build a competitor across the
-            street. Below it, nobody can — and you are buying bricks for less
-            than the bricks cost. */}
-        {built && (() => {
-          const rc = replacementCost(rec as never, game.econ);
-          if (!rc) return null;
-          const x = value / rc;
-          return (
-            <Big
-              label="Value / replacement cost"
-              title="Appraisal / replacement cost. Above 1× invites new supply."
-              value={`${x.toFixed(2)}×`}
-              bad={x > 1.25}
-            />
-          );
-        })()}
-        {(() => {
-          // A syndicated deed: the sponsor's equity is what the waterfall pays it.
-          const syn = h ? syndicateView(game, parcels, bbl) : null;
+        {h && !h.loan && !h.mezz && (() => {
+          const syn = syndicateView(game, parcels, bbl);
           if (syn) return <Big label="Sponsor equity" value={usd(syn.yours)} title={`Total ${usd(syn.equity)} · LPs ${usd(syn.theirs)}`} />;
-          return <Big label={h?.jv ? `Equity · yours ${Math.round((1 - h.jv.share) * 100)}%` : "Equity"} value={h ? usd((value - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0)) * (1 - (h.jv?.share ?? 0))) : "—"} />;
+          return <Big label={h.jv ? `Equity · yours ${Math.round((1 - h.jv.share) * 100)}%` : "Equity"} value={usd(value * (1 - (h.jv?.share ?? 0)))} />;
         })()}
-        {h && (() => {
-          // The same ledger read the Portfolio's "Returns to date" prints.
-          const r = returnsToDate(game, parcels).find((x) => x.bbl === bbl);
-          if (!r) return null;
-          return <Big label="Return to date" title="Pre-tax: (distributions + marked equity) / equity invested." value={`${r.multiple.toFixed(2)}×${r.irr !== null ? ` · ${pctSigned(r.irr)} IRR` : ""}`} bad={r.multiple < 1} />;
+        {!h && built && (() => {
+          const rc = replacementCost(rec as never, game.econ);
+          return rc ? <Big label="Value / replacement" title="Appraisal / replacement cost. Above 1× invites new supply." value={`${(value / rc).toFixed(2)}×`} bad={value / rc > 1.25} /> : null;
         })()}
       </div>
       <div className="prop-head">
-        <div>
-          {/* The address is the room's title now (RightPanel); this line is the deed. */}
-          <div className="panel-bbl mono">Parcel {rec.bbl} · {useLabel(rec)} · {rec.zoneDist}</div>
-          {/* Every building in this game is somewhere. Closing the page and
-              putting the camera on it is one click, not a hunt.
-              AND SELLING IS THE OTHER ONE. The exit used to be the ninth card
-              down a page that is mostly operating detail — which is the wrong
-              way round, because the decision to sell is the one you open this
-              page having already half made. */}
-          <div className="btn-row" style={{ marginTop: 6 }}>
-            {/* THE BUY SIDE GETS A FRONT DOOR TOO. An owner had "Sell this
-                building" up here; a buyer had to find the Acquire tab. */}
-            {!h && game.listings.some((l) => l.bbl === bbl) && (
-              // under contract or mid-talks it is no longer an offer to make
-              <button className="btn btn-buy" onClick={() => setTab("deal")}
-                title="Ask, in-place NOI, offer, funding">
-                {game.talks?.[bbl]?.agreed ? "Fund the closing ▸" : game.talks?.[bbl] ? "Negotiation ▸" : "Make an offer ▸"}
-              </button>
-            )}
-            {!h && (
-              <button className={"btn" + (game.watch?.includes(bbl) ? " btn-on" : "")}
-                onClick={() => useStore.getState().toggleWatch(bbl)}
-                title="Alert when listed; news filed under Your book.">
-                {game.watch?.includes(bbl) ? "★ Watching" : "☆ Watch"}
-              </button>
-            )}
-            {h && (
-              <button className="btn btn-sell" onClick={() => setTab("deal")}
-                title={h.sale ? "Listing and bids" : "List off-market or marketed"}>
-                {h.sale
-                  ? "◆ Listed · view bids"
-                  : (leasedFee ? "Sell leased fee" : built ? "Sell building" : "Sell lot")}
-              </button>
-            )}
-            <button className="btn" onClick={() => useStore.getState().focus(bbl, true)}
-              title="Show on map">
-              ⌖ Go to property
-            </button>
-          </div>
+        <div className="prop-facts">
+          {(() => {
+            const f: { k: string; v: string; title?: string; bad?: boolean }[] = [];
+            if (built) f.push({ k: "", v: `${sf(rec.bldgArea)} · ${rec.floors} fl · ${rec.yearBuilt}` });
+            f.push({ k: "Lot", v: sf(rec.lotArea) });
+            f.push({ k: "FAR", v: `${(rec.bldgArea / Math.max(1, rec.lotArea)).toFixed(1)} / ${farMaxFor(rec).toFixed(1)}`, title: `Built / envelope · buildable at max: ${buildableLine(rec)}` });
+            f.push({ k: "Demand", v: String(Math.round(demandNow(game, rec))) });
+            if (built && h) {
+              const u = unitStatus(rec, h, game.month);
+              f.push({ k: "Spaces", v: `${u.leased} / ${u.total}`, bad: u.leased < u.total * 0.6 });
+              if (h.tenants.length > 0) f.push({ k: "WALT", v: `${walt(h, game.month).toFixed(1)} y`, bad: walt(h, game.month) < 3 });
+              const os = operatingStatement(rec, game.econ, h, game.month);
+              f.push({ k: "Leakage", v: `${(os.leakage * 100).toFixed(0)}%`, title: "Opex and tax not recovered from tenants.", bad: os.leakage > 0.45 });
+              const rq = rollQualitySpread(rec, h, game.month, game.econ);
+              f.push({ k: "Roll", v: `${rq >= 0 ? "+" : ""}${(rq * 100).toFixed(0)} bps`, title: "Cap rate spread from term, credit and vacancy. Positive = price discount.", bad: rq > 0.15 });
+              if (remainingAbatement(h, game.month) > 0) f.push({ k: "Free rent owed", v: usd(-remainingAbatement(h, game.month)), bad: true, title: "Concessions granted and not yet burned off; a buyer credits this off the price." });
+              const rc = replacementCost(rec as never, game.econ);
+              if (rc) f.push({ k: "V / RC", v: `${(value / rc).toFixed(2)}×`, title: "Appraisal / replacement cost. Above 1× invites new supply.", bad: value / rc > 1.25 });
+            }
+            if (h && (h.loan || h.mezz)) {
+              const syn = syndicateView(game, parcels, bbl);
+              if (syn) f.push({ k: "Sponsor equity", v: usd(syn.yours), title: `Total ${usd(syn.equity)} · LPs ${usd(syn.theirs)}` });
+              else f.push({ k: h.jv ? `Equity ${Math.round((1 - h.jv.share) * 100)}%` : "Equity", v: usd((value - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0)) * (1 - (h.jv?.share ?? 0))) });
+            }
+            if (h) {
+              const r = returnsToDate(game, parcels).find((x) => x.bbl === bbl);
+              if (r) f.push({ k: "Return", v: `${r.multiple.toFixed(2)}×${r.irr !== null ? ` · ${pctSigned(r.irr)}` : ""}`, title: "Pre-tax: (distributions + marked equity) / equity invested; IRR.", bad: r.multiple < 1 });
+            }
+            if (leasedFee && rec.bldgArea > 0 && game.groundLeases?.[bbl]) {
+              f.push({ k: "Lessee", v: `${game.groundLeases[bbl].tenant} · ${game.groundLeases[bbl].floors ?? rec.floors} fl · ${sf(rec.bldgArea)}` });
+            }
+            return f.map((x, i) => (
+              <span key={i} className="prop-fact" title={x.title}>
+                {x.k && <span className="prop-fact-k">{x.k}</span>}
+                <span className={"mono" + (x.bad ? " neg" : "")}>{x.v}</span>
+              </span>
+            ));
+          })()}
         </div>
-        <div className="grid" style={{ minWidth: 320 }}>
-          {built && <Row k="Building" v={`${sf(rec.bldgArea)} · ${rec.floors} floors`} strong />}
-          <Row k="Land" v={sf(rec.lotArea)} />
-          <Row k="FAR built / envelope" v={`${(rec.bldgArea / Math.max(1, rec.lotArea)).toFixed(1)} / ${farMaxFor(rec).toFixed(1)}`} />
-          <Row k="Buildable at max" v={buildableLine(rec)} />
-          {built && <Row k="Built" v={String(rec.yearBuilt)} />}
-          <Row k="Demand" v={Math.round(demandNow(game, rec)) + " / 100"} />
+        <div className="btn-row">
+          {!h && game.listings.some((l) => l.bbl === bbl) && (
+            // under contract or mid-talks it is no longer an offer to make
+            <button className="btn btn-buy" onClick={() => setTab("deal")}
+              title="Ask, in-place NOI, offer, funding">
+              {game.talks?.[bbl]?.agreed ? "Fund the closing ▸" : game.talks?.[bbl] ? "Negotiation ▸" : "Make an offer ▸"}
+            </button>
+          )}
+          {!h && (
+            <button className={"btn" + (game.watch?.includes(bbl) ? " btn-on" : "")}
+              onClick={() => useStore.getState().toggleWatch(bbl)}
+              title="Alert when listed; news filed under Your book.">
+              {game.watch?.includes(bbl) ? "★ Watching" : "☆ Watch"}
+            </button>
+          )}
+          {h && (
+            <button className="btn btn-sell" onClick={() => setTab("deal")}
+              title={h.sale ? "Listing and bids" : "List off-market or marketed"}>
+              {h.sale ? "◆ Listed · view bids" : "Sell"}
+            </button>
+          )}
+          <button className="btn" onClick={() => useStore.getState().focus(bbl, true)}
+            title={`Show on map · parcel ${rec.bbl} · ${useLabel(rec)} · ${rec.zoneDist}`}>
+            ⌖ Map
+          </button>
         </div>
       </div>
       {/* A default is not a tab. It is the only thing on the page that matters

@@ -8,8 +8,10 @@ import { sf } from "@/ui/format";
 import { useStore } from "@/state/store";
 
 export function StackingList({
-  rec, holding, game, canHold,
+  rec, holding, game, canHold, vacantOnly,
 }: {
+  /** Only the empty floors: the rent roll below carries each tenant's floors. */
+  vacantOnly?: boolean;
   rec: ParcelRecord;
   holding: Holding;
   game: GameState;
@@ -31,7 +33,7 @@ export function StackingList({
     floorLo: number;
     floorHi: number;
   }[] = [];
-  for (const t of holding.tenants) {
+  for (const t of vacantOnly ? [] : holding.tenants) {
     if (t.use === "multifamily") continue;
     if (t.floorLo == null || t.floorHi == null) continue;
     rows.push({
@@ -59,9 +61,10 @@ export function StackingList({
     });
   }
   rows.sort((a, b) => a.floorLo - b.floorLo || a.floorHi - b.floorHi);
+  if (vacantOnly && !rows.length) return null;
   return (
     <div className="page-section">
-      <div className="page-section-head">Stacking · plates, not suites</div>
+      <div className="page-section-head">{vacantOnly ? "Vacant floors" : "Stacking · plates, not suites"}</div>
       <table className="tbl">
         <thead>
           <tr>
@@ -103,10 +106,6 @@ export function StackingList({
           )}
         </tbody>
       </table>
-      <div className="hint">
-        A list of who sits on which floors and what is still vacant. Hold keeps a
-        contiguous block off the desk for a future full-floor user.
-      </div>
     </div>
   );
 }

@@ -879,8 +879,10 @@ export interface HouseholdRegister {
   firmHc?: Record<number, number>; layoffWhy?: Record<number, number>;
   /** Each industry's openings still unfilled at the end of last month's matching: what a household may move to the region for. */
   vacLeft?: number[];
-  /** The town's normal labour-market tightness (openings per jobless at the month's matching), learned over twenty years (MATCH_ETA). */
+  /** The town's normal labour-market tightness (last month's month-end openings per jobless at the month's matching), learned over twenty years (MATCH_ETA). */
   thetaRef?: number;
+  /** Set once `thetaRef` reads the month-end openings (JOLTS's count; matchJobs 3b): a register saved before learned it on the openings at the search. */
+  thetaJolts?: 1;
   /** Last month's openings per jobless worker at the matching (SEP_ETA). */
   theta?: number;
   /** The nation's consumption mood (market.ts dem.cMood) the register opened in: its households' spending moves with the mood against it. */
@@ -2422,12 +2424,45 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
     jobless.push(3 * i + k);
   }
   // the finding rate at this month's openings per jobless worker (MATCH_ETA)
+  // ...COUNTED AS JOLTS COUNTS THEM (2026-11-09): the openings in θ are the
+  // ones still open at the end of last month (`vacLeft`, the month-end stock
+  // JOLTS reports — "positions open on the last business day of the month",
+  // FRED JTSJOL — and the stock MATCH_ETA and SEP_ETA were estimated on, over
+  // the unemployed, UNEMPLOY), not the ones open as this month's search
+  // begins, which still hold every opening the month will fill. The two
+  // move differently: the month's fills out of unemployment are f x U, not
+  // a share of the openings, so in a boom, as the jobless thin out, more of
+  // the openings are left at the month's end. Measured (walk probe, seeds
+  // 11/33, 30 years, 12-month changes per point of the national gap), the
+  // month-end stock moved 8.1% / 5.7% a point and the stock at the search
+  // 6.1% / 4.6%: read on the latter, the town's θ moved 8-12% a point
+  // against the record's ~20% (FRED 2001-19: JTSJOL/UNEMPLOY falls about
+  // 30% per point of unemployment, and the nation's rate here moves about
+  // 0.7 a point), and its unemployment fell 0.24-0.44 points a point of gap
+  // where the nation's fell 0.7. Read on the month-end stock (seeds
+  // 11/22/33): local unemployment -0.35/-0.44/-0.24 -> -0.44/-0.47/-0.27
+  // points a point of gap; its slope on the nation's rate 0.52/0.67/0.43 ->
+  // 0.64/0.74/0.48; the share of a change in heads that is filled (12-month
+  // log changes) 0.76/0.82/0.81 -> 0.83/0.83/0.93. (A month with no
+  // openings left at last month's end reads the openings at the search.)
   let uW = 0, vW = 0;
   for (const sl of jobless) uW += a.wt[(sl / 3) | 0];
-  for (let ind = 0; ind < N_IND; ind++) vW += Math.max(0, V[ind]);
+  if (r.vacLeft?.length === N_IND) for (let ind = 0; ind < N_IND; ind++) vW += r.vacLeft[ind];
+  const atSearch = !(vW > 0);
+  if (atSearch) for (let ind = 0; ind < N_IND; ind++) vW += Math.max(0, V[ind]);
   let find = UE_RATE;
-  if (uW > 0 && vW > 0) {
+  // (the books' first month has no month-end count yet: the finding rate is the normal one, and the normal is learned from the next)
+  if (uW > 0 && vW > 0 && !(atSearch && r.thetaRef === undefined)) {
     const theta = vW / uW;
+    // a register whose normal was learned on the openings at the search
+    // (saved before 2026-11-09) has it carried over to the month-end count
+    // once, by this month's ratio of the two, so the switch is not read as a slump
+    if (!atSearch && r.thetaRef !== undefined && !r.thetaJolts) {
+      let v0 = 0;
+      for (let ind = 0; ind < N_IND; ind++) v0 += Math.max(0, V[ind]);
+      if (v0 > 0) r.thetaRef *= vW / v0;
+    }
+    if (!atSearch) r.thetaJolts = 1;
     r.thetaRef = r.thetaRef === undefined ? theta : r.thetaRef + (theta - r.thetaRef) * THETA_MEMORY_RATE;
     find = Math.min(1, UE_RATE * Math.pow(theta / r.thetaRef, MATCH_ETA));
     r.theta = theta;

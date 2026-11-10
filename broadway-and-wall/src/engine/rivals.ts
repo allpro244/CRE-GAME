@@ -5675,7 +5675,14 @@ export function contractedEquity(s: GameState, r: Rival, exceptBbl?: string): nu
   let held = 0;
   for (const h of Object.values(s.holdings ?? {})) {
     const o = h.sale?.offer;
-    if (!o?.contract || o.firmId !== r.id || h.bbl === exceptBbl) continue;
+    // A STANDING OFFER IS MONEY SPOKEN FOR, not only a signed contract. A buyer
+    // that has put a number to the player earmarks the equity for it — it shows
+    // proof of funds with the offer — and does not spend the same cheque on
+    // another building that month. Counting only signed contracts let a firm's
+    // offer sit on the player's desk while its cash went elsewhere, so the
+    // player accepted and the firm withdrew at signing (test/sale-instructions,
+    // once signing re-checked the bidder's funds).
+    if (!o || o.firmId !== r.id || h.bbl === exceptBbl) continue;
     // The firm's own leverage on the price, and the 2% closing.
     held += Math.round(o.price * (1 - Math.max(0, Math.min(0.8, r.targetLtv ?? 0)))) + Math.round(o.price * BUY_CLOSING);
   }

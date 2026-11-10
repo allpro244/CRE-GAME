@@ -22,8 +22,10 @@ for (let m = 1; m <= YEARS * 12; m++) {
     else if (t.startsWith("Loan reinstated")) kinds.reinstated++;
     else if (t.startsWith("Note paid off")) kinds["paid off"]++;
     else if (t.startsWith("Note repaid on sale")) kinds["repaid on sale"]++;
-    else if (/keys|deed in lieu|handed you/i.test(t)) kinds.keys++;
+    else if (t.startsWith("Deed in lieu")) kinds.keys++;
+    else if (t.startsWith("Won at foreclosure auction")) kinds.auction = (kinds.auction ?? 0) + 1;
   }
+  for (const n of g.notes ?? []) if (!before.has(n.id)) (n.perf === "performing" ? kinds.boughtPerforming = (kinds.boughtPerforming ?? 0) + 1 : kinds.boughtNpl = (kinds.boughtNpl ?? 0) + 1);
   for (const n of g.notes ?? []) if (before.get(n.id) === "performing" && n.perf === "nonperforming") {
     const r = (g.rivals ?? []).find((x) => x.id === n.obligorId); const rec = E.resolveRec(P, g, n.bbl);
     if (r && rec && r.failedM === undefined) { const a = E.markAsset(g, r, rec); covAtDefault.push((a.noi / 12) / Math.max(1, n.face * n.ratePct / 1200)); }

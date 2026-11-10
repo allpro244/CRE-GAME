@@ -73,8 +73,16 @@ export const COMM_USES: Comm[] = ["office", "retail", "industrial"];
  * the weeks of disruption. A shop adds fixtures and the sales lost while it
  * reopens; a shed is racking, power and equipment [S~: the middles of those
  * ranges, summed].
+ *
+ * Office, summed again (2026-11-10): the move, cabling, IT and furniture
+ * $25 (the middle of $15-35) plus the fit-out the allowance does not cover
+ * $65 (the middle of $100-200 less the middle of $50-120) is $90; it read
+ * $50, which is not the sum of those middles. The weeks of disruption are
+ * still left out. At the town's opening face (~$20 office, 2024 money) that
+ * is about four and a half years' rent; at a prime CBD's $40-60 the "one to
+ * two years' rent" brokers quote [S~].
  */
-export const MOVE_PSF: Record<Comm, number> = { office: 50, retail: 50, industrial: 15 };
+export const MOVE_PSF: Record<Comm, number> = { office: 90, retail: 50, industrial: 15 };
 
 /** Buildings on a tenant broker's shortlist: a tour book runs five to eight (CBRE / JLL tenant-rep practice) [K]. */
 export const SHORTLIST = 6;
@@ -253,20 +261,43 @@ export const KEEN_POW: Record<Comm, number> = { office: 0, retail: 3, industrial
  * HOW A BUILDING'S LETTINGS ANSWER ITS POST, as an elasticity: the tour book
  * (KEEN_POW) and, once toured, the firm's logit choice among the shortlist
  * and its own suite — its taste for each is Gumbel with scale TASTE x the
- * market rent, so a building chosen with odds P answers its post with
- * elasticity (post / scale)·(1 - P), at P = 1 / (SHORTLIST + 1) [D: the
- * engine's own choice rule, nothing fitted here].
+ * going rent for the address (`ref`: for office the going post, `goingRent`;
+ * for shops and sheds the market rent), so a building chosen with odds P
+ * answers its post with elasticity (post / scale)·(1 - P), at
+ * P = 1 / (SHORTLIST + 1) [D: the engine's own choice rule, nothing fitted
+ * here].
  */
-export function askElasticity(k: Comm, post: number, mkt: number): number {
-  return KEEN_POW[k] + (post / Math.max(1e-9, TASTE[k] * mkt)) * (SHORTLIST / (SHORTLIST + 1));
+export function askElasticity(k: Comm, post: number, ref: number): number {
+  return KEEN_POW[k] + (post / Math.max(1e-9, TASTE[k] * ref)) * (SHORTLIST / (SHORTLIST + 1));
+}
+/**
+ * THE GOING RENT A FIRM'S TASTE IS SCALED BY, $/sf/yr: the address's market
+ * rent times `going`, the town's posts over market rents (streetRolls.ts
+ * marketView, office; 1 for shops and sheds).
+ *
+ * Office TASTE is calibrated as a share of what the firm is shown — the posts
+ * — so that ε = (1/TASTE)·6/7 ≈ 4.5 for a building posting at the going rate.
+ * Scaled by the market rent alone, which is read from the comps (signed
+ * rents, below the posts: a signing lands between the landlord's reservation
+ * and its post, `bargain`), the realised ε was (post/mkt)·4.5 = 5.9-6.5 with
+ * posts 1.3-1.45 times the comps (seeds 11, 33, 2026-11-10), the best months
+ * to let 13-16 not 24, and every office book cut 4-8% a year for as long as
+ * it took the comps to follow it down — which they do, since the comps are
+ * the posts' own bargains. Office real rent drifted down for a century.
+ * Scaled by the going post, a building at the town's rate reads the
+ * calibrated ε whatever the bargain takes off it, and the trade answers only
+ * months against M* [D].
+ */
+export function goingRent(k: Comm, mkt: number, going = 1): number {
+  return k === "office" ? mkt * going : mkt;
 }
 /** The months to let at which a cut gains in months dark what it gives up in rent: N / (ε - 1). */
 export function bestMonthsToLet(eps: number, termM = NEXT_TERM_M): number {
   return termM / Math.max(1e-6, eps - 1);
 }
 /** The log step that would bring a post's months to let to the best: ln(Mbest / M) / ε. */
-export function darkCostStep(k: Comm, post: number, mkt: number, monthsToLet: number): number {
-  const eps = askElasticity(k, post, mkt);
+export function darkCostStep(k: Comm, post: number, ref: number, monthsToLet: number): number {
+  const eps = askElasticity(k, post, ref);
   return Math.log(bestMonthsToLet(eps) / Math.max(1e-6, monthsToLet)) / eps;
 }
 
@@ -331,9 +362,11 @@ export function postedEff(L: LandlordAsk, _e: Econ, _k: Comm, _mkt: number, _sit
  * to let, its own evidence against the comps.
  *
  * `monthsToLet` is the market's clock (proforma.ts leaseUpMonthsOf for a
- * standing building: space on offer over lettings a month).
+ * standing building: space on offer over lettings a month). `going` is the
+ * town's posts over market rents (`goingRent`), which the tenants' taste and
+ * so the trade's ε are scaled by.
  */
-export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: { m: number; monthsToLet: number; darkM?: number; stressed: boolean; infl12: number; holdFace?: boolean }): void {
+export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: { m: number; monthsToLet: number; darkM?: number; stressed: boolean; infl12: number; holdFace?: boolean; going?: number }): void {
   if (k !== "office") return reviewAskByPatience(L, e, k, mkt, opts);
   if (L.m >= opts.m) return;
   const months = Math.max(1, Math.min(12, opts.m - L.m));
@@ -343,7 +376,7 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
   const toComps = comps > 0 ? (Math.log(comps) - Math.log(L.a)) * pull : 0;
   let d = (opts.infl12 / 12) * months;
   // THE MONTH-DARK TRADE: the share of the year's step a month's review makes.
-  let step = mkt > 0 ? darkCostStep(k, L.a * (1 - L.c), mkt, opts.monthsToLet) * pull : 0;
+  let step = mkt > 0 ? darkCostStep(k, L.a * (1 - L.c), goingRent(k, mkt, opts.going), opts.monthsToLet) * pull : 0;
   if (step < 0 && opts.stressed) step *= STRESS_MOVE;
   if (opts.darkM !== undefined) {
     // SPACE TO LET. Its own evidence: space that has sat longer than the
@@ -386,16 +419,24 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
  * floored at an ordinary market's months on market (MONTHS_ON_MARKET, the last
  * norm, deleted 2026-11-09); it is now the market's clock.
  */
-export function noteLetting(L: LandlordAsk, k: Comm, tom: number, share: number, monthsToLet: number, holdFace = false) {
+export function noteLetting(L: LandlordAsk, k: Comm, tom: number, share: number, _monthsToLet: number, holdFace = false) {
+  // OFFICE LEARNS NOTHING HERE (2026-11-10). Its yardstick was the market's
+  // clock — the town's average months to let — and a suite that let faster
+  // than the average raised its ask, while one that let slower cut nothing
+  // here: a ratchet against an average. The month-dark trade (`reviewAsk`)
+  // already reads every letting, through the clock it prices on, both ways.
+  // Measured with the raise (seed 11, years 13-40): posts cut 3-7% a year by
+  // the trade and real rent flat, the raise giving back what the trade took.
+  if (k === "office") return;
   // shops and sheds: the yardstick is the longer of the landlord's patience
   // and its class's ordinary months on market, and the patience is learned
-  const yard = k === "office" ? Math.max(1e-6, monthsToLet) : Math.max(L.t, searchMonths(k));
+  const yard = Math.max(L.t, searchMonths(k));
   if (tom < yard && share > 0) {
     const f = (1 - tom / yard) * Math.min(1, share);
     if (L.c > 0) L.c = Math.max(0, L.c - PKG_TAKE * f);
     else if (!holdFace) L.a = +(L.a * Math.exp(RAISE * f)).toFixed(2);
   }
-  if (k !== "office") L.t += (Math.max(0.5, tom) - L.t) / LET_MEMORY;
+  L.t += (Math.max(0.5, tom) - L.t) / LET_MEMORY;
 }
 
 /**
@@ -649,9 +690,21 @@ export function footFactor(k: Comm, footRel?: number): number {
   return k === "retail" && footRel !== undefined && footRel > 0 ? Math.pow(Math.max(0.25, Math.min(4, footRel)), 0.5) : 1;
 }
 
-/** Moving cost, $/sf/yr over the term. */
-export function moveCostPsfYr(e: Econ, k: Comm, termM: number): number {
-  return MOVE_PSF[k] * (e.costIdx ?? 1) / Math.max(1, termM / 12);
+/**
+ * Moving cost, $/sf/yr over the term. An office firm pays its move up front
+ * and has the term to earn it back, so it spreads the cost as a loan would:
+ * the level payment at what it borrows at (its books' rate, tenantBooks.ts
+ * `fin.fixed`: the long rate plus its trade's and grade's spread; with no
+ * books yet, the long rate) [D: the annuity, no new number]. Spread without
+ * interest it read 30-60% light over the 7-14-year office terms. Shops and
+ * sheds keep the straight line until their move costs are re-read.
+ */
+export function moveCostPsfYr(e: Econ, k: Comm, termM: number, firm?: Tenant): number {
+  const yrs = Math.max(1, termM / 12);
+  const cost = MOVE_PSF[k] * (e.costIdx ?? 1);
+  if (k !== "office") return cost / yrs;
+  const r = Math.max(0, firm?.fin?.fixed ?? (e.indexRate ?? 5.4) / 100);
+  return r > 1e-6 ? cost * r / (1 - Math.pow(1 + r, -yrs)) : cost / yrs;
 }
 
 /**

@@ -149,6 +149,8 @@ export interface Tenant {
   ind?: number;
   /** Space the firm's people needed at signing, per unit of `staffSign` — its heads times its industry's feet a worker (tenantMarket.ts `tenantHeads`). */
   hcRef?: number;
+  /** Feet a worker it signed for against its industry's norm, from the real rent at its last lease event (streetRolls.ts SPACE_RENT_ELAST). Unset: 1. */
+  spw?: number;
   /** Its heads when its class's demand was last written down (streetRolls.ts, why.ts). */
   hdNote?: number;
   /** Headcount (`staff`) when it last signed — the space it took was sized for these people. */
@@ -2417,6 +2419,8 @@ export interface Econ {
   /** The space a worker takes, by class: its structural level after a swan (remote work; market.ts, swans.ts), and that level at the opening. Every firm's need moves with their ratio. */
   spaceLvl?: Partial<Record<BuiltClass, number>>;
   spaceLvl0?: Partial<Record<BuiltClass, number>>;
+  /** Real effective rent by class at the opening: the rent the feet a worker (SF_PER_JOB) are read at (streetRolls.ts SPACE_RENT_ELAST). */
+  spwRent0?: Partial<Record<BuiltClass, number>>;
   /** The off-map firms' floor (FORMULA_LEDGER #10): the occupied sf off the map at the opening, and what they want now (that, moved by the class's heads × feet a worker), by class (market.ts). */
   offRef?: Partial<Record<BuiltClass, number>>;
   offWant?: Partial<Record<BuiltClass, number>>;

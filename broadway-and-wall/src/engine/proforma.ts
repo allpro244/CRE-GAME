@@ -233,7 +233,9 @@ export function grossLettingsMo(e: Econ, u: BuiltClass): number {
  *       into) over the stock then — with `ahead`, the pipeline and this
  *       building's own feet, which `forwardVacancy` already counts as vacant,
  *       less the share of them pre-let; without (a building already standing
- *       in the stock) the stock as it is — plus space offered for sublet.
+ *       in the stock) the stock as it is; for a building ahead, plus space
+ *       offered for sublet (no street firm takes a sublet, so a standing
+ *       building's clock leaves it out).
  *   L — gross lettings a month (`grossLettingsMo`).
  * Never shorter than one turn of a suite (`reletMonths`: make-ready and a
  * tenant's search): the physical minimum.
@@ -244,7 +246,11 @@ export function leaseUpMonthsOf(
   const stk = Math.max(1, e.stock?.[u] ?? CITY_STOCK[u]);
   const own = Math.max(0, ownSf);
   const base = ahead ? stk + Math.max(0, e.pipeline?.[u] ?? 0) + own : stk;
-  const avail = Math.max(0, vac * base + Math.max(0, e.sublet?.[u] ?? 0) - (ahead ? own * clamp01(preLet) : 0));
+  // Sublet space is on offer to a building being underwritten (the city's
+  // demand nets off it first, market.ts `unmet`), but not to a standing
+  // building's clock: no street firm leases a sublet, so counting it made the
+  // market's months to let 3-6 months too long at office (2026-11-10).
+  const avail = Math.max(0, vac * base + (ahead ? Math.max(0, e.sublet?.[u] ?? 0) - own * clamp01(preLet) : 0));
   const L = grossLettingsMo(e, u);
   const floor = reletMonths(u);
   // (240: a guard — twenty years of empty floors is a building nobody

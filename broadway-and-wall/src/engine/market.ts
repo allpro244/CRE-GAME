@@ -1121,9 +1121,11 @@ export const CONSTRUCTION_CLOSE_M = 2;
  */
 export const SF_PER_JOB: Record<BuiltClass, number> = { office: 230, industrial: 550, retail: 420, multifamily: 0 };
 /** Share of the population in the labour force. See the note at the unemployment term.
- *  (BLS CPS labour force 163.5M over Census resident population 330.5M = 49.5%
- *  in 2019; 50.5% in 2000; FRED CLF16OV / POPTHM) [S≠: source disagrees — 0.58 against 0.495-0.505; to reconcile] */
-const PARTICIPATION = 0.58;
+ *  BLS CPS labour force 163.5M over Census resident population 330.5M = 49.5%
+ *  in 2019; 50.5% in 2000 (FRED CLF16OV / POPTHM) [S]. It read 0.58, which no
+ *  year of the record gives, so the opening town had a sixth fewer residents
+ *  for its jobs than an American town does (2026-11-10). */
+const PARTICIPATION = 0.50;
 /** The rate the city opens at, which is what makes the opening state consistent.
  *  (BLS unemployment rate, FRED UNRATE: 4.0% in 2000, 5.85% mean 1990-2019) [S≠: source disagrees — no year reads 5.2% as the opening's; to reconcile] */
 const OPENING_UNEMP = 0.052;

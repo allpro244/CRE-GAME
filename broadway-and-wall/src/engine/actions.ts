@@ -4031,7 +4031,16 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
     // receiver likes them; it is that they are the only cheque in the room.
     const depth = li.distress ? qualifiedBuyers(s, rec, li.ask) : 0;
     const contested = li.distress && depth > 1 ? 1 + 0.22 * Math.min(4, depth - 1) : 1;
-    if (rng(s, "sales") < base * priceFactor * contested * Math.max(0.25, marketAppetite(s)) * (talk ? 1.7 : 1)) {
+    // EVERY LISTING GOES TO THE ROOM EVERY MONTH (2026-11-10). Whether it
+    // met the street at all was a coin — (0.02 + 0.08·hot …) × how cheap the
+    // ask looked × the depth of distressed bidders × appetite — so most
+    // listings saw no bidder in a month whatever the bids would have been.
+    // The broker canvasses the street every month, as it does for the
+    // player's own listing (#693, roomForYourSale), and each firm decides on
+    // its own books whether it bids (bidRound). The old draw is kept so the
+    // stream does not re-roll.
+    void (rng(s, "sales") < base * priceFactor * contested * Math.max(0.25, marketAppetite(s)) * (talk ? 1.7 : 1));
+    {
       // THE PRICE IS THE BIDS (ONE_ECONOMY_PLAN.md step 7). Every firm on the
       // street that would and could buy it underwrites it on its own capital
       // (propmarket.ts bidRound) and bids under its own number; the best bid

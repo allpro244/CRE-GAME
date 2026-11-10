@@ -75,34 +75,45 @@ const text = async () => (await send("Runtime.evaluate", { expression: "document
 
 await send("Runtime.enable");
 await send("Page.enable");
-await send("Page.navigate", { url: pathToFileURL(PLAYABLE).href + "?ui=next" });
 
-// the setup screen, then a new game started on it
-const t0 = Date.now();
-let setup = false;
-while (Date.now() - t0 < WAIT_MS && !errors.length) {
-  if (/Break ground/.test(await text())) { setup = true; break; }
-  await sleep(250);
+// BOTH INTERFACES (UI clean-up, 2026-11). This only ever opened ?ui=next, the
+// shelved shell, while every player and Unreal get Classic — so the interface
+// people actually play was never opened by CI. Classic first, then next.
+const results = [];
+for (const [ui, idleMs, shell] of [["classic", WAIT_MS, ".siderail"], ["next", Math.min(WAIT_MS, 8000), ".nx-rail"]]) {
+  errors.length = 0;
+  await send("Page.navigate", { url: pathToFileURL(PLAYABLE).href + "?ui=" + ui });
+
+  // the setup screen, then a new game started on it
+  const t0 = Date.now();
+  let setup = false;
+  while (Date.now() - t0 < WAIT_MS && !errors.length) {
+    if (/Break ground/.test(await text())) { setup = true; break; }
+    await sleep(250);
+  }
+  if (errors.length) done(1, `playable-loads: FAIL (${ui}) — the page threw on load:\n  ${errors.join("\n  ")}`);
+  if (!setup) done(1, `playable-loads: FAIL (${ui}) — no setup screen after ${WAIT_MS / 1000} s`);
+  const setupS = ((Date.now() - t0) / 1000).toFixed(1);
+  await send("Runtime.evaluate", { expression: `[...document.querySelectorAll("button")].find((b) => /Break ground/.test(b.textContent))?.click()` });
+  const t1 = Date.now();
+  while (Date.now() - t1 < idleMs && !errors.length) await sleep(250);
+  if (errors.length) done(1, `playable-loads: FAIL (${ui}) — the page threw after Break ground:\n  ${errors.join("\n  ")}`);
+  const drawn = (await send("Runtime.evaluate", { expression: `!!document.querySelector(${JSON.stringify(shell)})`, returnByValue: true }))?.result?.value;
+  if (!drawn) done(1, `playable-loads: FAIL (${ui}) — no ${shell} after a new game: the interface did not draw`);
+  // THE MONTH RUNS OFF THE PAGE'S THREAD (2026-11-08). After #678 both web
+  // workers threw on load (a module cycle read in its temporal dead zone) and
+  // the page quietly ran every month itself: the game froze while the clock ran
+  // and every check stayed green. Advance one month and ask where it ran.
+  await send("Runtime.evaluate", { expression: `[...document.querySelectorAll("button")].find((b) => /^\\s*(\\+1 mo|Advance)/.test(b.textContent))?.click()` });
+  let where = "none";
+  const t2 = Date.now();
+  while (Date.now() - t2 < WAIT_MS && !errors.length) {
+    where = (await send("Runtime.evaluate", { expression: "window.__sim?.where?.() ?? 'none'", returnByValue: true }))?.result?.value ?? "none";
+    if (where !== "none") break;
+    await sleep(250);
+  }
+  if (errors.length) done(1, `playable-loads: FAIL (${ui}) — after a month:\n  ${errors.join("\n  ")}`);
+  if (where !== "worker") done(1, `playable-loads: FAIL (${ui}) — the month ran on the ${where === "page" ? "page's thread (the sim worker failed)" : "page: no month closed"}`);
+  results.push(`${ui}: setup in ${setupS} s`);
 }
-if (errors.length) done(1, `playable-loads: FAIL — the page threw on load:\n  ${errors.join("\n  ")}`);
-if (!setup) done(1, `playable-loads: FAIL — no setup screen after ${WAIT_MS / 1000} s`);
-const setupS = ((Date.now() - t0) / 1000).toFixed(1);
-await send("Runtime.evaluate", { expression: `[...document.querySelectorAll("button")].find((b) => /Break ground/.test(b.textContent))?.click()` });
-const t1 = Date.now();
-while (Date.now() - t1 < WAIT_MS && !errors.length) await sleep(250);
-if (errors.length) done(1, `playable-loads: FAIL — the page threw after Break ground:\n  ${errors.join("\n  ")}`);
-// THE MONTH RUNS OFF THE PAGE'S THREAD (2026-11-08). After #678 both web
-// workers threw on load (a module cycle read in its temporal dead zone) and
-// the page quietly ran every month itself: the game froze while the clock ran
-// and every check stayed green. Advance one month and ask where it ran.
-await send("Runtime.evaluate", { expression: `[...document.querySelectorAll("button")].find((b) => /^\\s*(\\+1 mo|Advance)/.test(b.textContent))?.click()` });
-let where = "none";
-const t2 = Date.now();
-while (Date.now() - t2 < WAIT_MS && !errors.length) {
-  where = (await send("Runtime.evaluate", { expression: "window.__sim?.where?.() ?? 'none'", returnByValue: true }))?.result?.value ?? "none";
-  if (where !== "none") break;
-  await sleep(250);
-}
-if (errors.length) done(1, `playable-loads: FAIL — after a month:\n  ${errors.join("\n  ")}`);
-if (where !== "worker") done(1, `playable-loads: FAIL — the month ran on the ${where === "page" ? "page's thread (the sim worker failed)" : "page: no month closed"}`);
-done(0, `playable-loads: ok — setup screen in ${setupS} s, no exception through ${WAIT_MS / 1000} s of a new game, the month ran in the sim worker`);
+done(0, `playable-loads: ok — ${results.join(", ")}; no exception through a new game in either interface, the month ran in the sim worker`);

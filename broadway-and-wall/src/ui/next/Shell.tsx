@@ -17,21 +17,12 @@ import YearReview, { ExitCard, GoalCard } from "@/ui/YearReview";
 import ClockProgress from "@/ui/ClockProgress";
 import { LENSES } from "@/ui/MapControls";
 import { tabCounts } from "@/ui/desks";
-import FirmStanding from "@/ui/FirmStanding";
-import FirmTimeline from "@/ui/FirmTimeline";
 import { PortfolioPage } from "@/ui/panels/PortfolioPage";
-import { MarketPage, BuildingDatabase } from "@/ui/panels/MarketPage";
-import { PlayersPage } from "@/ui/panels/PlayersPage";
+import { BuildingDatabase } from "@/ui/panels/MarketPage";
 import { NotesPage } from "@/ui/panels/NotesPage";
-import { EconomyPage } from "@/ui/panels/EconomyPage";
-import { RankingsPage } from "@/ui/panels/RankingsPage";
-import { BooksPage } from "@/ui/panels/BooksPage";
-import { NewsPage } from "@/ui/panels/NewsPage";
 import { SavesPage, SettingsPage, PrimerPage } from "@/ui/panels/MiscPages";
 import { LeasingPage } from "@/ui/panels/LeasingPage";
 import { DebtPage } from "@/ui/panels/DebtPage";
-import { InvestorsPage } from "@/ui/panels/InvestorsPage";
-import { BanksPage } from "@/ui/panels/BankProfile";
 import { DecisionModal, AlertModal, AuctionModal, DefaultNoticeModal, GameOverPage } from "@/ui/panels/modals";
 import { useNext } from "./nextStore";
 import { FOOT_PAGES, PLACES, placeById, placeOf, visibleTabs, type PlaceId } from "./places";
@@ -50,22 +41,15 @@ import { LeasingExpiring, LeasingOffers, LeasingVacancy } from "./LeasingNext";
 import { CityMarkets, MarketsOverview, CityNews, CityPlayers, CityRankings, CityRecord } from "./CityNext";
 import { PipelineBoard, PipelineBuilding, PipelineBuying, PipelineSelling } from "./PipelineNext";
 
+// The classic pages a place tab still hosts unchanged (a tab with no `view`).
+// The rest are drawn by the new tables in NEXT_VIEW and were never shown.
 const PAGE_VIEW: Partial<Record<Page, ReactElement>> = {
   portfolio: <PortfolioPage />,
-  market: <MarketPage />,
-  players: <PlayersPage />,
   buildings: <BuildingDatabase />,
   notes: <NotesPage />,
-  economy: <EconomyPage />,
-  rankings: <RankingsPage />,
-  books: <BooksPage />,
-  news: <NewsPage />,
   saves: <SavesPage />,
   leasing: <LeasingPage />,
   debt: <DebtPage />,
-  investors: <InvestorsPage />,
-  banks: <BanksPage />,
-  firm: <><FirmStanding /><FirmTimeline /></>,
   settings: <SettingsPage />,
   primer: <PrimerPage />,
 };

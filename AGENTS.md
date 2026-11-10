@@ -26,8 +26,11 @@ expected time. Never hand the owner something you could do yourself.
 
 **The game is moving to Unreal Engine 5.8 (owner's decision, 2026-10-19).
 Read `UE58_PLAN.md` first.** The React UI in `broadway-and-wall/` is the
-game's interface, hosted inside Unreal (`?host=unreal`); the new shell in
-`src/ui/next/` is the default. The engine (`src/engine/`), the city
+game's interface, hosted inside Unreal (`?host=unreal`). **Classic is the
+interface players get** (rail in `src/ui/TopBar.tsx`, desks in `src/ui/desks.ts`,
+pages in `src/ui/panels/`); the new shell in `src/ui/next/` is shelved (owner,
+2026-10-23) and opens only with `?ui=next` — its tables are reused inside Classic.
+UI rules and the clean-up record: `ui-revamp/CLEANUP_PLAN.md`. The engine (`src/engine/`), the city
 generator (`src/citygen/`, including the region map) and the UI are all
 actively developed. Land work as small PRs to main. The CI gate is a ~35 s smoke test
 (.github/workflows/check.yml: tsc, fresh bundle, rng discipline, playable,

@@ -172,22 +172,33 @@ Walk probe (scratchpad `walk-probe/probe2.mjs` + `dec2.py`; 12-month changes on 
 
 **On main (merged this run, #662-#695):** jobs fill in ~a month (JOLTS); stronger recessions; layoffs where cuts happen; short-of-hands pro rata; credit spreads widen in slumps; investment speed sourced (TAU_K 68); labour flows CPS-sourced and answering tightness; the finding rate reads JOLTS month-end openings (#690); cap rates answer rates (quarterly broker survey) and the ten-year prices a held rate; shops (then all classes) never sign at a loss; "normal vacancy" deleted, steps 0-9b (leasing, lease-up, builder gate, appraisal, demolition all read the market); land: interim income, index no longer freezes, answers construction cost; new space leases at the market's pace; firm turnover counted as BDS does; office tenants' price sensitivity recalibrated + office landlords trade rent against months dark (#688); player sale offers come from the street's bid round (#693); paydown draws the LOC (#695); the sim worker load fix + a CI guard (#679, #681). Century (3×60): about PASS 32 · WATCH 14 · FAIL 0-2.
 
-**Ready-ish branches (verify, then PR):**
-- `claude/office-space-answers-rent` — **shipped (PR from `claude/office-space-answers-rent-n5xdqf`)**: anchor (sublet out of the clock; taste scaled by the going post) + churn (office tours ≥80% of need; move cost $90/sf amortised at the firm's rate; noteLetting office raise removed) + office space per worker answering real rent at −0.40 (Englund et al. 2005 −0.55, Hendershott et al. 1999 −0.24). Century 3×60 (seeds 11/22/33) against main 9cd7e1ac: PASS 30 · WATCH 18 · FAIL 0 → 33 · 13 · 2; office vacancy (years 6-60) 16.6/13.2/13.4 → 13.8/14.5/14.1%; office real rent −0.5 → −0.4%/yr; REGRESSION: office WT slope (Δlog real effective rent on vacancy, `wt.mjs`) −0.89/−0.85/−0.92 → −0.29/−0.31/−0.39. conserve 1,623 months clean; tenantmarket office renewals 80% (retail 91% FAIL, as on main); playable-loads: the month ran in the sim worker. Next fault: lettings thin as vacancy falls so the landlords' months-to-let clock decouples from vacancy (take 6 below).
-- `claude/office-vacancy-answers-rent` — the same plus office → flats conversion in replacementSearch (sourced: Lower Manhattan 1995-2006); overbuilt office on seed 33; parked.
-- `claude/offmap-occupancy` (draft PR #692) — off-map space let to its own tenants (demand-finite 64% → 6.7%); stock-ledger drift fix committed; the 6-seed comparison of the three new FAIL rows was in progress — finish it, then mark ready.
-- `claude/shed-tenant-books` — WIP: shed firms get industrial sectors/margins/credit (they failed 20-27%/yr vs 1-3% real). Unverified.
+**Merged in the second run (2026-11-10, #697-#702):**
+- #697 office: rent anchor, churn, office space per worker answering real rent (−0.40). Office WT slope regressed (stated in the PR).
+- #692 off-map space let to its own tenants (demand-finite 64% → 6.7%); a 6-seed check showed its new FAIL rows were noise.
+- #698 office slope, take 7 (measured, nothing shipped; below).
+- #699 one construction-loan price: rival takeovers, home builders, A&D loans and the deficit reserve all read the desk's live quote (`proforma.ts constructionRatePct`).
+- #700 sellers' loss aversion on their own purchase price (Genesove & Mayer 2001, 0.15 of the loss), replacing the market-wide anchor; distressed discount −5.9 → −9.3%.
+- #701 the appraisal values the rent roll term-and-reversion (the bidders' law, `value.ts termAndReversion`, `GAP_CLOSE_YR`), replacing the unsourced 55/45 blend. Agreement with the bids did not improve: the top bidder's value sits ~1.2× the appraisal either way, which is the bid shading (the cap is read from shaded prices), not two laws.
+- #702 every listing meets the street's bid round every month (the coin gate removed); trades +40%.
+
+Century after #702 (3×60): PASS 34 · WATCH 11 · FAIL 3, with the FAILs on land's swing / co-movement and the construction lag.
+
+**The 3-seed office WT slope is noise-dominated:** #699, which does not touch office rents, moved it from −0.40/−0.40/−0.05 to −0.13/−0.12/−0.08. Use 6+ seeds, or the same-year regression in `tools/probes/wtp.py`, before reading a change in it.
+
+**Open PR:** #703 shed tenants keep their industry's books (closures 15.7 → 9.8%/yr; leavers rise, so total shed exits barely move; credit grade still 0 for every shed firm, which is the next shed item).
+
+**Parked branch:** `claude/office-vacancy-answers-rent` (office → flats conversion; overbuilt office on seed 33).
 
 **Not started / still open (in priority order):**
-1. Office WT slope after the space-answers-rent change (the lettings/clock decoupling).
-2. Valuation "one answer": appraisal vs the street's bids (bids land at 0.62-0.98× the player's appraisal), anchoredAsk loss aversion on the seller's own basis (Genesove & Mayer), one construction-loan price law (liveSpread for everyone). The agent was lost to a container restart; branch `claude/valuation-one-answer` has no commits.
-3. The audit list (this file's history, 2026-11-10 audit): the player's buildings lease on a separate formula — put them on the street's shortlists; the tape's supply is a quota (owners' hold/sell review, distress from real defaults); the bid round's absorption coin gate; player-held notes on borrower dice; lenders' appetite read against NORMAL_NIM; land tape hazards; player lease terms as coins; workout tables; private-credit dice; register holders' exit hazards.
+1. Office WT slope: decompose a year's office rent change (trade, comps pull, CPI, bargains, composition). Use 6 seeds.
+2. Shed firms' credit (`creditOfSize` gives every street shed firm grade 0); then the expiry exit rule (`EXIT_BASE` × the firms-per-work ratio⁴, unsourced).
+3. The audit list: the player's buildings lease on a separate formula (put them on the street's shortlists); the tape's supply is a quota (owners' hold/sell review, distress only from real defaults); player-held notes on borrower dice (pay or miss on each building's own cash flow); lenders' appetite read against NORMAL_NIM; land tape hazards; player lease terms as coins; workout tables; private-credit dice; register holders' exit hazards. Also: check #702's +40% trade volume against a published turnover share of stock, and the mid-lease growers who never stop looking (take 7: 9-16% of office stock, up to 54 months; a lapse at PATIENCE_M is a realism fix of its own).
 4. Which class rents highest must be an outcome (section below).
-5. National shocks reverse within ~18 months (forward-looking attempt on `claude/forward-looking-nation` halved the reversal but cut recessions to 0.55/decade — not shipped). The owner said: do not change black swans or confidence shocks.
+5. National shocks reverse within ~18 months (`claude/forward-looking-nation`, not shipped). The owner said: do not change black swans or confidence shocks.
 6. Town payrolls in booms: heads grow slower than the nation's; labour demand, not hiring, is the remaining gap.
-7. Stale tests failing on main: test/loc-draw (firm with no buildings has no line — test setup), test/loc-defends-deed (cure recomputed under cash), refi-broken (pledged-facility expectations), products, deed-goes, mezz-sale, visible-buyers, tenantmarket retail renewals.
+7. Stale tests failing on main: test/loc-draw, test/loc-defends-deed, refi-broken, products, deed-goes, mezz-sale, visible-buyers, tenantmarket retail renewals.
 
-**How to work:** small PRs to main with before/after numbers; 3-seed 60-year century (`tools/proof.mjs`), conserve on any money change, `pnpm -s package:playable && node test/playable-loads.mjs` (the month must run in the sim worker — no module-level reads of imported constants across the engine's import cycles). Probe and harness scripts used this run are in the session scratchpad (walk-probe, or, drift, anchor, oc, ovr).
+**How to work:** small PRs to main with before/after numbers; 3-seed 60-year century (`tools/proof.mjs`), conserve on any money change, `pnpm -s package:playable && node test/playable-loads.mjs` (the month must run in the sim worker — no module-level reads of imported constants across the engine's import cycles). Probes from the second run are committed in `tools/probes/` (README there).
 
 ## Which class rents highest must be an outcome (owner, 2026-11-10, open)
 

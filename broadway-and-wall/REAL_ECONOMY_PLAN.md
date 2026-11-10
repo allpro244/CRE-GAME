@@ -185,7 +185,7 @@ Century after #702 (3×60): PASS 34 · WATCH 11 · FAIL 3, with the FAILs on lan
 
 **The 3-seed office WT slope is noise-dominated:** #699, which does not touch office rents, moved it from −0.40/−0.40/−0.05 to −0.13/−0.12/−0.08. Use 6+ seeds, or the same-year regression in `tools/probes/wtp.py`, before reading a change in it.
 
-**Open PR:** #703 shed tenants keep their industry's books (closures 15.7 → 9.8%/yr; leavers rise, so total shed exits barely move; credit grade still 0 for every shed firm, which is the next shed item).
+**Also merged:** #703 shed tenants keep their industry's books (closures 15.7 → 9.8%/yr; leavers rise, so total shed exits barely move; credit grade still 0 for every shed firm, which is the next shed item).
 
 **Parked branch:** `claude/office-vacancy-answers-rent` (office → flats conversion; overbuilt office on seed 33).
 

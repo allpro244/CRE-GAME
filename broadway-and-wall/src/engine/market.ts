@@ -256,7 +256,8 @@ const SUBLET_MAX: Record<BuiltClass, number> = {
  *  Shape parameters, from the length of the process; stated, not fitted. */
 const DEMAND_FORM_M: Record<BuiltClass, number> = { office: 9, retail: 6, industrial: 6, multifamily: 2 };
 /** MONTHS TO MOVE IN once searching: office tour-to-occupancy including
- *  fit-out ~6 months, a shop ~4, a shed ~3, a flat ~6 weeks. */
+ *  fit-out ~6 months, a shop ~4, a shed ~3, a flat ~6 weeks.
+ *  [K: a judgement from the length of the process, no source found.] */
 const MOVE_IN_M: Record<BuiltClass, number> = { office: 6, retail: 4, industrial: 3, multifamily: 1.5 };
 /** MONTHS TO MOVE OUT once space is surplus. Commercial tenants leave at
  *  lease expiry (subletting meanwhile) or by failing; the 2009 record puts a
@@ -265,9 +266,11 @@ const MOVE_IN_M: Record<BuiltClass, number> = { office: 6, retail: 4, industrial
 const MOVE_OUT_M: Record<BuiltClass, number> = { office: 24, retail: 18, industrial: 18, multifamily: 3 };
 
 /** The typical lease term by class, months — eight years of office paper,
- *  seven of retail, six of industrial, one of housing. */
+ *  seven of retail, six of industrial, one of housing.
+ *  [K: the terms as the trade quotes them, no survey found; twelve months is the
+ *  standard residential lease.] */
 export const LEASE_TERM_M: Record<BuiltClass, number> = { office: 96, retail: 84, industrial: 72, multifamily: 12 };
-/** The share of a class's leases that roll in a month: what the in-place rent moves at. */
+/** The share of a class's leases that roll in a month: what the in-place rent moves at. [D: 1 / LEASE_TERM_M] */
 const LEASE_ROLL: Record<BuiltClass, number> = {
   office: 1 / LEASE_TERM_M.office,
   retail: 1 / LEASE_TERM_M.retail,
@@ -294,11 +297,11 @@ export const HH_RENT_SHARE0 = 0.30;
 const ONLINE_0 = 0.02;      // share of store-type sales online at the opening (US 2000)
 const ONLINE_MAX = 0.4;     // the most of it that can ship (2026-10-17: 0.5 saturated by year 60 in a playthrough)
 const ONLINE_TECH = 10;     // logit points per log point of technology: ~11% at year 20 (US 2019), ~24% at 30, ~37% at 50
-const ONLINE_COST = 1.5;    // logit points per log point of a shop's rent over a shed's
-const ONLINE_GOODS = 0.4;   // share of retail floor selling shippable goods
-const ONLINE_SHED = 0.8;    // shed floor gained per unit of online share
-const MANUF_FX = 0.1;       // share of factory floor sent abroad a year per unit of log dear dollar
-/** Flats per adult: the national headship trend, its response to local job growth over the nation's, and that national job growth (a year). */
+const ONLINE_COST = 1.5;    // logit points per log point of a shop's rent over a shed's [K: judgement, no source found]
+const ONLINE_GOODS = 0.4;   // share of retail floor selling shippable goods [K: judgement, no source found]
+const ONLINE_SHED = 0.8;    // shed floor gained per unit of online share [K: judgement, no source found]
+const MANUF_FX = 0.1;       // share of factory floor sent abroad a year per unit of log dear dollar [K: judgement, no source found]
+/** Flats per adult: the national headship trend, its response to local job growth over the nation's, and that national job growth (a year). [K: the trend is a judgement, no source found.] */
 const HEADSHIP_TREND = 0.0015;
 const HEADSHIP_JOBS = 0.5;
 // The nation's payroll growth a year: the trades' 1990-2019 mean less the
@@ -338,6 +341,7 @@ export const SECTORS: Sector[] = [
   "finance", "law", "tech", "media", "insurance",
   "logistics", "apparel", "food", "medical", "design",
 ];
+/** [K: relative cyclicality by trade is a judgement, no source found.] */
 export const INDUSTRY_VOL: Record<Sector, number> = {
   tech: 2.0, media: 1.6, finance: 1.4, apparel: 1.3, design: 1.2,
   logistics: 1.05, food: 0.8, law: 0.7, medical: 0.6, insurance: 0.5,
@@ -505,6 +509,7 @@ export { devPencils };
 // basis points over the long-run average all-in loan, which is thin positive
 // leverage: enough that debt earns its risk in a normal market, not so much
 // that borrowing is free money.
+// [K: set against the loan index as above, not taken from a cap-rate series.]
 export const CAP_BASE = { office: 8.50, retail: 7.00, multifamily: 5.60, industrial: 7.00 } as const;
 
 // Development underwriting lives in value.ts (`devPencils`) and dev.ts
@@ -555,6 +560,7 @@ const PKG_EASE = 0.025;
 // the one that exists, which meant a 200,000 sf tower you delivered moved
 // citywide office vacancy by seven hundredths of a point: "your building is
 // supply too" was true in the code and invisible in the game.
+// [K: a fallback, no source.]
 export const CITY_STOCK = { office: 5e6, retail: 2e6, multifamily: 7e6, industrial: 1.5e6 } as const;
 
 /**
@@ -689,6 +695,7 @@ export const RENT_BASE = { office: 35.50, retail: 26.00, multifamily: 30.22, ind
  *
  * Anything that moves the package in leasing.ts moves this number. `pnpm
  * rent-chart` measures it and fails when the two drift apart.
+ * [K: test/glut.mjs names no source for the glut figures above; a judgement.]
  */
 export const CONC_DEPTH = 0.30;
 
@@ -866,11 +873,11 @@ export function reletMonths(k: BuiltClass): number {
  * the next tenant even when the lease is signed before the last one leaves
  * (~10 weeks for a second-generation suite), re-rack and repair a shed, refit
  * a shop. Months. The rest of `reletMonths` is search, and search is what a
- * tight market shortens.
+ * tight market shortens. [K: judgement, no source found.]
  */
 export const MAKE_READY_M: Record<BuiltClass, number> = { office: 2.5, retail: 1.5, multifamily: 0.4, industrial: 1.0 };
 
-/** Ordinary commercial term. Sector exit rolls on it. */
+/** Ordinary commercial term. Sector exit rolls on it. [D: LEASE_TERM_M.office / 12] */
 export const LEASE_TERM_YR = 8;
 
 /**
@@ -1044,6 +1051,8 @@ export function noteTenantSfChange(s: GameState, use: BuiltClass, deltaSf: numbe
  * in an ordinary year, measured as square feet under construction over square
  * feet standing; it is the point where the employment term is exactly neutral,
  * so it moves nothing about the existing calibration and only prices the swing.
+ * (BLS CES via FRED USCONS / PAYEMS: construction 7.49M of 150.9M nonfarm
+ * jobs in 2019 = 4.97%; 5.14% in 2000 and in 2023) [S≠: source disagrees — 4.8% is a little low; to reconcile]
  */
 export const CONSTRUCTION_JOB_SHARE = 0.048;
 /**
@@ -1068,6 +1077,7 @@ export const CONSTRUCTION_JOB_SHARE = 0.048;
  * already carried for the same quantity: roughly 1.8% of stock delivered a year
  * against a two-and-a-half year build is about 4.5% of the stock under
  * construction at any moment. One number, one file, two readers.
+ * [K: 1.8%/yr x 2.5 years; the 1.8% carries no source in dev.ts either.]
  */
 export const REF_PIPE_SHARE = 0.045;
 // How long the rest of the market takes to build each class, in months. This
@@ -1093,6 +1103,7 @@ export const BUILD_MONTHS = { office: [12, 30], retail: [18, 28], multifamily: [
 // measured fact about the business, in the same register as BUILD_MONTHS above
 // — not a shape parameter and not a tuning knob. It is not split by class
 // because the dominant term is the municipality, not the use.
+// [K: no source found for the range.]
 export const ENTITLE_MONTHS = [6, 18] as const;
 /** Loan documents, final permits and mobilization after approvals are in hand. */
 export const CONSTRUCTION_CLOSE_M = 2;
@@ -1106,21 +1117,26 @@ export const CONSTRUCTION_CLOSE_M = 2;
  * game has been bitten by it before. An office floor is 230 sf a head, a shed
  * is 550, a shop is 420. Flats employ nobody; they house people, and people
  * arrive here through the labour force rather than through the roof.
+ * [K: no source found; demand.ts carries the same ratios unsourced.]
  */
 export const SF_PER_JOB: Record<BuiltClass, number> = { office: 230, industrial: 550, retail: 420, multifamily: 0 };
-/** Share of the population in the labour force. See the note at the unemployment term. */
+/** Share of the population in the labour force. See the note at the unemployment term.
+ *  (BLS CPS labour force 163.5M over Census resident population 330.5M = 49.5%
+ *  in 2019; 50.5% in 2000; FRED CLF16OV / POPTHM) [S≠: source disagrees — 0.58 against 0.495-0.505; to reconcile] */
 const PARTICIPATION = 0.58;
-/** The rate the city opens at, which is what makes the opening state consistent. */
+/** The rate the city opens at, which is what makes the opening state consistent.
+ *  (BLS unemployment rate, FRED UNRATE: 4.0% in 2000, 5.85% mean 1990-2019) [S≠: source disagrees — no year reads 5.2% as the opening's; to reconcile] */
 const OPENING_UNEMP = 0.052;
-/** The nation's natural rate — the Phillips curve's u* in tickNation, and the pivot for national pay. */
+/** The nation's natural rate — the Phillips curve's u* in tickNation, and the pivot for national pay.
+ *  (CBO noncyclical rate, FRED NROU: 5.08% mean 1990-2019, 4.48% in 2019) [S≠: source disagrees — 4.8% sits between; to reconcile] */
 const NAT_U_STAR = 0.048;
-/** How far below zero the price level can fall a year, asymptotically (pay is not cut). */
+/** How far below zero the price level can fall a year, asymptotically (pay is not cut). [K: judgement, no source found] */
 const DEFLATION_FLOOR = 0.02;
-/** Credit gap built per month per point of real money under neutral (share of GDP). */
+/** Credit gap built per month per point of real money under neutral (share of GDP). [K: judgement, no source found] */
 const CRED_PER_EASY_PT = 0.0008;
 /** ...per unit of the lenders' window over normal, and per unit of output over potential. */
 const CRED_PER_WINDOW = 0.004, CRED_PER_GAP = 0.03;
-/** Written down per month per two points of unemployment over natural-plus-one (defaults). */
+/** Written down per month per two points of unemployment over natural-plus-one (defaults). [K: judgement, no source found] */
 const CRED_RECESSION_WRITEOFF = 0.0010;
 /** Months for the trend to catch up with the stock (a decade, as the BIS one-sided filter). */
 const CRED_TREND_M = 120;
@@ -1684,6 +1700,8 @@ const INDEX_HORIZON_M = 120;
 // was not the fit. Autocorrelation 0.45 at a year, -0.2 at two. At 0.85 the
 // bond market expected every move to be undone inside a few months, so the
 // ten-year moved 0.14 points per point of policy over a year (US 0.32).
+// [K: fitted to the simulated economy's own autocorrelation, as above — a fit to
+// the model's own output, which is fake number one until a source replaces it.]
 const RULE_GAP_RHO = 0.90;
 /** A departure from the rule's monthly persistence: 0.91 a quarter (see expectedPolicyAvg). */
 const RULE_DEV_RHO = Math.pow(0.91, 1 / 3);
@@ -1953,7 +1971,7 @@ function hhUserCost(mort: number, g3: number, inflExp: number): number {
 }
 /** Elasticity of the price fundamental to the user cost (~7% off per mortgage point near 6%). */
 const HPI_UC_ELAST = 0.5;
-/** Months for prices to close their gap to the fundamental. */
+/** Months for prices to close their gap to the fundamental. [K: judgement, no source found] */
 export const HPI_CHASE_M = 30;
 
 
@@ -2283,7 +2301,7 @@ export function priceLevel12(e: Econ): number {
   return h?.cpiXS ? (e.cpiXS ?? 1) / h.cpiXS - 1 : h?.cpi ? (e.cpi ?? 1) / h.cpi - 1 : (e.inflExp ?? 0.02);
 }
 
-/** Of the nation's drawn shocks, the share that are supply shocks; the other 0.30 were the wars' finance, now drawn as THE WAR (blackswans.ts). */
+/** Of the nation's drawn shocks, the share that are supply shocks; the other 0.30 were the wars' finance, now drawn as THE WAR (blackswans.ts). [K: judgement, no source found] */
 const SUPPLY_SHARE = 0.70;
 
 /** The spread of individual annual wage changes, ~6 points (CPS; Daly, Hobijn & Lucking 2012) [S]. */
@@ -3061,6 +3079,12 @@ export const LABOUR_FORCE_SLOWDOWN = 0.005;
  * national cycle: architects sell to builders, freight to inventory.
  */
 export interface FirmProfile { wage: number; rent: number; margin: number; lev: number; float: number; spread: number; rateDem: number; space: Partial<Record<BuiltClass, number>> }
+// [S~] margins checked against Damodaran's EBITDA/sales by industry (Jan 2026,
+// one year, not the 2000-24 average above): software 35.9%, computer services
+// 9.0%, broadcasting 18.2%, publishing 13.2%, insurance general 23.6% / life
+// 11.5%, trucking 15.6%, apparel 11.5%, restaurants 19.5%, food processing
+// 15.3%, hospitals 15.8%, engineering/construction 8.0%. The other columns were
+// not re-checked in this pass; rateDem is a judgement.
 export const FIRM_PROFILE: Record<Sector, FirmProfile> = {
   finance:   { wage: 0.35, rent: 0.06, margin: 0.28, lev: 2.0, float: 0.50, spread: 0.020, rateDem: 0.6, space: { office: 1 } },
   law:       { wage: 0.45, rent: 0.08, margin: 0.25, lev: 0.5, float: 0.70, spread: 0.020, rateDem: 0.0, space: { office: 1 } },
@@ -3073,7 +3097,7 @@ export const FIRM_PROFILE: Record<Sector, FirmProfile> = {
   medical:   { wage: 0.50, rent: 0.06, margin: 0.15, lev: 2.2, float: 0.30, spread: 0.025, rateDem: 0.0, space: { retail: 1 } },
   design:    { wage: 0.45, rent: 0.08, margin: 0.14, lev: 1.2, float: 0.50, spread: 0.030, rateDem: 1.0, space: { office: 1 } },
 };
-/** The interest cover a lender underwrites new debt to (bank leveraged-loan practice ~3x). */
+/** The interest cover a lender underwrites new debt to (bank leveraged-loan practice ~3x). [K: no source checked] */
 export const LENDER_COVER = 3;
 /**
  * A TOWN'S SHARE OF EACH NATIONAL TRADE WANDERS, FOR DECADES (2026-10-15).
@@ -3099,13 +3123,14 @@ const CAPITAL_SHARE = 0.33;
 /** Each trade's national trend: spread around its 1990-2019 mean, and its memory. */
 export const NAT_TREND_SD = 0.008;
 export const NAT_TREND_TAU_M = 360;
-/** Points of a trade's sales per point of the national output gap, before its cycle beta. */
+/** Points of a trade's sales per point of the national output gap, before its cycle beta. [K: judgement, no source found] */
 export const NAT_SALES_PER_GAP = 1.25;
 /**
  * `industryMom`'s readers (tenant staffing, default stress, renewals, the
  * comps tape) were calibrated in "boom units", where 0.016 x vol was a trade
  * in full boom. A boom here is excess hiring of about 0.4% a month, so the
  * conversion is 4. Units, not a dial: change the readers and this goes.
+ * [D: 0.016 / 0.004]
  */
 const MOM_UNITS = 4;
 

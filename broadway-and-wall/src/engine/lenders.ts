@@ -303,6 +303,17 @@ const NORMAL_NIM: Record<LenderKind, number> = { bank: 4.1, life: 1.7, conduit: 
  */
 const OPEX_PCT: Record<LenderKind, number> = { bank: 2.0, life: 0.15, conduit: 0.20, fund: 1.0 };
 const TAX_RATE: Record<LenderKind, number> = { bank: 0.25, life: 0.25, conduit: 0.25, fund: 0 };
+/**
+ * WHAT THE DESK'S EQUITY COSTS (2026-11-10): CAPM on the ten-year, with each
+ * kind's industry beta from Damodaran's US cost-of-capital table (January
+ * 2026, wacc.html): Banks (Regional) 0.40, Insurance (Life) 0.64, Financial
+ * Svcs. (Non-bank & Insurance) 0.97 for a conduit shelf, Investments & Asset
+ * Management 0.66 for a debt fund [S]. The equity risk premium is the one the
+ * same table implies: Total Market 8.02% at beta 0.91 against Regional Banks
+ * 5.73% at 0.40 is 4.49 points a unit of beta [D].
+ */
+const EQUITY_BETA: Record<LenderKind, number> = { bank: 0.40, life: 0.64, conduit: 0.97, fund: 0.66 };
+const EQUITY_PREMIUM_PTS = 4.49;
 
 /** Who writes construction paper in this town. Defined in types.ts, which
  * imports nothing, so the pro forma (proforma.ts, under value.ts) can name the
@@ -1299,8 +1310,21 @@ export function tickLenders(s: GameState) {
     // margin (a bank's 4.1 points: index + 1.9 on the book against deposits
     // at index − 2.2), so a bank is numerically unchanged, and a conduit
     // earning its whole 1.6-point gain-on-sale margin is at 1, not at half.
-    const nimRel = nim / (NORMAL_NIM[l.kind] ?? 4.1);
-    const nimFac = Math.max(0.25, Math.min(1, 0.35 + 0.65 * (nimRel - 0.195) / 0.683));
+    // AGAINST WHAT THE BOOK MUST EARN, NOT A NORMAL MARGIN (2026-11-10). The
+    // margin at which this desk's book just pays its running cost, its own
+    // expected loss (expectedLoss, its experience weighted with the
+    // industry's) and the cost of the equity it holds against each loan
+    // (its capital target × CAPM, grossed up for tax) — the break-even a
+    // credit committee prices to. A debt fund's equity hurdle is already in
+    // its funding (above), so it carries no second charge. The desk lends
+    // freely while it earns that, and rations in proportion as the margin
+    // falls short of it [shape stated: proportional, floored at a quarter,
+    // the old curve's floor]. It was the margin over a "normal" margin for
+    // the kind (NORMAL_NIM: bank 4.1, life 1.7 …) through a fitted line.
+    const coe = ((e.indexRate ?? 5) + (EQUITY_BETA[l.kind] ?? 0.5) * EQUITY_PREMIUM_PTS) / 100;
+    const eqCharge = l.kind === "fund" ? 0 : 100 * coe * k.capitalRatio / Math.max(0.5, 1 - (TAX_RATE[l.kind] ?? 0));
+    const breakEven = (OPEX_PCT[l.kind] ?? 0) + expectedLoss(l, "income") + eqCharge;
+    const nimFac = Math.max(0.25, Math.min(1, nim / Math.max(0.1, breakEven)));
     // ...ON ITS OWN WATCH LIST (2026-10-28). A credit committee does not wait
     // for the charge-offs to tighten: the loans whose buildings no longer
     // cover their coupon, and the ones already not paying, are on its desk

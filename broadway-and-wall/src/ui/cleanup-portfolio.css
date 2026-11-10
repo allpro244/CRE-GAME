@@ -1,11 +1,13 @@
 /* Portfolio clean-up (ui-revamp/CLEANUP_PLAN.md §3, PR 8): one line per
    holding, the row's verbs behind one "⋯" menu. */
 
-.tbl-book-one td { vertical-align: middle; white-space: nowrap; }
+.tbl.tbl-book-one td { vertical-align: middle; white-space: nowrap; }
+/* the desk opened under a row (List, Refi, Ground lease, Assemble) wraps as before */
+.tbl.tbl-book-one td[colspan] { white-space: normal; vertical-align: top; }
 .tbl-book-one td.book-prop {
   max-width: 340px; overflow: hidden; text-overflow: ellipsis;
 }
-.tbl-book-one td.book-occ { white-space: nowrap; }
+.tbl.tbl-book-one td.book-occ { white-space: nowrap; line-height: inherit; }
 .tbl-book-one td:last-child { width: 1%; text-align: right; }
 
 .row-menu { position: relative; display: inline-block; }
@@ -26,5 +28,4 @@
 .row-menu-item:disabled { color: var(--ink-dim); opacity: 0.6; cursor: default; }
 .row-menu-item.row-menu-on { font-weight: 600; }
 
-.book-exposure-head { display: flex; align-items: baseline; gap: 12px; }
-.book-exposure-links { display: inline-flex; gap: 10px; margin-left: auto; font-size: 12px; }
+.book-exposure-links { display: flex; justify-content: flex-end; gap: 14px; margin-top: 4px; font-size: 12px; }

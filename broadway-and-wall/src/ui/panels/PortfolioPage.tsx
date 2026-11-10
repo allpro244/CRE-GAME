@@ -360,16 +360,7 @@ export function PortfolioPage() {
       )}
       {exposure.roll > 0 && (
         <>
-          {/* The year-by-year shape of the roll and the wall lives on the desk
-              that acts on it; the two links ride on this heading, not on a
-              hint line of their own. */}
-          <div className="page-section book-exposure-head">
-            Exposure
-            <span className="book-exposure-links">
-              <button type="button" className="linkish" title="Lease rollover by year" onClick={() => setPage("leasing")}>rollover →</button>
-              <button type="button" className="linkish" title="Debt maturities by year" onClick={() => setPage("debt", "The maturity wall")}>maturities →</button>
-            </span>
-          </div>
+          <div className="page-section">Exposure</div>
           <div className="grid">
             {exposure.topTenant && (
               <Row
@@ -401,6 +392,12 @@ export function PortfolioPage() {
               v={`${usd(exposure.matWall)} · ${(exposure.wallShare * 100).toFixed(0)}% of debt`}
               bad={exposure.wallShare > 0.4}
             />
+          </div>
+          {/* The year-by-year shape of the roll and the wall lives on the
+              desk that acts on it: two links, not a hint line. */}
+          <div className="book-exposure-links">
+            <button type="button" className="linkish" title="Lease rollover by year" onClick={() => setPage("leasing")}>rollover by year →</button>
+            <button type="button" className="linkish" title="Debt maturities by year" onClick={() => setPage("debt", "The maturity wall")}>maturities by year →</button>
           </div>
         </>
       )}

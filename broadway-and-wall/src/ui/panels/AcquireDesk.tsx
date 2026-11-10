@@ -269,17 +269,14 @@ function InstructionFields({ accept, decline, setAccept, setDecline }: {
   return (
     <>
       <div className="btn-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
-        <span className="dim">Auto-accept at or above $</span>
+        <span className="dim" title="Broker applies these on arrival. Auto-accepts close as ordinary sales (no 1031) unless short after tax and payoff. Offers between, and marketed bid lists, come to you. Blank = review all.">Auto-accept at or above $</span>
         <input className="mono" style={{ width: 120 }} inputMode="numeric" placeholder="optional"
           value={accept} onChange={(e) => setAccept(e.target.value)} />
       </div>
       <div className="btn-row" style={{ alignItems: "center", flexWrap: "wrap" }}>
-        <span className="dim">Auto-decline below $</span>
+        <span className="dim" title="Broker applies these on arrival. Auto-accepts close as ordinary sales (no 1031) unless short after tax and payoff. Offers between, and marketed bid lists, come to you. Blank = review all.">Auto-decline below $</span>
         <input className="mono" style={{ width: 120 }} inputMode="numeric" placeholder="optional"
           value={decline} onChange={(e) => setDecline(e.target.value)} />
-      </div>
-      <div className="hint">
-        Broker applies these on arrival. Auto-accepts close as ordinary sales (no 1031) unless short after tax and payoff. Offers between, and marketed bid lists, come to you. Blank = review all.
       </div>
     </>
   );
@@ -642,16 +639,9 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
           answer the phone, and it is the one that says whether the ask is
           serious. */}
       {askCap !== null && (
-        <div className="hint">
+        <div className="hint" title={fee ? "Leased fee, priced as bond + reversion." : askCap < game.econ.capRate[saleClass] - 0.4 ? "Premium to market." : askCap > game.econ.capRate[saleClass] + 0.4 ? "Discount to market." : "At market."}>
           Ask cap <b className="mono">{askCap.toFixed(2)}%</b> on {usd(saleNoi)} {fee ? "ground rent" : "NOI"}
-          {fee
-            ? " (leased fee, priced as bond + reversion)."
-            : ` · market ${game.econ.capRate[saleClass].toFixed(2)}%.`}
-          {!fee && (askCap < game.econ.capRate[saleClass] - 0.4
-            ? " Premium to market."
-            : askCap > game.econ.capRate[saleClass] + 0.4
-              ? " Discount to market."
-              : " At market.")}
+          {!fee && <> · market <span className="mono">{game.econ.capRate[saleClass].toFixed(2)}%</span></>}
         </div>
       )}
       {/* TWO WAYS TO SELL, and they are genuinely different trades. A sign on
@@ -671,21 +661,16 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
       <InstructionFields accept={insAccept} decline={insDecline} setAccept={setInsAccept} setDecline={setInsDecline} />
       <div className="btn-row">
         <button className="btn btn-buy" disabled={instructionsFrom(insAccept, insDecline).bad}
+          title={`2-4 mo · every bid on one date, one best-and-final round · ${usd(Math.round(price * (0.025 - quietFeeRate(game))))} more fee than off-market`}
           onClick={() => listSale(bbl, price, "marketed", instructionsFrom(insAccept, insDecline).ins ?? undefined)}>
           Marketed sale · {usd(price)} less {usd(Math.round(price * 0.025))} fee
         </button>
         <button className="btn" disabled={instructionsFrom(insAccept, insDecline).bad}
+          title={`One buyer at a time, no price discovery · ${quietFeeRate(game) <= 0.0001 ? "no fee (relationships)" : `fee ${(quietFeeRate(game) * 100).toFixed(2)}%, falls with more firms traded`}`}
           onClick={() => listSale(bbl, price, "quiet", instructionsFrom(insAccept, insDecline).ins ?? undefined)}>
           Off-market sale · {usd(price)}
           {quietFeeRate(game) <= 0.0001 ? " · no fee" : ` less ${usd(Math.round(price * quietFeeRate(game)))} fee`}
         </button>
-      </div>
-      <div className="hint">
-        Marketed: +{usd(Math.round(price * (0.025 - quietFeeRate(game))))}, 2-4 mo, all bids on one date, one best-and-final round.
-        Off-market: one buyer at a time, no price discovery.
-        {quietFeeRate(game) <= 0.0001
-          ? " Off-market fee: none (relationships)."
-          : ` Off-market fee ${(quietFeeRate(game) * 100).toFixed(2)}%; falls with more firms traded.`}
       </div>
     </div>
   );

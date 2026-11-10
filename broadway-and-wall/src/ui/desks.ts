@@ -15,7 +15,7 @@ import { liveBrokerCalls } from "@/ui/panels/broker";
  * table is what the rail, the page header, the digit keys, the palette and the
  * Back button all read, so no two of them can drift apart again.
  */
-export type DeskId = "portfolio" | "market" | "deals" | "capital" | "city" | "firm";
+export type DeskId = "portfolio" | "leasing" | "deals" | "market" | "capital" | "city";
 
 export type DeskTab = {
   page: Page; label: string; note: string;
@@ -32,21 +32,31 @@ export type Desk = {
 export const DESKS: readonly Desk[] = [
   {
     id: "portfolio", label: "Portfolio", icon: "▦", key: "1",
-    note: "What you own, what it earns, and who is in it",
+    note: "What you own and what it earns",
     tabs: [
       { page: "portfolio", label: "Holdings", note: "Holdings, income and concentration" },
-      { page: "leasing", label: "Leasing", note: "Occupancy, expirations and mandate" },
     ],
   },
   {
-    id: "market", label: "Market", icon: "◎", key: "2",
+    // ITS OWN DESK (UI clean-up, 2026-11): leasing is a third of the engine's
+    // work on a building and the player's most frequent decision.
+    id: "leasing", label: "Leasing", icon: "⊟", key: "2",
+    note: "Leases, expiries, vacancy and letters",
+    tabs: [{ page: "leasing", label: "Leasing", note: "Occupancy, expirations and mandate" }],
+  },
+  {
+    id: "deals", label: "Deals", icon: "✎", key: "3",
+    note: "Every live negotiation, bid, contract and job on site",
+    tabs: [{ page: "deals", label: "Deals", note: "LOIs, negotiations, contracts and construction" }],
+  },
+  {
+    id: "market", label: "Market", icon: "◎", key: "4",
     note: "What is for sale — buildings, land and distressed paper",
     tabs: [
-      { page: "market", label: "Marketplace", note: "Listings, receiver books, auctions and off-market calls" },
+      { page: "market", label: "For sale", note: "Listings, receiver books, auctions and off-market calls" },
       // Every standing building in town, sortable — the list you shop from
-      // when nothing on the tape fits. It sat on City → Research as
-      // "Properties", which is the reading desk, not the buying one.
-      { page: "buildings", label: "Buildings", note: "Every standing building — size, income, value and owner" },
+      // when nothing on the tape fits.
+      { page: "buildings", label: "All buildings", note: "Every standing building — size, income, value and owner" },
       // Distressed paper exists only when a bank is selling it, a rival is
       // asking for a bridge, or you hold some. Until then the tab is noise —
       // ⌘K still finds the desk, and it appears the month there is a file.
@@ -57,76 +67,30 @@ export const DESKS: readonly Desk[] = [
     ],
   },
   {
-    id: "deals", label: "Deals", icon: "✎", key: "3",
-    note: "Every live negotiation, bid and contract",
-    tabs: [{ page: "deals", label: "Deals", note: "LOIs, negotiations and contracts" }],
-  },
-  {
-    id: "capital", label: "Capital", icon: "⚖", key: "4",
-    note: "Loans, investors, the fund, and the ledger",
+    id: "capital", label: "Capital", icon: "⚖", key: "5",
+    note: "Loans, lenders, investors and the ledger",
     tabs: [
       { page: "debt", label: "Debt", note: "Loans, refinancing and the line" },
-      // EQUITY IS NOT DEBT. Your standing with investors, every deal you
-      // raised and the fund sat at the bottom of the Debt page, under the
-      // mortgages — the one room a small developer needs to find first.
+      { page: "banks", label: "Lenders", note: "Every lender's books — capital, income, losses, terms, limits and its loans" },
       { page: "investors", label: "Investors", note: "Your standing with investors, outside equity deal by deal, and the fund" },
-      // EVERY LENDER'S BOOKS, ALWAYS OPEN. The desks' statements had been an
-      // expandable row at the bottom of City → Markets → The banks; a borrower
-      // choosing where to go needs them where the borrowing is.
-      { page: "banks", label: "Banks", note: "Every lender's books — capital, income, losses, terms, limits and its loans" },
       { page: "books", label: "Books", note: "Cash movement, income statement and balance sheet" },
     ],
   },
   {
-    id: "city", label: "City", icon: "∿", key: "5", home: true,
-    note: "The cycle, the markets, the players and the tape",
-    // FOUR QUESTIONS, NOT THREE DRAWERS. City used to be Economy, Research and
-    // News, and Research was eight unrelated sub-tabs — half of them repeating
-    // Economy (sector rents, the cycle hinge), the rest reference lists. The
-    // tabs now follow what a principal asks of the city: how is it doing
-    // (Pulse), what is each market doing (Markets), who else is in it
-    // (Players), and what just happened (Tape).
+    // Markets, the Tape, the other firms and your own record: everything you
+    // read rather than act on. Pulse is gone (UI clean-up, 2026-11): every
+    // figure on it was on Markets or the Tape.
+    id: "city", label: "City", icon: "∿", key: "6", home: true,
+    note: "The markets, the tape, the players and your record",
     tabs: [
-      { page: "economy", label: "Markets", note: "Each space market, land, banks, employers and districts in depth" },
-      { page: "pulse", label: "Pulse", note: "The city on one screen — cycle, markets, board and headlines" },
-      { page: "players", label: "Players", note: "Competitors and every owner in town" },
+      { page: "economy", label: "Markets", note: "Each space market, rates, the city's economy and its budget" },
       { page: "news", label: "Tape", note: "Headlines and closed sales" },
+      { page: "players", label: "Players", note: "Competitors and every owner in town" },
       { page: "rankings", label: "Rankings", note: "How this town ranks against real US cities" },
-    ],
-  },
-  {
-    id: "firm", label: "Firm", icon: "☺", key: "6",
-    note: "Your standing and your record",
-    tabs: [
-      { page: "firm", label: "The Record", note: "Every deed, delivery, exit and refinancing since founding" },
+      { page: "firm", label: "Record", note: "Every deed, delivery, exit and refinancing since founding" },
     ],
   },
 ];
-
-/**
- * THE RAIL, ONE ROOM PER LINE (owner, Oct 2026: six icons hid seventeen
- * rooms, and a rail that is only symbols tells nobody what they are clicking).
- * Every room is its own named line, grouped under the job it serves. The
- * desks above still own the rooms — the page header, the digit keys and the
- * palette read them — the rail just stops making you open a desk to find one.
- */
-export const RAIL_GROUPS: readonly { label: string; pages: readonly Page[] }[] = [
-  { label: "Your firm", pages: ["portfolio", "leasing", "deals", "firm"] },
-  { label: "Buy", pages: ["market", "buildings", "notes"] },
-  { label: "Capital", pages: ["debt", "investors", "banks", "books"] },
-  { label: "The city", pages: ["economy", "pulse", "players", "news", "rankings"] },
-];
-export const PAGE_ICON: Partial<Record<Page, string>> = {
-  portfolio: "▦", leasing: "⊟", deals: "✎", firm: "☺",
-  market: "◎", buildings: "▥", notes: "✉",
-  debt: "⚖", investors: "◆", banks: "⌂", books: "≡",
-  economy: "∿", pulse: "♥", players: "♟", news: "☰", rankings: "★",
-};
-/** A room's own line on the rail: its tab (label, note, when) and the desk it belongs to. */
-export function railEntry(page: Page): { tab: DeskTab; desk: Desk } | null {
-  for (const d of DESKS) for (const t of d.tabs) if (t.page === page) return { tab: t, desk: d };
-  return null;
-}
 
 /** The property file belongs to the Portfolio desk even though it is not a tab. */
 export function deskOf(page: Page): Desk | null {

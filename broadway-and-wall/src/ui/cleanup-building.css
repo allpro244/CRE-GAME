@@ -1,0 +1,19 @@
+/* THE BUILDING PAGE, CLEANED UP (2026-11): six tiles, then one line of facts. */
+.app .prop-page .prop-head { align-items: center; margin: 8px 0 2px; gap: 14px; }
+.app .prop-facts { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12.5px; color: var(--text-2); flex: 1 1 520px; }
+.app .prop-fact { white-space: nowrap; }
+.app .prop-fact-k { color: var(--text-3); margin-right: 5px; }
+.app .prop-fact .neg { color: var(--neg); }
+.app .prop-page .prop-head .btn-row { margin: 0; flex-wrap: nowrap; }
+
+/* THE MAP CARD AS A GLANCE (GlanceCard): four figures, a facts line, one alert. */
+.app .glance { margin: 4px 0 12px; }
+.app .glance-figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
+.app .glance-k { font-size: 10.5px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text-3); }
+.app .glance-v { font-size: 18px; color: var(--text); margin-top: 1px; white-space: nowrap; }
+.app .glance-v.neg { color: var(--neg); }
+.app .glance-facts { margin-top: 10px; font-size: 12.5px; color: var(--text-2); }
+.app .glance-alert { display: block; width: 100%; text-align: left; margin-top: 10px; padding: 7px 10px; font: inherit; font-size: 12.5px;
+  color: var(--neg); background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.app .glance-alert:hover { border-color: var(--neg); }
+.app .glance-acts { margin-top: 10px; }

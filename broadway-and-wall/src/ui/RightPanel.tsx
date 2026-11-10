@@ -11,7 +11,6 @@ import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { PortfolioPage } from "@/ui/panels/PortfolioPage";
 import { DealsPage } from "@/ui/panels/DealsPage";
 import { MarketPage, BuildingDatabase } from "@/ui/panels/MarketPage";
-import { PulsePage } from "@/ui/panels/PulsePage";
 import { PlayersPage } from "@/ui/panels/PlayersPage";
 import { NotesPage } from "@/ui/panels/NotesPage";
 import { EconomyPage } from "@/ui/panels/EconomyPage";
@@ -141,53 +140,16 @@ export default function GamePanels() {
   // The room on screen, plus the desks kept warm behind it.
   const views = open && !kept.includes(page) ? [...kept, page] : kept;
   if (!hasGame) return null;
-  const title = page === "portfolio" ? "Portfolio"
-    : page === "deals" ? "Deals"
-    : page === "books" ? "Books"
-    : page === "news" ? "News"
-    : page === "leasing" ? "Leasing & Occupancy"
-    : page === "debt" ? "Debt"
-    : page === "investors" ? "Investors"
-    : page === "banks" ? "Banks"
-    : page === "property" ? (propAddr ?? "Property")
-    : page === "saves" ? "Saved Games"
-    : page === "economy" ? "Markets"
-    : page === "pulse" ? "City"
-    : page === "players" ? "Players"
-    : page === "buildings" ? "Buildings"
-    : page === "rankings" ? "Rankings"
-    : page === "notes" ? "Notes"
-    : page === "firm" ? "The Record"
+  // ONE LINE OF HEADER (UI clean-up, 2026-11): the kicker and the one-line
+  // subtitle under every title are gone; a desk with rooms is titled by the
+  // desk and its tabs say which room.
+  const desk = deskOf(page);
+  const title = page === "property" ? (propAddr ?? "Property")
+    : desk && desk.tabs.length > 1 ? desk.label
+    : page === "saves" ? "Saves"
     : page === "settings" ? "Settings"
     : page === "primer" ? "Primer"
-    : "Marketplace";
-  const desk = deskOf(page);
-  const kicker = page === "property" ? (propOwned ? "Portfolio · your building" : "Property file")
-    : desk ? desk.label
-    : page === "saves" ? "Campaign"
-    : page === "settings" ? "Preferences"
-    : page === "primer" ? "Primer"
-    : "";
-  const subtitle = page === "portfolio" ? "Value, income, concentration"
-    : page === "deals" ? "Negotiations and contracts"
-    : page === "books" ? "Cash flow and ledger"
-    : page === "news" ? "Headlines and closed sales"
-    : page === "leasing" ? "Occupancy and expirations"
-    : page === "debt" ? "Coverage, maturities, refinancing"
-    : page === "investors" ? "Investor capital and fund"
-    : page === "banks" ? "Lender financials and loans"
-    : page === "property" ? "Operations, financing, development"
-    : page === "saves" ? "Named snapshots"
-    : page === "economy" ? "Markets by sector"
-    : page === "pulse" ? "City overview"
-    : page === "players" ? "Rival firms"
-    : page === "buildings" ? "All buildings"
-    : page === "rankings" ? "Vs. 32 US cities"
-    : page === "notes" ? "Loan trading and bridges"
-    : page === "firm" ? "Firm history"
-    : page === "settings" ? "Display and simulation"
-    : page === "primer" ? "Core CRE metrics"
-    : "Listings and off-market";
+    : desk?.label ?? "";
   // The map card is a glance. Firm desks open as rooms (~1100px parchment)
   // so a rent roll, deal stage or debt book is readable — the narrow right
   // dock from the map-first pass was too small for that work.
@@ -216,9 +178,8 @@ export default function GamePanels() {
           >
             <div className="page-head">
               <div className="page-heading">
-                <div className="page-kicker">{kicker}</div>
+                {page === "property" && <div className="page-kicker">{propOwned ? "Yours" : "Property file"}</div>}
                 <div className="page-title">{title}</div>
-                <div className="page-subtitle">{subtitle}</div>
               </div>
               <button className="panel-close page-close" aria-label={`Close ${title}`} onClick={() => setPage("none")}>×</button>
             </div>
@@ -269,7 +230,6 @@ const PAGE_VIEW: Partial<Record<Page, ReactElement>> = {
   portfolio: <PortfolioPage />,
   deals: <DealsPage />,
   market: <MarketPage />,
-  pulse: <PulsePage />,
   players: <PlayersPage />,
   buildings: <BuildingDatabase />,
   notes: <NotesPage />,
@@ -392,7 +352,7 @@ function DeskTabs({ desk, page }: { desk: Desk; page: Page }) {
  * Refinance entry opens Debt and lands on "Loan by loan" — and is consumed
  * here, once, after the first scan finds it.
  */
-const OWN_VIEWS = new Set<Page>(["pulse", "players", "news", "buildings"]);
+const OWN_VIEWS = new Set<Page>(["players", "news", "buildings", "economy"]);
 const HEAD_SEL = ".page-section-head, .deal-head, .page-section";
 type Sec = { el: HTMLElement; label: string };
 

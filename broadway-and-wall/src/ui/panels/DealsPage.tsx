@@ -12,7 +12,7 @@ import { sellerCashAtClose } from "@/engine/actions";
 import { usd, sf, pctSigned } from "@/ui/format";
 import { PortfolioSaleDesk } from "@/ui/panels/PortfolioPage";
 import { liveBrokerCalls } from "@/ui/panels/broker";
-import { Row, apMid } from "@/ui/panels/shared";
+import { Row, apMid, devUseLabel } from "@/ui/panels/shared";
 import { LoiCounterDraft, LoiHero, loiMarketPsf, openingNe } from "@/ui/panels/LoiNegotiate";
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
 import { Gloss } from "@/ui/Glossary";
@@ -425,7 +425,8 @@ export function DealsPage() {
     + (game.asks ?? []).filter((a) => !game.holdings[a.bbl]?.groundLeased).length
     + game.lois.filter((l) => loiNeedsPrincipal(game, l)).length;
   const quietDesk = liveCount === 0 && calls.length === 0 && inbound.length === 0;
-  const [desk, setDesk] = useState<"live" | "sales">(
+  const jobCount = Object.keys(game.developments).length;
+  const [desk, setDesk] = useState<"live" | "sales" | "build">(
     saleCount > 0 ? "sales" : "live",
   );
 
@@ -448,6 +449,12 @@ export function DealsPage() {
           className={"btn" + (desk === "sales" ? " btn-on" : "")}
           onClick={() => setDesk("sales")}>
           Your sales · {saleCount}
+        </button>
+        <button type="button" role="tab" aria-selected={desk === "build"}
+          className={"btn" + (desk === "build" ? " btn-on" : "")}
+          title="Development jobs in progress"
+          onClick={() => setDesk("build")}>
+          Building · {jobCount}
         </button>
         <button type="button"
           className={"btn btn-mini" + (game.noUnsolicited ? " btn-on" : "")}
@@ -493,12 +500,11 @@ export function DealsPage() {
           const live = Object.values(game.talks ?? {})
             .sort((a, b) => (b.agreed ? 1 : 0) - (a.agreed ? 1 : 0) || (a.closeByM ?? 1e9) - (b.closeByM ?? 1e9));
           const committed = live.reduce((a, t) => a + (t.agreed ? (t.agreedPrice ?? t.theirPrice) : 0), 0);
+          // AN EMPTY SECTION IS NO SECTION: the heading only when there is a deal under it.
+          if (!live.length) return null;
           return (
             <>
-              <div className="page-section">Negotiations · {live.length} of {MAX_TALKS}</div>
-              {live.length === 0 && (
-                <div className="hint">None · max {MAX_TALKS}</div>
-              )}
+              <div className="page-section" title={`At most ${MAX_TALKS} at once`}>Negotiations · {live.length} of {MAX_TALKS}</div>
               {live.map((t) => (
                 <div key={t.bbl} className="hint" style={{ cursor: "pointer", marginBottom: 6 }} onClick={() => go(t.bbl)}>
                   <div>
@@ -581,34 +587,15 @@ export function DealsPage() {
         {(() => {
           // Only letters the principal still owns — covered / leased-fee paper is quiet.
           const desk = game.lois.filter((l) => loiNeedsPrincipal(game, l));
-          const tally = deskMonthNow(game);
           const quiet = deskHoldsPen(game);
+          // No letters, no section (the desk's own tally is on the empty-desk card).
+          if (!desk.length) return null;
           return (
             <>
         <div className="page-section">
           LOIs · {desk.length}
           {quiet ? " · referred" : ""}
         </div>
-        {desk.length === 0 && (
-          <div className="deal">
-            <div className="hint">
-              {quiet
-                ? (tally
-                  ? `Desk this month: ${tally.signed} signed, ${tally.passed} passed, ${tally.referred} referred, ${tally.walked} walked`
-                  : "Desk signing · none referred")
-                : "No LOIs this month."}
-            </div>
-            {Object.keys(game.talks ?? {}).length > 0 ? null : Object.keys(game.holdings).length === 0 ? (
-              <button className="btn btn-buy" onClick={() => useStore.getState().setPage("market")}>
-                Marketplace →
-              </button>
-            ) : (
-              <button className="btn" onClick={() => useStore.getState().setPage("leasing")}>
-                Leasing plan →
-              </button>
-            )}
-          </div>
-        )}
         <TrayClear />
         <div className="loi-grid">
           {[...desk]
@@ -657,9 +644,8 @@ export function DealsPage() {
         {/* An off-market approach that you set aside has to be findable, or
             "Not now" is the same as "never" — and a number an owner gave you is
             a live deal whether or not you looked at it today. */}
-        <div className="page-section" style={{ marginTop: 18 }}>Your approaches · {calls.length}</div>
-        {calls.length === 0 && <div className="hint">None open.</div>}
-        <div className="mini-list">
+        {calls.length > 0 && <div className="page-section" style={{ marginTop: 18 }}>Your approaches · {calls.length}</div>}
+        {calls.length > 0 && <div className="mini-list">
           {calls.map((c) => (
             <button key={c.bbl} className="neighbor" onClick={() => go(c.bbl)}>
               <span className="neighbor-addr">{parcels[c.bbl]?.address ?? c.bbl}</span>
@@ -668,7 +654,7 @@ export function DealsPage() {
               </span>
             </button>
           ))}
-        </div>
+        </div>}
         {/* The other direction of the same channel, and it is somebody else's
             clock. One line, pointing at the page that holds the file — not a
             second copy of it. */}
@@ -691,9 +677,13 @@ export function DealsPage() {
           Sales in progress · {sales.length + (game.portfolioSale ? 1 : 0)}
         </div>
         {sales.length === 0 && !game.portfolioSale
-          && <div className="hint">Nothing listed · list from a building's Sell tab</div>}
+          && <div className="dim" title="List from a building's Sell tab">None</div>}
         {game.portfolioSale && <PortfolioSaleDesk bundle={[]} clear={() => { /* nothing to clear: not bundling here */ }} />}
         {sales.map((sl) => <SaleOfferCard key={sl.bbl} bbl={sl.bbl} ask={sl.ask} go={go} />)}
+      </section>}
+
+      {desk === "build" && <section>
+        <DevJobs go={(bbl) => useStore.getState().openProperty(bbl, "build")} />
       </section>}
 
       {/* The Watch tab that sat here listed leases rolling within a year and
@@ -706,3 +696,69 @@ export function DealsPage() {
 }
 
 // The credit window, in words rather than an index nobody can calibrate.
+
+/**
+ * EVERY JOB IN THE GROUND, ON THE DESK (cleanup plan §3, PR 9). Development
+ * had no place of its own: a job showed as one line in the book and its
+ * figures lived on the building's Build tab. One row a job, every figure a
+ * field the engine keeps on the `Development` record (types.ts) — the same
+ * reads the new shell's Pipeline › Building table makes.
+ */
+function DevJobs({ go }: { go: (bbl: string) => void }) {
+  const game = useStore((s) => s.game)!;
+  const parcels = useStore((s) => s.parcels)!;
+  const jobs = Object.values(game.developments).sort((a, b) => a.deliverM - b.deliverM);
+  if (!jobs.length) return <div className="dim">None</div>;
+  const pct = (n: number, d: number) => (d > 0 ? `${Math.round((n / d) * 100)}%` : "—");
+  const gcName = (id?: number) => (id === undefined ? "—" : game.econ.gcs?.firms.find((f) => f.id === id)?.name ?? "—");
+  return (
+    <>
+      <div className="page-section">Building · {jobs.length}</div>
+      <table className="tbl">
+        <thead>
+          <tr>
+            <th>Address</th>
+            <th>Use</th>
+            <th className="num" title="Budget as it stands today, escalation included">Budget</th>
+            <th className="num" title="Construction spend paid so far">Spent</th>
+            <th className="num" title="Contingency drawn against change orders, of the amount held">Contingency</th>
+            <th className="num" title="Interest reserve used, of the reserve in the loan">Int. reserve</th>
+            <th className="num" title="Delivery month (slips when the job does)">Completes</th>
+            <th className="num" title="Space signed during construction, share of the building">Pre-let</th>
+            <th>GC</th>
+          </tr>
+        </thead>
+        <tbody>
+          {jobs.map((d) => {
+            const spent = d.buildSpent ?? d.equitySpent + d.drawn;
+            const signed = (d.signed ?? []).reduce((a, x) => a + x.sf, 0);
+            const stalled = d.repudiatedM !== undefined;
+            return (
+              <tr key={d.bbl} onClick={() => go(d.bbl)} style={{ cursor: "pointer" }}
+                title={`${d.floors} fl · ${sf(d.sf)}${d.events > 0 ? ` · ${d.events} setback${d.events === 1 ? "" : "s"}` : ""}`}>
+                <td>
+                  {resolveRec(parcels, game, d.bbl)?.address ?? parcels[d.bbl]?.address ?? d.bbl}
+                  {stalled && <span className="neg" title={d.replaceM !== undefined ? `Lender seized · replacement loan ${monthLabel(d.replaceM)}` : "Lender seized"}> · stalled</span>}
+                </td>
+                <td>{devUseLabel(d.use)}</td>
+                <td className="num">{usd(d.costTotal)}</td>
+                <td className="num" title={usd(spent)}>{pct(spent, d.costTotal)}</td>
+                <td className={"num" + (d.contingency > 0 && d.contingencyUsed >= d.contingency ? " neg" : "")}
+                  title={`${usd(d.contingencyUsed)} of ${usd(d.contingency)}`}>
+                  {pct(d.contingencyUsed, d.contingency)}
+                </td>
+                <td className={"num" + (d.interestReserve > 0 && d.reserveUsed >= d.interestReserve ? " neg" : "")}
+                  title={`${usd(d.reserveUsed)} of ${usd(d.interestReserve)}`}>
+                  {pct(d.reserveUsed, d.interestReserve)}
+                </td>
+                <td className="num">{monthLabel(d.deliverM)}</td>
+                <td className="num" title={signed > 0 ? `${sf(signed)} of ${sf(d.sf)}` : undefined}>{pct(signed, d.sf)}</td>
+                <td>{gcName(d.gc)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </>
+  );
+}

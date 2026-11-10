@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { derive } from "@/ui/derive";
 import { useStore } from "@/state/store";
-import { monthLabel, CREDIT_LABEL, serviceSpec, planSpec, autoLeaseOnClose } from "@/engine/types";
+import type { Holding, LOI, Tenant } from "@/engine/types";
+import type { ParcelRecord } from "@/data/types";
+import { monthLabel, CREDIT_LABEL, autoLeaseOnClose, serviceSpec, planSpec } from "@/engine/types";
 import { isLeasedFee, marketRentPsfYr, resolveRec, useRentPsfYr, recoveryOf } from "@/engine/value";
 import {
-  isCommercial, walt, notReadySf,
+  isCommercial, walt, notReadySf, vacantSf, exclusiveFeeRate, loiSigningCash,
   deskHoldsPen, deskMonthNow, loiNeedsPrincipal, portfolioOccupancy, autoTiCapToday, autoLeaseRule,
   AUTO_CONCESSIONS, autoConcessionsOf, autoLeaseYear,
 } from "@/engine/leasing";
@@ -15,24 +17,45 @@ import { INDUSTRY_LABEL } from "@/engine/market";
 import { usd, sf } from "@/ui/format";
 import { HousePolicy } from "@/ui/panels/HousePolicyDesk";
 import { LoiCard, TrayClear } from "@/ui/panels/DealsPage";
-import { useLabel, occRead, occLabel, occTitle, Big } from "@/ui/panels/shared";
+import { useLabel, occRead, occLabel, occTitle, Big, ViewSwitch, useDeskView } from "@/ui/panels/shared";
 import Fold from "@/ui/Fold";
 import { Rollover } from "@/ui/rollups/Rollover";
 import { WhyButton } from "@/ui/WhyChain";
 import { whyGet } from "@/engine/why";
 import { OpsChoices } from "@/ui/panels/OpsChoices";
 import { BizLink } from "@/ui/BizSheet";
+import { DataTable, type Col } from "@/ui/next/DataTable";
+import { LeasingExpiring } from "@/ui/next/LeasingNext";
+import "@/ui/cleanup-leasing.css";
+
+/**
+ * LEASING: THE BOOK FIRST (ui-revamp/CLEANUP_PLAN.md §3). The page opens on
+ * every lease on every building, sortable by expiry, rent against market and
+ * credit; then what rolls, what is empty, the letters, and the house policy
+ * last. Explanations live on the hover of the control they explain.
+ */
+type View = "roll" | "expiring" | "vacant" | "letters" | "policy";
+const VIEWS: readonly View[] = ["roll", "expiring", "vacant", "letters", "policy"];
+
+interface BookRow {
+  h: Holding; rec: ParcelRecord; commercial: boolean; leased: number; notReady: number;
+  occ: number; or: ReturnType<typeof occRead>; rentRoll: number; rolling: number; mkt: number;
+}
+
+interface LeaseRow {
+  key: string; bbl: string; addr: string; t: Tenant; idx: number; mkt: number; loi?: LOI;
+}
+
+const stanceWord = (v: number) => (v > 0 ? "Push" : v < 0 ? "Fill" : "Market");
 
 export function LeasingPage() {
   const parcels = useStore((s) => s.parcels)!;
   const game = useStore((s) => s.game)!;
   const select = useStore((s) => s.select);
   const setPage = useStore((s) => s.setPage);
-  const {
-    setAgent, setRenewalMgmt, broker,
-  } = useStore.getState();
   const go = (bbl: string) => { setPage("none"); select(bbl); };
   const q = game.month;
+  const [view, setView] = useDeskView<View>("leasing", "roll", VIEWS);
 
   // Coupon-only fees: the lessee lets the tower. They must not dilute occ /
   // rent-roll totals or offer a "hire broker" button on an empty shell.
@@ -45,7 +68,7 @@ export function LeasingPage() {
   });
 
   // Once per state (ui/derive): kept across visits in the same month.
-  const leaseRows = derive(game, "leasing.rows", () => Object.values(game.holdings).flatMap((h) => {
+  const leaseRows = derive(game, "leasing.rows", () => Object.values(game.holdings).flatMap((h): BookRow[] => {
     // A lot folded into an assemblage is part of the site's deed now — its
     // building was demolished; listing it showed buildings that no longer exist.
     if (isLeasedFee(h) || game.merged?.[h.bbl]) return [];
@@ -57,78 +80,23 @@ export function LeasingPage() {
     const resSf = useSf(rec, "multifamily");
     const leased = h.tenants.reduce((a, t) => a + t.sf, 0) + Math.round((h.occ ?? 0) * resSf);
     const notReady = notReadySf(h, q);
-    // The leasing read, not the appraisal read — see occRead. A building whose
-    // whole leftover is under the demise floor is fully let, and the feet that
-    // cannot be let are named instead of sitting inside a percentage the owner
-    // spends a decade chasing.
+    // The leasing read, not the appraisal read — see occRead.
     const or = occRead(rec, h);
     const occ = or.lettableOcc;
     const rentRoll = h.tenants.reduce((a, t) => a + t.rentPsf * t.sf, 0)
       + resSf * useRentPsfYr(rec, game.econ, h.condition, "multifamily", h.condIdx) * (h.occ ?? 0);
     const rolling = commercial ? h.tenants.filter((t) => t.endM - q <= 12).reduce((a, t) => a + t.sf, 0) : 0;
-    return [{ h, rec, commercial, leased, notReady, occ, or, rentRoll, rolling }];
+    const mkt = marketRentPsfYr(rec, game.econ, h.condition, h.condIdx);
+    return [{ h, rec, commercial, leased, notReady, occ, or, rentRoll, rolling, mkt }];
   }), [parcels]);
-  // the table below sorts in place: a copy, so the cached order is never disturbed
-  const rows = [...leaseRows];
+  // biggest building first (owner, Oct 2026); a copy, so the cached order is never disturbed
+  const rows = [...leaseRows].sort((a, b) => (b.rec.bldgArea ?? 0) - (a.rec.bldgArea ?? 0));
 
+  const desk = game.lois.filter((l) => loiNeedsPrincipal(game, l));
   const ind = derive(game, "leasing.industries", () => portfolioIndustries(game));
 
-  function LeasedFeeStrip() {
-    if (!leasedFees.length) return null;
-    return (
-      <div className="page-section">
-        <div className="page-section-head">Leased fees</div>
-        <div className="hint" style={{ marginBottom: 8 }}>
-          Ground rent only; lessee manages the building.
-        </div>
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Property</th><th>Lessee</th><th className="num">Ground rent / yr</th><th className="num">Reverts</th>
-            </tr>
-          </thead>
-          <tbody>
-            {leasedFees.map(({ h, gl, rec }) => (
-              <tr key={h.bbl} onClick={() => go(h.bbl)}>
-                <td>{rec?.address ?? h.bbl}</td>
-                <td className="dim">{gl.tenant}</td>
-                <td className="num">{usd(gl.rentYr)}</td>
-                <td className="num">{monthLabel(gl.endM)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  }
-
-  if (!rows.length) {
-    return (
-      <div>
-        {/* The house policy belongs here even with an empty book, because
-            its other half is the deeds you have not closed yet: set it now and
-            everything you buy arrives configured instead of being corrected
-            afterwards. That is the whole argument for a default. It leads the
-            page, as it does once there is a book. */}
-        <HousePolicy />
-        <AgentBar />
-        <RenewalBar />
-        <DeskActivity />
-        <PlanEditor />
-        <PlanDigest />
-        <LeasedFeeStrip />
-        <div className="hint">No leased buildings.</div>
-        <button className="btn btn-buy" onClick={() => setPage("market")}>
-          Marketplace →
-        </button>
-      </div>
-    );
-  }
-  // Portfolio occupancy over LETTABLE feet, the same denominator every row
-  // uses — from the SAME function the top bar reads, because two surfaces
-  // doing their own arithmetic is how this screen totalled gross-minus-
-  // remainder while its own rows quoted rentable-minus-remainder, and the
-  // top bar quoted a third answer over gross. One function, one answer.
+  // Portfolio occupancy over LETTABLE feet, from the SAME function the top
+  // bar reads: one function, one answer.
   const totRemainder = rows.reduce((a, r) => a + r.or.remainderSf, 0);
   const po = portfolioOccupancy(game, parcels);
   const totSf = po?.lettableSf ?? 0;
@@ -136,257 +104,19 @@ export function LeasingPage() {
   const totRoll = rows.reduce((a, r) => a + r.rentRoll, 0);
   const totRolling = rows.reduce((a, r) => a + r.rolling, 0);
 
-  function AgentBar() {
-    const referred = (game.lois ?? []).filter((l) => loiNeedsPrincipal(game, l)).length;
-    // Two covers, one question: who holds the pen?
-    const title = game.agent
-      ? "Leasing: outside agent"
-      : "Leasing: in-house";
-    const sub = game.agent
-      ? `6% fee. Signs to plan, counters, declines weak LOIs, refers exceptions${referred ? ` · ${referred} LOI${referred === 1 ? "" : "s"} referred` : ""}.`
-      : "All LOIs come to you. Listing brokers source but do not sign. Options: renewals to management (below) or outside agent at 6%.";
-    return (
-      <div className="agent-bar">
-        <div>
-          <div className="agent-title">{title}</div>
-          <div className="agent-sub">{sub}</div>
-        </div>
-        <div className="btn-row" style={{ flexShrink: 0 }}>
-          {game.agent ? (
-            <button className="btn" onClick={() => setAgent(false)}>Bring in-house</button>
-          ) : (
-            <button className="btn" onClick={() => setAgent(true)}>
-              Outside coverage · 6%
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  }
+  // EVERY LEASE ON EVERY BUILDING, with the letter that tenant has sent, if any.
+  const leases: LeaseRow[] = rows.flatMap((r) => r.h.tenants.map((t, idx) => ({
+    key: `${r.h.bbl}:${idx}`, bbl: r.h.bbl, addr: r.rec.address || r.h.bbl, t, idx, mkt: r.mkt,
+    loi: desk.find((l) => l.bbl === r.h.bbl && l.tenantIdx === idx),
+  })));
+  const rolling12 = leases.filter((l) => l.t.endM - q <= 12).length;
+  const vacantN = rows.filter((r) => vacantSf(r.rec, r.h) > 0).length;
 
-  /**
-   * QUIET ACCOUNTABILITY. When somebody else holds the pen, popups stop.
-   * Without a tally, a quiet month looks the same as a desk that is turning
-   * every tenant away. Signed / passed / referred / walked is the proof.
-   */
-  function DeskActivity() {
-    if (!deskHoldsPen(game)) return null;
-    const tally = deskMonthNow(game);
-    const referred = (game.lois ?? []).filter((l) => loiNeedsPrincipal(game, l)).length;
-    return (
-      <div className="agent-bar" style={{ display: "block" }}>
-        <div className="agent-title">Desk this month · {monthLabel(game.month)}</div>
-        {!tally ? (
-          <div className="hint">
-            No LOIs this month.
-            {referred ? ` ${referred} referred LOI${referred === 1 ? "" : "s"} on Deals.` : ""}
-          </div>
-        ) : (
-          <>
-            <div className="stat-strip" style={{ marginTop: 6 }}>
-              <Big label="Signed" value={String(tally.signed)}
-                title="Signed within mandate" />
-              <Big label="Passed" value={String(tally.passed)}
-                title="Below mandate; declined" />
-              <Big label="Referred" value={String(tally.referred)}
-                title="Expansions, capital calls, ties, failed counters" />
-              <Big label="Walked" value={String(tally.walked)}
-                title="Left after counter" />
-              <Big label="Countered" value={String(tally.countered)}
-                title="Countered to mandate" />
-            </div>
-            <div className="hint" style={{ marginTop: 6 }}>
-              {tally.signed === 0 && tally.passed > 0 && tally.referred === 0
-                ? "Passes only: mandate may be above market."
-                : tally.signed > 0
-                  ? "Passed LOIs were below mandate."
-                  : referred
-                    ? `${referred} LOI${referred === 1 ? "" : "s"} on Deals need a decision.`
-                    : "No activity."}
-            </div>
-          </>
-        )}
-      </div>
-    );
-  }
-
-  /**
-   * THE TEAM, IN ONE CARD. An owner of two hundred buildings does not set a
-   * fit-out number per building and does not read two hundred news lines;
-   * they set how much the team may give away, switch the book on, and look at
-   * a scorecard. Rent posture stays per building (Fill / Market / Push on the
-   * rows below) because how hard to hold is a question about one building's
-   * lease-up; the concession limit is the firm's.
-   */
-  function TeamLeasing() {
-    const book = rows.filter((r) => r.commercial);
-    if (!book.length) return null;
-    const on = book.filter((r) => r.h.autoLease).length;
-    const allOn = on === book.length;
-    const conc = autoConcessionsOf(game);
-    const yr = autoLeaseYear(game);
-    const settled = yr.signed + yr.passed + yr.walked + yr.referred;
-    const pctOf = (x: number) => `${Math.round(x * 100)}%`;
-    return (
-      <div className="agent-bar" style={{ display: "block" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <div className="agent-title">
-            Auto-lease · your team answers {on} of {book.length} building{book.length === 1 ? "" : "s"}
-          </div>
-          <button
-            type="button"
-            className={"btn btn-mini" + (allOn ? " btn-on" : "")}
-            title={allOn
-              ? "All buildings on auto-lease. Click to disable."
-              : "Auto-lease all buildings at their Fill / Market / Push setting and the concession limit."}
-            onClick={() => {
-              // the whole book on (or off) is the instruction for the next deed too
-              useStore.getState().autoLease(book.map((r) => r.h.bbl), !allOn);
-              useStore.getState().autoLeaseNew(!allOn);
-            }}
-          >{allOn ? "All on ✓" : "Auto-lease every building"}</button>
-        </div>
-        <div className="lease-ctl" style={{ marginTop: 6 }}>
-          <span className="lease-ctl-label">Concessions</span>
-          <span className="seg" role="group" aria-label="Max TI and free rent">
-            {AUTO_CONCESSIONS.map((o) => (
-              <button
-                key={o.key}
-                type="button"
-                className={"btn btn-mini" + (conc === o.key ? " btn-on" : "")}
-                aria-pressed={conc === o.key}
-                title={`${o.label}: ${o.blurb}.`}
-                onClick={() => useStore.getState().autoConcessions(o.key)}
-              >{o.label}</button>
-            ))}
-          </span>
-          <button
-            type="button"
-            className={"btn btn-mini" + (game.autoRentFloor ? " btn-on" : "")}
-            aria-pressed={!!game.autoRentFloor}
-            title={game.autoRentFloor
-              ? "No leases, renewals or relief below market rent. Click to disable."
-              : "Floor face rent at market: counter up or pass. Slower lease-up."}
-            onClick={() => useStore.getState().autoRentFloor(!game.autoRentFloor)}
-          >{game.autoRentFloor ? "Never below market rent ✓" : "Never below market rent"}</button>
-          <button
-            type="button"
-            className={"btn btn-mini" + (autoLeaseOnClose(game) ? " btn-on" : "")}
-            aria-pressed={autoLeaseOnClose(game)}
-            title={autoLeaseOnClose(game)
-              ? "Acquisitions start on auto-lease at house setting. Click to disable."
-              : "Start acquisitions on auto-lease."}
-            onClick={() => useStore.getState().autoLeaseNew(!autoLeaseOnClose(game))}
-          >{autoLeaseOnClose(game) ? "New buildings join auto-lease ✓" : "New buildings join auto-lease"}</button>
-        </div>
-        <div className="agent-sub" style={{ marginTop: 4 }}>
-          TI and free rent: {AUTO_CONCESSIONS.find((o) => o.key === conc)!.blurb}, vs market package per space.
-          Rent setting per building below. Leases ≥ 25% of building (10,000 sf+) referred to you.
-        </div>
-        <div className="hint" style={{ marginTop: 6 }}>
-          {!settled
-            ? "Nothing settled in the last twelve months."
-            : <>
-                Last 12 months: <b>{yr.signed} signed</b>
-                {yr.signed > 0 && <> at <b>{pctOf(yr.deal)} of market deal</b> avg ({pctOf(yr.ne)} net effective vs market{yr.under ? `; ${yr.under} under 90%` : ""})</>}
-                {" · "}{yr.passed} passed · {yr.walked} walked · {yr.referred} referred
-              </>}
-        </div>
-      </div>
-    );
-  }
-
-  /**
-   * THE LETTERS THEMSELVES, ON THE LEASING PAGE.
-   *
-   * An LOI or a renewal used to reach the player as an interrupt card and as a
-   * row on Deals, and this page — the one called Leasing — showed a COUNT of
-   * them ("On your desk · 3") and nothing else. The owner's report: "when you
-   * get LOIs and renewals, they don't pop up in the leasing tab." They did
-   * not. Somebody reading their rent roll, seeing a tenant roll in eleven
-   * months, had to leave the page to find the renewal letter that tenant had
-   * already sent.
-   *
-   * Same cards, same predicate, same order as the Deals desk — `LoiCard` is
-   * imported, not copied, so the two surfaces cannot drift. Referred letters
-   * first, then the tours grouped, then arrival order.
-   */
-  function DeskLetters() {
-    const desk = game.lois.filter((l) => loiNeedsPrincipal(game, l));
-    if (!desk.length) return null;
-    const renewals = desk.filter((l) => l.kind === "renewal").length;
-    const quiet = deskHoldsPen(game);
-    return (
-      <div className="page-section">
-        <div className="page-section-head">
-          On your desk · {desk.length} LOI{desk.length === 1 ? "" : "s"}
-          {renewals ? ` · ${renewals} renewal${renewals === 1 ? "" : "s"}` : ""}
-          {quiet ? " · referred" : ""}
-        </div>
-        <TrayClear />
-        <div className="loi-grid">
-          {[...desk]
-            .sort((a, b) => (b.referred ? 1 : 0) - (a.referred ? 1 : 0)
-              || (a.tourId ?? -a.id) - (b.tourId ?? -b.id) || a.id - b.id)
-            .map((loi) => <LoiCard key={loi.id} loi={loi} go={go} />)}
-        </div>
-      </div>
-    );
-  }
-
-  /**
-   * THE MIDDLE OPTION. The agent above takes the whole book at 6% and signs
-   * everything, including the new leases — which is the half worth doing
-   * yourself, where you trade term against allowance and decide whether a
-   * covenant is worth a discount. This hands over only the RENEWALS: the paper
-   * that rolls whether you are paying attention or not.
-   *
-   * The 2% is not a new charge. `leaseCosts` has always priced a renewal at 2%
-   * of rent x sf x term against a new lease's 4%, because a renewal genuinely
-   * is less work — no fit-out to negotiate, no tour, no covenant to underwrite.
-   * Engaging the desk changes who signs, not what it costs.
-   *
-   * Hidden while the agent has the book, because the agent is already signing
-   * the renewals and offering both would be offering the same thing twice.
-   */
-  function RenewalBar() {
-    // Whole-book handoffs already cover renewals.
-    if (game.agent) return null;
-    const on = !!game.renewalMgmt;
-    return (
-      <div className="agent-bar">
-        <div>
-          <div className="agent-title">
-            {on ? "Renewals: property management" : "Renewals: in-house"}
-          </div>
-          <div className="agent-sub">
-            {on
-              ? "Signed within mandate. +2% of lease value (4% total). Weak renewals referred; junk passed. New leases stay with you."
-              : "Renewal LOIs arrive 6 mo before expiry; 2% commission. Management: +2%, new leases stay with you."}
-          </div>
-        </div>
-        <button className={"btn" + (on ? "" : " btn-on")} onClick={() => setRenewalMgmt(!on)}>
-          {on ? "Take renewals back" : "Management takes renewals · 2%"}
-        </button>
-      </div>
-    );
-  }
-
-  // THE DESK'S SHAPE: what the book says (the strip), what wants you (the
-  // letters), what the desk did, and then who holds the pen — a mandate set
-  // once and revisited rarely, so it folds to the one line that says who.
-  const penLine = game.agent ? "outside agent"
-    : game.renewalMgmt ? "in-house · renewals to management"
-    : "in-house";
   return (
-    <div>
-      {/* The house policy is the control on this page that gets used most —
-          one setting across the whole book — so it leads, above the numbers
-          it moves. */}
-      <HousePolicy />
+    <div className="lz">
       <div className="stat-strip">
         <Big
-          label="Portfolio occupancy"
+          label="Occupancy"
           value={totSf ? ((100 * Math.min(totLeased, totSf)) / totSf).toFixed(1) + "%" : "—"}
           bad={totSf > 0 && totLeased / totSf < 0.8}
           title={totRemainder
@@ -396,263 +126,427 @@ export function LeasingPage() {
         <Big label="Leased" value={sf(totLeased) + " of " + sf(totSf)} />
         <Big label="Rent roll / yr" value={usd(totRoll)} />
         <Big label="Rolling in 12 mo" value={sf(totRolling)} bad={totRolling > totLeased * 0.25} />
-        <Big
-          label="Pending LOIs"
-          value={String(game.lois.filter((l) => loiNeedsPrincipal(game, l)).length)}
-          title="Awaiting your decision (also on Deals)"
-        />
+        <Big label="Letters" value={String(desk.length)} title="Awaiting your decision (also on Deals)" />
       </div>
-
-      <TeamLeasing />
-
-      <div className="page-section">
-        <div className="page-section-head" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-          <span>By building</span>
-          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <MinLeaseAll />
-          </span>
-        </div>
-        <div>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Property</th>
-                <th>Type</th>
-                <th className="num">Bldg sf</th>
-                <th className="num">Occ</th>
-                <th className="num" title="In-place rent / leased sf, vs market">Avg $/sf</th>
-                <th className="num">Rent / yr</th>
-                <th className="num">WALT</th>
-                <th className="num">Rolling</th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* biggest building first (owner, Oct 2026) */}
-              {rows.sort((a, b) => (b.rec.bldgArea ?? 0) - (a.rec.bldgArea ?? 0)).map((r) => (
-                <tr key={r.h.bbl} onClick={() => go(r.h.bbl)}>
-                  <td>
-                    <div>{r.rec.address}</div>
-                    <div className="dim" style={{ fontSize: 11 }}>
-                      {/* named, so "Market · Market · Fund" reads as three settings */}
-                      rents {((r.h.stance ?? 0) > 0 ? "Push" : (r.h.stance ?? 0) < 0 ? "Fill" : "Market").toLowerCase()}
-                      {r.h.autoLease ? (autoTiCapToday(game, r.h) !== undefined ? ` · auto, TI ≤ $${autoTiCapToday(game, r.h)!.toFixed(2)}/yr` : " · auto") : ""}
-                      {" · service "}{serviceSpec(r.h.service).label.toLowerCase()}
-                      {" · capex "}{planSpec(r.h.plan).label.toLowerCase()}
-                      {r.h.broker ? " · broker" : ""}
-                      {r.notReady ? " · turning" : ""}
-                      {r.h.deliveredM !== undefined && q - r.h.deliveredM <= 30 ? " · lease-up" : ""}
-                    </div>
-                    {/* THE CONTROLS GET NAMES. Six bare chips — "Fill Market
-                        Push auto I sign here list" — ran on from the status
-                        line as if they were more of it. The three rent
-                        postures are one choice, so they are one segmented
-                        control with a label; the switches say what they do. */}
-                    <div className="lease-ctl" onClick={(e) => e.stopPropagation()}>
-                      <span className="lease-ctl-label">Asking</span>
-                      <span className="seg" role="group" aria-label={`Asking rents at ${r.rec.address}`}>
-                      {([-1, 0, 1] as const).map((v) => (
-                        <button
-                          key={v}
-                          type="button"
-                          className={"btn btn-mini" + ((r.h.stance ?? 0) === v ? " btn-on" : "")}
-                          title={v === 1 ? "+8% asking rents, fewer LOIs" : v === -1 ? "−8% rents, faster lease-up" : "Market rents"}
-                          onClick={(e) => { e.stopPropagation(); useStore.getState().stance(r.h.bbl, v); }}
-                          aria-pressed={(r.h.stance ?? 0) === v}
-                        >{v === 1 ? "Push +8%" : v === -1 ? "Fill −8%" : "Market"}</button>
-                      ))}
-                      </span>
-                      <button
-                        type="button"
-                        className={"btn btn-mini" + (r.h.autoLease ? " btn-on" : "")}
-                        title={r.h.autoLease ? `${autoLeaseRule(game, r.h)} Click to disable.` : "Auto-respond to LOIs at rent setting and concession limit."}
-                        onClick={(e) => { e.stopPropagation(); useStore.getState().autoLease(r.h.bbl, !r.h.autoLease); }}
-                        aria-pressed={!!r.h.autoLease}
-                      >{r.h.autoLease ? "Auto-answer ✓" : "Auto-answer"}</button>
-                      {r.commercial && (
-                        <button
-                          className={"btn btn-mini" + (r.h.principalSigns ? " btn-on" : "")}
-                          title={r.h.principalSigns
-                            ? "All LOIs here come to you. Click to return to agent."
-                            : "Route this building's LOIs to you regardless of agent."}
-                          onClick={(e) => { e.stopPropagation(); useStore.getState().setPrincipalSigns(r.h.bbl, !r.h.principalSigns); }}
-                        >{r.h.principalSigns ? "I sign here ✓" : "I sign here"}</button>
-                      )}
-                      {r.commercial && !r.h.broker && r.rec.bldgArea - r.leased > 500 && (
-                        <button className="btn btn-mini" title="Listing broker: sources tenants, you sign" onClick={(e) => { e.stopPropagation(); broker(r.h.bbl, true); }}>Hire a broker</button>
-                      )}
-                    </div>
-                    {/* HOW IT IS RUN, FROM THE ROW. Service and the capital plan
-                        lived only on each building's Operations tab — a click
-                        into every deed to set the book. The same component as
-                        the property page and Portfolio, so the row carries the
-                        same numbers: what each choice costs a year against the
-                        one in force, how tenants read the service, and the
-                        building's condition and reserve. */}
-                    <div onClick={(e) => e.stopPropagation()}>
-                      <OpsChoices bbl={r.h.bbl} h={r.h} compact />
-                    </div>
-                  </td>
-                  <td>{useLabel(r.rec)}</td>
-                  <td className="num">{sf(r.rec.bldgArea)}</td>
-                  <td className={"num" + (r.occ < 0.75 ? " neg" : "")} title={occTitle(r.or)}>{occLabel(r.or)}{(() => {
-                    // WHY A FLAT EMPTIED: the households that left this month, and why (households.ts)
-                    const id = game.households?.flatWhy?.[r.h.bbl];
-                    const ev = whyGet(game, id);
-                    if (!ev || ev.m !== game.month) return null;
-                    const n = ev.n?.households ?? 0;
-                    return <div className="dim" style={{ fontSize: 11 }} onClick={(e) => e.stopPropagation()}>{n} household{n === 1 ? "" : "s"} left <WhyButton id={id} /></div>;
-                  })()}</td>
-                  {(() => {
-                    // IN PLACE AGAINST THE MARKET. The rent roll over the feet
-                    // it is paid on, beside what the same space lets for today.
-                    const avg = r.leased > 0 ? r.rentRoll / r.leased : 0;
-                    const mkt = marketRentPsfYr(r.rec, game.econ, r.h.condition, r.h.condIdx);
-                    const gap = avg > 0 && mkt > 0 ? avg / mkt - 1 : 0;
-                    return (
-                      <td className="num" title={mkt > 0 ? `In place $${avg.toFixed(2)}/sf against a $${mkt.toFixed(2)}/sf market` : undefined}>
-                        {avg > 0 ? `$${avg.toFixed(2)}` : "—"}
-                        {avg > 0 && mkt > 0 && (
-                          <div className={"dim" + (gap < -0.1 ? " neg" : "")} style={{ fontSize: 11 }}>
-                            mkt ${mkt.toFixed(0)} · {gap >= 0 ? "+" : "−"}{Math.abs(Math.round(gap * 100))}%
-                          </div>
-                        )}
-                      </td>
-                    );
-                  })()}
-                  <td className="num">{usd(r.rentRoll)}</td>
-                  <td className="num">{r.commercial ? walt(r.h, q).toFixed(1) + "y" : "—"}</td>
-                  <td className={"num" + (r.rolling > r.leased * 0.3 ? " neg" : "")}>{r.rolling ? sf(r.rolling) : "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <DeskLetters />
-      <DeskActivity />
-      <Fold id="leasing:mandate" title="Leasing mandate" summary={penLine}>
-        <AgentBar />
-        <RenewalBar />
-        <PlanEditor />
-        <PlanDigest />
-      </Fold>
-
-      {/* WHAT YOUR RENT ROLL DOES FOR A LIVING.
-          You can own twelve diversified buildings and still be sixty per cent
-          finance — and when finance turns you find that out all at once, in
-          every building, in the same eighteen months. It is the single most
-          important thing a landlord can know about themselves and there was no
-          way to see it. */}
-      {ind.rows.length > 0 && (
-        <div className="page-section">
-          <div className="page-section-head">
-            Exposure by industry{ind.atRisk > 0.18 ? ` · ${(ind.atRisk * 100).toFixed(0)}% of income in contracting industries` : ""}
-          </div>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Industry</th><th className="num">Share of income</th><th className="num">Income / yr</th>
-                <th className="num">Space</th><th className="num">Tenants</th><th>Cycle</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ind.rows.map((r) => (
-                <tr key={r.sector} className={r.stress > 0.4 ? "dim" : ""}>
-                  <td>{INDUSTRY_LABEL[r.sector]}</td>
-                  <td className={"num" + (r.share > 0.45 ? " neg" : "")}>{(r.share * 100).toFixed(0)}%</td>
-                  <td className="num">{usd(r.income)}</td>
-                  <td className="num">{sf(r.sf)}</td>
-                  <td className="num">{r.tenants}</td>
-                  <td className={r.phase === "bust" ? "neg" : "dim"}>
-                    {r.phase === "boom" ? "expanding" : r.phase === "bust" ? "contracting" : "steady"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <div className="hint">
-            {ind.top && ind.top.share > 0.45
-              ? `${(ind.top.share * 100).toFixed(0)}% of rent from ${INDUSTRY_LABEL[ind.top.sector].toLowerCase()}. Concentration discounted by buyers and lenders.`
-              : "Diversified. Lenders and buyers discount single-industry concentration."}
-          </div>
-        </div>
-      )}
-
-      {/* Which YEAR the leases roll — the chart lived on Portfolio, but the
-          roll is this desk's business, so this is its home. */}
-      <Rollover />
-
-      <LeasedFeeStrip />
-
-      <div className="page-section">
-        <div className="page-section-head">Rent roll</div>
-        <div style={{ maxHeight: 420, overflowY: "auto" }}>
-          <table className="tbl">
-            <thead>
-              <tr>
-                <th>Tenant</th>
-                <th>Property</th>
-                <th className="num">sf</th>
-                <th className="num">Rent</th>
-                <th className="num">Expires</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.flatMap((r) => r.h.tenants.map((t, i) => ({ t, r, i })))
-                .sort((a, b) => a.t.endM - b.t.endM)
-                .map(({ t, r, i }) => {
-                  const mkt = marketRentPsfYr(r.rec, game.econ, r.h.condition, r.h.condIdx);
-                  const d = mkt > 0 ? t.rentPsf / mkt - 1 : 0;
-                  const recov = recoveryOf(t);
-                  return (
-                  <tr key={r.h.bbl + ":" + i} onClick={() => go(r.h.bbl)}>
-                    <td>
-                      <div><BizLink t={t} /></div>
-                      <div className="dim" style={{ fontSize: 11 }}>
-                        {t.sector}{t.quality !== undefined ? ` · q${t.quality}` : ""} · {CREDIT_LABEL[t.credit]} · {recov === "nnn" ? "NNN" : recov === "base" ? "base yr" : "gross"}
-                        {recov === "base" ? ` · stop $${(t.baseStopPsf ?? 0).toFixed(2)}` : ""}
-                      </div>
-                    </td>
-                    <td className="dim">{r.rec.address}</td>
-                    <td className="num">{sf(t.sf)}</td>
-                    <td className={"num" + (d < -0.12 ? " neg" : "")}>
-                      ${t.rentPsf.toFixed(2)}
-                      <div className="dim" style={{ fontSize: 11 }}>{(d * 100).toFixed(0)}% vs mkt</div>
-                    </td>
-                    <td className={"num" + (t.endM - q <= 12 ? " neg" : "")}>{monthLabel(t.endM)}</td>
+      <ViewSwitch<View>
+        label="Leasing"
+        on={view}
+        set={setView}
+        views={[
+          { id: "roll", label: "Rent roll", n: leases.length, title: "Every lease on every building" },
+          { id: "expiring", label: "Expiring", n: rolling12, title: "Leases rolling in the next three years; the count is the next twelve months" },
+          { id: "vacant", label: "Vacant", n: vacantN, title: "Each building's occupancy, empty space and rent against market" },
+          { id: "letters", label: "Letters", n: desk.length, title: "Letters of intent and renewals waiting for you" },
+          { id: "policy", label: "Policy", title: "House policy, auto-lease, who signs, and per-building overrides" },
+        ]}
+      />
+      {view === "roll" && (
+        <>
+          <RentRoll leases={leases} game={game} q={q} go={go}
+            counter={(id) => { useStore.getState().setLoiFocus(id); setView("letters"); }}
+            empty={totLeased > 0 ? `None named · ${sf(totLeased)} leased as apartments` : "None"} />
+          <LeasedFees fees={leasedFees} go={go} />
+          {ind.rows.length > 0 && (
+            <div className="page-section">
+              <div className="page-section-head"
+                title={ind.top && ind.top.share > 0.45
+                  ? `${(ind.top.share * 100).toFixed(0)}% of rent from ${INDUSTRY_LABEL[ind.top.sector].toLowerCase()}. Concentration discounted by buyers and lenders.`
+                  : "Diversified. Lenders and buyers discount single-industry concentration."}>
+                Exposure by industry{ind.atRisk > 0.18 ? ` · ${(ind.atRisk * 100).toFixed(0)}% contracting` : ""}
+              </div>
+              <table className="tbl">
+                <thead>
+                  <tr>
+                    <th>Industry</th><th className="num">Share</th><th className="num">Income / yr</th>
+                    <th className="num">Space</th><th className="num">Tenants</th><th>Cycle</th>
                   </tr>
-                  );
-                })}
-              {/* "Nothing under lease yet" sat under a 96%-let apartment
-                  building: flats are let unit by unit and carry no named
-                  lease, so this table is empty while the rent is real. */}
-              {!rows.some((r) => r.h.tenants.length) && (
-                <tr><td colSpan={5} className="dim">{totLeased > 0
-                  ? `No named leases. ${sf(totLeased)} leased as apartment units (see table above).`
-                  : "No leases."}</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                </thead>
+                <tbody>
+                  {ind.rows.map((r) => (
+                    <tr key={r.sector} className={r.stress > 0.4 ? "dim" : ""}>
+                      <td>{INDUSTRY_LABEL[r.sector]}</td>
+                      <td className={"num" + (r.share > 0.45 ? " neg" : "")}>{(r.share * 100).toFixed(0)}%</td>
+                      <td className="num">{usd(r.income)}</td>
+                      <td className="num">{sf(r.sf)}</td>
+                      <td className="num">{r.tenants}</td>
+                      <td className={r.phase === "bust" ? "neg" : "dim"}>
+                        {r.phase === "boom" ? "expanding" : r.phase === "bust" ? "contracting" : "steady"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+      {view === "expiring" && (
+        <>
+          <LeasingExpiring />
+          {/* Which YEAR the leases roll. */}
+          <Rollover />
+        </>
+      )}
+      {view === "vacant" && <Buildings rows={rows} go={go} />}
+      {view === "letters" && <Letters desk={desk} go={go} />}
+      {view === "policy" && <Policy rows={rows} go={go} />}
     </div>
   );
 }
 
+function RentRoll({ leases, game, q, go, counter, empty }: {
+  leases: LeaseRow[]; game: NonNullable<ReturnType<typeof useStore.getState>["game"]>; q: number;
+  go: (bbl: string) => void; counter: (id: number) => void; empty: string;
+}) {
+  const vs = (r: LeaseRow) => (r.mkt > 0 ? r.t.rentPsf / r.mkt - 1 : null);
+  const cols: Col<LeaseRow>[] = [
+    {
+      id: "tenant", label: "Tenant", get: (r) => r.t.name,
+      cell: (r) => <span title={`${r.t.sector}${r.t.quality !== undefined ? ` · quality ${r.t.quality}` : ""}`}><BizLink t={r.t} /></span>,
+    },
+    { id: "addr", label: "Building", get: (r) => r.addr },
+    { id: "sector", label: "Sector", get: (r) => r.t.sector, hidden: true },
+    { id: "credit", label: "Credit", get: (r) => r.t.credit, cell: (r) => CREDIT_LABEL[r.t.credit] ?? "—", tone: (r) => (r.t.credit === 0 ? "neg" : undefined) },
+    { id: "sf", label: "sf", get: (r) => r.t.sf, fmt: "n" },
+    { id: "rent", label: "$/sf", get: (r) => r.t.rentPsf, fmt: "psf" },
+    { id: "vs", label: "vs mkt", get: vs, fmt: "pct", tone: (r) => ((vs(r) ?? 0) < -0.12 ? "neg" : undefined) },
+    {
+      id: "recov", label: "Terms", get: (r) => recoveryOf(r.t), hidden: true,
+      cell: (r) => { const rv = recoveryOf(r.t); return rv === "nnn" ? "NNN" : rv === "base" ? `base yr · stop $${(r.t.baseStopPsf ?? 0).toFixed(2)}` : "gross"; },
+    },
+    { id: "end", label: "Expires", get: (r) => r.t.endM, cell: (r) => <span className="mono">{monthLabel(r.t.endM)}</span>, tone: (r) => (r.t.endM - q <= 12 ? "neg" : undefined) },
+    { id: "left", label: "Months", get: (r) => r.t.endM - q, fmt: "n" },
+  ];
+  return (
+    <DataTable id="leasing-book" cols={cols} rows={leases} rowKey={(r) => r.key}
+      initialSort={{ col: "end", dir: 1 }} empty={empty} maxHeight={560}
+      onRow={(r) => go(r.bbl)}
+      actions={(r) => {
+        const loi = r.loi;
+        if (!loi) return null;
+        // THE TENANT'S LETTER, ON THE TENANT'S ROW: the same respondLoi the
+        // letter card calls, with the same cash test for drawing the line.
+        const short = loiSigningCash(loi, exclusiveFeeRate(game.holdings[loi.bbl])) > game.cash;
+        const res = (a: "accept" | "decline") => useStore.getState().respondLoi(loi.id, a, a === "accept" ? short : undefined);
+        return (
+          <span className="lz-acts" title={`${loi.kind} letter · $${loi.rentPsf.toFixed(2)}/sf · ${(loi.termM / 12).toFixed(loi.termM % 12 ? 1 : 0)} yr · answer by ${monthLabel(loi.expiresM - 1)}`}>
+            <button type="button" className="btn btn-mini btn-buy" onClick={() => res("accept")}>Accept</button>
+            <button type="button" className="btn btn-mini" onClick={() => counter(loi.id)}>Counter</button>
+            <button type="button" className="btn btn-mini" onClick={() => res("decline")}>Decline</button>
+          </span>
+        );
+      }} />
+  );
+}
+
+function LeasedFees({ fees, go }: { fees: { h: Holding; gl: { tenant: string; rentYr: number; endM: number }; rec: ParcelRecord | null | undefined }[]; go: (bbl: string) => void }) {
+  if (!fees.length) return null;
+  return (
+    <div className="page-section">
+      <div className="page-section-head" title="Ground rent only; lessee manages the building.">Leased fees</div>
+      <table className="tbl">
+        <thead>
+          <tr><th>Property</th><th>Lessee</th><th className="num">Ground rent / yr</th><th className="num">Reverts</th></tr>
+        </thead>
+        <tbody>
+          {fees.map(({ h, gl, rec }) => (
+            <tr key={h.bbl} onClick={() => go(h.bbl)}>
+              <td>{rec?.address ?? h.bbl}</td>
+              <td className="dim">{gl.tenant}</td>
+              <td className="num">{usd(gl.rentYr)}</td>
+              <td className="num">{monthLabel(gl.endM)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** Each building: occupancy, empty space, rent in place against market. */
+function Buildings({ rows, go }: { rows: BookRow[]; go: (bbl: string) => void }) {
+  const game = useStore((s) => s.game)!;
+  const q = game.month;
+  const avg = (r: BookRow) => (r.leased > 0 ? r.rentRoll / r.leased : 0);
+  const gap = (r: BookRow) => (avg(r) > 0 && r.mkt > 0 ? avg(r) / r.mkt - 1 : null);
+  const cols: Col<BookRow>[] = [
+    { id: "addr", label: "Property", get: (r) => r.rec.address },
+    { id: "type", label: "Type", get: (r) => useLabel(r.rec) },
+    { id: "bsf", label: "Bldg sf", get: (r) => r.rec.bldgArea, fmt: "n", hidden: true },
+    {
+      id: "occ", label: "Occ", get: (r) => r.occ, num: true, tone: (r) => (r.occ < 0.75 ? "neg" : undefined),
+      cell: (r) => {
+        // WHY A FLAT EMPTIED: the households that left this month (households.ts)
+        const id = game.households?.flatWhy?.[r.h.bbl];
+        const ev = whyGet(game, id);
+        const n = ev && ev.m === game.month ? ev.n?.households ?? 0 : 0;
+        return (
+          <span title={occTitle(r.or)}>
+            {occLabel(r.or)}
+            {n > 0 && <span className="dim"> · {n} left <WhyButton id={id} /></span>}
+          </span>
+        );
+      },
+    },
+    { id: "vac", label: "Vacant sf", get: (r) => vacantSf(r.rec, r.h), fmt: "n" },
+    { id: "avg", label: "In place", get: (r) => avg(r) || null, fmt: "psf" },
+    { id: "mkt", label: "Market", get: (r) => r.mkt || null, fmt: "psf" },
+    { id: "gap", label: "vs mkt", get: gap, fmt: "pct", tone: (r) => ((gap(r) ?? 0) < -0.1 ? "neg" : undefined) },
+    { id: "roll", label: "Rent / yr", get: (r) => r.rentRoll, fmt: "usd" },
+    { id: "walt", label: "WALT", get: (r) => (r.commercial ? walt(r.h, q) : null), num: true, cell: (r) => (r.commercial ? walt(r.h, q).toFixed(1) + "y" : "—") },
+    { id: "rolling", label: "Rolling 12m", get: (r) => r.rolling || null, fmt: "n", hidden: true, tone: (r) => (r.rolling > r.leased * 0.3 ? "neg" : undefined) },
+    {
+      id: "status", label: "Status",
+      get: (r) => [
+        r.h.broker ? "broker" : "",
+        r.h.autoLease ? "auto" : "",
+        r.notReady ? "turning" : "",
+        r.h.deliveredM !== undefined && q - r.h.deliveredM <= 30 ? "lease-up" : "",
+      ].filter(Boolean).join(" · ") || null,
+    },
+  ];
+  return (
+    <DataTable id="leasing-bldgs" cols={cols} rows={rows} rowKey={(r) => r.h.bbl}
+      initialSort={{ col: "vac", dir: -1 }} empty="None" onRow={(r) => go(r.h.bbl)}
+      actions={(r) => (r.commercial && !r.h.broker && vacantSf(r.rec, r.h) > 0 && r.rec.bldgArea - r.leased > 500
+        ? <button type="button" className="btn btn-mini" title="Listing broker: sources tenants, you sign"
+            onClick={() => useStore.getState().broker(r.h.bbl, true)}>Broker</button>
+        : null)} />
+  );
+}
+
+/** The letters themselves: the same cards, same predicate, same order as Deals. */
+function Letters({ desk, go }: { desk: LOI[]; go: (bbl: string) => void }) {
+  const game = useStore((s) => s.game)!;
+  const tally = deskHoldsPen(game) ? deskMonthNow(game) : null;
+  return (
+    <>
+      {/* QUIET ACCOUNTABILITY: when somebody else holds the pen, the tally is
+          the proof the desk is working. */}
+      {tally && (
+        <div className="stat-strip">
+          <Big label="Signed" value={String(tally.signed)} title="Signed within mandate this month" />
+          <Big label="Passed" value={String(tally.passed)}
+            title={tally.signed === 0 && tally.passed > 0 && tally.referred === 0
+              ? "Below mandate; declined. Passes only: mandate may be above market."
+              : "Below mandate; declined"} />
+          <Big label="Referred" value={String(tally.referred)} title="Expansions, capital calls, ties, failed counters" />
+          <Big label="Walked" value={String(tally.walked)} title="Left after counter" />
+          <Big label="Countered" value={String(tally.countered)} title="Countered to mandate" />
+        </div>
+      )}
+      {!desk.length ? <div className="dim lz-none">None</div> : (
+        <>
+          <TrayClear />
+          <div className="loi-grid">
+            {[...desk]
+              .sort((a, b) => (b.referred ? 1 : 0) - (a.referred ? 1 : 0)
+                || (a.tourId ?? -a.id) - (b.tourId ?? -b.id) || a.id - b.id)
+              .map((loi) => <LoiCard key={loi.id} loi={loi} go={go} />)}
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+/** A switch row: label (explained on hover), then the choice. */
+function Opt({ label, title, children }: { label: string; title?: string; children: React.ReactNode }) {
+  return (
+    <div className="ops-choice">
+      <span className={"ops-choice-k" + (title ? " has-gloss" : "")} title={title}>{label}</span>
+      {children}
+    </div>
+  );
+}
+
+function Policy({ rows, go }: { rows: BookRow[]; go: (bbl: string) => void }) {
+  const game = useStore((s) => s.game)!;
+  const { setAgent, setRenewalMgmt } = useStore.getState();
+  const book = rows.filter((r) => r.commercial);
+  const on = book.filter((r) => r.h.autoLease).length;
+  const allOn = book.length > 0 && on === book.length;
+  const conc = autoConcessionsOf(game);
+  const yr = autoLeaseYear(game);
+  const settled = yr.signed + yr.passed + yr.walked + yr.referred;
+  const pctOf = (x: number) => `${Math.round(x * 100)}%`;
+  const referred = (game.lois ?? []).filter((l) => loiNeedsPrincipal(game, l)).length;
+  const newOn = autoLeaseOnClose(game);
+  return (
+    <>
+      <HousePolicy />
+      {/* THE TEAM, IN ONE BLOCK: how much the team may give away, the book
+          switched on, and the scorecard. Rent posture stays per building. */}
+      {book.length > 0 && (
+        <div className="page-section">
+          <div className="page-section-head"
+            title={`TI and free rent: ${AUTO_CONCESSIONS.find((o) => o.key === conc)!.blurb}, vs market package per space. Rent setting per building. Leases ≥ 25% of building (10,000 sf+) referred to you.`}>
+            Auto-lease · {on} of {book.length}
+          </div>
+          <Opt label="All buildings" title={allOn
+            ? "All buildings on auto-lease. Click to disable."
+            : "Auto-lease all buildings at their Fill / Market / Push setting and the concession limit."}>
+            <button type="button" className={"btn btn-sm" + (allOn ? " btn-on" : "")} aria-pressed={allOn}
+              onClick={() => {
+                // the whole book on (or off) is the instruction for the next deed too
+                useStore.getState().autoLease(book.map((r) => r.h.bbl), !allOn);
+                useStore.getState().autoLeaseNew(!allOn);
+              }}>{allOn ? "On" : "Off"}</button>
+          </Opt>
+          <Opt label="Concessions" title="The most TI and free rent the team may give, against the market package for each space.">
+            <span className="seg" role="group" aria-label="Max TI and free rent">
+              {AUTO_CONCESSIONS.map((o) => (
+                <button key={o.key} type="button" className={"btn btn-sm" + (conc === o.key ? " btn-on" : "")}
+                  aria-pressed={conc === o.key} title={`${o.label}: ${o.blurb}.`}
+                  onClick={() => useStore.getState().autoConcessions(o.key)}>{o.label}</button>
+              ))}
+            </span>
+          </Opt>
+          <Opt label="Rent floor" title={game.autoRentFloor
+            ? "No leases, renewals or relief below market rent. Click to disable."
+            : "Floor face rent at market: counter up or pass. Slower lease-up."}>
+            <button type="button" className={"btn btn-sm" + (game.autoRentFloor ? " btn-on" : "")} aria-pressed={!!game.autoRentFloor}
+              onClick={() => useStore.getState().autoRentFloor(!game.autoRentFloor)}>{game.autoRentFloor ? "Market" : "Off"}</button>
+          </Opt>
+          <Opt label="New buildings" title={newOn
+            ? "Acquisitions start on auto-lease at house setting. Click to disable."
+            : "Start acquisitions on auto-lease."}>
+            <button type="button" className={"btn btn-sm" + (newOn ? " btn-on" : "")} aria-pressed={newOn}
+              onClick={() => useStore.getState().autoLeaseNew(!newOn)}>{newOn ? "Join" : "Off"}</button>
+          </Opt>
+          <Opt label="Last 12 mo" title="What the team settled in the last twelve months; deal and net effective against market.">
+            <span className="ops-choice-read mono">
+              {!settled ? "none" : <>
+                {yr.signed} signed{yr.signed > 0 && <> · {pctOf(yr.deal)} deal · {pctOf(yr.ne)} NE{yr.under ? ` · ${yr.under} <90%` : ""}</>}
+                {" · "}{yr.passed} passed · {yr.walked} walked · {yr.referred} referred
+              </>}
+            </span>
+          </Opt>
+        </div>
+      )}
+      {/* WHO HOLDS THE PEN. The agent takes the whole book at 6%; management
+          takes only the renewals at +2% (leaseCosts prices a renewal at 2%
+          against a new lease's 4%). Hidden while the agent has the book. */}
+      <div className="page-section">
+        <div className="page-section-head">Who signs</div>
+        <Opt label="Leasing" title={game.agent
+          ? `Outside agent: 6% fee. Signs to plan, counters, declines weak LOIs, refers exceptions${referred ? ` · ${referred} LOI${referred === 1 ? "" : "s"} referred` : ""}.`
+          : "In-house: all LOIs come to you. Listing brokers source but do not sign. Options: renewals to management or outside agent at 6%."}>
+          <span className="seg" role="group" aria-label="Who signs leases">
+            <button type="button" className={"btn btn-sm" + (!game.agent ? " btn-on" : "")} aria-pressed={!game.agent}
+              onClick={() => game.agent && setAgent(false)}>In-house</button>
+            <button type="button" className={"btn btn-sm" + (game.agent ? " btn-on" : "")} aria-pressed={!!game.agent}
+              onClick={() => !game.agent && setAgent(true)}>Agent · 6%</button>
+          </span>
+        </Opt>
+        {!game.agent && (
+          <Opt label="Renewals" title={game.renewalMgmt
+            ? "Signed within mandate. +2% of lease value (4% total). Weak renewals referred; junk passed. New leases stay with you."
+            : "Renewal LOIs arrive 6 mo before expiry; 2% commission. Management: +2%, new leases stay with you."}>
+            <span className="seg" role="group" aria-label="Who signs renewals">
+              <button type="button" className={"btn btn-sm" + (!game.renewalMgmt ? " btn-on" : "")} aria-pressed={!game.renewalMgmt}
+                onClick={() => game.renewalMgmt && setRenewalMgmt(false)}>In-house</button>
+              <button type="button" className={"btn btn-sm" + (game.renewalMgmt ? " btn-on" : "")} aria-pressed={!!game.renewalMgmt}
+                onClick={() => !game.renewalMgmt && setRenewalMgmt(true)}>Management · 2%</button>
+            </span>
+          </Opt>
+        )}
+        <MinLeaseAll />
+      </div>
+      <Overrides rows={rows} go={go} />
+      <Fold id="leasing:mandate" title="Leasing plan">
+        <PlanEditor />
+        <PlanDigest />
+      </Fold>
+    </>
+  );
+}
+
 /**
- * THE TAPE, AS ITS OWN PAGE.
- *
- * Every headline this economy writes was being rendered into a 260px scroll
- * box at the bottom of the Books page, under the ledger and the milestone
- * list — which is the same as not having a news page, and is why the owner
- * asked where it was. Saves was promoted out of that same page for the same
- * reason.
- *
- * The engine keeps the last 120 items (market.ts and sim.ts both trim to it),
- * so this shows all of them rather than a slice, grouped by month so a run of
- * headlines reads as a month rather than as a list, and filterable because in
- * a bad year the warnings are the only ones you want.
+ * PER-BUILDING OVERRIDES, ONLY WHERE THEY EXIST. A building is listed when it
+ * runs something other than the house policy (asking rents, service, capital
+ * plan, auto-lease, or you sign there). Any other building can be set apart
+ * from the "Override…" menu.
  */
+function Overrides({ rows, go }: { rows: BookRow[]; go: (bbl: string) => void }) {
+  const game = useStore((s) => s.game)!;
+  const [extra, setExtra] = useState<string[]>([]);
+  const house = game.opsPolicy ?? { service: 0 as const, plan: 1 as const, stance: 0 as const };
+  const newOn = autoLeaseOnClose(game);
+  const differs = (r: BookRow) => (r.h.stance ?? 0) !== (house.stance ?? 0)
+    || (r.h.service ?? 0) !== house.service
+    || (r.h.plan ?? 1) !== house.plan
+    || !!r.h.principalSigns
+    || (r.commercial && !!r.h.autoLease !== newOn);
+  const shown = rows.filter((r) => differs(r) || extra.includes(r.h.bbl));
+  const rest = rows.filter((r) => !shown.includes(r));
+  const reset = (r: BookRow) => {
+    const st = useStore.getState();
+    st.stance(r.h.bbl, (house.stance ?? 0) as -1 | 0 | 1);
+    st.ops(r.h.bbl, { service: house.service, plan: house.plan });
+    if (r.h.principalSigns) st.setPrincipalSigns(r.h.bbl, false);
+    if (r.commercial && !!r.h.autoLease !== newOn) st.autoLease(r.h.bbl, newOn);
+    setExtra((x) => x.filter((b) => b !== r.h.bbl));
+  };
+  return (
+    <div className="page-section">
+      <div className="page-section-head lz-head"
+        title="Buildings running something other than the house policy. Each building can also be set on its own card.">
+        <span>Overrides · {shown.length}</span>
+        {rest.length > 0 && (
+          <select className="lz-pick" value="" aria-label="Override a building"
+            onChange={(e) => e.target.value && setExtra((x) => [...x, e.target.value])}>
+            <option value="">Override…</option>
+            {rest.map((r) => <option key={r.h.bbl} value={r.h.bbl}>{r.rec.address || r.h.bbl}</option>)}
+          </select>
+        )}
+      </div>
+      {!shown.length && <div className="dim lz-none">None</div>}
+      {shown.map((r) => {
+        const cap = r.h.autoLease ? autoTiCapToday(game, r.h) : undefined;
+        return (
+          <div key={r.h.bbl} className="lz-ovr">
+            <div className="lz-ovr-head">
+              <a onClick={() => go(r.h.bbl)}><b>{r.rec.address || r.h.bbl}</b></a>
+              <span className="dim" title="What differs from the house policy">{[
+                (r.h.stance ?? 0) !== (house.stance ?? 0) ? `rents ${stanceWord(r.h.stance ?? 0).toLowerCase()}` : "",
+                (r.h.service ?? 0) !== house.service ? `service ${serviceSpec(r.h.service).label.toLowerCase()}` : "",
+                (r.h.plan ?? 1) !== house.plan ? `capex ${planSpec(r.h.plan).label.toLowerCase()}` : "",
+                r.commercial && !!r.h.autoLease !== newOn ? `auto ${r.h.autoLease ? "on" : "off"}` : "",
+                r.h.principalSigns ? "you sign" : "",
+              ].filter(Boolean).join(" · ") || "as house"}{cap !== undefined ? ` · TI ≤ $${cap.toFixed(2)}/yr` : ""}</span>
+              {differs(r) && (
+                <button type="button" className="btn btn-mini" title="Back to the house policy" onClick={() => reset(r)}>House</button>
+              )}
+            </div>
+            <div className="ops-choice">
+              <span className="ops-choice-k">Asking</span>
+              <span className="seg" role="group" aria-label={`Asking rents at ${r.rec.address}`}>
+                {([-1, 0, 1] as const).map((v) => (
+                  <button key={v} type="button" className={"btn btn-sm" + ((r.h.stance ?? 0) === v ? " btn-on" : "")}
+                    title={v === 1 ? "+8% asking rents, fewer LOIs" : v === -1 ? "−8% rents, faster lease-up" : "Market rents"}
+                    aria-pressed={(r.h.stance ?? 0) === v}
+                    onClick={() => useStore.getState().stance(r.h.bbl, v)}>{v === 1 ? "Push" : v === -1 ? "Fill" : "Market"}</button>
+                ))}
+              </span>
+              <button type="button" className={"btn btn-sm" + (r.h.autoLease ? " btn-on" : "")} aria-pressed={!!r.h.autoLease}
+                title={r.h.autoLease ? `${autoLeaseRule(game, r.h)} Click to disable.` : "Auto-respond to LOIs at rent setting and concession limit."}
+                onClick={() => useStore.getState().autoLease(r.h.bbl, !r.h.autoLease)}>Auto</button>
+              {r.commercial && (
+                <button type="button" className={"btn btn-sm" + (r.h.principalSigns ? " btn-on" : "")} aria-pressed={!!r.h.principalSigns}
+                  title={r.h.principalSigns
+                    ? "All LOIs here come to you. Click to return to agent."
+                    : "Route this building's LOIs to you regardless of agent."}
+                  onClick={() => useStore.getState().setPrincipalSigns(r.h.bbl, !r.h.principalSigns)}>I sign</button>
+              )}
+            </div>
+            <OpsChoices bbl={r.h.bbl} h={r.h} compact />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 /**
  * ONE MINIMUM NEW LEASE FOR THE WHOLE BOOK. The per-building floor ("Smallest
@@ -668,16 +562,16 @@ function MinLeaseAll() {
   const valid = Number.isFinite(n) && n >= 0;
   const changed = valid && Math.round(n) !== house;
   return (
-    <label className="buybox-field" title="Minimum new lease size, all buildings and future acquisitions. Renewals, expansions, full-vacancy deals and apartments exempt. Override per building.">
-      Min. new lease, all buildings
-      <input type="number" step="500" min="0" value={v} placeholder="any"
-        style={{ width: 80 }}
+    <Opt label="Min. new lease" title="Minimum new lease size, all buildings and future acquisitions. Renewals, expansions, full-vacancy deals and apartments exempt. Override per building.">
+      <input type="number" step="500" min="0" value={v} placeholder="any" className="lz-num"
+        aria-label="Minimum new lease, sf"
         onChange={(e) => setV(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter" && changed) useStore.getState().minLeaseAll(n); }} />sf
-      <button type="button" className="btn btn-mini" disabled={!changed}
+        onKeyDown={(e) => { if (e.key === "Enter" && changed) useStore.getState().minLeaseAll(n); }} />
+      <span className="ops-choice-read">sf</span>
+      <button type="button" className="btn btn-sm" disabled={!changed}
         onClick={() => useStore.getState().minLeaseAll(n)}>
         {n > 0 ? "Set on all" : "Clear all"}
       </button>
-    </label>
+    </Opt>
   );
 }

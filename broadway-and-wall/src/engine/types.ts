@@ -149,6 +149,8 @@ export interface Tenant {
   ind?: number;
   /** Space the firm's people needed at signing, per unit of `staffSign` — its heads times its industry's feet a worker (tenantMarket.ts `tenantHeads`). */
   hcRef?: number;
+  /** Feet a worker it signed for against its industry's norm, from the real rent at its last lease event (streetRolls.ts SPACE_RENT_ELAST). Unset: 1. */
+  spw?: number;
   /** Its heads when its class's demand was last written down (streetRolls.ts, why.ts). */
   hdNote?: number;
   /** Headcount (`staff`) when it last signed — the space it took was sized for these people. */
@@ -797,7 +799,19 @@ export interface Holding {
      * still close early, or elect a 1031, from the card.
      */
     /** `firmId`: the street firm behind `from` — every buyer is one. `pkg`: one deed of a package close; the package books the buyer. */
-    offer?: { price: number; expiresM: number; countered?: boolean; from?: string; firmId?: string; retrade?: string; held?: boolean; contract?: boolean; pkg?: boolean };
+    /**
+     * `max`: the bidder's own walk-away on this offer — the lower of what the
+     * building is worth to it (propmarket.ts maxPrice) and what it can fund
+     * (affordable). Set when the offer came out of the bid round; a counter
+     * is read against it. `cover`: the next-best bid in the room that month.
+     */
+    offer?: { price: number; expiresM: number; countered?: boolean; from?: string; firmId?: string; retrade?: string; held?: boolean; contract?: boolean; pkg?: boolean; max?: number; cover?: { from: string; price: number } };
+    /**
+     * FIRMS WHOSE NUMBER YOU ALREADY SAW AND LET GO, and that number: a buyer
+     * whose offer you declined or let lapse does not ring back with the same
+     * figure, only with a better one.
+     */
+    passed?: Record<string, number>;
     /**
      * STANDING INSTRUCTIONS TO THE BROKER. A seller does not take every call
      * personally — they tell the broker "anything at or over this, take it;
@@ -1547,6 +1561,8 @@ export interface Bid {
   credibility: number;   // 0-1
   note: string;
   dropped?: boolean;     // walked at best and final
+  /** the bidder's walk-away: the lower of its own value (maxPrice) and what it can fund — set when the bid came from the bid round */
+  max?: number;
   countered?: boolean;   // you have already been back to this one privately
 }
 
@@ -2403,6 +2419,8 @@ export interface Econ {
   /** The space a worker takes, by class: its structural level after a swan (remote work; market.ts, swans.ts), and that level at the opening. Every firm's need moves with their ratio. */
   spaceLvl?: Partial<Record<BuiltClass, number>>;
   spaceLvl0?: Partial<Record<BuiltClass, number>>;
+  /** Real effective rent by class at the opening: the rent the feet a worker (SF_PER_JOB) are read at (streetRolls.ts SPACE_RENT_ELAST). */
+  spwRent0?: Partial<Record<BuiltClass, number>>;
   /** The off-map firms' floor (FORMULA_LEDGER #10): the occupied sf off the map at the opening, and what they want now (that, moved by the class's heads × feet a worker), by class (market.ts). */
   offRef?: Partial<Record<BuiltClass, number>>;
   offWant?: Partial<Record<BuiltClass, number>>;
@@ -2446,8 +2464,15 @@ export interface Econ {
     turned?: number }>>;
   /** The street's flats as its households hold them (households.ts, stage 2): feet let, feet on the street, and the feet the households across the water who want a flat here are looking for. */
   flatSpace?: { let: number; cap: number; seek: number };
-  /** The region's sheds off the map, occupied, on the city aggregate (market.ts). */
+  /** Saves from before 2026-11-10: the class's occupied feet on the city aggregate, from which the sheds' off-map half (`offMap`) opens (market.ts). */
   aggOcc?: Partial<Record<BuiltClass, number>>;
+  /**
+   * THE FLOOR OFF THE MAP, AS ITS TENANTS HOLD IT (market.ts): the feet the
+   * off-map tenants occupy (`occ`), the feet their heads need (`need`), and
+   * the level of their trades last month (`idx`: work x space a worker, or
+   * the flats' renters), by class. It moves only by what those tenants do.
+   */
+  offMap?: Partial<Record<BuiltClass, { occ: number; need: number; idx: number; /** sheds: the street's region movers still looking (fid -> sf) */ pend?: Record<number, number> }>>;
   /** Household spending on goods against the opening, from the cost of consumer credit. */
   hhCredit?: number;
   hhCreditRef?: number;

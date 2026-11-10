@@ -13,7 +13,7 @@ import { BUILT_CLASSES, cloneState, raiseAlert } from "./types";
 import { abatementAtStart } from "./citygov";
 import { logBooks, moveDeposit, moveFundCash, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
-import { rng, rrange, openingVac, forwardVacancy, CITY_STOCK, SECTOR_LABEL, addStock, REF_PIPE_SHARE, residenceVac, housableStock, payrollGrowth12 } from "./market";
+import { rng, rrange, openingVac, forwardVacancy, CITY_STOCK, SECTOR_LABEL, addStock, retireStock, REF_PIPE_SHARE, residenceVac, housableStock, payrollGrowth12 } from "./market";
 import { firmShort } from "./firm";
 import { classValuePsf, resolveRec, marketRentPsfYr, landValue, landRead, assetValue, ownedHoldingValue, condGrade, condCeiling, openingCondIdx,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
@@ -4379,7 +4379,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
     const kr = kidRecs[i];
     if (kr.class === "land" || !(kr.bldgArea > 0)) continue;
     s.built[kids[i]] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
-    if ((CITY_STOCK as Record<string, number>)[kr.class] !== undefined) addStock(e, kr.class as keyof typeof CITY_STOCK, -rentableSf(kr));
+    if ((CITY_STOCK as Record<string, number>)[kr.class] !== undefined) retireStock(e, kr);
     s.demolished = (s.demolished ?? 0) + 1;
     recordPropertyEvent(s, kids[i], {
       kind: "demolished", sf: kr.bldgArea, use: kr.class as BuiltClass,
@@ -4390,9 +4390,7 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
   // Off the record and off the stock only AFTER the replacement is funded.
   s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
   const stoodAs = rec.class !== "land" ? (rec.class as BuiltClass) : null;
-  if (stoodAs && (CITY_STOCK as Record<string, number>)[stoodAs] !== undefined) {
-    addStock(e, stoodAs as keyof typeof CITY_STOCK, -rentableSf(rec));
-  }
+  if (stoodAs && (CITY_STOCK as Record<string, number>)[stoodAs] !== undefined) retireStock(e, rec);
   s.demolished = (s.demolished ?? 0) + 1;
   recordPropertyEvent(s, bbl, {
     kind: "demolished",
@@ -4581,7 +4579,7 @@ function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) 
   const { bbl, rec } = worst;
   const oldSf = rec.bldgArea;
   s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
-  addStock(e, "industrial", -rentableSf(rec));
+  retireStock(e, rec);
   // Vacancy accounting: we cleared empty surplus. Keep occupied; next market
   // tick recomputes cityVac from occ/stock. Clamp occupied into housable if
   // a large shed somehow overshot (guard only).
@@ -4705,7 +4703,7 @@ function tickSurplusExit(s: GameState, parcels: ParcelTable, bbls: string[]) {
     const { bbl, rec } = worst;
     const oldSf = rec.bldgArea;
     s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
-    addStock(e, use, -rentableSf(rec));
+    retireStock(e, rec);
     const house = housableStock(e, use);
     if ((e.occupied?.[use] ?? 0) > house) e.occupied![use] = house;
     s.demolished = (s.demolished ?? 0) + 1;

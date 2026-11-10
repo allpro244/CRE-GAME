@@ -1033,11 +1033,13 @@ function DecisionBody({
         <div className="modal-sub">
           {h.sale!.unsolicited
             ? <>Expires {monthLabel(offer.expiresM)}{offer.from ? <> · <FirmLink name={offer.from} id={offer.firmId} /></> : null}</>
-            : `Expires ${monthLabel(offer.expiresM)} · ask ${usd(h.sale!.ask)}`}
+            : <>Expires {monthLabel(offer.expiresM)} · ask {usd(h.sale!.ask)}{offer.from ? <> · <FirmLink name={offer.from} id={offer.firmId} /></> : null}</>}
         </div>
         <div className="grid">
           <Row k="Offer" v={usd(offer.price)} strong />
           {!h.sale!.unsolicited && <Row k="vs. your ask" v={pctSigned(offer.price / h.sale!.ask - 1)} />}
+          {/* The room behind the number: the next-best bid that month (bid round). */}
+          {offer.cover && <Row k="Next best bid" v={`${usd(offer.cover.price)} · ${offer.cover.from}`} />}
           <Row k="vs. appraisal" v={pctSigned(offer.price / apMid(offerBbl!, value) - 1)} />
           <Row k="Loan payoff" v={usd(proceeds.loanPayoff)} />
           {proceeds.breakFee > 0 && <Row k="Break fee" v={usd(proceeds.breakFee)} bad />}

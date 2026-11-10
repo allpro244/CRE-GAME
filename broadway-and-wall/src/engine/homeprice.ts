@@ -21,6 +21,7 @@
 // low, is one where houses pencil; a cheap-money-dear-rates town is one where
 // they do not. Nobody chose which kind this seed is.
 import type { Econ } from "./types";
+import { constructionRatePct } from "./proforma";
 
 // ---------------------------------------------------------------- the facts [S]
 /** US median household income, 2023 (Census, Income in the United States P60-282: $80,610). wageIdx 1.0 is this. */
@@ -38,8 +39,6 @@ export const DOWN = 0.10;
 export const TAX_INS = 0.015;
 /** The 30-year mortgage over the loan index — the same 1.7 points the households' block uses (market.ts tickHouseholds). */
 export const MORTGAGE_SPREAD = 0.017;
-/** The engine's construction desk: the loan index plus 2.4 points, interest only (proforma.ts CONSTR_SPREAD). */
-const CONSTRUCTION_SPREAD = 0.024;
 /**
  * THE REFERENCE NEW HOUSE, 2024: Census New Residential Sales median sales
  * price of a new single-family house $420,000; median floor area of new
@@ -187,14 +186,15 @@ export type HomeQuote = {
  * costs and margin, less the construction interest, then discounted for the
  * months the lot is carried (build + sell) at the construction rate.
  */
-export function homeQuote(e: Pick<Econ, "costIdx" | "indexRate">, lotSf: number, psf: number, far = 0.6, adj = 0): HomeQuote {
+export function homeQuote(e: Pick<Econ, "costIdx" | "indexRate"> & Partial<Pick<Econ, "deskPx">>, lotSf: number, psf: number, far = 0.6, adj = 0): HomeQuote {
   const sf = homeSfFor(lotSf, far);
   const price = Math.round(psf * sf * (1 + adj));
   const vertical = Math.round(VERTICAL_PSF * sf * (e.costIdx ?? 1));
   const overhead = Math.round(NAHB.overhead * price);
   const selling = Math.round((NAHB.commission + NAHB.marketing) * price);
   const margin = Math.round(NAHB.profit * price);
-  const r = (e.indexRate ?? 5.4) / 100 + CONSTRUCTION_SPREAD;
+  // the volume construction desk's live coupon, interest only (proforma.ts constructionRatePct)
+  const r = constructionRatePct(e) / 100;
   // the draws go in evenly, so on average half the vertical is out for the build
   const carry = Math.round((vertical + overhead) * 0.5 * (BUILD_M / 12) * r);
   const pre = price - vertical - overhead - selling - margin - carry;

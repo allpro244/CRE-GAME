@@ -73,6 +73,11 @@ for (const seed of [4242, 1717, 9001, 31337]) {
     const b = bids[i];
     if (b.dropped) continue;
     const px = Math.round(Math.max(top * 1.01, b.price * 1.02));
+    // Bids come from the street's round and carry the bidder's walk-away
+    // (`max`); a lower bidder's walk-away is almost always under the top bid,
+    // so a counter past the field is rare by construction. This test is about
+    // what the list does when one does come up, so give this bidder the room.
+    if (b.max !== undefined) b.max = Math.max(b.max, px);
     const c = E.counterBid(g, parcels, bbl, i, px);
     if (c.err) continue;
     const after = c.s.holdings[bbl].sale.bids;

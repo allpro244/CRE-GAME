@@ -3,7 +3,7 @@
 // Randomness creates situations, never verdicts.
 import { leaseUpMonthsOf } from "./proforma";
 import { tickBands } from "./bands";
-import type { ParcelTable } from "@/data/types";
+import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, FirmBook, GameState, MarketPhase, NewsItem, Sector } from "./types";
 import { OFF_FLOOR_SHARE_NAT } from "./industries";
 import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert } from "./types";
@@ -477,7 +477,7 @@ export function developerOptimism(e: Econ, k: BuiltClass): number {
 // version's whole defect was that it did not need to: it worked from index
 // RATIOS against a single class-blind BASE_YOC and never touched a real
 // number. See `devPencils` in value.ts.
-import { devPencils, rentableSf, hashNormal } from "./value";
+import { devPencils, rentableSf, useRentableSf, hashNormal } from "./value";
 export { devPencils };
 
 // Each rebased DOWN by the average value of the new vacancy term below, so
@@ -5148,6 +5148,24 @@ export function addStock(e: Econ, k: keyof typeof CITY_STOCK, sf: number) {
     const dark = e.darkSf[k] ?? 0;
     const fromDark = Math.min(dark, -sf);
     e.darkSf[k] = dark - fromDark;
+  }
+}
+
+/**
+ * A STANDING BUILDING LEAVES THE STOCK USE BY USE (2026-11-10): each leg's
+ * rentable feet off its own class, which is how the map counts it
+ * (value.ts `useRentableSf`) and how deliveries are booked (supply.ts
+ * `programmeSf`). Demolitions, teardowns and fires took the whole building
+ * off its filing class, so a tower's ground-floor shops stayed on the shops'
+ * ledger for good and the office ledger lost them twice: the shops' stock ran
+ * 3% above the map in fifteen years (seed 11), a sliver no tenant could take.
+ * A building of one use is unchanged.
+ */
+export function retireStock(e: Econ, rec: ParcelRecord): void {
+  for (const k of BUILT_CLASSES) {
+    if ((CITY_STOCK as Record<string, number>)[k] === undefined) continue;
+    const sf = useRentableSf(rec, k);
+    if (sf > 0) addStock(e, k as keyof typeof CITY_STOCK, -sf);
   }
 }
 

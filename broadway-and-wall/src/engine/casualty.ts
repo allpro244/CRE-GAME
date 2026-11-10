@@ -35,7 +35,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { BuiltClass, GameState } from "./types";
 import { HARD_COST_PSF, heightPremium, constructionTypeMult, rentableSf, resolveRec } from "./value";
-import { addStock, BUILD_MONTHS } from "./market";
+import { retireStock, BUILD_MONTHS } from "./market";
 import { ownerFirm, PLAYER } from "./firms";
 import { queueSupplyProject } from "./supply";
 import { hash01 } from "./competitorTraits";
@@ -58,7 +58,7 @@ export function casualtyLoss(s: GameState, parcels: ParcelTable, bbl: string): C
   const groundM = s.month + Math.round(hash01(`restore|${bbl}|${s.month}`) * 2 * Math.max(0, REPLACE_M - buildM));
   const deliverM = groundM + buildM;
   s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
-  addStock(s.econ, k, -lostSf);
+  retireStock(s.econ, rec);
   s.demolished = (s.demolished ?? 0) + 1;
   // the restoration: the same building, funded by the claim, on the owner's deed
   (s.cityJobs ??= []).push({

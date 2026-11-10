@@ -36,8 +36,8 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
 import { sweepApy, monthLabel, START_YEAR } from "./types";
 import { isCivicLand } from "./demand";
-import { dollarLevel, rng, newsChance, rrange, addStock, CITY_STOCK, underwrittenGrowthPct, cycleDown } from "./market";
-import { mergedTouched, DEV_MARGIN, capRateFor, holdingValue, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec, ownerAskPsf } from "./value";
+import { dollarLevel, rng, newsChance, rrange, retireStock, CITY_STOCK, underwrittenGrowthPct, cycleDown } from "./market";
+import { mergedTouched, DEV_MARGIN, capRateFor, holdingValue, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableFromSpec, ownerAskPsf } from "./value";
 import type { DevPlan } from "./dev";
 import { lpNetIrr } from "./waterfall";
 import { BAND_TERMS, bandIdx, floorBand, inheritRecord, rivalBand, scoreOf, type Band } from "./reputation";
@@ -3695,7 +3695,7 @@ export function breakGround(
     const oldCls = rec.class as BuiltClass;
     s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
     if ((CITY_STOCK as Record<string, number>)[oldCls] !== undefined) {
-      addStock(s.econ, oldCls as keyof typeof CITY_STOCK, -rentableSf(rec));
+      retireStock(s.econ, rec);
     }
     // The plot reads as a site while the job runs either way — the old use's
     // stock is gone and the new one has not delivered, and the mark values

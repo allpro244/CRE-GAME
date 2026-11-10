@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, Fragment } from "react";
+import { useEffect, useRef, useState } from "react";
 import { derive, nwOf } from "@/ui/derive";
 import { useStore } from "@/state/store";
-import { monthLabel } from "@/engine/types";
+import { monthLabel, type Rival } from "@/engine/types";
+import { DataTable, type Col } from "@/ui/next/DataTable";
 import { distressTally } from "@/engine/history";
 import { resolveRec, portfolioMark } from "@/engine/value";
 import { marketAppetite, markRival, rivalCondition, firmEntryPitch } from "@/engine/rivals";
@@ -11,7 +12,7 @@ import { firmName } from "@/engine/firm";
 import { usd, sf } from "@/ui/format";
 import { Row, STYLE_MAX, CONDITION_WORD, STYLE_WORD } from "@/ui/panels/shared";
 import { TakePrivateDesk, TakenPrivateRecord } from "@/ui/panels/TakePrivateDesk";
-import { HeadlinerStrip, RaceChart, FirmPage, SignatureTraits, StreetTicker } from "@/ui/panels/CompetitorCards";
+import { HeadlinerStrip, RaceChart, FirmPage, StreetTicker } from "@/ui/panels/CompetitorCards";
 import { labelOf } from "@/engine/storyline";
 import Fold from "@/ui/Fold";
 
@@ -53,8 +54,23 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
   // the fold, under the leaders. Bring it into view when a link brought you
   // here (`scrollToYou` counts those) — not when you opened City → Players
   // from its tab, where the filter strip and search box are what you came for.
-  const youRef = useRef<HTMLTableRowElement>(null);
-  useEffect(() => { if (scrollToYou > 0) youRef.current?.scrollIntoView({ block: "center" }); }, [scrollToYou]);
+  const youRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { if (scrollToYou > 0) youRef.current?.querySelector("tr.on")?.scrollIntoView({ block: "center" }); }, [scrollToYou]);
+  // A card opened from the table lands at its top.
+  // The page is kept mounted between visits: opened again from the rail (no
+  // firm asked for, not back from "show on the map"), it opens on the table.
+  const page = useStore((s) => s.page);
+  useEffect(() => {
+    if (page !== "players") return;
+    const st = useStore.getState();
+    if (!st.firmFocus && !(st.mapFilter === "firm" && st.mapFirm)) setOpen(null);
+  }, [page]);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const opened = useRef(open);
+  useEffect(() => {
+    if (open && open !== opened.current) cardRef.current?.scrollIntoView({ block: "start" });
+    opened.current = open;
+  }, [open]);
   const rivals = game.rivals ?? [];
   // Marked once per month, not once per click: opening a firm's card used to
   // re-mark every rival's whole book and the player's own.
@@ -85,84 +101,158 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
   const noHit = !!needle && !hit(firmName(game)) && !marked.some(({ r }) => hit(r.name));
   const appetite = marketAppetite(game);
   const approach = game.takePrivate?.offer && game.month <= game.takePrivate.offer.expiresM ? game.takePrivate.offer : null;
+  const openRival = open ? rivals.find((r) => r.id === open) : undefined;
+
+  // ONE FIRM'S CARD, in place of the table (a click on a row opens it; "All
+  // firms" goes back). The drawer is the same one the table used to expand
+  // into: OwnerStatement, the firm page and the take-private desk.
+  if (openRival) {
+    const r = openRival;
+    const m = marked.find((x) => x.r.id === r.id)?.m ?? markRival(game, parcels, r);
+    const dead = r.failedM !== undefined;
+    const view = ownerById(game, parcels, r.id);
+    return (
+      <div ref={cardRef} data-firm={r.id}>
+        <div className="btn-row" style={{ alignItems: "baseline", marginBottom: 6 }}>
+          <button type="button" className="btn btn-sm" onClick={() => { setOpen(null); useStore.getState().openFirm(null); }}>← All firms</button>
+          <div className="page-section" style={{ margin: 0 }}>{r.name}</div>
+          <span className="dim">{statusOf(r, m)}</span>
+        </div>
+        {view && (
+          <OwnerStatement
+            o={view}
+            onFocus={(b) => focus(b, true)}
+            extra={<FirmPage r={r} />}
+            extraLate={
+              <>
+                {/* BUY THE WHOLE FIRM. The entity desk — see engine/takeprivate.ts. */}
+                {!dead && <TakePrivateDesk firmId={r.id} />}
+                {/* WHAT A FIRM HAS THAT A HOLDER DOES NOT: a covenant it is
+                    running against, a book that fills and empties, a capital
+                    plan it can be short of the cash for, and partners it has
+                    already paid. */}
+                <div className="grid" style={{ margin: "6px 0" }}>
+                  <Row k="Max LTV" v={`${(STYLE_MAX[r.style] * 100).toFixed(0)}% LTV`} bad={m.ltv > STYLE_MAX[r.style]} />
+                  {r.occ !== undefined && (
+                    <Row k="Portfolio occupancy" v={`${(r.occ * 100).toFixed(0)}%`} bad={r.occ < 0.8} />
+                  )}
+                  <Row k="Portfolio condition"
+                    v={`${CONDITION_WORD[rivalCondition(r)]} · ${usd(r.capexYr ?? 0)} capex YTD`}
+                    bad={(r.condIdx ?? 1) < 0.55} />
+                  <Row k="Distributed to date" v={usd(r.distributed ?? 0)}
+                    title="Paid out · not on balance sheet" />
+                  <Row k="Founded" v={r.bornM > 0 ? monthLabel(r.bornM) : "pre-start"} />
+                  {r.spawnedFrom && (
+                    <Row k="Spun out of" v={r.spawnedFrom.firmName} />
+                  )}
+                </div>
+                {/* WHAT THEY HAVE IN THE GROUND: money spent, debt drawn,
+                    nothing earning — and the space coming for your tenants. */}
+                {(() => {
+                  const jobs = (game.cityJobs ?? []).filter((j) => j.firmId === r.id);
+                  if (!jobs.length) return null;
+                  return (
+                    <>
+                      <div className="page-section" style={{ marginTop: 4 }}>
+                        Under construction · {jobs.length}
+                      </div>
+                      <div className="mini-list">
+                        {jobs.map((j) => {
+                          const rec = resolveRec(parcels, game, j.bbl);
+                          const pct = Math.min(100, Math.max(0, ((game.month - j.startM) / Math.max(1, j.deliverM - j.startM)) * 100));
+                          return (
+                            <button key={j.bbl} className="neighbor"
+                              onClick={(ev) => { ev.stopPropagation(); focus(j.bbl, true); }}>
+                              <span className="neighbor-addr">{rec?.address ?? j.bbl}</span>
+                              <span className="neighbor-meta">
+                                {sf(j.sf)} {j.use} · {j.floors} fl · {pct.toFixed(0)}% ·{" "}
+                                {j.orphaned ? "stalled · sponsor failed" : `due ${monthLabel(j.deliverM)}`}
+                                {j.debt ? ` · ${usd(j.debt)} drawn` : ""}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  );
+                })()}
+              </>
+            }
+          />
+        )}
+      </div>
+    );
+  }
+
+  // THE FIRM TABLE FIRST (CLEANUP_PLAN §3): every firm on one line, every
+  // column sorts, a click opens the firm's card. Deals are the buys and sales
+  // the street log (engine/firmLog) holds for the last twelve months.
+  const deals = new Map<string, number>();
+  for (const x of game.firmLog ?? []) {
+    if (x.m > game.month - 12 && (x.kind === "buy" || x.kind === "sell")) deals.set(x.firmId, (deals.get(x.firmId) ?? 0) + 1);
+  }
+  const live = marked.filter(({ r }) => r.failedM === undefined);
+  const rank = live.filter(({ r, m }) => rivalEquity(m, r) > playerEquity).length + 1;
+  const rows: FirmRow[] = [
+    {
+      id: YOU, name: firmName(game), you: true, dead: false, style: "Yours", bldgs: mine.buildings, gav: mine.gav,
+      debt: mine.debt, eq: playerEquity, ltv: mine.gav > 0 ? mine.ltv : null, cash: mine.cash, deals: null,
+      status: `${rank} of ${live.length + 1} by net equity`, from: "",
+    },
+    ...marked.map(({ r, m }): FirmRow => {
+      const dead = r.failedM !== undefined;
+      return {
+        id: r.id, name: r.name, you: false, dead, style: r.sheet ? labelOf(r) : STYLE_WORD[r.style],
+        bldgs: r.bbls.length, gav: dead ? null : m.aum, debt: dead ? null : r.debt, eq: dead ? null : rivalEquity(m, r),
+        ltv: dead || m.aum <= 0 ? null : m.ltv, cash: dead ? null : Math.max(0, r.cash), deals: deals.get(r.id) ?? 0,
+        status: statusOf(r, m), from: r.spawnedFrom?.firmName ?? "",
+      };
+    }),
+  ].filter((row) => hit(row.name));
+  const ep = firmEntryPitch(game);
+  const streetOpen = ep.leverage > 0 && ep.product > 0 && ep.pitch > 0;
+  const entryWhy = !streetOpen
+    ? ep.leverage <= 0 ? "Closed: negative leverage (cap rates below debt cost)" : "Closed: no trades in 12 months"
+    : `Open: positive leverage · ${ep.traded} trade${ep.traded === 1 ? "" : "s"} across ${ep.firms} firm${ep.firms === 1 ? "" : "s"} in 12 months${ep.thin > 1.15 ? " · few bidders" : ""}`;
+  const bids = game.founderBids ?? [];
+  const board = [{ name: firmName(game), eq: playerEquity }, ...live.map((x) => ({ name: x.r.name, eq: rivalEquity(x.m, x.r) }))]
+    .sort((a, b) => b.eq - a.eq);
   return (
     <>
-      <div className="page-section">
-        Competitors · buyer demand {appetite < 0.6 ? "none" : appetite < 0.9 ? "thin" : appetite > 1.15 ? "strong" : "normal"}
-      </div>
-      {/* THE DOOR TO THE STREET. How many firms this town carries is an output
-          of two terms — whether buildings yield over the debt against them,
-          and whether there are trades to go round the firms already here —
-          and both were invisible, so a new name on the tape read as spawned
-          rather than raised. firmEntryPitch is the engine's own raise gate,
-          pure, the same call `pnpm firms` audits. */}
-      {(() => {
-        const ep = firmEntryPitch(game);
-        const streetOpen = ep.leverage > 0 && ep.product > 0 && ep.pitch > 0;
-        const line = !streetOpen
-          ? ep.leverage <= 0
-            ? "New firm entry: closed · negative leverage (cap rates below debt cost)"
-            : "New firm entry: closed · no trades in 12 months"
-          : `New firm entry: open · positive leverage · ${ep.traded} trade${ep.traded === 1 ? "" : "s"} across ${ep.firms} firm${ep.firms === 1 ? "" : "s"} in 12 months`
-            + `${ep.thin > 1.15 ? " · few bidders" : ""}`;
-        const bids = game.founderBids ?? [];
-        return (
-          <>
-            <div className="hint">{line}</div>
-            {bids.length > 0 && (
-              <div className="grid" style={{ marginBottom: 10 }}>
-                {bids.map((b) => (
-                  <Row
-                    key={`${b.fromFirmId}:${b.readyM}`}
-                    k="Raising now"
-                    v={`Spin-out from ${b.fromFirmName}`
-                      + (b.readyM > game.month
-                        ? ` · from ${monthLabel(b.readyM)}`
-                        : ` · ${Math.max(0, FOUNDER_WINDOW_M - (b.openMs ?? 0))} month${FOUNDER_WINDOW_M - (b.openMs ?? 0) === 1 ? "" : "s"} left to first close`)}
-                  />
-                ))}
-              </div>
-            )}
-          </>
-        );
-      })()}
       {/* A BOARD THAT HAS COME TO YOU — the inbox item lands here. */}
       {approach && (
         <div className="hint" style={{ borderLeft: "3px solid var(--accent, #8a6d1f)", paddingLeft: 8, cursor: "pointer" }}
-          onClick={() => setOpen(approach.firmId)}>
+          title={approach.why} onClick={() => setOpen(approach.firmId)}>
           {approach.name} · take-private ask {usd(approach.ask)} · expires {monthLabel(approach.expiresM)}
-          {" "}· {approach.why}
         </div>
       )}
-      <TakenPrivateRecord />
-      {/* THE CAST FIRST (COMPETITORS_PLAN.md §6): who matters right now and
-          what is about to happen to them, then the race, then the full table. */}
-      <StreetTicker onOpen={(id) => setOpen(id)} />
-      <HeadlinerStrip onOpen={(id) => setOpen(id)} />
-      <RaceChart />
-      {/* THE LEAGUE TABLE. They started where you started — five to eighteen
-          million and a hundred years — so the only honest way to read your own
-          number is against theirs. */}
-      <div className="grid" style={{ marginBottom: 10 }}>
-        {(() => {
-          const board = [
-            { name: firmName(game), eq: playerEquity, me: true },
-            ...marked.filter((x) => x.r.failedM === undefined)
-              .map((x) => ({ name: x.r.name, eq: rivalEquity(x.m, x.r), me: false })),
-          ].sort((a, b) => b.eq - a.eq);
-          const rank = board.findIndex((b) => b.me) + 1;
-          return (
-            <>
-              <Row k="Your rank" v={`${rank} of ${board.length} by equity`} strong bad={rank > board.length / 2} />
-              <Row k="Largest firm" v={`${board[0].name} · ${usd(board[0].eq)}`} />
-            </>
-          );
-        })()}
+      <div className="grid" style={{ marginBottom: 8 }}>
+        <Row k="Your rank" v={`${rank} of ${live.length + 1} by equity`} strong bad={rank > (live.length + 1) / 2} />
+        <Row k="Largest firm" v={`${board[0].name} · ${usd(board[0].eq)}`} />
+        <Row k="Buyer demand" v={appetite < 0.6 ? "none" : appetite < 0.9 ? "thin" : appetite > 1.15 ? "strong" : "normal"} />
+        {/* THE DOOR TO THE STREET: firmEntryPitch is the engine's own raise
+            gate, pure, the same call `pnpm firms` audits. */}
+        <Row k="New firm entry" v={streetOpen ? `open · ${ep.traded} trades / 12m` : "closed"} title={entryWhy} />
+        {bids.map((b) => (
+          <Row
+            key={`${b.fromFirmId}:${b.readyM}`}
+            k="Raising now"
+            v={`Spin-out from ${b.fromFirmName}`
+              + (b.readyM > game.month
+                ? ` · from ${monthLabel(b.readyM)}`
+                : ` · ${Math.max(0, FOUNDER_WINDOW_M - (b.openMs ?? 0))} month${FOUNDER_WINDOW_M - (b.openMs ?? 0) === 1 ? "" : "s"} left to first close`)}
+          />
+        ))}
       </div>
+      <div ref={youRef}>
+        <DataTable id="street-firms" cols={FIRM_COLS} rows={rows} rowKey={(r) => r.id} selected={YOU}
+          initialSort={{ col: "eq", dir: -1 }} empty={noHit ? "No match" : "None"}
+          onRow={(r) => { if (r.you) useStore.getState().setPage("books"); else setOpen(r.id); }} />
+      </div>
+      <TakenPrivateRecord />
+      <StreetTicker onOpen={(id) => setOpen(id)} />
       {/* THE DISTRESS BOARD (2026-10-14). Where the next forced sale comes
-          from, before it is on the tape: firms behind on their paper and how
-          close the desks are to filing, lenders under their capital target,
-          and what the receivers are selling now. */}
+          from, before it is on the tape. */}
       {(() => {
         const stressed = rivals.filter((r) => r.failedM === undefined && (r.stressMs ?? 0) > 0)
           .sort((a, b) => (b.stressMs ?? 0) - (a.stressMs ?? 0));
@@ -172,7 +262,7 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
         const yr = distressTally(game, 12);
         const n = stressed.length + weakDesks.length + receiverSales.length + yr.defaults + yr.firms + yr.banks;
         return (
-          <Fold id="competitors:distress" title="Distress board" summary={n ? `${stressed.length} firm${stressed.length === 1 ? "" : "s"} delinquent · ${weakDesks.length} lender${weakDesks.length === 1 ? "" : "s"} under target · ${receiverSales.length} receiver sale${receiverSales.length === 1 ? "" : "s"}` : "None"} defaultOpen={n > 0}>
+          <Fold id="competitors:distress" title="Distress board" summary={n ? `${stressed.length} firm${stressed.length === 1 ? "" : "s"} delinquent · ${weakDesks.length} lender${weakDesks.length === 1 ? "" : "s"} under target · ${receiverSales.length} receiver sale${receiverSales.length === 1 ? "" : "s"}` : "None"}>
             <Row k="Last 12 months"
               v={`${yr.defaults} foreclosure${yr.defaults === 1 ? "" : "s"} · ${yr.firms} firm${yr.firms === 1 ? "" : "s"} failed · ${yr.banks} bank${yr.banks === 1 ? "" : "s"} closed`}
               bad={yr.defaults + yr.firms + yr.banks > 0} />
@@ -190,204 +280,60 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
               <Row key={l.bbl} k={resolveRec(parcels, game, l.bbl)?.address ?? l.bbl}
                 v={`${l.receiverFor ?? "receiver"} · ask ${usd(l.ask)} · until ${monthLabel(l.expiresM)}`} />
             ))}
-            {!n && <div className="hint">No distress.</div>}
           </Fold>
         );
       })()}
-      <Fold id="competitors:table" title="All competitors" summary={`${marked.filter((x) => x.r.failedM === undefined).length} active · by net equity`} defaultOpen>
-      <table className="tbl">
-        <thead>
-          <tr>
-            {/* NET EQUITY, ON THE TABLE. It was computed twice already — once
-                inside the league-table grid above, which ranks you against it,
-                and once inside each firm's drawer as "Net worth" — and the
-                column list did not carry it, so the one number that says who
-                is actually winning was two clicks deep. Gross assets less debt
-                plus cash, exactly as the drawer and the ranking compute it;
-                three expressions for one quantity is how a table comes to
-                disagree with the row it expands into, so all three now read
-                the same `eq` off `markRival` and the firm's own balance. */}
-            <th>Firm</th><th>Type</th><th className="num">Buildings</th><th className="num">Gross assets</th>
-            <th className="num">Debt</th><th className="num">Net equity</th>
-            <th className="num">Leverage</th><th className="num">Cash</th><th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {noHit && <tr><td colSpan={10} className="dim">No match.</td></tr>}
-          {(() => {
-            // where your row stands: by net equity, as the firms are sorted
-            const at = marked.findIndex(({ r, m }) => r.failedM !== undefined || rivalEquity(m, r) < playerEquity);
-            const all = [...marked.slice(0, at < 0 ? marked.length : at).map((x) => ({ x })), { you: true as const },
-              ...marked.slice(at < 0 ? marked.length : at).map((x) => ({ x }))];
-            return all.filter((row) => "you" in row
-              ? hit(firmName(game))
-              : hit(row.x.r.name));
-          })().map((row) => {
-            if ("you" in row) return (
-              <tr key="__you" ref={youRef} style={{ cursor: "pointer", background: "var(--accent-soft, rgba(138,109,31,0.12))", fontWeight: 600 }}
-                title="Your firm · open Books"
-                onClick={() => useStore.getState().setPage("books")}>
-                <td>★ {firmName(game)} <span className="dim" style={{ fontWeight: 400 }}>· you</span></td>
-                <td className="dim" style={{ fontWeight: 400 }}>Yours</td>
-                <td className="num">{mine.buildings}</td>
-                <td className="num">{usd(mine.gav)}</td>
-                <td className={"num" + (mine.debt > 0 ? " dim" : "")}>{usd(mine.debt)}</td>
-                <td className={"num" + (playerEquity < 0 ? " neg" : "")}>{usd(playerEquity)}</td>
-                <td className={"num" + (mine.ltv > 0.8 ? " neg" : "")}>{mine.gav <= 0 ? "—" : `${(mine.ltv * 100).toFixed(0)}%`}</td>
-                <td className="num">{usd(mine.cash)}</td>
-                <td className="dim" style={{ fontWeight: 400 }}>{(() => {
-                  const live = marked.filter(({ r }) => r.failedM === undefined);
-                  const rank = live.filter(({ r, m }) => rivalEquity(m, r) > playerEquity).length + 1;
-                  return `${rank}${rank === 1 ? "st" : rank === 2 ? "nd" : rank === 3 ? "rd" : "th"} of ${live.length + 1} by net equity`;
-                })()}</td>
-              </tr>
-            );
-            const { r, m } = row.x;
-            const dead = r.failedM !== undefined;
-            const stress = (r.stressMs ?? 0) > 0;
-            const isOpen = open === r.id;
-            return (
-              <Fragment key={r.id}>
-              <tr className={dead ? "dim" : ""} style={{ cursor: "pointer" }} data-firm={r.id}
-                onClick={() => setOpen(isOpen ? null : r.id)}>
-                <td title={r.spawnedFrom ? `Raised out of ${r.spawnedFrom.firmName}` : undefined}>
-                  {isOpen ? "▾ " : "▸ "}{r.name}
-                  {r.spawnedFrom ? <span className="dim"> · from {r.spawnedFrom.firmName}</span> : null}
-                </td>
-                <td>
-                  <div style={{ fontSize: 12 }}>{r.sheet ? labelOf(r) : STYLE_WORD[r.style]}</div>
-                  {!dead && r.sheet && <SignatureTraits r={r} />}
-                </td>
-                <td className="num">{dead ? (r.bbls.length ? `${r.bbls.length} in workout` : "—") : r.bbls.length}</td>
-                <td className="num">{dead ? "—" : usd(m.aum)}</td>
-                <td className={"num" + (!dead && r.debt > 0 ? " dim" : "")}>{dead ? "—" : usd(r.debt)}</td>
-                {/* THE NUMBER THE OWNER ASKED FOR. A firm running a billion of
-                    gross assets at 85% leverage has less of its own money in
-                    the game than a family trust with two hundred million
-                    unencumbered, and the first four columns could not tell you
-                    that. Negative is not a rounding artefact — it is a firm
-                    whose buildings no longer cover its paper, which is the
-                    condition that turns them into your seller. */}
-                <td className={"num" + (!dead && rivalEquity(m, r) < 0 ? " neg" : "")}>
-                  {dead ? "—" : usd(rivalEquity(m, r))}
-                </td>
-                {/* debt against no assets is not a ratio, it is a hole */}
-                <td className={"num" + (!dead && m.ltv > 0.8 ? " neg" : "")}>
-                  {dead ? "—" : m.aum <= 0 ? (r.debt > 0 ? "no assets" : "—") : `${(m.ltv * 100).toFixed(0)}%`}
-                </td>
-                <td className="num">{dead ? "—" : usd(Math.max(0, r.cash))}</td>
-                <td className="dim">
-                  {dead ? (r.takenPrivateM !== undefined
-                    ? `Taken private by you, ${monthLabel(r.takenPrivateM)}`
-                    : r.bbls.length
-                    ? `Failed ${monthLabel(r.failedM!)} · receiver selling`
-                    : `Failed ${monthLabel(r.failedM!)}`)
-                    : m.aum <= 0 && r.debt > 0 ? "No assets, debt outstanding"
-                    : stress ? "Distressed seller"
-                    : m.ltv > 0.75 ? "High leverage"
-                    : r.cash > m.aum * 0.06 ? "Cash-rich buyer"
-                    : "Fully invested"}
-                </td>
-              </tr>
-              {isOpen && (() => {
-                // ONE DRAWER FOR EVERY OWNER IN TOWN. This used to be a
-                // hand-built balance sheet that only firms had, and it is the
-                // reason the register beside it could not show one: the
-                // arithmetic lived in a panel rather than in the engine, so a
-                // private holder had nowhere to get it from. It is
-                // `OwnerStatement` now, shared with the Owners page, fed by
-                // engine/ownership.ts — which means the number the street
-                // table prints and the number the register prints cannot come
-                // apart, and a family office is read exactly the way a fund is.
-                const view = ownerById(game, parcels, r.id);
-                if (!view) return null;
-                return (
-                <tr>
-                  <td colSpan={9} style={{ background: "rgba(43,37,26,0.035)" }}>
-                    <OwnerStatement
-                      o={view}
-                      onFocus={(b) => focus(b, true)}
-                      extra={
-                        <>
-                          <FirmPage r={r} />
-                        </>
-                      }
-                      extraLate={
-                        <>
-                          {/* BUY THE WHOLE FIRM. The entity desk — see
-                              engine/takeprivate.ts. */}
-                          {!dead && <TakePrivateDesk firmId={r.id} />}
-                          {/* WHAT A FIRM HAS THAT A HOLDER DOES NOT: a covenant
-                              it is running against, a book that fills and
-                              empties, a capital plan it can be short of the
-                              cash for, and partners it has already paid. */}
-                          <div className="grid" style={{ margin: "6px 0" }}>
-                            <Row k="Max LTV" v={`${(STYLE_MAX[r.style] * 100).toFixed(0)}% LTV`} bad={m.ltv > STYLE_MAX[r.style]} />
-                            {r.occ !== undefined && (
-                              <Row k="Portfolio occupancy" v={`${(r.occ * 100).toFixed(0)}%`} bad={r.occ < 0.8} />
-                            )}
-                            {/* The run-rate above says what a capital plan
-                                COSTS; this says what they actually spent. A
-                                firm far under its own plan is a firm whose
-                                buildings are sliding, and the gap is the tell. */}
-                            <Row k="Portfolio condition"
-                              v={`${CONDITION_WORD[rivalCondition(r)]} · ${usd(r.capexYr ?? 0)} capex YTD`}
-                              bad={(r.condIdx ?? 1) < 0.55} />
-                            <Row k="Distributed to date" v={usd(r.distributed ?? 0)}
-                              title="Paid out · not on balance sheet" />
-                            <Row k="Founded" v={r.bornM > 0 ? monthLabel(r.bornM) : "pre-start"} />
-                            {r.spawnedFrom && (
-                              <Row k="Spun out of" v={r.spawnedFrom.firmName} />
-                            )}
-                          </div>
-                          {/* WHAT THEY HAVE IN THE GROUND. A firm's live jobs are
-                              the part of its balance sheet that is pure risk:
-                              money spent, debt drawn, nothing earning. It is also
-                              the space that is coming for your tenants in two
-                              years. */}
-                          {(() => {
-                            const jobs = (game.cityJobs ?? []).filter((j) => j.firmId === r.id);
-                            if (!jobs.length) return null;
-                            return (
-                              <>
-                                <div className="page-section" style={{ marginTop: 4 }}>
-                                  Under construction · {jobs.length}
-                                </div>
-                                <div className="mini-list">
-                                  {jobs.map((j) => {
-                                    const rec = resolveRec(parcels, game, j.bbl);
-                                    const pct = Math.min(100, Math.max(0, ((game.month - j.startM) / Math.max(1, j.deliverM - j.startM)) * 100));
-                                    return (
-                                      <button key={j.bbl} className="neighbor"
-                                        onClick={(ev) => { ev.stopPropagation(); focus(j.bbl, true); }}>
-                                        <span className="neighbor-addr">{rec?.address ?? j.bbl}</span>
-                                        <span className="neighbor-meta">
-                                          {sf(j.sf)} {j.use} · {j.floors} fl · {pct.toFixed(0)}% ·{" "}
-                                          {j.orphaned ? "stalled · sponsor failed" : `due ${monthLabel(j.deliverM)}`}
-                                          {j.debt ? ` · ${usd(j.debt)} drawn` : ""}
-                                        </span>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </>
-                            );
-                          })()}
-                        </>
-                      }
-                    />
-                  </td>
-                </tr>
-                );
-              })()}
-              </Fragment>
-            );
-          })}
-        </tbody>
-      </table>
+      {/* THE CAST (COMPETITORS_PLAN.md §6): who matters right now and what is
+          about to happen to them — one click away, under the table. */}
+      <Fold id="competitors:watch" title="The ones to watch">
+        <HeadlinerStrip onOpen={(id) => setOpen(id)} />
       </Fold>
+      <RaceChart />
     </>
   );
+}
+
+const YOU = "__you";
+
+interface FirmRow {
+  id: string; name: string; you: boolean; dead: boolean; style: string; bldgs: number; gav: number | null;
+  debt: number | null; eq: number | null; ltv: number | null; cash: number | null; deals: number | null;
+  status: string; from: string;
+}
+
+const FIRM_COLS: Col<FirmRow>[] = [
+  {
+    id: "name", label: "Firm", get: (r) => r.name,
+    cell: (r) => (
+      <span className={r.you ? "nx-strong-cell" : r.dead ? "nx-dim" : undefined}
+        title={r.from ? `Raised out of ${r.from}` : r.you ? "Your firm · open Books" : r.status}>
+        {r.you ? "★ " : ""}{r.name}
+      </span>
+    ),
+  },
+  { id: "style", label: "Style", get: (r) => r.style },
+  { id: "gav", label: "Assets", get: (r) => r.gav, fmt: "usd" },
+  { id: "debt", label: "Debt", get: (r) => r.debt, fmt: "usd" },
+  { id: "eq", label: "Net equity", get: (r) => r.eq, fmt: "usd", tone: (r) => ((r.eq ?? 0) < 0 ? "neg" : undefined) },
+  { id: "ltv", label: "LTV", get: (r) => r.ltv, fmt: "pct", tone: (r) => ((r.ltv ?? 0) > 0.8 ? "neg" : undefined) },
+  { id: "deals", label: "Deals 12m", get: (r) => r.deals, fmt: "n" },
+  { id: "bldgs", label: "Buildings", get: (r) => r.bldgs, fmt: "n", hidden: true },
+  { id: "cash", label: "Cash", get: (r) => r.cash, fmt: "usd", hidden: true },
+  { id: "status", label: "Status", get: (r) => r.status, hidden: true },
+];
+
+/** The status word the street table has always printed for a firm. */
+function statusOf(r: Rival, m: { aum: number; ltv: number }): string {
+  if (r.failedM !== undefined) {
+    return r.takenPrivateM !== undefined
+      ? `Taken private by you, ${monthLabel(r.takenPrivateM)}`
+      : r.bbls.length ? `Failed ${monthLabel(r.failedM)} · receiver selling` : `Failed ${monthLabel(r.failedM)}`;
+  }
+  return m.aum <= 0 && r.debt > 0 ? "No assets, debt outstanding"
+    : (r.stressMs ?? 0) > 0 ? "Distressed seller"
+    : m.ltv > 0.75 ? "High leverage"
+    : r.cash > m.aum * 0.06 ? "Cash-rich buyer"
+    : "Fully invested";
 }
 
 // Open-market months a ready founder keeps pitching before the street closes

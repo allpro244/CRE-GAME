@@ -239,6 +239,28 @@ Shops and sheds, with ε derived by Little's law from their own published facts 
 
 What it shows: the trade prices against a months-of-supply figure, and a class lands at the vacancy where its own months reach that figure. Every class in the engine lets 1.5-3 times the record's share of its stock to new tenants a year, so on the trade every class settles high (office 16%, which the band still holds; shops and sheds past it), and the sheds' city clock is not a market reading at all. Calibrating shops' price sensitivity alone, under the patience ladder, weakens the only discipline the ladder has (tenants walking from dear posts) while its months-on-market norm still says raise, so shop vacancy runs away. Order of work: (1) the off-map sheds' occupancy equation (FORMULA_LEDGER, item 6), so the sheds' clock is a market; (2) the churn — new-tenant lettings by cause against the record; (3) then the trade on every book with the ε above, and MONTHS_ON_MARKET deleted.
 
+**Step 9a, take 5: new-tenant lettings by cause (2026-11-10, measured; the fix tried is not shipped, branch `claude/tenant-churn-reqfit-wip`).** A probe counted every foot that left a street suite and every foot signed by a firm new to its suite, by cause, as a share of the street's stock a year (seed 11, years 6-40, main engine; counters in `streetRolls.ts`, probe-only, not committed):
+
+| office, % of stock a year | main | record |
+|---|---|---|
+| leases expiring | 10.7 | ~12.7 (0.89 occupancy over a ~7-year term) |
+| ...renewed (at once or after holding over) | 5.6 (52%) | 55-65% (CBRE / JLL expiry studies; test/tenantmarket.mjs reads 65%, counting firms that outgrew as moving) |
+| lettings to firms moving **for growth** (outgrown at expiry 2.0, mid-lease 2.6) | **5.6** | part of the ~5.7 that all non-renewals give |
+| lettings to firms moving for a better deal | 3.1 | |
+| lettings to new firms (replacing closures 2.1, left town 0.5) | 1.7 | BDS deaths ~2% of office space by the books' default rates |
+| **all new-tenant lettings** | **10.4** | ~6.7 (expiry non-renewals plus ~1% net absorption) |
+
+The excess is moves for growth, and most of them are made by the shortlist: a firm tours any suite of **half** its requirement (`shop`, `stayOdds`: `want * 0.5`, unsourced), signs for `take < want`, and keeps the heads it wanted (`hcRef = want / lvl`), so it has outgrown the suite the day it moves in. 21-25% of let office feet were signed under 80% of need; 29-34% of let feet need over 1.25× their floor at any time, and the mid-lease rule (3% a month once need > 1.5× floor, also unsourced) and the expiry rule (need > 1.25× with no room) send them to market. Shops show the same (35-39% of shop feet signed under 80% of need, 7% of shop stock a year going to market for growth mid-lease) but those firms almost always renew in the end (lettings for growth 0.6%); a shop's growth is meant to come as more shops (the CBP note at `tradeAdd`). Sheds have a different outlier: **shed tenants go dark at 14% of the street's shed stock a year** (office 2.1%, shops 6%), because every street shed firm is credit 0 (`creditOfSize` on the regional size distribution) and in a shop trade's profile (food and apparel margins ~1% on the shed floor), failing 20-27% a year against ~1-3% for industrial tenants. That is the next shed item.
+
+The fix tried: an office firm tours only suites of at least 80% of its requirement (`REQ_FIT`, the densest planning ratios running about a fifth under the norm, CoreNet 2012: 225 → 176 sf a worker), shops and sheds unchanged. On the probe, office lettings for growth 5.6 → 3.8, all new-tenant lettings 10.4 → 8.7, renewals 65% → 70% in test/tenantmarket.mjs. The century (3 seeds × 60 years, against #688):
+
+| | office vac | office WT | office real rent %/yr | report |
+|---|---|---|---|---|
+| main (#688) | 16.0 / 15.6 / 13.7 | −0.56 / −0.66 / −0.49 | −0.7 (WATCH) | PASS 32 · WATCH 14 · FAIL 2 |
+| REQ_FIT office 0.8 | 11.7 / 10.9 / 11.0 | −0.30 / −0.51 / −0.20 | −1.1 (WATCH); seed 33 real office rent 19 → 6 from year 22, still falling at 5-7% vacancy | PASS 31 · WATCH 14 · FAIL 3 (construction-follows-demand lag lost; real land −0.7%/yr; land swing 23.9% FAIL; shop vacancy 9.0 → 6.9 PASS) |
+
+So the churn is the cause of office's high vacancy — vacancy falls into the record's band as soon as the extra lettings go — but not of the weak slope: with less churn the slope weakens, because office real rent then falls through tight years (seed 33). Something other than the months-dark trade pulls office rent down over decades (the take-3 "real effective drifts down" WATCH, now stronger); find that before taking the churn out. Not shipped.
+
 
 **Cap-rate pass-through is weak at any lag** (seen while landing #643): Δcap on Δ10Y correlates about 0.2 at lags 1-4 on main and the branch alike, so the "Cap rates lag the 10Y" row's best lag flips between 2 and 4 on noise. The finding is the weak pass-through, not the lag. Open.
 

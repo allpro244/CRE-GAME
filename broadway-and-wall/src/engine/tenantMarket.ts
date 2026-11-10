@@ -73,8 +73,16 @@ export const COMM_USES: Comm[] = ["office", "retail", "industrial"];
  * the weeks of disruption. A shop adds fixtures and the sales lost while it
  * reopens; a shed is racking, power and equipment [S~: the middles of those
  * ranges, summed].
+ *
+ * Office, summed again (2026-11-10): the move, cabling, IT and furniture
+ * $25 (the middle of $15-35) plus the fit-out the allowance does not cover
+ * $65 (the middle of $100-200 less the middle of $50-120) is $90; it read
+ * $50, which is not the sum of those middles. The weeks of disruption are
+ * still left out. At the town's opening face (~$20 office, 2024 money) that
+ * is about four and a half years' rent; at a prime CBD's $40-60 the "one to
+ * two years' rent" brokers quote [S~].
  */
-export const MOVE_PSF: Record<Comm, number> = { office: 50, retail: 50, industrial: 15 };
+export const MOVE_PSF: Record<Comm, number> = { office: 90, retail: 50, industrial: 15 };
 
 /** Buildings on a tenant broker's shortlist: a tour book runs five to eight (CBRE / JLL tenant-rep practice) [K]. */
 export const SHORTLIST = 6;
@@ -411,16 +419,24 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
  * floored at an ordinary market's months on market (MONTHS_ON_MARKET, the last
  * norm, deleted 2026-11-09); it is now the market's clock.
  */
-export function noteLetting(L: LandlordAsk, k: Comm, tom: number, share: number, monthsToLet: number, holdFace = false) {
+export function noteLetting(L: LandlordAsk, k: Comm, tom: number, share: number, _monthsToLet: number, holdFace = false) {
+  // OFFICE LEARNS NOTHING HERE (2026-11-10). Its yardstick was the market's
+  // clock — the town's average months to let — and a suite that let faster
+  // than the average raised its ask, while one that let slower cut nothing
+  // here: a ratchet against an average. The month-dark trade (`reviewAsk`)
+  // already reads every letting, through the clock it prices on, both ways.
+  // Measured with the raise (seed 11, years 13-40): posts cut 3-7% a year by
+  // the trade and real rent flat, the raise giving back what the trade took.
+  if (k === "office") return;
   // shops and sheds: the yardstick is the longer of the landlord's patience
   // and its class's ordinary months on market, and the patience is learned
-  const yard = k === "office" ? Math.max(1e-6, monthsToLet) : Math.max(L.t, searchMonths(k));
+  const yard = Math.max(L.t, searchMonths(k));
   if (tom < yard && share > 0) {
     const f = (1 - tom / yard) * Math.min(1, share);
     if (L.c > 0) L.c = Math.max(0, L.c - PKG_TAKE * f);
     else if (!holdFace) L.a = +(L.a * Math.exp(RAISE * f)).toFixed(2);
   }
-  if (k !== "office") L.t += (Math.max(0.5, tom) - L.t) / LET_MEMORY;
+  L.t += (Math.max(0.5, tom) - L.t) / LET_MEMORY;
 }
 
 /**

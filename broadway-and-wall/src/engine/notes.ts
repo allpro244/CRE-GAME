@@ -148,6 +148,60 @@ export function noteAskPct(
   return cl(0.08, 1.02, noteFairPct(s, rec, r, face, perf) * (1.06 - 0.20 * p));
 }
 
+/**
+ * WHAT THE PAPER IS WORTH TO ONE BUYER (2026-11-10) — the number a firm sets
+ * against a desk's ask before it buys a loan. It replaced the coins that
+ * decided whether a firm bought (8% a month for a loan-to-own hunter, 55% and
+ * 50% at an offer's expiry, 12% for your own defaulted loan): a firm now buys
+ * when the paper is worth the ask TO IT, and the seller takes the best of them.
+ *
+ *   NON-PERFORMING  the borrower cures (pCure, the same read the offer sheet
+ *                   prints) and the buyer is paid face; or it does not, and the
+ *                   buyer takes the deed, worth to it what it would bid for the
+ *                   building at a sale (propmarket maxPrice), less the legal
+ *                   to get there (FILE_COST). Discounted at the buyer's own
+ *                   cost of capital over the fourteen months the calendar takes.
+ *   PERFORMING      a bond: the coupon to maturity and the balance back,
+ *                   discounted at the rate a new loan on the same building
+ *                   pays today (the buyer's own debt rate on it, uw.rd) —
+ *                   buying old paper below that yield is worse than lending
+ *                   fresh. Never worth more than the building behind it.
+ */
+export function paperWorth(
+  s: GameState, rec: ParcelRecord, bbl: string, buyer: Rival, obligor: Rival | undefined,
+  face: number, perf: "performing" | "nonperforming", ratePct = 0, maturityM = s.month + 60,
+): number {
+  const view = dealView(s, rec, bbl, collateralAsIs(rec, s.econ, ownerOcc(obligor)));
+  if (!view) return 0;
+  const { max: deed, uw } = maxPrice(s.econ, view, bidderOf(s, buyer, rec), beliefSignals(s, buyer));
+  if (!(deed > 0)) return 0;
+  if (perf === "performing") {
+    const n = Math.max(1, maturityM - s.month);
+    const y = Math.max(0.0001, uw.rd) / 12;
+    const c = (ratePct / 100 / 12) * face;
+    const pv = c * (1 - Math.pow(1 + y, -n)) / y + face * Math.pow(1 + y, -n);
+    return Math.min(pv, deed);
+  }
+  const cure = pCure(s, obligor, face);
+  const recover = cure * face + (1 - cure) * Math.max(0, deed - face * FILE_COST);
+  return recover / Math.pow(1 + Math.max(0, uw.r), 14 / 12);
+}
+
+/** Of the firms that would pay the ask for an offer, the one that values it most. */
+function bestPaperBuyer(
+  s: GameState, rec: ParcelRecord,
+  o: { bbl: string; obligorId: string; face: number; perf: "performing" | "nonperforming"; ratePct: number; maturityM: number },
+  px: number, pool: Rival[],
+): Rival | undefined {
+  let best: Rival | undefined, bestW = px;
+  const obligor = obligorOf(s, o.obligorId);
+  for (const r of pool) {
+    const w = paperWorth(s, rec, o.bbl, r, obligor, o.face, o.perf, o.ratePct, o.maturityM);
+    if (w >= bestW) { best = r; bestW = w; }
+  }
+  return best;
+}
+
 /** In words, for the panel: why is this on the market at all? */
 function sellingBecause(s: GameState, lender: string, perf: string): string {
   const l = lenderByName(s, lender);
@@ -455,9 +509,12 @@ function loanToOwnBids(s: GameState, parcels: ParcelTable) {
     // It buys the loan to own the building, so the building has to be one it
     // would own (its sheet's fit, hard rules included).
     const orec = resolveRec(parcels, s, o.bbl);
-    const buyer = hunters.find((r) =>
-      r.id !== o.obligorId && !!orec && fitOf(s, parcels, r, orec, true) > 0 && (r.aum ?? 0) > px * 3 && r.debt / Math.max(1, r.aum ?? 1) < 0.78
-      && hash01(`${s.seed}:lto:${r.id}:${o.id}:${s.month}`) < 0.08);
+    if (!orec) continue;
+    // It buys when the paper is worth the ask to it (paperWorth), not on an
+    // 8% hashed clock; of the hunters who would, the desk sells to the one
+    // that values it most.
+    const buyer = bestPaperBuyer(s, orec, o, px, hunters.filter((r) =>
+      r.id !== o.obligorId && fitOf(s, parcels, r, orec, true) > 0 && (r.aum ?? 0) > px * 3 && r.debt / Math.max(1, r.aum ?? 1) < 0.78));
     if (!buyer) continue;
     s.noteOffers.splice(i, 1);
     const equity = Math.min(Math.max(0, buyer.cash), Math.round(px * 0.35));
@@ -499,8 +556,10 @@ function expireOffers(s: GameState, parcels: ParcelTable) {
         r.failedM === undefined && r.id !== o.obligorId
         && (r.style === "opportunistic" || r.style === "core" || r.style === "pe")
         && r.cash > px * 1.1);
-      const bb = bondBuyers.length && rng(s) < 0.5
-        ? bondBuyers[Math.floor(rng(s) * bondBuyers.length)] : undefined;
+      // A firm buys the bond when its yield at the ask beats a new loan on the
+      // same building (paperWorth) — it was a 50% coin and a random name.
+      const brec = resolveRec(parcels, s, o.bbl);
+      const bb = brec ? bestPaperBuyer(s, brec, o, px, bondBuyers) : undefined;
       if (!bb) continue;
       bb.cash -= px;
       holdPaper(s, o.bbl, bb.id);
@@ -518,7 +577,10 @@ function expireOffers(s: GameState, parcels: ParcelTable) {
       && (r.sheet ? r.sheet.distress >= 70 : r.style === "opportunistic")
       && (() => { const rec = resolveRec(parcels, s, o.bbl); return !!rec && fitOf(s, parcels, r, rec, true) > 0; })()
       && (r.aum ?? 0) > px * 3 && r.debt / Math.max(1, r.aum ?? 1) < 0.78);
-    const buyer = able.length && rng(s) < 0.55 ? able[Math.floor(rng(s) * able.length)] : undefined;
+    // Taken by the firm that values the paper most, if any values it at the
+    // ask (paperWorth) — it was a 55% coin and a random name.
+    const arec = resolveRec(parcels, s, o.bbl);
+    const buyer = arec ? bestPaperBuyer(s, arec, o, px, able) : undefined;
     if (!buyer) continue;
     const equity = Math.min(Math.max(0, buyer.cash), Math.round(px * 0.35));
     buyer.cash -= equity;
@@ -590,7 +652,9 @@ function bringPaperToMarket(s: GameState, parcels: ParcelTable) {
     // that is not paying once the new owners hold the rest.
     const receiving = l.failedM !== undefined || (l.receiverUntilM ?? -1) > s.month;
     if (receiving) {
-      if (rng(s) > 0.30) continue;
+      // A receiver's job is to empty the cabinet, so it puts a loan out every
+      // month it has one to sell (it was a 30% monthly coin). The shortlist cap
+      // and one offer a month city-wide still pace it.
       const rows = Object.values(s.cityLoans ?? {}).filter((x) => x.lender === l.name
         && (l.failedM !== undefined || x.status !== "current"));
       const sale = rows.filter((x) => {
@@ -635,17 +699,18 @@ function bringPaperToMarket(s: GameState, parcels: ParcelTable) {
       return;
     }
     const p = lenderPressure(l);
-    // A regulator makes you sell what is not paying. Above ~2.8% delinquency
-    // the examiners start asking, and above 8% it is every other month.
-    const nplOdds = Math.max(0, l.delinquent - 0.028) * 3.2;
-    // Performing paper goes when the desk needs capital. Phase C widens the
-    // window slightly (pressure from 0.22, and a separate capital-sale path
-    // when delinquency is quiet but the book is tight) — still episodic, still
-    // one offer a month city-wide. Measured, not invented volume.
-    const perfOdds = p > 0.22 ? 0.085 * p : 0;
-    const npl = rng(s) < nplOdds;
-    const capitalSale = !npl && p > 0.42 && (l.delinquent ?? 0) < 0.04 && rng(s) < 0.14 * p;
-    const perf = (!npl && rng(s) < perfOdds) || capitalSale;
+    // THE DESK'S OWN POSITION DECIDES (2026-11-10). These were three coins —
+    // (delinquency - 2.8%) x 3.2 for a non-performing sale, 8.5% x pressure
+    // for a performing one, 14% x pressure for a capital sale. The desk now
+    // sells when its own numbers say it must, and the shortlist cap and one
+    // offer a month city-wide pace how fast that reaches the market:
+    //   - non-performing paper, when the book is past the line where the
+    //     examiners make a desk classify and dispose of what is not paying
+    //     (~2.8% delinquent, the line this code has always used [K]);
+    //   - performing paper, when it needs capital: lenderPressure above 0.22,
+    //     capital under ~0.95 of its target (the old window's own edge).
+    const npl = l.delinquent > 0.028;
+    const perf = !npl && p > 0.22;
     if (!npl && !perf) continue;
 
     const live = (s.rivals ?? []).filter((r) =>
@@ -1029,15 +1094,24 @@ function sellYourDefaultToACompetitor(s: GameState, parcels: ParcelTable) {
     const view = dealView(s, rec, w.bbl, value);
     if (!view) continue;
     const toJuly = ((6 - (s.month % 12)) + 12) % 12 || 12;
+    // WHO BUYS, AND WHETHER THE BANK SELLS (2026-11-10). Each hunter used to
+    // look on a 12% hashed coin and the bank took the first number. Every
+    // hunter that can fund it now makes its offer; the bank takes the best,
+    // and only if it beats the bank's own ask for the paper — the law the
+    // offer sheet prices by (noteAskPct): what the bank would recover itself,
+    // the building or the balance, fourteen months out, marked down by how
+    // badly it needs the capital (lenderPressure).
     let buyer: Rival | undefined; let px = 0;
     for (const r of hunters) {
-      if (used.has(r.id) || hash01(`${s.seed}:ltoYou:${r.id}:${w.bbl}:${s.month}`) >= 0.12) continue;
+      if (used.has(r.id)) continue;
       const { max, uw } = maxPrice(s.econ, view, bidderOf(s, r, rec), beliefSignals(s, r));
       const offer = Math.round(Math.min(bal, max / Math.pow(1 + Math.max(0, uw.r), toJuly / 12)));
-      if (!(offer > 0)) continue;
-      if ((r.aum ?? 0) > offer * 3 && r.debt / Math.max(1, r.aum ?? 1) < 0.75 && Math.max(0, r.cash) >= offer * 0.34) { buyer = r; px = offer; break; }
+      if (!(offer > px)) continue;
+      if ((r.aum ?? 0) > offer * 3 && r.debt / Math.max(1, r.aum ?? 1) < 0.75 && Math.max(0, r.cash) >= offer * 0.34) { buyer = r; px = offer; }
     }
     if (!buyer) continue;
+    const bankAsk = Math.min(bal, value) * TIME_DISC * (1.06 - 0.20 * p);
+    if (px < bankAsk) continue;
     const pct = px / Math.max(1, bal);
     used.add(buyer.id);
     const equity = Math.round(px * 0.34);
@@ -1107,14 +1181,24 @@ export function firmHoldingYourLoan(s: GameState, bbl: string) {
  */
 export function maybeSellYourLoan(s: GameState, parcels: ParcelTable) {
   sellYourDefaultToACompetitor(s, parcels);
-  for (const h of Object.values(s.holdings)) {
+  // THE DESK'S CAPITAL DECIDES (2026-11-10), not a 3.5% monthly coin. A desk
+  // whose capital has fallen well under target (lenderPressure 0.55 or more,
+  // the line this always used) sells performing loans to raise it — the
+  // largest first, since that frees the most capital, one a month per desk —
+  // to a debt fund that has the capital to take it (no pressure of its own).
+  const soldFrom = new Set<string>();
+  const book = Object.values(s.holdings).filter((h) => h.loan && !h.loan.holder)
+    .sort((a, b) => b.loan!.balance - a.loan!.balance);
+  for (const h of book) {
     if (!h.loan || h.loan.holder) continue;
     const from = productById(h.loan.product).lender;
+    if (soldFrom.has(from)) continue;
     const l = lenderByName(s, from);
     const p = lenderPressure(l);
-    if (p < 0.55 || rng(s) > 0.035) continue;
-    const to = (s.lenders ?? []).find((x) => x.kind === "fund" && x.failedM === undefined && x.name !== from);
+    if (p < 0.55) continue;
+    const to = (s.lenders ?? []).find((x) => x.kind === "fund" && x.failedM === undefined && x.name !== from && lenderPressure(x) === 0);
     if (!to) continue;
+    soldFrom.add(from);
     h.loan.holder = to.name;
     const rec = resolveRec(parcels, s, h.bbl);
     s.news.unshift({

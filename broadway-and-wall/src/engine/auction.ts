@@ -94,9 +94,23 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
     // and any borrower with the arrears in hand does exactly that.
     const cure = Math.max(1, Math.round(f.debt * 0.08));
     const canFund = r.cash >= cure;
-    if (canFund && ((r.stressMs ?? 0) === 0 || rng(s) < 0.09)) {
+    // THE BORROWER'S OWN SUM, NOT A DIE (2026-11-10). A firm still in the
+    // squeeze used to reinstate on a 9% monthly coin. It now does what a
+    // borrower with the arrears in hand does: pays them when the building is
+    // worth more than the debt on it — the cure buys back equity it would
+    // otherwise lose at the July sale (any surplus at the hammer goes to the
+    // borrower, but a sale as-is, with no diligence, rarely leaves one). An
+    // underwater building is handed back: paying arrears on a loan larger than
+    // the asset throws good money after bad. Its value is the same as-is
+    // collateral read the docket and the note desks use.
+    const equity = collateralAsIs(rec, s.econ, Math.max(0.15, Math.min(0.95, r.occ ?? 0.6))) - f.debt;
+    if (canFund && ((r.stressMs ?? 0) === 0 || equity > cure)) {
       r.cash -= cure;
       s.bankFcls.splice(i, 1);
+      // Reinstating IS paying the arrears: the row is current again, or the
+      // desk would file on the same missed months next tick.
+      const row = s.cityLoans?.[f.bbl];
+      if (row && row.lender === f.lender && row.obligorId === r.id) row.arrearsMs = 0;
       s.news.unshift({
         q: s.month, kind: "info",
         text: `${r.name} paid $${(cure / 1000).toFixed(0)}K to reinstate at ${rec.address}; ${f.lender} has withdrawn the sale. `
@@ -109,7 +123,14 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
   if (s.bankFcls.length >= 4) return;
   for (const l of s.lenders ?? []) {
     if (l.failedM !== undefined) continue;
-    if (l.delinquent < 0.035 || rng(s) > 0.09) continue;
+    // WHEN A DESK FILES (2026-11-10). This was a 9% monthly coin, and only for
+    // a desk whose book was 3.5% delinquent — so a clean desk let a loan sit
+    // unpaid for ever, and a dirty one filed by dice. A desk now files on a
+    // loan of its own that is three payments behind, which is the point US
+    // servicing practice treats as default and starts the process (the 90-day
+    // default notice; CFPB Reg X §1024.41(f) bars a first filing on a
+    // residential loan before 120 days, and commercial paper has no such wait).
+    // The borrower can still reinstate up to the sale (above).
     // A DESK FILES ON ITS OWN LOAN, AND ONLY ONE THAT IS NOT BEING PAID. The
     // pool used to be any firm four months into a squeeze, on any of its
     // buildings, for an owed figure drawn as 75-115% of the building's as-is
@@ -120,7 +141,8 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
       && !s.holdings[x.bbl] && !s.bankFcls!.some((f) => f.bbl === x.bbl)
       && (s.rivals ?? []).some((r) => r.id === x.obligorId && r.failedM === undefined && r.bbls.includes(x.bbl)));
     if (!rows.length) continue;
-    const row = rows[Math.floor(rng(s) * rows.length)];
+    // The longest-unpaid file first (it was a random one of them).
+    const row = rows.reduce((a, b) => ((b.arrearsMs ?? 0) > (a.arrearsMs ?? 0) || ((b.arrearsMs ?? 0) === (a.arrearsMs ?? 0) && b.balance > a.balance) ? b : a));
     const r = (s.rivals ?? []).find((x) => x.id === row.obligorId)!;
     const bbl = row.bbl;
     const rec = resolveRec(parcels, s, bbl);

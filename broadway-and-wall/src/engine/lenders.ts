@@ -141,6 +141,8 @@ export interface Lender {
   appetite: number;
   /** Points this desk adds to (or, negative, takes off) its sheet to manage its share of the town's book — see lenderChase. */
   chase?: number;
+  /** It has been reported as having stopped lending (appetite under 0.15), until it lends again. */
+  shutNoted?: boolean;
   /** Out of the market entirely, and the month it happened. */
   /**
    * The panic surcharge on this desk's funding today, in points, while another
@@ -1479,12 +1481,20 @@ export function tickLenders(s: GameState) {
       // and identical in fact, 58 and 58 over a passive run. A paper that says
       // the same thing twice is not twice as informative; it is a paper the
       // reader learns to skim.
-    } else if (l.appetite < 0.15 && rng(s, "lenders") < 0.04) {
+    } else if (l.appetite < 0.15 && !l.shutNoted) {
+      // THE MONTH IT HAPPENS (2026-11-10). This line ran on a 4% monthly coin
+      // for as long as a desk sat shut, so the paper reported a closing at a
+      // random month of it, or several times, or never. It is reported once,
+      // the month the desk's appetite falls under the line, and again only
+      // after it has come back to lending at twice it (so a desk dithering at
+      // the edge is not news every month).
+      l.shutNoted = true;
       s.news.unshift({
         q: s.month, kind: "warn",
         text: `${l.name} stopped lending: ${(l.delinquent * 100).toFixed(1)}% of their book delinquent, capital constrained.`,
       });
     }
+    if (l.shutNoted && l.appetite >= 0.30) l.shutNoted = undefined;
   }
   // The statement keeps a history — capital ratio, sampled quarterly, fifty
   // years deep. The chart of a bank walking toward its seizure is the single

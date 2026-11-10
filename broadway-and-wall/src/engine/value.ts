@@ -8,7 +8,7 @@ export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, openingVac, CAP_BASE, developerOptimism, LEASE_TERM_M, forwardVacancy, RENT_BASE } from "./market";
+import { industryStress, openingVac, CAP_BASE, developerOptimism, LEASE_TERM_M, forwardVacancy, RENT_BASE, underwrittenGrowthPct } from "./market";
 import { gpInterestInFund } from "./fund";
 import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE, leaseUpMonthsOf, stabilisedVacancy } from "./proforma";
 import { splitRule, coverageMax, MINOR_FIXED, MINOR_PER_LOT, CORNER_K } from "./lotcode";
@@ -4333,8 +4333,10 @@ export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number, 
   // market prices both, and it prices the second one harder.
   const ind = industryConcentration(h, econ);
   const indSpread = clamp((Math.max(0, ind.share - 0.45) / 0.55) * 0.40 + ind.stressed * 0.55, 0, 0.85);
-  const revSpread = wRev / sfTot;
-  const comm = waltSpread + creditSpread + occSpread + structSpread + concSpread + indSpread + revSpread;
+  // The roll's distance from market (wRev) is no longer a spread: holdingValue
+  // prices it in dollars, term and reversion. Kept as a reading only.
+  void wRev;
+  const comm = waltSpread + creditSpread + occSpread + structSpread + concSpread + indSpread;
   // A mixed building is graded as what it is: part rent roll, part occupancy.
   return resShare > 0.02 ? comm * (1 - resShare) + residentialSpread(h) * resShare : comm;
 }
@@ -4411,6 +4413,30 @@ export function remainingAbatement(h: Holding, month: number): number {
  * is what the in-place leg is there to price. The as-is premium over the blend
  * fades out linearly between one and two market spans (see leaseUpWeight).
  */
+/**
+ * HOW FAST AN IN-PLACE INCOME GAP CLOSES: rent and vacancy gaps close about a
+ * quarter a year (Wheaton & Torto; the same REVERT_PER_YR builders read in
+ * rivals.ts) [S~]. One law for every reader of a rent roll: the street's
+ * bidders (propmarket.ts valueTo) and the appraiser (holdingValue).
+ */
+export const GAP_CLOSE_YR = 0.25;
+/** Years of an income gap a buyer pays for: the gap decaying at `kappa` a year, discounted at `r` (a geometric sum). */
+export function gapDuration(r: number, kappa = GAP_CLOSE_YR): number {
+  return 1 / Math.max(0.05, 1 - (1 - kappa) / (1 + r));
+}
+/**
+ * TERM AND REVERSION: the stabilised value plus what the roll in place pays
+ * over or under it while the gap lasts. `noiAfterTax` is the owner's NOI
+ * after its tax bill; at stabilised that is `cap × stabilised`, so the gap is
+ * the difference. The same arithmetic the street's bidders use (valueTo:
+ * `V += (noiPre − stabPre) × dur`), discounted at the appraiser's yield plus
+ * the growth it capitalises.
+ */
+function termAndReversion(econ: Econ, stabilised: number, noiAfterTax: number, cap: number, yAll: number): number {
+  const r = yAll + underwrittenGrowthPct(econ) / 100;
+  return stabilised + (noiAfterTax - cap * stabilised) * gapDuration(r);
+}
+
 function leaseUpMark(
   rec: ParcelRecord, econ: Econ, h: Holding, month: number,
   capNoRoll: number, cap: number, contractNoi: number, stabNoi: number,
@@ -4437,8 +4463,8 @@ function leaseUpMark(
   const inPlaceShare = clamp(letShare / Math.max(0.01, stabOcc), 0, 1);
   const capFilled = capNoRoll + (cap - capNoRoll) * inPlaceShare;
   const filledNoi = contractNoi + leaseUpGapNoiYr(rec, econ, h, gap * rentableSf(rec));
-  const filled = Math.max(0, filledNoi) / capFilled * 0.55
-    + stabNoi / (capFilled + taxRate(econ) * taxBorneShare(rec)) * 0.45;
+  const yFilled = capFilled + taxRate(econ) * taxBorneShare(rec);
+  const filled = termAndReversion(econ, stabNoi / yFilled, filledNoi, capFilled, yFilled);
   const mark = leaseUpMarkAt(rec, econ, h.condition, sinceM, letShare, capNoRoll, filled, h.condIdx);
   return mark === null ? null : { mark, weight };
 }
@@ -4888,8 +4914,17 @@ function holdingValueOn(rec: ParcelRecord, econ: Econ, h: Holding, month?: numbe
   // so an identical stabilised net-leased building had two values ~14% apart
   // depending on which desk was asked (one quantity, two answers — CLAUDE.md).
   const stabNoi = noiYr(rec, econ, h.condition, true, h.condIdx);
-  const stabilized = stabNoi / (cap + taxRate(econ) * taxBorneShare(rec));
-  const blended = inPlace * 0.55 + stabilized * 0.45;
+  const yAll = cap + taxRate(econ) * taxBorneShare(rec);
+  const stabilized = stabNoi / yAll;
+  // THE ROLL, VALUED THE WAY A BUYER VALUES IT (2026-11-10): the stabilised
+  // building plus the in-place gap — rent over or under market, space let or
+  // dark — for as long as such gaps last (termAndReversion). It was 55% of the
+  // in-place income capitalised forever and 45% of the stabilised mark, with
+  // the roll's distance from market priced again as a cap spread: a held
+  // office let 40% over market marked ~15% above what the street would bid,
+  // because the appraisal capitalised rent the leases' expiry takes away.
+  void inPlace;
+  const blended = termAndReversion(econ, stabilized, contractNoi, cap, yAll);
   const abate = month === undefined ? 0 : remainingAbatement(h, month);
   // A BUILDING IN ITS FIRST LEASE-UP IS NOT A BUILDING WITH A VACANCY PROBLEM.
   // Until it stabilises the as-is-on-completion mark governs, and it retires

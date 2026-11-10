@@ -15,8 +15,9 @@
  *   firms      every firm's headcount follows its trade's payroll; its books
  *              run and it fails off them. The space it needs is its heads
  *              times its industry's feet a worker (tenantMarket.ts
- *              `tenantHeads`); what it holds beyond that it sublets. Rent does
- *              not shrink its need: rent is what it shops, starts and fails on.
+ *              `tenantHeads`), an office's feet a worker set at its last lease
+ *              by the real rent then (SPACE_RENT_ELAST); what it holds beyond
+ *              that it sublets. Rent is also what it shops, starts and fails on.
  *              A class's demand is the sum of its firms' needs (FORMULA_LEDGER
  *              #10), and a move in it is written down firm by firm (why.ts).
  *   expiries   at the end of a lease a firm renews in place, resized to what
@@ -61,7 +62,7 @@ import { whyFirmDark, whyIndustry } from "./economy";
 import { why, whyTenantBooks } from "./why";
 import { tenantFin } from "./tenantBooks";
 import {
-  type LandlordAsk, type Option, SHORTLIST, TASTE, KEEN_POW, askOf, postedEff, compsFace, compsPackage, reviewAsk, noteLetting, reservation, locCtx, posOf, hourCost,
+  type LandlordAsk, type Option, SHORTLIST, TASTE, KEEN_POW, goingRent, askOf, postedEff, compsFace, compsPackage, reviewAsk, noteLetting, reservation, locCtx, posOf, hourCost,
   placeCost, worthOf, footFactor, moveCostPsfYr, bargain, bidCeiling, contestPrice, noteContest, freeMonthsFor, gumbel, recordLease, movedLine, fmtPct, creditOfSize, readOut, tenantHeads,
 } from "./tenantMarket";
 
@@ -114,6 +115,23 @@ const SHED_MOVE = 0.3;
 const EXIT_BASE: Record<Comm, number> = { office: 0.05, retail: 0.07, industrial: SHED_MOVE };
 /** Months for the town's want of space to turn into firms looking for it (market.ts DEMAND_FORM_M). */
 const FORM_M: Record<Comm, number> = { office: 9, retail: 6, industrial: 6 };
+/**
+ * THE LEAST OF ITS REQUIREMENT A FIRM WILL TOUR, by class. An office firm's
+ * people need their feet: it can crowd them, but not by much — the densest
+ * planning standards run about a fifth under the norm (North American office
+ * space per worker 225 sf in 2010 against 176 in 2012 and a projected ~150 in
+ * open-plan fit-outs; CoreNet Global 2012) — so a suite under about 80% of
+ * what it needs is not on its broker's list [K~, shape parameter: that fifth].
+ * It was half, for every class, unsourced. A firm that signed at half its need
+ * kept its heads (`hcRef` is what it wanted), so it had outgrown the suite the
+ * day it moved in: measured on seed 11 (2026-11-10), 21-25% of let office feet
+ * were signed under 80% of need, and moves for growth were the office's
+ * largest source of new lettings (5.6% of the stock a year of 10.4%; the
+ * record's ~6.7% for all causes). Shops and sheds keep the half: a shop's
+ * floor is its format and its staff flex with its sales, and no source here
+ * yet says how far a shed's racking packs.
+ */
+const REQ_FIT: Record<Comm, number> = { office: 0.8, retail: 0.5, industrial: 0.5 };
 /** Score points between the space a firm shops for and a building, per e-fold of its interest. */
 const FIT_W = 12;
 
@@ -189,10 +207,11 @@ const useOf = (t: Tenant) => (t.use ?? "office") as Comm;
 
 /**
  * THE SPACE A WORKER TAKES, AGAINST THE OPENING'S (FORMULA_LEDGER #10).
- * A firm's need is its heads times its industry's feet a worker, and nothing
- * else: no rent response (the rent works through the firm's own choices —
- * which building it shops, whether it starts, whether its books carry it —
- * tenantMarket.ts, tenantBooks.ts), no town-wide income term. What moves the
+ * A firm's need is its heads times its industry's feet a worker — for an
+ * office, read at its last lease event against the real rent then
+ * (SPACE_RENT_ELAST, below); otherwise the rent works through the firm's own
+ * choices (which building it shops, whether it starts, whether its books
+ * carry it: tenantMarket.ts, tenantBooks.ts). No town-wide income term. What moves the
  * feet a worker for every firm on a class's floor is a structural level a
  * swan sets — remote work after a pandemic (market.ts `spaceLvl`, swans.ts) —
  * and its ratio to the opening's is read here.
@@ -228,10 +247,42 @@ function ensureFirm(s: GameState, t: Tenant) {
   t.hcRef ??= t.sf / lvlNow(s, useOf(t));
 }
 
+/**
+ * FEET A WORKER ANSWER THE RENT (2026-11-10). A firm that pays more for its
+ * floor plans its people tighter; one in a cheap market spreads out. The
+ * long-run price elasticity of office space demand, with employment held
+ * fixed, is −0.55 in Stockholm 1977-2002 (Englund, Gunnelin, Hendershott &
+ * Söderberg 2005, NBER WP 11345, Table 4: 1 / the lnS coefficient −1.803,
+ * p. 11) and −0.24 in London (Hendershott, Matysiak & Lizieri 1999, cited
+ * there); this is their mean [S]. Employment's elasticity in the same
+ * equations is about one (1.04, 0.92), so it is space per worker that moves.
+ * Read on the class's real effective rent against the opening's, the rent
+ * the feet a worker (SF_PER_JOB) are set at. A firm resizes only at a lease
+ * event — signing, renewing — as the record's long-run response comes
+ * through the leases rolling (the same papers' adjustment equations); in
+ * between it holds what it signed for. Offices only: no coefficient for
+ * shops or sheds was found.
+ */
+const SPACE_RENT_ELAST: Partial<Record<Comm, number>> = { office: -(0.55 + 0.24) / 2 };
+function rentSpw(s: GameState, k: Comm): number {
+  const el = SPACE_RENT_ELAST[k];
+  if (!el) return 1;
+  const e = s.econ;
+  const r = (e.effRentIdx?.[k] ?? e.rentIdx?.[k] ?? 0) / Math.max(0.05, e.cpi ?? 1);
+  if (!(r > 0)) return 1;
+  const r0 = ((e.spwRent0 ??= {})[k] ??= r);
+  return Math.pow(r / Math.max(1e-6, r0), el);
+}
+
 /** The space this firm needs now: its heads, at its industry's feet a worker (tenantMarket.ts `tenantHeads`) — the floor it signed for, moved by its staff since. */
 export function firmNeed(s: GameState, t: Tenant): number {
   ensureFirm(s, t);
-  return firmHc(t) * lvlNow(s, useOf(t));
+  return firmHc(t) * lvlNow(s, useOf(t)) * (t.spw ?? 1);
+}
+/** ...and what it would sign for today, at a lease event: its feet a worker read again at today's rent. */
+function firmNeedNow(s: GameState, t: Tenant): number {
+  ensureFirm(s, t);
+  return firmHc(t) * lvlNow(s, useOf(t)) * rentSpw(s, useOf(t));
 }
 
 /**
@@ -340,7 +391,7 @@ function toSeekers(s: GameState, t: Tenant, why: Seeker["why"], fromPlayer: stri
   if (!COMM.includes(use)) return;
   ensureFirm(s, t);
   const firm: Tenant = { ...structuredClone(t), freeUntilM: undefined, deposit: 0 };
-  (e.seekers ??= []).push({ fid: t.fid!, use, want: Math.round(firmNeed(s, firm)), since: s.month, why, t: firm,
+  (e.seekers ??= []).push({ fid: t.fid!, use, want: Math.round(firmNeedNow(s, firm)), since: s.month, why, t: firm,
     ...(fromPlayer ? { fromPlayer, was: { rent: t.rentPsf } } : {}) });
 }
 
@@ -454,6 +505,26 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
   // a standing building's). What every landlord prices its months dark on.
   const mtlMemo: Partial<Record<Comm, number>> = {};
   const monthsToLet = (k: Comm) => (mtlMemo[k] ??= leaseUpMonthsOf(e, k, 0, 0, e.cityVac?.[k] ?? 0, false));
+  // THE GOING POST, office: the town's posted effective rents over their
+  // addresses' market rents (the comps), feet-weighted in logs over the books
+  // open this month. A firm's taste is scaled by the going post, not the comps
+  // (tenantMarket.ts goingRent); shops and sheds keep the market rent.
+  const goingMemo: Partial<Record<Comm, number>> = {};
+  const going = (k: Comm): number => {
+    const hit = goingMemo[k];
+    if (hit !== undefined) return hit;
+    let w = 0, v = 0;
+    if (k === "office") for (const [bbl, roll] of rollList) {
+      const L = roll.ask?.[k];
+      if (!L || !(L.a > 0)) continue;
+      const b = blds.get(bbl) ?? bld(bbl);
+      const mkt = b?.mkt[k] ?? 0, cap = b?.cap[k] ?? 0;
+      const post = L.a * (1 - L.c);
+      if (!(mkt > 0) || !(cap > 0) || !(post > 0)) continue;
+      w += cap; v += cap * Math.log(post / mkt);
+    }
+    return (goingMemo[k] = w > 0 ? Math.exp(v / w) : 1);
+  };
   // each trade's payroll, this month against last: the term a firm signs reads it (see THE TERM IS CHOSEN TOO)
   const gTradeOf = (sec: string) => {
     const bk = e.firmBooks?.[sec as Tenant["sector"]], prevE = e.tradeEmpPrev?.[sec];
@@ -474,8 +545,8 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
     const res = reservation(L, k, post, termM, stay, b.stressed, monthsToLet(k));
     const pc = placeCost(firm.fid !== undefined ? ctx.pts.get(firm.fid) : undefined, b.pos, hourCost(firm));
     const worth = worthOf(firm, k, mkt, b.sc[k] ?? 50, take, pc.cost, k === "retail" ? footRel(b.bbl) : undefined, rentCapacity(s.econ, firm, k));
-    const move = !stay && moving ? moveCostPsfYr(e, k, termM) : 0;
-    const joint = worth - post - move + TASTE[k] * mkt * gumbel(rng(s, "leasing"));
+    const move = !stay && moving ? moveCostPsfYr(e, k, termM, firm) : 0;
+    const joint = worth - post - move + TASTE[k] * goingRent(k, mkt, going(k)) * gumbel(rng(s, "leasing"));
     // a sitting tenant is offered its landlord's ask, like anyone (tenantMarket.ts postedEff)
     const ask = L.a;
     const ff = footFactor(k, k === "retail" ? footRel(b.bbl) : undefined);
@@ -526,7 +597,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
       if (!b || !b.cap[k]) continue;
       const avail = availIn(b, roll, k);
       const floor = minSfOf(b, k);
-      if (avail < Math.max(floor, Math.min(want * 0.5, avail + 1))) continue;
+      if (avail < Math.max(floor, Math.min(want * REQ_FIT[k], avail + 1))) continue;
       const letShare = 1 - avail / (b.cap[k] ?? 1);
       const mkt = b.mkt[k] ?? 0;
       const keen = mkt > 0 && KEEN_POW[k] ? Math.min(4, Math.pow(mkt / Math.max(0.01, postedEff(bookOf(b, roll, k), e, k, mkt, false)), KEEN_POW[k])) : 1;
@@ -569,7 +640,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
     out.sort((a, b) => b.joint - a.joint);
     return out;
   };
-  return { R, m, owners, blds, bld, letOf, notReady, availOf, catchOf, foot, ctx, recOf, footRel, vacShare, bookOf, monthsToLet, gTradeOf, termOf, value, shop, availIn, noteRoll, rollList };
+  return { R, m, owners, blds, bld, letOf, notReady, availOf, catchOf, foot, ctx, recOf, footRel, vacShare, bookOf, monthsToLet, going, gTradeOf, termOf, value, shop, availIn, noteRoll, rollList };
 }
 /** The street as the player's leasing desk's prospects see it this month (one view a month). */
 const DESK_VIEW = new WeakMap<GameState, { m: number; v: ReturnType<typeof marketView> }>();
@@ -607,9 +678,9 @@ export function offerForPlayer(s: GameState, parcels: ParcelTable, firm: Tenant,
   if (!c) return { bid: 1 };
   const pc = placeCost(firm.fid !== undefined ? V.ctx.pts.get(firm.fid) : undefined, posOf(rec), hourCost(firm));
   const worth = worthOf(firm, k, mktHere, score, sf, pc.cost, k === "retail" ? V.footRel(rec.bbl) : undefined, rentCapacity(s.econ, firm, k));
-  const taste = TASTE[k] * mktHere * gumbel(rng(s, "leasing"));
+  const taste = TASTE[k] * goingRent(k, mktHere, V.going(k)) * gumbel(rng(s, "leasing"));
   // a sitting tenant renewing does not move; every street option costs it the move
-  const rMax = worth - (sitting ? 0 : moveCostPsfYr(s.econ, k, termM)) + taste - c.joint - (c.post - c.res);
+  const rMax = worth - (sitting ? 0 : moveCostPsfYr(s.econ, k, termM, firm)) + taste - c.joint - (c.post - c.res);
   return { bid: Math.max(0.4, Math.min(1, rMax / postEff)), alt: c.bbl };
 }
 
@@ -642,13 +713,13 @@ export function stayOdds(s: GameState, parcels: ParcelTable | null | undefined, 
   const was = hit.memo.get(key);
   if (was) return was;
   const V = hit.v, e = s.econ;
-  const sigma = TASTE[k] * mktHere;
+  const sigma = TASTE[k] * goingRent(k, mktHere, V.going(k));
   const pts = firm.fid !== undefined ? V.ctx.pts.get(firm.fid) : undefined;
   const hour = hourCost(firm);
   const here = placeCost(pts, posOf(rec), hour);
   const vStay = worthOf(firm, k, mktHere, score, sf, here.cost, k === "retail" ? V.footRel(rec.bbl) : undefined, rentCapacity(e, firm, k)) - postEff;
   const q = firm.quality ?? score;
-  const move = moveCostPsfYr(e, k, termM);
+  const move = moveCostPsfYr(e, k, termM, firm);
   const cands: { w: number; v: number; bbl: string }[] = [];
   let tot = 0;
   for (const [bbl, roll] of V.rollList) {
@@ -657,7 +728,7 @@ export function stayOdds(s: GameState, parcels: ParcelTable | null | undefined, 
     if (!b || !b.cap[k]) continue;
     const avail = V.availIn(b, roll, k);
     const floor = minSfOf(b, k);
-    if (avail < Math.max(floor, Math.min(sf * 0.5, avail + 1))) continue;
+    if (avail < Math.max(floor, Math.min(sf * REQ_FIT[k], avail + 1))) continue;
     const mkt = b.mkt[k] ?? 0;
     if (!(mkt > 0)) continue;
     // the landlord's post, or — with no book yet — the comps, read and not opened
@@ -755,7 +826,9 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       face / Math.max(0.01, pick.mkt), termM, freeM);
     // Signed for the people it has now, at today's rent.
     lease.staffSign = firm.staff ?? 1;
-    lease.hcRef = want / lvlNow(s, k);
+    const spw = rentSpw(s, k);
+    lease.hcRef = want / (lvlNow(s, k) * spw);
+    if (spw !== 1) lease.spw = spw;
     roll.t.push(lease);
     noteRoll(roll);
     const effSigned = face * (1 - freeM / Math.max(1, termM));
@@ -861,8 +934,9 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
         continue;                                   // went dark: the suite is empty
       }
       if (!COMM.includes(k)) { keep.push(t); continue; }
-      const need = firmNeed(s, t);
       const mine = seeking.get(t.fid!);
+      // at a lease event the firm sizes to today's rent; between them it holds what it signed for
+      const need = mine || t.endM <= m ? firmNeedNow(s, t) : firmNeed(s, t);
       if (mine) {
         // Holding over while it looks. When the holdover runs out it takes the
         // best it has been shown — its own suite included, on a fresh lease
@@ -951,7 +1025,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   e.seekers = e.seekers.filter((k) => seeking.get(k.fid) === k
     && (k.from ? !!R[k.from]?.t.some((t) => t.fid === k.fid) : !!k.t)
     && (k.from || m - k.since <= PATIENCE_M[k.use]));
-  for (const k of e.seekers) if (k.t) k.want = Math.round(firmNeed(s, k.t));
+  for (const k of e.seekers) if (k.t) { k.want = Math.round(firmNeedNow(s, k.t)); k.t.spw = rentSpw(s, k.use); }
 
   // ---- 2. space and headcount by class, and the firms that form
   const space: NonNullable<GameState["econ"]["streetSpace"]> = {};
@@ -1163,7 +1237,8 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       let u = rng(s, "leasing") * capAll, q = 50;
       for (const x of scores[k]) { u -= x.cap; if (u <= 0) { q = x.sc; break; } }
       q = Math.max(1, Math.min(100, q + rrange(s, -6, 6, "leasing")));
-      let want = Math.round(drawTenantSf(s, k, 40_000, 120_000, sizeScale(q)) * lvlNow(s, k));
+      const spw = rentSpw(s, k);
+      let want = Math.round(drawTenantSf(s, k, 40_000, 120_000, sizeScale(q)) * lvlNow(s, k) * spw);
       // Half the new firms are sized by the space on offer: a start-up takes
       // the small suite that is there, not the one it might have drawn up.
       if (suites[k].length && rng(s, "leasing") < 0.5) {
@@ -1178,13 +1253,13 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       const credit: Credit = creditOfSize(k, want);
       const t: Tenant = {
         name: pickName(s, sector), use: k, sector, credit, quality: Math.round(q), sf: want, rentPsf: 0,
-        net: false, startM: m, endM: m, staff: 1, staffSign: 1, hcRef: want / lvlNow(s, k),
+        net: false, startM: m, endM: m, staff: 1, staffSign: 1, hcRef: want / (lvlNow(s, k) * spw), ...(spw !== 1 ? { spw } : {}),
         ...(ind !== undefined ? { ind } : {}),
       } as Tenant;
       ensureFirm(s, t);
       e.seekers.push({ fid: t.fid!, use: k, want, since: m, why: "new", t });
       sp.seek += want;
-      form -= want / lvlNow(s, k);
+      form -= want / (lvlNow(s, k) * spw);
     }
   }
 
@@ -1328,7 +1403,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       for (const k of COMM) {
         if (!b.cap[k] || !(b.mkt[k]! > 0)) continue;
         const since = roll.vac?.[k];
-        reviewAsk(bookOf(b, roll, k), e, k, b.mkt[k]!, { m, monthsToLet: V.monthsToLet(k), darkM: since === undefined ? undefined : m - since, stressed: b.stressed, infl12, holdFace: opening });
+        reviewAsk(bookOf(b, roll, k), e, k, b.mkt[k]!, { m, monthsToLet: V.monthsToLet(k), darkM: since === undefined ? undefined : m - since, stressed: b.stressed, infl12, holdFace: opening, going: V.going(k) });
       }
     }
   }
@@ -1419,7 +1494,9 @@ function renewInPlace(s: GameState, b: Bld, roll: StreetRoll, t: Tenant, need: n
     }, [whyTenantBooks(s, t, tenantFin(s.econ, t))]);
   }
   t.staffSign = t.staff ?? 1;
-  t.hcRef = need / lvlNow(s, k);
+  const spw = rentSpw(s, k);
+  t.hcRef = need / (lvlNow(s, k) * spw);
+  if (spw !== 1) t.spw = spw; else delete t.spw;
   // A fresh lease takes a fresh deposit, sized to the rent and floor it is
   // for: it kept the old one, so a renewal at less rent or on less floor left
   // a deposit of four months' rent with the firm (invariants, seed 4000).

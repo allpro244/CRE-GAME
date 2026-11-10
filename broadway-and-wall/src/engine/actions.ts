@@ -2551,6 +2551,63 @@ export function saleFeeRate(h: Holding, s?: GameState): number {
 }
 
 /**
+ * THE ROOM FOR YOUR BUILDING — the same room every other seller faces.
+ *
+ * Offers on the player's listings used to arrive on a coin
+ * ((0.55 - 0.42 x ask/appraisal) x appetite) and price at a draw of
+ * 90-103% of the PLAYER'S OWN APPRAISAL, from a firm picked at random among
+ * those that could close; a competing bump was a 12% coin worth 2-6%. A
+ * rival's or an anonymous holder's listing meanwhile went to the street's
+ * bid round (propmarket.ts bidRound): every firm that would and could buy it
+ * underwriting it on its own capital, its desks' loan sizing, its cash and
+ * its line. Two rulebooks for the same building, depending on whose name was
+ * on the deed (PARITY_PLAN.md).
+ *
+ * Now the player's listing goes to that round. Each bid is the firm's own
+ * number (maxPrice, shaded by how many are in the room), capped by what it
+ * can fund; a firm counts only if it could close at it (rivalCanClose, the
+ * test acceptSaleOffer applies at the table). `walk` is its walk-away — the
+ * lower of its value and its purse — which a counter is read against.
+ * `campaign`: a broker campaign reaches every buyer in town; a quiet listing
+ * is heard first by the listing broker's own clients (beliefs.ts
+ * hearsOfListing), as a tape listing is.
+ *
+ * Returns null for a leased fee, which is a ground coupon with a deed
+ * attached and which the building round cannot price: it keeps the old path.
+ */
+interface StreetBid { r: Rival; bid: number; walk: number; w: number; afford: number }
+function roomForYourSale(s: GameState, parcels: ParcelTable, rec: ParcelRecord, h: Holding, campaign: boolean): StreetBid[] | null {
+  const sale = h.sale;
+  if (!sale || h.groundLeased) return null;
+  const building = rec.class !== "land" && rec.bldgArea > 0;
+  const li = { bbl: h.bbl, ask: sale.ask, listedM: campaign ? undefined : sale.listedM, cond: h.condition, condIdx: h.condIdx };
+  const round = building ? bidRound(s, parcels, rec, li) : landBidRound(s, parcels, rec, li);
+  const out: StreetBid[] = [];
+  for (const b of round.bids) {
+    if (!rivalCanClose(s, parcels, b.r, rec, b.bid)) continue;
+    const afford = b.afford ?? b.bid;
+    out.push({ r: b.r, bid: b.bid, walk: Math.max(b.bid, Math.round(Math.min(b.max, afford) / 1000) * 1000), w: b.uw.w, afford });
+  }
+  return out;
+}
+
+/**
+ * THE OFFER ON A QUIET LISTING: the best bid from a firm whose number you
+ * have not already let go (`sale.passed`). Under the ask it offers its bid.
+ * At or over the ask it offers the ask — nobody pays more than the sign says
+ * unprompted — unless the next bid in the room is over the ask too, in which
+ * case the competition takes it up to that cover, never past its own bid.
+ * That is the second-best bid setting the price, as it does on the tape.
+ */
+function quietOffer(room: StreetBid[], ask: number, passed?: Record<string, number>): { top: StreetBid; price: number; cover?: StreetBid } | null {
+  const top = room.find((b) => (passed?.[b.r.id] ?? 0) < Math.min(b.bid, ask));
+  if (!top) return null;
+  const cover = room.find((b) => b !== top && b.r.id !== top.r.id);
+  const price = top.bid < ask ? top.bid : Math.min(top.bid, Math.max(ask, cover?.bid ?? 0));
+  return { top, price: Math.round(price / 1000) * 1000, cover };
+}
+
+/**
  * OFFERS ARE DUE TODAY.
  *
  * Every buyer who was going to bid, bidding at once. The depth of the list is
@@ -2599,7 +2656,30 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
   // the Players list that could actually close at the appraisal (its own
   // cash, or its line), and a market with three such firms has at most three
   // bids however hot the cycle is.
-  const live = rivalsWhoCanClose(s, parcels, rec, value);
+  const room = roomForYourSale(s, parcels, rec, h, true);
+  if (room) {
+    // THE BIDS ARE THE STREET'S OWN NUMBERS (see roomForYourSale). The depth
+    // of the list is the number of firms that would and could buy it; each
+    // bids its own underwriting, shaded by how many are in the room. A
+    // broker's shortlist: the best six go to the seller.
+    //
+    // HOW SURE A BID IS, from the bidder's own position: an all-cash buyer
+    // well inside its means is a certain close; one borrowing most of the
+    // price at the edge of its purse is the one whose committee or lender
+    // finds a reason later. Credibility = 1 - debt share x share of its
+    // purse the bid uses — a reading, not a calibrated constant.
+    for (const b of room.slice(0, 6)) {
+      const credibility = Math.max(0.2, Math.min(0.97, 1 - b.w * (b.bid / Math.max(1, b.afford))));
+      bids.push({
+        name: b.r.name, firmId: b.r.id, price: b.bid, credibility, max: b.walk,
+        note: b.w <= 0.01 ? "Cash to close, no financing condition."
+          : credibility > 0.5 ? "Financed, but the lender is known."
+          : "Aggressive number. Read the covenant before you count on it.",
+      });
+    }
+    n = 0;
+  }
+  const live = room ? [] : rivalsWhoCanClose(s, parcels, rec, value);
   for (let i = 0; i < n; i++) {
     const open = live.filter((r) => !used.has(r.id));
     if (!open.length) break;
@@ -2714,7 +2794,8 @@ export function bestAndFinal(s: GameState, parcels: ParcelTable, bbl: string): {
     if (rng(next) < pWalk) { b.dropped = true; walked++; continue; }
     const bump = 1 + rrange(next, 0.005, 0.035) * b.credibility;
     const before = b.price;
-    b.price = Math.round(b.price * bump);
+    // ...and never past its own walk-away, where the round recorded one.
+    b.price = Math.round(Math.min(b.price * bump, b.max ?? Infinity));
     if (b.price > before) lifted++;
   }
   ns.round = 1;
@@ -3149,7 +3230,11 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
 export function declineSaleOffer(s: GameState, bbl: string): GameState {
   const next = clone(s);
   const sale = next.holdings[bbl]?.sale;
-  if (sale?.offer) delete sale.offer;
+  if (sale?.offer) {
+    // They heard no. They do not ring back with the same number (quietOffer).
+    if (sale.offer.firmId) (sale.passed ??= {})[sale.offer.firmId] = sale.offer.price;
+    delete sale.offer;
+  }
   return next;
 }
 
@@ -3585,12 +3670,23 @@ export function counterSale(
   const offer = sale.offer!;
   if (px <= offer.price) return { s, err: "A counter must be above the offer. Accept it instead." };
 
-  const value = ownedHoldingValue(next, parcels, h);
-  // how far a buyer will stretch past appraisal: a boom with open credit buys
-  // aggressively, a downturn with shut credit does not buy at all
-  const creditEase = Math.max(0.4, next.econ.creditIdx ?? 1);
-  const stretch = (0.99 + 0.11 * cycleHot(next.econ)) * (0.94 + 0.12 * creditEase);
-  const reservation = Math.max(offer.price, Math.round(value * stretch * rrange(next, 0.97, 1.05)));
+  // THE BUYER'S RESERVATION IS ITS OWN WALK-AWAY when the offer came out of
+  // the bid round (`offer.max`: the lower of what the building is worth to it
+  // and what it can fund). Inside it they take your number; a little over and
+  // they come back at it, final — they do not pay past it; well over and they
+  // are gone. An offer without one (an unsolicited approach, a retrade, a
+  // leased fee) is still read against a stretch on the appraisal.
+  const walk = offer.max;
+  let reservation: number;
+  if (walk !== undefined) reservation = Math.max(offer.price, walk);
+  else {
+    const value = ownedHoldingValue(next, parcels, h);
+    // how far a buyer will stretch past appraisal: a boom with open credit buys
+    // aggressively, a downturn with shut credit does not buy at all
+    const creditEase = Math.max(0.4, next.econ.creditIdx ?? 1);
+    const stretch = (0.99 + 0.11 * cycleHot(next.econ)) * (0.94 + 0.12 * creditEase);
+    reservation = Math.max(offer.price, Math.round(value * stretch * rrange(next, 0.97, 1.05)));
+  }
 
   if (px <= reservation) {
     const was = offer.price;
@@ -3604,7 +3700,7 @@ export function counterSale(
     return { s: next, msg: `Counter accepted · ${money(px)}` };
   }
   if (px <= reservation * 1.06) {
-    const split = Math.round((px + reservation) / 2);
+    const split = walk !== undefined ? reservation : Math.round((px + reservation) / 2);
     offer.price = split;
     offer.countered = true;
     offer.expiresM = next.month + 2;
@@ -3734,6 +3830,7 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
     if (sale.offer && s.month > sale.offer.expiresM) {
       const rec0 = resolveRec(parcels, s, h.bbl);
       const px = sale.offer.price;
+      if (sale.offer.firmId) (sale.passed ??= {})[sale.offer.firmId] = px;
       delete sale.offer;
       if (sale.unsolicited) delete h.sale;      // they were never on the market
       // A LAPSE USED TO BE SILENT. Deferred the card, or pop-ups off, and the
@@ -3751,6 +3848,33 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
     if (sale.unsolicited && !sale.offer) { delete h.sale; continue; }
     const rec = resolveRec(parcels, s, h.bbl);
     if (!rec) continue;
+    // THE ROUND RUNS EVERY MONTH THE BUILDING IS ON THE MARKET (roomForYourSale).
+    // A campaign's room is called on its date (runCallForOffers), not monthly.
+    const room = sale.mode === "marketed" ? null : roomForYourSale(s, parcels, rec, h, false);
+    if (room && sale.offer) {
+      // A STANDING OFFER MEETS NEXT MONTH'S ROOM. A firm that now bids more
+      // than the number on your desk — another firm, or the same one whose
+      // underwriting moved — puts in the better offer. A signed contract, a
+      // retrade or a counter already agreed is not re-opened.
+      const o = sale.offer;
+      if (!o.contract && !o.retrade && !o.countered && !o.pkg) {
+        const q = quietOffer(room, sale.ask, sale.passed);
+        if (q && q.price > o.price) {
+          const other = q.top.r.id !== o.firmId;
+          sale.offer = {
+            price: q.price, expiresM: s.month + 2, from: q.top.r.name, firmId: q.top.r.id, max: q.top.walk,
+            ...(q.cover ? { cover: { from: q.cover.r.name, price: q.cover.bid } } : {}),
+          };
+          s.news.unshift({
+            q: s.month, kind: "deal",
+            text: other
+              ? `${q.top.r.name} tops ${o.from ?? "the standing offer"} · ${rec.address} · ${money(q.price)} against ${money(o.price)}. Good for two months.`
+              : `${q.top.r.name} · ${rec.address} · offer raised to ${money(q.price)}.`,
+          });
+        }
+      }
+      continue;
+    }
     if (sale.offer) {
       const value = ownedHoldingValue(s, parcels, h);
       if (sale.offer.price < sale.ask && sale.ask / Math.max(1, value) < 1.1 && rng(s, "sales") < 0.12) {
@@ -3775,6 +3899,27 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
     // are due — and a quiet offer landing mid-campaign used to leave both a
     // frozen phone call and a bid list on the same building.
     if (sale.callM !== undefined && s.month < sale.callM) continue;
+    if (room) {
+      // THE BEST BID IN THE ROOM IS THE OFFER (quietOffer). Nobody who could
+      // close bids, or every one of them already showed you its number: the
+      // phone stays quiet this month. No coin, no band on your appraisal.
+      const q = quietOffer(room, sale.ask, sale.passed);
+      if (q) {
+        sale.offer = {
+          price: q.price, expiresM: s.month + 2, from: q.top.r.name, firmId: q.top.r.id, max: q.top.walk,
+          ...(q.cover ? { cover: { from: q.cover.r.name, price: q.cover.bid } } : {}),
+        };
+        s.news.unshift({
+          q: s.month, kind: "deal",
+          text: `Offer in from ${q.top.r.name}: ${money(q.price)} for ${rec.address} (ask ${money(sale.ask)})`
+            + (q.cover ? `; next best ${money(q.cover.bid)} from ${q.cover.r.name}` : "; the only bid in the room")
+            + `. Good for two months.`,
+        });
+      }
+      continue;
+    }
+    // A LEASED FEE (roomForYourSale returns null): the old arrival path,
+    // until the ground coupon has a bidder's underwriting of its own.
     const value = ownedHoldingValue(s, parcels, h);
     const ratio = sale.ask / Math.max(1, value);
     // WHO IS IN THE ROOM, NOT WHICH LABEL THE MONTH CARRIES.
@@ -4152,9 +4297,16 @@ export function counterBid(
   // How far this buyer will actually stretch. Credibility is the whole read:
   // the institution that bid with a committee behind it has room, and the
   // syndicate that bid to be in the running does not.
-  const value = ownedHoldingValue(next, parcels, next.holdings[bbl]!);
-  const headroom = (0.02 + b0.credibility * 0.09) * (0.85 + 0.40 * cycleHot(next.econ));
-  const limit = Math.round(Math.max(b0.price, Math.min(value * 1.18, b0.price * (1 + headroom))));
+  // A bid from the street's round carries its walk-away (`max`): that is the
+  // limit, and a counter past it gets the walk-away, final. A bid without one
+  // (an older save) keeps the credibility read.
+  let limit: number;
+  if (b0.max !== undefined) limit = Math.max(b0.price, b0.max);
+  else {
+    const value = ownedHoldingValue(next, parcels, next.holdings[bbl]!);
+    const headroom = (0.02 + b0.credibility * 0.09) * (0.85 + 0.40 * cycleHot(next.econ));
+    limit = Math.round(Math.max(b0.price, Math.min(value * 1.18, b0.price * (1 + headroom))));
+  }
 
   if (px <= limit) {
     bid.price = px;
@@ -4167,7 +4319,7 @@ export function counterBid(
     return { s: next, msg: `They came up — ${money(px)}.` };
   }
   if (px <= limit * 1.05) {
-    const split = Math.round((px + limit) / 2);
+    const split = b0.max !== undefined ? limit : Math.round((px + limit) / 2);
     bid.price = split;
     bid.note = "Split the difference and stopped.";
     rankBids(nsale.bids!);

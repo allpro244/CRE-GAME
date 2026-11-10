@@ -797,7 +797,19 @@ export interface Holding {
      * still close early, or elect a 1031, from the card.
      */
     /** `firmId`: the street firm behind `from` — every buyer is one. `pkg`: one deed of a package close; the package books the buyer. */
-    offer?: { price: number; expiresM: number; countered?: boolean; from?: string; firmId?: string; retrade?: string; held?: boolean; contract?: boolean; pkg?: boolean };
+    /**
+     * `max`: the bidder's own walk-away on this offer — the lower of what the
+     * building is worth to it (propmarket.ts maxPrice) and what it can fund
+     * (affordable). Set when the offer came out of the bid round; a counter
+     * is read against it. `cover`: the next-best bid in the room that month.
+     */
+    offer?: { price: number; expiresM: number; countered?: boolean; from?: string; firmId?: string; retrade?: string; held?: boolean; contract?: boolean; pkg?: boolean; max?: number; cover?: { from: string; price: number } };
+    /**
+     * FIRMS WHOSE NUMBER YOU ALREADY SAW AND LET GO, and that number: a buyer
+     * whose offer you declined or let lapse does not ring back with the same
+     * figure, only with a better one.
+     */
+    passed?: Record<string, number>;
     /**
      * STANDING INSTRUCTIONS TO THE BROKER. A seller does not take every call
      * personally — they tell the broker "anything at or over this, take it;
@@ -1547,6 +1559,8 @@ export interface Bid {
   credibility: number;   // 0-1
   note: string;
   dropped?: boolean;     // walked at best and final
+  /** the bidder's walk-away: the lower of its own value (maxPrice) and what it can fund — set when the bid came from the bid round */
+  max?: number;
   countered?: boolean;   // you have already been back to this one privately
 }
 

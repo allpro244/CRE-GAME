@@ -321,6 +321,7 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
             {offer.retrade ? <b className="neg">retraded · </b> : null}
             <b>{usd(offer.price)}</b> offered{offer.from ? <> by <FirmLink name={offer.from} id={offer.firmId} /></> : ""} · expires {monthLabel(offer.expiresM)}
             {" "}· {((offer.price / Math.max(1, ask) - 1) * 100).toFixed(1)}% vs ask
+            {offer.cover ? <> · next best {usd(offer.cover.price)} from {offer.cover.from}</> : null}
           </div>
           {h && parcels && (() => {
             // The broker's one line: price against the mark and the basis,

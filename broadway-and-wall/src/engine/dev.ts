@@ -410,9 +410,21 @@ function tickBuilderFirms(s: GameState, looksF: number) {
 function builderDone(s: GameState, lastBuild: number, lastPencil: number | undefined): boolean {
   return s.month - Math.max(lastBuild, lastPencil ?? -Infinity) > 180;
 }
-function pickBuilderFirm(s: GameState): Rival | undefined {
+function pickBuilderFirm(s: GameState, looking = false): Rival | undefined {
   const live = livingBuilderFirms(s);
-  if (!live.length) return undefined;
+  // THE TRADE IS BIGGER THAN ITS SHOPS (2026-11-10). A look is one of the
+  // town's developers walking the sites, and the trade that walks them is
+  // the town's size of it (`builderTarget`, the opening roster), not only
+  // whoever has a shop open today. When fewer shops are open than that, the
+  // rest of the looks are people of the trade without one — a project
+  // manager, a broker, a contractor thinking of setting up — each with the
+  // trade's habits; what pencils for one of them is an opening a new shop
+  // sets up for (`developerLook` with no firm, `foundersFor`). Without this
+  // the street saw only through its survivors' eyes: measured on seed 11,
+  // the roster fell to two shops by year fifty and no opening was ever seen
+  // again. Each outsider weighs as a shop with no book.
+  const outsiders = looking ? Math.max(0, builderTarget(developerLooksPerMonth(s.econ)) - live.length) : 0;
+  if (!live.length && !outsiders) return undefined;
   // THE TOWN'S WORK GOES ROUND. Every job the supply desk commissions went to
   // a living builder firm drawn uniformly — so a town with three builders
   // handed a third of everything it built, forever, to whichever happened to
@@ -427,10 +439,10 @@ function pickBuilderFirm(s: GameState): Rival | undefined {
     const share = street > 0 ? Math.max(0, r.aum ?? 0) / street : 0;
     return 1 / (1 + (share / 0.15) ** 2);
   });
-  const total = w.reduce((a, b) => a + b, 0);
+  const total = w.reduce((a, b) => a + b, 0) + outsiders;
   let x = rng(s, "dev") * total;
   for (let i = 0; i < live.length; i++) { x -= w[i]; if (x <= 0) return live[i]; }
-  return live[live.length - 1];
+  return outsiders > 0 ? undefined : live[live.length - 1];
 }
 
 /** The roster, once a month: founders for work nobody could carry, retirements of the idle, commitments recounted from the live jobs. */
@@ -5100,11 +5112,11 @@ function developerLook(
   // rent read moving a little from one look to the next.
   // The frames already standing when the game opens (a backdated look) are
   // history and stay the city's; every look after that is one of the firms.
-  const firm = s.builderFirms && opts?.backdate === undefined ? pickBuilderFirm(s) : undefined;
-  // NOBODY LEFT TO LOOK. With every builder firm gone the town's sites are
-  // still there; a would-be builder from the trade's population walks them,
-  // and what pencils for it is an opening a new shop sets up for (it has no
-  // shop yet, so no purse to build with: `noteOpening` below).
+  const firm = s.builderFirms && opts?.backdate === undefined ? pickBuilderFirm(s, true) : undefined;
+  // A LOOK BY SOMEBODY WITHOUT A SHOP (`pickBuilderFirm`): one of the trade
+  // with no firm open — or nobody left at all — walks the sites; what pencils
+  // for it is an opening a new shop sets up for (it has no shop yet, so no
+  // purse to build with: `noteOpening` below).
   const nobody = !!s.builderFirms && opts?.backdate === undefined && !firm;
   const who = firm || nobody ? undefined : pickBuilder(s);
   const habits = firm?.builderProf ?? who?.prof;

@@ -108,7 +108,8 @@ So progress is measured on the mechanism, not on the outputs:
   still not simulated, from the source: **coins** (a random draw compared
   against a probability — a decision taken by dice), other **draws** (random
   magnitudes, picks, timings), **unsourced constants** (no citation, year or
-  [S]/[D]/[K] tag in the comment) and open **FORMULA_LEDGER** rows. The
+  [S]/[D]/[M] tag in the comment; a [K] judgement still counts) and open
+  **FORMULA_LEDGER** rows. The
   outside world (nation, swans, weather) and agents' own taste draws
   (random utility) are counted but allowed. It writes MECHANISM_AUDIT.md.
 - **The ratchet**: CI runs `--check` against MECHANISM_BASELINE.json, so no PR

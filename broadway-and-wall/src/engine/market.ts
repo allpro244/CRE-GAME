@@ -1653,12 +1653,14 @@ export function stepCredit(s: GameState) {
 }
 
 /** The committee's calendar, month-of-year 0-indexed: Jan, Mar, Apr, Jun,
- *  Jul, Sep, Oct, Dec — close to the real FOMC year. */
+ *  Jul, Sep, Oct, Dec — eight scheduled meetings about six weeks apart, as the
+ *  Federal Reserve's FOMC calendars (2024: Jan, Mar, Apr-May, Jun, Jul, Sep,
+ *  Nov, Dec; 2025: Jan, Mar, May, Jun, Jul, Sep, Oct, Dec) [S]. */
 const FOMC = [0, 2, 3, 5, 6, 8, 9, 11];
 const isMeetingMonth = (m: number) => FOMC.includes(((m % 12) + 12) % 12);
 
 /** The maturity the loan index is a yield on: the ten-year, the benchmark
- *  fixed commercial mortgages price over. */
+ *  fixed commercial mortgages price over — 120 months by definition [D]. */
 const INDEX_HORIZON_M = 120;
 /**
  * How fast the rule's prescription returns to its long-run level, per month.

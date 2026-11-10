@@ -508,9 +508,9 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
    * the firm, drawn by how close each is to the quality it shops for, how much
    * room it has, how hard its owner lets and how dark its lobby is; each
    * valued, with the firm's own suite (when it has one to renew) beside them.
-   * Best first. For shops and sheds the draw also weighs how keen the post is
+   * Best first. For shops the draw also weighs how keen the post is
    * against the market, by (market / post)^KEEN_POW (the old stale-space
-   * weight's cube). For office it does not: the firm weighs price once, in
+   * weight's cube). For office and sheds it does not: the firm weighs price once, in
    * its choice among what it is shown (`value`, TASTE); the cube counted it
    * twice and made a building's lettings answer its post about 2.5 times as
    * hard as the record says (tenantMarket.ts TASTE, 2026-11-09).

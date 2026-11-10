@@ -119,7 +119,8 @@ const LINKS_EXPECTED = 3;
  *   HOW HARD A BUILDING'S LETTINGS ANSWER ITS POST. A building chosen with
  *   odds P answers its post with elasticity (post / scale)·(1 - P), about
  *   (1/TASTE)·6/7 with a shortlist of six and the firm's own suite, plus the
- *   broker's tour-book weight (KEEN_POW, zero for office) (`askElasticity`). The record puts the office figure near 4.5, from two
+ *   broker's tour-book weight (KEEN_POW: zero for office and sheds)
+ *   (`askElasticity`). The record puts the office figure near 4.5, from two
  *   independent facts: (a) US office space on the market takes ~20-25 months
  *   to absorb at ~11% vacancy (CBRE / CoStar availability over trailing
  *   net absorption, 2010s; Cushman & Wakefield months of supply) [S~], and a
@@ -129,8 +130,42 @@ const LINKS_EXPECTED = 3;
  *   point of vacancy (Wheaton & Torto 1988; Hendershott 1996) [S], which with
  *   the landlord's step ln(Mbest/M)/ε and M rising with vacancy gives ε ≈ 4-5 (REAL_ECONOMY_PLAN, "Office rents and vacancy", step 9a take 2).
  *   So office TASTE = (6/7)/4.5 ≈ 0.19. It was 0.10, fitted to renewals
- *   alone, which with the broker's price cube (KEEN_POW 3) gave ε ≈ 11.6 —
- *   measured 6-10 in an ask test — 2.5 times the record.
+ *   alone, which with the broker's price cube (KEEN_POW 3) gave ε ≈ 11.6 — measured 6-10 in an
+ *   ask test — 2.5 times the record.
+ *
+ *   SHOPS AND SHEDS (2026-11-09) have no published months-of-supply series
+ *   to read, so their figure is derived by Little's law from facts that are
+ *   published: the months space takes to let is the vacant stock over the
+ *   new-tenant lettings a year, and new-tenant lettings are the expiring
+ *   space that does not renew, (1 - R)·occupancy / lease term, plus net
+ *   absorption g. ε then follows from the same trade, ε = 1 + N/M, with N the
+ *   class's own term.
+ *     office      R 55%, N 84 mo, v 11%, g 1%/yr → M ≈ 20, ε ≈ 5.3
+ *                 (a check: the months-of-supply reading above gives 4.5-4.8)
+ *     shops       R 65% (lease-expiry studies, above; Kimco reports ~90%
+ *                 renewal-and-option retention in a 96%-let grocery-anchored
+ *                 portfolio, 2024 annual report — the top of the range),
+ *                 N 90 mo (shop leases run 5-10 years), v 7% (CoStar /
+ *                 REIS US retail 1990-2024: 4-13%), g 0.5%/yr → M ≈ 17,
+ *                 ε ≈ 6.2
+ *     sheds       R 75% (Prologis retention 69-87%, 10-Ks 2012-25), N 60 mo
+ *                 (industrial leases run about five years; CompStak WALT,
+ *                 industrial ~0.7 x office), v 7% (CBRE US industrial
+ *                 1989-2024: 3-14%), g 2%/yr (CBRE / Cushman US net
+ *                 absorption ~200-300 msf a year on ~14 bsf) → M ≈ 12.6,
+ *                 ε ≈ 5.8
+ *   So sheds' TASTE = (6/7)/5.8 ≈ 0.15 with the cube dropped (it was 0.07
+ *   with the cube, ε ≈ 15.2, fitted to renewals alone; sheds renewed 61% of
+ *   expiring space in test/tenantmarket.mjs against the studies' 75%, and
+ *   renew 71% at 0.15). [S~: each input is a published range; the
+ *   derivation is the engine's own choice rule, and no vacancy is read off
+ *   it.] Shops keep 0.08 and the cube for now: at 0.14 without it (shops
+ *   renew 88%, nearer the studies' 65% than today's 92%) shop vacancy rose
+ *   past the record (14-18% for decades, 36% at a peak; 2 seeds x 60 years,
+ *   REAL_ECONOMY_PLAN step 9a take 4), because shop landlords still price
+ *   by patience — a months-on-market norm a less price-sensitive tenant no
+ *   longer disciplines. Shops and sheds still price by patience, not by the
+ *   month-dark trade (below): see `reviewAsk`.
  *
  *   HOW OFTEN A FIRM RENEWS IN PLACE, with moving costs as above and ordinary
  *   landlords: about 55% of expiring office space, 65% of shops and 75% of
@@ -141,11 +176,9 @@ const LINKS_EXPECTED = 3;
  *   55%; at 0.19 it renews 65% — the two facts agree in direction, and the
  *   elasticity is the one that sets the number.
  *
- * Shops and sheds keep their renewal fits and the broker's cube (no
- * months-of-supply fact is read for them here) [K: shape parameter, fitted to
- * the facts stated above, not to a vacancy].
+ * [K: shape parameter, calibrated to the facts stated above, not to a vacancy.]
  */
-export const TASTE: Record<Comm, number> = { office: 0.19, retail: 0.08, industrial: 0.07 };
+export const TASTE: Record<Comm, number> = { office: 0.19, retail: 0.08, industrial: 0.15 };
 
 /**
  * THE LANDLORD'S PRICING RULE: WHAT A MONTH DARK COSTS, AND THE PACKAGE FIRST.
@@ -244,11 +277,11 @@ const NEXT_TERM_M = 84;
 /**
  * HOW A BROKER'S TOUR BOOK ANSWERS A POST: a building is drawn onto the
  * shortlist with weight (market rent / post)^KEEN_POW (streetRolls.ts shop).
- * For shops and sheds the cube of the old stale-space weight, unsourced [K];
- * for office nothing — the firm weighs price once, in its own choice (TASTE,
- * where the office figure is calibrated with this at zero).
+ * For shops the cube of the old stale-space weight, unsourced [K]; for office
+ * and sheds nothing — the firm weighs price once, in its own choice (TASTE,
+ * where their figures are calibrated with this at zero).
  */
-export const KEEN_POW: Record<Comm, number> = { office: 0, retail: 3, industrial: 3 };
+export const KEEN_POW: Record<Comm, number> = { office: 0, retail: 3, industrial: 0 };
 /**
  * HOW A BUILDING'S LETTINGS ANSWER ITS POST, as an elasticity: the tour book
  * (KEEN_POW) and, once toured, the firm's logit choice among the shortlist

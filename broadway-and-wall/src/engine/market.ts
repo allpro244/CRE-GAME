@@ -1126,12 +1126,14 @@ export const SF_PER_JOB: Record<BuiltClass, number> = { office: 230, industrial:
  *  year of the record gives, so the opening town had a sixth fewer residents
  *  for its jobs than an American town does (2026-11-10). */
 const PARTICIPATION = 0.50;
-/** The rate the city opens at, which is what makes the opening state consistent.
- *  (BLS unemployment rate, FRED UNRATE: 4.0% in 2000, 5.85% mean 1990-2019) [S≠: source disagrees — no year reads 5.2% as the opening's; to reconcile] */
-const OPENING_UNEMP = 0.052;
+/** The rate the city opens at, which is what makes the opening state consistent:
+ *  the opening year's (START_YEAR 2000) US rate, BLS UNRATE annual average 4.0%
+ *  (FRED UNRATE) [S]. It read 5.2%, which no year near the opening gives. */
+const OPENING_UNEMP = 0.040;
 /** The nation's natural rate — the Phillips curve's u* in tickNation, and the pivot for national pay.
- *  (CBO noncyclical rate, FRED NROU: 5.08% mean 1990-2019, 4.48% in 2019) [S≠: source disagrees — 4.8% sits between; to reconcile] */
-const NAT_U_STAR = 0.048;
+ *  CBO's noncyclical rate for the opening year, 2000: 5.07-5.12% by quarter
+ *  (FRED NROU, by vintage), 5.08% mean 1990-2019 [S]. It read 4.8%. */
+const NAT_U_STAR = 0.051;
 /** How far below zero the price level can fall a year, asymptotically (pay is not cut). [K: judgement, no source found] */
 const DEFLATION_FLOOR = 0.02;
 /** Credit gap built per month per point of real money under neutral (share of GDP). [K: judgement, no source found] */

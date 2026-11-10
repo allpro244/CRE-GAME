@@ -73,7 +73,13 @@ for (const seed of [4242, 1717, 9001, 31337, 777]) {
         const ros = roster(h);
         check(bids.every((b) => b.firmId && ros.get(b.firmId)?.name === b.name),
           `seed ${seed}: all ${bids.length} bids on the marketed sale are roster firms (${bids.map((b) => b.name).join(", ")})`);
-        const took = E.acceptBid(h, parcels, bbl, 0, bids[0].name);
+        // Signing re-runs each bidder's numbers (acceptBid): a firm that spent
+        // its cash elsewhere since it bid withdraws, and the next one is taken.
+        let took = E.acceptBid(h, parcels, bbl, 0, bids[0].name);
+        for (let k = 1; !took.err && !took.s.holdings[bbl].sale.offer && k < bids.length; k++) {
+          took = E.acceptBid(took.s, parcels, bbl, 0, took.s.holdings[bbl].sale.bids.find((x) => !x.dropped)?.name);
+        }
+        if (!took.err && !took.s.holdings[bbl].sale.offer) took = { ...took, err: "every bidder withdrew at signing" };
         check(!took.err, `taking the best bid works${took.err ? ` — ${took.err}` : ""}`);
         if (!took.err) {
           const offer = took.s.holdings[bbl].sale.offer;

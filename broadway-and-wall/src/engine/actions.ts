@@ -13,8 +13,8 @@ import { mergedTouched, ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, rivalCanClose, rivalsWhoCanClose, gradeOf, tie, firmSells, firmMaxPrice } from "./rivals";
-import { BUY_CLOSING, bidRound, listingReserve, noteRoundFailed, noteRoundClosed, impliedCap, landBidRound, noteLandRoundFailed } from "./propmarket";
-import { PREMARKET_M } from "./beliefs";
+import { BUY_CLOSING, bidRound, listingReserve, noteRoundFailed, noteRoundClosed, impliedCap, landBidRound, noteLandRoundFailed, dealView, bidderOf, maxPrice, affordable, landMaxPrice } from "./propmarket";
+import { PREMARKET_M, beliefSignals } from "./beliefs";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg, holderSheet } from "./owners";
@@ -2599,17 +2599,32 @@ function roomForYourSale(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
 }
 
 /**
- * A BIDDER RE-RUNS ITS NUMBERS: the street's round on today's market
- * (roomForYourSale, the whole town as a campaign reaches it), read for each
- * firm on the list. A firm missing from it would not or could not buy the
- * building today. null when the round cannot price the deed (a leased fee):
- * the caller keeps the walk-away the bid recorded.
+ * A BIDDER RE-RUNS ITS NUMBERS on today's market, the same underwriting its
+ * bid came from (propmarket.ts bidRound): `walk` is the lower of what the
+ * building is worth to it (maxPrice; a lot, landMaxPrice) and what it can
+ * fund (affordable), and `canClose` is the test the closing applies
+ * (rivalCanClose) at `price`. A firm that has failed walks at 0. null when
+ * there is no firm to ask or the round cannot price the deed (a leased
+ * fee): the caller keeps the walk-away the bid recorded.
  */
-function roundToday(s: GameState, parcels: ParcelTable, bbl: string): Map<string, StreetBid> | null {
+function walkAwayToday(
+  s: GameState, parcels: ParcelTable, bbl: string, firmId: string | undefined, price: number,
+): { walk: number; canClose: boolean; purse: boolean } | null {
   const h = s.holdings[bbl];
-  const rec = h ? resolveRec(parcels, s, bbl) : null;
-  const room = h && rec ? roomForYourSale(s, parcels, rec, h, true) : null;
-  return room ? new Map(room.map((b) => [b.r.id, b])) : null;
+  const rec = h && firmId && !h.groundLeased ? resolveRec(parcels, s, bbl) : null;
+  if (!h || !rec) return null;
+  const r = (s.rivals ?? []).find((x) => x.id === firmId);
+  if (!r || r.failedM !== undefined) return { walk: 0, canClose: false, purse: false };
+  const canClose = rivalCanClose(s, parcels, r, rec, price);
+  if (rec.class === "land" || !(rec.bldgArea > 0)) {
+    return { walk: Math.round(landMaxPrice(s, r, rec) / 1000) * 1000, canClose, purse: false };
+  }
+  const view = dealView(s, rec, bbl, h.sale?.ask ?? price, h.condition, h.condIdx);
+  if (!view) return null;
+  const b = bidderOf(s, r, rec);
+  const max = maxPrice(s.econ, view, b, beliefSignals(s, r)).max;
+  const afford = affordable(s, r, view, b);
+  return { walk: Math.round(Math.max(0, Math.min(max, afford)) / 1000) * 1000, canClose, purse: afford < max };
 }
 
 /**
@@ -2811,14 +2826,14 @@ export function bestAndFinal(s: GameState, parcels: ParcelTable, bbl: string): {
   let walked = 0, lifted = 0;
   // WHO WALKS IS EACH BIDDER'S OWN NUMBER (2026-11-10). This was a coin —
   // rng < 0.30·(1 − credibility) + 0.18·cycleDown. Now each firm re-runs its
-  // underwriting on today's market (roundToday): one already at its
-  // walk-away was at its best the first time and walks; one the round no
-  // longer has (it would not or could not buy today) walks; the rest sharpen,
-  // never past the walk-away. A bid with no walk-away on record (a leased
-  // fee, an older save) stands and sharpens.
-  const today = roundToday(next, parcels, bbl);
+  // underwriting on today's market (walkAwayToday): one already at its
+  // walk-away was at its best the first time and walks, and so does one that
+  // could no longer close at its own bid; the rest sharpen, never past the
+  // walk-away. A bid with no walk-away on record (a leased fee, an older
+  // save) stands and sharpens.
   for (const b of live) {
-    const walk = today && b.firmId ? (today.get(b.firmId)?.walk ?? 0) : b.max;
+    const today = walkAwayToday(next, parcels, bbl, b.firmId, b.price);
+    const walk = today ? (today.canClose ? today.walk : 0) : b.max;
     if (walk !== undefined && walk <= b.price) { b.dropped = true; walked++; continue; }
     if (walk !== undefined) b.max = walk;
     const bump = 1 + rrange(next, 0.005, 0.035) * b.credibility;
@@ -2868,16 +2883,15 @@ export function acceptBid(
   // A RETRADE IS THE BUYER'S OWN RE-UNDERWRITING (2026-11-10). This was a
   // coin — rng < 0.42·(1 − credibility) — at a 2-8% cut drawn from the air,
   // with a reason picked from a list. Now the firm runs its numbers again on
-  // today's market (roundToday). If it no longer would buy at all, or can no
-  // longer fund the number it bid (its cash, line and loan: `afford`), it
-  // withdraws — a firm short of money does not offer a fraction of its bid.
-  // If its value has fallen under the bid, it comes back at its new walk-away
-  // (the committee — or, on a number it already agreed with you, the rent
-  // roll read against today's market). A bid the round cannot price (a
-  // leased fee) is signed as bid.
-  const today = b.firmId ? roundToday(next, parcels, bbl) : null;
-  const now = today && b.firmId ? today.get(b.firmId) : undefined;
-  if (today && (!now || Math.round(now.afford / 1000) * 1000 < b.price)) {
+  // today's market (walkAwayToday). If it could no longer close at its bid
+  // (the closing's own test) or would not buy at any price, it withdraws.
+  // If its walk-away has fallen under the bid, it comes back at the
+  // walk-away, and the reason is what moved: its purse (the lender sized the
+  // loan down) or its value (the committee — or, on a number it already
+  // agreed with you, the rent roll read against today's market). A bid that
+  // cannot be re-run (a leased fee) is signed as bid.
+  const now = walkAwayToday(next, parcels, bbl, b.firmId, b.price);
+  if (now && (!now.canClose || now.walk <= 0)) {
     b.dropped = true;
     b.note = "Withdrew: its numbers no longer work.";
     rankBids(ns.bids!);
@@ -2889,7 +2903,8 @@ export function acceptBid(
   }
   if (now && now.walk < b.price) {
     const price = now.walk;
-    const reason = b.countered ? "they read the rent roll against today's market and did not like the rollover"
+    const reason = now.purse ? "their lender resized the loan"
+      : b.countered ? "they read the rent roll against today's market and did not like the rollover"
       : "their committee would not approve the number";
     // The retraded number IS its walk-away: a counter past it is read against it.
     ns.offer = { price, expiresM: next.month + 2, from: b.name, firmId: b.firmId, retrade: reason, max: price };

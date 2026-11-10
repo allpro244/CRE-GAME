@@ -123,14 +123,14 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
   if (s.bankFcls.length >= 4) return;
   for (const l of s.lenders ?? []) {
     if (l.failedM !== undefined) continue;
-    // WHEN A DESK FILES (2026-11-10). This was a 9% monthly coin, and only for
-    // a desk whose book was 3.5% delinquent — so a clean desk let a loan sit
-    // unpaid for ever, and a dirty one filed by dice. A desk now files on a
-    // loan of its own that is three payments behind, which is the point US
-    // servicing practice treats as default and starts the process (the 90-day
-    // default notice; CFPB Reg X §1024.41(f) bars a first filing on a
-    // residential loan before 120 days, and commercial paper has no such wait).
-    // The borrower can still reinstate up to the sale (above).
+    // WHEN A DESK FILES: still a coin (9% a month, for a desk whose book is
+    // 3.5% delinquent). Filing on every loan three payments behind was tried
+    // (2026-11-10) and set off a fire-sale cascade — the player-bot in
+    // test/conserve went insolvent at months 38-106 against 290-401 — because
+    // real desks forbear on underwater paper ("extend and pretend", 2009-12)
+    // and nothing here models that choice yet. Kept until a desk weighs a
+    // foreclosure's recovery against forbearing.
+    if (l.delinquent < 0.035 || rng(s) > 0.09) continue;
     // A DESK FILES ON ITS OWN LOAN, AND ONLY ONE THAT IS NOT BEING PAID. The
     // pool used to be any firm four months into a squeeze, on any of its
     // buildings, for an owed figure drawn as 75-115% of the building's as-is

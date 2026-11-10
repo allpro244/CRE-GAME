@@ -357,7 +357,8 @@ export function affordable(s: GameState, r: Rival, v: DealView, b: Bidder): numb
   return a * p1 <= v.debtCap ? p1 : (avail + v.debtCap) / (1 + BUY_CLOSING);
 }
 
-export interface Bid { r: Rival; max: number; bid: number; uw: Underwriting }
+/** `afford`: the most the firm can fund at the table (affordable) — with `max`, its walk-away is the lower of the two. */
+export interface Bid { r: Rival; max: number; bid: number; uw: Underwriting; afford?: number }
 
 /**
  * A BID ROUND: every firm on the street that would and could buy this,
@@ -369,8 +370,12 @@ export interface Bid { r: Rival; max: number; bid: number; uw: Underwriting }
  * each bidder stays in up to what it can pay, so its "bid" is its limit and
  * the price is set by the runner-up, not by a sealed guess.
  */
-export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress"> & { listedM?: number; open?: boolean }): { bids: Bid[]; n: number; view: DealView | null } {
-  const view = dealView(s, rec, li.bbl, li.ask, undefined, undefined, !!li.open);
+/**
+ * `cond` / `condIdx`: the building's grade when the seller is not on the tape
+ * (the player's own deed — the holding's grade, which the tape cannot know).
+ */
+export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress"> & { listedM?: number; open?: boolean; cond?: Condition; condIdx?: number }): { bids: Bid[]; n: number; view: DealView | null } {
+  const view = dealView(s, rec, li.bbl, li.ask, li.cond, li.condIdx, !!li.open);
   if (!view) return { bids: [], n: 0, view };
   const seller = ownerOf(s, rec.bbl);
   const distress = !!li.distress;
@@ -401,7 +406,8 @@ export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
     const b = bidderOf(s, r, rec);
     const { max, uw } = maxPrice(s.econ, view, b, beliefSignals(s, r));
     if (!(max > 0)) continue;
-    let bid = Math.min(li.open ? max : max * (1 - SHADE / Math.max(1, n)), affordable(s, r, view, b));
+    const afford = affordable(s, r, view, b);
+    let bid = Math.min(li.open ? max : max * (1 - SHADE / Math.max(1, n)), afford);
     bid = Math.round(bid / 1000) * 1000;
     if (!(bid > 0)) continue;
     // A firm already at its covenant, or with no desk that will take more of
@@ -411,7 +417,7 @@ export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
     const cushion = r.sheet ? 0.10 * r.sheet.discipline / 100 : 0;
     if (aumAfter > 0 && (r.debt + debt) / aumAfter > paramsOf(r).maxLtv - cushion) continue;
     if (debt > 0 && !deskWithRoom(s, r.id, debt)) continue;
-    bids.push({ r, max, bid, uw });
+    bids.push({ r, max, bid, uw, afford });
   }
   bids.sort((x, y) => y.bid - x.bid);
   return { bids, n, view };
@@ -1517,7 +1523,7 @@ export function landBidRound(s: GameState, parcels: ParcelTable, rec: ParcelReco
     if (!(avail > 0)) continue;
     const bid = Math.round(Math.min(max * (1 - SHADE / Math.max(1, n)), avail / Math.max(0.05, 1 + BUY_CLOSING - a)) / 1000) * 1000;
     if (!(bid > 0)) continue;
-    bids.push({ r, max, bid, uw: { V: max, r: 0, rE: 0, rd: land.ratePct / 100, w: a, g: 0 } });
+    bids.push({ r, max, bid, uw: { V: max, r: 0, rE: 0, rd: land.ratePct / 100, w: a, g: 0 }, afford: avail / Math.max(0.05, 1 + BUY_CLOSING - a) });
   }
   bids.sort((x, y) => y.bid - x.bid);
   return { bids, n };

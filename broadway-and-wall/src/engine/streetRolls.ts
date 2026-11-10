@@ -49,7 +49,7 @@ import { START_YEAR } from "./types";
 import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, useOccupancy, N_BANDS, scoreRentMult, locationRentMult } from "./value";
 import { isCommercial, bumpOf, minLettableSf, streetLease, pickSector, pickName, termBandM, depositFor, chosenTermM } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
-import { tickTenantFin, tenantFailOdds, entrantMargin, rentCapacity } from "./tenantBooks";
+import { tickTenantFin, tenantFailOdds, entrantMargin, rentCapacity, finGrade } from "./tenantBooks";
 import { rng, rrange, reletMonths, recordDeal, FIRM_PROFILE, turnoverYr, priceLevel12, CONC_DEPTH, SECTOR_LABEL, SF_PER_JOB } from "./market";
 import { staleDiscount } from "./absorption";
 import { leaseUpMonthsOf } from "./proforma";
@@ -770,7 +770,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   const m = s.month;
   e.seekers ??= [];
   const V = marketView(s, parcels);
-  const { owners, blds, bld, letOf, availOf, catchOf, ctx, recOf, bookOf, gTradeOf, termOf, value, shop, noteRoll } = V;
+  const { owners, blds, bld, letOf, availOf, catchOf, ctx, recOf, bookOf, termOf, value, shop, noteRoll } = V;
   const seeking = new Map<number, Seeker>();
   for (const k of e.seekers) seeking.set(k.fid, k);
   const ratio = (k: Comm) => e.streetSpace?.[k] && (e.streetSpace[k] as { ratio?: number }).ratio || 1;
@@ -809,7 +809,10 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     // shrinking trade signs longer at today's rent (Grenadier 1995 on the
     // option value in lease term; the covenant bands stay, since they are
     // what landlords and their lenders will take from each grade).
-    const termM = rrange(s, band.loM, band.hiM, "leasing") * qt.term * Math.max(0.6, Math.min(1.4, Math.exp(-4 * gTradeOf(firm.sector))));
+    // The middle of the band, tilted by the trade (leasing.ts chosenTermM — the
+    // player's tenants choose by the same rule); it was a draw across the band.
+    void band;
+    const termM = chosenTermM(e, firm.credit, firm.sector) * qt.term;
     // a contested suite signs at the price its best-and-final set (`contestPrice`),
     // on the face when that is above the ask: no free months then
     // ...and never above the most the firm would pay (its surplus at zero,
@@ -1475,10 +1478,15 @@ function renewInPlace(s: GameState, b: Bld, roll: StreetRoll, t: Tenant, need: n
   // The renewal term is chosen as a new lease's is: within the covenant's
   // band, shorter for a firm whose trade is growing fast (see THE TERM IS
   // CHOSEN TOO).
-  const band = termBandM(t.credit);
-  const bk = s.econ.firmBooks?.[t.sector], prevE = s.econ.tradeEmpPrev?.[t.sector];
-  const gTrade = bk && prevE ? Math.pow(bk.emp / Math.max(1e-6, prevE), 12) - 1 : 0;
-  const termM = Math.round(rrange(s, band.loM, band.hiM, "leasing") * Math.max(0.6, Math.min(1.4, Math.exp(-4 * gTrade))));
+  // ...AND THE GRADE IS READ AGAIN AT THE RENEWAL, as the player's tenants'
+  // is on its anniversary (leasing.ts): the lower of the street's covenant rule
+  // on the feet it needs and what its own interest cover and cash earn
+  // (tenantBooks.ts finGrade). A street firm kept the grade it was born with.
+  {
+    const sized = creditOfSize(k as Comm, need);
+    t.credit = Math.min(sized, finGrade(tenantFin(s.econ, t))) as Credit;
+  }
+  const termM = Math.round(chosenTermM(s.econ, t.credit, t.sector));
   const freeM = freeMonthsFor(face, eff, termM);
   t.rentPsf = +face.toFixed(2);
   t.endM = m + termM;

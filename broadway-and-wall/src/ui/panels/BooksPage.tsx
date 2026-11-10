@@ -210,8 +210,8 @@ function Row({ k, v, sub, strong, rule, note, bad }: {
   const neg = bad ?? v < 0;
   return (
     <tr className={rule ? "is-rule" : undefined}>
-      <td style={{ paddingLeft: sub ? 22 : 0, fontWeight: strong ? 600 : undefined }}>
-        {k}{note && <span className="dim" style={{ fontWeight: 400 }}> · {note}</span>}
+      <td style={{ paddingLeft: sub ? 22 : 0, fontWeight: strong ? 600 : undefined }} title={note}>
+        {note ? <span className="has-gloss">{k}</span> : k}
       </td>
       <td className={"num" + (neg ? " neg" : "") + (strong ? " is-strong" : "")}>
         {v === 0 ? "—" : (v < 0 ? "(" : "") + usd(Math.abs(v)) + (v < 0 ? ")" : "")}
@@ -593,8 +593,8 @@ export function IncomeStatement() {
     k: string; v: number; sub?: boolean; strong?: boolean; rule?: boolean; note?: string;
   }) => (
     <tr className={rule ? "is-rule" : undefined}>
-      <td style={{ paddingLeft: sub ? 22 : 0, fontWeight: strong ? 600 : undefined }}>
-        {k}{note && <span className="dim" style={{ fontWeight: 400 }}> · {note}</span>}
+      <td style={{ paddingLeft: sub ? 22 : 0, fontWeight: strong ? 600 : undefined }} title={note}>
+        {note ? <span className="has-gloss">{k}</span> : k}
       </td>
       <td className={"num" + (v < 0 ? " neg" : "") + (strong ? " is-strong" : "")}>
         {v === 0 ? "—" : (v < 0 ? "(" : "") + usd(Math.abs(v)) + (v < 0 ? ")" : "")}
@@ -623,7 +623,7 @@ export function IncomeStatement() {
 
   return (
     <div className="page-section">
-      <div className="page-section-head">Cash flow · {headLabel}</div>
+      <div className="page-section-head has-gloss" title="Above property cash flow: operations · below: financing, investing, tax.">Cash flow · {headLabel}</div>
       <div className="btn-row" style={{ marginBottom: 10 }}>
         <button
           type="button"
@@ -642,7 +642,6 @@ export function IncomeStatement() {
           Monthly
         </button>
       </div>
-      <div className="hint">Above <em>property cash flow</em>: operations · below: financing, investing, tax</div>
       <div className="btn-row">
         {period === "year"
           ? books.slice(-8).map((b) => (
@@ -664,7 +663,30 @@ export function IncomeStatement() {
         <div className="hint">No data for this period.</div>
       ) : (
         <>
-          <table className="tbl tbl-stmt">
+          <table className="tbl tbl-stmt" title={(() => {
+              const p = opCf(cur), a = afterDebt(cur), b = bottom(cur);
+              const cover = cur.debtSvc > 0 ? (cur.noi / cur.debtSvc) : null;
+              const span = usingMonth ? "this month" : "this year";
+              const parts: string[] = [];
+              if (p <= 0) parts.push(`Property cash flow negative ${span}, before debt service.`);
+              else if (a < 0 && p > 0) parts.push("Debt service exceeds property cash flow.");
+              else if (a > 0) parts.push(`${usd(a)} after debt service.`);
+              if (cover !== null) parts.push(`DSCR ${cover.toFixed(2)}×.`);
+              if (cur.dev > 0 && b < 0 && a > 0) parts.push(`Cash down on ${usd(cur.dev)} of development.`);
+              if (cur.taxes > 0 && cur.sold > 0) parts.push(`${usd(cur.taxes)} tax on ${usd(cur.sold)} of sales.`);
+              // THE SHELTER, SAID OUT LOUD. Depreciation is designed to throw a
+              // paper loss, and the loss carries forward with no expiry — so a
+              // development year or a soft year is banked capacity, not a
+              // wasted one. A player who cannot see the bank cannot plan the
+              // year they spend it in.
+              const carry = game.taxLossCarry ?? 0;
+              if (carry > 0) {
+                parts.push(
+                  `NOL ${usd(carry)} · no expiry · offsets up to ${(NOL_SHELTER_CAP * 100).toFixed(0)}% of taxable income per year.`,
+                );
+              }
+              return parts.join(" ");
+            })()}>
             <thead>
               <tr><th>{headLabel}</th><th className="num">Amount</th><th className="num">vs {vsLabel}</th></tr>
             </thead>
@@ -688,32 +710,6 @@ export function IncomeStatement() {
               <L k="Change in cash" v={bottom(cur)} strong rule />
             </tbody>
           </table>
-          <div className="hint">
-            {(() => {
-              const p = opCf(cur), a = afterDebt(cur), b = bottom(cur);
-              const cover = cur.debtSvc > 0 ? (cur.noi / cur.debtSvc) : null;
-              const span = usingMonth ? "this month" : "this year";
-              const parts: string[] = [];
-              if (p <= 0) parts.push(`Property cash flow negative ${span}, before debt service.`);
-              else if (a < 0 && p > 0) parts.push("Debt service exceeds property cash flow.");
-              else if (a > 0) parts.push(`${usd(a)} after debt service.`);
-              if (cover !== null) parts.push(`DSCR ${cover.toFixed(2)}×.`);
-              if (cur.dev > 0 && b < 0 && a > 0) parts.push(`Cash down on ${usd(cur.dev)} of development.`);
-              if (cur.taxes > 0 && cur.sold > 0) parts.push(`${usd(cur.taxes)} tax on ${usd(cur.sold)} of sales.`);
-              // THE SHELTER, SAID OUT LOUD. Depreciation is designed to throw a
-              // paper loss, and the loss carries forward with no expiry — so a
-              // development year or a soft year is banked capacity, not a
-              // wasted one. A player who cannot see the bank cannot plan the
-              // year they spend it in.
-              const carry = game.taxLossCarry ?? 0;
-              if (carry > 0) {
-                parts.push(
-                  `NOL ${usd(carry)} · no expiry · offsets up to ${(NOL_SHELTER_CAP * 100).toFixed(0)}% of taxable income per year.`,
-                );
-              }
-              return parts.join(" ");
-            })()}
-          </div>
         </>
       )}
     </div>
@@ -750,8 +746,8 @@ function ProfitAndLoss() {
   type Key = keyof Omit<PnlView, "yr" | "label" | "months" | "deprFinal">;
   const line = (k: string, key: Key, opts: { sign?: 1 | -1; sub?: boolean; strong?: boolean; rule?: boolean; note?: string } = {}) => (
     <tr className={opts.rule ? "is-rule" : undefined}>
-      <td style={{ paddingLeft: opts.sub ? 22 : 0, fontWeight: opts.strong ? 600 : undefined }}>
-        {k}{opts.note && <span className="dim" style={{ fontWeight: 400 }}> · {opts.note}</span>}
+      <td style={{ paddingLeft: opts.sub ? 22 : 0, fontWeight: opts.strong ? 600 : undefined }} title={opts.note}>
+        {opts.note ? <span className="has-gloss">{k}</span> : k}
       </td>
       {years.map((y) => {
         const v = (opts.sign ?? 1) * y[key];
@@ -768,9 +764,9 @@ function ProfitAndLoss() {
   const cover = cur.intExp > 0 ? cur.ebitda / cur.intExp : null;
   return (
     <div className="page-section">
-      <div className="page-section-head">Income statement · accrual basis</div>
-      <div className="hint">
-        Principal, purchases and draws on Cash flow · sales at gain over depreciated basis · fund deeds report via the fund
+      <div className="page-section-head has-gloss"
+        title="Principal, purchases and draws are on Cash flow · sales at gain over depreciated basis · fund deeds report via the fund.">
+        Income statement · accrual basis
       </div>
       <table className="tbl tbl-stmt">
         <thead>
@@ -804,7 +800,7 @@ function ProfitAndLoss() {
           {line("Net profit", "net", { strong: true, rule: true })}
         </tbody>
       </table>
-      <div className="hint">
+      <div className="dim cap-note">
         {[
           margin !== null ? `Net margin ${cur.label}: ${(margin * 100).toFixed(0)}%.` : null,
           cover !== null ? `Interest cover ${cover.toFixed(2)}× (EBITDA ÷ interest).` : null,

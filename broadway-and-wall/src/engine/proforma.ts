@@ -681,6 +681,23 @@ export function marketConstructionQuote(econ: Econ, mix: UseMix, costTotal = 0):
  * relationship and hold off the GameState and asks this; the market quote
  * above asks it with those held at neutral. One formula, two callers.
  */
+/**
+ * ONE PRICE FOR A CONSTRUCTION LOAN, %/yr: the desk's own live spread on
+ * construction paper over the loan index (pricing.ts liveSpread — its
+ * funding, its loss experience on construction loans, its rationing and its
+ * pitch, published on econ.deskPx), the same law the player's quotes are
+ * priced on (`deskQuote`). A named desk, or the regional volume desk. Every
+ * construction coupon in the engine is this: rival takeovers of a stalled job
+ * (rivals.ts), home builders' lines (homes.ts) and the builder's residual
+ * (homeprice.ts) and land developers' A&D loans (growth.ts, on the desk's
+ * land-loan loss class) each carried a private flat spread (2.4, or 2.6 + 0.6).
+ */
+export function constructionRatePct(e: Pick<Econ, "indexRate"> & Partial<Pick<Econ, "deskPx">>, lender?: string, rel = 0, cls: "construction" | "land" = "construction"): number {
+  const desks = constructionDesks();
+  const d = desks.find((x) => x.name === lender) ?? desks.find((x) => x.name === CONSTRUCTION_LENDER) ?? desks[0];
+  return bankRatePct(e.indexRate ?? 5.4, liveSpread(e.deskPx?.[d.name], d.spread, cls), { rel });
+}
+
 export function deskQuote(
   e: Econ, d: ConstructionDesk, mix: UseMix, costTotal: number, app: number, rel: number, maxCommit?: number,
 ): ConstructionQuote & { held: boolean } {
@@ -713,7 +730,7 @@ export function deskQuote(
   // this file never imports the banks. The fund's ease is its own now: it
   // prices off its own book like every other desk.
   void tight;
-  const ratePct = bankRatePct(e.indexRate, liveSpread(e.deskPx?.[d.name], d.spread, "construction"), { rel });
+  const ratePct = constructionRatePct(e, d.name, rel);
   const open = app >= 0.12 && ltcMax > 0.02;
   return {
     lender: d.name, ratePct, ltcMax: +Math.max(0, ltcMax).toFixed(3), points: d.points, open,
@@ -1310,7 +1327,8 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // has to cover is the SHORTFALL WHILE THERE IS ONE: sum the months the
   // building cannot pay its own coupon, and ignore the months it can, because
   // by then the money has already been spent.
-  const dsMonthly = (preReserve * ltc * ((econ.indexRate + 2.1) / 100)) / 12;
+  // at the loan's own coupon (`ratePct`, the desk's quote above); it read the index + 2.1, a private price
+  const dsMonthly = (preReserve * ltc * (ratePct / 100)) / 12;
   let deficit = 0;
   if (dsMonthly > 0) {
     const curve = absorptionCurve(carryMonths);

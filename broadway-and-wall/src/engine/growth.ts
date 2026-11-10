@@ -49,6 +49,7 @@ import {
 import { platLocation, homeTargetPsf, platQuoteNow } from "./homes";
 import { pickConstructionDesk } from "./dev";
 import { lenderByName, chargeLenderLoss } from "./lenders";
+import { constructionRatePct } from "./proforma";
 import { voidContract } from "./acquire";
 import { money } from "./money";
 import {
@@ -166,13 +167,12 @@ const REHEAR_M = 24;
 /**
  * WHAT THE DESK ADVANCES a land developer: the interagency supervisory
  * loan-to-value limits (12 CFR 34 App. A to Subpart D; OCC / FDIC / Fed) —
- * 65% against raw land, 75% against land development [S] — at the
- * construction desk's coupon, the loan index plus 2.4 points (proforma.ts
- * CONSTR_SPREAD). The developer's own money is the rest, and the board's
+ * 65% against raw land, 75% against land development [S] — at its
+ * desk's live coupon on land paper (proforma.ts constructionRatePct). The developer's own money is the rest, and the board's
  * fees, which no bank lends against.
  */
 const LAND_ADVANCE = 0.65, DEV_ADVANCE = 0.75;
-const devRate = (s: GameState) => ((s.econ.indexRate ?? 5.4) + 2.4) / 100;
+const devRate = (s: GameState, d: LandDev) => constructionRatePct(s.econ, d.lender, 0, "land") / 100;
 /**
  * THE RELEASE PRICE: the desk is repaid 120% of its loan per lot as each lot
  * closes, so the note is retired before the last lots sell (the same release
@@ -404,7 +404,7 @@ function tickDevBooks(s: GameState, parcels: ParcelTable) {
     if (d.failedM !== undefined) continue;
     booksOf(s, d);
     if ((d.debt ?? 0) > 0) {
-      const i = Math.round(d.debt! * devRate(s) / 12);
+      const i = Math.round(d.debt! * devRate(s, d) / 12);
       d.cash! -= i; d.interestPaid = (d.interestPaid ?? 0) + i;
     }
     d.stressMs = d.cash! < 0 ? (d.stressMs ?? 0) + 1 : 0;

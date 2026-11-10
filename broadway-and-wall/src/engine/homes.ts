@@ -33,6 +33,7 @@ import { resolveRec, assetValue, initialCondition, farmUsePsf } from "./value";
 import { INFRA_PER_FRONT_FT, IMPACT_FEE, ENTITLE_PER_LOT, ENTITLE_FIXED, PLAT_STREET_SHARE } from "./landdev";
 import { sweepLocIdleCash } from "./credit";
 import { pickConstructionDesk } from "./dev";
+import { constructionRatePct } from "./proforma";
 import { landDevSold } from "./growth";
 import { lenderByName, chargeLenderLoss } from "./lenders";
 import { saleTaxQuote } from "./actions";
@@ -121,8 +122,8 @@ function newBuilder(s: GameState, name: string): HomeBuilder {
  * own money is the rest. A desk that has failed advances nothing.
  */
 const LOT_ADVANCE = 0.75, HOUSE_ADVANCE = 0.85;
-/** The construction desk's coupon: the loan index plus 2.4 points (proforma.ts CONSTR_SPREAD). */
-const builderRate = (s: GameState) => ((s.econ.indexRate ?? 5.4) + 2.4) / 100;
+/** The builder's desk's coupon on construction paper (proforma.ts constructionRatePct). */
+const builderRate = (s: GameState, b: HomeBuilder) => constructionRatePct(s.econ, b.lender) / 100;
 const deskOpen = (s: GameState, b: HomeBuilder) => !!b.lender && lenderByName(s, b.lender)?.failedM === undefined;
 /** Can the builder fund `cost` of lot (and the cash share of the house it starts on it)? */
 function canFund(s: GameState, b: HomeBuilder, lotCost: number, houseBudget: number): boolean {
@@ -624,7 +625,7 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
   // cannot pay its way for three months fails (step 5)
   for (const b of Object.values(h.builders)) {
     if (b.failedM !== undefined || !(b.debt > 0)) continue;
-    const i = Math.round(b.debt * builderRate(s) / 12);
+    const i = Math.round(b.debt * builderRate(s, b) / 12);
     b.cash -= i; b.interestPaid += i;
   }
   // 1. THE FRAMES GO UP, the desk advancing its share of each draw, and the finished ones stand

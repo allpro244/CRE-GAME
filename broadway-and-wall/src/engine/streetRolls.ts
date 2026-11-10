@@ -101,6 +101,8 @@ export interface Seeker {
   was?: { rent: number };
   /** the cause-ledger event of its going to market */
   whyId?: number;
+  /** a sitting firm that outgrew its suite mid-lease and went looking (it can give up and stay) */
+  midLease?: boolean;
 }
 
 /** Months a looking firm takes to find and sign space, on average (market.ts MOVE_IN_M). */
@@ -1007,7 +1009,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
         const room = availOf(b, roll, k);
         if (room >= need - t.sf) { t.sf = premises(b, roll, t, need); noteRoll(roll); }
         else {
-          e.seekers.push({ fid: t.fid!, use: k, want: Math.round(need), since: m, why: "grow", from: bbl });
+          e.seekers.push({ fid: t.fid!, use: k, want: Math.round(need), since: m, why: "grow", from: bbl, midLease: true });
           seeking.set(t.fid!, e.seekers[e.seekers.length - 1]);
         }
       }
@@ -1024,7 +1026,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   for (const k of e.seekers) if (k.t && !k.from && k.why !== "new" && m - k.since > PATIENCE_M[k.use]) lost[k.use] += firmHc(k.t);
   e.seekers = e.seekers.filter((k) => seeking.get(k.fid) === k
     && (k.from ? !!R[k.from]?.t.some((t) => t.fid === k.fid) : !!k.t)
-    && (k.from || m - k.since <= PATIENCE_M[k.use]));
+    && ((k.from && !k.midLease) || m - k.since <= PATIENCE_M[k.use]));
   for (const k of e.seekers) if (k.t) { k.want = Math.round(firmNeedNow(s, k.t)); k.t.spw = rentSpw(s, k.use); }
 
   // ---- 2. space and headcount by class, and the firms that form

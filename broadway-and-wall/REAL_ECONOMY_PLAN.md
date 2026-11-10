@@ -167,6 +167,10 @@ Walk probe (scratchpad `walk-probe/probe2.mjs` + `dec2.py`; 12-month changes on 
 5. **The ten-year under a held off-rule policy** moves +0.6pp against +1 to +2.5 in the record; no engine code holds a rate off its rule, so this is a harness question, not an engine one.
 6. **Investment volatility** 4.9x output (record ~3): source `TAU_K` and `I_LAG`.
 
+## Which class rents highest must be an outcome (owner, 2026-11-10, open)
+
+The owner does not want office to have the highest rent per foot every game. Which class rents highest or lowest should come out of each market's own supply and demand: the tenants it houses and what they can pay, its stock and pipeline, its vacancy and costs. It should not come from opening rent levels or class constants that fix the ranking. In the record the ranking varies by city and decade: prime high-street retail above office, industrial rents overtaking office in many US metros after 2020, apartments leading in supply-constrained towns. To check: (1) measure how often the ranking changes across seeds and over a century; (2) trace what pins it, e.g. opening rent anchors (CITY_STOCK and opening rents by class), per-class FIRM_PROFILE occupancy-cost shares, construction cost per class, or the tenants' value-of-space terms; (3) let each class's level be set by its own tenants' ability to pay and its own market. Tackle after the office rent and churn work.
+
 ## Office rents and vacancy: what the measurements say (2026-11-07, open)
 
 The century's office Wheaton-Torto slope (yearly Δlog real effective rent on last year's vacancy) is −0.22%/yr per point on seed 11, against −2 to −3 in the record. A 40-year probe (scratchpad `offprobe.mjs`, `mosprobe.mjs`) located it:

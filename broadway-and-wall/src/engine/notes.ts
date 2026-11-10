@@ -49,7 +49,7 @@ import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, autoLease
 import { rng, rrange } from "./market";
 import { assetValue, collateralAsIs, holdingValue, ownedHoldingValue, resolveRec } from "./value";
 import { lenderByName, lenderPressure, chargeLenderLoss } from "./lenders";
-import { assetGrade, clearRivalClaims, fitOf, forgetDeed, noteLost } from "./rivals";
+import { assetGrade, clearRivalClaims, fitOf, forgetDeed, noteLost, markAsset, lineRoom } from "./rivals";
 import { dealView, maxPrice, bidderOf, forcedSalePrice } from "./propmarket";
 import { beliefSignals } from "./beliefs";
 import { addToLine, dropDeed, syncDebt } from "./rivalDebt";
@@ -218,15 +218,46 @@ function serviceNotes(s: GameState, parcels: ParcelTable) {
       s.notes!.splice(i, 1); continue;
     }
 
+    // THE BUILDING'S OWN BOOKS (2026-11-10). Whether a borrower pays, refinances,
+    // reinstates or hands over the keys is its decision on this building — what
+    // it earns and what it is worth, as the firm marks it (rivals.ts markAsset,
+    // the mark its own refinancing cliff sizes on) — and on what the firm can
+    // fund. These were coins on a hand-weighted score (pCure: 0.55 − 0.45 ×
+    // stress − 0.30 × leverage …): a 55-95% coin at maturity, 9% a month of
+    // default while the firm was "stressed", a 72% reinstatement coin and a 3%
+    // a month deed-in-lieu coin, none of them reading the building.
+    const cpn = Math.round((n.face * n.ratePct) / 100 / 12);
+    const mark = r && !dead ? markAsset(s, r, rec) : null;
+    const noiMo = mark ? mark.noi / 12 : 0;
+    const funds = r && !dead ? Math.max(0, r.cash) + Math.max(0, lineRoom(s, r, r.aum ?? 0, r.markNoi ?? 0, r.markLand ?? 0)) : 0;
+    // what the street's desks would lend against it today (dealView: the same
+    // sizing a buyer's loan gets), the refinancing a borrower can find
+    const refiFor = (): number => {
+      if (!mark || !(mark.v > 0)) return 0;
+      const v = dealView(s, rec, n.bbl, mark.v);
+      return v ? Math.min(v.debtA * mark.v, v.debtCap) : 0;
+    };
+    // The firm takes you out: new money for what the desks will lend (booked
+    // on its line — debt for debt), its own cash for the rest.
+    const takeOut = (amt: number) => {
+      if (!r) return;
+      const lent = Math.min(amt, refiFor());
+      const own = Math.min(Math.max(0, r.cash), amt - lent);
+      r.cash -= own;
+      addToLine(s, r, amt - own);
+    };
+
     // --- the coupon, silently ------------------------------------------------
     if (n.perf === "performing" && n.filedM === undefined) {
       const cpn = Math.round((n.face * n.ratePct) / 100 / 12);
       s.cash += cpn; n.collected += cpn; logBooks(s, "interest", cpn);
       // it matures and they repay, or it does not and they do not
       if (s.month >= n.maturityM) {
-        if (!dead && rng(s) < 0.55 + 0.4 * pCure(s, r, n.face)) {
+        // it repays if a new lender will take it out — the refinancing plus
+        // what the firm can put in from its cash and its line
+        if (!dead && refiFor() + funds >= n.face) {
           s.cash += n.face; logBooks(s, "sold", n.face);
-          if (r) { r.cash = Math.max(0, r.cash - n.face); dropDeed(s, r, n.bbl); }
+          if (r) { takeOut(n.face); dropDeed(s, r, n.bbl); }
           clearPrivateOrigination(s, n);
           s.news.unshift({
             q: s.month, kind: "deal",
@@ -238,8 +269,11 @@ function serviceNotes(s: GameState, parcels: ParcelTable) {
         goBad(s, n, `${n.obligor} could not repay the loan on ${n.address} at maturity`);
         continue;
       }
-      // or it simply stops paying, because the obligor is in trouble
-      if (dead || ((r!.stressMs ?? 0) > 0 && rng(s) < 0.09)) {
+      // or it stops paying: the building does not cover the coupon and the
+      // firm either cannot fund the shortfall or will not, because it has no
+      // equity left in the building to protect (a strategic default)
+      const short = cpn - noiMo;
+      if (dead || (short > 0 && (mark!.v <= n.face || funds < short))) {
         goBad(s, n, `${n.obligor} has stopped paying on ${n.address}`);
       }
       continue;
@@ -248,24 +282,28 @@ function serviceNotes(s: GameState, parcels: ParcelTable) {
     // --- it is not paying ----------------------------------------------------
     // The coupon it is not paying piles up as arrears — a real claim, capped
     // at two years because a court will not let interest run forever.
-    const cpn = Math.round((n.face * n.ratePct) / 100 / 12);
     n.arrears = Math.min(cpn * 24, (n.arrears ?? 0) + cpn);
 
     // THE BORROWER CAN COME BACK, and filing does not stop them — the right to
-    // reinstate runs to the hammer itself. Odds are the underwriting, spread
-    // over ~15 months, and most recoveries are exactly this: they find the
-    // arrears, the file closes, and you own a performing loan again. The
-    // rarer, better outcome is a full payoff — outside money refinancing you
-    // out at face plus everything owed.
-    if (!dead && rng(s) < pCure(s, r, n.face) / 15) {
-      const legal = n.filedM !== undefined ? Math.round(n.face * FILE_COST) : 0;
-      const reinstate = Math.round((n.arrears ?? 0) * 1.05) + legal;
-      // Reinstating is what a borrower DOES with the money they can find — the
-      // cheque is small next to the face, and a firm that is not buried draws
-      // its line for it the way it draws its line for everything else.
-      const ltvR = (r!.aum ?? 0) > 0 ? r!.debt / r!.aum! : 2;
-      if (rng(s) < 0.72 && (r!.cash > reinstate || ltvR < 0.88)) {
-        r!.cash -= reinstate;
+    // reinstate runs to the hammer itself: when the building carries its
+    // coupon again and there is equity to protect, they find the arrears, the
+    // file closes, and you own a performing loan again. The other way out is
+    // a full payoff — outside money refinancing you out at face plus
+    // everything owed.
+    const legal = n.filedM !== undefined ? Math.round(n.face * FILE_COST) : 0;
+    const reinstate = Math.round((n.arrears ?? 0) * 1.05) + legal;
+    const owed = n.face + (n.arrears ?? 0);
+    // A refinancing that clears everything owed pays you off; otherwise a
+    // borrower whose building covers the coupon again, with equity above the
+    // arrears, reinstates if it can fund them (its cash and its line).
+    const refiNow = !dead ? refiFor() : 0;
+    const canPayOff = !dead && refiNow + funds >= Math.round(n.face * 1.02 + (n.arrears ?? 0));
+    const canReinstate = !dead && noiMo >= cpn && mark!.v > owed + reinstate && funds >= reinstate;
+    if (canReinstate || canPayOff) {
+      if (canReinstate) {
+        const own = Math.min(Math.max(0, r!.cash), reinstate);
+        r!.cash -= own;
+        addToLine(s, r!, reinstate - own);
         s.cash += reinstate; n.collected += reinstate; logBooks(s, "interest", reinstate);
         n.perf = "performing";
         n.arrears = 0;
@@ -280,6 +318,8 @@ function serviceNotes(s: GameState, parcels: ParcelTable) {
       }
       // they could not fund the arrears, or they went and found a refinancing
       const px = Math.round(n.face * 1.02 + (n.arrears ?? 0));
+      takeOut(px);
+      dropDeed(s, r, n.bbl);
       s.cash += px; logBooks(s, "sold", px);
       clearPrivateOrigination(s, n);
       s.news.unshift({
@@ -292,8 +332,8 @@ function serviceNotes(s: GameState, parcels: ParcelTable) {
     // THE KEYS, OFFERED. A borrower who is hopelessly under water would rather
     // stop bleeding than fight you for eight months. No decision to make: it is
     // strictly better than what you were going to get.
-    const ltv = r && (r.aum ?? 0) > 0 ? r.debt / r.aum! : 2;
-    if (!dead && ltv > 1.02 && rng(s) < 0.03) {
+    // ...when THIS building is under water and does not carry its coupon
+    if (!dead && mark!.v < owed && noiMo < cpn) {
       takeDeed(s, parcels, n, "deed");
       s.notes!.splice(i, 1); continue;
     }

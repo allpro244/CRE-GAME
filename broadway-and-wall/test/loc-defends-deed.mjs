@@ -46,7 +46,11 @@ function buyLevered(seed) {
       startM: g.month, decideM: g.month + 1, cure: 400_000, asks: 0,
     },
   };
-  g.cash = 50_000;
+  // No cash at all, so whatever the cure is re-priced to (refreshCureAmount
+  // reads the real covenant gap, often well under the file's 400k) can only
+  // come from the line. It was 50k of cash, which the re-priced cure fitted
+  // inside, so the line was never touched and the check below failed.
+  g.cash = 0;
   g.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
   check(E.fundableNow(g, parcels) >= 400_000, "line + cash can fund the covenant cure");
   const cured = E.cureWorkout(g, parcels, bbl);

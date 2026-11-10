@@ -189,14 +189,21 @@ Century after #702 (3×60): PASS 34 · WATCH 11 · FAIL 3, with the FAILs on lan
 
 **Parked branch:** `claude/office-vacancy-answers-rent` (office → flats conversion; overbuilt office on seed 33).
 
+**Merged in the third run (2026-11-10, #705-#708):**
+- #705 tests: a loan is paid whenever cash or the line can pay it (`test/loc-pays-loans.mjs`; the engine already did this everywhere: mortgages, default cures of every cause, mezz, balloons, the bailiff); `loc-draw` and `loc-defends-deed` setups fixed (both had failed on main).
+- #706 player-held notes pay, refinance, reinstate or hand over the keys on the building's own books (`markAsset`, `dealView`), not `pCure` coins: building NOI over coupon at default, median 1.95 → 1.02; deeds in lieu 3 → 12 in 3 seeds × 40 years. `pCure` still prices notes on the market (a forecast) — make it the same tests' probability.
+- #708 lenders ration on their own break-even margin (opex + own expected loss + CAPM cost of equity × capital target; Damodaran Jan 2026 betas, ERP 4.49), not NORMAL_NIM. 6 seeds: PASS 33/14/1 → 35/10/3; the land rows got noisier (swing ratio 2.70 → 4.34, ranges overlapping).
+
 **Not started / still open (in priority order):**
-1. Office WT slope: decompose a year's office rent change (trade, comps pull, CPI, bargains, composition). Use 6 seeds.
-2. Shed firms' credit (`creditOfSize` gives every street shed firm grade 0); then the expiry exit rule (`EXIT_BASE` × the firms-per-work ratio⁴, unsourced).
-3. The audit list: the player's buildings lease on a separate formula (put them on the street's shortlists); the tape's supply is a quota (owners' hold/sell review, distress only from real defaults); player-held notes on borrower dice (pay or miss on each building's own cash flow); lenders' appetite read against NORMAL_NIM; land tape hazards; player lease terms as coins; workout tables; private-credit dice; register holders' exit hazards. Also: check #702's +40% trade volume against a published turnover share of stock, and the mid-lease growers who never stop looking (take 7: 9-16% of office stock, up to 54 months; a lapse at PATIENCE_M is a realism fix of its own).
-4. Which class rents highest must be an outcome (section below).
-5. National shocks reverse within ~18 months (`claude/forward-looking-nation`, not shipped). The owner said: do not change black swans or confidence shocks.
-6. Town payrolls in booms: heads grow slower than the nation's; labour demand, not hiring, is the remaining gap.
-7. Stale tests failing on main: test/loc-draw, test/loc-defends-deed, refi-broken, products, deed-goes, mezz-sale, visible-buyers, tenantmarket retail renewals.
+1. **Land price formation (fails or flips on nearly every change).** A lot's price is today's development residual (levered: near-zero residuals swing hardest) or a holder bid at a hand-set peak (`PEAK_RENT_MULT` 1.25) discounted by a hand-set wait (`WAIT_DISCOUNT` 0.567). Replace both with the development option (McDonald & Siegel 1986; Williams 1991; Capozza & Helsley 1990): build when the finished value V reaches V* = β/(β−1)·K; below it land = (V/V*)^β·(V* − K). β from the engine's own measured property volatility, the cap rate as the payout yield and the underwriting discount rate; check the option premium against Quigg (1993, Seattle: ~6% of land value). Then measure land's swing, swing ratio and co-movement on 6 seeds.
+2. The tape's supply is a quota (`sim.ts refreshListings` tops the tape up to `targetListings` with random parcels, distress on a coin `pDistress`). Owners should review hold/sell on their own numbers (the street's best bid against their value-in-use plus the round trip's costs); distress only from real defaults (cityLoans in workout).
+3. Office WT slope: decompose a year's office rent change (trade, comps pull, CPI, bargains, composition) on 6 seeds.
+4. Shed firms' credit (`creditOfSize` gives every street shed firm grade 0); then the expiry exit rule (`EXIT_BASE` × the firms-per-work ratio⁴, unsourced).
+5. The audit list: the player's buildings lease on a separate formula (put them on the street's shortlists); land tape hazards; player lease terms as coins; workout tables; private-credit dice; register holders' exit hazards. Also: check #702's +40% trade volume against a published turnover share of stock, and the mid-lease growers who never stop looking (take 7: 9-16% of office stock, up to 54 months; a lapse at PATIENCE_M is a realism fix of its own).
+6. Which class rents highest must be an outcome (section below).
+7. National shocks reverse within ~18 months (`claude/forward-looking-nation`, not shipped). The owner said: do not change black swans or confidence shocks.
+8. Town payrolls in booms: heads grow slower than the nation's; labour demand, not hiring, is the remaining gap.
+9. Stale tests failing on main: test/loc-draw, test/loc-defends-deed, refi-broken, products, deed-goes, mezz-sale, visible-buyers, tenantmarket retail renewals.
 
 **How to work:** small PRs to main with before/after numbers; 3-seed 60-year century (`tools/proof.mjs`), conserve on any money change, `pnpm -s package:playable && node test/playable-loads.mjs` (the month must run in the sim worker — no module-level reads of imported constants across the engine's import cycles). Probes from the second run are committed in `tools/probes/` (README there).
 

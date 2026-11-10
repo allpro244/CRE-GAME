@@ -112,6 +112,9 @@ function scanDice() {
  * A dated change note — "(2026-10-15)" — is not a citation and is stripped
  * first. A [K] / [K~] tag is a judgement stated as such: honest, and still
  * not a source, so it counts as unsourced (reported apart as "judgement").
+ * So does a source that DISAGREES with the number (`[S≠ …]`, "source
+ * disagrees"): the figure is written down and the constant is still to be
+ * reconciled.
  */
 const SOURCED = /\[(S|S~|D|M)[\]:,\s]|\b(19|20)\d\d\b|\b(BLS|BEA|Census|FDIC|NBER|JOLTS|CPS|NCREIF|CBRE|JLL|REIS|CoStar|ACLI|NAIOP|BOMA|IREM|RSMeans|Damodaran|Freddie|Fannie|HUD|IRS|OCC|SLOOS|ICSC|NAHB|CoreNet|Prologis|Cushman|Moody|RCA|FRED|OECD|IMF|BIS|CBO|ECB|Treasury|Federal Reserve|ULI|MBA|ACS|CBP|BDS|QCEW|CES|PMMS|S&P|Fitch|ATUS|CoStar|Trepp|MSCI|NAR|NMHC|Zillow)\b|et al\.|\bsource[sd]?:/i;
 const JUDGEMENT = /\[K~?[\]:,\s]|shape parameter|stated, not fitted/i;
@@ -145,7 +148,8 @@ function scanConstants() {
         break;
       }
       const text = (cmt + "\n" + lines[i] + "\n" + body).replace(DATE_NOTE, "");
-      const sourced = SOURCED.test(text);
+      // a source that disagrees with the number is not a source for it
+      const sourced = SOURCED.test(text) && !/\[S≠|source disagrees/i.test(text);
       out.push({ file: f, line: i + 1, name, sourced, judgement: !sourced && JUDGEMENT.test(text), value: value.slice(0, 60) });
     }
   }

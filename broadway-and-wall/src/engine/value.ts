@@ -3361,7 +3361,7 @@ export function recoveryFor(
 // Property tax: ~1.1% of assessed value a year. On net leases the tenant
 // reimburses it; the landlord eats the share on vacant space and gross leases.
 // (NAHB from the 2024 ACS: $370.0B of real-estate tax on $41.7T of owner-
-// occupied home value = 0.89%) [S]
+// occupied home value = 0.89%) [S≠: source disagrees — and it is owner-occupied homes, not commercial property; to reconcile]
 export const TAX_RATE = 0.011;
 /**
  * The rate this year: the statutory one times what City Hall levies against

@@ -1052,7 +1052,7 @@ export function noteTenantSfChange(s: GameState, use: BuiltClass, deltaSf: numbe
  * feet standing; it is the point where the employment term is exactly neutral,
  * so it moves nothing about the existing calibration and only prices the swing.
  * (BLS CES via FRED USCONS / PAYEMS: construction 7.49M of 150.9M nonfarm
- * jobs in 2019 = 4.97%; 5.14% in 2000 and in 2023) [S]
+ * jobs in 2019 = 4.97%; 5.14% in 2000 and in 2023) [S≠: source disagrees — 4.8% is a little low; to reconcile]
  */
 export const CONSTRUCTION_JOB_SHARE = 0.048;
 /**
@@ -1122,13 +1122,13 @@ export const CONSTRUCTION_CLOSE_M = 2;
 export const SF_PER_JOB: Record<BuiltClass, number> = { office: 230, industrial: 550, retail: 420, multifamily: 0 };
 /** Share of the population in the labour force. See the note at the unemployment term.
  *  (BLS CPS labour force 163.5M over Census resident population 330.5M = 49.5%
- *  in 2019; 50.5% in 2000; FRED CLF16OV / POPTHM) [S] */
+ *  in 2019; 50.5% in 2000; FRED CLF16OV / POPTHM) [S≠: source disagrees — 0.58 against 0.495-0.505; to reconcile] */
 const PARTICIPATION = 0.58;
 /** The rate the city opens at, which is what makes the opening state consistent.
- *  (BLS unemployment rate, FRED UNRATE: 4.0% in 2000, 5.85% mean 1990-2019) [S] */
+ *  (BLS unemployment rate, FRED UNRATE: 4.0% in 2000, 5.85% mean 1990-2019) [S≠: source disagrees — no year reads 5.2% as the opening's; to reconcile] */
 const OPENING_UNEMP = 0.052;
 /** The nation's natural rate — the Phillips curve's u* in tickNation, and the pivot for national pay.
- *  (CBO noncyclical rate, FRED NROU: 5.08% mean 1990-2019, 4.48% in 2019) [S] */
+ *  (CBO noncyclical rate, FRED NROU: 5.08% mean 1990-2019, 4.48% in 2019) [S≠: source disagrees — 4.8% sits between; to reconcile] */
 const NAT_U_STAR = 0.048;
 /** How far below zero the price level can fall a year, asymptotically (pay is not cut). [K: judgement, no source found] */
 const DEFLATION_FLOOR = 0.02;
@@ -1700,7 +1700,8 @@ const INDEX_HORIZON_M = 120;
 // was not the fit. Autocorrelation 0.45 at a year, -0.2 at two. At 0.85 the
 // bond market expected every move to be undone inside a few months, so the
 // ten-year moved 0.14 points per point of policy over a year (US 0.32).
-// [D: fitted to the simulated economy's own autocorrelation, as above.]
+// [K: fitted to the simulated economy's own autocorrelation, as above — a fit to
+// the model's own output, which is fake number one until a source replaces it.]
 const RULE_GAP_RHO = 0.90;
 /** A departure from the rule's monthly persistence: 0.91 a quarter (see expectedPolicyAvg). */
 const RULE_DEV_RHO = Math.pow(0.91, 1 / 3);

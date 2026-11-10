@@ -24,9 +24,3 @@ DOWNLOAD
   3. Leave the small terminal open while you play (needs Python 3)
 
 Start a NEW campaign after updating if you were mid-run on an older tip.
-
-THE UI BEFORE THE 2026-11 CLEAN-UP
-  Classic-before-ui-cleanup.zip is the game exactly as it was before the
-  interface clean-up (main at 7d07f5f), kept so the old screens can be played
-  side by side or restored. Unzip and run it the same way.
-  The source is on the branch ui-classic-before-cleanup.

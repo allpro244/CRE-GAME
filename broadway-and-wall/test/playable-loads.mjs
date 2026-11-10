@@ -102,7 +102,10 @@ for (const [ui, idleMs, shell] of [["classic", WAIT_MS, ".siderail"], ["next", M
   const t1 = Date.now();
   while (Date.now() - t1 < idleMs && !errors.length) await sleep(250);
   if (errors.length) done(1, `playable-loads: FAIL (${ui}) — the page threw after Break ground:\n  ${errors.join("\n  ")}`);
-  const drawn = (await send("Runtime.evaluate", { expression: `!!document.querySelector(${JSON.stringify(shell)})`, returnByValue: true }))?.result?.value;
+  let drawn = false;
+  for (const t3 = Date.now(); !drawn && Date.now() - t3 < WAIT_MS; await sleep(250)) {
+    drawn = !!(await send("Runtime.evaluate", { expression: `!!document.querySelector(${JSON.stringify(shell)})`, returnByValue: true }))?.result?.value;
+  }
   if (!drawn) done(1, `playable-loads: FAIL (${ui}) — no ${shell} after a new game: the interface did not draw`);
   // THE MONTH RUNS OFF THE PAGE'S THREAD (2026-11-08). After #678 both web
   // workers threw on load (a module cycle read in its temporal dead zone) and

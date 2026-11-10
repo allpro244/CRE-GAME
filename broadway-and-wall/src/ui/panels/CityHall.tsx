@@ -12,7 +12,7 @@ const P = (v: number, d = 2) => `${(v * 100).toFixed(d)}%`;
  * (citygov.ts). Numbers first: the budget by line, the debt and what the
  * market charges the city for it, the policies in force, and who is mayor.
  */
-export function CityHallBox({ open = false }: { open?: boolean }) {
+export function CityHallBox({ open = false, record = true }: { open?: boolean; record?: boolean }) {
   const game = useStore((s) => s.game)!;
   const g = game.econ.gov;
   if (!g) return null;
@@ -79,7 +79,7 @@ export function CityHallBox({ open = false }: { open?: boolean }) {
         <Row k="Rent rules" v={pol.rentCap ? `stabilised, built by ${pol.rentCap.sinceYr}` : "none"} title={pol.rentCap ? "Renewals capped near 70% of inflation" : undefined} />
         <Row k="Service level" v={`${(pol.service * 100).toFixed(0)}% of normal`} bad={pol.service < 0.95} />
       </div>
-      {g.log.length > 0 && (
+      {record && g.log.length > 0 && (
         <>
           <div className="page-section" style={{ marginTop: 10 }}>Record</div>
           <div className="hint" style={{ lineHeight: 1.5 }}>
@@ -88,5 +88,25 @@ export function CityHallBox({ open = false }: { open?: boolean }) {
         </>
       )}
     </details>
+  );
+}
+
+/** City Hall's record, newest first — Markets → Record carries it on its own. */
+export function CityHallRecord() {
+  const g = useStore((s) => s.game?.econ.gov);
+  if (!g) return null;
+  return (
+    <>
+      <div className="page-section">Record</div>
+      {g.log.length === 0 ? <div className="dim">None</div> : (
+        <div className="grid">
+          {g.log.slice(-12).reverse().map((x, i) => (
+            <div key={i} style={{ display: "contents" }}>
+              <div className="k mono">{monthLabel(x.m)}</div><div className="v" style={{ textAlign: "left" }}>{x.text}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }

@@ -268,7 +268,7 @@ function NetWorthLine({ game }: { game: GameState }) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
   const nw = game.nwHistory ?? [];
   if (nw.length < 2) {
-    return <div className="hint">Not enough months on the book to draw the curve yet.</div>;
+    return <div className="dim" title="Not enough months on the book to draw the curve yet">None</div>;
   }
   const W = 760, H = 200, PL = 58, PR = 14, PT = 12, PB = 22;
   // Zero-based on purpose: insolvency is net worth through the floor, and a
@@ -503,11 +503,9 @@ export default function FirmTimeline() {
           <span className="tl-glyph-inline" aria-hidden="true">❦</span>
           {firmName(game)} — founded {monthLabel(game.firm?.foundedM ?? 0)}.
         </div>
-        <div className="hint">
-          The record begins with the first deed. Nothing reaches this strip except what the
-          firm buys, builds, signs and survives — and the Marketplace is where that starts.
-        </div>
-        <button className="btn" onClick={() => useStore.getState().setPage("market")}>
+        <div className="dim">None</div>
+        <button className="btn" title="The record begins with the first deed. Nothing reaches this strip except what the firm buys, builds, signs and survives — and the Marketplace is where that starts."
+          onClick={() => useStore.getState().setPage("market")}>
           Open the Marketplace →
         </button>
         {/* The street's year is the town's, not the firm's: a shop with no
@@ -537,13 +535,13 @@ export default function FirmTimeline() {
   return (
     <div>
       <div className="page-section" style={{ marginTop: 6 }}>
-        <div className="page-section-head">The year in review</div>
-        <div className="tl-lede">
-          {windowWord}: {review.boughtN} deed{review.boughtN === 1 ? "" : "s"} onto the book and{" "}
-          {review.soldN} off{review.forcedN > 0 ? ` — ${review.forcedN} of them taken, not sold` : ""},{" "}
-          {review.sfDelivered > 0 ? `${fmtSf(review.sfDelivered)} delivered` : "nothing delivered"}.{" "}
-          {review.biggest ? <>The largest single mark was {review.biggest}. </> : null}
-          The firm is worth {usd(Math.abs(review.dNW))} {grewWord} {againstWord}.
+        <div className="page-section-head"
+          title={`${windowWord}: ${review.boughtN} deed${review.boughtN === 1 ? "" : "s"} onto the book and `
+            + `${review.soldN} off${review.forcedN > 0 ? ` — ${review.forcedN} of them taken, not sold` : ""}, `
+            + `${review.sfDelivered > 0 ? `${fmtSf(review.sfDelivered)} delivered` : "nothing delivered"}. `
+            + (review.biggest ? `The largest single mark was ${review.biggest}. ` : "")
+            + `The firm is worth ${usd(Math.abs(review.dNW))} ${grewWord} ${againstWord}.`}>
+          The year in review · {yearOne ? "since founding" : `12 months to ${monthLabel(review.m)}`}
         </div>
         <div className="tl-stats">
           <div className="tl-stat">
@@ -594,10 +592,8 @@ export default function FirmTimeline() {
       </div>
 
       <div className="page-section">
-        <div className="page-section-head">The strip · newest first</div>
-        <div className="hint">
-          Rows marked ✈ are about a deed — click one and the camera goes there. Dimmed rows
-          are the city's weather, not the firm's record.
+        <div className="page-section-head" title="Rows marked ✈ are about a deed — click one and the camera goes there. Dimmed rows are the city's weather, not the firm's record.">
+          The strip · newest first
         </div>
         {visible.map(({ y, rows: rs }, gi) => {
           const collapseCtx = campaignYears > COLLAPSE_AFTER_YEARS && gi >= CONTEXT_KEEP_YEARS;
@@ -631,10 +627,8 @@ export default function FirmTimeline() {
           </button>
         )}
         {truncated && (
-          <div className="hint">
-            The ledgers are finite — a deed's log keeps its last {PROPERTY_HISTORY_CAP} entries
-            and the exit record its last {EXITS_CAP} — so the earliest years above are
-            summarized from what the record kept.
+          <div className="dim" title={`The ledgers are finite — a deed's log keeps its last ${PROPERTY_HISTORY_CAP} entries and the exit record its last ${EXITS_CAP} — so the earliest years above are summarized from what the record kept.`}>
+            Earliest years summarized
           </div>
         )}
       </div>
@@ -701,7 +695,7 @@ function StreetYear({ game }: { game: GameState }) {
         </tbody>
       </table>
       <div className="tl-lede" style={{ marginTop: 6 }}>
-        {events.length ? events.join(" · ") + "." : "A quiet year on the street: nobody failed, nobody new set up, no bank closed."}
+        {events.length ? events.join(" · ") : <span className="dim" title="Nobody failed, nobody new set up, no bank closed">None</span>}
       </div>
     </div>
   );

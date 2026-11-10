@@ -77,6 +77,7 @@ for (const seed of [4242, 1717, 9001, 31337]) {
     // (`max`); a lower bidder's walk-away is almost always under the top bid,
     // so a counter past the field is rare by construction. This test is about
     // what the list does when one does come up, so give this bidder the room.
+    const realMax = b.max;
     if (b.max !== undefined) b.max = Math.max(b.max, px);
     const c = E.counterBid(g, parcels, bbl, i, px);
     if (c.err) continue;
@@ -91,10 +92,20 @@ for (const seed of [4242, 1717, 9001, 31337]) {
     check(!a.err, `take best${a.err ? `: ${a.err}` : ""}`);
     if (a.err) { tested++; break; }
     const offer = a.s.holdings[bbl].sale.offer;
+    // The bidder re-runs its numbers when you sign (acceptBid): one that can
+    // no longer buy or fund it withdraws — a real outcome, like a retrade.
+    if (!offer) {
+      check(a.s.holdings[bbl].sale.bids.find((x) => x.name === b.name)?.dropped === true, `${b.name} withdrew and is off the list`);
+      continue;
+    }
     check(offer.from === b.name, `take best signs the bidder you countered (${offer.from})`);
     if (offer.retrade) {
       // A retrade is a real outcome, and it is struck off the countered number.
+      // Signing re-runs the bidder's own numbers (acceptBid), so the room this
+      // test handed it above is gone and it comes back at its real walk-away.
       check(offer.price < me.price, `retrade struck off the countered number (${usd(offer.price)} < ${usd(me.price)})`);
+      if (realMax !== undefined) check(offer.price === realMax, `the retrade is the bidder's own walk-away (${usd(offer.price)} = ${usd(realMax)})`);
+      tested++;
       continue;
     }
     check(offer.price === me.price, `contract at the countered price ${usd(me.price)} (got ${usd(offer.price)}, original bid ${usd(b.price)})`);
@@ -104,7 +115,7 @@ for (const seed of [4242, 1717, 9001, 31337]) {
   }
   if (tested) break;
 }
-check(tested > 0, "found a bidder who came up past the field and a clean contract to test");
+check(tested > 0, "found a bidder who came up past the field and a signing to test");
 
 // --- 3 & 4: stale index with a name, and a walk-away -----------------------
 {
@@ -115,8 +126,10 @@ check(tested > 0, "found a bidder who came up past the field and a clean contrac
     const bids = g.holdings[bbl].sale.bids;
     const want = bids[bids.length - 1];
     const a = E.acceptBid(g, parcels, bbl, 0, want.name);
-    check(!a.err && a.s.holdings[bbl].sale.offer.from === want.name,
-      `a named take signs that bidder even from a stale index (${a.err ?? a.s.holdings[bbl].sale.offer.from})`);
+    // ...or, if that bidder can no longer fund it, that bidder withdraws.
+    const so = a.s.holdings[bbl].sale;
+    check(!a.err && (so.offer ? so.offer.from === want.name : so.bids.find((x) => x.name === want.name)?.dropped === true),
+      `a named take acts on that bidder even from a stale index (${a.err ?? so.offer?.from ?? `${want.name} withdrew`})`);
     // Push the top bidder far past anything they would pay: they walk, and the
     // head of the list is somebody still at the table.
     const w = E.counterBid(g, parcels, bbl, 0, Math.round(bids[0].price * 1.6));

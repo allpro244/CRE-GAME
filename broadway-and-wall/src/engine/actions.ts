@@ -12,7 +12,7 @@ import { dollarLevel, rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown
 import { mergedTouched, ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
-import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, rivalCanClose, rivalsWhoCanClose, gradeOf, tie, firmSells } from "./rivals";
+import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, rivalCanClose, rivalsWhoCanClose, gradeOf, tie, firmSells, firmMaxPrice } from "./rivals";
 import { BUY_CLOSING, bidRound, listingReserve, noteRoundFailed, noteRoundClosed, impliedCap, landBidRound, noteLandRoundFailed } from "./propmarket";
 import { PREMARKET_M } from "./beliefs";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
@@ -1759,10 +1759,15 @@ function ownersView(s: GameState, rec: ParcelRecord, value: number, ageM: number
  * and it is why the two outcomes cannot be a coin flip layered on top — the
  * kind of owner who deflects is the same kind whose private number is wild.
  *
- * The half-way point is five years of not having looked: an owner whose last
- * opinion of value predates the last cycle is as likely to deflect as to
- * quote. That is a judgement about how people negotiate when they cannot
- * defend their figure, not a measurement, and it is stated as one.
+ * The line is five years of not having looked: an owner whose last opinion of
+ * value is younger than that has a figure it can defend and names it; one
+ * whose opinion predates the last cycle deflects. That is a judgement about
+ * how people negotiate when they cannot defend their figure, not a
+ * measurement, and it is stated as one [K].
+ *
+ * It was a coin (2026-11-10): rng < 1 / (1 + (ageM / 60)^1.2), so two owners
+ * with the same file answered differently. Now the owner's own file decides —
+ * the age of its valuation, which is already its own draw (valuationAgeM).
  */
 const QUOTE_HALF_M = 60;
 
@@ -1886,7 +1891,9 @@ export function ownerAnswersCall(
   const ripeLand = rec.class === "land" && landRead(rec, s.econ).winner === "builder";
   const markup = (ripeLand ? 1.0 + 0.15 * Math.pow(rng(s, ch), 2) : 1.06 + 0.5 * Math.pow(rng(s, ch), 2)) + styleAsk;
   const unadvised = 1 - 1 / (1 + ageM / 24);
-  const quotes = rng(s, ch) < 1 / (1 + Math.pow(ageM / QUOTE_HALF_M, 1.2));
+  // Names a number only when its valuation is fresh enough to defend (QUOTE_HALF_M).
+  void rng(s, ch); // the old coin's draw, kept so the firms' stream does not re-roll
+  const quotes = ageM < QUOTE_HALF_M;
   const dream = 1 + DREAM_MAX * unadvised * (quotes ? 1 : 1 + BLIND_LICENCE) * Math.pow(rng(s, ch), 3);
   const reserve = Math.round(Math.max(value * OWNER_FLOOR, view * markup * dream) / 1000) * 1000;
   return { refused: false, reserve, quotes, value };
@@ -2075,7 +2082,7 @@ export function approachOwner(
     (ripeLand ? 1.0 + 0.15 * Math.pow(rng(next), 2) : 1.06 + 0.5 * Math.pow(rng(next), 2)) + 0.22 * pressure + 0.55 * Math.pow(pressure, 3) + styleAsk
     - (stressed ? rrange(next, 0.16, 0.30) : 0);
   const unadvised = 1 - 1 / (1 + ageM / 24);
-  const quotes = rng(next) < 1 / (1 + Math.pow(ageM / QUOTE_HALF_M, 1.2));
+  const quotes = ageM < QUOTE_HALF_M;    // its own file, not a coin: see QUOTE_HALF_M
   const dream = 1 + DREAM_MAX * unadvised * (quotes ? 1 : 1 + BLIND_LICENCE) * Math.pow(rng(next), 3);
   const number = Math.round(Math.max(value * OWNER_FLOOR, view * markup * dream) / 1000) * 1000;
 
@@ -2592,6 +2599,20 @@ function roomForYourSale(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
 }
 
 /**
+ * A BIDDER RE-RUNS ITS NUMBERS: the street's round on today's market
+ * (roomForYourSale, the whole town as a campaign reaches it), read for each
+ * firm on the list. A firm missing from it would not or could not buy the
+ * building today. null when the round cannot price the deed (a leased fee):
+ * the caller keeps the walk-away the bid recorded.
+ */
+function roundToday(s: GameState, parcels: ParcelTable, bbl: string): Map<string, StreetBid> | null {
+  const h = s.holdings[bbl];
+  const rec = h ? resolveRec(parcels, s, bbl) : null;
+  const room = h && rec ? roomForYourSale(s, parcels, rec, h, true) : null;
+  return room ? new Map(room.map((b) => [b.r.id, b])) : null;
+}
+
+/**
  * THE OFFER ON A QUIET LISTING: the best bid from a firm whose number you
  * have not already let go (`sale.passed`). Under the ask it offers its bid.
  * At or over the ask it offers the ask — nobody pays more than the sign says
@@ -2788,14 +2809,21 @@ export function bestAndFinal(s: GameState, parcels: ParcelTable, bbl: string): {
   const live = (ns.bids ?? []).filter((b) => !b.dropped).slice(0, 3);
   const rec = resolveRec(parcels, next, bbl);
   let walked = 0, lifted = 0;
+  // WHO WALKS IS EACH BIDDER'S OWN NUMBER (2026-11-10). This was a coin —
+  // rng < 0.30·(1 − credibility) + 0.18·cycleDown. Now each firm re-runs its
+  // underwriting on today's market (roundToday): one already at its
+  // walk-away was at its best the first time and walks; one the round no
+  // longer has (it would not or could not buy today) walks; the rest sharpen,
+  // never past the walk-away. A bid with no walk-away on record (a leased
+  // fee, an older save) stands and sharpens.
+  const today = roundToday(next, parcels, bbl);
   for (const b of live) {
-    // The ones who can afford to be patient are the ones who walk.
-    const pWalk = 0.30 * (1 - b.credibility) + 0.18 * cycleDown(next.econ);
-    if (rng(next) < pWalk) { b.dropped = true; walked++; continue; }
+    const walk = today && b.firmId ? (today.get(b.firmId)?.walk ?? 0) : b.max;
+    if (walk !== undefined && walk <= b.price) { b.dropped = true; walked++; continue; }
+    if (walk !== undefined) b.max = walk;
     const bump = 1 + rrange(next, 0.005, 0.035) * b.credibility;
     const before = b.price;
-    // ...and never past its own walk-away, where the round recorded one.
-    b.price = Math.round(Math.min(b.price * bump, b.max ?? Infinity));
+    b.price = Math.round(Math.min(b.price * bump, walk ?? Infinity));
     if (b.price > before) lifted++;
   }
   ns.round = 1;
@@ -2837,21 +2865,34 @@ export function acceptBid(
   const ns = next.holdings[bbl].sale!;
   const b = ns.bids![index];
   const rec = resolveRec(parcels, next, bbl);
-  const pRetrade = 0.42 * (1 - b.credibility);
-  if (rng(next) < pRetrade) {
-    const cut = rrange(next, 0.02, 0.08);
-    const price = Math.round(b.price * (1 - cut));
-    const reasons = [
-      "their engineer found the roof",
-      "their lender resized the loan",
-      "they read the rent roll properly and did not like the rollover",
-      "their committee would not approve the number",
-      "the environmental report came back with a question",
-    ].filter((r) => !b.countered || !r.includes("committee"));
-    // A buyer who just agreed your counter took that number to committee to
-    // agree it; only what diligence finds can move them now.
-    const reason = reasons[Math.floor(rng(next) * reasons.length)];
-    ns.offer = { price, expiresM: next.month + 2, from: b.name, firmId: b.firmId, retrade: reason };
+  // A RETRADE IS THE BUYER'S OWN RE-UNDERWRITING (2026-11-10). This was a
+  // coin — rng < 0.42·(1 − credibility) — at a 2-8% cut drawn from the air,
+  // with a reason picked from a list. Now the firm runs its numbers again on
+  // today's market (roundToday). If it no longer would buy at all, or can no
+  // longer fund the number it bid (its cash, line and loan: `afford`), it
+  // withdraws — a firm short of money does not offer a fraction of its bid.
+  // If its value has fallen under the bid, it comes back at its new walk-away
+  // (the committee — or, on a number it already agreed with you, the rent
+  // roll read against today's market). A bid the round cannot price (a
+  // leased fee) is signed as bid.
+  const today = b.firmId ? roundToday(next, parcels, bbl) : null;
+  const now = today && b.firmId ? today.get(b.firmId) : undefined;
+  if (today && (!now || Math.round(now.afford / 1000) * 1000 < b.price)) {
+    b.dropped = true;
+    b.note = "Withdrew: its numbers no longer work.";
+    rankBids(ns.bids!);
+    next.news.unshift({
+      q: next.month, kind: "warn",
+      text: `${b.name} withdrew from ${rec?.address ?? bbl} before signing: on today's numbers it would not buy it, or could not fund it.`,
+    });
+    return { s: next, msg: `${b.name} withdrew.` };
+  }
+  if (now && now.walk < b.price) {
+    const price = now.walk;
+    const reason = b.countered ? "they read the rent roll against today's market and did not like the rollover"
+      : "their committee would not approve the number";
+    // The retraded number IS its walk-away: a counter past it is read against it.
+    ns.offer = { price, expiresM: next.month + 2, from: b.name, firmId: b.firmId, retrade: reason, max: price };
     delete ns.bids;
     next.news.unshift({
       q: next.month, kind: "warn",
@@ -2935,7 +2976,13 @@ function unsolicitedBidder(
     }))
     .filter((x) => x.n >= 3)
     .sort((a, b) => b.n - a.n)[0];
-  if (collector && rng(s, "sales") < 0.7) {
+  // THE COLLECTOR RINGS WHEN ITS OWN NUMBER CLEARS THE MARK (2026-11-10).
+  // This was a coin (rng < 0.7). Now the firm underwrites the building as the
+  // rival desks do when they ring an owner (rivals.ts firmMaxPrice): a firm
+  // that would pay the appraisal or more makes the call; one that would not
+  // leaves it to the opportunist below.
+  if (collector) void rng(s, "sales"); // the old coin's draw, kept so the stream does not re-roll
+  if (collector && firmMaxPrice(s, collector.r, rec) >= value) {
     return {
       firm: collector.r, name: collector.r.name,
       why: `They own ${collector.n} similar buildings.`,
@@ -3483,7 +3530,11 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
 
   // they pitch near what you already buy: same class, similar size, better corner
   const ref = Object.values(s.holdings).map((h) => resolveRec(parcels, s, h.bbl)).filter(Boolean) as ParcelRecord[];
-  const wantClass = ref.length && rng(s, "sales") < 0.65 ? ref[Math.floor(rng(s, "sales") * ref.length) % ref.length].class : null;
+  // THE BROKER PITCHES WHAT YOU BUY (2026-11-10): the class you hold most of.
+  // It was a coin (rng < 0.65) and then a random building of yours.
+  const held0 = new Map<string, number>();
+  for (const r of ref) held0.set(r.class, (held0.get(r.class) ?? 0) + 1);
+  const wantClass = [...held0].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
   // WHOSE BUILDINGS THE PHONE RINGS ABOUT.
   //
   // Measured: sixteen off-market calls a fifty-year run and 2% of them on a
@@ -3523,32 +3574,42 @@ export function tickBrokerCalls(s: GameState, parcels: ParcelTable, bbls: string
     related.push(bbl);
   }
   const relationshipPool = [...new Set([...insidePool, ...related])];
-  const inside = relationshipPool.length > 0 && rng(s, "sales") < 0.65;
-  const pool = inside ? relationshipPool : bbls;
+  // WHICH FILE, IN THE BROKER'S OWN ORDER (2026-11-10). Two coins chose this
+  // — the relationship pool 65% of the time, and a building of another class
+  // passed 30% of the time. Now the broker works its list in the order a
+  // broker would: your class from the sellers it knows, your class anywhere,
+  // then anything from the sellers it knows, then anything. The first pass
+  // that turns up a file is the call.
+  const pools = relationshipPool.length ? [relationshipPool, bbls] : [bbls];
+  const passes: { pool: string[]; strict: boolean }[] = [];
+  for (const strict of wantClass ? [true, false] : [false]) for (const pool of pools) passes.push({ pool, strict });
   let best: ParcelRecord | null = null;
-  for (let i = 0; i < 90; i++) {
-    const bbl = pool[Math.floor(rng(s, "sales") * pool.length)];
-    if (s.holdings[bbl] || s.approaches[bbl] || s.listings.some((l) => l.bbl === bbl)) continue;
-    const rec = resolveRec(parcels, s, bbl);
-    if (!rec || rec.class === "land" || !rec.bldgArea) continue;
-    const pitchHeld = holderOf(s, parcels, bbl);
-    if (pitchHeld && isCold(s, pitchHeld.id)) continue;
-    if (wantClass && rec.class !== wantClass && rng(s, "sales") < 0.7) continue;
-    const v = assetValue(rec, s.econ, gradeOf(s, rec));
-    // THE FLOOR MOVES WITH YOUR BOOK.
-    //
-    // There was a ceiling here and no floor, so a firm running a hundred
-    // million kept getting rung about three-million-dollar walk-ups. No broker
-    // does that twice: the file you get shown is the file that matches the
-    // cheque you can write, and pitching a principal a deal that would move
-    // their net worth by three per cent is how you stop being called back.
-    // Roughly a twentieth of net worth at the bottom, capped so it never
-    // filters out the whole city early on.
-    const nw = netWorthLike(s);
-    const floor = Math.min(20_000_000, Math.max(0, nw * 0.05));
-    if (v <= 0 || v < floor || v > Math.max(6_000_000 * dollarLevel(s.econ), nw * 1.6)) continue;
-    best = rec;
-    break;
+  for (const { pool, strict } of passes) {
+    if (best) break;
+    for (let i = 0; i < 90; i++) {
+      const bbl = pool[Math.floor(rng(s, "sales") * pool.length)];
+      if (s.holdings[bbl] || s.approaches[bbl] || s.listings.some((l) => l.bbl === bbl)) continue;
+      const rec = resolveRec(parcels, s, bbl);
+      if (!rec || rec.class === "land" || !rec.bldgArea) continue;
+      const pitchHeld = holderOf(s, parcels, bbl);
+      if (pitchHeld && isCold(s, pitchHeld.id)) continue;
+      if (strict && rec.class !== wantClass) continue;
+      const v = assetValue(rec, s.econ, gradeOf(s, rec));
+      // THE FLOOR MOVES WITH YOUR BOOK.
+      //
+      // There was a ceiling here and no floor, so a firm running a hundred
+      // million kept getting rung about three-million-dollar walk-ups. No broker
+      // does that twice: the file you get shown is the file that matches the
+      // cheque you can write, and pitching a principal a deal that would move
+      // their net worth by three per cent is how you stop being called back.
+      // Roughly a twentieth of net worth at the bottom, capped so it never
+      // filters out the whole city early on.
+      const nw = netWorthLike(s);
+      const floor = Math.min(20_000_000, Math.max(0, nw * 0.05));
+      if (v <= 0 || v < floor || v > Math.max(6_000_000 * dollarLevel(s.econ), nw * 1.6)) continue;
+      best = rec;
+      break;
+    }
   }
   if (!best) return;
 
@@ -4378,13 +4439,22 @@ export function repriceListing(
   if (cut) sale.listedM = next.month;
   // Raising mid-campaign costs you the bidders who were close to the old ask.
   if (!cut && sale.bids?.length) {
+    // WHO LEAVES IS EACH BIDDER'S OWN WALK-AWAY (2026-11-10). This was a
+    // coin (rng < 0.5 for a bid under 90% of the new ask). A firm leaves when
+    // the new ask is past its walk-away (`max`, from the street's round): the
+    // seller now wants more than the building is worth to it or than it can
+    // fund. A bid with no walk-away on record keeps the old line, without the
+    // coin: more than a tenth under the new ask.
     for (const b of sale.bids) {
       if (b.dropped) continue;
-      if (b.price < px * 0.9 && rng(next) < 0.5) { b.dropped = true; b.note = "Left when the ask went up."; }
+      if (b.max !== undefined ? px > b.max : b.price < px * 0.9) { b.dropped = true; b.note = "Left when the ask went up."; }
     }
     rankBids(sale.bids);
   }
-  if (!cut && sale.offer && sale.offer.price < px * 0.92 && rng(next) < 0.45) {
+  // ...and the standing offer the same way (it was rng < 0.45 under 92% of
+  // the new ask). A signed contract is not re-opened by a new sign.
+  const o = sale.offer;
+  if (!cut && o && !o.contract && (o.max !== undefined ? px > o.max : o.price < px * 0.92)) {
     delete sale.offer;
   }
   next.news.unshift({

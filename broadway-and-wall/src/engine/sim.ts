@@ -350,7 +350,7 @@ function listHolderExit(s: GameState, parcels: ParcelTable) {
     // draws are kept so the stream does not re-roll. FORMULA_LEDGER #23.
     void (distress ? rrange(s, 0.78, 0.93) : rrange(s, 0.96, 1.08));
     const heard = distress ? forcedSalePrice(s, parcels, rec, bbl, value) : 0;
-    const ask = Math.round((distress ? (heard > 0 ? heard : value) : anchoredAsk(s.econ, rec, value)) / 1000) * 1000;
+    const ask = Math.round((distress ? (heard > 0 ? heard : value) : anchoredAsk(s, rec, value)) / 1000) * 1000;
     // Only a holder whose register kind IS an estate may stamp reason:"estate".
     // Partnership/fund/developer exits used to wear that badge too —
     // Marketplace then read every book sale as an estate. Voluntary is the
@@ -523,11 +523,11 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     // to the new cap rate; they hold last year's number and wait. So in a
     // downturn the honest asks vanish and the tape fills with either dreamers
     // or people who have run out of road — and telling those apart is the job.
-    // (anchoredAsk, propmarket.ts: the higher of today's appraisal and last
-    // year's — loss aversion, not a random band. FORMULA_LEDGER #23.)
+    // (anchoredAsk, propmarket.ts: loss aversion on what the seller paid —
+    // Genesove & Mayer — not a random band. FORMULA_LEDGER #23.)
     const dn = cycleDown(s.econ);
     void rrange(s, 0.94 + 0.16 * dn, 1.10 + 0.18 * dn);   // the old band's draw, kept so the stream does not re-roll
-    const denial = anchoredAsk(s.econ, rec, value) / value;
+    const denial = anchoredAsk(s, rec, value) / value;
     // A lender clearing troubled paper prices at loan basis, not appraisal.
     const cl = distress ? s.cityLoans?.[bbl] : undefined;
     let ask: number;

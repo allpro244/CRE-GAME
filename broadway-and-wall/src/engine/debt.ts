@@ -993,11 +993,17 @@ export function paydownLoan(
   const loan = h.loan!;
   const penalty = prepayPenalty({ ...loan, balance: amt }, next.month, next.econ);
   const due = amt + penalty;
-  if (next.cash < due) {
-    return { s, err: `Need $${due.toLocaleString()} in cash${penalty > 0 ? ` ($${amt.toLocaleString()} + $${penalty.toLocaleString()} to prepay early)` : ""} — you have $${Math.max(0, Math.round(next.cash)).toLocaleString()}.` };
+  // CASH OR THE LINE (2026-11-10). A paydown is paid like any other cheque:
+  // operating cash first, then the revolver. Firms draw their lines to pay
+  // down term debt, and payoff, refinance and balloon gaps already fund this
+  // way. It took cash only, so a firm with $50K in the account and an open
+  // line was told it could not pay down a mortgage.
+  const room = fundableNow(next, parcels);
+  if (room < due) {
+    return { s, err: `Need $${due.toLocaleString()}${penalty > 0 ? ` ($${amt.toLocaleString()} + $${penalty.toLocaleString()} to prepay early)` : ""} — you have $${Math.max(0, Math.round(room)).toLocaleString()} in cash and on your line.` };
   }
-  const paid = fundCashNeed(next, parcels, due, { allowLoc: false });
-  if (paid < due) return { s, err: `Could not raise the $${due.toLocaleString()} from cash.` };
+  const paid = fundCashNeed(next, parcels, due);
+  if (paid < due) return { s, err: `Could not raise the $${due.toLocaleString()} from cash and the line.` };
   logBooks(next, "debtSvc", due, bbl);
   loan.balance = Math.max(0, loan.balance - amt);
   recastPayment(loan, next.month);

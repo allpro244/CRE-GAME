@@ -36,8 +36,8 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
 import { sweepApy, monthLabel, START_YEAR } from "./types";
 import { isCivicLand } from "./demand";
-import { dollarLevel, rng, newsChance, rrange, addStock, CITY_STOCK, underwrittenGrowthPct, cycleDown } from "./market";
-import { mergedTouched, DEV_MARGIN, capRateFor, holdingValue, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableSf, rentableFromSpec, ownerAskPsf } from "./value";
+import { dollarLevel, rng, newsChance, rrange, retireStock, CITY_STOCK, underwrittenGrowthPct, cycleDown } from "./market";
+import { mergedTouched, DEV_MARGIN, capRateFor, holdingValue, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableFromSpec, ownerAskPsf } from "./value";
 import type { DevPlan } from "./dev";
 import { lpNetIrr } from "./waterfall";
 import { BAND_TERMS, bandIdx, floorBand, inheritRecord, rivalBand, scoreOf, type Band } from "./reputation";
@@ -54,7 +54,7 @@ import { money } from "./money";
 import { FUND_INVEST_M, FUND_MGMT_FEE, FUND_PREF, FUND_PROMOTE } from "./fund";
 import { observe, yearOfWatching } from "./competitorReads";
 import { logFirm, milestone } from "./firmLog";
-import { developmentProForma, marketConstructionQuote, underwritingEcon } from "./proforma";
+import { developmentProForma, marketConstructionQuote, underwritingEcon, constructionRatePct } from "./proforma";
 import { dealView, maxPrice, bidderOf, sellerTerms, bidRound, forcedSalePrice, bankerHoldValue, holdValueFor, entrantBankerView, landBidRound, listingReserve, impliedCap, BUY_CLOSING } from "./propmarket";
 import { why } from "./why";
 import { beliefOf, beliefSignals } from "./beliefs";
@@ -612,7 +612,6 @@ export function minTicket(r: Rival): number {
   const eq = Math.max(0, (r.aum ?? 0) - r.debt + r.cash);
   return (TICKET_PCT[r.style] ?? 0) * eq;
 }
-const CONSTR_SPREAD_R = 2.6;   // construction paper is dearer than term paper
 
 // ---------------------------------------------------------------- deal equity
 //
@@ -1206,10 +1205,12 @@ export function fundJobs(s: GameState) {
           });
         if (desk) {
           j.lender = desk.name;
-          // The premium a desk charges to step into a receiver's shoes — the
-          // same one orphanToTape's takeover paper carries, for the same
-          // reason. It is not a new number.
-          j.ratePct = +(s.econ.indexRate + CONSTR_SPREAD_R + 0.6).toFixed(2);
+          // The new desk prices the loan on its own book, like any
+          // construction loan it writes (proforma.ts constructionRatePct).
+          // It was the index + 2.6 + a 0.6 "receiver's premium", both
+          // unsourced; the desk's loss experience on construction paper is
+          // already in its live spread.
+          j.ratePct = constructionRatePct(s.econ, desk.name);
           delete j.repudiatedM;
           delete j.replaceM;
         }
@@ -3478,7 +3479,8 @@ function rescueOrphan(s: GameState, parcels: ParcelTable, ci: number) {
   syncDebt(s, taker);
   j.equityLeft = Math.round(toFinish * 0.45);
   j.cost = (j.spent ?? 0) + toFinish;
-  j.ratePct = +(s.econ.indexRate + CONSTR_SPREAD_R + 0.6).toFixed(2);
+  // the job's desk reprices the loan for the new sponsor on its own book (proforma.ts constructionRatePct)
+  j.ratePct = constructionRatePct(s.econ, j.lender);
   // a restart is slow: new drawings, new contractor, a site that has weathered
   j.deliverM = s.month + Math.max(6, Math.round((j.deliverM - j.startM) * 0.5));
   s.listings = s.listings.filter((l) => l.bbl !== j.bbl);
@@ -3695,7 +3697,7 @@ export function breakGround(
     const oldCls = rec.class as BuiltClass;
     s.built[bbl] = { class: "land" as unknown as BuiltClass, bldgArea: 0, floors: 0, yearBuilt: 0 };
     if ((CITY_STOCK as Record<string, number>)[oldCls] !== undefined) {
-      addStock(s.econ, oldCls as keyof typeof CITY_STOCK, -rentableSf(rec));
+      retireStock(s.econ, rec);
     }
     // The plot reads as a site while the job runs either way — the old use's
     // stock is gone and the new one has not delivered, and the mark values

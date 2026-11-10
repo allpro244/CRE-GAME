@@ -44,7 +44,7 @@ import { underwrittenGrowthPct, dollarLevel, RENT_BASE, CAP_BASE } from "./marke
 import {
   assetValue, capRateFor, initialCondIdx, demandLinear, incomeValueAsIs, initialCondition, inPlace, landValue,
   marketAppraisal, noiYr, resolveRec, specWearMult, taxBorneShare, taxRate, interimUsePsfYr, useOccupancy, useRentableSf,
-  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, residualScheme,
+  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, residualScheme, GAP_CLOSE_YR, gapDuration,
 } from "./value";
 import { uses } from "./mix";
 import { catchUpCapex } from "./dev";
@@ -60,6 +60,7 @@ import { rowOn, deskWithRoom } from "./rivalDebt";
 import { why, whyGet, whyNation } from "./why";
 import { beliefSignals, whyBelief, hearsOfListing } from "./beliefs";
 import { money } from "./money";
+import { propertyTimeline } from "./history";
 import { START_YEAR } from "./types";
 
 const K: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
@@ -97,13 +98,6 @@ const bentIndex = (i: number) => i + BEND * (Math.exp(-i / BEND) - Math.exp(-BEN
 export const BUY_CLOSING = 0.02;
 /** Points on the acquisition loan (streetLoanCost charges about one). */
 const LOAN_POINTS = 0.01;
-/**
- * HOW FAST AN IN-PLACE INCOME GAP CLOSES: rent and vacancy gaps close about a
- * quarter a year (Wheaton & Torto; the same REVERT_PER_YR builders read in
- * rivals.ts). A lease-up buyer with harder leasing (CARE.lease) closes it
- * faster, which is the value-add trade.
- */
-const GAP_CLOSE_YR = 0.25;
 /**
  * RENT GROWTH MEAN-REVERTS: annual rent-growth autocorrelation runs 0.5-0.7 in
  * US office and industrial series, so a growth surprise decays at
@@ -328,8 +322,10 @@ export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<ty
     w = V > 0 ? D / V : 0;
   }
   const r = w * rd + (1 - w) * rE;
-  const kappa = GAP_CLOSE_YR * (v.noiPre < v.stabPre ? b.lease : 1);
-  const dur = 1 / Math.max(0.05, 1 - (1 - kappa) / (1 + r));
+  // the gap closes at the market's pace (value.ts GAP_CLOSE_YR, the appraiser's
+  // too); a lease-up buyer with harder leasing (CARE.lease) closes it faster,
+  // which is the value-add trade
+  const dur = gapDuration(r, GAP_CLOSE_YR * (v.noiPre < v.stabPre ? b.lease : 1));
   V += (v.noiPre - v.stabPre) * dur;
   V -= v.catchUp;
   if (b.builds) V = Math.max(V, v.land);
@@ -495,22 +491,35 @@ export function sellerTerms(
 }
 
 /**
- * A HOLDER UNDER NO PRESSURE ASKS ITS ANCHOR: the higher of what the building
- * appraises at today and what it appraised at a year ago (today's value
- * restated at last year's cap read). Sellers who would book a loss against
- * their reference price list higher and sell slower — the loss aversion
- * Genesove & Mayer (2001, Boston condos) and Bokhari & Geltner (2011,
- * commercial) measure — so in a falling market the honest asks vanish and the
- * bid-ask gap opens on its own. In a rising one they ask today's number.
- * This replaced a random "denial" band (FORMULA_LEDGER #23).
+ * A HOLDER UNDER NO PRESSURE ASKS ITS ANCHOR, AND ITS ANCHOR IS WHAT IT PAID.
+ * A seller who would book a nominal loss against its own purchase price
+ * lists above the expected price by a share of that loss: 25-35% of the gap
+ * for owner-occupants, about half that for investors (Genesove & Mayer 2001,
+ * QJE 116(4), Boston condominiums 1990-97) — 0.15 here, the investors' half
+ * of the middle [S]. A seller with a gain asks the expected price. So in a
+ * falling market the asks of recent buyers hold up and the bid-ask gap opens
+ * from the holders who bought near the top, as the record shows (Bokhari &
+ * Geltner 2011 find the same in commercial deals).
+ *
+ * The basis is the last price the deed traded at in this town (the property
+ * log, `history.ts propertyTimeline`, which every recorded sale writes). A holder whose deed
+ * has not traded since the record began has no nominal loss to avoid: it
+ * bought decades ago, below any value the town now prints.
+ *
+ * It was the higher of today's appraisal and today's value restated at last
+ * year's cap read: a market-wide anchor every holder shared, whatever it had
+ * paid (FORMULA_LEDGER #23's first fix).
  */
-export function anchoredAsk(e: Econ, rec: ParcelRecord, value: number): number {
+export const LOSS_AVERSION = 0.15;
+export function sellerBasis(s: GameState, bbl: string): number | undefined {
+  // newest first, the comps tape folded in for saves older than the log
+  for (const ev of propertyTimeline(s, bbl)) if (ev.kind === "trade" && (ev.amount ?? 0) > 0) return ev.amount;
+  return undefined;
+}
+export function anchoredAsk(s: GameState, rec: ParcelRecord, value: number): number {
   if (rec.class === "land" || !(rec.bldgArea > 0)) return value;
-  const k = rec.class as BuiltClass;
-  const h = e.history ?? [];
-  const then = h.length >= 13 ? h[h.length - 13]?.cap?.[k] : undefined;
-  const now = e.capRate?.[k];
-  return then && now && then > 0 ? value * Math.max(1, now / then) : value;
+  const basis = sellerBasis(s, rec.bbl);
+  return basis !== undefined && basis > value ? value + LOSS_AVERSION * (basis - value) : value;
 }
 
 /** The least the seller of a listing takes: a named firm's own reservation, else the tape's 92% of ask (a lender's 88%). */

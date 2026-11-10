@@ -350,6 +350,27 @@ export function tenantFailOdds(f: TenantFin, credit: Credit): number {
 /** Odds per unit of book stress (see tenantFailOdds). */
 const FAIL_K = 0.00005;
 
+/**
+ * THE GRADE ITS BOOKS EARN (2026-11-10), the financial half of a rating. S&P
+ * rates a company on its business risk and its financial risk together
+ * (S&P Global Ratings, Corporate Methodology, 2013) [S]; here the business
+ * half is the firm's size (tenantMarket.ts creditOfSize — the street's own
+ * covenant rule) and this is the financial half, off EBITDA / interest on
+ * S&P's standard-volatility ratio grid (Corporate Methodology: Ratios And
+ * Adjustments, 2013): cover of about 6x and above reads "intermediate" or
+ * better, under 2x "highly leveraged" [S~: the two cut-offs as recalled, not
+ * re-checked against the document]. Intermediate or better carries an
+ * investment-grade name (2), the bands between a mid-market one (1), highly
+ * leveraged no better than small unrated (0).
+ * Under a month of costs in the bank is "weak" liquidity, which S&P caps at
+ * 'b-' whatever the ratios (Liquidity Descriptors For Global Corporate
+ * Issuers, 2014) [S] — grade 0. A firm's grade is the lower of the two halves.
+ */
+export function finGrade(f: TenantFin): Credit {
+  if (f.liqM < 1 || f.cover < 2) return 0;
+  return f.cover >= 6 ? 2 : 1;
+}
+
 /** 0..~3: how hard the business is squeezed — what makes a tenant write for relief. */
 export function tenantSqueeze(f: TenantFin): number {
   return Math.max(0, 1.5 - f.cover) * 0.6 + Math.max(0, 3 - f.liqM) * 0.35 + Math.max(0, -f.margin) * 4;

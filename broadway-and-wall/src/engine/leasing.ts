@@ -49,7 +49,7 @@ import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locO
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
 import { overallScore, scoreRentMult, N_BANDS } from "./value";
-import { recordLease, compsPackage } from "./tenantMarket";
+import { recordLease, compsPackage, creditOfSize } from "./tenantMarket";
 import type { Comm } from "./tenantMarket";
 import { tenantQualityTerms } from "./bands";
 import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook, operatingReserve, drawLineInPlace, parkedOnLine } from "./credit";
@@ -63,7 +63,7 @@ import { leasingOdds, supportableOcc, staleDiscount, currentAskPsfYr } from "./a
 import { assignTenantFloors, blocksOf, blockIdForSf, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
 import { money } from "./money";
 import { purseOf } from "./vehicles";
-import { tenantFin, tickTenantFin, tenantFailOdds, tenantSqueeze } from "./tenantBooks";
+import { tenantFin, tickTenantFin, tenantFailOdds, tenantSqueeze, finGrade } from "./tenantBooks";
 
 /** 0..1, for the net-effective trade in the prospect draw. */
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -855,11 +855,16 @@ export function streetLease(
   const market = useRentPsfYr(rec, s.econ, cond, use, condIdx);
   const rentPsf = +(market * rentMult).toFixed(2);
   const { name, sector, credit, ...rest } = firm;
+  // NET IS WHAT THE RECOVERY SAYS. `net` was a second coin (office 75%,
+  // else 40%) beside the recovery clause it labels; every reader takes the
+  // clause first (value.ts recoveryOf) and reads `net` as "nnn" when there is
+  // none, so the flag is now that clause, and the two cannot disagree.
+  const recovery = rollRecovery(s, use);
   return {
     ...rest,
     name, use, sector, credit, sf: Math.round(sf), rentPsf,
-    net: use === "office" ? rng(s, "leasing") < 0.75 : rng(s, "leasing") < 0.4,
-    recovery: rollRecovery(s, use),
+    net: recovery === "nnn",
+    recovery,
     baseStopPsf: +stopPsfNow(rec, s.econ, vessel, use).toFixed(2),
     startM: s.month, endM: s.month + Math.max(12, Math.round(termM)),
     freeUntilM: freeM > 0 ? s.month + Math.round(freeM) : undefined,
@@ -921,12 +926,12 @@ function recombinationCost(rec: ParcelRecord, t: Tenant, costIdx: number): numbe
   return Math.round(DEMISE_PSF * Math.min(per, stack.plateSf - per) * span * costIdx);
 }
 
-// Anchor pre-lease for a development: one large credit tenant signed before
-// delivery, long paper at a small discount to market for taking the risk.
+// Anchor pre-lease for a development: one tenant signed before delivery, on
+// the paper its covenant chooses, at a small discount to market for the risk.
 /**
  * The anchor who signed before there was a building. They took delivery risk
  * and they priced it — `discount` is what that cost you, and it is locked in
- * for a decade and a half.
+ * for the term they signed.
  */
 /** Place a construction pre-let onto the rent roll. Returns false when the
  *  space will not demise — callers must not treat silence as success. */
@@ -947,18 +952,23 @@ export function genAnchorTenant(
   const floor = minLettableSf(rec, use);
   if (sfAnchor < floor && vacant < floor) return false;
   const sector = pickSector(s, use);
+  const credit: Credit = sizeGrade(use, sfAnchor) ?? 1;
   const market = useRentPsfYr(rec, s.econ, h.condition, use, h.condIdx) * discount;
   const t: Tenant = {
     name: pickName(s, sector),
     use,
     sector,
-    credit: rng(s, "leasing") > 0.4 ? 2 : 1, // anchors are credit tenants
+    // its covenant is its size, as on the street (tenantMarket.ts
+    // creditOfSize); this was a coin, 60% investment grade and never weak
+    credit,
     sf: sfAnchor,
     rentPsf: +(market * rrange(s, 0.9, 0.97, "leasing")).toFixed(2),
     net: true,
     recovery: "nnn",
     startM: s.month,
-    endM: s.month + Math.round(rrange(s, 120, 180, "leasing")),
+    // the term its covenant and its trade choose (chosenTermM, the street's
+    // rule); this was a draw of ten to fifteen years whoever signed
+    endM: s.month + Math.round(chosenTermM(s.econ, credit, sector)),
   };
   if (stack && !placeOnStack(rec, h.tenants, t, stack)) return false;
   h.tenants.push(t);
@@ -1798,7 +1808,12 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // Their books, not the headlines: cover thinning, cash running down.
         const squeeze = tenantSqueeze(tenantFin(s.econ, t)) + Math.max(0, over - 1) * 2;
         if (squeeze <= 0.65) continue;                      // healthy trades honour their paper
-        if (rng(s, "leasing") >= Math.min(0.07, 0.022 * squeeze * (t.credit === 0 ? 1.6 : 1))) continue;
+        // ...and it writes when its books say it cannot carry the rent: the
+        // business is losing money after paying it (margin under nought), or
+        // it cannot cover its interest and has under a month of costs in the
+        // bank. This was a coin, up to 7% a month on the squeeze.
+        const fin = tenantFin(s.econ, t);
+        if (!(fin.margin < 0 || (fin.cover < 1 && fin.liqM < 1))) continue;
         t.reliefAskedM = q;
         askIssued = true;
         // The ask is a cut off the rent they PAY — their problem is the
@@ -1840,12 +1855,15 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // degraded one — measured at zero credit changes across 163 tenancies.
         // It already drives default odds, deposit size, the renewal discount
         // and the quality spread a buyer pays. This is the only wire missing.
-        // ...on the tenant's own numbers: a business covering its interest
-        // five times with half a year of costs in the bank earns an upgrade;
-        // one under 1.5x or under a month of cash loses one.
+        // ...on the tenant's own numbers, rated the way an agency rates: the
+        // lower of what its size earns (creditOfSize, the street's covenant
+        // rule, on the feet its headcount needs today) and what its interest
+        // cover and cash earn (tenantBooks.ts finGrade, S&P's ratio grid).
+        // This was a coin: a step up on 15% a year past 5x cover and six
+        // months of cash, a step down on 35% under 1.5x or a month of cash.
         const f = tenantFin(s.econ, t);
-        if (f.cover > 5 && f.liqM > 6 && t.credit < 2 && rng(s, "leasing") < 0.15) t.credit = (t.credit + 1) as Credit;
-        else if ((f.cover < 1.5 || f.liqM < 1) && t.credit > 0 && rng(s, "leasing") < 0.35) t.credit = (t.credit - 1) as Credit;
+        const sized = sizeGrade(t.use ?? dominantUse(rec), t.sf * (t.staff ?? 1) / Math.max(0.2, t.staffSign ?? 1));
+        t.credit = Math.min(sized ?? t.credit, finGrade(f)) as Credit;
       }
       // HEADCOUNT. Measured, a p95 boom compounds this to 1.65x over two years
       // and a bust runs it back down. Everything else in this block reads it.
@@ -2026,7 +2044,9 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const boom = Math.max(0, (s.econ.industryMom?.[t.sector] ?? 0)) * 6;
       const trade = 1 - stress * 0.14 + boom;
       const ask = market * stayBid * creditDisc * clampL(trade, 0.78, 1.18);
-      const renewTermM = Math.round(rrange(s, 36, 84, "leasing"));
+      // the term the firm chooses (chosenTermM), as the street's renewals do
+      // (streetRolls.ts, termOf); this was a draw of three to seven years
+      const renewTermM = Math.round(chosenTermM(s.econ, t.credit, t.sector));
       // Renewals are cheap to do: no downtime, a fraction of the TI, no free
       // rent worth the name. That gap is why renewal economics beat a new
       // lease at a higher face rent almost every time.
@@ -2280,9 +2300,10 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         const credit = seeker.credit;
         const termBias = tt.term;
         // term first: the free-rent ask is a function of how long they sign for
-        const band = termBandM(credit);
+        // the firm's chosen term (chosenTermM, the street's rule), not a
+        // draw across its covenant's band
         const termM = Math.round(
-          rrange(s, band.loM, band.hiM, "leasing")
+          chosenTermM(s.econ, credit, sector)
           * (sf > typicalSuiteSf(rec, use) * 2.5 ? 1.15 : 1)
           * Math.max(0.8, 1 - 5 * Math.max(0, labourSlack(s.econ))) * termBias,
         );
@@ -2381,8 +2402,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // market where nobody had to give anything away.
           freeM: Math.max(0, Math.round((termM / 12) * rrange(s, 0.25, 0.85, "leasing") * concession)),
           bumpPct: rollBumpPct(s, credit),
-          net: use === "office" ? rng(s, "leasing") < 0.8 : rng(s, "leasing") < 0.4,
-          recovery: rollRecovery(s, use),
+          ...((r) => ({ net: r === "nnn", recovery: r }))(rollRecovery(s, use)),   // net is the clause (see streetLease)
           expiresM: q + 3,
         });
         }
@@ -3300,9 +3320,9 @@ export function bumpPremiumPsf(rentPsf: number, bumpPct: number, termM: number):
 /** What a prospect opens at — credit tenants push for flatter paper. */
 function rollBumpPct(s: GameState, credit: Credit): number {
   const soft = -Math.min(0.35, 12 * Math.max(0, labourSlack(s.econ)));
-  const base = credit === 2 ? rrange(s, 1.5, 2.5, "leasing")
-    : credit === 1 ? rrange(s, 2.0, 3.0, "leasing")
-    : rrange(s, 2.25, 3.5, "leasing");
+  // the middle of its covenant's band (these bands are the old asserted
+  // convention, unchanged); it was a draw across the band
+  const base = credit === 2 ? 2.0 : credit === 1 ? 2.5 : 2.875;
   // Quarter-point steps so the counter dial and the letter agree.
   return Math.round(clampL(base + soft, 0, 5) * 4) / 4;
 }
@@ -3321,6 +3341,25 @@ export function termBandM(credit: Credit): { loM: number; hiM: number } {
   return credit === 2 ? { loM: 84, hiM: 144 }
     : credit === 1 ? { loM: 60, hiM: 108 }
     : { loM: 36, hiM: 60 };
+}
+
+/**
+ * THE TERM A FIRM CHOOSES, one rule for the street's tenants and yours
+ * (streetRolls.ts THE TERM IS CHOSEN TOO): the middle of its covenant's band,
+ * shorter when its trade is growing fast (a short lease is the option to move
+ * when it outgrows the suite) and longer when it is shrinking (Grenadier 1995
+ * on the option value in lease term).
+ */
+export function chosenTermM(e: Econ, credit: Credit, sector: Sector): number {
+  const bk = e.firmBooks?.[sector], prevE = e.tradeEmpPrev?.[sector];
+  const gTrade = bk && prevE ? Math.pow(bk.emp / Math.max(1e-6, prevE), 12) - 1 : 0;
+  const band = termBandM(credit);
+  return (band.loM + band.hiM) / 2 * Math.max(0.6, Math.min(1.4, Math.exp(-4 * gTrade)));
+}
+
+/** A firm's covenant off its size (tenantMarket.ts creditOfSize); undefined for a use with no size distribution. */
+function sizeGrade(use: BuiltClass, sf: number): Credit | undefined {
+  return use === "office" || use === "retail" || use === "industrial" ? creditOfSize(use, sf) : undefined;
 }
 
 /** The width of the tenant's own term band, in months. Never zero. */

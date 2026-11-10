@@ -47,7 +47,7 @@ import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { BuiltClass, Condition, Credit, Econ, GameState, Tenant } from "./types";
 import { START_YEAR } from "./types";
 import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, useOccupancy, N_BANDS, scoreRentMult, locationRentMult } from "./value";
-import { isCommercial, bumpOf, minLettableSf, streetLease, pickSector, pickName, termBandM, depositFor } from "./leasing";
+import { isCommercial, bumpOf, minLettableSf, streetLease, pickSector, pickName, termBandM, depositFor, chosenTermM } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
 import { tickTenantFin, tenantFailOdds, entrantMargin, rentCapacity } from "./tenantBooks";
 import { rng, rrange, reletMonths, recordDeal, FIRM_PROFILE, turnoverYr, priceLevel12, CONC_DEPTH, SECTOR_LABEL, SF_PER_JOB } from "./market";
@@ -532,10 +532,8 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
     const bk = e.firmBooks?.[sec as Tenant["sector"]], prevE = e.tradeEmpPrev?.[sec];
     return bk && prevE ? Math.pow(bk.emp / Math.max(1e-6, prevE), 12) - 1 : 0;
   };
-  const termOf = (firm: Tenant) => {
-    const band = termBandM(firm.credit);
-    return (band.loM + band.hiM) / 2 * Math.max(0.6, Math.min(1.4, Math.exp(-4 * gTradeOf(firm.sector))));
-  };
+  // one rule with the player's tenants (leasing.ts chosenTermM)
+  const termOf = (firm: Tenant) => chosenTermM(e, firm.credit, firm.sector);
   /**
    * What `firm` would make of `take` feet of `k` in this building: what it is
    * worth to the firm, what the landlord will take, the move, its taste.

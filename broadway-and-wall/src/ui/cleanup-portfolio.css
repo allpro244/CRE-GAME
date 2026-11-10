@@ -1,0 +1,30 @@
+/* Portfolio clean-up (ui-revamp/CLEANUP_PLAN.md §3, PR 8): one line per
+   holding, the row's verbs behind one "⋯" menu. */
+
+.tbl-book-one td { vertical-align: middle; white-space: nowrap; }
+.tbl-book-one td.book-prop {
+  max-width: 340px; overflow: hidden; text-overflow: ellipsis;
+}
+.tbl-book-one td.book-occ { white-space: nowrap; }
+.tbl-book-one td:last-child { width: 1%; text-align: right; }
+
+.row-menu { position: relative; display: inline-block; }
+.row-menu-btn { min-width: 30px; padding-left: 8px; padding-right: 8px; line-height: 1; }
+.row-menu-list {
+  position: absolute; right: 0; top: calc(100% + 3px); z-index: 30;
+  display: flex; flex-direction: column; min-width: 150px;
+  background: var(--paper); border: 1px solid var(--card-line);
+  border-radius: var(--r-sm); box-shadow: 0 6px 18px rgba(43, 37, 26, 0.18);
+  padding: 3px;
+}
+.row-menu-item {
+  all: unset; box-sizing: border-box; cursor: pointer;
+  padding: 5px 10px; border-radius: 4px; font-size: 13px; color: var(--ink);
+  white-space: nowrap; text-align: left;
+}
+.row-menu-item:hover:not(:disabled), .row-menu-item:focus-visible { background: var(--gold-soft); }
+.row-menu-item:disabled { color: var(--ink-dim); opacity: 0.6; cursor: default; }
+.row-menu-item.row-menu-on { font-weight: 600; }
+
+.book-exposure-head { display: flex; align-items: baseline; gap: 12px; }
+.book-exposure-links { display: inline-flex; gap: 10px; margin-left: auto; font-size: 12px; }

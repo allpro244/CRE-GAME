@@ -106,11 +106,16 @@ function scanDice() {
 }
 
 /**
- * A source, for this audit, is any of: a [S] / [S~] / [D] / [K] / [K~] tag
- * (the repo's own convention: sourced, derived, stated shape), a four-digit
- * year 1900-2099 (every citation here carries one), or a named data source.
+ * A source, for this audit, is any of: a [S] / [S~] / [D] / [M] tag (the
+ * repo's convention: sourced, derived from other sourced numbers, a
+ * mathematical constant), a cited year 1900-2099, or a named data source.
+ * A dated change note — "(2026-10-15)" — is not a citation and is stripped
+ * first. A [K] / [K~] tag is a judgement stated as such: honest, and still
+ * not a source, so it counts as unsourced (reported apart as "judgement").
  */
-const SOURCED = /\[(S|S~|D|K|K~)[\]:,\s]|\b(19|20)\d\d\b|\b(BLS|BEA|Census|FDIC|NBER|JOLTS|CPS|NCREIF|CBRE|JLL|REIS|CoStar|ACLI|NAIOP|BOMA|IREM|RSMeans|Damodaran|Freddie|Fannie|HUD|IRS|OCC|SLOOS|ICSC|NAHB|CoreNet|Prologis|Cushman|Moody|RCA|Fed\b|FRED|OECD|IMF)\b|et al\.|\bsource[sd]?\b/i;
+const SOURCED = /\[(S|S~|D|M)[\]:,\s]|\b(19|20)\d\d\b|\b(BLS|BEA|Census|FDIC|NBER|JOLTS|CPS|NCREIF|CBRE|JLL|REIS|CoStar|ACLI|NAIOP|BOMA|IREM|RSMeans|Damodaran|Freddie|Fannie|HUD|IRS|OCC|SLOOS|ICSC|NAHB|CoreNet|Prologis|Cushman|Moody|RCA|FRED|OECD|IMF|BIS|CBO|ECB|Treasury|Federal Reserve|ULI|MBA|ACS|CBP|BDS|QCEW|CES|PMMS|S&P|Fitch|ATUS|CoStar|Trepp|MSCI|NAR|NMHC|Zillow)\b|et al\.|\bsource[sd]?:/i;
+const JUDGEMENT = /\[K~?[\]:,\s]|shape parameter|stated, not fitted/i;
+const DATE_NOTE = /\b20\d\d-\d\d(-\d\d)?\b/g;
 /** Physical and accounting facts that need no citation: units, calendar, display. */
 const TRIVIAL = /^(0|1|-1|2|12|100|1000|1e3|1e6|1_000_000|1_000|24|60|365|0\.5)$/;
 
@@ -133,9 +138,15 @@ function scanConstants() {
       if (numeric && TRIVIAL.test(value.replace(/_/g, ""))) continue;
       // the comment block directly above (contiguous comment lines), plus the same line and the body
       let k = i - 1, cmt = "";
-      while (k >= 0 && /^\s*(\/\/|\*|\/\*\*?|\*\/)/.test(lines[k])) { cmt = lines[k] + "\n" + cmt; k--; }
-      const text = cmt + "\n" + lines[i] + "\n" + body;
-      out.push({ file: f, line: i + 1, name, sourced: SOURCED.test(text), value: value.slice(0, 60) });
+      // ...through a run of sibling constants declared under one comment
+      for (;;) {
+        while (k >= 0 && /^\s*(\/\/|\*|\/\*\*?|\*\/)/.test(lines[k])) { cmt = lines[k] + "\n" + cmt; k--; }
+        if (k >= 0 && /^(?:export\s+)?const\s+[A-Z][A-Z0-9_]{2,}\b/.test(lines[k]) && cmt === "") { k--; continue; }
+        break;
+      }
+      const text = (cmt + "\n" + lines[i] + "\n" + body).replace(DATE_NOTE, "");
+      const sourced = SOURCED.test(text);
+      out.push({ file: f, line: i + 1, name, sourced, judgement: !sourced && JUDGEMENT.test(text), value: value.slice(0, 60) });
     }
   }
   return out;
@@ -197,11 +208,11 @@ lines.push("| fault | count | what it is |");
 lines.push("|---|---|---|");
 lines.push(`| **coins** | ${counts.coins} | a random draw compared against a probability: a decision an actor should take, taken by dice |`);
 lines.push(`| **draws** | ${counts.draws} | other random draws (magnitudes, picks, timings) that are not the outside world or an agent's taste |`);
-lines.push(`| **unsourced constants** | ${counts.unsourced} | module-level numbers whose comment names no source, year or [S]/[D]/[K] tag |`);
+lines.push(`| **unsourced constants** | ${counts.unsourced} | module-level numbers whose comment names no source, cited year or [S]/[D]/[M] tag ([K] judgements count here) |`);
 lines.push(`| **ledger rows open** | ${counts.ledger} | aggregates still set from the top (FORMULA_LEDGER.md: ${ledger.ids.map((x) => "#" + x).join(", ")}) |`);
 lines.push(`| load-bearing rails | ${rails ? rails.loadBearing : "—"} | from the last \`tools/rail-audit.mjs\` run (${rails ? rails.date : "never"}; a run takes ~15 min, so it is not re-counted here) |`);
 lines.push("");
-lines.push(`Allowed and counted: ${allowed.outside} draws of the outside world (nation, swans, weather), ${allowed.taste} taste draws (random utility), ${allowed.keepers} stream keepers (\`void rng\`), ${allowed.sourcedConstants} sourced constants.`);
+lines.push(`Allowed and counted: ${allowed.outside} draws of the outside world (nation, swans, weather), ${allowed.taste} taste draws (random utility), ${allowed.keepers} stream keepers (\`void rng\`), ${allowed.sourcedConstants} sourced constants. Of the unsourced constants, ${consts.filter((c) => c.judgement).length} are judgements stated as such ([K]) — honest, and still to be sourced or replaced by a mechanism.`);
 lines.push("");
 lines.push("## Where they are (coins weighted ×3)");
 lines.push("");

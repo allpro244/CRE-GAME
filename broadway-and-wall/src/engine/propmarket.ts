@@ -1359,7 +1359,7 @@ export function entrantBankerView(): BankerView {
   return { id: "entrant", lean: 0, eqPrem: EQUITY_PREMIUM.pe, ltvCap: 0.15, fileSpread: 0 };
 }
 
-/** Five-point Gauss-Hermite nodes and weights for a standard normal. */
+/** Five-point Gauss-Hermite nodes and weights for a standard normal (Abramowitz & Stegun Table 25.10, rescaled to N(0,1)) [M]. */
 const GH_Z = [0, -1.355626, 1.355626, -2.856970, 2.856970];
 const GH_W = [0.533333, 0.222076, 0.222076, 0.011257, 0.011257];
 /**

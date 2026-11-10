@@ -1,0 +1,12 @@
+/* Capital pages clean-up (Debt, Banks, Investors, Books). */
+
+/* Banks: one lender table, a row opens the desk's file below. */
+.app .cap-lenders .cap-row { cursor: pointer; }
+.app .cap-lenders .cap-row:hover td { background: rgba(43, 37, 26, 0.04); }
+.app .cap-lenders .cap-row-on td { background: rgba(120, 100, 70, 0.10); }
+.app .cap-caret { display: inline-block; width: 1em; color: var(--muted, #8b8370); }
+.app .cap-note { font-size: 12px; margin: 2px 0 6px; }
+
+/* Debt: the loan table leads, and its row actions stay on one line. */
+.app .debt-loans > tbody > tr > td:not([colspan]), .app .debt-loans > thead th { white-space: nowrap; }
+.app .debt-loans > tbody > tr > td:nth-child(2):not([colspan]) { white-space: normal; min-width: 140px; }

@@ -1,0 +1,21 @@
+/* UI clean-up: Leasing, Settings, Saves (ui-revamp/CLEANUP_PLAN.md §3).
+   Classic only; the tables reuse next.css's .nx-dt (class-scoped, loaded by App). */
+.app .lz .view-switch { margin: 10px 0 8px; }
+.app .lz .nx-dt { border: 1px solid var(--nx-line); }
+.app .lz .nx-dt-table td { max-width: 220px; }
+.app .lz .nx-place { padding: 0; }
+.app .lz-acts { display: inline-flex; gap: 4px; }
+.app .lz-none { padding: 8px 2px; }
+.app .lz-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.app .lz-pick { font: inherit; font-size: 12px; text-transform: none; letter-spacing: 0; padding: 2px 4px; }
+.app .lz-num { width: 80px; }
+.app .lz-ovr { border-top: 1px solid var(--border, rgba(146, 110, 40, 0.28)); padding: 6px 0 2px; }
+.app .lz-ovr .ops-choice { margin: 4px 0; }
+.app .lz-ovr-head { display: flex; align-items: baseline; gap: 10px; }
+.app .lz-ovr-head a { cursor: pointer; }
+.app .lz-ovr-head .btn { margin-left: auto; }
+
+/* Settings: label + switch on one line; the explanation is on hover. */
+.app .setting-row.st-compact { align-items: center; padding-top: 6px; padding-bottom: 6px; }
+.app .st-compact .setting-text { cursor: help; }
+.app .st-keys .grid { row-gap: 2px; }

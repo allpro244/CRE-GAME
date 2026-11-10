@@ -7,7 +7,6 @@ import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { marketRentPsfYr, resolveRec, landPsfNow, inPlace, landRead } from "@/engine/value";
 import { buyBoxSet, inBuyBox, landPencils, type BuyBox } from "@/engine/buybox";
-import { starterPicks } from "@/engine/standing";
 import { spendable } from "@/engine/credit";
 import { streetBookStats } from "@/engine/portfoliosale";
 import { ownerAt } from "@/engine/ownership";
@@ -17,8 +16,9 @@ import { marketAppetite, gradeOf } from "@/engine/rivals";
 import { houseBrokerName, brokerScore, EARLY_FEES, EARLY_WINDOW_M } from "@/engine/broker";
 import { usd, sf, pct } from "@/ui/format";
 import { BrokerCalls, liveBrokerCalls } from "@/ui/panels/broker";
-import { useLabel, Big, Row } from "@/ui/panels/shared";
+import { useLabel, Row } from "@/ui/panels/shared";
 import { SiteFinder } from "@/ui/panels/SiteFinder";
+import "@/ui/cleanup-market.css";
 
 type DbBase = { bbl: string; addr: string; cls: string; sf: number; fl: number; yr: number; owner: string; dmd: number };
 type DbFull = { occ: number; known: boolean; rent: number; noi: number; val: number; psf: number };
@@ -119,8 +119,8 @@ export function BuildingDatabase() {
       return (typeof av === "string" ? (av as string).localeCompare(bv as string) : (av as number) - (bv as number)) * dir;
     });
   }, [rows, sortK, dir, cls, q, game, parcels]);
-  const H = ({ k, label, num }: { k: string; label: string; num?: boolean }) => (
-    <th className={num ? "num" : undefined} style={{ cursor: "pointer", whiteSpace: "nowrap" }}
+  const H = ({ k, label, num, title }: { k: string; label: string; num?: boolean; title?: string }) => (
+    <th className={num ? "num" : undefined} style={{ cursor: "pointer", whiteSpace: "nowrap" }} title={title}
         onClick={() => { if (sortK === k) setDir((d) => (d === 1 ? -1 : 1)); else { setSortK(k); setDir(-1); } setPg(0); }}>
       {label}{sortK === k ? (dir === -1 ? " ▾" : " ▴") : ""}
     </th>
@@ -142,7 +142,6 @@ export function BuildingDatabase() {
   );
   return (
     <div>
-      <div className="hint">All standing buildings · ~ occupancy = class average (no rent roll)</div>
       <div className="btn-row" style={{ marginBottom: 6 }}>
         {["all", "office", "retail", "multifamily", "industrial"].map((c) => (
           <button key={c} className={"btn" + (cls === c ? " btn-on" : "")} onClick={() => { setCls(c); setPg(0); }}>
@@ -165,10 +164,10 @@ export function BuildingDatabase() {
             <H k="sf" label="SF" num />
             <H k="fl" label="Fl" num />
             <H k="yr" label="Built" num />
-            <H k="occ" label="Occ" num />
+            <H k="occ" label="Occ" num title="From the rent roll where known · ~ = class average (no rent roll)" />
             <H k="rent" label="Rent $/sf" num />
             <H k="noi" label="NOI / yr" num />
-            <H k="dmd" label="Demand" num />
+            <H k="dmd" label="Demand" num title="Block demand score, 0-100" />
             <H k="val" label="Value" num />
             <H k="psf" label="$/sf" num />
             <H k="owner" label="Owner" />
@@ -309,39 +308,58 @@ export function MarketPage() {
     .map((l) => ({ l, off: l.mark && l.mark > 0 ? 1 - l.ask / l.mark : 0 }))
     .sort((a, b) => b.off - a.off);
   const { buyStreetBook, offerStreetBook, acceptStreetBook } = useStore.getState();
+  // THE DISTRESS PIPELINE, counted once for the line and the panel under it.
+  const liveDocket = !!game.auction && game.month < game.auction.m;
+  // The county calls the list in July; the hammer falls the month after.
+  const nextDocket = game.month + ((6 - (game.month % 12)) + 12) % 12 || 12;
+  const cityLoans = Object.values(game.cityLoans ?? {});
+  const inWorkout = cityLoans.filter((l) => l.status === "workout");
+  const onWatch = cityLoans.filter((l) => l.status === "watch");
+  // COLLAPSIBLE, AND OPEN WHEN IT MATTERS. Opens on a live docket, when
+  // banks have noticed sales, or when a receiver book is upstairs —
+  // otherwise eleven months of watchlist stays tucked away.
+  const distressShown = distressOpen ?? !!(liveDocket || bankFcls.length || streetBooks.length || reo.length);
+  const distressLabel = liveDocket
+    ? `Foreclosure auction · ${game.auction!.lots.length} lot${game.auction!.lots.length === 1 ? "" : "s"} · ${monthLabel(game.auction!.m)}`
+    : ["Distress", reo.length ? `${reo.length} REO` : "", bankFcls.length ? `${bankFcls.length} noticed` : "",
+      inWorkout.length ? `${inWorkout.length} workout` : "", onWatch.length ? `${onWatch.length} watch` : "",
+      `auction ${monthLabel(nextDocket)}`].filter(Boolean).join(" · ");
   return (
     <div>
-      {Object.keys(game.holdings).length === 0 && <StarterBlock go={go} />}
-      <div className="stat-strip">
-        <Big label="On the market" value={String(live)} />
-        <Big label="Motivated sellers" value={String(distress)} bad={distress > 0} />
-        <Big label="Books for sale" value={String(streetBooks.length)} bad={streetBooks.length > 0}
-          title="Receiver packages and fund wind-downs · one price" />
-        <Big label="Half-built frames" value={String(frames)} />
-        <Big label="Buyer demand" value={
+      {/* ONE LINE, NOT A STRIP OF TILES (cleanup plan §3). Five tiles, a
+          "Books for sale · 0" line and a collapsed Distress card took ~200px
+          to say mostly that nothing was there. Zero counts drop out; the
+          distress pipeline is the toggle at the end of the line. */}
+      <div className="mkt-line">
+        <span className="mkt-fig"><b className="mono">{live}</b> on the market</span>
+        {distress > 0 && <span className="mkt-fig neg" title="Motivated sellers · ask under appraisal"><b className="mono">{distress}</b> motivated</span>}
+        {streetBooks.length > 0 && <span className="mkt-fig neg" title="Receiver packages and fund wind-downs · one price"><b className="mono">{streetBooks.length}</b> book{streetBooks.length === 1 ? "" : "s"} for sale</span>}
+        {frames > 0 && <span className="mkt-fig" title="Half-built frames on the tape"><b className="mono">{frames}</b> half-built</span>}
+        <span className="mkt-fig" title="How many funded buyers the tape has this month">buyers <b>{
           marketAppetite(game) < 0.6 ? "none" : marketAppetite(game) < 0.9 ? "thin"
-            : marketAppetite(game) > 1.15 ? "strong" : "normal"} />
-      </div>
-      {/* Controls sat inside the stat strip as two tiles of a different height
-          and face; they are actions, so they get a row of their own. */}
-      <div className="btn-row" style={{ marginTop: 4, marginBottom: 4 }}>
-        <button
-          className={"btn btn-sm" + (lens === "listings" ? " btn-on" : "")}
-          title="Highlight listings on the map"
-          onClick={() => setLens(lens === "listings" ? "none" : "listings")}
-        >
-          {lens === "listings" ? "Map highlight on" : "Highlight on map"}
+            : marketAppetite(game) > 1.15 ? "strong" : "normal"}</b></span>
+        <button type="button" className={"mkt-toggle" + (distressShown ? " mkt-toggle-on" : "")}
+          aria-expanded={distressShown}
+          title={distressShown ? "Collapse" : "Foreclosure pipeline · REO, noticed sales, workouts, watchlist"}
+          onClick={() => setDistressOpen(!distressShown)}>
+          {distressShown ? "▾ " : "▸ "}{distressLabel}
         </button>
-        <button
-          className="btn btn-sm"
-          title="Change in Settings"
-          onClick={() => useStore.getState().setPage("settings")}
-        >
-          {game.brokersOff ? "Brokers: off" : "Brokers: on"}
-          {" · "}
-          {game.auctionQuiet ? "Auction card: off" : "Auction card: on"}
-          {" →"}
-        </button>
+        <span className="mkt-line-tools">
+          <button
+            className={"btn btn-sm" + (lens === "listings" ? " btn-on" : "")}
+            title="Highlight listings on the map"
+            onClick={() => setLens(lens === "listings" ? "none" : "listings")}
+          >
+            {lens === "listings" ? "Map highlight on" : "Highlight on map"}
+          </button>
+          <button
+            className="btn btn-sm"
+            title={`Brokers ${game.brokersOff ? "off" : "on"} · auction card ${game.auctionQuiet ? "off" : "on"} · change in Settings`}
+            onClick={() => useStore.getState().setPage("settings")}
+          >
+            {game.brokersOff ? "Brokers off" : "Brokers on"} →
+          </button>
+        </span>
       </div>
 
       {/* BOOKS FOR SALE — the desk the seizure alert always pointed at and never reached.
@@ -351,21 +369,13 @@ export function MarketPage() {
           listings — the only thing a new player can act on — below three
           empty sections and two paragraphs explaining what would be in them.
           The explanation is still here, on hover; the space is not. */}
-      {streetBooks.length === 0 ? (
-        <div
-          className="hint dim"
-          style={{ marginTop: 10, marginBottom: 6 }}
-          title="Lender packages from failed firms (4+ deeds) · price cut quarterly · distressed notes on Notes"
-        >
-          Books for sale · 0
-        </div>
-      ) : (
+      {streetBooks.length > 0 && (
         <>
-          <div className="page-section" style={{ marginTop: 10 }}>
+          <div className="page-section" style={{ marginTop: 10 }}
+            title="Lender packages from failed firms (4+ deeds) · price cut quarterly · all cash, no financing · rivals bid too">
             Books for sale · {streetBooks.length}
           </div>
         <div style={{ marginBottom: 12 }}>
-          <div className="hint" style={{ marginBottom: 8 }}>All cash · no financing · rivals bid too</div>
           {streetBooks.map((p) => {
             const disc = p.gross > 0 ? (1 - p.ask / p.gross) * 100 : 0;
             const closing = Math.round(p.ask * 0.02);
@@ -394,7 +404,7 @@ export function MarketPage() {
             const monthsOut = Math.max(0, game.month - p.listedM);
             return (
               <div key={p.id} className="deal" style={{ marginBottom: 8 }}>
-                <div className="deal-head" style={{ cursor: "pointer" }}
+                <div className="deal-head" style={{ cursor: "pointer" }} title={p.reason}
                   onClick={() => setExpandedBook(open ? null : p.id)}>
                   <span className="dim" style={{ marginRight: 6 }}>{open ? "▾" : "▸"}</span>
                   {p.reo ? "REO · " : ""}{p.bbls.length} buildings
@@ -445,8 +455,6 @@ export function MarketPage() {
                   />
                   {p.cuts > 0 && <Row k="Price cuts" v={`${p.cuts} · quarterly`} bad />}
                 </div>
-                <div className="hint" style={{ marginTop: 4 }}>{p.reason}</div>
-                <div className="hint dim" style={{ marginTop: 2 }}>{basisHint}</div>
                 {open && (
                   <table className="tbl" style={{ marginTop: 8 }}>
                     <thead>
@@ -558,16 +566,8 @@ export function MarketPage() {
           docket when there is one and what is heading toward it when there is
           not, and it always says when the next one is called. */}
       {(() => {
-        const liveDocket = game.auction && game.month < game.auction.m;
-        // The county calls the list in July; the hammer falls the month after.
-        const nextDocket = game.month + ((6 - (game.month % 12)) + 12) % 12 || 12;
-        const loans = Object.values(game.cityLoans ?? {});
-        const inWorkout = loans.filter((l) => l.status === "workout");
-        const onWatch = loans.filter((l) => l.status === "watch");
-        // COLLAPSIBLE, AND OPEN WHEN IT MATTERS. Opens on a live docket, when
-        // banks have noticed sales, or when a receiver book is upstairs —
-        // otherwise eleven months of watchlist stays tucked away.
-        const open = distressOpen ?? !!(liveDocket || bankFcls.length || streetBooks.length || reo.length);
+        const open = distressShown;
+        if (!open) return null;
         const reoList = reo.length > 0 && (
           <>
             <div className="page-section" style={{ marginTop: 4 }}>Bank-owned (REO) · {reo.length}</div>
@@ -589,15 +589,7 @@ export function MarketPage() {
         );
         return (
           <div className="deal" style={{ marginBottom: 10 }}>
-            <div className="deal-head" style={{ cursor: "pointer", userSelect: "none" }}
-              title={open ? "Collapse" : "Expand"}
-              onClick={() => setDistressOpen(!open)}>
-              <span className="dim" style={{ marginRight: 6 }}>{open ? "▾" : "▸"}</span>
-              {liveDocket
-                ? `Foreclosure auction · ${game.auction!.lots.length} lot${game.auction!.lots.length === 1 ? "" : "s"} · ${monthLabel(game.auction!.m)}`
-                : `Distress · ${reo.length ? `${reo.length} REO · ` : ""}${bankFcls.length} noticed · ${inWorkout.length} workout · ${onWatch.length} watch · next auction ${monthLabel(nextDocket)}`}
-            </div>
-            {!open ? null : liveDocket ? (
+            {liveDocket ? (
               <>
                 {reoList}
                 <div className="hint">All cash · 10% at registration · as-is</div>
@@ -752,7 +744,7 @@ export function MarketPage() {
                     tabIndex={0}
                     title={notToYou
                       ? `${rec.address} · ${held!.name} will not sell to you`
-                      : `Open the property file for ${rec.address}`}
+                      : `${rec.address}${li.reason && !FORCED_REASONS.has(li.reason) ? ` · ${reasonText(li.reason)}` : ""} · open the property file`}
                     className={yours ? "row-mine" : notToYou ? "row-cold" : undefined}>
                     <td>
                       {"earlyUntilM" in li && li.earlyUntilM !== undefined && game.month < li.earlyUntilM && (
@@ -762,8 +754,10 @@ export function MarketPage() {
                         </span>
                       )}
                       {li.distress && <span className="chip chip-distress" style={{ marginRight: 6 }} title="Motivated seller · ask under appraisal">HOT</span>}
-                      {/* WHY IT IS FOR SALE — the chip is jargon without its reason */}
-                      {li.reason && (
+                      {/* WHY IT IS FOR SALE — a chip only when the sale is not
+                          ordinary (cleanup plan §3: "VOLUNTARY" sat on 50 of 55
+                          rows). An ordinary reason rides in the row's tooltip. */}
+                      {li.reason && FORCED_REASONS.has(li.reason) && (
                         <span className="chip" style={{ marginRight: 6 }}
                           title={li.reason === "merchant" ? "Merchant builder selling on completion"
                             : li.reason === "fund-life" ? "Closed-end fund at end of life · must sell"
@@ -912,7 +906,7 @@ export function MarketPage() {
         const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
         return (
           <div className="deal" style={{ marginTop: 14 }}>
-            <div className="deal-head">Brokers</div>
+            <div className="deal-head" title={`${EARLY_FEES} fees with one broker: ~half its listings reach you ${EARLY_WINDOW_M} months early · lapsed looks lower the score`}>Brokers</div>
             <div className="grid">
               {shops.map((sh) => (
                 <Row
@@ -934,9 +928,6 @@ export function MarketPage() {
                   bad={!!sh.rel && sh.rel.ignores > sh.rel.fees}
                 />
               ))}
-            </div>
-            <div className="hint">
-              {EARLY_FEES} fees with one broker: ~half its listings reach you {EARLY_WINDOW_M} months early · lapsed looks lower the score
             </div>
           </div>
         );
@@ -1061,7 +1052,7 @@ function BuyBoxEditor() {
   const on = buyBoxSet(box);
   return (
     <div className="buybox">
-      <span className="buybox-label">Buy box</span>
+      <span className="buybox-label" title={on ? "Only matching first looks stop the clock." : "Empty · every affordable first look stops the clock."}>Buy box</span>
       {USES.map(([u, label]) => {
         const sel = box.uses?.includes(u) ?? false;
         return (
@@ -1085,40 +1076,18 @@ function BuyBoxEditor() {
           onChange={(e) => set({ ...box, maxAsk: e.target.value === "" ? undefined : Math.round(Number(e.target.value) * 1e6) })} />M
       </label>
       {on && <button type="button" className="btn btn-sm" onClick={() => set({})}>Clear</button>}
-      <span className="buybox-note">{on ? "Only matching first looks stop the clock." : "Empty · every affordable first look stops the clock."}</span>
     </div>
   );
 }
 
-/**
- * A FIRM WITH NO BUILDINGS SEES THREE FIRST. The tape sits under a stat strip,
- * a paragraph, the distress pipeline and the brokers' calls; a newcomer had
- * to scroll past all of it to reach a row. The three best going-in yields
- * among let buildings the firm could buy outright — the tape's own sort, cut
- * to what is actually within reach.
- */
-function StarterBlock({ go }: { go: (bbl: string) => void }) {
-  const game = useStore((s) => s.game)!;
-  const parcels = useStore((s) => s.parcels)!;
-  const picks = starterPicks(game, parcels, spendable(game, parcels).total, 3);
-  if (!picks.length) return null;
-  return (
-    <div className="starter-block">
-      <div className="page-section-head">Highest yields (all-cash)</div>
-      {picks.map((p) => {
-        const rec = resolveRec(parcels, game, p.bbl);
-        return (
-          <button key={p.bbl} type="button" className="starter-row" onClick={() => go(p.bbl)}>
-            <span className="starter-addr">{rec?.address ?? p.bbl}</span>
-            <span className="dim">{rec ? useLabel(rec) : ""}</span>
-            <span className="mono">{p.cap.toFixed(1)}% going-in</span>
-            <span className="mono">{Math.round(p.occ * 100)}% let</span>
-            <span className="mono">{usd(p.cash)} to close</span>
-            <span className="lnk">Open →</span>
-          </button>
-        );
-      })}
-      <div className="hint" style={{ marginBottom: 0 }}>Going-in yield = in-place NOI ÷ price</div>
-    </div>
-  );
+/** Sales nobody chose to make: the only reasons that earn a chip on the tape. */
+const FORCED_REASONS = new Set(["deleverage", "receiver", "fund-life"]);
+function reasonText(r: string): string {
+  return r === "merchant" ? "Merchant builder selling on completion"
+    : r === "fund-life" ? "Closed-end fund at end of life · must sell"
+      : r === "estate" ? "Estate sale"
+        : r === "non-core" ? "Large firm selling a non-core asset"
+          : r === "deleverage" ? "Firm over its loan covenant · must sell"
+            : r === "receiver" ? "Lender-owned · receiver sale"
+              : "Voluntary sale";
 }

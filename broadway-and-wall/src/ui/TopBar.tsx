@@ -1,5 +1,4 @@
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { headlineEpithet } from "@/engine/firm";
 import { useStore, type Page } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { currentCity, currentSeed } from "@/state/city";
@@ -9,10 +8,10 @@ import { derive, nwOf, standingOf } from "@/ui/derive";
 import { ordinal, type Standing } from "@/engine/standing";
 import { openViewOn } from "@/ui/panels/shared";
 import { firmBookStress, firmOverheadMonthly, portfolioMonthlyCF } from "@/engine/sim";
-import { portfolioOccupancy, portfolioRentPsf } from "@/engine/leasing";
+import { portfolioOccupancy } from "@/engine/leasing";
 import { usd, pct } from "./format";
 import { nextDue } from "./nextDue";
-import { DESKS, tabCounts, tabLabel, RAIL_GROUPS, PAGE_ICON, railEntry } from "./desks";
+import { DESKS, tabCounts, tabLabel, deskOf, deskCount, deskLanding, visibleTabs } from "./desks";
 import DeltaChip from "@/ui/vitals/DeltaChip";
 import Waterfall, { usablePrev } from "@/ui/vitals/Waterfall";
 import ClockProgress from "@/ui/ClockProgress";
@@ -144,7 +143,7 @@ export default function TopBar() {
   const vitals = useMemo(() => {
     if (!deferredGame) {
       return {
-        nw: 0, cf: 0, occ: null as number | null, rentPsf: null as number | null, vacDpp: null as number | null,
+        nw: 0, cf: 0, occ: null as number | null, vacDpp: null as number | null,
         line: 0, counts: {} as ReturnType<typeof tabCounts>,
         dNw: null as number | null, nwSpark: [] as number[],
         dCf: null as number | null, dCfSince: null as number | null,
@@ -184,7 +183,6 @@ export default function TopBar() {
     // Leasing total: leased over lettable, operated deeds only.
     const occ = parcels ? (portfolioOccupancy(deferredGame, parcels)?.occ ?? null) : null;
     // What the leased feet pay on average — same deeds as occupancy.
-    const rentPsf = parcels ? portfolioRentPsf(deferredGame, parcels) : null;
     // Badges: one counter shared with the desk tabs, so the rail and the
     // tab inside the desk cannot disagree about what is waiting.
     const counts = tabCounts(deferredGame);
@@ -217,12 +215,12 @@ export default function TopBar() {
     const due = nextDue(deferredGame, parcels);
     return {
       standing, dRank, due,
-      nw, cf, occ, rentPsf, vacDpp, line, counts,
+      nw, cf, occ, vacDpp, line, counts,
       dNw, nwSpark, dCf, dCfSince, dRateBp,
     };
   }, [deferredGame, deferredPrev]);
   const {
-    nw, cf, occ, rentPsf, vacDpp, line, counts, dNw, dCf, dCfSince, dRateBp, standing, dRank, due,
+    nw, cf, occ, vacDpp, line, counts, dNw, dCf, dCfSince, dRateBp, standing, dRank, due,
   } = vitals;
 
   // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the
@@ -524,15 +522,6 @@ export default function TopBar() {
                 : "Portfolio occupancy"}
             />
             )}
-            {rentPsf !== null && (
-            <Stat
-              label="Avg $ psf"
-              value={`$${rentPsf.toFixed(2)}`}
-              drop={2}
-              w={64}
-              title={`Avg in-place rent, leased sf only: $${rentPsf.toFixed(2)}/sf/yr.`}
-            />
-            )}
             {/* ONE READOUT FOR THE STREET. Base rate, vacancy change, the phase
                 and the era used to be four separate readouts across the bar and
                 the rail. They are one question — what is money and space doing
@@ -616,12 +605,6 @@ export default function TopBar() {
             {game?.firm && (
               <span className="firm-id" title={(game.firm.epithets ?? []).map((e) => e.text).join(" · ") || "—"}>
                 <span className="firm-name">{game.firm.name}</span>
-                {(() => {
-                  const e = headlineEpithet(game);
-                  if (!e) return null;
-                  const yrs = Math.floor((game.month - e.sinceM) / 12);
-                  return <span className="firm-epithet">{e.text}{yrs >= 8 ? ` · ${yrs} yrs` : ""}</span>;
-                })()}
               </span>
             )}
             {/* YOU DO NOT GET TO CHANGE TOWNS MID-CAMPAIGN.
@@ -659,49 +642,42 @@ export default function TopBar() {
           </div>
         </div>
         <div className="siderail-scroll">
-          {/* EVERY ROOM, NAMED, UNDER THE JOB IT SERVES (desks.ts RAIL_GROUPS).
-              It was six bare icons over seventeen rooms; now each room is its
-              own labelled line and carries its own badge. */}
-          {RAIL_GROUPS.map((grp) => (
-            <div key={grp.label} className="rail-group" role="group" aria-label={grp.label}>
-              <div className="rail-group-label">{grp.label}</div>
-              {grp.pages.map((p) => {
-                const e = railEntry(p);
-                if (!e) return null;
-                if (e.tab.when && page !== p && !(game && e.tab.when(game))) return null;
-                const on = page === p || (p === "portfolio" && page === "property");
-                const n = counts[p] ?? 0;
-                const warn = p === "debt" ? counts.debtWarn : null;
-                const debtBal = counts.debtBal ?? 0, debtWall = counts.debtWall ?? 0;
-                const label = e.tab.label === "Holdings" ? "Portfolio" : e.tab.label;
-                const title = [
-                  `${label} — ${e.tab.note}`,
-                  p === "market" && n > 0 && counts.bcallSoon !== undefined
-                    ? `${n} pending · next off-market call lapses in ${counts.bcallSoon} mo.` : "",
-                  p === "debt" && debtBal > 0
-                    ? `${(debtBal / 1e6).toFixed(1)}M outstanding${warn ? ` · ${((debtWall / debtBal) * 100).toFixed(0)}% matures within 3 yrs` : ""}.` : "",
-                ].filter(Boolean).join(" ");
-                return (
-                  <button
-                    key={p}
-                    type="button"
-                    className={"rail-item" + (on ? " on" : "")}
-                    aria-current={on ? "page" : undefined}
-                    title={title}
-                    onClick={() => setPage(on && page !== "property" ? "none" : p)}
-                  >
-                    <span className="rail-ico" aria-hidden="true">{PAGE_ICON[p] ?? e.desk.icon}</span>
-                    <span className="rail-label">{label}</span>
-                    {/* A NUMBER MEANS AN ANSWER IS OWED; the tape's news is unread, not owed — a dot. */}
-                    {n > 0 && p === "news" ? <span className="rail-dot" aria-label="unread news" />
-                      : n > 0 ? <span className="rail-badge" aria-label={`${n} waiting`}>{n}</span>
-                      : warn ? <span className="rail-badge rail-badge-warn" aria-label={warn === "swept" ? "cash sweep on" : "maturity wall"}>{warn === "swept" ? "⚠" : "!"}</span>
-                      : null}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
+          {/* ONE LINE PER DESK (desks.ts DESKS); the rooms are tabs inside it.
+              Fifteen room lines became six desks (UI clean-up, 2026-11): the
+              badge is the desk's total and the tab inside says which room. */}
+          {DESKS.map((d) => {
+            const on = deskOf(page)?.id === d.id;
+            const n = deskCount(d, counts);
+            const warn = d.id === "capital" ? counts.debtWarn : null;
+            const debtBal = counts.debtBal ?? 0, debtWall = counts.debtWall ?? 0;
+            const title = [
+              `${d.label} (${d.key}) — ${visibleTabs(d, game, page).map((t) => t.label).join(" · ")}`,
+              d.id === "market" && (counts.market ?? 0) > 0 && counts.bcallSoon !== undefined
+                ? `${counts.market} pending · next off-market call lapses in ${counts.bcallSoon} mo.` : "",
+              d.id === "capital" && debtBal > 0
+                ? `${(debtBal / 1e6).toFixed(1)}M outstanding${warn ? ` · ${((debtWall / debtBal) * 100).toFixed(0)}% matures within 3 yrs` : ""}.` : "",
+            ].filter(Boolean).join(" ");
+            // the Tape's news is unread, not owed: a dot, not a number
+            const owed = d.tabs.reduce((k, t) => k + (t.page === "news" ? 0 : counts[t.page] ?? 0), 0);
+            const unread = n > owed;
+            return (
+              <button
+                key={d.id}
+                type="button"
+                className={"rail-item" + (on ? " on" : "")}
+                aria-current={on ? "page" : undefined}
+                title={title}
+                onClick={() => setPage(on && page !== "property" ? "none" : deskLanding(d, counts, game))}
+              >
+                <span className="rail-ico" aria-hidden="true">{d.icon}</span>
+                <span className="rail-label">{d.label}</span>
+                {owed > 0 ? <span className="rail-badge" aria-label={`${owed} waiting`}>{owed}</span>
+                  : warn ? <span className="rail-badge rail-badge-warn" aria-label={warn === "swept" ? "cash sweep on" : "maturity wall"}>{warn === "swept" ? "⚠" : "!"}</span>
+                  : unread ? <span className="rail-dot" aria-label="unread news" />
+                  : null}
+              </button>
+            );
+          })}
         </div>
         {/* THE TOOLS, ONE ROW. Saves, the primer, settings and the view modes
             are things you reach for, not places you work — icons with their

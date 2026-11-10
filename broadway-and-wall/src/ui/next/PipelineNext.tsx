@@ -81,7 +81,7 @@ export function buildRows(g: GameState, p: ParcelTable): BuildRow[] {
       out.push({ ...blank, key: "raise:" + r.bbl, bbl: r.bbl, addr: addrOf(p, g, r.bbl), stage: "raising", use: r.job.use, floors: r.job.floors, doneM: r.deadlineM, target: r.target, committed: committedTotal(r) });
     }
     for (const d of Object.values(g.developments)) {
-      const spent = d.equitySpent + d.drawn;
+      const spent = d.buildSpent ?? d.equitySpent + d.drawn; // same read as Deals › Building
       const signed = (d.signed ?? []).reduce((a, x) => a + x.sf, 0);
       out.push({
         ...blank, key: "job:" + d.bbl, bbl: d.bbl, addr: addrOf(p, g, d.bbl),

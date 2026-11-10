@@ -62,6 +62,8 @@ const wireKey = (t: string) =>
  */
 export function NewsPage() {
   const game = useStore((s) => s.game)!;
+  // THE FRONT PAGE BY DEFAULT. The clean-up tried Headlines first and measured
+  // it: 2,344 words and 143 sentences at rest against the front page's 309.
   const [view, setView] = useDeskView<TapeView>("news", "front", TAPE_VIEWS);
   const prints = (game.comps ?? []).length;
   const switcher = (
@@ -71,7 +73,8 @@ export function NewsPage() {
       set={setView}
       views={[
         { id: "front", label: "Front page", title: "Stories dug out of the deed histories, the street and your own book" },
-        { id: "headlines", label: "Headlines", n: (game.news ?? []).length },
+        { id: "headlines", label: "Headlines", n: (game.news ?? []).length,
+          title: `The last ${(game.news ?? []).length} items off the wire, newest first. ✈ marks a specific place — a building or a civic work; click it and the camera goes there.` },
         { id: "prints", label: "Prints", n: prints, title: "Closed sales — the price paid, the cap rate it implies, and who was on each side" },
       ]}
     />
@@ -112,9 +115,8 @@ function FrontPage({ onWire }: { onWire: () => void }) {
       </div>
 
       {!layout.lead && (
-        <div className="hint">
-          The city is too young for stories yet — a deed needs a history before it has a past. Until then, the
-          wire below is everything that has happened.
+        <div className="dim" title="The city is too young for stories yet — a deed needs a history before it has a past. Until then, the wire is everything that has happened.">
+          No stories yet
         </div>
       )}
 
@@ -143,8 +145,7 @@ function FrontPage({ onWire }: { onWire: () => void }) {
         if (!rows.length) return null;
         return (
           <div key={sec.k} className="page-section">
-            <div className="page-section-head">{sec.head}</div>
-            <div className="hint paper-blurb">{sec.blurb}</div>
+            <div className="page-section-head" title={sec.blurb}>{sec.head}</div>
             <div className="paper-grid">
               {rows.map((s) => <StoryCard key={s.id} s={s} month={game.month} />)}
             </div>
@@ -311,10 +312,6 @@ function Headlines({ switcher }: { switcher: ReactNode }) {
   return (
     <div>
       {switcher}
-      <div className="hint">
-        The last {(game.news ?? []).length} items off the wire, newest first. Anything marked ✈ is about a
-        specific place — a building, or a civic work. Click it and the camera goes there.
-      </div>
       <div className="btn-row" style={{ marginBottom: 8, flexWrap: "wrap" }}>
         {NEWS_KINDS.map((t) => (
           <button
@@ -328,7 +325,7 @@ function Headlines({ switcher }: { switcher: ReactNode }) {
       </div>
       {!items.length && (
         <div className="deal">
-          <div className="hint">Nothing under that heading yet.</div>
+          <div className="dim">None</div>
           {kind !== "all" && (
             <button className="btn" onClick={() => setKind("all")}>Show everything →</button>
           )}

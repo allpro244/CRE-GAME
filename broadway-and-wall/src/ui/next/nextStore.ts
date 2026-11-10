@@ -66,7 +66,8 @@ interface NextState {
 
 export const useNext = create<NextState>((set) => ({
   uiShell: initialShell(),
-  setUiShell: (v) => { write("bw:ui-shell", v); set({ uiShell: v }); },
+  // session only, like ?ui= (nothing ever read a stored choice back)
+  setUiShell: (v) => { try { sessionStorage.setItem("bw:ui", v); } catch { /* no storage */ } set({ uiShell: v }); },
   placeTab: {},
   setPlaceTab: (p, tab) => set((s) => ({ placeTab: { ...s.placeTab, [p]: tab } })),
   inboxDone: [],

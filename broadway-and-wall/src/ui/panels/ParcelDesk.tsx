@@ -19,7 +19,7 @@ import { assemblagePressure, hasOwnedSiteNeighbor, siteDeeds } from "@/engine/ac
 import { currentAskPsfYr } from "@/engine/absorption";
 import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unitCount, suiteSf, avgUnitSf, renewalIntent, minLettableSf, unlettableRemainderSf, planIsLive, autoLeaseRule, autoTiCapToday } from "@/engine/leasing";
 import { StackingList } from "@/ui/panels/StackingList";
-import { stacksOf } from "@/engine/plates";
+import { assignTenantFloors, stacksOf } from "@/engine/plates";
 import { supportableOcc } from "@/engine/absorption";
 import { dscr, ltv, payOffDue, rateCapCost, capStrikeFor, prepayPenalty, equityCureNeed } from "@/engine/debt";
 import { fundableNow } from "@/engine/credit";
@@ -42,6 +42,8 @@ import { entitleQuote, platQuote, PLAT_LOT_SIZES, INDUSTRIAL_LOT_SIZES } from "@
 import { platHomesView, tractLotQuote, houseValue, sfrRentMo } from "@/engine/homes";
 import { tractYield } from "@/engine/platdesign";
 import { SplitTab } from "@/ui/next/SplitTab";
+import { GlanceCard } from "@/ui/panels/GlanceCard";
+import "@/ui/cleanup-building.css";
 import { splittable } from "@/engine/lotsplit";
 import { BizLink } from "@/ui/BizSheet";
 import { RentExposure } from "@/ui/panels/IndustriesView";
@@ -430,13 +432,11 @@ function ParcelPanelInner({
   // seventy-odd rows — once the campaign passed month 12, on the theory that a
   // veteran wants everything. A veteran who does picks Full OM once and the
   // card remembers; everyone else gets a glance card that fits on the screen.
-  const [omFull, setOmFullState] = useState(() => {
+  // The old card's "Full OM" preference still adds its extra rows to the file's
+  // Overview for whoever chose it; the card itself is always the glance now.
+  const [omFull] = useState(() => {
     try { return localStorage.getItem("bw:om") === "full"; } catch { return false; }
   });
-  const setOmFull = (v: boolean) => {
-    setOmFullState(v);
-    try { localStorage.setItem("bw:om", v ? "full" : "summary"); } catch { /* storage blocked */ }
-  };
 
   if (!parcels) return null;
   const rec = resolveRec(parcels, game, selectedBBL);
@@ -462,7 +462,9 @@ function ParcelPanelInner({
   // header above it by the premium on every corner, waterfront and high street
   // lot, and the sale desk below priced your listing against it.
   const value = marketAppraisal(game, rec, selectedBBL, cond);
-  const dupe = embedded && !!holding;
+  // The property page's header carries the appraisal, NOI, occupancy, size,
+  // FAR, demand and WALT for every building (UI clean-up, 2026-11), owned or not.
+  const dupe = embedded;
   const builtFar = rec.lotArea > 0 ? rec.bldgArea / rec.lotArea : 0;
   const farMax = Math.max(rec.farMaxComm, rec.farMaxRes);
   // A ground lessee's building stands on your deed — it is not yours to let.
@@ -470,6 +472,8 @@ function ParcelPanelInner({
   const renovating = holding?.renovatingUntilM !== undefined && game.month < (holding.renovatingUntilM ?? 0);
   const commercial = isCommercial(rec);
   const leasedSf = holding && commercial ? holding.tenants.reduce((s2, t) => s2 + t.sf, 0) : 0;
+  // which floors each lease sits on, for the rent roll (StackingList does the same)
+  if (holding && commercial) assignTenantFloors(rec, holding.tenants);
   const d = holding ? dscr(rec, game, holding) : null;
   const l = holding ? ltv(rec, game, holding) : null;
   const taxAppeal = holding ? taxAppealQuote(game, parcels, selectedBBL) : null;
@@ -479,8 +483,12 @@ function ParcelPanelInner({
   // the overview, plus the buy desk when the building is not yours (that is
   // why you clicked it), and a row of doors into the property file's tabs.
   // Full OM brings the whole file back for whoever wants it on the map.
+  // THE MAP CARD IS A GLANCE (owner, 2026-11): four numbers, a facts line,
+  // at most one alert and the door to the file (GlanceCard); the buy desk stays
+  // under it on a building that is not yours. Everything else is the full file.
+  const glance = !embedded && tab === undefined;
   const on = (t: PropTab) => tab === undefined
-    ? (omFull || t === "summary" || (t === "deal" && !holding))
+    ? (t === "deal" && !holding)
     : tab === t;
   // Land desk: property-page Build tab always; docked card only when the lot
   // can assemble / is land / is already folded — not on every leased tower.
@@ -502,8 +510,10 @@ function ParcelPanelInner({
       {!embedded && (
         <div className="panel-head">
           <div>
-            <div className="panel-address">{rec.address}</div>
-            <div className="panel-bbl mono">Parcel {rec.bbl}</div>
+            <div className="panel-address" title={`Parcel ${rec.bbl} · ${rec.zoneDist}`}>{rec.address}
+              {holding && <span className="chip chip-owned" style={{ marginLeft: 8, verticalAlign: "middle" }}>OWNED</span>}
+              {listing && !holding && <span className="chip chip-listed" style={{ marginLeft: 8, verticalAlign: "middle" }}>FOR SALE</span>}
+            </div>
           </div>
           <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
             <button className="btn-mini" title="Open full property page" onClick={() => useStore.getState().setPage("property")}>full view</button>
@@ -530,46 +540,17 @@ function ParcelPanelInner({
       {on("summary") && rec.ag && <LandDevCard bbl={selectedBBL} />}
       {on("summary") && rec.homeLot && <HomesCard bbl={selectedBBL} />}
 
-      {on("summary") && !embedded && (
-        <div className="btn-row" style={{ marginBottom: 8 }}>
-          <button
-            type="button"
-            className={"btn-mini" + (!omFull ? " on" : "")}
-            onClick={() => setOmFull(false)}
-            title="Price, occupancy, key risk"
-          >
-            Summary
-          </button>
-          <button
-            type="button"
-            className={"btn-mini" + (omFull ? " on" : "")}
-            onClick={() => setOmFull(true)}
-            title="Full offering memorandum"
-          >
-            Full OM
-          </button>
-        </div>
-      )}
-      {tab === undefined && !embedded && !omFull && holding && (
-        <div className="btn-row card-doors" style={{ marginBottom: 10 }}>
-          {([
-            ["leasing", "Rent roll", isBuilt],
-            ["money", "Money", isBuilt || !!holding.loan || !!holding.groundLeased],
-            ["ops", "Operations", isBuilt],
-            ["deal", "Sell", true],
-            ["build", isBuilt ? "Convert / Build" : "Build", true],
-          ] as const).filter(([, , show]) => show).map(([t, label]) => (
-            <button key={t} type="button" className="btn-mini"
-              title={`Open ${label}`}
-              onClick={() => useStore.getState().openProperty(selectedBBL, t)}>
-              {label} →
-            </button>
-          ))}
-        </div>
+      {glance && (
+        <>
+          <GlanceCard game={game} parcels={parcels} rec={rec} bbl={selectedBBL} value={value} />
+          {rec.ag && <LandDevCard bbl={selectedBBL} />}
+          {rec.homeLot && <HomesCard bbl={selectedBBL} />}
+        </>
       )}
 
       {on("summary") && holding && !dev && <AssembleCard bbl={selectedBBL} />}
-      {(on("summary") || on("build")) && holding && !dev && !parcels?.[selectedBBL]?.tract && <SplitCard key={selectedBBL} bbl={selectedBBL} />}
+      {/* only dirt can be split: on a standing building the card said so and nothing else */}
+      {(on("summary") || on("build")) && holding && !dev && !parcels?.[selectedBBL]?.tract && (rec.class === "land" || !rec.bldgArea) && <SplitCard key={selectedBBL} bbl={selectedBBL} />}
       {on("summary") && holding && !dev && (() => {
         const read = landRead(rec, game.econ);
         const room = farMax > 0 ? Math.max(0, 1 - builtFar / farMax) : 0;
@@ -808,7 +789,7 @@ function ParcelPanelInner({
         })()}
         {/* DISCLOSED, not estimated, whenever the seller has shown a roll. The
             label drops "(mkt)" with it, because it is no longer an opinion. */}
-        {isBuilt && !holding && (() => {
+        {isBuilt && !holding && !dupe && (() => {
           const ip = goingIn(game, selectedBBL, value);
           // ONE BASIS WITH THE HEADER. The property page's strip reads let
           // over LETTABLE feet ("fully let · 1,209 sf unlettable"); this row
@@ -903,13 +884,13 @@ function ParcelPanelInner({
             bad={u.leased < u.total * 0.6}
           />
         ))}
-        {holding && isBuilt && commercial && holding.tenants.length > 0 && (
+        {holding && isBuilt && commercial && holding.tenants.length > 0 && !dupe && (
           <Row
             k="Rent roll"
             v={`${holding.tenants.length} lease${holding.tenants.length === 1 ? "" : "s"} · ${sf(holding.tenants.reduce((a, t) => a + t.sf, 0))}`}
           />
         )}
-        {holding && isBuilt && commercial && (
+        {holding && isBuilt && commercial && !dupe && (
           <Row k={<Gloss term="WALT">WALT</Gloss>} v={walt(holding, game.month).toFixed(1) + " yrs avg remaining"} />
         )}
         {/* One building must not quote two different NOIs on one panel. In
@@ -1020,7 +1001,7 @@ function ParcelPanelInner({
       })()}
 
       {on("leasing") && holding && commercial && (
-        <StackingList rec={rec} holding={holding} game={game} canHold={planIsLive(game)} />
+        <StackingList rec={rec} holding={holding} game={game} canHold={planIsLive(game)} vacantOnly />
       )}
       {on("leasing") && holding && commercial && holding.tenants.length > 0 && (
         <div className="deal">
@@ -1072,6 +1053,7 @@ function ParcelPanelInner({
                       {yrsIn >= 5 && <span className="dim"> · since {START_YEAR + Math.floor(t.startM / 12)}</span>}
                     </span>
                     <span className="roll-meta mono">
+                      {t.floorLo != null && t.floorHi != null && <>{t.floorLo === t.floorHi ? `Fl ${t.floorLo}` : `Fl ${t.floorLo}–${t.floorHi}`} · </>}
                       {sf(t.sf)} · ${t.rentPsf.toFixed(0)} {recoveryOf(t) === "gross" ? "G" : recoveryOf(t).toUpperCase()} · exp {monthLabel(t.endM)}
                       {" "}· {termLeft(t.endM, game.month)}
                       {outgrown && (noRoom
@@ -1290,7 +1272,12 @@ function ParcelPanelInner({
               {contract
                 ? <Row k="Agreed price" v={usd(contract.agreedPrice ?? contract.theirPrice)} strong />
                 : <>
-                    <Row k="Ask" v={usd(listing.ask)} strong />
+                    {/* the cap at ask rides on the ask; the offer desk below
+                        prints NOI, going-in and stabilised at YOUR price */}
+                    {!glance && <Row k="Ask" v={(() => {
+                      const ip = isBuilt ? goingIn(game, selectedBBL, listing.ask) : null;
+                      return ip && ip.noi > 0 ? `${usd(listing.ask)} · ${((ip.noi / Math.max(1, listing.ask)) * 100).toFixed(2)}% cap` : usd(listing.ask);
+                    })()} strong />}
                     {listing.loanBasis !== undefined && listing.loanBasis > 0 && (
                       <Row k="Loan basis" v={usd(listing.loanBasis)} title="Outstanding debt; ask anchored to it, not appraisal." />
                     )}
@@ -1301,12 +1288,13 @@ function ParcelPanelInner({
                   off the disclosed rent roll where there is one, so the cap
                   rate on this card is the cap rate you actually buy at rather
                   than the one a building of this type ought to trade at. */}
-              {isBuilt && (() => {
+              {isBuilt && !(glance && !contract) && (() => {
                 const px = contract?.agreedPrice ?? listing.ask;
                 const ip = goingIn(game, selectedBBL, px);
                 const stab = proFormaNOIYr(rec, game.econ, ip.h?.condition ?? cond, px);
                 return (
                   <>
+                    {contract && <>
                     <Row k={ip.disclosed ? "In-place NOI / yr" : "NOI / yr (mkt est.)"} v={usd(ip.noi)} bad={ip.noi < 0} />
                     <Row
                       k="Going-in cap"
@@ -1317,6 +1305,7 @@ function ParcelPanelInner({
                     {/* The seller's other number, and it is labelled as the
                         forecast it is. What you buy is the line above. */}
                     <Row k="Stabilised pro-forma" v={`${usd(stab)} · ${((stab / Math.max(1, px)) * 100).toFixed(2)}%`} />
+                    </>}
                     {(() => {
                       const r = ip.h ? occRead(rec, ip.h) : null;
                       return (

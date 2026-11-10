@@ -6,7 +6,7 @@ import { useStore } from "@/state/store";
 import { CLASS_LABEL } from "@/data/types";
 import { monthLabel } from "@/engine/types";
 import { ownedHoldingValue, resolveRec, ownedContractNoiYr } from "@/engine/value";
-import { PRODUCTS, productById, payOffDue, rateCapCost, capStrikeFor, loanLender } from "@/engine/debt";
+import { PRODUCTS, productById, payOffDue, rateCapCost, capStrikeFor, loanLender, dscr as loanDscr, ltv as loanLtv } from "@/engine/debt";
 import { fundableNow, locRate, spendable } from "@/engine/credit";
 import type { FacilityQuote } from "@/engine/facility";
 import { facilityQuotes, facilityMetrics, facilityStatus, facilityDrawTerms, pledgeable, pledged, releaseCost, allocatedAmount, FACILITY_MIN_ASSETS, RELEASE_PREMIUM } from "@/engine/facility";
@@ -16,15 +16,8 @@ import { Big, Row } from "@/ui/panels/shared";
 import { CreditLine } from "@/ui/panels/CreditLineDesk";
 import { MaturityWall } from "@/ui/rollups/MaturityWall";
 import { tabCounts } from "@/ui/desks";
+import "@/ui/cleanup-capital.css";
 
-export { TheBanks } from "@/ui/panels/BanksDesk";
-export { SponsorRecord } from "@/ui/panels/SponsorRecord";
-export { CompsSheet } from "@/ui/panels/CompsSheet";
-export { TheStreet, rivalEquity, STYLE_MAX, CONDITION_WORD, STYLE_WORD } from "@/ui/panels/StreetDesk";
-export { FundDesk } from "@/ui/panels/FundDesk";
-export { CreditLine } from "@/ui/panels/CreditLineDesk";
-export { HousePolicy } from "@/ui/panels/HousePolicyDesk";
-export { Owners, OwnerStatement } from "@/ui/panels/OwnersDesk";
 
 /**
  * The saves page. The slot manager used to live at the bottom of the Books
@@ -266,6 +259,176 @@ export function DebtPage() {
         <Big label="WAM" title="Weighted average maturity (years, by balance)." value={agg.wam > 0 ? agg.wam.toFixed(1) + " yrs" : "—"} bad={agg.wam > 0 && agg.wam < 3} />
       </div>
 
+      {/* ---- every loan, one row each ---------------------------------- */}
+      {/* FIRST, because it is the page: each loan against its own covenants
+          (the engine's `dscr` / `ltv`, the same reads the quarterly test
+          makes), when it comes due, whether it is swept, and what leaving
+          early costs today (`payOffDue`). Soonest maturity first. */}
+      <div className="page-section">Loan by loan</div>
+        <table className="tbl debt-loans">
+          <thead>
+            <tr>
+              <th>Building</th><th>Lender</th><th className="num">Balance</th><th className="num">Rate</th>
+              <th className="num has-gloss" title="Coverage today / the loan's covenant minimum. Tested quarterly; below the minimum the loan is swept.">DSCR / min</th>
+              <th className="num has-gloss" title="Loan-to-value today / the loan's covenant maximum.">LTV / max</th>
+              <th>Matures</th><th className="num has-gloss" title="Months to the balloon.">Left</th>
+              <th className="has-gloss" title="Covenant breach: cash flow trapped to principal until cured.">Sweep</th>
+              <th className="has-gloss" title="Prepayment terms, and what paying off today costs on top of the balance.">Prepay</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.filter((r) => r.h.loan).sort((a, b) => (a.h.loan!.maturityM) - (b.h.loan!.maturityM)).map(({ h, rec }) => {
+              const l = h.loan!;
+              const p = productById(l.product);
+              const d = rec ? loanDscr(rec, game, h) : null;
+              const lv = rec ? loanLtv(rec, game, h) : null;
+              const left = l.maturityM - game.month;
+              const near = left <= 24;
+              const due = payOffDue(l, game.month, game.econ);
+              const jvBlock = consentFor(game, h, "debt");
+              const canPay = !pledged(game, h.bbl) && !jvBlock && fundableNow(game, parcels) >= due.due;
+              const crumb = due.balance > 0 && due.balance < 25_000;
+              const pk = l.prepay ?? "open";
+              const pkWord = pk === "yieldmaint" ? "YM" : pk === "stepdown" ? "Step-down" : "Open";
+              const pkLive = pk !== "open" && (l.prepayUntilM ?? 0) > game.month;
+              const flags = [game.month < l.ioUntilM ? "interest-only" : null, p.recourse ? "recourse" : "non-recourse",
+                (l.floating ?? l.product === "float") ? "floating" : "fixed"].filter(Boolean).join(" · ");
+              return (
+                <Fragment key={h.bbl}>
+                <tr>
+                  <td>
+                    <a className="lnk" onClick={() => useStore.getState().focus(h.bbl, true)}>{rec!.address}</a>
+                    {pledged(game, h.bbl) ? <span className="dim"> · pledged</span> : null}
+                  </td>
+                  <td className="dim" title={flags}><BankLink name={loanLender(l)} /></td>
+                  <td className="num" title={`Payment ${usd(l.monthlyPmt)}/mo`}>{usd(l.balance)}</td>
+                  <td className="num">{l.ratePct.toFixed(2)}%{(l.floating ?? l.product === "float") ? " fl" : ""}</td>
+                  <td className="num">
+                    <span className={d !== null && l.minDSCR > 0 && d < l.minDSCR ? "neg" : ""}>{d !== null ? d.toFixed(2) : "—"}</span>
+                    <span className="dim"> / {l.minDSCR > 0 ? l.minDSCR.toFixed(2) : "—"}</span>
+                  </td>
+                  <td className="num">
+                    <span className={lv !== null && lv > l.maxLTV ? "neg" : ""}>{lv !== null ? (lv * 100).toFixed(0) + "%" : "—"}</span>
+                    <span className="dim"> / {(l.maxLTV * 100).toFixed(0)}%</span>
+                  </td>
+                  <td className={near ? "neg" : ""}>{monthLabel(l.maturityM)}</td>
+                  <td className={"num" + (left <= 12 ? " neg" : "")}>{Math.max(0, left)}</td>
+                  <td className={l.sweep ? "neg" : "dim"}>{l.sweep ? "swept" : "—"}</td>
+                  <td className={pkLive ? "" : "dim"}
+                    title={pkLive ? `${pkWord} until ${monthLabel(l.prepayUntilM!)} · payoff today ${usd(due.due)}` : "No prepayment penalty"}>
+                    {pkLive ? `${pkWord} · ${usd(due.penalty)}` : "Open"}
+                  </td>
+                  <td>
+                    <div className="btn-row" style={{ gap: 4, margin: 0, justifyContent: "flex-end", flexWrap: "nowrap" }}>
+                      <button
+                        className={"btn btn-sm" + (crumb ? " btn-buy" : "")}
+                        disabled={!canPay}
+                        title={jvBlock ? jvBlock : pledged(game, h.bbl)
+                          ? "Pledged to credit facility; release first."
+                          : !canPay
+                            ? `Payoff ${usd(due.due)}${due.penalty > 0 ? ` incl. ${usd(due.penalty)} prepayment` : ""} · short ${usd(due.due - fundableNow(game, parcels))}`
+                            : due.penalty > 0
+                              ? `Payoff ${usd(due.balance)} + ${usd(due.penalty)} prepayment penalty`
+                              : `Payoff ${usd(due.due)}`}
+                        onClick={() => useStore.getState().payOffLoan(h.bbl)}
+                      >
+                        Pay off{crumb ? ` · ${usd(due.due)}` : ""}
+                      </button>
+                      {(l.floating ?? l.product === "float") && !l.cap && (
+                        <button
+                          className="btn btn-sm"
+                          title={`Index cap ${capStrikeFor(game, l).toFixed(2)}% · 3 yrs`}
+                          onClick={() => useStore.getState().rateCap(h.bbl)}
+                        >
+                          Cap · {usd(rateCapCost(l))}
+                        </button>
+                      )}
+                      <button
+                        className={"btn btn-sm" + (refiRow === h.bbl ? " btn-on" : "")}
+                        title={near
+                          ? "Matures within 2 yrs."
+                          : "Current refinance quotes"}
+                        onClick={() => setRefiRow(refiRow === h.bbl ? null : h.bbl)}
+                      >
+                        Refi
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                {refiRow === h.bbl && (
+                  <tr>
+                    <td colSpan={11} style={{ background: "rgba(43,37,26,0.035)" }}>
+                      <RefiSection bbl={h.bbl} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
+              );
+            })}
+            {Object.values(game.developments).map((dv) => {
+              const rec = parcels[dv.bbl];
+              const intMo = (dv.loanBalance * dv.ratePct) / 100 / 12;
+              const lv = dv.costTotal > 0 ? dv.loanBalance / dv.costTotal : null;
+              return (
+                <tr key={`cons:${dv.bbl}`}>
+                  <td>
+                    <a className="lnk" onClick={() => useStore.getState().focus(dv.bbl, true)}>{rec?.address ?? dv.bbl}</a>
+                    <span className="dim"> · construction</span>
+                  </td>
+                  <td className="dim" title={[dv.use, dv.contract === "gmp" ? "GMP" : "cost-plus", "interest-only", dv.repudiatedM !== undefined ? "repudiated" : null].filter(Boolean).join(" · ")}>
+                    {dv.lender ? <BankLink name={dv.lender} /> : "construction"}
+                  </td>
+                  <td className="num" title={`${usd(dv.drawn)} drawn of ${usd(dv.commitment)} committed · accrued interest ${usd(intMo)}/mo (capitalised)`}>
+                    {usd(dv.loanBalance)}
+                  </td>
+                  <td className="num">{dv.ratePct.toFixed(2)}%</td>
+                  <td className="num dim">—</td>
+                  <td className="num" title="Loan to cost">{lv !== null ? (lv * 100).toFixed(0) + "%" : "—"}</td>
+                  <td>{monthLabel(dv.deliverM)}</td>
+                  <td className="num">{Math.max(0, dv.deliverM - game.month)}</td>
+                  <td className="dim">—</td>
+                  <td className="dim">—</td>
+                  <td className="dim">delivers</td>
+                </tr>
+              );
+            })}
+            {fac && (
+              <tr>
+                <td><strong>Facility</strong> <span className="dim">· {fac.bbls.length} deeds</span></td>
+                <td className="dim" title={[game.month < fac.ioUntilM ? "interest-only" : null, "recourse", "cross-collateralised"].filter(Boolean).join(" · ")}>
+                  <BankLink name={fac.lender} />
+                </td>
+                <td className="num" title={`Payment ${usd(fac.monthlyPmt)}/mo`}>{usd(fac.balance)}</td>
+                <td className="num">{fac.ratePct.toFixed(2)}%{fac.floating ? " fl" : ""}</td>
+                <td className="num">
+                  <span className={facM.dscr !== null && facM.dscr < fac.minDSCR ? "neg" : ""}>{facM.dscr !== null ? facM.dscr.toFixed(2) : "—"}</span>
+                  <span className="dim"> / {fac.minDSCR.toFixed(2)}</span>
+                </td>
+                <td className="num">
+                  <span className={facM.ltv !== null && facM.ltv > fac.maxLTV ? "neg" : ""}>{facM.ltv !== null ? (facM.ltv * 100).toFixed(0) + "%" : "—"}</span>
+                  <span className="dim"> / {(fac.maxLTV * 100).toFixed(0)}%</span>
+                </td>
+                <td className={fac.maturityM - game.month <= 24 ? "neg" : ""}>{monthLabel(fac.maturityM)}</td>
+                <td className={"num" + (fac.maturityM - game.month <= 12 ? " neg" : "")}>{Math.max(0, fac.maturityM - game.month)}</td>
+                <td className={fac.sweep ? "neg" : "dim"}>{fac.sweep ? "swept" : "—"}</td>
+                <td className="dim">—</td>
+                <td className="dim">—</td>
+              </tr>
+            )}
+            {!rows.some((r) => r.h.loan) && !fac && Object.keys(game.developments).length === 0 && (
+              <tr><td colSpan={11} className="dim">None</td></tr>
+            )}
+          </tbody>
+        </table>
+
+      {/* ONE WALL, ONE HOME. The ladder that sat here and the wall on
+          Portfolio drew the same balloons twice; the wall is the richer of the
+          two (each segment wears its building's coverage) and now carries the
+          construction loans the ladder used to add, so it is the only one. */}
+      {agg.bal > 0 || Object.values(game.developments ?? {}).some((d) => d.loanBalance > 0)
+        ? <MaturityWall />
+        : <><div className="page-section">The maturity wall</div><div className="dim">None</div></>}
+
       {/* WHAT IT IS MADE OF. Three different instruments with three different
           ways of hurting you, and the book showed one number for all of them. */}
       <div className="page-section">Debt stack</div>
@@ -289,10 +452,7 @@ export function DebtPage() {
 
       {(game.privateBorrowQuotes?.length ?? 0) > 0 && (
         <>
-          <div className="page-section">Private borrow offers</div>
-          <div className="hint" style={{ marginBottom: 8 }}>
-            Short-term bridge quotes from rival firms when banks decline or cap a refinance. High cost.
-          </div>
+          <div className="page-section has-gloss" title="Short-term bridge quotes from rival firms when banks decline or cap a refinance. High cost.">Private borrow offers</div>
           {(game.privateBorrowQuotes ?? []).map((q) => {
             const h = game.holdings[q.bbl];
             const payoff = (h?.loan?.balance ?? 0) + (h?.mezz?.balance ?? 0);
@@ -338,36 +498,33 @@ export function DebtPage() {
         <Row k="Maturing within 3 yrs" v={`${usd(agg.wall36)} · ${agg.bal > 0 ? ((agg.wall36 / agg.bal) * 100).toFixed(0) : 0}% of debt`} bad={agg.bal > 0 && agg.wall36 / agg.bal > 0.35} />
       </div>
 
-      {/* ONE WALL, ONE HOME. The ladder that sat here and the wall on
-          Portfolio drew the same balloons twice; the wall is the richer of the
-          two (each segment wears its building's coverage) and now carries the
-          construction loans the ladder used to add, so it is the only one. */}
-      {agg.bal > 0 || Object.values(game.developments ?? {}).some((d) => d.loanBalance > 0)
-        ? <MaturityWall />
-        : <><div className="page-section">The maturity wall</div><div className="hint">No debt.</div></>}
 
       {/* THE STANDING INSTRUCTION. A balloon any desk will renew rolls on its
           own at maturity; this is the one condition a treasurer attaches. */}
-      <div className="hint">
-        <b>At maturity:</b> auto-refinance with the cheapest lender that covers the balance (normal fees, points,
-        rate cap on floating). Stops if no lender quotes{" "}
-        {(() => {
-          const cur = game.debtPolicy?.rollMaxJumpBp;
-          const opts: (number | undefined)[] = [undefined, 50, 100, 200];
-          return (
-            <>
-              or coupon rises more than{" "}
+      <div className="grid">
+        <div className="k has-gloss"
+          title="At maturity: auto-refinance with the cheapest lender that covers the balance (normal fees, points, rate cap on floating). Stops if no lender quotes or the coupon rises more than this.">
+          Auto-refi: max rate rise
+        </div>
+        <div className="v">
+          {(() => {
+            const cur = game.debtPolicy?.rollMaxJumpBp;
+            const opts: (number | undefined)[] = [undefined, 50, 100, 200];
+            return (
               <select value={cur === undefined ? "" : String(cur)}
                 onChange={(e) => useStore.getState().setDebtPolicy({ rollMaxJumpBp: e.target.value === "" ? undefined : Number(e.target.value) })}>
                 {opts.map((o) => <option key={String(o)} value={o === undefined ? "" : String(o)}>{o === undefined ? "no limit" : `${o}bp`}</option>)}
-              </select>.
-            </>
-          );
-        })()}
+              </select>
+            );
+          })()}
+        </div>
       </div>
 
       {/* ---- the facility ---------------------------------------------- */}
-      <div className="page-section">Portfolio facility</div>
+      <div className="page-section has-gloss"
+        title={`One loan on a pool of buildings: higher LTV, lower coupon than single-asset loans. Cross-collateralised and recourse: a breach sweeps all deeds. Release price = allocated share + ${Math.round((RELEASE_PREMIUM - 1) * 100)}%.`}>
+        Portfolio facility
+      </div>
       {fac && !building ? (
         <>
           <div className="grid">
@@ -535,13 +692,10 @@ export function DebtPage() {
                         />
                         <div className="btn-row">
                           <button className="btn btn-buy" disabled={!rqt.available}
-                            title={!refiFacility ? "Not available in this build." : undefined}
+                            title={!refiFacility ? "Not available in this build." : "Pool stays cross-collateralised and recourse. Draw below balance = paydown at closing; above = cash out."}
                             onClick={() => { refiFacility?.(rqt.productId, refiLev); setRefiFac(false); }}>
                             Refinance · {usd(draw)} at {rqt.ratePct.toFixed(2)}%
                           </button>
-                        </div>
-                        <div className="hint">
-                          Pool stays cross-collateralised and recourse. Draw below balance = paydown at closing; above = cash out.
                         </div>
                       </>
                     );
@@ -584,15 +738,9 @@ export function DebtPage() {
                 })}
               </tbody>
             </table>
-          <div className="hint">
-            Cross-collateralised: breach sweeps all deeds. Release price = allocated share + {Math.round((RELEASE_PREMIUM - 1) * 100)}%.
-          </div>
         </>
       ) : !building ? (
         <>
-          <div className="hint">
-            One loan on a pool of buildings: higher LTV, lower coupon than single-asset loans. Cross-defaulted, recourse; releases cost a premium.
-          </div>
           <div className="btn-row">
             <button className="btn btn-buy" disabled={candidates.length < FACILITY_MIN_ASSETS}
               onClick={() => { setBuilding(true); setPool(candidates.slice(0, Math.min(8, candidates.length)).map((c) => c.bbl)); }}>
@@ -679,148 +827,6 @@ export function DebtPage() {
         </>
       )}
 
-      {/* ---- every loan, one row each ---------------------------------- */}
-      <div className="page-section">Loan by loan</div>
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Building</th><th>Desk</th><th className="num">Balance</th><th className="num">Rate</th>
-              <th className="num">LTV</th><th className="num">DSCR</th><th className="num">Payment</th>
-              <th>Matures</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.filter((r) => r.h.loan).sort((a, b) => (b.h.loan!.balance) - (a.h.loan!.balance)).map(({ h, rec, v, noi }) => {
-              const l = h.loan!;
-              const p = productById(l.product);
-              const ds = l.monthlyPmt * 12;
-              const d = ds > 0 ? noi / ds : null;
-              const lv = v > 0 ? l.balance / v : null;
-              const near = l.maturityM - game.month <= 24;
-              const due = payOffDue(l, game.month, game.econ);
-              const jvBlock = consentFor(game, h, "debt");
-              const canPay = !pledged(game, h.bbl) && !jvBlock && fundableNow(game, parcels) >= due.due;
-              const crumb = due.balance > 0 && due.balance < 25_000;
-              return (
-                <Fragment key={h.bbl}>
-                <tr>
-                  <td>
-                    <a className="lnk" onClick={() => useStore.getState().focus(h.bbl, true)}>{rec!.address}</a>
-                    {pledged(game, h.bbl) ? <span className="dim"> · pledged</span> : null}
-                  </td>
-                  <td className="dim">
-                    <BankLink name={loanLender(l)} />
-                    <div style={{ fontSize: 11 }}>
-                      {[l.sweep ? "swept" : null, game.month < l.ioUntilM ? "IO" : null, p.recourse ? "recourse" : null,
-                        l.prepay === "yieldmaint" ? "YM" : null].filter(Boolean).join(" · ")}
-                    </div>
-                  </td>
-                  <td className="num">{usd(l.balance)}</td>
-                  <td className="num">{l.ratePct.toFixed(2)}%{(l.floating ?? l.product === "float") ? " fl" : ""}</td>
-                  <td className={"num" + (lv !== null && lv > l.maxLTV ? " neg" : "")}>{lv !== null ? (lv * 100).toFixed(0) + "%" : "—"}</td>
-                  <td className={"num" + (d !== null && d < l.minDSCR ? " neg" : "")}>{d !== null ? d.toFixed(2) : "—"}</td>
-                  <td className="num">{usd(l.monthlyPmt)}</td>
-                  <td className={near ? "neg" : ""}>{monthLabel(l.maturityM)}</td>
-                  <td>
-                    <div className="btn-row" style={{ gap: 4, margin: 0, justifyContent: "flex-end" }}>
-                      <button
-                        className={"btn btn-sm" + (crumb ? " btn-buy" : "")}
-                        disabled={!canPay}
-                        title={jvBlock ? jvBlock : pledged(game, h.bbl)
-                          ? "Pledged to credit facility; release first."
-                          : !canPay
-                            ? `Payoff ${usd(due.due)}${due.penalty > 0 ? ` incl. ${usd(due.penalty)} prepayment` : ""} · short ${usd(due.due - fundableNow(game, parcels))}`
-                            : due.penalty > 0
-                              ? `Payoff ${usd(due.balance)} + ${usd(due.penalty)} prepayment penalty`
-                              : `Payoff ${usd(due.due)}`}
-                        onClick={() => useStore.getState().payOffLoan(h.bbl)}
-                      >
-                        Pay off{crumb ? ` · ${usd(due.due)}` : ""}
-                      </button>
-                      {(l.floating ?? l.product === "float") && !l.cap && (
-                        <button
-                          className="btn btn-sm"
-                          title={`Index cap ${capStrikeFor(game, l).toFixed(2)}% · 3 yrs`}
-                          onClick={() => useStore.getState().rateCap(h.bbl)}
-                        >
-                          Cap · {usd(rateCapCost(l))}
-                        </button>
-                      )}
-                      <button
-                        className={"btn btn-sm" + (refiRow === h.bbl ? " btn-on" : "")}
-                        title={near
-                          ? "Matures within 2 yrs."
-                          : "Current refinance quotes"}
-                        onClick={() => setRefiRow(refiRow === h.bbl ? null : h.bbl)}
-                      >
-                        Refi
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                {refiRow === h.bbl && (
-                  <tr>
-                    <td colSpan={9} style={{ background: "rgba(43,37,26,0.035)" }}>
-                      <RefiSection bbl={h.bbl} />
-                    </td>
-                  </tr>
-                )}
-                </Fragment>
-              );
-            })}
-            {Object.values(game.developments).map((dv) => {
-              const rec = parcels[dv.bbl];
-              const intMo = (dv.loanBalance * dv.ratePct) / 100 / 12;
-              const lv = dv.costTotal > 0 ? dv.loanBalance / dv.costTotal : null;
-              return (
-                <tr key={`cons:${dv.bbl}`}>
-                  <td>
-                    <a className="lnk" onClick={() => useStore.getState().focus(dv.bbl, true)}>{rec?.address ?? dv.bbl}</a>
-                    <div className="dim" style={{ fontSize: 11 }}>construction · {dv.use}</div>
-                  </td>
-                  <td className="dim">
-                    {dv.lender ? <BankLink name={dv.lender} /> : "construction"}
-                    <div style={{ fontSize: 11 }}>
-                      {[dv.contract === "gmp" ? "GMP" : "cost-plus", "IO", dv.repudiatedM !== undefined ? "repudiated" : null]
-                        .filter(Boolean).join(" · ")}
-                    </div>
-                  </td>
-                  <td className="num" title={`${usd(dv.drawn)} drawn of ${usd(dv.commitment)} committed`}>
-                    {usd(dv.loanBalance)}
-                    <div className="dim" style={{ fontSize: 11 }}>of {usd(dv.commitment)}</div>
-                  </td>
-                  <td className="num">{dv.ratePct.toFixed(2)}%</td>
-                  <td className="num">{lv !== null ? (lv * 100).toFixed(0) + "%" : "—"}</td>
-                  <td className="num dim">—</td>
-                  <td className="num" title="Accrued interest (capitalised)">{usd(intMo)}</td>
-                  <td>{monthLabel(dv.deliverM)}</td>
-                  <td className="dim">delivers</td>
-                </tr>
-              );
-            })}
-            {fac && (
-              <tr>
-                <td><strong>Facility</strong> <span className="dim">· {fac.bbls.length} deeds pledged</span></td>
-                <td className="dim">
-                  <BankLink name={fac.lender} />
-                  <div style={{ fontSize: 11 }}>
-                    {[fac.sweep ? "swept" : null, game.month < fac.ioUntilM ? "IO" : null, "recourse", "crossed"].filter(Boolean).join(" · ")}
-                  </div>
-                </td>
-                <td className="num">{usd(fac.balance)}</td>
-                <td className="num">{fac.ratePct.toFixed(2)}%</td>
-                <td className={"num" + (facM.ltv !== null && facM.ltv > fac.maxLTV ? " neg" : "")}>{facM.ltv !== null ? (facM.ltv * 100).toFixed(0) + "%" : "—"}</td>
-                <td className={"num" + (facM.dscr !== null && facM.dscr < fac.minDSCR ? " neg" : "")}>{facM.dscr !== null ? facM.dscr.toFixed(2) : "—"}</td>
-                <td className="num">{usd(fac.monthlyPmt)}</td>
-                <td className={fac.maturityM - game.month <= 24 ? "neg" : ""}>{monthLabel(fac.maturityM)}</td>
-                <td className="dim">—</td>
-              </tr>
-            )}
-            {!rows.some((r) => r.h.loan) && !fac && Object.keys(game.developments).length === 0 && (
-              <tr><td colSpan={9} className="dim">No debt.</td></tr>
-            )}
-          </tbody>
-        </table>
     </div>
   );
 }

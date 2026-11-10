@@ -15,12 +15,9 @@
 import type { GameState, Loan } from "@/engine/types";
 import { monthLabel } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
-import { attentionItems, MILESTONES } from "@/engine/sim";
-import { netWorth, resolveRec } from "@/engine/value";
-import { planIsLive, loiSigningCost, vacantSf, sheetReview } from "@/engine/leasing";
+import { attentionItems } from "@/engine/sim";
+import { planIsLive, loiSigningCost, sheetReview } from "@/engine/leasing";
 import { loiMarketPsf } from "@/ui/panels/LoiNegotiate";
-import { positiveLeverage, starterPick } from "@/engine/standing";
-import { fundableNow } from "@/engine/credit";
 import { buyBoxSet, suggestBuyBox } from "@/engine/buybox";
 import { usd } from "@/ui/format";
 import type { Page } from "@/state/store";
@@ -96,9 +93,6 @@ function urgentKey(key: string): boolean {
   if (head === "facility-balloon") return key.endsWith(":near");
   return false;
 }
-
-/** Milestones worth nudging a first-year firm toward, in the order they come. */
-const YEAR_ONE_IDS = ["deed1", "lease1", "tower1", "exit1", "nw25"];
 
 export function buildDocket(
   game: GameState,
@@ -288,6 +282,10 @@ export function buildDocket(
     // to sit under a CITY tag beside the CAP row for the very same breach.
     const subject = n.bbl ?? bblIn(n.text);
     const mine = !!subject && !!game.holdings[subject];
+    // THE DESK IS FOR WHAT IS YOURS OR WANTS AN ANSWER (UI clean-up, 2026-11).
+    // The city's own news, other firms' trades included, is on the Tape one
+    // click away; a first look you are offered has its own row above.
+    if (!mine) return;
     items.push({
       key,
       cat: n.kind === "deal" ? "deals" : mine ? "assets" : "world",
@@ -302,74 +300,8 @@ export function buildDocket(
   // An urgent item ignores a snooze set before it was urgent.
   const live = items.filter((it) => it.urgent || !((snooze[it.key] ?? -1) > month));
 
-  // (d) The year-one nudge — the next milestone a first-year firm has not
-  // reached, offered only when nothing on the desk is on fire. netWorth is a
-  // full-book appraisal walk, so it runs only inside the first twelve months.
-  if (month < 12 && parcels && !live.some((it) => it.urgent)) {
-    const nw = netWorth(game, parcels);
-    const next = MILESTONES.find((m) => YEAR_ONE_IDS.includes(m.id) && !m.test(game, nw));
-    if (next && !((snooze[`milestone:${next.id}`] ?? -1) > month)) {
-      // WHERE EACH RUNG IS CLIMBED. This sent every milestone to the
-      // Marketplace — including the first lease, which arrives as a letter on
-      // the Deals desk, and the first exit, which is sold from your own book.
-      const HOW: Record<string, { page: Page; how: string }> = {
-        deed1: { page: "market", how: "buy a building off the tape" },
-        // Letters only come for vacant space: a full building's first letter
-        // waits on a lease expiring. Said, rather than promised.
-        lease1: { page: "deals", how: Object.values(game.holdings).some((h) => { const r = parcels ? resolveRec(parcels, game, h.bbl) : null; return !!r && vacantSf(r, h) > 0; })
-          ? "tenants write for your vacant space — letters land on the Deals desk"
-          : "your space is let, so letters come as leases turn over — or buy a building with room in it" },
-        tower1: { page: "market", how: "buy a lot and break ground on it" },
-        exit1: { page: "portfolio", how: "list a building for more than you paid" },
-        nw25: { page: "market", how: "grow the book" },
-      };
-      const h = HOW[next.id] ?? { page: "market" as Page, how: "" };
-      // THE FIRST DEED, NAMED. A page of listings is not advice; one building
-      // with its yield and its cheque is.
-      const pick = next.id === "deed1" ? starterPick(game, parcels, fundableNow(game, parcels)) : null;
-      if (pick) {
-        live.push({
-          key: `milestone:${next.id}`,
-          cat: "world",
-          nudge: true,
-          title: `Start here: ${addr(pick.bbl)} — ${pick.cap.toFixed(1)}% going-in, ${Math.round(pick.occ * 100)}% let`,
-          sub: `${usd(pick.cash)} to buy outright, closing included · the best yield on the tape you can afford · ${12 - month} mo of year one left`,
-          bbl: pick.bbl,
-          page: "property",
-        });
-      } else live.push({
-        key: `milestone:${next.id}`,
-        cat: "world",
-        nudge: true,
-        title: next.label,
-        sub: `${h.how ? `${h.how} · ` : ""}${12 - month} mo of year one left`,
-        page: h.page,
-      });
-    }
-  }
-
-  // (e) IDLE CAPITAL, AFTER YEAR ONE. A firm sitting mostly in cash earns the
-  // deposit rate while the tape carries buildings whose going-in yield beats
-  // the cheapest money that would write them — that spread is the whole
-  // premise of the business, and the year card was the only place it was
-  // said. Offered when the desk is quiet and cash is most of the stamped book
-  // (nwHistory — no appraisal walk here); snoozable like any row.
-  const nwNow = game.nwHistory.at(-1) ?? 0;
-  if (month >= 12 && parcels && nwNow > 0 && game.cash / nwNow > 0.6 && !live.some((it) => it.urgent)) {
-    const key = `idle:${Math.floor(month / 12)}`;
-    if (!((snooze[key] ?? -1) > month)) {
-      const pl = positiveLeverage(game, parcels);
-      if (pl.count > 0 && pl.best) {
-        live.push({
-          key,
-          cat: "capital",
-          title: `${Math.round((game.cash / nwNow) * 100)}% of the book is cash — ${pl.count} of ${pl.of} on the tape earn more than money costs`,
-          sub: `widest: ${addr(pl.best.bbl)} at ${pl.best.cap.toFixed(2)}% against ${pl.best.coupon.toFixed(2)}%`,
-          bbl: pl.best.bbl,
-        });
-      }
-    }
-  }
+  // The year-one "Start here" nudge and the idle-capital coaching line were
+  // advice, not answers owed; both went in the UI clean-up (2026-11).
 
   // (e2) FIRST LOOKS WITH NO BOX. Every broker's first look you could
   // afford stops the clock as it lapses until you say what you buy. Offer

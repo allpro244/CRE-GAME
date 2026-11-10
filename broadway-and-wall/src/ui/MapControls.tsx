@@ -1,3 +1,4 @@
+import { UNREAL_HOST } from "@/state/unrealHost";
 import { useStore, type Lens, type MapFilter } from "@/state/store";
 
 /**
@@ -44,6 +45,9 @@ export default function MapControls() {
   if (page !== "none" && !mapOnly) return null;
   return (
     <div className={"map-controls" + (carded ? " map-controls-carded" : "")} role="toolbar" aria-label="Map view">
+      {/* City / Book / Cranes dim the browser map; Unreal does not read the
+          filter yet, so inside Unreal they would be three dead buttons. */}
+      {!UNREAL_HOST && <>
       <div className="map-controls-group" role="group" aria-label="Emphasis">
         {FILTERS.map((f) => (
           <button
@@ -67,6 +71,7 @@ export default function MapControls() {
         )}
       </div>
       <span className="map-controls-sep" aria-hidden="true" />
+      </>}
       <div className="map-controls-group" role="group" aria-label="Lens">
         {LENSES.map((l) => (
           <button

@@ -638,9 +638,12 @@ export { RETAIL_FLOORS_MAX } from "./value";
  * gets and for the same reason — the use has a shape, and the shape is flat.
  */
 export { INDUSTRIAL_FLOORS_MAX } from "./value";
+// Getters, not values: value.ts and this module are in an import cycle, and under
+// native ESM (the dev server) this module can evaluate first, so reading the
+// constants at module level threw "before initialization" and the page was blank.
 export const MAX_FLOORS_BY_USE: Partial<Record<DevUse, number>> = {
-  retail: RETAIL_FLOORS_MAX,
-  industrial: INDUSTRIAL_FLOORS_MAX,
+  get retail() { return RETAIL_FLOORS_MAX; },
+  get industrial() { return INDUSTRIAL_FLOORS_MAX; },
 };
 
 

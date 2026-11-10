@@ -99,11 +99,12 @@ export function BrokerCalls() {
         Brokers on the phone · {calls.length}{freshCount ? ` · ${freshCount} new` : ""}
       </div>
       {calls.length === 0 && (
-        <div className="hint">
-          {game.brokersOff
+        <div className="dim"
+          title={game.brokersOff
             ? "You have told the street to stop ringing. Nothing off-market will reach you until you switch the brokers back on above."
             : "Nobody is shopping you anything off-market today. Brokers ring a principal they have closed with, "
-              + "about a building that is not on the tape — it takes a couple of years of trading before the phone starts."}
+              + "about a building that is not on the tape — it takes a couple of years of trading before the phone starts."}>
+          {game.brokersOff ? "Brokers off" : "None"}
         </div>
       )}
       {calls.map(({ bbl, a, lapseM }) => {

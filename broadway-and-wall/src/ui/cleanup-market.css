@@ -1,0 +1,16 @@
+/* Marketplace clean-up (ui-revamp/CLEANUP_PLAN.md §3): the stat tiles, the
+   empty "Books for sale" line and the Distress card become one line. */
+
+.mkt-line {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px;
+  margin: 2px 0 10px; font-size: 13px; color: var(--ink-dim);
+}
+.mkt-fig b { color: var(--ink); font-weight: 600; }
+.mkt-fig.neg b { color: var(--danger); }
+.mkt-toggle {
+  all: unset; cursor: pointer; color: var(--ink-dim);
+  border-bottom: 1px dotted currentColor; white-space: nowrap;
+}
+.mkt-toggle:hover, .mkt-toggle-on { color: var(--ink); }
+.mkt-toggle:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.mkt-line-tools { display: inline-flex; gap: 6px; margin-left: auto; }

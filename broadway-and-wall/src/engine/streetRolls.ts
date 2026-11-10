@@ -111,7 +111,7 @@ const PATIENCE_M: Record<Comm, number> = { office: 15, retail: 10, industrial: 9
 const HOLDOVER_M = 6;
 /** Share of expiring firms that close or leave town in a town with exactly the firms its payrolls support. */
 /** Of the sheds' leases that end, the share whose tenants relocate within the region rather than renew. */
-const SHED_MOVE = 0.3;
+export const SHED_MOVE = 0.3;
 const EXIT_BASE: Record<Comm, number> = { office: 0.05, retail: 0.07, industrial: SHED_MOVE };
 /** Months for the town's want of space to turn into firms looking for it (market.ts DEMAND_FORM_M). */
 const FORM_M: Record<Comm, number> = { office: 9, retail: 6, industrial: 6 };

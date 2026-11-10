@@ -3,11 +3,12 @@
 // Randomness creates situations, never verdicts.
 import { leaseUpMonthsOf } from "./proforma";
 import { tickBands } from "./bands";
-import type { ParcelTable } from "@/data/types";
+import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, FirmBook, GameState, MarketPhase, NewsItem, Sector } from "./types";
 import { OFF_FLOOR_SHARE_NAT } from "./industries";
 import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert } from "./types";
 import { tickStreetTenants } from "./tenantBooks";
+import { SHED_MOVE } from "./streetRolls";
 import { simulateHistory, driftInflTarget, shortIndexFor } from "./regime";
 import { swanClassLevel, swanTradeWave, tickSwans, exposureToTrade } from "./swans";
 import { whyTrade, why, whyAt, whyMark, whyNation } from "./why";
@@ -476,7 +477,7 @@ export function developerOptimism(e: Econ, k: BuiltClass): number {
 // version's whole defect was that it did not need to: it worked from index
 // RATIOS against a single class-blind BASE_YOC and never touched a real
 // number. See `devPencils` in value.ts.
-import { devPencils, rentableSf, hashNormal } from "./value";
+import { devPencils, rentableSf, useRentableSf, hashNormal } from "./value";
 export { devPencils };
 
 // Each rebased DOWN by the average value of the new vacancy term below, so
@@ -4206,8 +4207,8 @@ export function tickEcon(s: GameState) {
     // Offices and shops are all on the map: what is occupied is what the
     // town's firms hold — the street's rolls and the player's — and what is
     // looking is the firms still searching. Sheds run half and half: the
-    // region's off the map stays on the aggregate below (`aggOcc`), the
-    // mapped ones are the firms'.
+    // region's off the map are the off-map tenants' book below (`offMap`),
+    // the mapped ones are the firms'.
     // (flats: the street's households since households stage 2 — who stays,
     // who leaves, who chose a block from across the water; households.ts)
     const firms = k !== "multifamily" ? e.streetSpace?.[k] : e.flatSpace;
@@ -4224,7 +4225,10 @@ export function tickEcon(s: GameState) {
     // the town grew 30% in seven years), the shops fell back to the aggregate
     // equation and read a 98% shortage at 12% vacancy, and real shop rents
     // went 11 -> 85 in five years. Sheds stay split (most are off the map).
-    const firmsOnly = !!firms && (k === "office" || k === "retail" || k === "multifamily" || offShare < 0.10);
+    // ...AND THE FLOOR OFF THE MAP IS ITS OWN TENANTS' (2026-11-10): the
+    // sheds' off-map half no longer runs on the aggregate, and no class's
+    // off-map floor is let at the map's rate (below, `offMap`).
+    const firmsOnly = !!firms;
     // WHAT THE FLOOR OFF THE MAP IS WANTED FOR (FORMULA_LEDGER #10). Every
     // foot the town's named firms demand is theirs (streetRolls.ts); what the
     // aggregate below still carries is the floor of the firms off the map —
@@ -4250,12 +4254,16 @@ export function tickEcon(s: GameState) {
     // Before the books open, the opening's level stands.
     let targetRaw: number;
     const base = (e.baseStock?.[k] ?? CITY_STOCK[k]) * (1 - OPENING_VAC[k]);
+    const reanchor = k !== "multifamily" && e.offRef?.[k] === undefined;
+    const offWantPrev = e.offWant?.[k];
+    let offIdx = driver * swanLvl;
     if (k === "multifamily") targetRaw = base * driver * swanLvl;
     else {
       const f = firms ? Math.max(0.02, offShare) : 1;
       const w = eco?.workSf?.[k], w0 = e.eco0?.workSf?.[k];
       const work = w && w0 ? Math.max(0.05, w / w0) : 1;
-      const ref = ((e.offRef ??= {})[k] ??= (firms ? (e.aggOcc?.[k] ?? e.occupied[k]) : e.occupied[k]) * f);
+      offIdx = work * swanLvl;
+      const ref = ((e.offRef ??= {})[k] ??= (firms ? (e.offMap?.[k]?.occ ?? (e.aggOcc?.[k] ?? e.occupied[k]) * f) : e.occupied[k]));
       const want = ref * work * swanLvl;
       (e.offWant ??= {})[k] = want;
       targetRaw = want / f;
@@ -4335,16 +4343,91 @@ export function tickEcon(s: GameState) {
     // change in what the player's buildings actually hold since last month is
     // the city's change too, before the street's absorption runs on the gap.
     const pNow = e.playerNow?.occ?.[k];
-    if (firms && !firmsOnly) e.occupied[k] = (e.aggOcc ??= {})[k] ?? e.occupied[k];
     let absorb = 0;
     if (firmsOnly) {
       const before = e.occupied[k];
       const onMap = firms!.cap + (e.playerNow?.sf?.[k] ?? 0), letMap = firms!.let + (pNow ?? 0);
-      // the off-map stock is let at the on-map rate, except its dark feet:
-      // space delivered or converted that no tenant has taken yet (darkSf)
-      e.occupied[k] = Math.min(e.stock[k], letMap + Math.max(0, e.stock[k] - onMap - darkSfOf(e, k)) * Math.min(1, letMap / Math.max(1, onMap)));
+      // THE FLOOR OFF THE MAP IS LET TO ITS OWN TENANTS (2026-11-10). It was
+      // let at the map's occupancy rate, less its dark feet — an equation, not
+      // tenants: +12% office stock read as 64% new occupants within thirty
+      // months as the dark marker faded on a timer (test/demand-finite), and
+      // the sheds' off-map half, on the aggregate, sat 1-3% vacant while the
+      // map's sheds ran 10-45% (REAL_ECONOMY_PLAN 9a take 4). Now it is a
+      // book of tenants: what they occupy and what their heads need.
+      const offSf = Math.max(0, e.stock[k] - onMap);
+      const om: NonNullable<NonNullable<Econ["offMap"]>[BuiltClass]> = (e.offMap ??= {})[k] ??= (() => {
+        // Opened at the class's occupancy as the books stood when the street
+        // was first counted — at a new game, the opening's availability
+        // (OPENING_VAC) on the floor off the map; in a save from before this,
+        // the sheds' off-map share of the aggregate they were kept on.
+        const agg = e.aggOcc?.[k];
+        const occ0 = clamp(agg !== undefined ? agg * offShare : offSf * e.occupied[k] / Math.max(1, e.stock[k]), 0, offSf);
+        return { occ: occ0, need: occ0, idx: offIdx };
+      })();
+      // Their heads move with their trades: every industry's employment on
+      // this floor at its feet a worker (economy.ts `workSf`, the off-map
+      // firms' own need, FORMULA_LEDGER #10), or the flats' renters. A
+      // re-anchored economy (economy.ts migration, `offRef` cleared) is a new
+      // reference, not a month of growth.
+      const r = reanchor || !(om.idx > 0) ? 1 : offIdx / om.idx;
+      om.idx = offIdx;
+      const dNeed = om.need * (r - 1);
+      // SHEDS ARE ONE REGIONAL MARKET (streetRolls.ts, `shedMovers`): each
+      // month the region's relocating tenants (SHED_MOVE of each year's
+      // expiries, on five-year leases), the replacements for the map's sheds
+      // that closed or left, and the off-map firms' growth take the empty
+      // floor they find, the map's in proportion to its share of the region's
+      // empty floor. The street forms the map's share as new firms looking
+      // for a shed; the rest look off the map, and so does every one of the
+      // street's that gives up without signing — so each mover is housed
+      // once. A glut on the map draws the region's tenants onto it, and the
+      // floor they leave is empty off the map.
+      if (k === "industrial") {
+        const avMap = Math.max(0, onMap - letMap), avOff = Math.max(0, offSf - om.occ);
+        const toMap = avMap / Math.max(1, avMap + avOff);
+        const reloc = om.occ * SHED_MOVE / 60;
+        let lost = 0;
+        for (const f of e.streetFailed ?? []) if (f.m === s.month && f.use === k) lost += f.sf;
+        // the street's region movers still looking, housed, or gone back to the region
+        const pend = (om.pend ??= {});
+        let back = 0;
+        const looking = new Map<number, number>();
+        for (const sk of e.seekers ?? []) if (sk.use === k && sk.why === "new" && !sk.from) looking.set(sk.fid, sk.want);
+        let housed: Set<number> | null = null;
+        for (const id of Object.keys(pend)) {
+          const fid = +id;
+          if (looking.has(fid)) continue;
+          if (!housed) {
+            housed = new Set<number>();
+            for (const roll of Object.values(e.streetRolls ?? {})) for (const t of roll.t) if (t.fid !== undefined) housed.add(t.fid);
+            for (const h of Object.values(s.holdings)) for (const t of h.tenants ?? []) if (t.fid !== undefined) housed.add(t.fid);
+          }
+          if (!housed.has(fid)) back += pend[fid];
+          delete pend[fid];
+        }
+        // (formed this month: the opening's own start-ups are not the region's)
+        for (const sk of e.seekers ?? []) if (looking.has(sk.fid) && (sk.since === s.month || pend[sk.fid] !== undefined)) pend[sk.fid] = sk.want;
+        om.need = Math.max(0, om.need - (om.occ > 0 ? reloc * om.need / om.occ : 0) + Math.min(0, dNeed)
+          + (reloc + lost + Math.max(0, dNeed)) * (1 - toMap) + back);
+        om.occ -= reloc;
+        // ...and the off-map firms' growth, as the street reads it (`offWant`)
+        (e.offWant ??= {})[k] = (offWantPrev ?? om.need) + dNeed;
+      } else om.need += dNeed;
+      // What they need and do not hold is a search, at the speed of a lease
+      // (MOVE_IN_M), into the empty floor off the map less the suites
+      // between tenants; what they hold beyond their heads goes back as
+      // leases let them (MOVE_OUT_M) and is the sublet market meanwhile.
+      const room = Math.max(0, offSf - betweenTenantsSf(om.occ, k, e) - om.occ);
+      const gapOff = om.need - om.occ;
+      om.occ += gapOff > 0 ? Math.min(room, gapOff / MOVE_IN_M[k]) : gapOff / MOVE_OUT_M[k];
+      om.occ = clamp(om.occ, 0, offSf);
+      // Need that finds no floor here stops looking here within months (the
+      // pool's drain above): the mainland houses it.
+      const unmet = om.need - om.occ - Math.max(0, offSf - betweenTenantsSf(om.occ, k, e) - om.occ);
+      if (unmet > 0) om.need -= 0.25 * unmet;
+      e.occupied[k] = Math.min(e.stock[k], letMap + om.occ);
       absorb = e.occupied[k] - before;
-      e.pool[k] = e.occupied[k] + firms!.seek;
+      e.pool[k] = e.occupied[k] + firms!.seek + Math.max(0, om.need - om.occ);
       if (pNow !== undefined) (e.playerOcc ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] = pNow;
     } else if (pNow !== undefined) {
       const pPrev = e.playerOcc?.[k];
@@ -4398,11 +4481,6 @@ export function tickEcon(s: GameState) {
     // count does not print a cliff.
     const next = clamp(e.occupied[k] + absorb, 0, Math.max(streetCap, Math.min(e.occupied[k], housable)));
     e.occupied[k] = next > streetCap ? next - 0.5 * (next - streetCap) : next;
-    if (firms) {
-      // The region's sheds keep the aggregate; the mapped ones are the firms'.
-      e.aggOcc![k] = e.occupied[k];
-      e.occupied[k] = Math.min(e.stock[k], e.occupied[k] * offShare + firms.let + (pNow ?? 0));
-    }
     }
 
     // THE SUBLET MARKET IS WHAT FIRMS HOLD BEYOND WHAT THEIR HEADS NEED
@@ -4419,9 +4497,10 @@ export function tickEcon(s: GameState) {
     // people, a trade the swan sent home: each is its own line here.
     if (!e.sublet) e.sublet = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
     let excess = k !== "multifamily" ? (firms as { excess?: number } | undefined)?.excess ?? 0 : 0;
-    if (!firmsOnly && k !== "multifamily") {
-      const heldOff = firms ? (e.aggOcc?.[k] ?? 0) * offShare : e.occupied[k];
-      excess += Math.max(0, heldOff - (e.offWant?.[k] ?? heldOff));
+    if (k !== "multifamily") {
+      const om = e.offMap?.[k];
+      excess += om ? Math.max(0, om.occ - om.need)
+        : Math.max(0, e.occupied[k] - (e.offWant?.[k] ?? e.occupied[k]));
     }
     const marketable = clamp(excess * DEMISABLE[k], 0, e.occupied[k] * SUBLET_MAX[k]);
     e.sublet[k] += (marketable - e.sublet[k]) / SUBLET_TAU;
@@ -4456,8 +4535,8 @@ export function tickEcon(s: GameState) {
     // lease-up at the rate the market lets space — its gross lettings over the
     // space on offer (proforma.ts leaseUpMonthsOf, the clock builders and
     // lenders underwrite) — not on a vacated suite's relet clock (under a
-    // month), and they are not counted as let until then (the off-map
-    // imputation above). Before, new off-map space read as occupied the month
+    // month). (Off the map, new floor is let only as its tenants take it,
+    // `offMap` above; this marker is the housable stock's.) Before, new off-map space read as occupied the month
     // it arrived and its dark marker faded within weeks: +12% office stock
     // became 95% new occupants in 30 months (test/demand-finite).
     e.darkSf[k] = Math.max(0, (e.darkSf[k] ?? 0) * (1 - 1 / Math.max(1, leaseUpMonthsOf(e, k, 0, 0, e.cityVac?.[k] ?? openingVac(k), false))));
@@ -5069,6 +5148,24 @@ export function addStock(e: Econ, k: keyof typeof CITY_STOCK, sf: number) {
     const dark = e.darkSf[k] ?? 0;
     const fromDark = Math.min(dark, -sf);
     e.darkSf[k] = dark - fromDark;
+  }
+}
+
+/**
+ * A STANDING BUILDING LEAVES THE STOCK USE BY USE (2026-11-10): each leg's
+ * rentable feet off its own class, which is how the map counts it
+ * (value.ts `useRentableSf`) and how deliveries are booked (supply.ts
+ * `programmeSf`). Demolitions, teardowns and fires took the whole building
+ * off its filing class, so a tower's ground-floor shops stayed on the shops'
+ * ledger for good and the office ledger lost them twice: the shops' stock ran
+ * 3% above the map in fifteen years (seed 11), a sliver no tenant could take.
+ * A building of one use is unchanged.
+ */
+export function retireStock(e: Econ, rec: ParcelRecord): void {
+  for (const k of BUILT_CLASSES) {
+    if ((CITY_STOCK as Record<string, number>)[k] === undefined) continue;
+    const sf = useRentableSf(rec, k);
+    if (sf > 0) addStock(e, k as keyof typeof CITY_STOCK, -sf);
   }
 }
 

@@ -2464,8 +2464,15 @@ export interface Econ {
     turned?: number }>>;
   /** The street's flats as its households hold them (households.ts, stage 2): feet let, feet on the street, and the feet the households across the water who want a flat here are looking for. */
   flatSpace?: { let: number; cap: number; seek: number };
-  /** The region's sheds off the map, occupied, on the city aggregate (market.ts). */
+  /** Saves from before 2026-11-10: the class's occupied feet on the city aggregate, from which the sheds' off-map half (`offMap`) opens (market.ts). */
   aggOcc?: Partial<Record<BuiltClass, number>>;
+  /**
+   * THE FLOOR OFF THE MAP, AS ITS TENANTS HOLD IT (market.ts): the feet the
+   * off-map tenants occupy (`occ`), the feet their heads need (`need`), and
+   * the level of their trades last month (`idx`: work x space a worker, or
+   * the flats' renters), by class. It moves only by what those tenants do.
+   */
+  offMap?: Partial<Record<BuiltClass, { occ: number; need: number; idx: number; /** sheds: the street's region movers still looking (fid -> sf) */ pend?: Record<number, number> }>>;
   /** Household spending on goods against the opening, from the cost of consumer credit. */
   hhCredit?: number;
   hhCreditRef?: number;

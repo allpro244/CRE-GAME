@@ -1822,6 +1822,8 @@ export interface Builder {
   /** Profit booked to the firm over its life. */
   profit: number;
   lastStartM?: number;
+  /** Month one of its looks last found a scheme clearing its bar, funded or not. */
+  lastPencilM?: number;
   /** Its best and worst openings: value against cost. */
   best?: number;
   worst?: number;
@@ -3379,6 +3381,8 @@ export interface Rival {
   style: RivalStyle;
   /** Month this firm last broke ground on a city job — builders get hungry when idle (firmMargin). */
   lastBuildM?: number;
+  /** Month one of this builder's own looks last found a scheme clearing its bar, whether or not it could fund it (dev.ts). */
+  lastPencilM?: number;
   /** Off-market calls this firm made: a building it will not ring again before the month given. */
   doors?: Record<string, number>;
   /** Private holders who will not take this firm's call before the month given — a lowball they remember. */
@@ -4140,6 +4144,14 @@ export interface GameState {
   /** The street's named developers, living and gone (dev.ts). */
   builders?: Builder[];
   nextBuilderId?: number;
+  /**
+   * WORK NOBODY ON THE STREET COULD CARRY (dev.ts developerLook): schemes a
+   * developer's look found clearing its own bar, on terms a construction desk
+   * would lend on, that the looking shop could not put its own cheque into —
+   * or that nobody looked at because no builder was left. What a new shop
+   * sets up for; read and cleared by the roster tick.
+   */
+  builderOpenings?: { bbl: string; basis: number; ltc: number; m: number }[];
   cityPlans?: {
     bbl: string; use: string; floors: number; plate: number; spec: number; ltc: number; decidedM: number; breakM: number;
     /** The scheme's lead class and its square feet in that class, as decided (the order book counts them). */

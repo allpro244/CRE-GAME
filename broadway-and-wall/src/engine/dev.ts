@@ -267,7 +267,7 @@ function settleMerchant(s: GameState, parcels: ParcelTable, bbl: string, m: Merc
 // unchanged — each look is still one developer running the same pro forma —
 // but a developer that opens into a glut loses its own money, and one that
 // loses all of it, or hands two buildings back to the bank, folds. New ones
-// set up when the roster thins, faster when credit is easy.
+// set up for work that pays and that nobody here can fund (`foundersFor`).
 //
 // THE GP'S CHEQUE. A merchant developer raises most of a scheme's equity from
 // partners and puts in a slice itself — about a tenth is the common
@@ -297,8 +297,9 @@ function builderName(s: GameState, n: number): { name: string; founder: string }
   }
   return { name: `Builder No. ${n}`, founder: "unknown" };
 }
-/** How many developers a city this size carries: about one and a half for every look a month — so a
- *  working developer starts a scheme every two or three years, as a small local shop does. */
+/** The town's existing trade at the opening: about one and a half developers for every look a month — so a
+ *  working developer starts a scheme every two or three years, as a small local shop does. After the
+ *  opening the roster is whoever sets up for work and stays in business (`foundersFor`, `builderDone`). */
 function builderTarget(looksF: number): number {
   return Math.max(10, Math.min(60, Math.round(1.5 * looksF)));
 }
@@ -306,20 +307,50 @@ const livingBuilders = (s: GameState) => (s.builders ?? []).filter((b) => b.fail
 export function builderById(s: GameState, id: string | undefined): Builder | undefined {
   return id ? (s.builders ?? []).find((b) => b.id === id) : undefined;
 }
-function newBuilder(s: GameState): Builder {
+function newBuilder(s: GameState, opening?: Opening, k = 0): Builder | undefined {
   const n = (s.nextBuilderId ?? 1);
-  s.nextBuilderId = n + 1;
-  const { name, founder } = builderName(s, n);
   const prof = drawDeveloper(s);
   // Own money: lognormal around $3M in the town's opening prices, carried at
   // inflation — a small shop to a family company that has built for decades.
   // A developer building mostly on its own money IS money — a family company
   // or an institution building to hold — so its purse is several times a
-  // merchant's.
-  const capital = Math.round(3_000_000 * Math.exp(0.9 * (hash01(`${s.seed}:bcap:${n}`) * 2 - 1) * 1.6)
+  // merchant's. A would-be founder answering an opening is a fresh draw from
+  // the same population (keyed on the month), so one who cannot carry it
+  // does not stand in the way of the next.
+  const capital = Math.round(3_000_000 * Math.exp(0.9 * (hash01(opening ? `${s.seed}:bcap:${n}:${s.month}:${k}` : `${s.seed}:bcap:${n}`) * 2 - 1) * 1.6)
     * (prof.ltc <= CASH_BUILDER_LTC ? 8 : 1) * (s.econ.priceLevel ?? 1) * (s.econ.cpi ?? 1));
+  // A FOUNDER SETS UP FOR WORK IT CAN DO: its own cheque into the scheme it
+  // saw going begging — the trade's co-invest at the leverage it would get
+  // (its own habit, no more than the desk offered) — has to fit its money.
+  if (opening && builderCoInvest(opening.basis, Math.min(prof.ltc, opening.ltc)) > capital) return undefined;
+  s.nextBuilderId = n + 1;
+  const { name, founder } = builderName(s, n);
   return { id: `B${n}`, name, founder, bornM: s.month, prof, capital, committed: 0,
     starts: 0, delivered: 0, sfDelivered: 0, underwater: 0, handedBack: 0, profit: 0 };
+}
+type Opening = NonNullable<GameState["builderOpenings"]>[number];
+/**
+ * WHO SETS UP THIS MONTH (2026-11-10). A new shop opened on a coin — a quarter
+ * of the months the roster sat under a head-count target, scaled by the credit
+ * index. A builder sets up because there is work on offer that pays and that
+ * the shops already here cannot carry: last month's looks that found a scheme
+ * clearing the looking shop's own bar, on terms a construction desk would lend
+ * on, with the shop's own cheque bigger than its purse (or nobody left to
+ * look). One would-be founder per such scheme, drawn from the same population
+ * as the trade; it sets up if its money covers its own cheque into that
+ * scheme (`newBuilder`). Whether it then builds it is its own next look.
+ */
+function foundersFor(s: GameState): Builder[] {
+  const open = s.builderOpenings ?? [];
+  s.builderOpenings = [];
+  const out: Builder[] = [];
+  open.forEach((o, k) => { const b = newBuilder(s, o, k); if (b) out.push(b); });
+  return out;
+}
+/** A look found a scheme it would build but could not fund: an opening for a new shop (one per lot). */
+function noteOpening(s: GameState, bbl: string, basis: number, ltc: number) {
+  const o = (s.builderOpenings ??= []);
+  if (!o.some((x) => x.bbl === bbl)) o.push({ bbl, basis: Math.round(basis), ltc: +ltc.toFixed(3), m: s.month });
 }
 // ---- THE TOWN'S BUILDERS AS FIRMS (GameState.builderFirms) ------------------
 //
@@ -331,14 +362,14 @@ function newBuilder(s: GameState): Builder {
 // building opens, holds it on its book, sells it, marks it, can be stressed,
 // hand back keys and fail. A merchant's habits put it in the merchant style
 // (buys land, holds about three years); one building mostly on its own money
-// is a developer (holds for a decade). The roster target, the entry rate and
-// the fifteen-year retirement are the register's.
+// is a developer (holds for a decade). The opening roster, entry and
+// retirement are the register's.
 const isBuilderFirm = (r: Rival) => !!r.builderProf;
 function livingBuilderFirms(s: GameState): Rival[] {
   return (s.rivals ?? []).filter((r) => isBuilderFirm(r) && r.failedM === undefined && r.retiredM === undefined);
 }
-function newBuilderFirm(s: GameState): Rival {
-  const b = newBuilder(s);
+function newBuilderFirm(s: GameState, founded?: Builder): Rival {
+  const b = founded ?? newBuilder(s)!;
   const style: RivalStyle = b.prof.ltc <= CASH_BUILDER_LTC ? "developer" : "merchant";
   const r: Rival = {
     id: `r${s.rivals.length}`, name: b.name, style, founder: b.founder, builderProf: b.prof,
@@ -351,19 +382,33 @@ function newBuilderFirm(s: GameState): Rival {
 function tickBuilderFirms(s: GameState, looksF: number) {
   const live = livingBuilderFirms(s);
   const target = builderTarget(looksF);
-  if (!live.length && !(s.rivals ?? []).some(isBuilderFirm)) for (let i = 0; i < target; i++) newBuilderFirm(s);
-  else if (live.length < target && rng(s, "dev") < 0.25 * Math.max(0.3, Math.min(1.5, s.econ.creditIdx ?? 1))) {
-    const r = newBuilderFirm(s);
+  // The opening roster is the town's existing trade (an initial condition);
+  // after that a shop sets up for work nobody here can carry (`foundersFor`).
+  if (!live.length && !(s.rivals ?? []).some(isBuilderFirm)) { for (let i = 0; i < target; i++) newBuilderFirm(s); s.builderOpenings = []; }
+  else for (const b of foundersFor(s)) {
+    const r = newBuilderFirm(s, b);
     s.news.unshift({ q: s.month, kind: "info", text: `New ${r.style === "developer" ? "developer" : "builder"} · ${r.name} · founder ${r.founder} · ${money(r.cash)} equity.` });
   }
-  // Fifteen years without breaking ground and nothing on the book: the founder retires.
   for (const r of livingBuilderFirms(s)) {
-    const idle = s.month - (r.lastBuildM ?? r.bornM);
-    if (idle > 180 && !r.bbls.length && !(s.cityJobs ?? []).some((j) => j.firmId === r.id) && rng(s, "dev") < 0.02) {
-      r.retiredM = s.month;
-      (r.career ??= []).push({ m: s.month, text: `${r.founder} retired; the firm closed` });
-    }
+    if (!builderDone(s, r.lastBuildM ?? r.bornM, r.lastPencilM)) continue;
+    if (r.bbls.length || (s.cityJobs ?? []).some((j) => j.firmId === r.id) || (s.cityPlans ?? []).some((p) => p.firmId === r.id)) continue;
+    r.retiredM = s.month;
+    (r.career ??= []).push({ m: s.month, text: `${r.founder} retired; the firm closed` });
   }
+}
+/**
+ * THE FOUNDER CLOSES THE SHOP ON ITS OWN RECORD (2026-11-10). It was a 2%
+ * coin a month once fifteen years had passed without a start. A builder with
+ * nothing on its book, nothing in the ground and nothing committed is a
+ * founder and a purse; it closes when its own looks have stopped finding work
+ * — fifteen years (the span the register always used, a shape parameter)
+ * since it last broke ground AND since a look last found a scheme clearing its
+ * own bar, funded or not. A shop that keeps seeing deals it cannot fund stays
+ * open for them; one whose market has left it closes, and its money goes
+ * wherever its founder puts it.
+ */
+function builderDone(s: GameState, lastBuild: number, lastPencil: number | undefined): boolean {
+  return s.month - Math.max(lastBuild, lastPencil ?? -Infinity) > 180;
 }
 function pickBuilderFirm(s: GameState): Rival | undefined {
   const live = livingBuilderFirms(s);
@@ -388,27 +433,23 @@ function pickBuilderFirm(s: GameState): Rival | undefined {
   return live[live.length - 1];
 }
 
-/** The roster, once a month: entries when it thins, retirements of the idle, commitments recounted from the live jobs. */
+/** The roster, once a month: founders for work nobody could carry, retirements of the idle, commitments recounted from the live jobs. */
 function tickBuilders(s: GameState, looksF: number) {
   if (s.builderFirms) { tickBuilderFirms(s, looksF); return; }
   if (!s.builders) s.builders = [];
   const live = livingBuilders(s);
   const target = builderTarget(looksF);
-  // The opening roster is the town's existing trade; after that a new shop
-  // sets up in about a quarter of the months the roster is short, more often
-  // when money is easy to raise.
-  if (!live.length) for (let i = 0; i < target; i++) s.builders.push(newBuilder(s));
-  else if (live.length < target && rng(s, "dev") < 0.25 * Math.max(0.3, Math.min(1.5, s.econ.creditIdx ?? 1))) {
-    const b = newBuilder(s);
-    s.builders.push(b);
-  }
+  // The opening roster is the town's existing trade; after that a shop sets
+  // up for work nobody here can carry (`foundersFor`).
+  if (!live.length && !s.builders.length) { for (let i = 0; i < target; i++) s.builders.push(newBuilder(s)!); s.builderOpenings = []; }
+  else s.builders.push(...foundersFor(s));
   const owed: Record<string, number> = {};
   for (const j of s.cityJobs ?? []) if (j.builderId && !j.firmId) owed[j.builderId] = (owed[j.builderId] ?? 0) + (j.coInvest ?? 0);
   for (const b of livingBuilders(s)) {
     b.committed = owed[b.id] ?? 0;
-    // Fifteen years without a start and nothing in the ground: the founder retires.
-    const idle = s.month - (b.lastStartM ?? b.bornM);
-    if (idle > 180 && !b.committed && rng(s, "dev") < 0.02) { b.failedM = s.month; b.endReason = "retired"; }
+    // Nothing in the ground and its own looks long empty: the founder retires (`builderDone`).
+    if (!b.committed && builderDone(s, b.lastStartM ?? b.bornM, b.lastPencilM)
+      && !(s.cityPlans ?? []).some((p) => p.builderId === b.id)) { b.failedM = s.month; b.endReason = "retired"; }
   }
   // Keep the register readable: the long-gone fall off after twenty years.
   s.builders = s.builders.filter((b) => b.failedM === undefined || s.month - b.failedM < 240);
@@ -4510,6 +4551,16 @@ function worthMoreCleared(s: GameState, rec: NonNullable<ReturnType<typeof resol
  * replacement project. Teardown-for-replacement remains the conversion path
  * when a project clears.
  */
+/**
+ * WHETHER A TEARDOWN OR A GROUNDBREAKING IS NEWS TO YOU (2026-11-10). Each was
+ * printed on a coin (18% of teardowns, 40% of anonymous starts) to keep the
+ * paper readable. The test is the one the deliveries use: it happened in a
+ * district where you own a building, so it moves your market.
+ */
+function yourDistrict(s: GameState, parcels: ParcelTable, rec: { district?: string }): boolean {
+  return !!rec.district && Object.keys(s.holdings).some((b) => resolveRec(parcels, s, b)?.district === rec.district);
+}
+
 function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) {
   const e = s.econ;
   const ic = e.industComp ?? 1;
@@ -4597,7 +4648,7 @@ function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) 
     use: "industrial",
     outcome: `${rec.yearBuilt || "Older"} industrial cleared — manufacturing footprint has left`,
   });
-  if (rng(s, "indust") < 0.18) {
+  if (yourDistrict(s, parcels, rec)) {
     s.news.unshift({
       q: s.month, kind: "info",
       text: `Teardown · ${rec.address} · vacant industrial, `
@@ -4716,7 +4767,7 @@ function tickSurplusExit(s: GameState, parcels: ParcelTable, bbls: string[]) {
       use,
       outcome: `${rec.yearBuilt || "Older"} ${use} cleared empty — the market it was built for has left`,
     });
-    if (rng(s, "exit") < 0.18) {
+    if (yourDistrict(s, parcels, rec)) {
       s.news.unshift({
         q: s.month, kind: "info",
         text: `Teardown · ${rec.address} · ${use === "multifamily" ? "apartments" : "floors"} `
@@ -5050,13 +5101,19 @@ function developerLook(
   // The frames already standing when the game opens (a backdated look) are
   // history and stay the city's; every look after that is one of the firms.
   const firm = s.builderFirms && opts?.backdate === undefined ? pickBuilderFirm(s) : undefined;
-  if (s.builderFirms && opts?.backdate === undefined && !firm) return false;
-  const who = firm ? undefined : pickBuilder(s);
+  // NOBODY LEFT TO LOOK. With every builder firm gone the town's sites are
+  // still there; a would-be builder from the trade's population walks them,
+  // and what pencils for it is an opening a new shop sets up for (it has no
+  // shop yet, so no purse to build with: `noteOpening` below).
+  const nobody = !!s.builderFirms && opts?.backdate === undefined && !firm;
+  const who = firm || nobody ? undefined : pickBuilder(s);
   const habits = firm?.builderProf ?? who?.prof;
   const dev: DeveloperProfile = habits ? { ...habits, outlook: habits.outlook * Math.exp(0.03 * (2 * rng(s, "dev") - 1)) } : drawDeveloper(s);
   // A firm's purse is its free cash: what it holds less what its live jobs still need.
-  const purse = firm ? Math.max(0, freeCash(s, firm)) : who ? Math.max(0, who.capital - who.committed) : Infinity;
-  let best: { bbl: string; rec: (typeof parcels)[string]; use: DevUse; floors: number; plate: number; h: number; coInvest: number; kids: string[]; sf: number } | null = null;
+  const purse = firm ? Math.max(0, freeCash(s, firm)) : who ? Math.max(0, who.capital - who.committed) : nobody ? 0 : Infinity;
+  let best: { bbl: string; rec: (typeof parcels)[string]; use: DevUse; floors: number; plate: number; h: number; coInvest: number; kids: string[]; sf: number; fin: boolean; basis: number; ltc: number } | null = null;
+  // The best scheme it would build but cannot put its own cheque into, on terms a desk would lend on.
+  let unfunded: { bbl: string; h: number; basis: number; ltc: number } | null = null;
   let examined = 0;
   // the lots tied up by a job or another developer's plan, once a look (the draws below start neither)
   const jobAt = new Set(s.cityJobs.map((j) => j.bbl)), planAt = new Set((s.cityPlans ?? []).map((p) => p.bbl));
@@ -5152,15 +5209,31 @@ function developerLook(
         if (hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) < 1 + (spreadFloor(dev) - 1) * stretch) continue;
         // ...and only what its own money can carry its share of.
         const coInvest = builderCoInvest(u.plan.basisTotal, ltcHere);
-        if (coInvest > purse) continue;
         const h = hurdleAt(u.plan, DEV_MARGIN) * dev.outlook * momentumRead(s, lead, dev.momentum, firm) * exitRead(s, firm, lead);
-        if (!best || h > best.h) best = { bbl, rec, use, floors: fl, plate, h, coInvest, kids, sf: ownSf };
+        if (coInvest > purse) {
+          if (u.financeable && !kids.length && (!unfunded || h > unfunded.h)) unfunded = { bbl, h, basis: u.plan.basisTotal, ltc: ltcHere };
+          continue;
+        }
+        if (!best || h > best.h) best = { bbl, rec, use, floors: fl, plate, h, coInvest, kids, sf: ownSf, fin: u.financeable, basis: u.plan.basisTotal, ltc: ltcHere };
         } finally { undo?.(); }
       }
     }
     s.merged = before;
     }
   }
+  // WHAT THE LOOK SAW, for the roster (2026-11-10): a scheme clearing this
+  // developer's own bar keeps a shop in business (`builderDone`), and one it
+  // could not fund — or one nobody named was there to take — is an opening a
+  // new shop sets up for (`foundersFor`). Today's looks only: the opening
+  // roster's backdated frames are history.
+  if (opts?.backdate === undefined) {
+    const sawWork = (best && best.h >= dev.bar) || (unfunded && unfunded.h >= dev.bar);
+    if (sawWork && firm) firm.lastPencilM = s.month;
+    if (sawWork && who) who.lastPencilM = s.month;
+    if (unfunded && unfunded.h >= dev.bar && !(best && best.h >= dev.bar)) noteOpening(s, unfunded.bbl, unfunded.basis, unfunded.ltc);
+    else if (!firm && !who && best && best.h >= dev.bar && best.fin && !best.kids.length) noteOpening(s, best.bbl, best.basis, best.ltc);
+  }
+  if (nobody) return false;
   // Built only if the deal clears THIS developer's bar.
   if (!best) return false;
   if (best.h < dev.bar) return false;
@@ -5630,7 +5703,7 @@ function breakCityGround(
     floors,
     party: claimed?.name ?? openingFirm?.name ?? "The city",
   });
-  if (!claimed && !opts?.quiet && rng(s, "dev") < 0.4) {
+  if (!claimed && !opts?.quiet && yourDistrict(s, parcels, rec)) {
     s.news.unshift({
       q: s.month, kind: "info",
       text: `Groundbreaking · ${rec.address} · ${(sf / 1000).toFixed(0)}k sf of ${use} · due ${monthLabel(deliverM)}.`,

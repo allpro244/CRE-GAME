@@ -114,6 +114,23 @@ const SHED_MOVE = 0.3;
 const EXIT_BASE: Record<Comm, number> = { office: 0.05, retail: 0.07, industrial: SHED_MOVE };
 /** Months for the town's want of space to turn into firms looking for it (market.ts DEMAND_FORM_M). */
 const FORM_M: Record<Comm, number> = { office: 9, retail: 6, industrial: 6 };
+/**
+ * THE LEAST OF ITS REQUIREMENT A FIRM WILL TOUR, by class. An office firm's
+ * people need their feet: it can crowd them, but not by much — the densest
+ * planning standards run about a fifth under the norm (North American office
+ * space per worker 225 sf in 2010 against 176 in 2012 and a projected ~150 in
+ * open-plan fit-outs; CoreNet Global 2012) — so a suite under about 80% of
+ * what it needs is not on its broker's list [K~, shape parameter: that fifth].
+ * It was half, for every class, unsourced. A firm that signed at half its need
+ * kept its heads (`hcRef` is what it wanted), so it had outgrown the suite the
+ * day it moved in: measured on seed 11 (2026-11-10), 21-25% of let office feet
+ * were signed under 80% of need, and moves for growth were the office's
+ * largest source of new lettings (5.6% of the stock a year of 10.4%; the
+ * record's ~6.7% for all causes). Shops and sheds keep the half: a shop's
+ * floor is its format and its staff flex with its sales, and no source here
+ * yet says how far a shed's racking packs.
+ */
+const REQ_FIT: Record<Comm, number> = { office: 0.8, retail: 0.5, industrial: 0.5 };
 /** Score points between the space a firm shops for and a building, per e-fold of its interest. */
 const FIT_W = 12;
 
@@ -526,7 +543,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
       if (!b || !b.cap[k]) continue;
       const avail = availIn(b, roll, k);
       const floor = minSfOf(b, k);
-      if (avail < Math.max(floor, Math.min(want * 0.5, avail + 1))) continue;
+      if (avail < Math.max(floor, Math.min(want * REQ_FIT[k], avail + 1))) continue;
       const letShare = 1 - avail / (b.cap[k] ?? 1);
       const mkt = b.mkt[k] ?? 0;
       const keen = mkt > 0 && KEEN_POW[k] ? Math.min(4, Math.pow(mkt / Math.max(0.01, postedEff(bookOf(b, roll, k), e, k, mkt, false)), KEEN_POW[k])) : 1;
@@ -657,7 +674,7 @@ export function stayOdds(s: GameState, parcels: ParcelTable | null | undefined, 
     if (!b || !b.cap[k]) continue;
     const avail = V.availIn(b, roll, k);
     const floor = minSfOf(b, k);
-    if (avail < Math.max(floor, Math.min(sf * 0.5, avail + 1))) continue;
+    if (avail < Math.max(floor, Math.min(sf * REQ_FIT[k], avail + 1))) continue;
     const mkt = b.mkt[k] ?? 0;
     if (!(mkt > 0)) continue;
     // the landlord's post, or — with no book yet — the comps, read and not opened

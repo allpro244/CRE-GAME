@@ -291,6 +291,20 @@ export function askElasticity(k: Comm, post: number, ref: number): number {
 export function goingRent(k: Comm, mkt: number, going = 1): number {
   return k === "office" ? mkt * going : mkt;
 }
+/**
+ * HOW FAST A LANDLORD MOVES TOWARD ITS BEST POST, the share of the gap
+ * closed in a year. Rents on new office leases close 0.378 of the gap
+ * between equilibrium and actual rent a year (Englund, Gunnelin, Hendershott
+ * & Söderberg 2005, NBER WP 11345, Table 5, basic model: ε(t-1) −0.3780,
+ * t −3.62, annual, Stockholm 1977-2002, 2,500 leases; "rent ten percent above
+ * equilibrium ... closing over a third of the gap", p. 17) [S]. The trade
+ * moved the whole gap in a year, so a vacancy shock was priced away inside
+ * the year and last year's vacancy explained almost nothing of this year's
+ * rent: office Wheaton-Torto slope −0.15 to −0.5 on last year's vacancy
+ * against −1.0 to −1.3 on the same year's (seed 11, 50 years, 2026-11-10);
+ * the same table's coefficient on last year's vacancy is −1.97.
+ */
+export const RENT_ADJ_YR = 0.378;
 /** The months to let at which a cut gains in months dark what it gives up in rent: N / (ε - 1). */
 export function bestMonthsToLet(eps: number, termM = NEXT_TERM_M): number {
   return termM / Math.max(1e-6, eps - 1);
@@ -376,7 +390,7 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
   const toComps = comps > 0 ? (Math.log(comps) - Math.log(L.a)) * pull : 0;
   let d = (opts.infl12 / 12) * months;
   // THE MONTH-DARK TRADE: the share of the year's step a month's review makes.
-  let step = mkt > 0 ? darkCostStep(k, L.a * (1 - L.c), goingRent(k, mkt, opts.going), opts.monthsToLet) * pull : 0;
+  let step = mkt > 0 ? darkCostStep(k, L.a * (1 - L.c), goingRent(k, mkt, opts.going), opts.monthsToLet) * pull * RENT_ADJ_YR : 0;
   if (step < 0 && opts.stressed) step *= STRESS_MOVE;
   if (opts.darkM !== undefined) {
     // SPACE TO LET. Its own evidence: space that has sat longer than the

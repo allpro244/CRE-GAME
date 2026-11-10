@@ -95,7 +95,7 @@ export function zoneUseBar(
  * the gradient should be steeper that is its own decision, made deliberately
  * with the harnesses and not smuggled in behind this one.
  */
-const DEMAND_GAMMA = 1.05;   // must match DEMAND_GAMMA in src/citygen/build.mjs
+const DEMAND_GAMMA = 1.05;   // must match DEMAND_GAMMA in src/citygen/build.mjs [K: a display shape, no source]
 export function demandIdx(demandScore: number): number {
   // One-entry memo: the pro forma asks this of the same lot dozens of times in
   // a row, and a pow is the whole cost. Pure, so the number cannot change.
@@ -208,9 +208,10 @@ import { tableVersion } from "./tableVersion";
  * all unchanged and only the spread around them is new. This constant is the
  * difficulty dial for the whole of development: raising it makes every
  * building slightly worse and every big site relatively better.
+ * [D: measured off the generated city — a normaliser, not a world figure.]
  */
 export const REF_PLATE_SF = 4300;
-/** The median lot, for the same reason. */
+/** The median lot, for the same reason. [D: measured off the generated city] */
 export const REF_LOT_SF = 4950;
 /**
  * THE FIXED PART OF A CORE IS VERTICAL CIRCULATION, AND A LOW BUILDING NEEDS
@@ -305,6 +306,7 @@ export function plateEfficiency(plateSf: number): number {
 // of depth there is no window, and the extra area is corridor. So assembling
 // gets you an office or an industrial site, and not necessarily a residential
 // one, which is a decision rather than a bonus.
+// [K: judgement, no source found.]
 const PLATE_RENT_BETA: Partial<Record<BuiltClass, number>> = {
   office: 0.07, retail: 0.05, industrial: 0.08, multifamily: 0,
 };
@@ -335,6 +337,9 @@ export function plateOf(rec: { bldgArea: number; floors: number }): number {
  * convention as REF_PLATE_SF. The zone width and halving are the method's own
  * constants, not tuned. The clamp is a guard: a plate under 20 ft deep is all
  * Zone A (the ceiling, 1.57) and only a big box past ~250 ft reaches the floor.
+ * Zone width: 6.1 m (20 ft) zones from the window, each half the one in front,
+ * the remainder half of zone C (VOA, "How we value small shops", 2022) [S];
+ * REF_SHOP_DEPTH_FT is measured off the generated towns [D].
  */
 const ZONE_FT = 20;
 export const REF_SHOP_DEPTH_FT = 38;
@@ -374,7 +379,7 @@ export function plateRentMult(rec: { bldgArea: number; floors: number; lotFront?
 }
 
 // the footprints a new building may take (proforma.ts MIN_COVERAGE to the
-// widest MAX_COVERAGE)
+// widest MAX_COVERAGE) [D: 0.6 to 0.85 in five-point steps]
 const COVERAGE_LADDER = [0.6, 0.65, 0.7, 0.75, 0.8, 0.85];
 /**
  * How much of its own zoning envelope this dirt can physically carry, at the
@@ -391,7 +396,7 @@ export function envelopeRealisation(rec: { lotArea: number; farMaxComm: number; 
   }
   return clamp(best / far, 0.30, 1);
 }
-/** The median lot reaches 98.5% of its envelope. Measured over three cities. */
+/** The median lot reaches 98.5% of its envelope. Measured over three cities. [D: measured off the generated cities] */
 const REF_REALISATION = 0.985;
 const siteQ = (plateSf: number) => plateEfficiency(plateSf) * plateRentMult({ bldgArea: plateSf, floors: 1 }, "office");
 const REF_SITE_Q = siteQ(REF_LOT_SF * 0.70);
@@ -529,13 +534,14 @@ export function constructionTypeMult(use: BuiltClass, floors: number): number {
   const fl = Math.max(1, floors || 1);
   return fl <= 3 ? 0.68 : fl <= 7 ? 0.83 : 1;
 }
-export const SOFT_COST = 0.16;    // design, legal, permits, insurance, financing fees
-export const CONTINGENCY = 0.06;  // held against change orders; unspent is yours
+export const SOFT_COST = 0.16;    // design, legal, permits, insurance, financing fees [K: no source found]
+export const CONTINGENCY = 0.06;  // held against change orders; unspent is yours [K: no source found]
 
 /**
  * THE DEVELOPER'S MARGIN — what the trade requires to take the risk, as a
  * share of cost. 15-20% on cost is the standard hurdle a lender underwrites
  * to and a developer will not go below; below it, nobody breaks ground.
+ * [K: a judgement inside that band, no source found.]
  */
 export const DEV_MARGIN = 0.17;
 
@@ -569,8 +575,8 @@ export function developmentHurdle(yieldOnCost: number, exitCap: number): {
  * and a peak is worth roughly a quarter more than the middle of the cycle,
  * which is the amplitude the rent index actually runs at.
  */
-const WAIT_DISCOUNT = 0.567;
-const PEAK_RENT_MULT = 1.25;
+const WAIT_DISCOUNT = 0.567;   // [K: 1/1.12^5; the five years is a judgement and LAND_CARRY_RATE is unsourced]
+const PEAK_RENT_MULT = 1.25;   // [K: judgement, no source found]
 
 /**
  * THE SHAPE EACH USE HAS. Shops and sheds are flat — two floor plates is the
@@ -963,7 +969,7 @@ function queueFactorOf(q: NonNullable<Econ["landQueue"]>[BuiltClass] | undefined
   return Math.pow(1 + Math.max(0.01, q.r), -ahead / q.absYr);
 }
 
-/** Lots sampled per refresh — the queue is a distribution, and a Great City has ~6,000 lots. */
+/** Lots sampled per refresh — the queue is a distribution, and a Great City has ~6,000 lots. [K: a sample size for speed, not an economic quantity] */
 const LAND_QUEUE_SAMPLE = 400;
 
 /**
@@ -1326,7 +1332,7 @@ export function devPencils(
   // appetite.
   return Math.min(3, Math.pow(Math.max(0, hurdle.hurdleRatio), Q_ELASTICITY_DEV));
 }
-/** Same supply elasticity `buildClimate` uses; see the note there. */
+/** Same supply elasticity `buildClimate` uses; see the note there. [K: dev.ts Q_ELASTICITY is unsourced too] */
 const Q_ELASTICITY_DEV = 1.2;
 
 export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
@@ -1741,6 +1747,7 @@ export function landAppraisalFloor(rec: ParcelRecord, econ: Econ, inLeaseUp: boo
   return land * (0.92 + 0.08 * w);
 }
 
+/** [K: rent by grade is a judgement, no source found.] */
 export const CONDITION_RENT_MULT: Record<Condition, number> = {
   obsolete: 0.62, worn: 0.82, standard: 1.0, good: 1.2,
 };
@@ -1774,7 +1781,7 @@ export function specRentMult(spec = 0.5): number {
  * THE FOUR WAYS TO BUILD. The spec number stays 0..1 underneath — saves,
  * gut renovations and every reader keep working on it — and the desk offers
  * four named points on it. Cost is `specCostMult` at each point, untouched.
- * BUILD_CLASS_PLAN.md.
+ * BUILD_CLASS_PLAN.md. [K: the four points are a design choice.]
  */
 export const BUILD_TIERS = [
   { key: "value" as const, label: "Value", spec: 0.15,
@@ -1878,6 +1885,7 @@ export function buildingScore(
  * slab), so it is the closest to even. A 50/50 blend ranked a score-64 office
  * on a demand-48 corner above a score-57 one on a demand-77 corner that let
  * for $3/sf more; at these weights the order is the market's.
+ * [K: chosen against the measured correlations above, not fitted.]
  */
 export const SCORE_LOC_WEIGHT: Record<BuiltClass, number> = { office: 0.7, retail: 0.8, multifamily: 0.65, industrial: 0.55 };
 export function overallScore(rec: ParcelRecord, econ: Econ, use?: BuiltClass, condIdx?: number): number {
@@ -1895,6 +1903,7 @@ export function overallScore(rec: ParcelRecord, econ: Econ, use?: BuiltClass, co
  * — the record's year, spec and class, the condition index, the clock and the
  * class's stock vintage. A pro forma scores the same paper building three
  * times per use; this is the same number without the three allocations.
+ * [M: not a parameter — a memo cell; NaN is empty.]
  */
 const BSCORE = { yearBuilt: NaN as unknown, buildSpec: NaN as unknown, cls: NaN as unknown, condIdx: NaN as unknown, month: NaN as unknown, vintage: NaN as unknown, score: 0 };
 function buildingScoreOf(rec: ParcelRecord, condIdx: number | undefined, ctx: NonNullable<Econ["tierCtx"]>): number {
@@ -1912,6 +1921,7 @@ function buildingScoreOf(rec: ParcelRecord, condIdx: number | undefined, ctx: No
  * THE STREET'S STOCK BY SCORE, IN TEN-POINT BANDS — bookkeeping, not tiers:
  * a tenant and a building each carry their exact score, and every reader
  * below interpolates across bands, so a 74 and a 76 are the same market.
+ * [M: ten-point bands of a 0-100 score.]
  */
 export const N_BANDS = 10;
 export const bandCenter = (b: number) => b * 10 + 5;
@@ -2072,6 +2082,7 @@ function condMult(c: Condition): number {
  * continuous. So every price reader takes the index and interpolates between
  * the grades' centres; the grade keeps its jobs as a label and a gate (the
  * life company's "good", the desk's repairs holdback).
+ * [D: midpoints of COND_BANDS — 0-0.34, 0.34-0.52, 0.52-0.78, and 0.78-0.95 for good.]
  */
 const COND_CENTRE: Record<Condition, number> = { obsolete: 0.17, worn: 0.43, standard: 0.65, good: 0.865 };
 const COND_PTS = new Map<Record<Condition, number>, [number, number][]>();
@@ -2090,6 +2101,7 @@ function condLerp(idx: number, table: Record<Condition, number>): number {
 }
 /** The rent multiplier at a condition index — the grade table, read continuously. */
 export function condMultAt(idx: number): number { return condLerp(idx, CONDITION_RENT_MULT); }
+/** The cap-rate spread by grade, points. [K: judgement, no source found] */
 const QUAL_SPREAD: Record<Condition, number> = { obsolete: 1.85, worn: 0.70, standard: 0, good: -0.40 };
 /** The cap-rate spread for the state of the building, read continuously. */
 export function qualSpreadAt(idx: number): number { return condLerp(idx, QUAL_SPREAD); }
@@ -2303,8 +2315,8 @@ export function useRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition
  * exactly what it was. It moves only where height already varies, which is
  * where a real comp set would have found the argument.
  */
-const COMP_RADIUS_M = 300;
-const M_PER_DEG_LAT = 111_320;
+const COMP_RADIUS_M = 300;   // [K: judgement, no source found]
+const M_PER_DEG_LAT = 111_320;   // [M] metres per degree of latitude
 type BlockGeo = {
   /** the cut of the table it was built from (tableVersion.ts) */
   v?: number;
@@ -2828,7 +2840,7 @@ export function tradeAreaDemand(s: GameState, parcels: Record<string, ParcelReco
  * The smallest lot an anchored centre fits on: a 30,000 sf neighbourhood
  * centre at its solved site plan (products.ts) needs about 100,000 sf. Only
  * vacant lots this big carry the trade-area reads, so the reader is never
- * asked of an ordinary town lot.
+ * asked of an ordinary town lot. [D: the products.ts site plan]
  */
 const ANCHORED_LOT_MIN_SF = 100_000;
 const ANCHOR_RADII = [...new Set(PRODUCT_KEYS.map((k) => PRODUCT_TYPES[k]).filter((p) => p.tradeRadiusM && p.anchors.length).map((p) => p.tradeRadiusM!))];
@@ -3136,6 +3148,7 @@ export function physicalOcc(rec: ParcelRecord, h: Holding): number {
  * about 1% — the visible change is in the operating statement reading like an
  * industrial building instead of an office one, and in what a VACANT shed
  * costs to sit on, which is where the whole difference lands.
+ * [K: the class levels and the fee are judgements; no survey figure checked.]
  */
 export const OPEX_CONTROLLABLE: Record<BuiltClass, number> = { office: 4.17, retail: 3.20, multifamily: 6.21, industrial: 0.50 };
 export const OPEX_FIXED: Record<BuiltClass, number> = { office: 1.72, retail: 1.54, multifamily: 2.01, industrial: 0.30 };
@@ -3152,6 +3165,8 @@ export const MGMT_FEE = 0.04;   // of effective gross income, industry standard
  * turns — roughly $250-350 a unit a year, which on ordinary unit sizes is
  * about three points of collections. Together they are the seven points that
  * were there before, so this splits a number rather than changing one.
+ * (Fannie Mae Multifamily Selling and Servicing Guide, Part III 105.01, 2026:
+ * the replacement reserve is at least $250 per unit per year) [S]
  */
 export const APT_RESERVE = 0.03;
 
@@ -3277,6 +3292,9 @@ export function locOpexMult(rec: ParcelRecord, econ: Econ | undefined, cls: Buil
  * third poorer than it is; assume full recovery and a gross office building
  * looks richer. Either way the number on the screen is a lie, and the loan
  * sized against it is a lie too.
+ * [D: leasing.ts rollRecovery's mix with base-year recovering about a third —
+ * office 0.30 + 0.58/3 = 0.49, retail 0.86 + 0.09/3 = 0.89, industrial
+ * 0.92 + 0.08/3 = 0.95.]
  */
 export const RECOVERY_RATE: Record<BuiltClass, number> = {
   retail: 0.88, industrial: 0.92, office: 0.50, multifamily: 0,
@@ -3342,6 +3360,8 @@ export function recoveryFor(
 
 // Property tax: ~1.1% of assessed value a year. On net leases the tenant
 // reimburses it; the landlord eats the share on vacant space and gross leases.
+// (NAHB from the 2024 ACS: $370.0B of real-estate tax on $41.7T of owner-
+// occupied home value = 0.89%) [S]
 export const TAX_RATE = 0.011;
 /**
  * The rate this year: the statutory one times what City Hall levies against
@@ -3360,7 +3380,7 @@ export const taxRate = (econ?: { taxMult?: number }) => TAX_RATE * (econ?.taxMul
  * tenth of a point is the insurance that 1.2% always carried above the tax:
  * vacant-land general-liability cover runs a few hundred dollars a year a
  * lot, around 0.1% of a typical urban lot's value (commercial-lines quotes;
- * no building, so no property cover).
+ * no building, so no property cover). [K: no quote checked.]
  */
 const IDLE_LAND_INS = 0.001;
 export const idleLandCarryRate = (econ?: { taxMult?: number }) => taxRate(econ) + IDLE_LAND_INS;
@@ -4971,6 +4991,7 @@ export function monthlyNOI(rec: ParcelRecord, econ: Econ, h: Holding, currentQ: 
   return holdingNOIYr(rec, econ, h, currentQ) / 12;
 }
 
+// [K: renovation cost and time are judgements, no cost survey checked.]
 export const RENO_COST_PSF: Record<BuiltClass, number> = { office: 210, retail: 150, multifamily: 165, industrial: 90 };
 export const RENO_MONTHS = 6;
 

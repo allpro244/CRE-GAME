@@ -19,6 +19,7 @@ import { LineChart } from "@/ui/Chart";
 import { usd } from "@/ui/format";
 import { bankStatement } from "@/ui/panels/NotesPage";
 import { useDeskView, openViewOn } from "@/ui/deskView";
+import "@/ui/cleanup-capital.css";
 
 /**
  * EVERY LENDER, ON THE RECORD, AT ANY TIME.
@@ -61,11 +62,11 @@ const KIND_WORD: Record<string, string> = {
 function Row({ k, v, bad, good }: { k: string; v: React.ReactNode; bad?: boolean; good?: boolean }) {
   return (<><div className="k">{k}</div><div className={"v mono v-long" + (bad ? " v-bad" : good ? " v-good" : "")}>{v}</div></>);
 }
-function Section({ title, children, note }: { title: string; children: React.ReactNode; note?: React.ReactNode }) {
+function Section({ title, children, note, tip }: { title: string; children: React.ReactNode; note?: React.ReactNode; tip?: string }) {
   return (
     <div className="page-section-block" style={{ marginTop: 18 }}>
-      <div className="page-section">{title}</div>
-      {note && <div className="hint">{note}</div>}
+      <div className={"page-section" + (tip ? " has-gloss" : "")} title={tip}>{title}</div>
+      {note && <div className="dim cap-note">{note}</div>}
       {children}
     </div>
   );
@@ -75,34 +76,63 @@ export function BanksPage() {
   const game = useStore((s) => s.game)!;
   const lenders = game.lenders ?? [];
   const names = lenders.map((l) => l.name);
-  const [sel, setSel] = useDeskView<string>("banks", names[0] ?? "", names);
-  if (!lenders.length) return <div className="hint">No lenders.</div>;
-  const l = lenders.find((x) => x.name === sel) ?? lenders[0];
+  // Nothing open until a row is clicked (or a BankLink deep-links a desk).
+  const [sel, setSel] = useDeskView<string>("banks", "", names);
+  if (!lenders.length) return <div className="dim">None</div>;
+  const l = lenders.find((x) => x.name === sel) ?? null;
   const yourLine = lineLender(game);
+  const e = game.econ;
   return (
     <>
-      <div className="mkt-cards">
-        {lenders.map((x) => {
-          const h = lenderHealth(x, game.econ);
-          const sp = stayingPower(game, x);
-          const mult = capitalRatio(x) / Math.max(0.01, lenderConstitution(x).target);
-          return (
-            <button key={x.id} className={"mkt-card" + (x.name === l.name ? " mkt-card-on" : "")} onClick={() => setSel(x.name)}>
-              <div className="mkt-card-head">
-                <span className="mkt-card-name">{x.name}</span>
-                <span className="mono">{x.failedM !== undefined ? "—" : `${mult.toFixed(2)}×`}</span>
-              </div>
-              <div className={"mkt-card-state" + (h.bad ? " neg" : "")}>{sp.word}</div>
-              <div className="mkt-card-sub mono">
-                {usd(x.book)} book · {pc(x.delinquent)} delinquent
-                {x.yours > 0 ? ` · owed ${usd(x.yours)}` : ""}
-                {yourLine?.id === x.id && (game.loc?.balance ?? 0) > 0 ? " · your line" : ""}
-              </div>
-            </button>
-          );
-        })}
-      </div>
-      <BankFile l={l} />
+      {/* ONE TABLE OF LENDERS: what you owe each, where its capital and
+          appetite stand, and the best coupon it quotes today on its own
+          sheets (the same `bankRatePct` read the file's terms table makes,
+          clean office, your file). A row opens the desk's whole file below. */}
+      <table className="tbl cap-lenders">
+        <thead>
+          <tr>
+            <th>Lender</th><th>Standing</th>
+            <th className="num has-gloss" title="Capital ratio against the desk's own target. Red under 0.7×; a bank is seized near 0.22× of target.">Capital ×</th>
+            <th className="num has-gloss" title="Willingness to lend, 0–1. Below 0.12 it is not quoting.">Appetite</th>
+            <th className="num has-gloss" title="Share of town loans in default or late.">Late</th>
+            <th className="num">You owe</th>
+            <th className="num has-gloss" title="Lowest coupon among its products quoting today, clean office, your file.">Best rate</th>
+            <th className="num has-gloss" title="Advance against its stated LTV sheet today, after its appetite.">Advance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lenders.map((x) => {
+            const h = lenderHealth(x, e);
+            const sp = stayingPower(game, x);
+            const failed = x.failedM !== undefined;
+            const mult = capitalRatio(x) / Math.max(0.01, lenderConstitution(x).target);
+            const px = e.deskPx?.[x.name];
+            const rates = failed ? [] : PRODUCTS.filter((p) => p.lender === x.name && windowOpen(game, p)).map((p) => {
+              const bench = p.floating ? shortIndexOf(e) : e.indexRate;
+              return bankRatePct(bench, liveSpread(px, p.spread, lossClassOf(p), 1, p.floating ? "short" : "long"), { rel: relCurve(game, x.name) });
+            });
+            const best = rates.length ? Math.min(...rates) : null;
+            const on = l?.name === x.name;
+            return (
+              <tr key={x.id} className={"cap-row" + (on ? " cap-row-on" : "")} onClick={() => setSel(on ? "" : x.name)}
+                title={`${KIND_WORD[x.kind] ?? x.kind}. ${lenderBlurb(x.name)}`}>
+                <td>
+                  <span className="cap-caret">{on ? "▾" : "▸"}</span> <b>{x.name}</b>
+                  {yourLine?.id === x.id ? <span className="dim"> · your line</span> : null}
+                </td>
+                <td className={h.bad || failed ? "neg" : ""}>{failed ? "closed" : sp.word}</td>
+                <td className={"num" + (mult < 0.7 ? " neg" : "")}>{failed ? "—" : `${mult.toFixed(2)}×`}</td>
+                <td className="num">{failed ? "—" : x.appetite.toFixed(2)}</td>
+                <td className={"num" + (x.delinquent > 0.045 ? " neg" : "")}>{pc(x.delinquent, 1)}</td>
+                <td className="num">{x.yours > 0 ? usd(x.yours) : "—"}</td>
+                <td className="num">{best !== null ? `${best.toFixed(2)}%` : <span className="neg">{failed ? "closed" : "not quoting"}</span>}</td>
+                <td className="num">{failed ? "—" : pc(advanceFactor(game, x.name), 0)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {l && <BankFile l={l} />}
     </>
   );
 }
@@ -183,8 +213,7 @@ function BankFile({ l }: { l: Lender }) {
     <div style={{ marginTop: 14 }}>
       {/* ---------------------------------------------------------- who */}
       <div className="deal">
-        <div className="deal-head">{l.name}</div>
-        <div className="hint" style={{ marginTop: 0 }}>{KIND_WORD[l.kind] ?? l.kind}. {lenderBlurb(l.name)}</div>
+        <div className="deal-head has-gloss" title={`${KIND_WORD[l.kind] ?? l.kind}. ${lenderBlurb(l.name)}`}>{l.name}</div>
         <div className="grid">
           <Row k="Standing" v={`${h.word} · ${sp.why}`} bad={h.bad} />
           <Row k="Status" bad={failed}
@@ -238,12 +267,10 @@ function BankFile({ l }: { l: Lender }) {
       </Section>
 
       {/* -------------------------------------------------- income statement */}
-      <Section title="Income statement" note={<>
-        {monthsIn === 0 ? "Year just closed" : `YTD (${monthsIn} month${monthsIn === 1 ? "" : "s"}) and last year`}
-      </>}>
+      <Section title="Income statement">
         {inc ? (
           <table className="tbl">
-            <thead><tr><th></th><th className="num">This year</th><th className="num">Last year</th></tr></thead>
+            <thead><tr><th></th><th className="num">{monthsIn === 0 ? "Year just closed" : `YTD · ${monthsIn} mo`}</th><th className="num">Last year</th></tr></thead>
             <tbody>
               <tr><td>Interest income</td><td className="num">{cur(inc.interest)}</td><td className="num">{prv(prev?.interest)}</td></tr>
               <tr><td>Cost of funds{(l.panicBps ?? 0) > 0 ? " (incl. panic surcharge)" : ""}</td><td className="num">{cur(inc.funding, true)}</td><td className="num">{prv(prev?.funding, true)}</td></tr>
@@ -255,7 +282,7 @@ function BankFile({ l }: { l: Lender }) {
               <tr><td>Dividends</td><td className="num">{(l.divYr ?? 0) > 0 ? cur(l.divYr!) : "—"}</td><td className="num">{prev?.dividends ? prv(prev.dividends) : "—"}</td></tr>
             </tbody>
           </table>
-        ) : <div className="hint">No data yet.</div>}
+        ) : <div className="dim">None</div>}
         <div className="grid" style={{ marginTop: 8 }}>
           <Row k="Book yield" v={l.bookYield !== undefined ? `${l.bookYield.toFixed(2)}% · reprices as loans roll` : "—"} />
           <Row k="Cost of funds" v={l.fundCost !== undefined ? `${Math.max(0, l.fundCost).toFixed(2)}%${(l.panicBps ?? 0) > 0 ? ` + ${(l.panicBps! * 100).toFixed(0)}bp panic surcharge` : ""}` : "—"} />
@@ -313,9 +340,8 @@ function BankFile({ l }: { l: Lender }) {
 
       {/* -------------------------------------------------------- what it charges */}
       {px && (
-        <Section title="What it charges, and why" note={<>
-          Points a year over the market rate. The sheet is the desk's rate card in an ordinary year; the rest is this desk's own books today.
-        </>}>
+        <Section title="What it charges, and why"
+          tip="Points a year over the market rate. The sheet is the desk's rate card in an ordinary year; the rest is this desk's own books today. Expected loss is two-thirds this desk's own loss experience and a third the industry's long-run rate. Capital is what it holds per dollar at its target × the return its owners want. Floor: funding + loss + running cost; it will not lend below that.">
           <div className="grid">
             <Row k="Funding" v={`${px.fund >= 0 ? "+" : ""}${px.fund.toFixed(2)} vs the market rate · ${px.dFund >= 0 ? "+" : ""}${px.dFund.toFixed(2)} vs its usual mix`} bad={px.dFund > 0.25} good={px.dFund < -0.1} />
             <Row k="Running cost" v={`${px.opex.toFixed(2)} of book a year`} />
@@ -339,7 +365,6 @@ function BankFile({ l }: { l: Lender }) {
               ))}
             </tbody>
           </table>
-          <div className="hint">Expected loss is two-thirds this desk's own loss experience and a third the industry's long-run rate. Capital is what it holds per dollar at its target × the return its owners want. Floor: funding + loss + running cost — it will not lend below that.</div>
         </Section>
       )}
 
@@ -379,7 +404,7 @@ function BankFile({ l }: { l: Lender }) {
               })}
             </tbody>
           </table>
-        ) : <div className="hint">Construction loans only.</div>}
+        ) : <div className="dim">Construction loans only</div>}
       </Section>
 
       {/* ------------------------------------------------------ limits */}
@@ -389,7 +414,7 @@ function BankFile({ l }: { l: Lender }) {
           <Row k="Your headroom" v={`${usd(Math.max(0, nameLimit - l.yours))} (used ${usd(l.yours)})`} bad={l.yours > nameLimit * 0.85} />
         </div>
         {classTot > 0 && (
-          <div className="hint" style={{ marginTop: 6 }}>
+          <div className="dim cap-note" style={{ marginTop: 6 }}>
             By class: {Object.entries(l.classBook ?? {}).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${pc(v / classTot, 0)}`).join(" · ")}
           </div>
         )}
@@ -411,7 +436,7 @@ function BankFile({ l }: { l: Lender }) {
       </Section>
 
       {/* ---------------------------------------------------- you and them */}
-      <Section title="Relationship" note={<>Builds with on-time payment · lost on covenant breach, workout or deed in lieu</>}>
+      <Section title="Relationship" tip="Builds with on-time payment; lost on covenant breach, workout or deed in lieu.">
         <div className="grid">
           <Row k="Relationship score" v={`${rel.toFixed(0)} / 100`} good={rel >= 55} bad={rel < 15} />
           <Row k="Rate benefit" v={relCurve(game, l.name) > 0 ? `−${(relCurve(game, l.name) * 100).toFixed(0)}bp` : (l.kind === "conduit" ? "none (conduit)" : "none")} />
@@ -461,11 +486,11 @@ function BankFile({ l }: { l: Lender }) {
               ))}
             </tbody>
           </table>
-        ) : <div className="hint">No named loans on this desk.</div>}
+        ) : <div className="dim">None</div>}
       </Section>
 
       {/* ---------------------------------------------------- the record */}
-      <Section title="History">
+      <Section title="History" tip="Capital ratio, quarterly, against the desk's own target.">
         {hist.length > 1 ? (
           <>
             <LineChart height={150}
@@ -474,9 +499,8 @@ function BankFile({ l }: { l: Lender }) {
               yFmt={(v) => `${v.toFixed(1)}%`}
               xLabels={[`${Math.round(hist.length / 4)} yrs ago`, "now"]}
               xAt={(i) => { const q = hist.length - 1 - i; return q === 0 ? "now" : `${q} qtr${q === 1 ? "" : "s"} ago`; }} />
-            <div className="hint">Capital ratio, quarterly</div>
           </>
-        ) : <div className="hint">No history yet (quarterly).</div>}
+        ) : <div className="dim">None</div>}
         {news.length > 0 && (
           <ul className="news-list" style={{ marginTop: 6 }}>
             {news.map((n, i) => <li key={i} className={n.kind === "warn" ? "neg" : undefined}><span className="dim mono">{monthLabel(n.q)}</span> {n.text}</li>)}

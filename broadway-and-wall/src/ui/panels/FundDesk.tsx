@@ -23,11 +23,13 @@ export function FundDesk() {
     // has a visible first rung.
     return (
       <div className="page-section">
-        <div className="page-section-head">The fund</div>
-        <div className="hint" style={{ marginBottom: 0 }}>
-          {q.reason} A fund raises LP money against your record — sized by what the city's investors have to put to work
-          this year — pays you a {(FUND_MGMT_FEE * 100).toFixed(2)}% management fee and a promote over an {Math.round(FUND_PREF * 100)}% preferred return,
-          and must hand the capital back.
+        <div className="page-section-head has-gloss"
+          title={`A fund raises LP money against your record, sized by what the city's investors have to put to work this year; it pays you a ${(FUND_MGMT_FEE * 100).toFixed(2)}% management fee and a promote over an ${Math.round(FUND_PREF * 100)}% preferred return, and must hand the capital back.`}>
+          The fund
+        </div>
+        <div className="grid">
+          <div className="k">Status</div>
+          <div className="v" title={q.reason}>Not open</div>
         </div>
       </div>
     );
@@ -76,12 +78,14 @@ export function FundDesk() {
                   <Big label="Your interest" value={usd(gp)} />
                   <Big label="DPI · TVPI" value={`${dpi.toFixed(2)}× · ${tvpi.toFixed(2)}×`} bad={tvpi < 1} />
                 </div>
-                <div className={"hint" + (endDpi < 1 ? " neg" : "")}>
-                  At today&rsquo;s marks, winding the vehicle down now would return {Math.round(endDpi * 100)}&cent; on each dollar
-                  called — {endDpi >= 1 ? "capital back, the fund counts as a success" : "short of capital, and a fund that misses is the last one you raise"}.
-                  {f.extendedTo !== undefined
-                    ? ` In extension: anything unsold by ${monthLabel(f.extendedTo)} you buy in at NAV.`
-                    : ` Life ends ${monthLabel(f.lifeEndM)}; unsold buildings then get a two-year extension, then a buy-in at NAV.`}
+                <div className="grid">
+                  <div className="k has-gloss"
+                    title={`At today's marks, winding the vehicle down now would return ${Math.round(endDpi * 100)}¢ on each dollar called: ${endDpi >= 1 ? "capital back, the fund counts as a success" : "short of capital, and a fund that misses is the last one you raise"}.${f.extendedTo !== undefined
+                      ? ` In extension: anything unsold by ${monthLabel(f.extendedTo)} you buy in at NAV.`
+                      : ` Life ends ${monthLabel(f.lifeEndM)}; unsold buildings then get a two-year extension, then a buy-in at NAV.`}`}>
+                    Wind-down today
+                  </div>
+                  <div className={"v mono" + (endDpi < 1 ? " v-bad" : "")}>{Math.round(endDpi * 100)}¢ per $ called</div>
                 </div>
                 {deeds.length > 0 && (
                   <table className="tbl" style={{ marginTop: 8 }}>
@@ -136,14 +140,12 @@ export function FundDesk() {
           <div className="btn-row">
             <button className={"btn" + (game.fundPay ? " btn-on" : "")}
               disabled={!fundCanBuy(game) && !game.fundPay}
+              title="Vehicle cash is not yours. NOI and sale proceeds on fund deeds stay in the vehicle; the promote only crystallises once the pref is current. Miss returning capital and the street closes."
               onClick={() => setFundPay(!game.fundPay)}>
               {game.fundPay ? "Buying from the vehicle" : "Buy from the vehicle"}
             </button>
           </div>
-          <div className="hint">
-            Vehicle cash is not yours. NOI and sale proceeds on fund deeds stay in the vehicle;
-            the promote only crystallises once the pref is current. Miss returning capital and the street closes.
-          </div>
+
         </>
       ) : (
         <>

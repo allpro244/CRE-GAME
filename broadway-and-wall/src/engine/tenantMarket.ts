@@ -253,20 +253,43 @@ export const KEEN_POW: Record<Comm, number> = { office: 0, retail: 3, industrial
  * HOW A BUILDING'S LETTINGS ANSWER ITS POST, as an elasticity: the tour book
  * (KEEN_POW) and, once toured, the firm's logit choice among the shortlist
  * and its own suite — its taste for each is Gumbel with scale TASTE x the
- * market rent, so a building chosen with odds P answers its post with
- * elasticity (post / scale)·(1 - P), at P = 1 / (SHORTLIST + 1) [D: the
- * engine's own choice rule, nothing fitted here].
+ * going rent for the address (`ref`: for office the going post, `goingRent`;
+ * for shops and sheds the market rent), so a building chosen with odds P
+ * answers its post with elasticity (post / scale)·(1 - P), at
+ * P = 1 / (SHORTLIST + 1) [D: the engine's own choice rule, nothing fitted
+ * here].
  */
-export function askElasticity(k: Comm, post: number, mkt: number): number {
-  return KEEN_POW[k] + (post / Math.max(1e-9, TASTE[k] * mkt)) * (SHORTLIST / (SHORTLIST + 1));
+export function askElasticity(k: Comm, post: number, ref: number): number {
+  return KEEN_POW[k] + (post / Math.max(1e-9, TASTE[k] * ref)) * (SHORTLIST / (SHORTLIST + 1));
+}
+/**
+ * THE GOING RENT A FIRM'S TASTE IS SCALED BY, $/sf/yr: the address's market
+ * rent times `going`, the town's posts over market rents (streetRolls.ts
+ * marketView, office; 1 for shops and sheds).
+ *
+ * Office TASTE is calibrated as a share of what the firm is shown — the posts
+ * — so that ε = (1/TASTE)·6/7 ≈ 4.5 for a building posting at the going rate.
+ * Scaled by the market rent alone, which is read from the comps (signed
+ * rents, below the posts: a signing lands between the landlord's reservation
+ * and its post, `bargain`), the realised ε was (post/mkt)·4.5 = 5.9-6.5 with
+ * posts 1.3-1.45 times the comps (seeds 11, 33, 2026-11-10), the best months
+ * to let 13-16 not 24, and every office book cut 4-8% a year for as long as
+ * it took the comps to follow it down — which they do, since the comps are
+ * the posts' own bargains. Office real rent drifted down for a century.
+ * Scaled by the going post, a building at the town's rate reads the
+ * calibrated ε whatever the bargain takes off it, and the trade answers only
+ * months against M* [D].
+ */
+export function goingRent(k: Comm, mkt: number, going = 1): number {
+  return k === "office" ? mkt * going : mkt;
 }
 /** The months to let at which a cut gains in months dark what it gives up in rent: N / (ε - 1). */
 export function bestMonthsToLet(eps: number, termM = NEXT_TERM_M): number {
   return termM / Math.max(1e-6, eps - 1);
 }
 /** The log step that would bring a post's months to let to the best: ln(Mbest / M) / ε. */
-export function darkCostStep(k: Comm, post: number, mkt: number, monthsToLet: number): number {
-  const eps = askElasticity(k, post, mkt);
+export function darkCostStep(k: Comm, post: number, ref: number, monthsToLet: number): number {
+  const eps = askElasticity(k, post, ref);
   return Math.log(bestMonthsToLet(eps) / Math.max(1e-6, monthsToLet)) / eps;
 }
 
@@ -331,9 +354,11 @@ export function postedEff(L: LandlordAsk, _e: Econ, _k: Comm, _mkt: number, _sit
  * to let, its own evidence against the comps.
  *
  * `monthsToLet` is the market's clock (proforma.ts leaseUpMonthsOf for a
- * standing building: space on offer over lettings a month).
+ * standing building: space on offer over lettings a month). `going` is the
+ * town's posts over market rents (`goingRent`), which the tenants' taste and
+ * so the trade's ε are scaled by.
  */
-export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: { m: number; monthsToLet: number; darkM?: number; stressed: boolean; infl12: number; holdFace?: boolean }): void {
+export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: { m: number; monthsToLet: number; darkM?: number; stressed: boolean; infl12: number; holdFace?: boolean; going?: number }): void {
   if (k !== "office") return reviewAskByPatience(L, e, k, mkt, opts);
   if (L.m >= opts.m) return;
   const months = Math.max(1, Math.min(12, opts.m - L.m));
@@ -343,7 +368,7 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
   const toComps = comps > 0 ? (Math.log(comps) - Math.log(L.a)) * pull : 0;
   let d = (opts.infl12 / 12) * months;
   // THE MONTH-DARK TRADE: the share of the year's step a month's review makes.
-  let step = mkt > 0 ? darkCostStep(k, L.a * (1 - L.c), mkt, opts.monthsToLet) * pull : 0;
+  let step = mkt > 0 ? darkCostStep(k, L.a * (1 - L.c), goingRent(k, mkt, opts.going), opts.monthsToLet) * pull : 0;
   if (step < 0 && opts.stressed) step *= STRESS_MOVE;
   if (opts.darkM !== undefined) {
     // SPACE TO LET. Its own evidence: space that has sat longer than the

@@ -203,7 +203,7 @@ Century after #702 (3×60): PASS 34 · WATCH 11 · FAIL 3, with the FAILs on lan
 6. Which class rents highest must be an outcome (section below).
 7. National shocks reverse within ~18 months (`claude/forward-looking-nation`, not shipped). The owner said: do not change black swans or confidence shocks.
 8. Town payrolls in booms: heads grow slower than the nation's; labour demand, not hiring, is the remaining gap.
-9. Stale tests failing on main: test/loc-draw, test/loc-defends-deed, refi-broken, products, deed-goes, mezz-sale, visible-buyers, tenantmarket retail renewals.
+9. Stale tests failing on main: refi-broken, products, deed-goes, mezz-sale, visible-buyers, tenantmarket retail renewals.
 
 **How to work:** small PRs to main with before/after numbers; 3-seed 60-year century (`tools/proof.mjs`), conserve on any money change, `pnpm -s package:playable && node test/playable-loads.mjs` (the month must run in the sim worker — no module-level reads of imported constants across the engine's import cycles). Probes from the second run are committed in `tools/probes/` (README there).
 

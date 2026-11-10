@@ -32,7 +32,6 @@ import { LeasingPage } from "@/ui/panels/LeasingPage";
 import { DebtPage } from "@/ui/panels/DebtPage";
 import { InvestorsPage } from "@/ui/panels/InvestorsPage";
 import { BanksPage } from "@/ui/panels/BankProfile";
-import { PulsePage } from "@/ui/panels/PulsePage";
 import { DecisionModal, AlertModal, AuctionModal, DefaultNoticeModal, GameOverPage } from "@/ui/panels/modals";
 import { useNext } from "./nextStore";
 import { FOOT_PAGES, PLACES, placeById, placeOf, visibleTabs, type PlaceId } from "./places";
@@ -54,7 +53,6 @@ import { PipelineBoard, PipelineBuilding, PipelineBuying, PipelineSelling } from
 const PAGE_VIEW: Partial<Record<Page, ReactElement>> = {
   portfolio: <PortfolioPage />,
   market: <MarketPage />,
-  pulse: <PulsePage />,
   players: <PlayersPage />,
   buildings: <BuildingDatabase />,
   notes: <NotesPage />,

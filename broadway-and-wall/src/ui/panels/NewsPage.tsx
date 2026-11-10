@@ -19,7 +19,7 @@ import { ViewSwitch, useDeskView } from "@/ui/panels/shared";
 // knowing.
 
 type TapeView = "front" | "headlines" | "prints";
-const TAPE_VIEWS: readonly TapeView[] = ["headlines", "front", "prints"];
+const TAPE_VIEWS: readonly TapeView[] = ["front", "headlines", "prints"];
 
 export const NEWS_KINDS = [
   { k: "all", label: "Everything" },
@@ -62,7 +62,9 @@ const wireKey = (t: string) =>
  */
 export function NewsPage() {
   const game = useStore((s) => s.game)!;
-  const [view, setView] = useDeskView<TapeView>("news", "headlines", TAPE_VIEWS);
+  // THE FRONT PAGE BY DEFAULT. The clean-up tried Headlines first and measured
+  // it: 2,344 words and 143 sentences at rest against the front page's 309.
+  const [view, setView] = useDeskView<TapeView>("news", "front", TAPE_VIEWS);
   const prints = (game.comps ?? []).length;
   const switcher = (
     <ViewSwitch<TapeView>
@@ -70,9 +72,9 @@ export function NewsPage() {
       on={view}
       set={setView}
       views={[
+        { id: "front", label: "Front page", title: "Stories dug out of the deed histories, the street and your own book" },
         { id: "headlines", label: "Headlines", n: (game.news ?? []).length,
           title: `The last ${(game.news ?? []).length} items off the wire, newest first. ✈ marks a specific place — a building or a civic work; click it and the camera goes there.` },
-        { id: "front", label: "Front page", title: "Stories dug out of the deed histories, the street and your own book" },
         { id: "prints", label: "Prints", n: prints, title: "Closed sales — the price paid, the cap rate it implies, and who was on each side" },
       ]}
     />

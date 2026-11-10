@@ -1,7 +1,106 @@
 # UI clean-up plan
 
-Written 2026-11-10 from a real playthrough on `main` (b029f6d). Plan only: no
-code was changed. Screenshots are in [`shots/cleanup/`](shots/cleanup/).
+Written 2026-11-10 from a real playthrough on `main` (b029f6d), then **built the
+same day** at the owner's request ("do everything you recommend"). What was
+done, what changed against the plan and the before/after measurements are in
+section 0. Screenshots are in [`shots/cleanup/`](shots/cleanup/).
+
+**To go back to the old interface:** the branch `ui-classic-before-cleanup` is
+`main` as it was (7d07f5f), and `broadway-and-wall/playable/Classic-before-ui-cleanup.zip`
+is its playable.
+
+## 0. Result
+
+Measured on one save (new game, $10M and a 3-building book, played to month 90),
+the old playable against the new one, 1920x1080 in `?host=unreal`. Same method
+as section 1.
+
+| Page | Words | Explanatory sentences | In first screen | Buttons | Screens long |
+|---|---:|---:|---:|---:|---:|
+| Portfolio | 469 → 307 | 6 → 1 | 1 → 1 | 31 → 16 | 1.5 → 1.3 |
+| Leasing | 1,122 → 259 | 24 → 0 | 16 → 0 | 104 → 18 | 3.4 → 1.0 |
+| Deals | 51 → 50 | 1 → 1 | 1 → 1 | 6 → 7 | 1.0 → 1.0 |
+| Market › For sale | 724 → 528 | 15 → 4 | 3 → 2 | 18 → 22 | 2.0 → 1.6 |
+| Market › All buildings | 1,025 → 1,016 | 2 → 1 | 2 → 1 | 8 → 11 | 2.4 → 2.3 |
+| Capital › Debt | 449 → 327 | 12 → 3 | 6 → 2 | 39 → 43 | 1.8 → 1.6 |
+| Capital › Lenders (Banks) | 3,614 → 122 | 19 → 0 | 5 → 0 | 20 → 5 | 10.4 → 1.0 |
+| Capital › Investors | 394 → 164 | 7 → 1 | 2 → 1 | 5 → 9 | 1.4 → 1.1 |
+| Capital › Books | 383 → 275 | 5 → 1 | 5 → 0 | 16 → 20 | 2.0 → 2.0 |
+| City › Markets | 805 → 192 | 6 → 0 | 5 → 0 | 25 → 20 | 2.9 → 1.0 |
+| City › Players | 1,681 → 887 | 23 → 6 | 14 → 0 | 7 → 13 | 5.2 → 2.9 |
+| City › Rankings | 410 → 353 | 6 → 1 | 6 → 1 | 7 → 12 | 1.6 → 1.5 |
+| City › Record | 416 → 356 | 12 → 7 | 6 → 3 | 15 → 20 | 1.9 → 1.7 |
+| Settings | 682 → 146 | 32 → 2 | 16 → 1 | 32 → 32 | 1.8 → 1.2 |
+| Saves | 98 → 34 | 4 → 0 | 4 → 0 | 5 → 5 | 1.0 → 1.0 |
+| Building › Overview | 331 → 249 | 3 → 1 | 3 → 1 | 19 → 17 | 1.2 → 1.0 |
+| Building › Rent roll | 737 → 583 | 4 → 2 | 2 → 2 | 40 → 33 | 1.8 → 1.3 |
+| Building › Sell | 349 → 236 | 15 → 8 | 13 → 8 | 19 → 19 | 1.2 → 1.0 |
+| Map card | 531 → 383 | 9 → 4 | 9 → 4 | 78 → 56 | 1.1 → 1.0 |
+| City view, nothing open | 345 → 223 | 7 → 4 | 7 → 4 | 62 → 43 | n/a |
+
+Across the 23 screens measured: words 15,884 → 9,893, explanatory sentences
+235 → 197 (News included; 92 → 54 without it), buttons 613 → 550. Some button
+counts rose because a table's sortable headers and row menus count as buttons.
+The remaining "sentences" on several pages are lists the measure misreads as
+prose (lender names, keyboard rows, table headers).
+
+![Portfolio after](shots/cleanup/after-portfolio.jpg)
+![Leasing after](shots/cleanup/after-leasing.jpg)
+![Lenders after](shots/cleanup/after-banks.jpg)
+![Markets after](shots/cleanup/after-economy.jpg)
+![Building after](shots/cleanup/after-property-summary.jpg)
+
+Matching `before-*.jpg` files are beside them.
+
+### What was built
+
+- **Rail:** six desks with tabs (Portfolio, Leasing, Deals, Market, Capital,
+  City) instead of fifteen rooms. Desk tabs always show. Pulse is gone.
+- **Page header:** title only; kicker and subtitle gone.
+- **Top bar:** Avg $ psf gone; the firm's epithet is on hover.
+- **Docket:** only what is yours or wants an answer. The "Start here" nudge and
+  the idle-capital coaching line are gone.
+- **Leasing:** opens on every lease in the book; Expiring, Vacant, Letters,
+  Policy as tabs; policy is toggles with hover text; per-building overrides
+  only where a building differs.
+- **Portfolio:** one line per building, a "⋯" menu per row, DSCR and WALT
+  columns, Demand and "Run" gone.
+- **Deals:** a Building tab for every job under construction; empty sections
+  do not render.
+- **Market:** tags only for non-ordinary sales; one summary line; empty states
+  say None; the "Start here" block gone.
+- **Capital:** Debt opens on the loan table with DSCR and LTV against their
+  covenants; Lenders is one table with a detail view per lender; Investors
+  hides the track-record table until outside money is raised and names the
+  building on each row.
+- **City:** Markets tiles are figures and sparklines, four tabs instead of
+  ten; Players opens on a sortable firm table and prints each trade once.
+- **Building page:** six tiles and one facts line; Overview rows the header
+  shows are gone; leases print once, with their floors; Split only on vacant
+  land; Sell and offer screens print each number once.
+- **Settings and Saves:** label and switch; paragraphs on hover.
+- **Map controls:** City / Book / Cranes hidden inside Unreal.
+- **CI:** the browser test now opens Classic as well as the shelved shell.
+- **Dead code:** CareerTimeline, smoke.mjs, verify.mjs, the unused interface
+  switch, the shelved shell's never-shown pages, Debt's dead re-exports, the
+  Pulse page and its styles.
+- **Also fixed:** the blank page on `pnpm dev` (engine/dev.ts read two
+  constants at module level across an import cycle; now getters).
+
+### Where the build departed from the plan, and why
+
+- **Pop-ups kept.** The plan said a "No action required" card should not be a
+  modal. The code records the owner's rule that a swan and the Fed always take
+  the screen. The stale four-card stack on load came from my test bot advancing
+  through the store without answering cards; a player answers them.
+- **"Line left" kept** on the top bar: the owner asked for it.
+- **Zoning variance stays on Overview:** the owner put the land desk there.
+- **Lenses kept in Unreal:** they reach Unreal now (the inventory the plan
+  used was older). Only City / Book / Cranes are hidden, which Unreal ignores.
+- **News opens on the front page, not Headlines.** Headlines first was built
+  and measured: 2,344 words and 143 sentences at rest against 309. The
+  headline list is one tab away.
+
 
 ## Summary (one minute)
 

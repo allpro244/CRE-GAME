@@ -283,8 +283,9 @@ export function buildDocket(
     const subject = n.bbl ?? bblIn(n.text);
     const mine = !!subject && !!game.holdings[subject];
     // THE DESK IS FOR WHAT IS YOURS OR WANTS AN ANSWER (UI clean-up, 2026-11).
-    // The city's own news is on the Tape, one click away on City.
-    if (n.kind !== "deal" && !mine) return;
+    // The city's own news, other firms' trades included, is on the Tape one
+    // click away; a first look you are offered has its own row above.
+    if (!mine) return;
     items.push({
       key,
       cat: n.kind === "deal" ? "deals" : mine ? "assets" : "world",

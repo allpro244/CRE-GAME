@@ -82,6 +82,10 @@ await send("Page.enable");
 const results = [];
 for (const [ui, idleMs, shell] of [["classic", WAIT_MS, ".siderail"], ["next", Math.min(WAIT_MS, 8000), ".nx-rail"]]) {
   errors.length = 0;
+  // a fresh start each time: the first run's autosave turns the setup screen into Continue
+  await send("Page.navigate", { url: "about:blank" });
+  await send("Storage.clearDataForOrigin", { origin: "file://", storageTypes: "all" });
+  await sleep(300);
   await send("Page.navigate", { url: pathToFileURL(PLAYABLE).href + "?ui=" + ui });
 
   // the setup screen, then a new game started on it

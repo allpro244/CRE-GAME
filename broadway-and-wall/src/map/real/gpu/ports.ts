@@ -96,7 +96,7 @@ function toneHaze(s: Shared): N {
 function facade(m: N, s: Shared, U: Record<string, { value: N }>) {
   // the tile holds two bays by two floors (repeat 0.5)
   const uvT = T.uv().mul(0.5);
-  // EVERY INPUT READ OFF THE MATERIAL BEING DRAWN. All 250-odd facades build
+  // EVERY INPUT READ OFF THE MESH'S OWN MATERIAL. All 250-odd facades build
   // the same node graph, so three compiles them to ONE program (as classic
   // does) — and a texture or uniform node holding a value would then be the
   // first material's for every wall in town. Material references resolve per
@@ -106,7 +106,10 @@ function facade(m: N, s: Shared, U: Record<string, { value: N }>) {
     bwWin: U.uWin.value, bwSeed: U.uSeed.value, bwGlassy: U.uGlassy.value,
     bwBay: U.uBay.value, bwReveal: U.uReveal.value, bwGlassP: U.uGlassP.value,
   });
-  const R = (k: string, t: string) => T.materialReference(k, t);
+  // through the MESH (object.material), not the material being built: the
+  // shadow pass builds this graph against its own depth material, where a
+  // material reference finds no maps and the whole frame's commands fail
+  const R = (k: string, t: string) => T.reference("material." + k, t);
   const wallLum = R("bwWallLum", "float"), trimLum = R("bwTrimLum", "float"), accLum = R("bwAccLum", "float");
   const uWin = R("bwWin", "vec4"), uSeed = R("bwSeed", "vec2"), uGlassy = R("bwGlassy", "float");
   const uBay = R("bwBay", "vec2"), uReveal = R("bwReveal", "float"), uGlassP = R("bwGlassP", "vec4");

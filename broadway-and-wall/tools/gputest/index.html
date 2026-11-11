@@ -42,7 +42,9 @@ if (q.has("custom")) {
   camera.matrix.makeTranslation(eye.x, eye.y, eye.z);
   camera.matrixWorldNeedsUpdate = true;
   camera.coordinateSystem = renderer.coordinateSystem;
-  window.__apply = () => { camera.projectionMatrix.copy(proj); camera.projectionMatrixInverse.copy(proj).invert(); };
+  const G = new THREE.Matrix4().set(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
+  const isGpu = renderer.backend.isWebGPUBackend === true;
+  window.__apply = () => { camera.projectionMatrix.copy(proj); if (isGpu) camera.projectionMatrix.premultiply(G); camera.projectionMatrixInverse.copy(camera.projectionMatrix).invert(); };
 } else window.__apply = () => {};
 if (q.has("out")) scene.traverse((o) => { if (o.material && o.material.isMeshStandardMaterial) o.material.outputNode = T.vec4(T.acesFilmicToneMapping(T.output.rgb, T.float(0.9)), T.output.a); });
 let draw = () => renderer.render(scene, camera);
@@ -52,11 +54,17 @@ if (q.has("pipe")) {
   pl.outputNode = T.vec4(T.sRGBTransferOETF(sp.getTextureNode("output").rgb), 1);
   draw = () => pl.render();
 }
+if (q.has("off")) {
+  const rt = new THREE.RenderTarget(W, H); const inner = draw;
+  const view = document.createElement("canvas"); view.width = W; view.height = H; document.body.appendChild(view); canvas.style.display = "none";
+  draw = async () => { renderer.setRenderTarget(rt); inner(); renderer.setRenderTarget(null); const px = await renderer.readRenderTargetPixelsAsync(rt, 0, 0, W, H); const g = view.getContext("2d"); const im = g.createImageData(W, H); const st = px.length / H; for (let y = 0; y < H; y++) im.data.set(px.subarray(y * st, y * st + W * 4), y * W * 4); g.putImageData(im, 0, 0); };
+}
 if (q.has("stage")) { const ms = []; scene.traverse((o) => { if (o.isMesh) { o.layers.set(31); ms.push(o); } }); window.__apply(); draw(); await new Promise((r) => setTimeout(r, 200)); for (const o of ms) o.layers.set(0); sun.shadow.needsUpdate = true; }
 if (q.has("late")) { sun.castShadow = false; window.__apply(); draw(); await new Promise((r) => setTimeout(r, 200)); sun.castShadow = true; sun.shadow.needsUpdate = true; }
-window.__apply(); draw();
+window.__apply(); await draw();
 await new Promise((r) => setTimeout(r, 300));
-window.__apply(); draw();
+window.__apply(); await draw();
+if (q.has('move')) { await new Promise((r) => setTimeout(r, 300)); scene.children.forEach((o) => { if (o.isMesh && o.geometry.type === 'BoxGeometry') o.position.y += 120; }); window.__apply(); await draw(); await new Promise((r) => setTimeout(r, 300)); await draw(); }
 window.__done = true;
 </script>
 </body></html>

@@ -65,8 +65,15 @@ export class GpuBackend {
   /** Review switches (window.__gpu.debug): hold a uniform at a value regardless of the city. */
   debug: Record<string, number> = {};
   private readonly dressed = new WeakSet<THREE.Material>();
+  /**
+   * REVIEW ONLY (?gpu=offscreen): draw into a render target and copy it to a
+   * 2D canvas. Headless Chromium on SwiftShader loses its WebGPU device the
+   * moment a WebGPU canvas presents, but renders offscreen fine — this is how
+   * the WebGPU backend itself is screenshotted in CI-like containers.
+   */
+  private off: { rt: THREE.RenderTarget; view: HTMLCanvasElement; busy: boolean; again: boolean } | null = null;
   /** Frame timing for the review tools (window.__gpuStats). */
-  readonly stats = { frames: 0, ms: 0, calls: 0, triangles: 0, backend: "" };
+  readonly stats: { frames: number; ms: number; calls: number; triangles: number; backend: string; offscreenFrames?: number } = { frames: 0, ms: 0, calls: 0, triangles: 0, backend: "" };
 
   private constructor(map: maplibregl.Map, scene: THREE.Scene, camera: THREE.PerspectiveCamera, sun: THREE.DirectionalLight, canvas: HTMLCanvasElement, renderer: THREE.WebGPURenderer) {
     this.map = map; this.scene = scene; this.camera = camera; this.sun = sun;
@@ -125,6 +132,13 @@ export class GpuBackend {
     const renderer = new THREE.WebGPURenderer({ canvas, antialias: false, alpha: false, forceWebGL });
     await renderer.init();
     const b = new GpuBackend(map, scene, camera, sun, canvas, renderer);
+    if (new URLSearchParams(location.search).get("gpu") === "offscreen") {
+      const view = document.createElement("canvas");
+      Object.assign(view.style, { position: "absolute", left: "0", top: "0", width: "100%", height: "100%", pointerEvents: "none" });
+      canvas.after(view);
+      canvas.style.visibility = "hidden";
+      b.off = { rt: new THREE.RenderTarget(2, 2), view, busy: false, again: false };
+    }
     camera.coordinateSystem = renderer.coordinateSystem;
     b.fit();
     console.info(`[bw] city renderer: ${b.backendName === "webgpu" ? "WebGPU" : "WebGL 2 (WebGPU unavailable or forced off)"}`);
@@ -139,6 +153,28 @@ export class GpuBackend {
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(mc.width / pr, mc.height / pr, false);
     return true;
+  }
+
+  private renderOffscreen() {
+    const o = this.off!, w = this.canvas.width, h = this.canvas.height;
+    if (o.rt.width !== w || o.rt.height !== h) o.rt.setSize(w, h);
+    this.renderer.setRenderTarget(o.rt);
+    this.pipeline!.render();
+    this.renderer.setRenderTarget(null);
+    // a frame drawn while the last one is still being read back is shown by a repaint after it
+    if (o.busy) { o.again = true; return; }
+    o.busy = true;
+    void (this.renderer.readRenderTargetPixelsAsync(o.rt, 0, 0, w, h) as Promise<Uint8Array>).then((px) => {
+      o.busy = false;
+      if (o.view.width !== w || o.view.height !== h) { o.view.width = w; o.view.height = h; }
+      const g = o.view.getContext("2d")!;
+      const img = g.createImageData(w, h);
+      // render targets read bottom-up on WebGL, top-down on WebGPU
+      img.data.set(px.subarray(0, w * h * 4));
+      g.putImageData(img, 0, 0);
+      this.stats.offscreenFrames = (this.stats.offscreenFrames ?? 0) + 1;
+      if (o.again) { o.again = false; this.map.triggerRepaint(); }
+    }).catch(() => { o.busy = false; });
   }
 
   shadowNeedsUpdate() { this.sun.shadow.needsUpdate = true; }
@@ -250,7 +286,8 @@ export class GpuBackend {
     }
     this.post!.update(postFx, pitch, distM, this.canvas.height);
     const info = this.renderer.info as N;
-    this.pipeline.render();
+    if (this.off) this.renderOffscreen();
+    else this.pipeline.render();
     // hand RealCity its camera back as it set it (its picking unprojects through it)
     this.camera.projectionMatrix.copy(_c);
     this.camera.projectionMatrixInverse.copy(_ci);

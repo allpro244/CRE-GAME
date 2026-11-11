@@ -678,7 +678,11 @@ export function underwritingStandards(s: GameState): number {
   // recessions, measured by tools/bankplay.mjs). The Fed's loan-officer
   // survey reads near zero through an ordinary expansion and swings hard at
   // the turns, and that is the shape this now has.
-  const window = clampSigned((ci - 1.0) / 0.22);
+  // ...AND THE ORDINARY YEAR IS THE LENDERS' OWN DECADE (2026-11-11). Read
+  // against 1.0, a credit index that settled near 0.86 read "tight" in nearly
+  // every month: banks' advances sat at 55-60% with 2-3x coverage in
+  // ordinary years. Now the window is the index against its trailing mean.
+  const window = clampSigned((ci - (s.econ.creditIdxMean ?? 1.0)) / 0.22);
   // appetite runs 0-1.15: the whole street flush is +1, the street at 0.65 is −1
   const app = s.bankApp ?? 0.9;
   const balance = clampSigned((app - 0.90) / 0.25);

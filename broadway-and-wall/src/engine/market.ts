@@ -298,6 +298,8 @@ const LEASE_ROLL: Record<BuiltClass, number> = {
 /** The share of income renters spend on rent (ACS): the level the household register's opening incomes are solved to. */
 export const HH_RENT_SHARE0 = 0.30;
 /** Online selling (see ONLINE in the secular block). */
+/** A lender's memory of an ordinary year: a decade [K: the SLOOS asks relative to recent experience; ten years is a judgement of how long a loan officer remembers]. */
+const CREDIT_MEMORY_M = 120;
 const ONLINE_0 = 0.02;      // share of store-type sales online at the opening (US 2000)
 const ONLINE_MAX = 0.4;     // the most of it that can ship (2026-10-17: 0.5 saturated by year 60 in a playthrough)
 const ONLINE_TECH = 10;     // logit points per log point of technology: ~11% at year 20 (US 2019), ~24% at 30, ~37% at 50
@@ -5139,6 +5141,10 @@ export function tickEcon(s: GameState) {
   }
 
   recordHistory(e, s.month, monthAbs, monthComp);
+  // WHAT A LENDER CALLS AN ORDINARY YEAR is the last decade it lent through:
+  // the Fed's loan-officer survey asks about standards relative to recent
+  // experience, not against a fixed level. A ten-year exponential mean.
+  e.creditIdxMean = (e.creditIdxMean ?? 1) + ((e.creditIdx ?? 1) - (e.creditIdxMean ?? 1)) / CREDIT_MEMORY_M;
   // THE TOWN'S PROPERTY VOLATILITY, measured once a year off its own tape —
   // the sigma the land option is priced on (value.ts landOption).
   if (s.month % 12 === 0) {

@@ -546,6 +546,8 @@ export interface Holding {
    * it, not the month's mark. Unset: the mark (old saves, unlevered deeds).
    */
   apprV?: number; apprM?: number;
+  /** Accrued expected tours by use (leasing.ts): a party comes through each time it passes 1. */
+  tourAcc?: Partial<Record<BuiltClass, number>>;
   /** this building is part of a package you have taken to market as one ticket */
   inPackage?: boolean;
   /**
@@ -2976,6 +2978,8 @@ export interface Econ {
   // that opened last year from one that opened in 1928.
   m?: number;
   creditIdx: number;
+  /** The credit index averaged over the trailing decade (market.ts, monthly EMA): what lenders read as an ordinary year (debt.ts underwritingStandards). */
+  creditIdxMean?: number;
   // The demand driver behind leasing velocity.
   employIdx: number;
   // THE SPACE MARKET, class by class. Stock is every square foot standing;

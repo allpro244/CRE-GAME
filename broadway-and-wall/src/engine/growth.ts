@@ -39,12 +39,11 @@ import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { GameState } from "./types";
 import { monthLabel } from "./types";
 import { tractYield } from "./platdesign";
-import { rng } from "./market";
 import { ownerOf } from "./rivals";
 import { farmUsePsf } from "./value";
 import {
   ENTITLE_FIXED, ENTITLE_PER_LOT, ENTITLE_MONTHS, INFRA_MONTHS, INFRA_PER_FRONT_FT, IMPACT_FEE,
-  MAIN_PER_M, REZONE, PLAT_LOT_SIZES, entitleOdds, servedM,
+  MAIN_PER_M, REZONE, PLAT_LOT_SIZES, entitleOdds, servedM, boardCarries,
 } from "./landdev";
 import { platLocation, homeTargetPsf, platQuoteNow } from "./homes";
 import { pickConstructionDesk } from "./dev";
@@ -136,6 +135,8 @@ export interface GrowthState {
   unpacked?: Record<number, number>;
   /** the town's occupied flats at the first count, sf (towngrowth.ts scales the opening's dwellings by it) */
   mf0?: number;
+  /** new land developers owed to the county's entry flow, in firms (pickDev) */
+  entryAcc?: number;
   /** the year's counters, reset at each annual record */
   yr: { bought: number; refused: number };
   hist: GrowthYear[];
@@ -238,8 +239,10 @@ export type TractRead = {
  * sell-out at the pace one more community would sell at; less the
  * horizontal and the off-site mains (paid once the board says yes); less the
  * board's fees (paid now); all discounted at the land-development rate over
- * the months the board and the streets take; times the odds the board agrees —
- * and if it refuses, the developer still owns a farm. The lot size is the
+ * the months the board and the streets take — if the board would carry it
+ * today (landdev.ts boardCarries: a majority of it behind a farm this far
+ * from the mains); one that would refuse leaves the developer owning a farm,
+ * and that is all the read is worth. The lot size is the
  * developer's choice: whichever pays most.
  */
 export function readTract(s: GameState, parcels: ParcelTable, bbl: string, extraSellers = 0, lotsMult = 1, costMult = 1): TractRead | null {
@@ -251,7 +254,7 @@ export function readTract(s: GameState, parcels: ParcelTable, bbl: string, extra
   const served = servedM(s, parcels, bbl);
   // a farm the board has already zoned for houses (an approved developer's REO) needs no board: no fees, no wait, no odds
   const zoned = isZonedForHouses(s, bbl);
-  const odds = zoned ? 1 : entitleOdds(served);
+  const odds = zoned || boardCarries(entitleOdds(served)) ? 1 : 0;
   const farm = farmUsePsf(rec, e) * rec.lotArea;
   const r = LOT_SELLOUT_RATE;
   const sellers = activeCommunities(s) + extraSellers + 1;
@@ -320,13 +323,23 @@ function devName(s: GameState, g: GrowthState): string {
 }
 /**
  * Who buys: most fringe land in a county this size is taken down by a handful
- * of regional developers. An existing one takes the next deal unless a new
- * name enters, about one deal in three [K].
+ * of regional developers. New names enter at about one deal in three [K]: an
+ * arrival flow, accrued on the county's count (`entryAcc`) so a new firm comes
+ * in when a whole one is owed. Otherwise the deal goes to the existing
+ * developer with the most money free for it — the one that can sign soonest
+ * and carry it furthest (2026-11-11; it was a die for entry and a die for
+ * which firm).
  */
 function pickDev(s: GameState, g: GrowthState, ownNeed: number): string | null {
   // only a developer with the money for its share can sign
-  const names = Object.keys(g.devs).sort().filter((n) => devFunds(s, g.devs[n]) >= ownNeed);
-  if (names.length && rng(s, "growth") > 1 / 3) return names[Math.floor(rng(s, "growth") * names.length)];
+  const free = new Map(Object.keys(g.devs).map((n) => [n, devFunds(s, g.devs[n])] as const));
+  const names = [...free.keys()].filter((n) => free.get(n)! >= ownNeed)
+    .sort((a, b) => free.get(b)! - free.get(a)! || a.localeCompare(b));
+  if (names.length) {
+    g.entryAcc = (g.entryAcc ?? 0) + 1 / 3;
+    if (g.entryAcc < 1) return names[0];
+    g.entryAcc -= 1;
+  }
   const n = devName(s, g);
   const d = newDev(s, n);
   if (d.cash! < ownNeed) return names.length ? names[0] : null;
@@ -552,9 +565,8 @@ function tickProjects(s: GameState, parcels: ParcelTable) {
     const rec = parcels[pr.bbl];
     if (!rec) { delete g.projects[pr.bbl]; delete g.held[pr.bbl]; continue; }
     if (pr.stage === "entitle" && s.month >= pr.decideM) {
-      // the board's odds are the ones it would give the player for the same farm today
-      const odds = entitleOdds(servedM(s, parcels, pr.bbl));
-      if (rng(s, "growth") < odds) {
+      // the board votes as it would on the player's application for the same farm today
+      if (boardCarries(entitleOdds(servedM(s, parcels, pr.bbl)))) {
         s.rezoned = { ...(s.rezoned ?? {}), [pr.bbl]: { zone: REZONE.zone, far: REZONE.far, lotSf: pr.lotSf, m: s.month } };
         pr.stage = "approved";
       } else {

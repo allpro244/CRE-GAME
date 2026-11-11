@@ -62,8 +62,7 @@ import { prepayPenalty, loanLender } from "./debt";
 import { recastPayment } from "./amortize";
 import { consentFor } from "./vehicles";
 import { RELEASE_PREMIUM } from "./facility";
-import { ENTITLE_FIXED, ENTITLE_PER_LOT, ENTITLE_MONTHS, entitleOdds, REFILE_BAR_M } from "./landdev";
-import { hash01 } from "./competitorTraits";
+import { ENTITLE_FIXED, ENTITLE_PER_LOT, ENTITLE_MONTHS, entitleOdds, REFILE_BAR_M, boardCarries } from "./landdev";
 import { money } from "./money";
 import { bumpTable } from "./tableVersion";
 import { measurePieces, type SiteGeo, type SplitCut, type PieceGeo } from "./lotsplitGeom";
@@ -456,7 +455,7 @@ export function fileSplit(s: GameState, parcels: ParcelTable, bbl: string, geo: 
     q: next.month, kind: "info",
     text: q.kind === "minor"
       ? `Lot split filed at ${addr}: ${q.lots} lots, ${money(q.cost)} for the survey, the deeds and recording. The planning staff sign off ${monthLabel(rec.doneM)}.`
-      : `Subdivision filed at ${addr}: ${q.lots} lots before the board, ${money(q.cost)}. It sits ${monthLabel(rec.doneM)}; plats like it pass about ${Math.round(q.odds * 100)}% of the time.`,
+      : `Subdivision filed at ${addr}: ${q.lots} lots before the board, ${money(q.cost)}. It sits ${monthLabel(rec.doneM)}; about ${Math.round(q.odds * 100)}% of it backs plats like it, and a majority carries one.`,
   });
   return { s: next, msg: "Filed." };
 }
@@ -585,8 +584,9 @@ export function tickSplits(s: GameState, parcels: ParcelTable, bbls: string[]) {
   for (const sp of s.splits) {
     if (sp.done || sp.lapsed || s.month < sp.doneM) continue;
     if (sp.kind === "major") {
-      // the board: a draw keyed to the application, not the month's random stream
-      const yes = hash01(`split:${s.seed}:${sp.parent}:${sp.id}`) < sp.odds;
+      // the board votes (landdev.ts boardCarries): a town lot is served land, so its support is the
+      // plat process's at the edge of service, read on the day it sits; it was a hashed die on it
+      const yes = boardCarries(entitleOdds(0));
       recordPropertyEvent(s, sp.parent, { kind: "planning", amount: sp.cost, outcome: yes ? `Subdivision approved: ${sp.pieces.length} lots` : "Subdivision refused" });
       if (!yes) {
         s.splitRefusedM = { ...(s.splitRefusedM ?? {}), [sp.parent]: s.month };

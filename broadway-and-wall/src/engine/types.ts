@@ -1528,6 +1528,8 @@ export interface HomesState {
   pl?: Record<string, PlatPL>;
   /** the town's population, the last thirteen months */
   popHist?: number[];
+  /** single-family-rental investors' share of closings owed and not yet taken, in houses (homes.ts sfrShare) */
+  sfrAcc?: number;
 }
 
 export interface VarianceApplication {

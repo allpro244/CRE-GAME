@@ -28,11 +28,11 @@
 import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { GameState } from "./types";
 import { monthLabel, START_YEAR } from "./types";
-import { rng } from "./market";
 import { resolveRec } from "./value";
 import { GROCER_SALES } from "./grocerHook";
 import { farMaxFor } from "./proforma";
 import { FAR_CEIL } from "./zoning";
+import { boardCarries, entitleOdds, servedM } from "./landdev";
 import { ownerOf } from "./rivals";
 import { startTradeAreaBuilding, underwriteDevelopment } from "./dev";
 import { roadPlan, countyEntries, COUNTY_TO_TOWN } from "./roads";
@@ -63,19 +63,27 @@ const GROCER_FORMATS = [45_000, 30_000, 18_000];
 const STRIP = { hh: 1_500, radiusM: 1_600, sf: 20_000 };
 /** Suburban retail sites run FAR 0.2-0.3 with their car parks (commerce.mjs) [S]. */
 const RETAIL_FAR = 0.25;
-/** A commercial rezoning and site plan approval at an arterial corner: about a year, and usually granted [K: 0.8]. */
-const C_ENTITLE_M = 12, C_ODDS = 0.8;
+/**
+ * A commercial rezoning and site plan approval at an arterial corner: about a
+ * year [K]. Whether it is granted is the board's vote on the farm (landdev.ts
+ * entitleOdds, boardCarries): the same question as a subdivision — will the
+ * town run its mains out to it — read on the day the board sits. It was a
+ * die at 0.8 (2026-11-11).
+ */
+const C_ENTITLE_M = 12;
 /** How far from the frontage a centre's site may lie, m [K]. */
 const SITE_M = 700;
 /**
  * THE PLAN COMMISSION. A rezoning study and the council's vote take about two
- * years [S]; it passes about two times in three where the town has already
- * been rebuilding [K]; it moves a district one step (+25% of its envelope,
+ * years [S]; the council votes on the evidence the study was opened on,
+ * counted again on the day — upzoned when, of the buildings the district has
+ * seen in ten years, still at least half are built out to the code (it was a
+ * die at 0.65, 2026-11-11); it moves a district one step (+25% of its envelope,
  * about R5 to R6) [K], and does not revisit the district for ten years [K].
  * The signal is the one planners use: recent buildings built out to their
  * zoning (85%+ of the envelope) — the code is binding [S, Glaeser & Gyourko 2003].
  */
-const PLAN = { studyM: 24, odds: 0.65, step: 1.25, coolM: 120, binding: 0.85, minBuilt: 2 };
+const PLAN = { studyM: 24, step: 1.25, coolM: 120, binding: 0.85, minBuilt: 2 };
 
 // ---------------------------------------------------------------- the state
 export interface TownState {
@@ -275,7 +283,7 @@ function tickCommerce(s: GameState, parcels: ParcelTable, bbls: string[], adjace
     if (s.month < p.decideM) continue;
     T.pending = (T.pending ?? []).filter((x) => x !== p);
     if (s.growth?.held[p.bbl]) delete s.growth.held[p.bbl];
-    if (p.rezone && !(rng(s, "growth") < C_ODDS)) {
+    if (p.rezone && !boardCarries(entitleOdds(servedM(s, parcels, p.bbl)))) {
       s.news.unshift({ q: s.month, kind: "info", bbl: p.bbl, text: `The board turned down a shopping centre at ${parcels[p.bbl]?.address ?? p.bbl}.` });
       (T.failedM ??= {})[p.bbl] = s.month;
       continue;
@@ -351,12 +359,27 @@ function tickCommerce(s: GameState, parcels: ParcelTable, bbls: string[], adjace
 }
 
 // ---------------------------------------------------------------- planning
+/** A district's buildings of the last ten years, and how many are built out to the code (PLAN.binding). */
+function bindingCount(s: GameState, parcels: ParcelTable, list: string[]): { built: number; binding: number } {
+  const year = START_YEAR + Math.floor(s.month / 12);
+  let built = 0, binding = 0;
+  for (const bbl of list) {
+    const b = s.built[bbl];
+    if (!b || !(b.bldgArea > 0) || (b.yearBuilt ?? 0) < year - 10) continue;
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec || !(rec.lotArea > 0)) continue;
+    built++;
+    if (b.bldgArea / (rec.lotArea * Math.max(0.1, farMaxFor(rec))) >= PLAN.binding) binding++;
+  }
+  return { built, binding };
+}
 function tickPlanning(s: GameState, parcels: ParcelTable, st: Statics) {
   const T = townOf(s);
   for (const st0 of (T.studies ?? []).slice()) {
     if (s.month < st0.decideM) continue;
     T.studies = (T.studies ?? []).filter((x) => x !== st0);
-    if (rng(s, "growth") < PLAN.odds) {
+    const ev = bindingCount(s, parcels, st.districts.get(st0.d) ?? []);
+    if (ev.built >= PLAN.minBuilt && ev.binding * 2 >= ev.built) {
       const now = s.zoneAdj?.[st0.d] ?? 1;
       const mult = +Math.min(FAR_CEIL, now * PLAN.step).toFixed(3);
       if (mult > now) {
@@ -365,22 +388,13 @@ function tickPlanning(s: GameState, parcels: ParcelTable, st: Statics) {
         s.news.unshift({ q: s.month, kind: "event", text: `The council upzoned ${st0.d}: its envelope is ${Math.round((mult / now - 1) * 100)}% larger from today.` });
       }
     } else {
-      s.news.unshift({ q: s.month, kind: "info", text: `The council voted down the rezoning study for ${st0.d}. The neighbours turned out.` });
+      s.news.unshift({ q: s.month, kind: "info", text: `The council voted down the rezoning study for ${st0.d}: ${ev.binding} of the ${ev.built} buildings it has seen in ten years are built out to the zoning, not enough to outvote the neighbours.` });
     }
   }
-  const year = START_YEAR + Math.floor(s.month / 12);
   for (const [d, list] of st.districts) {
     if ((T.studies ?? []).some((x) => x.d === d)) continue;
     if (T.lastStudyM?.[d] !== undefined && s.month - T.lastStudyM[d] < PLAN.coolM) continue;
-    let built = 0, binding = 0;
-    for (const bbl of list) {
-      const b = s.built[bbl];
-      if (!b || !(b.bldgArea > 0) || (b.yearBuilt ?? 0) < year - 10) continue;
-      const rec = resolveRec(parcels, s, bbl);
-      if (!rec || !(rec.lotArea > 0)) continue;
-      built++;
-      if (b.bldgArea / (rec.lotArea * Math.max(0.1, farMaxFor(rec))) >= PLAN.binding) binding++;
-    }
+    const { built, binding } = bindingCount(s, parcels, list);
     if (built >= PLAN.minBuilt && binding * 2 >= built) {
       (T.studies ??= []).push({ d, decideM: s.month + PLAN.studyM });
       (T.lastStudyM ??= {})[d] = s.month;

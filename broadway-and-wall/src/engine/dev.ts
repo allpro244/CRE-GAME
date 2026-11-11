@@ -9,6 +9,7 @@ import type { ParcelTable } from "@/data/types";
 import { rentMultOf } from "./regime";
 import type { BtsCommitment, Builder, BuildingDesign, BuiltClass, Contract, DevUse, Development, Econ, GameState, MerchantBook, Rival, RivalStyle, UseMix } from "./types";
 import { hash01 } from "./competitorTraits";
+import { creditOfSize } from "./tenantMarket";
 import { BUILT_CLASSES, cloneState, raiseAlert } from "./types";
 import { abatementAtStart } from "./citygov";
 import { logBooks, moveDeposit, moveFundCash, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
@@ -288,7 +289,8 @@ const BUILDER_KIND = ["Development", "Builders", "Building Co.", "Development Gr
 function builderName(s: GameState, n: number): { name: string; founder: string } {
   const used = new Set([...(s.builders ?? []).map((b) => b.name), ...(s.rivals ?? []).map((r) => r.name)]);
   for (let k = 0; k < 40; k++) {
-    const h = (x: string) => hash01(`${s.seed}:builder:${n}:${k}:${x}`);
+    // a name, drawn: world generation, not a decision
+    const h = (x: string): number => { return hash01(`${s.seed}:builder:${n}:${k}:${x}`); };
     const sur = BUILDER_SURNAMES[Math.floor(h("s") * BUILDER_SURNAMES.length)];
     const kind = BUILDER_KIND[Math.floor(h("k") * BUILDER_KIND.length)];
     const name = kind === "& Partners" ? `${sur} & Partners` : `${sur} ${kind}`;
@@ -1761,7 +1763,16 @@ function mintBtsCommitment(
   s: GameState, parcels: ParcelTable, bbl: string,
   use: BuiltClass, floors: number, coverage: number, termYears: number,
 ): { bts: BtsCommitment } | { walked: { name: string; needPsf: number; ceilingPsf: number } } | null {
-  const credit = (rng(s, "leasing") < 0.58 ? 2 : 1) as 1 | 2;
+  // ITS COVENANT IS ITS SIZE (tenantMarket.ts creditOfSize), as on the street:
+  // a firm that needs the whole shell is where its floor sits in the class's
+  // requirement distribution. A build-to-suit is underwritten to a covenant a
+  // construction lender will lend against, so an unrated name is taken at the
+  // mid-market grade or not at all — here, at it. This was a die, 58% grade A.
+  const plan0 = planDevelopment(s, parcels, bbl, use, floors, coverage, "gmp");
+  if (!plan0) return null;
+  const sf0 = Math.floor(plan0.rentable * (plan0.mix[use] ?? 1));
+  const credit = (use === "office" || use === "retail" || use === "industrial")
+    && creditOfSize(use, sf0) === 2 ? 2 : 1;
   const sector = pickSector(s, use);
   const name = pickName(s, sector);
   const termY = btsTermY(termYears);
@@ -5378,7 +5389,8 @@ type DeveloperProfile = {
   outlook: number; momentum: number; maxShare: number;
 };
 function drawDeveloper(s: GameState): DeveloperProfile {
-  const u = () => rng(s, "dev");
+  // the shop's traits: heterogeneity the industry has (taste), not a decision taken for it
+  const u = (): number => { return rng(s, "dev"); };
   const nrm = () => Math.sqrt(-2 * Math.log(Math.max(1e-9, u()))) * Math.cos(2 * Math.PI * u());
   const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
   // Every trait a sliding scale. Traits that travel together in the real

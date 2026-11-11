@@ -25,7 +25,6 @@ import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { GameState, EntitlementApplication, PlatRecord, Holding, Loan } from "./types";
 import { monthLabel, cloneState } from "./types";
 import { bumpTable } from "./tableVersion";
-import { rng } from "./market";
 import { resolveRec } from "./value";
 import { recordPropertyEvent } from "./history";
 import { spendable, fundAndBook } from "./credit";
@@ -46,11 +45,13 @@ export const ENTITLE_PER_LOT = 2_500;
 /** A rezoning and plat approval takes one to two years in most US suburbs [S]. */
 export const ENTITLE_MONTHS = (lots: number) => Math.round(clamp(12 + lots / 25, 12, 24));
 /**
- * The odds a board says yes. Near the town's edge, where water and sewer reach
- * and annexation is routine, most applications pass (with conditions); a farm
- * three kilometres out asks the town to extend its mains to it, and many are
- * refused. A shape parameter [K], not a measurement: 0.80 at the edge, 0.45 at
- * 3 km and beyond.
+ * How much of the board backs a subdivision. Near the town's edge, where water
+ * and sewer reach and annexation is routine, most members vote for it (with
+ * conditions); a farm three kilometres out asks the town to extend its mains
+ * to it, and most of them turn against it. A shape parameter [K], not a
+ * measurement: 0.80 of the board at the edge, 0.45 at 3 km and beyond. The
+ * field that carries it is still called `odds` (saves and the desks read it);
+ * it is the board's support, and the vote is `boardCarries`.
  */
 export const entitleOdds = (edgeM: number) => clamp(0.80 - 0.35 * clamp(edgeM / 3000, 0, 1), 0.45, 0.80);
 /**
@@ -59,6 +60,18 @@ export const entitleOdds = (edgeM: number) => clamp(0.80 - 0.35 * clamp(edgeM / 
  * with a garage on a 5,000-sf lot or a fourplex on 7,500 [S, typical R-2].
  */
 export const REZONE = { zone: "R-2", far: 0.6 };
+/**
+ * THE BOARD VOTES; IT DOES NOT ROLL (2026-11-11). A plan commission, a zoning
+ * board of appeals or a council carries a motion on a majority of the votes
+ * cast (the default rule of US municipal codes and of Robert's Rules of Order,
+ * 12th ed. 2020, s. 44) [S]. So an application whose case has more than half
+ * the board behind it on the day it sits is granted, and one that has not is
+ * refused. Its support is read again on that day: the months of hearings are
+ * months in which served land creeps out towards a farm, or a neighbourhood
+ * fills in round a site, and the applicant's risk is that the case it filed on
+ * is not the case the board hears. This was a die thrown against the support.
+ */
+export const boardCarries = (support: number) => support > 0.5;
 /**
  * AN INDUSTRIAL PARK (products.ts): the board's light-industrial district,
  * lots of two to twenty acres on a truck-rated spine road. FAR 0.6 carries a
@@ -196,7 +209,7 @@ export function fileEntitlement(s: GameState, parcels: ParcelTable, bbl: string,
   next.entitlementApps = { ...(next.entitlementApps ?? {}), [bbl]: app };
   next.news.unshift({
     q: next.month, kind: "info",
-    text: `Rezoning filed for ${p.rec.address}: ${q.lots} lots of ${lotSf.toLocaleString()} sf. The board sits ${monthLabel(app.decideM)}; applications like it pass about ${Math.round(q.odds * 100)}% of the time.`,
+    text: `Rezoning filed for ${p.rec.address}: ${q.lots} lots of ${lotSf.toLocaleString()} sf. The board sits ${monthLabel(app.decideM)}; about ${Math.round(q.odds * 100)}% of it backs a farm this far from the mains today, and a majority carries it.`,
   });
   return { s: next, msg: "Filed." };
 }
@@ -208,7 +221,8 @@ function decideEntitlements(s: GameState, parcels: ParcelTable) {
   for (const app of due) {
     delete apps[app.bbl];
     if (!s.holdings[app.bbl]) continue;           // sold while the board deliberated
-    const granted = rng(s) < app.odds;
+    // the board's support on the day it sits: the mains may have come closer since the filing
+    const granted = boardCarries(entitleOdds(servedM(s, parcels, app.bbl)));
     const rec = resolveRec(parcels, s, app.bbl);
     recordPropertyEvent(s, app.bbl, { kind: "planning", amount: app.cost, outcome: granted ? `Rezoned ${rezoneFor(app.lotSf).zone}: ${app.lots} lots approved` : "Rezoning refused" });
     const rz = rezoneFor(app.lotSf);

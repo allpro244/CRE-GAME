@@ -314,8 +314,13 @@ const EMP_CONC = 2.2;
 // around the head-house reprices on the announcement, again when the hoarding
 // goes up, and again on the day it runs. Nobody has to click anything: it is
 // news, a lens on the map, and a number on the panel.
-/** Odds of a civic work being rumoured in any given year. */
-const LINE_ODDS = 1 / 14;
+/**
+ * How often a civic work is rumoured: about one a fourteen years [K: judgement].
+ * Plans arrive as a flow, so the city's count of them runs at that rate from a
+ * hashed phase per campaign and a plan circulates in the year a whole one is
+ * owed (2026-11-11; it was a hashed die each year).
+ */
+const LINE_RATE = 1 / 14;
 /**
  * How far a station's pull reaches, in metres. [S~: Debrezion, Pels &
  * Rietveld 2007, "The Impact of Railway Stations on Residential and
@@ -331,16 +336,14 @@ const LINE_EARLY = 0.18, LINE_DIGGING = 0.45;
  * and the market prices almost none of it — LINE_RUMOR is the smart-money
  * leak, not a consensus. That gap between what the paper says and what the
  * tape says is the trade: anybody reading the news can buy ahead of the
- * announcement, and the price they pay for the option is SHELVE_ODDS — a
- * quarter of these plans die at the hearing and the ground gives the leak
- * back. An early trade with no way to lose is not an early trade, it is a
- * coupon.
+ * announcement, and the price they pay for the option is the hearing: a plan
+ * that reaches it while City Hall is running a deficit dies there, and the
+ * ground gives the leak back. An early trade with no way to lose is not an
+ * early trade, it is a coupon.
  */
 const RUMOR_M = 24;
 /** [K: judgement, no source found — the share of a station's value priced on a rumour.] */
 const LINE_RUMOR = 0.06;
-/** [K: judgement, no source found — no published rate found for how many announced transit plans are shelved.] */
-const SHELVE_ODDS = 0.25;
 /**
  * What each kind of work is worth and how far it reaches. Stations reach the
  * five-minute walk and carry the most; a park is loved closer in; a bridge
@@ -1090,9 +1093,12 @@ function tickTransit(s: GameState, model: DemandModel, parcels: ParcelTable) {
   for (const l of [...(s.lines ?? [])]) {
     if (l.rumorM === undefined || s.month !== l.annM) continue;
     const kind: WorkKind = l.kind ?? "station";
-    // The politics (the hash) first; then the money — a work the city cannot
-    // bond for is cut from the capital budget (citygov.ts cityFundsWork).
-    const killed = hash01(`${s.seed}:shelve:${l.id}:${l.annM}`) < SHELVE_ODDS;
+    // The politics first: a council whose operating budget runs a deficit
+    // does not vote a new capital commitment (its debt service is one more
+    // recurring line the budget cannot meet); then the money — a work the
+    // city cannot bond for is cut from the capital budget (citygov.ts
+    // cityFundsWork). The politics was a hashed die at 25% (2026-11-11).
+    const killed = (s.econ.gov?.defShare ?? 0) > 0;
     if (killed || !cityFundsWork(s, kind, l.id, l.openM - s.month)) {
       s.lines = (s.lines ?? []).filter((x) => x !== l);
       s.news.unshift({ q: s.month, kind: "warn", text: killed ? WORK_COPY[kind].shelved(l.name)
@@ -1107,14 +1113,12 @@ function tickTransit(s: GameState, model: DemandModel, parcels: ParcelTable) {
   // Hashed off the campaign seed rather than drawn from `s.rng`, deliberately.
   // Drawing here would shift the RNG stream for everything downstream of this
   // tick — every rival decision, every tenant, every listing — which turns a
-  // change about geography into a change about all of it, and makes every
-  // seed-pinned number anybody else has measured stop reproducing. It also
-  // means a save-scummer cannot reroll the line. Same hash keys as the old
-  // announcement-only mechanic, so every seed keeps the corridor and the year
-  // it always had — what changed is that the year now starts a rumour rather
-  // than a funded work.
+  // change about geography into a change about all of it. It also means a
+  // save-scummer cannot reroll the line. The year comes off the schedule
+  // (LINE_RATE); the corridor, the kind and the size keep their hash keys.
   const yr = Math.floor(s.month / 12);
-  if (hash01(`${s.seed}:line:${yr}`) >= LINE_ODDS) return;
+  const x = yr * LINE_RATE + hash01(`${s.seed}:line`);
+  if (Math.floor(x + LINE_RATE) === Math.floor(x)) return;
   const cand = [...model.blocks.values()].filter((b) =>
     b.baseD < 55 && !(s.lines ?? []).some((l) => Math.hypot(l.cx - b.cx, l.cy - b.cy) < 900));
   if (!cand.length) return;

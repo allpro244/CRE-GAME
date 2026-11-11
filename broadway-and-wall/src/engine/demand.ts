@@ -90,10 +90,14 @@ const REACH_M = 270;
  * worth the same number of points whether the corner started dead or busy.
  * `RESPONSE` is points per log unit — 52 makes a doubled neighbourhood worth
  * about 12 points, which is a corner going from ordinary to good.
- * [K: judgement, no source found — a response gain in game "demand points",
- * a unit with no real-world counterpart; set by eye, not fitted.]
+ * SET TO THE MEASURED ELASTICITY (2026-11-11). At 52 a doubled neighbourhood
+ * (+12 points) put about 34% on office rent at the median block — a rent
+ * elasticity to density of ~0.4. The synthesis of the literature recommends
+ * 0.21 for rents (Ahlfeldt & Pietrostefani 2019, J. Urban Econ., Table 5,
+ * from Combes, Duranton & Gobillon 2016) [S]; 26 points a log unit gives that
+ * at the median block through locationRentMult's office curve [D].
  */
-const RESPONSE = 52;
+const RESPONSE = 26;
 /**
  * A neighbourhood can at most double, or halve, what it is made of.
  * [K: judgement, no source found — a guard rail; e^0.62 ≈ 1.86, so "double"
@@ -1160,7 +1164,13 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
 
   tickEmployment(s, model);
   tickTransit(s, model, parcels);
-  tickPoles(s, model);
+  // THE CENTRES' HIDDEN FORTUNES ARE GONE (2026-11-11). Each centre walked on a
+  // secret drift and a noise level tuned so the winner showed itself around
+  // year 22 — "the entire design" by its own account: a design dial, not an
+  // economy. A centre now rises or falls on what is built, let and hiring
+  // around it (the emergence above), which is agglomeration doing the work.
+  // tickPoles is kept (unused) so an old save's pole levels read as before.
+  void tickPoles;
 
   // Blocks you have money in. A district turning is the slowest and most
   // valuable thing in this business and it happens a tenth of a point at a

@@ -3893,6 +3893,12 @@ export interface GameState {
    * which is every town cut before the option existed.
    */
   cityParks?: "low" | "medium" | "high";
+  /**
+   * Which street generator cut the town (citygen STREET_PLANS): absent is
+   * "classic", which is every town cut before the option existed, so an old
+   * save rebuilds the streets it was played on.
+   */
+  cityStreets?: "classic" | "natural";
   rng: number;
   /**
    * Named RNG streams so a change in how often leasing rolls the dice does not

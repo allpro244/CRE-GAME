@@ -277,6 +277,19 @@ export const PARK_AMOUNTS = [
 ];
 export const DEFAULT_PARKS = "medium";
 
+/**
+ * WHICH STREET GENERATOR CUTS THE TOWN, from the setup page. Classic lays
+ * each district out under its own template and survey; Natural grows one
+ * street network over the whole island from the shore, the landing and the
+ * surveys (natural.mjs, CITYGEN_NEXT_PLAN.md). Part of the town's identity:
+ * a save stores it and rebuilds the same town; absent is classic.
+ */
+export const STREET_PLANS = [
+  { id: "classic", name: "Classic", note: "Each district laid out on its own survey and template, meeting its neighbours at straight seams." },
+  { id: "natural", name: "Natural (beta)", note: "One street network grown from the shore and the old landing outward, the surveys bending into each other. Beta: a new generator still being tuned." },
+];
+export const DEFAULT_STREETS = "classic";
+
 export const CITY_PLAN = 17;   // 17: the region town tapers into its suburbs, no floodplain, small strips (region/*)
 
 /**

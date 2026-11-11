@@ -68,6 +68,7 @@ function ringAreaSigned(r) {
 
 const CELL = 10;
 
+
 /**
  * Build the street-direction field.
  *
@@ -302,7 +303,7 @@ export function buildField(spec) {
     /** the street direction (the short-spaced family) and the field's strength */
     dir(p) { const cx = at(tx, p), cy = at(ty, p); return [Math.atan2(cy, cx) / 2, Math.hypot(cx, cy)]; },
     /** spacing of the family along `dir` and of the one across it */
-    sep(p, fam) { return fam === 0 ? at(sA, p) : at(sB, p); },
+    sep(p, fam) { return (fam === 0 ? at(sA, p) : at(sB, p)); },
     oldness(p) { return at(oldness, p); },
     land(p) { return inRing(p, ring); },
     shoreDist(p) { return shoreAt(p)[0]; },

@@ -53,7 +53,7 @@ const seeds = [3252, 1, 42, 4604];
 let failed = 0;
 
 for (const seed of seeds) {
-  const city = makeCity(PROCEDURAL, seed, { size: "harbour" });
+  const city = makeCity(PROCEDURAL, seed, { size: "harbour", streets: process.env.BW_STREETS || undefined });
   const core = city.manifest?.core ?? city.manifest?.bbox;
   const lon0 = Array.isArray(core) && core.length === 2 ? core[0] : (city.manifest.bbox[0] + city.manifest.bbox[2]) / 2;
   const lat0 = Array.isArray(core) && core.length === 2 ? core[1] : (city.manifest.bbox[1] + city.manifest.bbox[3]) / 2;

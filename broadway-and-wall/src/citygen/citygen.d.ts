@@ -95,7 +95,10 @@ declare module "@/citygen/index.mjs" {
   export function loadManhattanPlat(): Promise<unknown>;
   /** Hand the plat to a context that already holds it (the town worker). */
   export function setManhattanPlat(data: unknown): void;
-  export function makeCity(cityId: string, seed: number, opts?: { density?: string; size?: string; planV?: number; parks?: string }): GeneratedCity;
+  export function makeCity(cityId: string, seed: number, opts?: { density?: string; size?: string; planV?: number; parks?: string; streets?: string }): GeneratedCity;
+  /** Which street generator cuts a generated town: the setup page's choice (natural.mjs). */
+  export const STREET_PLANS: { id: "classic" | "natural"; name: string; note: string }[];
+  export const DEFAULT_STREETS: string;
   /** How much of a generated town is park: the setup page's choice (island.mjs). */
   export const PARK_AMOUNTS: { id: "low" | "medium" | "high"; name: string; note: string }[];
   export const DEFAULT_PARKS: string;

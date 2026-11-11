@@ -10,11 +10,11 @@
 import { makeCity } from "@/citygen/index.mjs";
 import { platPreviewSVG } from "@/citygen/platPreview.mjs";
 
-export type PlatRequest = { island: string; seed: number; size: string; dev: string; parks?: string };
+export type PlatRequest = { island: string; seed: number; size: string; dev: string; parks?: string; streets?: string };
 export type PlatReply = { svg?: string; lots?: number; name?: string; err?: string };
 
 export function drawPlat(r: PlatRequest): PlatReply {
-  const city = makeCity(r.island, r.seed, { size: r.size, density: r.dev, parks: r.parks });
+  const city = makeCity(r.island, r.seed, { size: r.size, density: r.dev, parks: r.parks, streets: r.streets });
   return platPreviewSVG(city);
 }
 

@@ -29,11 +29,13 @@ export function seedFor(runIndex = 0) {
 /** Build (or reuse) a city. Returns the substrate every harness needs. */
 export function loadCity(runIndex = 0, normalizeParcels) {
   const seed = seedFor(runIndex);
-  const key = [DEFAULT_CITY, seed, process.env.BW_SIZE ?? "", process.env.BW_DENSITY ?? ""].join(":");
+  const key = [DEFAULT_CITY, seed, process.env.BW_SIZE ?? "", process.env.BW_DENSITY ?? "", process.env.BW_STREETS ?? ""].join(":");
   if (!cache.has(key)) {
     const built = makeCity(DEFAULT_CITY, seed, {
       size: process.env.BW_SIZE || undefined,
       density: process.env.BW_DENSITY || undefined,
+      // BW_STREETS=natural runs a harness on the Natural street generator (natural.mjs)
+      streets: process.env.BW_STREETS || undefined,
     });
     if (normalizeParcels) normalizeParcels(built.parcels);
     cache.set(key, {

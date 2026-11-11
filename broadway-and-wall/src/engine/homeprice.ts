@@ -223,13 +223,13 @@ export function homeQuote(e: Pick<Econ, "costIdx" | "indexRate"> & Partial<Pick<
  * no better than the market's). An estimate, not a promise: the board, the
  * cycle and the rates will move it.
  */
-export function forwardHomeEcon(e: Econ, months: number): { psf: number; costIdx: number; indexRate: number } {
+export function forwardHomeEcon(e: Econ, months: number): { psf: number; costIdx: number; indexRate: number; deskPx?: Econ["deskPx"] } {
   const m = Math.max(0, months);
   const infl = Math.pow(1 + ((e as { inflExp?: number }).inflExp ?? e.nat?.inflExp ?? 0.02), m / 12);
   const fund = fundamentalHomePsf(e) * infl;
   const now = e.homes?.psf ?? fundamentalHomePsf(e);
   const psf = fund + (now - fundamentalHomePsf(e)) * Math.pow(1 - 1 / 30, m);
-  return { psf, costIdx: (e.costIdx ?? 1) * infl, indexRate: e.indexRate };
+  return { psf, costIdx: (e.costIdx ?? 1) * infl, indexRate: e.indexRate, deskPx: e.deskPx };
 }
 
 /** A plat's market, as homes.ts writes it each month. */

@@ -26,17 +26,16 @@
 // are that desk's.
 //
 // THE LINE is an outstanding balance at one named bank, priced like the
-// player's: `deskRatePct(shortIndex, LOC_SPREAD, { ci, app })`. A sale pays
+// player's: the bank's own junior-paper price (credit.ts locRate). A sale pays
 // the mortgage on the building at the closing table and then the line out of
 // what is left, because a revolver's borrowing base just lost a building.
 //
 // Nothing here draws on the RNG stream.
 import type { CityLoan, GameState, Rival } from "./types";
-import { productById, quote, REFI_FEE, nameLimit, windowOpen, CAP_TERM_M, type StabView } from "./debt";
+import { productById, productSpread, quote, REFI_FEE, nameLimit, windowOpen, CAP_TERM_M, type StabView } from "./debt";
 import { capPremiumOn } from "./amortize";
-import { chargeLenderLoss, targetCapital } from "./lenders";
+import { chargeLenderLoss, targetCapital, deskPxOf } from "./lenders";
 import type { Lender } from "./lenders";
-import { LOC_SPREAD } from "./credit";
 import { bankRatePct, liveSpread } from "./pricing";
 import { shortIndexOf } from "./market";
 import { why } from "./why";
@@ -334,7 +333,7 @@ export function pickDesk(
   const fallback = noiYr > 0 ? productById("harbor") : productById("land");
   return {
     lender: best?.name ?? fallback.lender,
-    ratePct: bankRatePct(s.econ.indexRate, liveSpread(best ? s.econ.deskPx?.[best.name] : undefined, 2.2, "income")),
+    ratePct: bankRatePct(s.econ.indexRate, best ? liveSpread(deskPxOf(s, best.name), "income") : productSpread(s, fallback)),
     termM: fallback.termM, product: fallback.id,
   };
 }
@@ -449,7 +448,7 @@ export function lineRatePct(s: GameState, r: Rival): number {
   const bank = lineBankOf(s, r);
   // The bank's own costs and appetite (pricing.ts liveSpread); a receiver
   // holding a failed bank's line charges what the bank last did.
-  return bankRatePct(shortIndexOf(s.econ), liveSpread(bank ? s.econ.deskPx?.[bank.name] : undefined, LOC_SPREAD, "income", 1, "short"))
+  return bankRatePct(shortIndexOf(s.econ), liveSpread(deskPxOf(s, bank?.name ?? productById("harbor").lender), "junior"))
     + fileSpreadAdj(r);
 }
 /** Draw the line: cash in, balance up, at the firm's bank. */

@@ -55,8 +55,8 @@ import { holderOf } from "./owners";
 import type { Holder } from "./owners";
 import { holderNoteTerms, holderCfads, holderRefiAdvance, HOLDER_AMORT_M } from "./ownership";
 import { deskQuotes } from "./rivalDebt";
-import { productById, nameLimit } from "./debt";
-import { chargeLenderLoss, reoAsk, bookShareOf, targetCapital } from "./lenders";
+import { productById, nameLimit, productSpread } from "./debt";
+import { chargeLenderLoss, reoAsk, bookShareOf, targetCapital, deskPxOf } from "./lenders";
 import { cityLoanBook, deskTotals } from "./loanbook";
 import { NOTICE_M, FORECLOSE_M } from "./workout";
 import { forcedSalePrice } from "./propmarket";
@@ -429,8 +429,11 @@ function rollBalloon(s: GameState, x: StreetLoan, parcels: ParcelTable) {
       x.extensions = (x.extensions ?? 0) + 1;
       x.maturityM = s.month + 12;
       const p = productById(x.product);
-      if (p?.floating) x.spread = +liveSpread(s.econ.deskPx?.[x.lender], p.spread, x.klass === "land" ? "land" : "income", 1, "short").toFixed(2);
-      else x.ratePct = bankRatePct(s.econ.indexRate, liveSpread(s.econ.deskPx?.[x.lender], p?.spread ?? 2, x.klass === "land" ? "land" : "income"));
+      const ltvNow = x.value && x.value > 0 ? x.balance / x.value : undefined;
+      const spr = p ? productSpread(s, p, { ltv: ltvNow, klass: x.klass === "land" ? undefined : x.klass })
+        : liveSpread(deskPxOf(s, x.lender), x.klass === "land" ? "land" : "income");
+      if (p?.floating) x.spread = +spr.toFixed(2);
+      else x.ratePct = bankRatePct(s.econ.indexRate, spr);
       x.status = "watch";
       return;
     }

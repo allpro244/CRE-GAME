@@ -506,8 +506,12 @@ function shelterRead(r: HouseholdRegister, e: Econ): void {
   const h = (r.shelterIdx ??= [1]);
   const last = h[h.length - 1];
   const dMf = r.mfRef && r.mfRef > 0 && mf > 0 ? Math.log(mf / r.mfRef) : 0;
-  const dMain = r.mainRefS && r.mainRefS > 0 ? Math.log(r.mainRent / r.mainRefS) : 0;
-  r.mfRef = mf; r.mainRefS = r.mainRent;
+  // the mainland's part is the rent its renters pay (what CPI shelter samples: sitting tenants), not the asking rent
+  let wM = 0;
+  for (let i = 0; i < r.n; i++) if (a.ten[i] === TEN_MAINLAND) wM += a.wt[i];
+  const paid = wM > 0 ? main / wM : r.mainRent;
+  const dMain = r.mainRefS && r.mainRefS > 0 ? Math.log(paid / r.mainRefS) : 0;
+  r.mfRef = mf; r.mainRefS = paid;
   h.push(last * Math.exp(s * dMf + (1 - s) * dMain));
   if (h.length > 13) h.shift();
   e.shelter12 = h.length === 13 ? h[12] / h[0] - 1 : undefined;
@@ -1967,7 +1971,7 @@ const MAIN_OPEX = 0.42;
  * MAIN_BUILD_M later. (2b replaces the elasticity with the land itself:
  * distance from the crossing.)
  *
- * Returns the going rent's move this month; sitting rents renew with it.
+ * Returns the going rent's move this month; a sitting tenant renews to the going rent on its lease's anniversary.
  */
 function tickMainland(r: HouseholdRegister, e: Econ, m: number): number {
   const a = r.a!;
@@ -2868,7 +2872,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   let hhNow = 0;
   for (let i = 0; i < r.n; i++) hhNow += r.a!.wt[i];
   r.hhRef = hhNow;
-  const gMain = tickMainland(r, e, s.month);
+  tickMainland(r, e, s.month);
   shelterRead(r, e);
   const short = shortIndexOf(e) / 100;
   const n0 = r.n;
@@ -2891,7 +2895,8 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       a.wage2[i] *= gInd && a.ind2[i] !== IND_NONE ? gInd[a.ind2[i]] : gW;
       a.wage3[i] *= gInd && a.ind3[i] !== IND_NONE ? gInd[a.ind3[i]] : gW;
       a.yperm[i] *= gW;
-      if (a.ten[i] === TEN_MAINLAND) a.rent[i] *= gMain;
+      // a sitting mainland tenant renews to the going rent on its lease's anniversary (one-year leases), at what its pay carries
+      if (a.ten[i] === TEN_MAINLAND && (s.month + a.id[i]) % 12 === 0) { const pay = payOf(a, i); a.rent[i] = pay > 0 ? Math.min(r.mainRent, (SCREEN * pay) / 12) : r.mainRent; }
       if (a.ten[i] === TEN_OWN) a.hval[i] *= gH;
       lose(a.emp1, a.un1, i); lose(a.emp2, a.un2, i); lose(a.emp3, a.un3, i);
     }

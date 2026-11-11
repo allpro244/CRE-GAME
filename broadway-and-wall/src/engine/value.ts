@@ -534,14 +534,27 @@ export function constructionTypeMult(use: BuiltClass, floors: number): number {
   const fl = Math.max(1, floors || 1);
   return fl <= 3 ? 0.68 : fl <= 7 ? 0.83 : 1;
 }
-export const SOFT_COST = 0.16;    // design, legal, permits, insurance, financing fees [K: no source found]
-export const CONTINGENCY = 0.06;  // held against change orders; unspent is yours [K: no source found]
+// [S~] Soft cost as a share of TOTAL development cost: 15-25% for multifamily
+// (Fannie Mae Multifamily / RSMeans, "Location, location, location: multifamily
+// construction"); 16.2% for seniors housing (CBRE 2026 Senior Housing
+// Development Costs, Q2 2026; 18.5% in its 2022 survey). 0.16 of hard cost is
+// ~14% of hard + soft, at the bottom of that band. Kept, not raised: the
+// surveys' totals carry items (land carry, developer fee) this engine books
+// elsewhere.
+export const SOFT_COST = 0.16;    // design, legal, permits, insurance, financing fees
+// [S~] Hard-cost contingency: most commercial projects carry 5-10% of hard cost,
+// 5-8% with complete documents and a bid GC contract (Terrapin, "Commercial
+// Construction Contingency by Project Type", 2026).
+export const CONTINGENCY = 0.06;  // held against change orders; unspent is yours
 
 /**
  * THE DEVELOPER'S MARGIN — what the trade requires to take the risk, as a
  * share of cost. 15-20% on cost is the standard hurdle a lender underwrites
  * to and a developer will not go below; below it, nobody breaks ground.
- * [K: a judgement inside that band, no source found.]
+ * [S~] RICS Land Journal, "Approaches to developer returns in appraisals": the
+ * margin most small and medium developers required was 15-20%; NSW Local
+ * Government Housing Kit, Module 4: developer's margin on total project cost
+ * typically 15-20%. 0.17 sits inside both.
  */
 export const DEV_MARGIN = 0.17;
 
@@ -1416,7 +1429,7 @@ export function devPencils(
   // appetite.
   return Math.min(3, Math.pow(Math.max(0, hurdle.hurdleRatio), Q_ELASTICITY_DEV));
 }
-/** Same supply elasticity `buildClimate` uses; see the note there. [K: dev.ts Q_ELASTICITY is unsourced too] */
+/** Same supply elasticity `buildClimate` uses; see the note there. [D: equal to dev.ts Q_ELASTICITY, which cites Saiz 2010] */
 const Q_ELASTICITY_DEV = 1.2;
 
 export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
@@ -1825,7 +1838,11 @@ export function landAppraisalFloor(rec: ParcelRecord, econ: Econ, inLeaseUp: boo
   return land * (0.92 + 0.08 * w);
 }
 
-/** [K: rent by grade is a judgement, no source found.] */
+/**
+ * Rent by grade. good : standard = 1.20 against a Class A premium over lower
+ * grades of ~25% (Savills, late 2023; 25.5% over Class B, Q1 2026, ConnectCRE)
+ * [S~]. The worn and obsolete steps below standard are still judgements [K].
+ */
 export const CONDITION_RENT_MULT: Record<Condition, number> = {
   obsolete: 0.62, worn: 0.82, standard: 1.0, good: 1.2,
 };
@@ -3230,7 +3247,7 @@ export function physicalOcc(rec: ParcelRecord, h: Holding): number {
  */
 export const OPEX_CONTROLLABLE: Record<BuiltClass, number> = { office: 4.17, retail: 3.20, multifamily: 6.21, industrial: 0.50 };
 export const OPEX_FIXED: Record<BuiltClass, number> = { office: 1.72, retail: 1.54, multifamily: 2.01, industrial: 0.30 };
-export const MGMT_FEE = 0.04;   // of effective gross income, industry standard
+export const MGMT_FEE = 0.04;   // of effective gross income; office fees run 3-4% Class A, 4-5.5% Class B (CORE Advisors, Commercial Property Management Fees 2026) [S~]
 /**
  * THE REPLACEMENT RESERVE ON A BLOCK OF FLATS, and it is NOT the management
  * fee — which is the confusion this constant exists to end.
@@ -3478,7 +3495,7 @@ export function recoveryFor(
 // the level an IAAO ratio study targets); the study's cities carry their own
 // sales ratios, so the bill this town actually levies on market value runs
 // below it by exactly as much as its roll lags — which is the point. (This
-// was 1.1%, tagged [S≠]: its only source was NAHB's 0.89% on owner-occupied
+// was 1.1%, tagged as disputed: its only source was NAHB's 0.89% on owner-occupied
 // homes, not commercial property.)
 /** Assessed at 70% of fair market value (CGS §12-62a(b); CT OPM) [S]. */
 export const ASSESS_RATIO = 0.70;
@@ -5128,8 +5145,13 @@ export function monthlyNOI(rec: ParcelRecord, econ: Econ, h: Holding, currentQ: 
   return holdingNOIYr(rec, econ, h, currentQ) / 12;
 }
 
-// [K: renovation cost and time are judgements, no cost survey checked.]
+// Office: JLL's average office renovation cost runs $297-303/sf in the dearest
+// markets (San Francisco, New York, San Jose; CoStar, "Here's what it costs to
+// build the office tenants say they want") and mid-range remodels $70-150/sf
+// (Atlanta, swivl cost guide); $210 sits between [S~]. Retail, flats and
+// industrial are still judgements [K].
 export const RENO_COST_PSF: Record<BuiltClass, number> = { office: 210, retail: 150, multifamily: 165, industrial: 90 };
+// [K: renovation time is a judgement, no schedule survey checked.]
 export const RENO_MONTHS = 6;
 
 export function renovationCost(rec: ParcelRecord, econ: Econ): number {

@@ -94,7 +94,7 @@ export const REQ_SIZE: Record<string, [number, number, number]> = {
  */
 export const OFFICE_WHALE_P = 0.012;
 export const OFFICE_WHALE_SIZE: [number, number, number] = [120_000, 500_000, 1.6];
-/** The mean of the draw above, so an arrival rate can be backed out of a rate of capture. */
+/** The mean of the draw above, so an arrival rate can be backed out of a rate of capture. [D: arithmetic mean of REQ_SIZE with the office whale mixed in] */
 export const REQ_MEAN: Record<string, number> = { office: 19_450, retail: 7_740, industrial: 50_130 };
 
 /** One requirement, in square feet. */

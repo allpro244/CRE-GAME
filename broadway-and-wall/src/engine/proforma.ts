@@ -292,7 +292,7 @@ export function overMix(mix: UseMix, f: (u: BuiltClass) => number): number {
 export function specShare(mix: UseMix): number {
   return (mix.office ?? 0) + (mix.retail ?? 0) + (mix.industrial ?? 0);
 }
-const CONSTR_SPREAD = 2.4;     // over the index, interest-only
+const CONSTR_SPREAD = 2.4;     // over the index, interest-only. Trepp: construction loan spreads peaked near 310 bp late 2024, 237.5 bp by Q3 2025 (CRE Daily) [S]
 
 /**
  * THE CONTRACT.
@@ -306,6 +306,9 @@ const CONSTR_SPREAD = 2.4;     // over the index, interest-only
  * In a boom, when costs are running, the GMP premium is the cheapest money on
  * the board. In a flat market it is four points of nothing. Reading which one
  * you are in is the job.
+ * [S~] What the GMP buys is chiefly the contractor's contingency, typically 3-5%
+ * of contract value (Custom Builder, "Is a GMP contract right for you"; Rabbet,
+ * "Cost-plus vs GMP").
  */
 export const CONTRACT_PREMIUM: Record<Contract, number> = { gmp: 0.04, costplus: 0 };
 

@@ -602,8 +602,10 @@ export const loanLender = (l: { holder?: string; product: string }): string => l
 /**
  * The cost of closing a refinancing, as a share of the balance, charged on
  * top of the desk's points.
- * [K: judgement, no source found — no survey of commercial refinancing
- * closing costs as a share of the loan was found.]
+ * [S~] All-in commercial closing costs run 2-6% of the loan (biz2credit,
+ * "Commercial refinance hidden costs"), of which origination is 0.25-5% and title
+ * about 0.5% (StackSource 2020, "Typical closing costs for a commercial
+ * mortgage"). Net of the points the desk already charges, about one point.
  */
 export const REFI_FEE = 0.01;
 
@@ -1159,8 +1161,8 @@ export function stabViewFor(
  * equal to the loan amount, with liquidity of 9 months' principal and
  * interest — a multiple of 1.0 [S]. It read 2.0, which no source gave.
  */
-export interface Guarantor { nw: number }
 const GUARANTOR_NW_MULT = 1.0;
+export interface Guarantor { nw: number }
 export function guarantorCap(g: Guarantor | undefined, p: LoanProduct): number {
   if (!g || !p.recourse) return Infinity;
   return Math.max(0, Math.round(g.nw * GUARANTOR_NW_MULT));
@@ -1396,9 +1398,10 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
  * three years, interest-only, two points, and a balloon that lands whether or
  * not the building ever let.
  *
- * [K: judgement, no source found — no published average loan-to-stabilised-
- * value for bridge loans was found; the published lender surveys report
- * average LTV across all closings (about 62%), not bridge paper alone.]
+ * [S~] Lender guides cap CRE bridge loans at 70% of stabilised value (Private
+ * Lender Link, "Maximum LTV for CRE bridge loans", 2022; multifamily.loans),
+ * Arbor at 75%; 65-75% of as-is is the common quote (rets.ai, 2026). 0.65 is
+ * the conservative end of that range.
  */
 const STAB_LTV = 0.65;
 
@@ -2044,9 +2047,9 @@ export function placeMezz(
 }
 /**
  * The term of the rate cap a floating borrower buys, months.
- * [K: judgement, no source found — practice notes say a cap is bought for the
- * loan's initial term, commonly two to three years, but no primary figure was
- * found.]
+ * [S~] Chatham Financial ("What is an interest rate cap"; "Springing interest
+ * rate cap requirements"): the cap is matched to the bridge loan's initial term,
+ * typically two or three years; 36 months is the three-year case.
  */
 export const CAP_TERM_M = 36;
 export function rateCapCost(loan: Loan): number {

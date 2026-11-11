@@ -1087,7 +1087,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
             n: { sf: t.sf, rentYr: Math.round(t.rentPsf * t.sf), firmsPerWork: +ratio(k).toFixed(2) },
             t: `${t.name} left town at lease end · ${(t.sf / 1000).toFixed(1)}k sf${ratio(k) > 1.05 ? ` · its trade has ${Math.round((ratio(k) - 1) * 100)}% more firms here than work` : ""}`,
           }, [whyTenantBooks(s, t, f)]) : undefined;
-          (e.streetFailed ??= []).push({ m, bbl, name: t.name, fid: t.fid, sf: t.sf, use: k, why: "left", ...(whyId ? { whyId } : {}) });
+          (e.streetFailed ??= []).push({ m, bbl, name: t.name, fid: t.fid, sf: t.sf, use: k, why: "left", ...(mover ? { reloc: true } : {}), ...(whyId ? { whyId } : {}) });
           vacate(roll, t);
           continue;
         }

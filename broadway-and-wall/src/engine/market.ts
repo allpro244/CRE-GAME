@@ -4458,8 +4458,8 @@ export function tickEcon(s: GameState) {
       const dNeed = om.need * (r - 1);
       // SHEDS ARE ONE REGIONAL MARKET (streetRolls.ts, `shedMovers`): each
       // month the region's relocating tenants (SHED_MOVE of each year's
-      // expiries, on five-year leases), the replacements for the map's sheds
-      // that closed or left, and the off-map firms' growth take the empty
+      // expiries, on five-year leases), the map's tenants that relocated into
+      // the region, and the off-map firms' growth take the empty
       // floor they find, the map's in proportion to its share of the region's
       // empty floor. The street forms the map's share as new firms looking
       // for a shed; the rest look off the map, and so does every one of the
@@ -4470,8 +4470,12 @@ export function tickEcon(s: GameState) {
         const avMap = Math.max(0, onMap - letMap), avOff = Math.max(0, offSf - om.occ);
         const toMap = avMap / Math.max(1, avMap + avOff);
         const reloc = om.occ * SHED_MOVE / 60;
+        // The map's tenants that RELOCATED into the region this month: they
+        // chose the region's empty floor (streetRolls.ts) and need it. A shed
+        // that closed or went dark is gone; the town's own trades re-form its
+        // work on the map (streetRolls.ts, the gap), not the region.
         let lost = 0;
-        for (const f of e.streetFailed ?? []) if (f.m === s.month && f.use === k) lost += f.sf;
+        for (const f of e.streetFailed ?? []) if (f.m === s.month && f.use === k && f.reloc) lost += f.sf;
         // the street's region movers still looking, housed, or gone back to the region
         const pend = (om.pend ??= {});
         let back = 0;
@@ -4492,7 +4496,7 @@ export function tickEcon(s: GameState) {
         // (formed this month: the opening's own start-ups are not the region's)
         for (const sk of e.seekers ?? []) if (looking.has(sk.fid) && (sk.since === s.month || pend[sk.fid] !== undefined)) pend[sk.fid] = sk.want;
         om.need = Math.max(0, om.need - (om.occ > 0 ? reloc * om.need / om.occ : 0) + Math.min(0, dNeed)
-          + (reloc + lost + Math.max(0, dNeed)) * (1 - toMap) + back);
+          + (reloc + Math.max(0, dNeed)) * (1 - toMap) + lost + back);
         om.occ -= reloc;
         // ...and the off-map firms' growth, as the street reads it (`offWant`)
         (e.offWant ??= {})[k] = (offWantPrev ?? om.need) + dNeed;

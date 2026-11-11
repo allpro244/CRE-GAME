@@ -63,6 +63,8 @@ import { gradeOf, markRival, ownerOf, paramsOf } from "./rivals";
 import { isCivicLand } from "./demand";
 import type { Holder } from "./owners";
 import { holderOf, isCold, relOf, standingWith } from "./owners";
+import type { Bidder } from "./propmarket";
+import { EQUITY_PREMIUM } from "./propmarket";
 
 /** Deterministic 0..1 from a string. Never touches the RNG stream. */
 function hash01(str: string): number {
@@ -401,6 +403,33 @@ function statement(
  * not a war chest and it is not meant to be read as one — a private holder is
  * not bidding on anything, which is what `operator: false` says on the view.
  */
+/**
+ * A PRIVATE HOLDER AS ITS OWN BIDDER: the terms on which it values its own
+ * building in use, read by the same law the street's bidders price with
+ * (propmarket.ts valueTo), so "is it worth more to me than the street would
+ * pay" is one quantity on both sides. Its equity target is the street style
+ * its kind invests like [K]: a pension or insurer is core money, an old family
+ * or an estate is family money, a private partnership targets value-add
+ * returns (pe), a builder is a developer. It borrows at the advance its kind
+ * writes (HOLDER_ADVANCE), leases with its own effort (HOLDER_CARE), reads no
+ * forecast of its own (lean 0) and makes no committee error on a building it
+ * has owned for years (misPp 0); a builder can always tear down.
+ */
+const HOLDER_STYLE: Record<SellerKind, RivalStyle> = {
+  institution: "core", local: "family", estate: "family", partnership: "pe", developer: "developer", lender: "core",
+};
+export function holderBidder(h: Holder): Bidder {
+  const style = HOLDER_STYLE[h.kind] ?? "family";
+  return {
+    id: h.id, style, lean: 0, misPp: 0,
+    lease: (HOLDER_CARE[h.kind] ?? HOLDER_CARE.local).lease,
+    ltvCap: (HOLDER_ADVANCE[h.kind] ?? HOLDER_ADVANCE.local).ltv,
+    eqPrem: EQUITY_PREMIUM[style] ?? 8,
+    fileSpread: 0,
+    builds: h.kind === "developer",
+  };
+}
+
 const CASH_MONTHS: Record<SellerKind, number> = {
   estate: 14, local: 9, institution: 7, partnership: 6, developer: 3, lender: 2,
 };

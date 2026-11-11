@@ -29,7 +29,7 @@ let degenerateTotal = 0;
 for (const seed of SEEDS) {
   let m;
   try {
-    m = measurePlat(makeCity("somewhere", seed, { size: SIZE, density: DEV }));
+    m = measurePlat(makeCity("somewhere", seed, { size: SIZE, density: DEV, streets: process.env.BW_STREETS || undefined }));
   } catch (e) {
     console.log(`  ${String(seed).padStart(8)}  GENERATION THREW: ${e.message}`);
     degenerateTotal++;

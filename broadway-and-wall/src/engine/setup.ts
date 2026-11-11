@@ -78,6 +78,8 @@ export interface GameSetup {
   rivalCapital?: RivalCapital;
   /** How much of the town is park (citygen PARK_AMOUNTS). Absent = the usual. The store applies it. */
   parks?: "low" | "medium" | "high";
+  /** Which street generator cuts the town (citygen STREET_PLANS). Absent = classic. The store applies it. */
+  streets?: "classic" | "natural";
 }
 
 /**

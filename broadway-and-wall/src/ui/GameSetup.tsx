@@ -9,7 +9,7 @@ import {
 } from "@/engine/setup";
 import { generateFirmName } from "@/engine/firm";
 import { setupCity, currentSize, currentDev, currentCash0, regionShown } from "@/state/city";
-import { cityList, cityName, sizeList, developmentList, extentList, randomSeed, PARK_AMOUNTS, REGION } from "@/citygen/index.mjs";
+import { cityList, cityName, sizeList, developmentList, extentList, randomSeed, PARK_AMOUNTS, STREET_PLANS, REGION } from "@/citygen/index.mjs";
 import { drawPlatOffThread } from "@/state/platClient";
 import { BUILD_STAMP } from "@/buildStamp";
 import { usd } from "./format";
@@ -59,6 +59,7 @@ interface Draft {
   island: string; size: string; dev: string; cash0: number; goal: GoalId | null;
   field: FieldChoice; inherit: 0 | 2 | 3 | 4; home: HomeChoice; rivalCapital: RivalCapital;
   parks: "low" | "medium" | "high";
+  streets: "classic" | "natural";
   firmName: string; sandbox: boolean; clock: NonNullable<GameSetup["clock"]>; brokerStops: boolean; seed: number; poolEntry: boolean; rivalReputation: boolean; rivalDealTerms: boolean; builderFirms: boolean;
 }
 
@@ -78,7 +79,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
     const island = setupCity();
     return {
       island, size: currentSize(island), dev: currentDev(island), cash0: currentCash0(), goal: null,
-      field: DEFAULT_SETUP.field, inherit: 0, home: "any", rivalCapital: "medium", parks: "medium",
+      field: DEFAULT_SETUP.field, inherit: 0, home: "any", rivalCapital: "medium", parks: "medium", streets: "classic",
       firmName: "", sandbox: false, clock: "decisions", brokerStops: true, seed: randomSeed(), poolEntry: true, rivalReputation: true, rivalDealTerms: true, builderFirms: true,
     };
   };
@@ -99,12 +100,12 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
   // the town changes, after a short pause. Same makeCity call Break ground
   // makes, so this is the town you will get.
   const [plat, setPlat] = useState<{ key: string; svg?: string; lots?: number; err?: string } | null>(null);
-  const platKey = `${d.island}|${d.size}|${d.dev}|${d.parks}|${d.seed}`;
+  const platKey = `${d.island}|${d.size}|${d.dev}|${d.parks}|${d.streets}|${d.seed}`;
   useEffect(() => {
     if (isWritten) return;
     let gone = false;
     const t = setTimeout(() => {
-      void drawPlatOffThread({ island: d.island, seed: d.seed, size: isFixed ? d.island : d.size, dev: d.dev, parks: d.parks === "medium" ? undefined : d.parks })
+      void drawPlatOffThread({ island: d.island, seed: d.seed, size: isFixed ? d.island : d.size, dev: d.dev, parks: d.parks === "medium" ? undefined : d.parks, streets: d.streets === "natural" && !isFixed ? d.streets : undefined })
         .then((r) => { if (!gone) setPlat({ key: platKey, svg: r.svg, lots: r.lots, err: r.err }); });
     }, 250);
     return () => { gone = true; clearTimeout(t); };
@@ -145,7 +146,8 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
     d.rivalCapital !== "medium" ? `rivals' money ${RIVAL_CAPITAL.find((c) => c.id === d.rivalCapital)?.label.toLowerCase()}` : null,
     d.goal ? GOALS.find((g) => g.id === d.goal)?.label : null,
     d.parks !== "medium" && !isWritten && !isFixed ? `${PARK_AMOUNTS.find((x) => x.id === d.parks)?.name.toLowerCase()} parks` : null,
-  ].filter(Boolean).join(" · "), [d.field, d.inherit, d.rivalCapital, d.goal, d.parks, isWritten, isFixed]);
+    d.streets === "natural" && !isWritten && !isFixed ? "natural streets (beta)" : null,
+  ].filter(Boolean).join(" · "), [d.field, d.inherit, d.rivalCapital, d.goal, d.parks, d.streets, isWritten, isFixed]);
 
   const breakGround = () => {
     pendingGoal.id = d.sandbox ? null : d.goal;
@@ -154,6 +156,8 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
       rivalCapital: d.rivalCapital === "medium" ? undefined : d.rivalCapital,
       // a written-down city's parks are real: the choice only applies to a generated island
       parks: d.parks === "medium" || isWritten || isFixed ? undefined : d.parks,
+      // the street generator likewise: a generated island only
+      streets: d.streets === "natural" && !isWritten && !isFixed ? "natural" : undefined,
       firmName: d.firmName.trim() || undefined, sandbox: d.sandbox, clock: d.clock,
       brokerStops: d.brokerStops ? undefined : "never",
       poolEntry: d.poolEntry ? undefined : false,
@@ -320,6 +324,15 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
                   <div>
                     {seg(PARK_AMOUNTS.map((x) => ({ id: x.id, label: x.name, note: x.note })), d.parks, (v) => up({ parks: v }), "How many parks")}
                     <div className="hs-note">{PARK_AMOUNTS.find((x) => x.id === d.parks)?.note}</div>
+                  </div>
+                </div>
+              )}
+              {!isWritten && !isFixed && (
+                <div className="hs-row">
+                  <div className="hs-label">Streets</div>
+                  <div>
+                    {seg(STREET_PLANS.map((x) => ({ id: x.id, label: x.name, note: x.note })), d.streets, (v) => up({ streets: v }), "Street generator")}
+                    <div className="hs-note">{STREET_PLANS.find((x) => x.id === d.streets)?.note}</div>
                   </div>
                 </div>
               )}

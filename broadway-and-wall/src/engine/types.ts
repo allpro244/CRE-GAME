@@ -4698,6 +4698,8 @@ export interface GameState {
      * it, not one per month — see sim.ts.
      */
     payingNotes?: boolean;
+    /** Net worth at the bank's last annual review, and when (credit.ts locLimit). */
+    reviewNw?: number; reviewM?: number;
   };
   books: BooksYear[];                        // the ledger, one entry per year
   /** Monthly flow buckets for the income statement's month view. Optional for old saves. */

@@ -114,6 +114,8 @@ const HOURS_YR = 2000;
  * A FIRM'S NAMED RELATIONSHIPS (economy.ts LINKS_PER_FIRM, about three
  * suppliers a firm keeps by name): a firm with fewer counts the centre of its
  * industry's customers for the rest.
+ * [K: judgement — mirrors economy.ts LINKS_PER_FIRM, which is itself tagged
+ * a judgement there.]
  */
 const LINKS_EXPECTED = 3;
 
@@ -808,6 +810,7 @@ export function freeMonthsFor(face: number, eff: number, termM: number): number 
  */
 export interface Comp { m: number; f: number; e: number; b: number; nb: number; sf: number; r?: 1 }
 
+/** How far back a signed lease counts as a comp, months. [K: judgement, no source found — no published standard look-back for commercial lease comps was found.] */
 export const COMP_WINDOW_M = 6;
 
 /** Record a commercial lease (the street's, a renewal, or the player's). */

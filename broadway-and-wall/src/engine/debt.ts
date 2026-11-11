@@ -99,6 +99,12 @@ export interface LoanProduct {
 //
 // spread. Both are listed as separate lines because that is how a term sheet
 // arrives.
+//
+// [K: judgement, no source found for the table as a whole — each desk's
+// advance, spread, IO, term, coverage and debt-yield floor are set by eye
+// against general term-sheet practice, not read off one published survey.
+// The 1.25x coverage test matches agency term sheets, but the rest is not
+// checked row by row.]
 export const PRODUCTS: LoanProduct[] = [
   {
     id: "harbor", label: "First Harbor Bank · 5 yr, 25-yr am", lender: "First Harbor Bank",
@@ -416,6 +422,9 @@ export function windowOpen(s: GameState, p: LoanProduct): boolean {
  * points of file barely move the quote and the last twenty move it a lot — a
  * borrower who has closed twice is not a relationship, and a borrower who has
  * closed eleven times and never missed a payment is.
+ *
+ * [K: judgement, no source found — the caps by desk are set by eye; the
+ * relationship-lending literature measures a discount, not these shares.]
  */
 const REL_MAX: Record<string, number> = { bank: 0.40, life: 0.30, fund: 0.25, conduit: 0 };
 export function lenderRelOf(s: GameState, lender: string): number {
@@ -492,6 +501,11 @@ export function singleNameCap(kind: string | undefined): number {
  * A bank whose capital is impaired has no limit left, which is the law too.
  * The national books (life, conduit, fund) are limited against balance
  * sheets the game does not carry, so theirs stays a share of their slice.
+ *
+ * [S: 12 U.S.C. 84(a)(1) and 12 CFR 32.3(a) — loans to one borrower "may not
+ * exceed 15 percent of the bank's or savings association's capital and
+ * surplus", plus 10 percent more only if fully secured by readily marketable
+ * collateral.]
  */
 export const LEGAL_LENDING_LIMIT = 0.15;
 export function nameLimit(l: { kind?: string; book: number; capital: number }, book = l.book): number {
@@ -548,6 +562,8 @@ function lenderByNameLocal(s: GameState, name: string) {
  * the product's terms saw a 4.10 bridge spread on a loan written at 2.10.
  * They are named for what they are now. Not on any desk's sheet — `PRODUCTS`
  * is what a borrower can ask for — but `productById` knows them.
+ *
+ * [K: judgement, no source found — terms set by eye, as for PRODUCTS.]
  */
 export const INTERNAL_PRODUCTS: LoanProduct[] = [
   {
@@ -583,6 +599,12 @@ export function isPrivatePaper(l: { product: string; holder?: string }): boolean
  */
 export const loanLender = (l: { holder?: string; product: string }): string => l.holder ?? productById(l.product).lender;
 
+/**
+ * The cost of closing a refinancing, as a share of the balance, charged on
+ * top of the desk's points.
+ * [K: judgement, no source found — no survey of commercial refinancing
+ * closing costs as a share of the loan was found.]
+ */
 export const REFI_FEE = 0.01;
 
 /**
@@ -685,6 +707,10 @@ export function standardsWord(st: number): string {
  * The conduit and the banks are the marginal lenders, so they move most. Land
  * money is the first to go and the last to come back, which is why its band
  * is the widest of all.
+ *
+ * [K: judgement, no source found — the Fed's loan-officer survey reports the
+ * net share of banks tightening, not points of advance, so these bands are
+ * set by eye.]
  */
 const ADVANCE_BAND: Record<string, { up: number; down: number }> = {
   harbor: { up: 0.05, down: 0.10 },
@@ -704,6 +730,11 @@ const ADVANCE_BAND: Record<string, { up: number; down: number }> = {
  * flats do not go dark at once — and they get five points over the sheet.
  * Warehouses two. Shops two under, because retail income is one tenant's
  * lease away from nothing. Offices are the sheet.
+ *
+ * [S~: CBRE Lending Momentum Q1 2024 — average LTV on multifamily loans
+ * 63.9% against 57.9% on commercial loans, a six-point gap (the +5 here). The
+ * split of the commercial figure between office, industrial and retail is
+ * not published there; the +2 / 0 / −2 is a judgement.]
  */
 const CLASS_ADVANCE: Record<string, number> = { multifamily: 0.05, industrial: 0.02, office: 0, retail: -0.02 };
 
@@ -713,6 +744,9 @@ const CLASS_ADVANCE: Record<string, number> = { multifamily: 0.05, industrial: 0
  * saw on the property condition assessment. Three points of advance is what
  * that comes to on an ordinary tired building; an obsolete one, the same, and
  * the life company will not look at either.
+ *
+ * [K: judgement, no source found — agency guides size a repair escrow off the
+ * property condition report's own estimate, not as a share of value.]
  */
 const REPAIRS_HOLDBACK = 0.03;
 
@@ -1120,6 +1154,12 @@ export function stabViewFor(
  * $20M building on a bank's balance sheet. Half the loan is the middle of
  * practice for a small sponsor; the cap grows as you do, which is the
  * mid-game the sponsor record never had a positive side to.
+ *
+ * [S≠: source disagrees — Freddie Mac Small Balance Loan term sheets
+ * (program launched 2014, folded into Conventional Small in 2026): guarantor
+ * net worth at least equal to the loan amount and liquidity of 9 months'
+ * principal and interest, i.e. a multiple of 1.0, not 2.0. No published
+ * figure found for community-bank practice at half the loan.]
  */
 export interface Guarantor { nw: number }
 const GUARANTOR_NW_MULT = 2.0;
@@ -1357,6 +1397,10 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
  * The upside it buys is bought at a price the engine already models — floating,
  * three years, interest-only, two points, and a balloon that lands whether or
  * not the building ever let.
+ *
+ * [K: judgement, no source found — no published average loan-to-stabilised-
+ * value for bridge loans was found; the published lender surveys report
+ * average LTV across all closings (about 62%), not bridge paper alone.]
  */
 const STAB_LTV = 0.65;
 
@@ -2000,6 +2044,12 @@ export function placeMezz(
   sweepLocIdleCash(next, { announce: true });
   return { s: next, msg: `Mezz closed — ${money(q.principal)}.` };
 }
+/**
+ * The term of the rate cap a floating borrower buys, months.
+ * [K: judgement, no source found — practice notes say a cap is bought for the
+ * loan's initial term, commonly two to three years, but no primary figure was
+ * found.]
+ */
 export const CAP_TERM_M = 36;
 export function rateCapCost(loan: Loan): number {
   return capPremiumOn(loan.balance);

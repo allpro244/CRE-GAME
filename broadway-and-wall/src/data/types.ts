@@ -45,6 +45,13 @@ export interface ParcelRecord {
   floors: number;
   yearBuilt: number;
   unitsRes: number;
+  /**
+   * The island's share of its region's residents (city plan 18, citygen
+   * demand.mjs), the same on every lot of a town; absent on earlier plans.
+   * The engine opens the region's population at the island's residents over
+   * it (market.ts `initEcon`).
+   */
+  regionShare?: number;
   assessedLand: number;
   assessedTotal: number;
   /**

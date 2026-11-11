@@ -592,8 +592,8 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
  * (0.72-0.90x value), capped at three a month. Its own rng channel, so the
  * rest of the city's stream is not re-rolled by the land market.
  */
-const RIPE_CHECK_SHARE = 1 / 12;
-const RIPE_LIST_P = 0.25;
+/** An owner looks at its vacant lot once a year [K: the annual budget/tax-bill cycle an owner reviews a holding on]. */
+const RIPE_REVIEW_M = 12;
 // Forced land sales follow distress — slack and shrinking payrolls — at up to
 // 0.6% of vacant lots a month in a full downturn (the old depression row).
 function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: Set<string>) {
@@ -654,7 +654,11 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
   };
   // ripe dirt finds its builder
   for (const v of vacant) {
-    if (rng(s, "land") >= RIPE_CHECK_SHARE) continue;
+    // Each owner reviews its dirt once a year, staggered by a hash of the
+    // parcel — no die (2026-11-11; it was a 1-in-12 draw every month).
+    let hb = 2166136261;
+    for (let i = 0; i < v.bbl.length; i++) { hb ^= v.bbl.charCodeAt(i); hb = Math.imul(hb, 16777619); }
+    if (((hb >>> 0) % RIPE_REVIEW_M) !== s.month % RIPE_REVIEW_M) continue;
     const rec = full(v);
     const read = landRead(rec, s.econ);
     // ...OR A LAND FUND WANTS IT. Dirt nobody can build on today has buyers
@@ -668,7 +672,8 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
       const reservation = Math.max(landValue(rec, s.econ), ownerAskPsf(rec, s.econ) * rec.lotArea);
       if (!(reservation > 0) || landFundBid(s, rec) < reservation * (1 + BUY_CLOSING)) continue;
     }
-    if (rng(s, "land") < RIPE_LIST_P) put(v.bbl, rec, false);
+    // A buyer clears its number at the review: it lists (the 25% coin is gone).
+    put(v.bbl, rec, false);
   }
   // forced sellers clear land through a slump
   const h = 0.006 * cycleDown(s.econ);

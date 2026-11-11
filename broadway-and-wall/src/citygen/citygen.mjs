@@ -1411,6 +1411,7 @@ export function generateCity(cfg) {
     const lines = traceStreets(field, { blocked, seeds, rand: natStream(S, 0x7ace5) });
     // the graph: every street, the shore, and the frontage round each square
     const graph = lines.map((l) => ({ pts: simplify(l.pts, 0.6), cls: l.major ? "arterial" : "street" }));
+    natNaming = nameStreets(lines, graph, founding, leafOf);
     graph.push({ pts: [...innerRing, innerRing[0]], cls: "shore", closed: true });
     for (const r of PARK_RES) graph.push({ pts: [...r, r[0]], cls: "park", closed: true });
     for (const r of STILL) graph.push({ pts: [...r, r[0]], cls: "park", closed: true });
@@ -1480,6 +1481,47 @@ export function generateCity(cfg) {
         return c === "party" ? 0 : c === "arterial" ? aw / 2 : sw / 2;
       };
     };
+    // A NEEDLE IS NOT A BLOCK. Where two streets cross under 35 degrees the
+    // block between them runs out to a point no lot can be staked on (the
+    // plat's own sliver rule refuses a corner under 22 degrees, and the
+    // Flatiron's 25 is the sharpest anyone built). The point is cut off square
+    // by a short connector street where the block is 18 m across — one row of
+    // the shallowest lot a plat sells, plus its kerb — and the tip is paved as
+    // a traffic island, as every gridded city paves its acute gores.
+    const TIP_DEG = 45, TIP_W = 18;
+    function squareTips(cell) {
+      let ring = cell;
+      const tips = [];
+      for (let k = 0; k < 4; k++) {
+        const n = ring.length;
+        let at = -1, worst = (TIP_DEG * Math.PI) / 180;
+        for (let i = 0; i < n; i++) {
+          const a = ring[(i + n - 1) % n], b = ring[i], c = ring[(i + 1) % n];
+          const v1 = [a[0] - b[0], a[1] - b[1]], v2 = [c[0] - b[0], c[1] - b[1]];
+          const l1 = Math.hypot(v1[0], v1[1]), l2 = Math.hypot(v2[0], v2[1]);
+          if (l1 < 1e-6 || l2 < 1e-6) continue;
+          const ang = Math.acos(Math.max(-1, Math.min(1, (v1[0] * v2[0] + v1[1] * v2[1]) / (l1 * l2))));
+          if (ang < worst) { worst = ang; at = i; }
+        }
+        if (at < 0) break;
+        const a = ring[(at + n - 1) % n], b = ring[at], c = ring[(at + 1) % n];
+        const u1 = [a[0] - b[0], a[1] - b[1]], u2 = [c[0] - b[0], c[1] - b[1]];
+        const L1 = Math.hypot(u1[0], u1[1]), L2 = Math.hypot(u2[0], u2[1]);
+        const bis = [u1[0] / L1 + u2[0] / L2, u1[1] / L1 + u2[1] / L2];
+        const bl = Math.hypot(bis[0], bis[1]);
+        const dir = [bis[0] / bl, bis[1] / bl];
+        const t = TIP_W / (2 * Math.tan(worst / 2));
+        const lim = dir[0] * b[0] + dir[1] * b[1] + t;
+        const keep = clipRingHalfPlane(ring, -dir[0], -dir[1], -lim);
+        const tip = clipRingHalfPlane(ring, dir[0], dir[1], lim);
+        const kc = keep && cleanRing(keep), tc = tip && cleanRing(tip);
+        // nothing worth keeping behind the tip: the whole sliver is the island
+        if (!kc || !tc || polygonArea([kc]) < 400) return [{ ring, gore: 1 }, ...tips];
+        tips.push({ ring: tc, gore: 1 });
+        ring = kc;
+      }
+      return [ring, ...tips];
+    }
     let nCells = 0;
     // a face of the graph that is the sea or a square is not a block; asked
     // of each convex piece, since a bent face's centroid can sit outside it
@@ -1501,7 +1543,12 @@ export function generateCity(cfg) {
         for (const part of parts) {
           const leaf = leafOf(centroid(part));
           const name = leaf?.district ?? names[0];
-          for (const cell of claimCell(part, [], KEEP)) {
+          for (const cell of claimCell(part, [], KEEP).flatMap(squareTips)) {
+            if (cell.gore) {
+              // the tip a short connector cut off: a paved traffic island
+              pushBlock(cell.ring, name, false, cfg.districts[name].streetW, cfg.districts[name].streetW, { gore: 1 }, 0, null, halfOf(name));
+              continue;
+            }
             const hOf = halfOf(name);
             pushBlock(cell, name, false, cfg.districts[name].streetW, cfg.districts[name].streetW, {}, 0, null, hOf);
             nCells++;
@@ -1510,6 +1557,13 @@ export function generateCity(cfg) {
             // its lots run the full depth from the street to that line, not
             // two rows back to back (which halved every lot on it).
             const b = blocks[blocks.length - 1];
+            // unequal half-streets can collapse a short edge of the inset into
+            // a new point: square that off too (the tip is just more roadway)
+            if (b.inset) {
+              const sq = squareTips(b.inset);
+              if (sq[0].gore) b.gore = 1;
+              else b.inset = sq[0];
+            }
             const fr = b.inset && blockFrame(b.inset);
             if (fr) {
               for (let e = 0; e < cell.length; e++) {
@@ -1529,6 +1583,117 @@ export function generateCity(cfg) {
     if (globalThis.__natDebug) globalThis.__natDebug({ lines, founding, innerRing, parks: PARK_RES, field, blocks });
   }
   let naturalStats = null;
+  let natNaming = null;
+
+  // ONE STREET, ONE NAME, END TO END. A natural town's streets are traced
+  // lines, so each is named once: the arterials — the old roads out of town —
+  // take the island's avenue names, longest first; every other street takes a
+  // name from the pool of the district its middle runs through, longest
+  // first, and a name is never used twice in the town. Its own salt.
+  function nameStreets(lines, graph, founding, leafOf) {
+    const rnd = natStream(cfg.seed >>> 0, 0x57ee7);
+    const EXT = ["North", "South", "East", "West", "Upper", "Lower", "New", "Old"];
+    const used = new Set();
+    const take = (pools) => {
+      for (const pool of pools) {
+        const start = Math.floor(rnd() * pool.length);
+        for (let j = 0; j < pool.length; j++) {
+          const nm = pool[(start + j) % pool.length];
+          if (!used.has(nm)) { used.add(nm); return nm; }
+        }
+      }
+      for (const e of EXT) for (const pool of pools) for (const nm0 of pool) {
+        const nm = `${e} ${nm0}`;
+        if (!used.has(nm)) { used.add(nm); return nm; }
+      }
+      return null;
+    };
+    const allPools = Object.values(cfg.streets ?? {});
+    const out = graph.map((g, i) => {
+      const P = g.pts;
+      // numbered from the end nearer the landing: the old town is 1
+      const rev = Math.hypot(P[0][0] - founding[0], P[0][1] - founding[1]) > Math.hypot(P[P.length - 1][0] - founding[0], P[P.length - 1][1] - founding[1]);
+      const pts = rev ? [...P].reverse() : P;
+      const cum = [0];
+      for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+      return { pts, cum, len: cum[cum.length - 1], major: lines[i].major, name: null };
+    });
+    const order = out.map((_, i) => i).sort((a, b) => (out[b].major - out[a].major) || (out[b].len - out[a].len));
+    for (const i of order) {
+      const L = out[i];
+      const mid = L.pts[Math.floor(L.pts.length / 2)];
+      const d = leafOf(mid)?.district;
+      const pools = L.major
+        ? [cfg.avenues ?? [], cfg.streets?.[d] ?? [], ...allPools]
+        : [cfg.streets?.[d] ?? [], cfg.streets?.default ?? [], ...allPools];
+      L.name = take(pools.filter((x) => x.length));
+    }
+    // a spatial index of the named lines, for the address pass
+    const G = 40, grid = new Map();
+    out.forEach((L, li) => {
+      for (let k = 1; k < L.pts.length; k++) {
+        const a = L.pts[k - 1], b = L.pts[k];
+        for (let gx = Math.floor(Math.min(a[0], b[0]) / G); gx <= Math.floor(Math.max(a[0], b[0]) / G); gx++) {
+          for (let gy = Math.floor(Math.min(a[1], b[1]) / G); gy <= Math.floor(Math.max(a[1], b[1]) / G); gy++) {
+            const key = gx * 100003 + gy;
+            if (!grid.has(key)) grid.set(key, []);
+            grid.get(key).push(li, k);
+          }
+        }
+      }
+    });
+    /** the named street nearest p within r: { L, s (m along it), side (+1 left, -1 right), d } */
+    const nearest = (p, r) => {
+      let best = null;
+      const g = Math.ceil(r / G), cx = Math.floor(p[0] / G), cy = Math.floor(p[1] / G);
+      for (let gx = cx - g; gx <= cx + g; gx++) for (let gy = cy - g; gy <= cy + g; gy++) {
+        const arr = grid.get(gx * 100003 + gy);
+        if (!arr) continue;
+        for (let q = 0; q < arr.length; q += 2) {
+          const L = out[arr[q]], k = arr[q + 1];
+          if (!L.name) continue;
+          const a = L.pts[k - 1], b = L.pts[k];
+          const ex = b[0] - a[0], ey = b[1] - a[1], L2 = ex * ex + ey * ey || 1;
+          let t = ((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / L2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const dd = Math.hypot(p[0] - a[0] - ex * t, p[1] - a[1] - ey * t);
+          if (dd < r && (!best || dd < best.d)) {
+            const side = ex * (p[1] - a[1]) - ey * (p[0] - a[0]) > 0 ? 1 : -1;
+            best = { L, s: L.cum[k - 1] + t * Math.sqrt(L2), side, d: dd };
+          }
+        }
+      }
+      return best;
+    };
+    return { lines: out, nearest, taken: new Set() };
+  }
+  /**
+   * A natural town's address: the street the lot's front faces and a number
+   * along it — rising away from the old town, two numbers for every 2.2 m of
+   * frontage (a hundred to a ~110 m block, the American convention), odd on
+   * the left, even on the right. The front is the lot's longest edge on the
+   * block's kerb line; failing that, its nearest named street.
+   */
+  function natAddress(lotRing, kerb) {
+    if (!natNaming) return null;
+    let best = null;
+    for (let i = 0; i < lotRing.length; i++) {
+      const a = lotRing[i], b = lotRing[(i + 1) % lotRing.length];
+      const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+      if (distToRing(mid, kerb) > 0.3) continue;
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const hit = natNaming.nearest(mid, 22);
+      if (hit && (!best || len > best.len)) best = { ...hit, len };
+    }
+    const hit = best ?? natNaming.nearest(centroid(lotRing), 90);
+    if (!hit) return null;
+    const name = hit.L.name;
+    let no = 2 * Math.floor(hit.s / 2.2) + (hit.side > 0 ? 1 : 2);
+    while (natNaming.taken.has(`${no} ${name}`)) no += 2;
+    natNaming.taken.add(`${no} ${name}`);
+    return `${no} ${name}`;
+  }
+
 
   // "chamfer" and "superblock" are the lattice with its own options set —
   // a regular grid with every corner cut, and a coarse grid whose cells are
@@ -1687,7 +1852,20 @@ export function generateCity(cfg) {
   // share exact vertices, so adjacency is exact; a merge is taken only when
   // the union is convex — the hull of the pair adds no ground — so a merged
   // lot can never lap a third lot's land.
-  function absorbSlivers(lots) {
+  /** The sharpest interior corner of a ring, in degrees (edges under 0.5 m ignored). */
+  function minCornerDeg(r) {
+    let m = 180;
+    const n = r.length;
+    for (let i = 0; i < n; i++) {
+      const a = r[(i + n - 1) % n], b = r[i], c = r[(i + 1) % n];
+      const v1x = a[0] - b[0], v1y = a[1] - b[1], v2x = c[0] - b[0], v2y = c[1] - b[1];
+      const l1 = Math.hypot(v1x, v1y), l2 = Math.hypot(v2x, v2y);
+      if (l1 < 0.5 || l2 < 0.5) continue;
+      m = Math.min(m, (Math.acos(Math.max(-1, Math.min(1, (v1x * v2x + v1y * v2y) / (l1 * l2)))) * 180) / Math.PI);
+    }
+    return m;
+  }
+  function absorbSlivers(lots, isSliver = null) {
     const widOf = (r) => {
       const ax2 = longestEdgeAngle(r);
       return Math.min(extentAlong(r, ax2).span, extentAlong(r, ax2 + Math.PI / 2).span);
@@ -1697,7 +1875,7 @@ export function generateCity(cfg) {
       let i = -1;
       for (let k = 0; k < lots.length; k++) {
         if (stuck.has(lots[k])) continue;
-        if (polygonArea([lots[k]]) < 120 || widOf(lots[k]) < 8) { i = k; break; }
+        if (isSliver ? isSliver(lots[k]) : polygonArea([lots[k]]) < 120 || widOf(lots[k]) < 8) { i = k; break; }
       }
       if (i < 0) return;
       const r = lots[i];
@@ -2608,6 +2786,10 @@ export function generateCity(cfg) {
       // point on one piece; plan 8 paves that point too, as the block-level
       // trim already does (a 19.5-degree corner lot on seed 20261 otherwise).
       if (FRONTAGE && PLAN_V >= 8) for (let i = 0; i < lots.length; i++) lots[i] = trimNeedles(lots[i]);
+      // NATURAL STREETS: a row cut square across a block whose end runs at a
+      // slant leaves a triangle at the end of the row — a needle lot. It goes
+      // to its neighbour in the row, as a surveyor would have drawn the end lot.
+      if (cfg.streetPlan === "natural") absorbSlivers(lots, (r) => minCornerDeg(r) < 30);
     }
 
     let lotNo = 1;
@@ -2885,6 +3067,8 @@ export function generateCity(cfg) {
         address = `${numberOn(namedStreet, houseNo)} ${namedStreet}`;
       }
       if (realAddr) address = realAddr;
+      // a natural town addresses every lot on the traced street it fronts
+      if (natNaming) address = natAddress(lotRing, street) ?? address;
 
       parcels.features.push({
         type: "Feature",

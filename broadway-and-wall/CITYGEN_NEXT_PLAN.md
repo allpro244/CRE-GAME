@@ -79,6 +79,16 @@ other planned districts). **Slivers are merged**: a graph face under 40% of the 
 or narrower than 30 m on average is merged into the neighbour it shares the most street
 with (the street between them is not built), never across the shore or a square.
 
+**Street names.** Each traced street is named once, end to end: arterials take the island's
+avenue names, longest first; other streets a name from the pool of the district their
+middle runs through; no name twice. A lot's address is the street its longest kerb-line
+edge faces (else its nearest named street) and a number along it, rising away from the
+landing, two numbers per 2.2 m (a hundred to a ~110 m block), odd left, even right; no
+address repeats. **Needles.** Where streets cross under 45 degrees the block's point is cut
+off square where it is 18 m across and paved as a traffic island (also on the inset, where
+unequal half-streets can make a new point), and a needle lot at the slanted end of a row is
+merged into its neighbour.
+
 **Party lines.** A face too concave to be one convex block is cut into convex pieces only
 because the lot cutter wants convex blocks; the cut is a party line between two halves of
 one block, so it pays no street, and a half whose long side is that line is platted as one
@@ -124,18 +134,21 @@ Seed 481923 "Stancliff Landing":
 
 Measured on the prototype (City size; `tools/platlib.mjs`):
 
-| seed | lots classic | lots natural | change | lot area classic → natural (M sf) |
-|---|---|---|---|---|
-| 2967923640 | 951 | 1030 | +8% | 7.88 → 7.99 (+1%) |
-| 1 | 1453 | 1396 | -4% | 7.33 → 7.99 (+9%) |
-| 20261 | 1384 | 1186 | -14% | 8.71 → 9.34 (+7%) |
-| 555 | 1191 | 1143 | -4% | 7.90 → 8.88 (+12%) |
-| 3252 | 1076 | 1055 | -2% | |
-| 481923 | 999 | 978 | -2% | |
-| 2967923640 Great City | 3876 | 4196 | +8% | |
+| seed | lots classic | lots natural | change |
+|---|---|---|---|
+| 2967923640 | 951 | 1047 | +10% |
+| 1 | 1453 | 1440 | -1% |
+| 20261 | 1384 | 1124 | -19% |
+| 555 | 1191 | 1142 | -4% |
+| 3252 | 1076 | 1048 | -3% |
+| 481923 | 999 | 981 | -2% |
+| 2967923640 Great City | 3876 | 4218 | +9% |
 
-`test/plat.mjs` on its twelve pinned seeds (City): lots 13,257 classic → 12,816 natural
-(-3%); sliver 0% and spikes 0% in both; street share (pavement per unit of block) median
+Sharp corners (interior angle under 30 degrees), six seeds above: natural blocks 24 → 0
+after the needle rule; lots 57 → 11 natural (classic: 100).
+
+`test/plat.mjs` on its twelve pinned seeds (City): lots 13,257 classic → 12,632 natural
+(-5%); sliver 0% and spikes 0% in both; street share (pavement per unit of block) median
 1.61 classic → 1.48 natural; largest unprogrammed void the same (a park apron, 14,943 m2).
 Land use still follows demand: in the top 15% of lots by demand, office is 51% / 40% / 54%
 of lots on seeds 2967923640 / 555 / 1 (classic 44% / 40% / 48%), and the town's office
@@ -176,7 +189,5 @@ at the shore than classic. Generation takes ~1.5x as long (0.8-1.6 s per City is
   (owner's call), so "water crossings" is a no-op today; the field has a creek basis ready.
 - **Small/odd blocks** near converging streets and a wiggly shore; the wedge rule and the
   gore rule already take the worst, sliver % is 0-0.1.
-- **Address/street names** are still drawn per block, as for classic organic quarters, not
-  per traced street (phase 2).
 - **Performance**: ~1.5x generation time; Great City ~2.1 s. Acceptable for the setup preview
   (off-thread) but watched.

@@ -1070,7 +1070,12 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
         let mover = false;
         if (kx === "industrial" && rng(s, "leasing") < SHED_MOVE) {
           mover = true;
-          leaves = rng(s, "leasing") < shedOffShare();
+          // where it goes, as a flow: the region's share of the movers builds
+          // up month to month, and a mover leaves the map each time a whole
+          // one has (no die on the destination)
+          e.shedOffAcc = (e.shedOffAcc ?? 0) + shedOffShare();
+          leaves = e.shedOffAcc >= 1;
+          if (leaves) e.shedOffAcc -= 1;
         }
         if (!mover) {
           const room0 = availOf(b, roll, kx);

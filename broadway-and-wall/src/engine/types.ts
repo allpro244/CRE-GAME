@@ -2404,6 +2404,8 @@ export interface Econ {
   seekers?: import("./streetRolls").Seeker[];
   /** Firms whose broker's best option this month is one of the player's buildings: the party the player's desk tours (streetRolls.ts shop → leasing.ts). */
   playerTours?: { fid: number; bbl: string; use: BuiltClass; want: number; m: number; done?: boolean }[];
+  /** The region's share of the relocating shed tenants, accrued: one leaves the map each time a whole one has built up (streetRolls.ts). */
+  shedOffAcc?: number;
   nextFid?: number;
   /**
    * THE FLATS' COMPS (market.ts recordDeal): every flat let or renewed in

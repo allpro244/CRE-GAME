@@ -661,7 +661,15 @@ export interface Holding {
   // tickGroundLeases, at odds set by the corner's live demand and the same
   // development climate that governs the city's own starts. Optional, with
   // fallbacks everywhere it is read, so old saves load untouched.
-  groundOffer?: { years: number; sinceM: number; review?: GroundReview };
+  /** Unsolicited callers owed on this deed, accumulated from the monthly rate while one may ring (a call at 1). */
+  unsolAcc?: number;
+  /** Assemblers that have already made their holdout offer on this deed; one you turned down builds around you. */
+  holdoutRung?: string[];
+  groundOffer?: {
+    years: number; sinceM: number; review?: GroundReview;
+    /** Lessees owed a look, accumulated from the monthly arrival rate (one takes at 1). */
+    takeAcc?: number;
+  };
   /**
    * Shopping the site for a build-to-suit occupier — a listing, not a signed
    * commitment. Anchors arrive through tickBuildToSuit the way ground lessees
@@ -797,6 +805,8 @@ export interface Holding {
    */
   sale?: {
     ask: number; listedM: number; unsolicited?: boolean;
+    /** Leased fee only: callers owed, accumulated from the monthly arrival rate (an offer comes at 1). */
+    arriveAcc?: number;
     mode?: "quiet" | "marketed";
     callM?: number;                    // when offers are due
     bids?: Bid[];                      // the list, once they are in
@@ -4014,6 +4024,13 @@ export interface GameState {
   builderFirms?: boolean;
   /** Months a rival's first close was slowed by a thin investor pool (rivals.ts; measured, display only). */
   poolBindMs?: number;
+  /**
+   * THE STREET'S FIRST CLOSE IN PROGRESS (rivals.ts maybeNewFirm): the
+   * expected progress of the sponsors pitching the town's LPs, accrued each
+   * open month at the entry hazard (pitch x slots / RAISE_M x pool). A fund
+   * closes when it reaches one; a window that shuts loses it.
+   */
+  entryProgress?: number;
   /** Deal-by-deal raises in progress, keyed by the lot (raise.ts). */
   raises?: Record<string, import("./investors").Raise>;
   /**

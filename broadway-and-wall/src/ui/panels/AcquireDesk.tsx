@@ -19,7 +19,7 @@ import {
 import { sellerOf, sellerProfile, closingBand, phaseShift, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { ownerAt } from "@/engine/ownership";
 import { unitStatus, buyoutQuote, BUYOUT_PREMIUM } from "@/engine/leasing";
-import { PRODUCTS, deskAdvice } from "@/engine/debt";
+import { PRODUCTS, deskAdvice, onIncome } from "@/engine/debt";
 import { stayingPower, lenderByName } from "@/engine/lenders";
 import { WhyButton } from "@/ui/WhyChain";
 import { loanWhy, loanLead } from "@/ui/whyLinks";
@@ -1122,7 +1122,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
     if (!q) { q = buyQuote(game, parcels, bbl, offerPrice, id, 1); qCache.set(id, q); }
     return q;
   };
-  const productChoices = PRODUCTS.filter((p) => !p.mezz && (isLand ? p.uwDscr <= 0 : p.uwDscr > 0))
+  const productChoices = PRODUCTS.filter((p) => !p.mezz && (isLand ? !onIncome(p) : onIncome(p)))
     .map((p) => ({ p, q: quoteOf(p.id) }))
     .sort((a, b) => (b.q.principal > 0 ? 1 : 0) - (a.q.principal > 0 ? 1 : 0) || a.q.allInPct - b.q.allInPct)
     .map((x) => x.p);
@@ -1305,7 +1305,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                 ? `LTV-constrained: ${(max.ltvCap * 100).toFixed(0)}% max (${max.sheetWhy ?? "lender terms"}).`
                 : max.bind === "dscr"
                   ? `DSCR-constrained: ${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% LTV vs ${(max.ltvCap * 100).toFixed(0)}% max. `
-                    + `${max.ratePct}% coupon at ${max.uwDscr.toFixed(2)}x min DSCR.`
+                    + `${max.ratePct}% coupon, closing at ${max.uwDscr.toFixed(2)}x coverage on the lender's own risk model.`
                   : max.bind === "dy"
                     ? `Debt-yield constrained: ${(max.ltvCap * 100).toFixed(0)}% max LTV not reached.`
                     : `${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% LTV vs ${(max.ltvCap * 100).toFixed(0)}% max (${max.sheetWhy ?? "lender terms"}) · ${max.advanceWhy ?? "reduced by credit conditions and track record"}.`}

@@ -43,7 +43,7 @@ import { tickBeliefs } from "./beliefs";
 import { tickCorporate } from "./corporate";
 import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose, landFundBid, streetSaleCost } from "./rivals";
 import { openingCapSurvey, tickBrokerSurvey, tickLandSurvey, anchoredAsk, forcedSalePrice, foreclosureSale, BUY_CLOSING, bidRound, valueTo } from "./propmarket";
-import { initLenders, priceDesks, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
+import { initLenders, publishOpeningPrices, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { tickStreetLoans, retireFoldedLoans } from "./streetLoans";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
@@ -227,7 +227,7 @@ export function newGame(
   // ...and every desk publishes its price before anybody asks it for one:
   // the opening's own deals (rivals' books, the opening leverage, the first
   // pro formas) are priced off the desks' costs, not off a rate card.
-  priceDesks(s);
+  publishOpeningPrices(s);
   if (parcels) s.rivals = initRivals(s, parcels, Object.keys(parcels));
   // Cap rates open where the street's own bidders say (propmarket.ts).
   if (parcels) openingCapSurvey(s, parcels);

@@ -72,6 +72,11 @@ inland toward the core) and get a 60 x 44 m market square there unless a program
 already sits within 150 m: Dock Square's order of size, squared to the shore. It is where
 the old town's roads converge, and without it they knot into wedges.
 
+**Party lines.** A face too concave to be one convex block is cut into convex pieces only
+because the lot cutter wants convex blocks; the cut is a party line between two halves of
+one block, so it pays no street, and a half whose long side is that line is platted as one
+row of full-depth lots rather than two rows back to back.
+
 **Estates** (the superblock district) are cut to their own slab size, and their ordinary
 streets take the town's median street width — in classic only the estate's ring road is
 22-25 m wide.
@@ -112,15 +117,19 @@ Seed 481923 "Stancliff Landing":
 
 Measured on the prototype (City size; `tools/platlib.mjs`):
 
-| seed | lots classic | lots natural | change | sliver % (nat) | paved void % cls → nat |
-|---|---|---|---|---|---|
-| 2967923640 | 951 | 970 | +2% | 0.0 | 3.1 → 2.1 |
-| 1 | 1453 | 1343 | -8% | 0.0 | 5.7 → 4.3 |
-| 20261 | 1384 | 1241 | -10% | 0.0 | 3.8 → 3.0 |
-| 555 | 1191 | 1198 | +1% | 0.0 | 5.2 → 3.8 |
-| 3252 | 1076 | 1106 | +3% | 0.0 | 4.0 → 3.2 |
-| 481923 | 999 | 1037 | +4% | 0.0 | 4.6 → 3.3 |
-| 2967923640 Great City | 3876 | 4145 | +7% | | |
+| seed | lots classic | lots natural | change | lot area classic → natural (M sf) |
+|---|---|---|---|---|
+| 2967923640 | 951 | 1011 | +6% | 7.88 → 7.53 (-4%) |
+| 1 | 1453 | 1347 | -7% | 7.33 → 7.69 (+5%) |
+| 20261 | 1384 | 1257 | -9% | 8.71 → 8.64 (-1%) |
+| 555 | 1191 | 1183 | -1% | 7.90 → 8.38 (+6%) |
+| 3252 | 1076 | 1123 | +4% | |
+| 481923 | 999 | 1067 | +7% | |
+| 2967923640 Great City | 3876 | 4176 | +8% | |
+
+`test/plat.mjs` on its twelve pinned seeds (City): lots 13,257 classic → 12,728 natural
+(-4%); sliver 0% and spikes 0% in both; street share (pavement per unit of block) median
+1.61 classic → 1.58 natural; largest unprogrammed void the same (a park apron, 14,943 m2).
 
 Lot counts stay inside the classic town-to-town spread (the economy's calibration reads lot
 count and area per size preset), and the natural network leaves less unprogrammed asphalt

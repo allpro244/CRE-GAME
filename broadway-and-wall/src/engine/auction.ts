@@ -94,9 +94,23 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
     // and any borrower with the arrears in hand does exactly that.
     const cure = Math.max(1, Math.round(f.debt * 0.08));
     const canFund = r.cash >= cure;
-    if (canFund && ((r.stressMs ?? 0) === 0 || rng(s) < 0.09)) {
+    // THE BORROWER'S OWN SUM, NOT A DIE (2026-11-10). A firm still in the
+    // squeeze used to reinstate on a 9% monthly coin. It now does what a
+    // borrower with the arrears in hand does: pays them when the building is
+    // worth more than the debt on it — the cure buys back equity it would
+    // otherwise lose at the July sale (any surplus at the hammer goes to the
+    // borrower, but a sale as-is, with no diligence, rarely leaves one). An
+    // underwater building is handed back: paying arrears on a loan larger than
+    // the asset throws good money after bad. Its value is the same as-is
+    // collateral read the docket and the note desks use.
+    const equity = collateralAsIs(rec, s.econ, Math.max(0.15, Math.min(0.95, r.occ ?? 0.6))) - f.debt;
+    if (canFund && ((r.stressMs ?? 0) === 0 || equity > cure)) {
       r.cash -= cure;
       s.bankFcls.splice(i, 1);
+      // Reinstating IS paying the arrears: the row is current again, or the
+      // desk would file on the same missed months next tick.
+      const row = s.cityLoans?.[f.bbl];
+      if (row && row.lender === f.lender && row.obligorId === r.id) row.arrearsMs = 0;
       s.news.unshift({
         q: s.month, kind: "info",
         text: `${r.name} paid $${(cure / 1000).toFixed(0)}K to reinstate at ${rec.address}; ${f.lender} has withdrawn the sale. `
@@ -109,6 +123,13 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
   if (s.bankFcls.length >= 4) return;
   for (const l of s.lenders ?? []) {
     if (l.failedM !== undefined) continue;
+    // WHEN A DESK FILES: still a coin (9% a month, for a desk whose book is
+    // 3.5% delinquent). Filing on every loan three payments behind was tried
+    // (2026-11-10) and set off a fire-sale cascade — the player-bot in
+    // test/conserve went insolvent at months 38-106 against 290-401 — because
+    // real desks forbear on underwater paper ("extend and pretend", 2009-12)
+    // and nothing here models that choice yet. Kept until a desk weighs a
+    // foreclosure's recovery against forbearing.
     if (l.delinquent < 0.035 || rng(s) > 0.09) continue;
     // A DESK FILES ON ITS OWN LOAN, AND ONLY ONE THAT IS NOT BEING PAID. The
     // pool used to be any firm four months into a squeeze, on any of its
@@ -120,7 +141,8 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
       && !s.holdings[x.bbl] && !s.bankFcls!.some((f) => f.bbl === x.bbl)
       && (s.rivals ?? []).some((r) => r.id === x.obligorId && r.failedM === undefined && r.bbls.includes(x.bbl)));
     if (!rows.length) continue;
-    const row = rows[Math.floor(rng(s) * rows.length)];
+    // The longest-unpaid file first (it was a random one of them).
+    const row = rows.reduce((a, b) => ((b.arrearsMs ?? 0) > (a.arrearsMs ?? 0) || ((b.arrearsMs ?? 0) === (a.arrearsMs ?? 0) && b.balance > a.balance) ? b : a));
     const r = (s.rivals ?? []).find((x) => x.id === row.obligorId)!;
     const bbl = row.bbl;
     const rec = resolveRec(parcels, s, bbl);
@@ -487,7 +509,12 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       }
       // Outbid: the firm in the room takes the deed onto its own book.
       const roomBuyer = toREO ? null : thirdPartyTakes(s, parcels, rec, gross, roomFirm!);
-      recordComp(s, rec, gross, toREO ? lot.holder : roomBuyer!, firmShort(s), true, h.condition);
+      // A CREDIT BID IS NOT A PRICE (2026-11-11). When nobody beats the lender,
+      // `gross` is what it was owed, not what anyone paid — recorded as a sale
+      // it put the loan on the comps sheet, above what the building was worth,
+      // for every appraisal and bid that reads the tape. The lender's resale
+      // is the trade the tape sees.
+      if (!toREO) recordComp(s, rec, gross, roomBuyer!, firmShort(s), true, h.condition);
       if (s.groundLeases?.[lot.bbl]) transferGroundLeaseOffBook(s, lot.bbl);
       moveDeposit(s, h, -depositsOn(h));
       s.lastTradeM = s.lastTradeM ?? {};

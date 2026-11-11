@@ -480,7 +480,10 @@ export function counterPortfolio(s: GameState, price: number): { s: GameState; e
   // a bundle is a discretionary purchase and there is always another one, but
   // nobody abandons a live file over a few per cent.
   const over = (stretch - limit) / Math.max(0.01, limit - 1);
-  if (over < 1 && rng(next) > 0.30) {
+  // The buyer's own limit decides, not a 30% coin: a counter less than its
+  // room again past its limit is a no — it restates its bid and waits; one
+  // further out than that is a goodbye, and it withdraws.
+  if (over < 1) {
     next.news.unshift({
       q: next.month, kind: "warn",
       text: `${best.name} declined ${money(price)}; holds at ${money(best.price)}, final.`,

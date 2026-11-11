@@ -15,7 +15,6 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Econ, GameState } from "./types";
 import { cloneState } from "./types";
-import { rng } from "./market";
 import { landValue, ownedHoldingValue, taxRate } from "./value";
 import { recordPropertyEvent } from "./history";
 import { spendable, fundAndBook } from "./credit";
@@ -98,9 +97,14 @@ export function tickTaxAppeals(s: GameState, parcels: ParcelTable): void {
     delete h.taxAppeal;
     h.lastTaxAppealM = s.month;
     if (h.groundLeased) continue; // the lessee carries the bill now
-    const won = rng(s, "owners") < app.odds;
+    // THE BOARD DECIDES ON THE EVIDENCE AT THE HEARING, not on a die
+    // (2026-11-11). The owner carries the burden: it wins when the roll still
+    // sits more than the filing threshold (5%) above the market evidence the
+    // day the board sits. What made an appeal uncertain is the wait — the
+    // market moves while the docket does — and that is simulated.
+    const currentEvidence = Math.round(ownedHoldingValue(s, parcels, h));
+    const won = currentEvidence > 0 && (h.assessed ?? app.assessedAtFile) > currentEvidence * 1.05;
     if (won) {
-      const currentEvidence = Math.round(ownedHoldingValue(s, parcels, h));
       const target = Math.min(app.target, currentEvidence || app.target);
       const before = Math.round(h.assessed ?? app.assessedAtFile);
       h.assessed = Math.min(before, target);

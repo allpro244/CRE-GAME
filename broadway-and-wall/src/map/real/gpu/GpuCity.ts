@@ -112,6 +112,8 @@ export class GpuBackend {
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     (window as unknown as { __gpuStats?: unknown; __gpu?: unknown }).__gpuStats = this.stats;
     (window as unknown as { __gpu?: unknown }).__gpu = this;
+    // the node library, for review probes run from the console
+    Object.assign(window, { __gpuTSL: TSL, __gpuTHREE: THREE });
   }
 
   static async create(map: maplibregl.Map, scene: THREE.Scene, camera: THREE.PerspectiveCamera, sun: THREE.DirectionalLight): Promise<GpuBackend> {

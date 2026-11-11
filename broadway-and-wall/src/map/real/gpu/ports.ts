@@ -53,7 +53,7 @@ export function portMaterial(m: THREE.Material, s: Shared, renderer: N) {
   const pr = probeOf(m, renderer);
   if (pr) {
     const U = pr.uniforms, F = pr.fragmentShader, V = pr.vertexShader;
-    if (U.uWallLum) { facade(mm, s, U); note("facade:paint+foot"); }
+    if (U.uWallLum) { facade(mm, s, U); note("facade:paint+foot+far+panes+reveal+rooms"); }
     else if (U.seaShore) { sea(mm, s, U); note("sea:bottom+shore"); }
     else if (F.includes("diffuseColor.a *= vColor.r")) {
       mm.vertexColors = false;
@@ -91,18 +91,50 @@ function toneHaze(s: Shared): N {
   })();
 }
 
-/** RealCity buildFamily: the paint scheme (PAINT_FRAG) and the street's shade at the foot of the wall. */
+/** RealCity buildFamily, the whole wall: paint (PAINT_FRAG), the street's shade at the foot, far calm (farK), the panes' variety (WINDOW_VARIATION), the reveal and the room behind the glass (REVEAL_FRAG). */
 function facade(m: N, s: Shared, U: Record<string, { value: N }>) {
-  const map = m.map as THREE.Texture, rough = m.roughnessMap as THREE.Texture, msk = m.emissiveMap as THREE.Texture;
   // the tile holds two bays by two floors (repeat 0.5)
   const uvT = T.uv().mul(0.5);
-  // uniforms, not constants: every facade then compiles to the same shader (classic shares one program too)
-  const wallLum = T.uniform(U.uWallLum.value), trimLum = T.uniform(U.uTrimLum.value), accLum = T.uniform(U.uAccLum.value);
+  // EVERY INPUT READ OFF THE MATERIAL BEING DRAWN. All 250-odd facades build
+  // the same node graph, so three compiles them to ONE program (as classic
+  // does) — and a texture or uniform node holding a value would then be the
+  // first material's for every wall in town. Material references resolve per
+  // object: the family's own numbers ride on the material as bw* properties.
+  Object.assign(m, {
+    bwWallLum: U.uWallLum.value, bwTrimLum: U.uTrimLum.value, bwAccLum: U.uAccLum.value,
+    bwWin: U.uWin.value, bwSeed: U.uSeed.value, bwGlassy: U.uGlassy.value,
+    bwBay: U.uBay.value, bwReveal: U.uReveal.value, bwGlassP: U.uGlassP.value,
+  });
+  const R = (k: string, t: string) => T.materialReference(k, t);
+  const wallLum = R("bwWallLum", "float"), trimLum = R("bwTrimLum", "float"), accLum = R("bwAccLum", "float");
+  const uWin = R("bwWin", "vec4"), uSeed = R("bwSeed", "vec2"), uGlassy = R("bwGlassy", "float");
+  const uBay = R("bwBay", "vec2"), uReveal = R("bwReveal", "float"), uGlassP = R("bwGlassP", "vec4");
+  const uColor = R("color", "color");
+  const tex = (k: string) => R(k, "texture").context({ getUV: () => uvT });
+  // one node per texture (each texture() is a sampler, and a WebGL 2 device
+  // guarantees 16); the stock emissive read goes too: it is always 0 here
+  const mapT = tex("map"), mskT = tex("emissiveMap");
+  m.emissiveNode = T.vec3(0);
+  // the vertex colour is applied here, in classic's order (before the panes' blinds and curtains)
+  m.vertexColors = false;
+  const farK = T.smoothstep(320.0, 1300.0, T.length(T.positionView));
+  const orm = tex("roughnessMap");
+  const winM = orm.r;
+  const bayC = T.uv();
+  const cellC = T.floor(bayC);
+  const wh1 = T.fract(T.sin(T.dot(cellC.add(uSeed), T.vec2(12.9898, 78.233))).mul(43758.5453));
+  const wh2 = T.fract(wh1.mul(17.31).add(0.137));
+  const fC = T.fract(bayC);
+  const tW = T.clamp(fC.y.sub(T.float(1).sub(uWin.w)).div(T.max(uWin.w.sub(uWin.z), 0.01)), 0.0, 1.0);
+  const xW = T.clamp(fC.x.sub(uWin.x).div(T.max(uWin.y.sub(uWin.x), 0.01)), 0.0, 1.0);
+  const notGlassy = T.float(1).sub(uGlassy);
+  const blindK = T.step(wh1, 0.3).mul(T.step(T.float(1).sub(tW), wh2.mul(0.7).add(0.2))).mul(notGlassy);
+  const curtK = T.step(0.3, wh1).mul(T.step(wh1, 0.46)).mul(T.step(xW, wh2.mul(0.12).add(0.24)).add(T.step(T.float(0.76).sub(wh2.mul(0.12)), xW))).mul(notGlassy);
+  const winShade = T.clamp(blindK.add(curtK), 0.0, 1.0);
   m.colorNode = T.Fn(() => {
-    const base = T.texture(map, uvT).toVar();
-    base.rgb.mulAssign(T.uniform(m.color));
-    const mskT = T.texture(msk, uvT);
-    const paneP = T.texture(rough, uvT).r;
+    const base = T.vec4(mapT).toVar();
+    base.rgb.mulAssign(uColor);
+    const paneP = winM;
     const paint = T.attribute("paint", "vec4"), trimc = T.attribute("trimc", "vec3"), accent = T.attribute("accent", "vec3");
     const lumA = T.dot(base.rgb, T.vec3(0.2126, 0.7152, 0.0722));
     const c = base.rgb.toVar();
@@ -112,19 +144,67 @@ function facade(m: N, s: Shared, U: Record<string, { value: N }>) {
     c.assign(T.mix(c, trimc.mul(T.clamp(T.float(0.75).add(lumA.mul(0.5).div(T.max(trimLum, 0.02))), 0.85, 1.15)), trimP));
     const accP = mskT.b.mul(T.step(0.0, accent.r));
     c.assign(T.mix(c, accent.mul(T.clamp(T.float(0.75).add(lumA.mul(0.5).div(T.max(accLum, 0.02))), 0.8, 1.2)), accP));
+    c.mulAssign(T.vertexColor().rgb);
     // the street darkens the foot of every wall, up as far as the street's own canyon (aoh)
     const gz = T.positionGeometry.z, aoh = T.attribute("aoh", "float");
-    const foot = T.mix(0.6, 1.0, T.smoothstep(0.0, T.max(aoh, 1.0), gz)).mul(T.mix(0.82, 1.0, T.smoothstep(0.0, 1.2, gz)));
-    return T.vec4(c.mul(foot), base.a);
+    c.mulAssign(T.mix(0.6, 1.0, T.smoothstep(0.0, T.max(aoh, 1.0), gz)).mul(T.mix(0.82, 1.0, T.smoothstep(0.0, 1.2, gz))));
+    // WINDOW_VARIATION: a pane's own shade, blinds and curtains
+    const blindCol = T.mix(T.vec3(0.74, 0.7, 0.62), T.vec3(0.58, 0.57, 0.55), wh2);
+    const curtCol = T.mix(T.vec3(0.62, 0.5, 0.42), T.vec3(0.5, 0.52, 0.5), wh2);
+    const paneCol = c.mul(T.float(1).add(wh2.sub(0.5).mul(T.mix(0.36, 0.03, uGlassy)))).toVar();
+    paneCol.assign(T.mix(paneCol, blindCol.mul(0.42), blindK));
+    paneCol.assign(T.mix(paneCol, curtCol.mul(0.4), curtK.mul(T.float(1).sub(blindK))));
+    c.assign(T.mix(c, paneCol, winM.mul(T.float(1).sub(farK.mul(0.7)))));
+    // REVEAL_FRAG: the jamb, sill and head inside the opening, then the room behind the pane
+    const rN = T.normalize(T.normalView);
+    const rUp = T.vec3(0, 0, 1);   // the view space is the world's, eye-centred and unrotated
+    const rT = T.normalize(T.cross(rUp, rN));
+    const rV = T.normalize(T.positionView.negate());
+    const rn = T.max(T.dot(rV, rN), 0.15);
+    const vu = T.dot(rV, rT).div(rn), vv = T.dot(rV, rUp).div(rn);
+    const ww = T.max(uWin.y.sub(uWin.x).mul(uBay.x), 0.3), wh = T.max(uWin.w.sub(uWin.z).mul(uBay.y), 0.3);
+    const dep = uReveal;
+    const jamb = T.select(vu.greaterThan(0.0), T.step(xW, dep.mul(vu).div(ww)), T.step(T.float(1).sub(xW), dep.mul(vu.negate()).div(ww)));
+    const sill = T.select(vv.greaterThan(0.0), T.step(tW, dep.mul(vv).div(wh)), T.float(0));
+    const head = T.select(vv.lessThan(0.0), T.step(T.float(1).sub(tW), dep.mul(vv.negate()).div(wh)), T.float(0));
+    const hasRev = T.step(0.001, uReveal);
+    const rk = winM.mul(hasRev).mul(T.float(1).sub(farK));
+    c.assign(T.mix(c, c.mul(0.45).add(0.05), jamb.mul(rk)));
+    c.assign(T.mix(c, T.vec3(0.62, 0.6, 0.56), sill.mul(rk).mul(T.float(1).sub(jamb))));
+    c.assign(T.mix(c, c.mul(0.5), head.mul(rk)));
+    // a room behind the glass, the size of its bay and storey, 4 m deep
+    const RW = uBay.x, RH = uBay.y, RD = T.float(4.0);
+    const X0 = fC.x.sub(0.5).mul(RW), Y0 = fC.y.mul(RH);
+    const dS = T.select(T.abs(vu).greaterThan(0.001), T.select(vu.greaterThan(0.0), X0.add(RW.mul(0.5)).div(vu), X0.sub(RW.mul(0.5)).div(vu)), T.float(1e3));
+    const dF = T.select(vv.greaterThan(0.001), Y0.div(vv), T.float(1e3));
+    const dC = T.select(vv.lessThan(-0.001), Y0.sub(RH).div(vv), T.float(1e3));
+    const dm = T.min(T.min(RD, dS), T.min(dF, dC));
+    const wallPc = T.mix(T.vec3(0.78, 0.72, 0.62), T.vec3(0.66, 0.7, 0.72), T.step(0.6, wh1));
+    const room = wallPc.mul(0.62).toVar();
+    room.assign(T.select(dm.equal(dS), wallPc.mul(0.42), room));
+    room.assign(T.select(dm.equal(dF).and(dm.notEqual(dS)), T.mix(T.vec3(0.34, 0.24, 0.16), T.vec3(0.42, 0.4, 0.38), T.step(0.5, wh2)).mul(0.55), room));
+    room.assign(T.select(dm.equal(dC).and(dm.notEqual(dS)).and(dm.notEqual(dF)), T.vec3(0.8, 0.79, 0.76).mul(0.5), room));
+    room.mulAssign(T.mix(0.62, 0.32, T.clamp(dm.div(RD), 0.0, 1.0)).mul(T.float(0.8).add(wh2.mul(0.4))));
+    const inK = winM.mul(hasRev).mul(T.float(1).sub(winShade)).mul(T.float(1).sub(jamb)).mul(T.float(1).sub(farK)).mul(0.8);
+    c.assign(T.mix(c, room, inK));
+    const sky = winM.mul(hasRev).mul(T.float(1).sub(winShade)).mul(T.float(1).sub(jamb)).mul(T.float(0.16).add(T.clamp(vv, 0.0, 1.0).mul(0.12)));
+    c.assign(T.mix(c, T.vec3(0.52, 0.62, 0.72), sky));
+    return T.vec4(c, base.a);
   })();
-  // far away, calm down: the relief fades and the glass roughens with distance (classic farK)
-  const farK = T.smoothstep(320.0, 1300.0, T.length(T.positionView));
-  const rTex = T.texture(rough, uvT);
+  // roughness: far calm, then the panes' own variety (classic roughnessmap_fragment + WINDOW_VARIATION)
   m.roughnessNode = T.Fn(() => {
-    const r = rTex.g.mul(T.materialRoughness).toVar();
-    return T.mix(r, T.max(r, 0.5), farK);
+    const r = orm.g.mul(T.materialRoughness).toVar();
+    r.assign(T.mix(r, T.max(r, 0.5), farK));
+    const varied = T.clamp(r.add(wh2.sub(0.5).mul(T.max(T.mix(0.14, 0.01, uGlassy), uGlassP.z.mul(2.0)))), 0.02, 1.0);
+    return T.mix(r, T.mix(varied, 0.85, winShade), winM);
   })();
-  m.metalnessNode = rTex.b.mul(T.materialMetalness).mul(T.float(1).sub(farK.mul(0.6)));
+  // review switch: ?gpudbg=mask|paint|orm|map shows one input of the wall instead of the wall
+  const dbg = typeof location !== "undefined" ? new URLSearchParams(location.search).get("gpudbg") : null;
+  if (dbg === "mask") m.colorNode = T.vec4(mskT.rgb, 1);
+  else if (dbg === "paint") m.colorNode = T.vec4(T.attribute("paint", "vec4").rgb.mul(T.attribute("paint", "vec4").a), 1);
+  else if (dbg === "orm") m.colorNode = T.vec4(orm.rgb, 1);
+  else if (dbg === "map") m.colorNode = T.vec4(mapT.rgb, 1);
+  m.metalnessNode = orm.b.mul(T.materialMetalness).mul(T.float(1).sub(farK.mul(0.6))).mul(T.float(1).sub(winShade.mul(winM)));
   void s;
 }
 

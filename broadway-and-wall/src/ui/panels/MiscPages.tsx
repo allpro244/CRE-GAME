@@ -330,7 +330,7 @@ export function SettingsPage() {
       <div className="page-section" style={{ marginTop: 10 }} title="Which engine draws the 3D city. Looks only: the city, its numbers and your save are the same either way. Switching rebuilds the map.">Renderer</div>
       <div className="btn-row">
         <button type="button" className={"btn" + (cityRenderer === "classic" ? " btn-on" : "")} title="The proven renderer (WebGL)." onClick={() => setCityRenderer("classic")}>Classic (WebGL)</button>
-        <button type="button" className={"btn" + (cityRenderer === "webgpu" ? " btn-on" : "")} title="Beta: the city on its own WebGPU renderer, with real post-processing (ambient occlusion, reflections, temporal anti-aliasing). Falls back to WebGL 2 where the browser has no WebGPU." onClick={() => setCityRenderer("webgpu")}>WebGPU (beta)</button>
+        <button type="button" className={"btn" + (cityRenderer === "webgpu" ? " btn-on" : "")} title="Beta: the city on its own WebGPU renderer, with real post-processing (ambient occlusion on High, screen-space reflections on Max). Falls back to WebGL 2 where the browser has no WebGPU." onClick={() => setCityRenderer("webgpu")}>WebGPU (beta)</button>
       </div>
       </>)}
       {UNREAL_HOST ? <UnrealGraphics /> : (<>

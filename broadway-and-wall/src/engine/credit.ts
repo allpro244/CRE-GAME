@@ -210,7 +210,14 @@ export function locLimit(s: GameState, parcels: ParcelTable, nwPre?: number): nu
   // and again for the Net-worth readout on every render (including every nav
   // click and every FPS tick), which is what made ordinary UI clicks feel
   // heavy once the book grew.
-  const nw = nwPre ?? netWorth(s, parcels);
+  // THE LINE IS SIZED AT ITS ANNUAL REVIEW (2026-11-11). A bank re-underwrites
+  // a corporate revolver's borrowing base once a year off the financials it is
+  // given, not off this month's marks — so one bad quarter does not call a
+  // borrower's line in the middle of a slump (the fire-sale loop: marks fall,
+  // lines shrink, owners sell, marks fall). The review's net worth is set in
+  // tickLoc; sponsor standing and the bank's own appetite still cut at once.
+  const nwNow = nwPre ?? netWorth(s, parcels);
+  const nw = s.loc?.reviewNw !== undefined ? s.loc.reviewNw : nwNow;
   const ci = s.econ.creditIdx ?? 1;
   // The revolver is the most relationship-dependent money on the balance
   // sheet, so it is the first thing a bank pulls when your name goes bad —
@@ -501,6 +508,8 @@ export function repayLoc(s: GameState, amount: number): { s: GameState; err?: st
 // shortfall automatically rather than letting the run die with credit unused.
 export function tickLoc(s: GameState, parcels: ParcelTable) {
   if (!s.loc) s.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
+  // the annual review re-sizes the borrowing base (see locLimit)
+  if (s.loc.reviewM === undefined || s.month - s.loc.reviewM >= 12) { s.loc.reviewNw = netWorth(s, parcels); s.loc.reviewM = s.month; _locAvailCache = null; }
   // Pin the line to its bank while it is drawn; release it once it is clear.
   if (s.loc.balance > 0 && !s.loc.lender) s.loc.lender = lineLender(s)?.name;
   else if (s.loc.balance <= 0 && s.loc.lender) delete s.loc.lender;

@@ -3043,9 +3043,12 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     } else if (ten === TEN_OWN && a.arrears[i] >= FORECLOSE_M && a.owed[i] >= FORECLOSE_OWED * Math.max(1, housing)) {
       r.flow.foreclosures += w;
       a.owed[i] = 0; a.arrears[i] = 0; a.ten[i] = TEN_DOUBLED; a.mort[i] = 0; a.mortPmt[i] = 0; a.hval[i] = 0;
-    } else if (ten === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) && a.sav[i] > 3 * r.mainRent && (!r.mk || r.mk.occ + r.mk.signed + a.wt[i] <= r.mk.homes)) {
-      // a doubled-up household with work and a deposit takes its own flat across the water
-      a.ten[i] = TEN_MAINLAND; a.rent[i] = signMainland(r, a, i);
+    } else if (ten === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) && a.sav[i] > 3 * r.mainRent) {
+      // a doubled-up household with work and a deposit takes its own flat
+      // across the water — if one is free; if not it is still at the doors,
+      // a guest card every month it looks (the demand a full market hides)
+      if (!r.mk || r.mk.occ + r.mk.signed + a.wt[i] <= r.mk.homes) { a.ten[i] = TEN_MAINLAND; a.rent[i] = signMainland(r, a, i); }
+      else mainCard(r, a, i);
     }
     // a year older on its month — and past fifty, at its age's rate, retired (LF_AGE)
     if ((m + a.id[i]) % 12 === 0 && a.age[i] < 110) {

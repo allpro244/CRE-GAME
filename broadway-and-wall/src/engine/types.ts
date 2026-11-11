@@ -672,6 +672,8 @@ export interface Holding {
     termY?: number;
     /** The last occupier that looked and passed: the rent the shell needed against what they would pay. */
     lastWalk?: { m: number; name: string; needPsf: number; ceilingPsf: number };
+    /** Occupiers of this size owed a look, accumulated from the arrival rate (an anchor comes at 1). */
+    lookAcc?: number;
   };
   // Designated. No demolition, no bigger building, a rent premium forever.
   landmarked?: boolean;
@@ -1106,6 +1108,8 @@ export interface Development {
   // building that lets well on the way up opens covering its mini-perm, and
   // the one that lets nothing opens empty.
   signed?: { sf: number; use: string; discount: number; name: string }[];
+  /** Pre-let interest earned, sf: the frame's fair share of the class's lettings, accumulated until a tenant's worth signs. */
+  preletAcc?: number;
   /** Named tenant committed before groundbreak; absent means ordinary spec. */
   bts?: BtsCommitment;
   mode?: "ground" | "reuse";

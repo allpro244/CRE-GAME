@@ -48,7 +48,7 @@ import {
 
 /**
  * A homebuilder notices a plat with lots for sale and a residual worth paying
- * within a few months: a quarter a month [K]; twice that when the plat is
+ * within a few months: it looks every fourth month [K]; twice as often when the plat is
  * listed to the builders, which is what a land broker is paid for. An offer
  * stands two months.
  */
@@ -714,8 +714,12 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
     const crowded = salesPace(e, q.price / pm.loc, 0, Math.max(1, n)) > COMMUNITY_SALES_CAP;
     const canEnter = !here.size || crowded;
     const want = spare.length > 0 && !h.offers?.[parent];
-    const entryP = listing ? LISTED_ENTRY_P : BUILDER_ENTRY_P;
-    if (q.residual > 0 && ((want && (listing || canEnter)) || (canEnter && f.market.length)) && rng(s, "homes") < entryP) {
+    // A builder's rounds: it looks at each plat every 1/entryP months (every
+    // fourth month; every second when listed), on a schedule staggered by the
+    // plat's id — no dice. When it looks, the residual and the room decide.
+    const every = Math.round(1 / (listing ? LISTED_ENTRY_P : BUILDER_ENTRY_P));
+    const looksNow = (s.month + Math.floor(hash01(`hb-look:${s.seed}:${parent}`) * every)) % every === 0;
+    if (q.residual > 0 && ((want && (listing || canEnter)) || (canEnter && f.market.length)) && looksNow) {
       let name: string;
       const existing = [...here].sort()[0];
       if (existing && !canEnter) name = existing;

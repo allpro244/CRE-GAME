@@ -32,7 +32,12 @@ import { fundCashNeed, fundableNow } from "./credit";
 import { CAP_GAINS_RATE, RECAPTURE_RATE } from "./actions";
 import { transferTaxRate } from "./citygov";
 
-/** Lack of control and marketability on a minority stake — see the note above. */
+/**
+ * Lack of control and marketability on a minority stake — see the note above.
+ * [S~: minority discounts on interests in real-estate holding entities run
+ * 10-25% (Marcum and Marks Paneth valuation notes, drawing on the Partnership
+ * Profiles re-sale discount survey); 12% is the shallow end.]
+ */
 export const JV_MINORITY_DISCOUNT = 0.12;
 /** Counsel on the operating agreement, both ways. About a point. */
 export const JV_DEAL_COST = 0.01;

@@ -151,6 +151,9 @@ export function tickTaxAppeals(s: GameState, parcels: ParcelTable): void {
  * choices that actually change the bill are the ones already modelled: when to
  * sell, whether to exchange, and how much depreciation the basis allocation
  * lets you take.
+ *
+ * [S: Tax Foundation 2024 — the 21% federal rate plus the average state top
+ * rate is a combined 25.6%; 0.25 is that, rounded.]
  */
 export const INCOME_TAX_RATE = 0.25;
 
@@ -177,7 +180,11 @@ export const NOL_SHELTER_CAP = 0.80;
  */
 export const LAND_SHARE_MIN = 0.10;
 export const LAND_SHARE_MAX = 0.80;
-/** Used only when the parcel has no land read at all — the metro-typical share. */
+/**
+ * Used only when the parcel has no land read at all — the metro-typical share.
+ * [S~: Case 2007 (Lincoln Institute, "The Value of Land in the United States"):
+ * land was 31% of the value of all US real estate in 2005.]
+ */
 export const LAND_SHARE_TYPICAL = 0.30;
 
 /**

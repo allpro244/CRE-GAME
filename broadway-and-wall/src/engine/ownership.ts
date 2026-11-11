@@ -192,9 +192,9 @@ const HOLDER_ADVANCE: Record<SellerKind, { ltv: number; clear: number }> = {
   lender: { ltv: 0, clear: 1 },
 };
 
-/** Commercial amortisation, in months. Twenty-five years is the convention. */
+/** Commercial amortisation, in months. Twenty-five years is the convention. [S~: CMBS 25-30 years, life companies 25 (lender term sheets).] */
 const AMORT_M = 300;
-/** How long a note runs before it rolls. Five to ten years is the market. */
+/** How long a note runs before it rolls. Five to ten years is the market. [S~: CMBS terms 5, 7 or 10 years; life companies 10 and up (lender term sheets).] */
 const TERM_M = 96;
 
 /**

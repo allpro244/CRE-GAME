@@ -16,6 +16,7 @@ export const ABS_MAX_FLOORS_V = 90;
  * tower.
  */
 const MAX_SLENDERNESS = 12;
+/** Office floor-to-floor. [S~: CTBUH Height Calculator, 3.9 m (12.8 ft) a storey for office; 12.5 ft is 2% under.] */
 const FLOOR_HEIGHT_FT = 12.5;
 /** The plate's narrow dimension in feet, from the lot's proportions. */
 export function plateNarrowFt(plateSf: number, rec?: { lotFront?: number; lotDepth?: number }): number {

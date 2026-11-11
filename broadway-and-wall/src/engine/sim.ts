@@ -2581,7 +2581,11 @@ export function windDownFund(s: GameState, parcels: ParcelTable) {
   settleFund(s);
 }
 
-/** A typical first-mortgage advance on stabilised product, for "could you close this" screens only. */
+/**
+ * A typical first-mortgage advance on stabilised product, for "could you close
+ * this" screens only. [S~: ACLI life-company originations averaged 63% LTV
+ * over 2007-2023 (58.7% in 2023), via NFG's 2026 commercial-mortgage paper.]
+ */
 const TYPICAL_LTV = 0.65;
 
 /** Exported for the UI's continuous play, which must stop on exactly what Yr / Skip stop on. */

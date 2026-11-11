@@ -3683,8 +3683,8 @@ export function householdMoney(s: GameState): {
     if (ten === TEN_RENT || ten === TEN_MAINLAND) rent += w * a.rent[i];
     else if (ten === TEN_OWN) { if (a.mort[i] > 0) mortgage += w * a.mortPmt[i]; ownerCost += w * (TAX_INS / 12) * a.hval[i]; ownerValue += w * a.hval[i]; }
   }
-  // TAX_INS is ~1.0 points of property tax and ~0.5 of insurance (homeprice.ts)
-  return { wages, pensions, ui, tax, taxLocal, rent, mortgage, propertyTax: ownerCost * (1 / 1.5), homeInsurance: ownerCost * (0.5 / 1.5), spend: r.flow.spend, households: hh, persons, ownerValue,
+  // TAX_INS is ~0.9 points of property tax and ~0.5 of insurance (homeprice.ts)
+  return { wages, pensions, ui, tax, taxLocal, rent, mortgage, propertyTax: ownerCost * (0.9 / 1.4), homeInsurance: ownerCost * (0.5 / 1.4), spend: r.flow.spend, households: hh, persons, ownerValue,
     spendCat: r.flow.spendCat ?? zeroCat(), transfers: r.flow.transfers ?? 0 };
 }
 

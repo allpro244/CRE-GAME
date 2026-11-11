@@ -31,6 +31,7 @@ import {
   longestEdgeAngle, extentAlong, pointAt,
 } from "./geom.mjs";
 import { buildField, traceStreets, polygonize, convexCells, simplify, natStream } from "./natural.mjs";
+import { balanceUses } from "./demand.mjs";
 
 // --- small helpers ----------------------------------------------------------
 
@@ -4526,6 +4527,12 @@ export function generateCity(cfg) {
     })),
   };
 
+  // PLAN 18: THE TOWN IS BUILT FOR ITS PEOPLE. Every building the massing
+  // drew stands; what each one is FOR is set by the region's demand (demand.mjs).
+  // A surveyed plat keeps the uses its cadastre records.
+  const demandMix = PLAN_V >= 18 && !cfg.plat
+    ? balanceUses(builtLots, { seed: cfg.seed, density: cfg.density, districts: cfg.districts }) : null;
+
   const jobsByBlock = new Map();
   for (const f of parcels.features) {
     const p = f.properties;
@@ -4987,6 +4994,8 @@ export function generateCity(cfg) {
     districts: cfg.districtNames ?? {},
     // street plan 4: lots cut by frontage, demand read per nearest platform
     ...(FRONTAGE ? { frontagePlat: true } : {}),
+    // plan 18: the island in its region, and the uses its demand set
+    ...(demandMix ? { region: demandMix } : {}),
   };
 
   // --- coverage -------------------------------------------------------------

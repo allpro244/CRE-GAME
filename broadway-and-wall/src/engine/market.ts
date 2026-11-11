@@ -1166,11 +1166,11 @@ export const SF_PER_JOB: Record<BuiltClass, number> = { office: 230, industrial:
  *  in 2019; 50.5% in 2000 (FRED CLF16OV / POPTHM) [S]. It read 0.58, which no
  *  year of the record gives, so the opening town had a sixth fewer residents
  *  for its jobs than an American town does (2026-11-10). */
-const PARTICIPATION = 0.50;
+export const PARTICIPATION = 0.50;
 /** The opening rate for a save made before the town drew its opening year
  *  (opening.ts): 2000's, BLS UNRATE annual average 4.0% (FRED UNRATE) [S]. A
  *  new game opens on the year it draws. */
-const OPENING_UNEMP = 0.040;
+export const OPENING_UNEMP = 0.040;
 /** The nation's natural rate — the Phillips curve's u* in tickNation, and the pivot for national pay —
  *  for a save made before the opening year was drawn: 2000's, CBO's
  *  noncyclical rate 5.07-5.12% by quarter (FRED NROU) [S]. A new game reads
@@ -1267,6 +1267,29 @@ export function citySize(stock: Record<BuiltClass, number>, uOpen = OPENING_UNEM
 }
 
 /**
+ * THE REGION THE ISLAND SITS IN (city plan 18). A town generated from demand
+ * (citygen demand.mjs) carries the island's share of its region's residents;
+ * the region's people are then the island's opening residents — its occupied
+ * flats at SF_PER_HOME a home and PEOPLE_PER_HOME a household — over that
+ * share, and its jobs are what that many people hold at the opening's
+ * participation and unemployment. The island's named firms hold the jobs on
+ * its floors and the off-map sample the mainland's (economy.ts
+ * `openingOffMap`). A town without the record (plan 17 and before) is sized
+ * from its floors alone, as `citySize` always did; the island's own jobs are
+ * the floor under the region's either way — a region cannot employ fewer
+ * than work on the island.
+ */
+export function regionSize(stock: Record<BuiltClass, number>, parcels: ParcelTable | undefined, uOpen = OPENING_UNEMP): { jobs0: number; pop0: number } {
+  const own = citySize(stock, uOpen);
+  let share = 0;
+  if (parcels) for (const bbl in parcels) { share = parcels[bbl]?.regionShare ?? 0; break; }
+  if (!(share > 0)) return own;
+  const residents = (stock.multifamily ?? 0) * (1 - OPENING_VAC.multifamily) / SF_PER_HOME * PEOPLE_PER_HOME;
+  const pop0 = Math.max(own.pop0, Math.round(residents / share));
+  return { jobs0: Math.round(pop0 * PARTICIPATION * (1 - uOpen)), pop0 };
+}
+
+/**
  * HOW BUILT-UP THE MAP IS, as floor area over lot area.
  *
  * Vacant lots count in the denominator with zero building, so a Frontier town
@@ -1346,7 +1369,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // nation's history is then simulated around it (regime.ts simulateHistory),
   // so where unemployment stands on the opening day is the history's outcome.
   const OPEN = openingLabour(s.seed);
-  const SIZE = citySize(CITY, OPEN.uStar);
+  const SIZE = regionSize(CITY, parcels, OPEN.uStar);
   const dens = parcels ? densityPriceScales(cityFloorIntensity(parcels)) : densityPriceScales(REF_CITY_FAR);
   const econ: Econ = {
     indexRate: 5.4,

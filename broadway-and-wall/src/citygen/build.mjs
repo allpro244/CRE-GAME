@@ -52,68 +52,73 @@ function districtCachet(name, seed) {
   return 1 + span * (u * 2 - 1);
 }
 
+// Asset-class remap from PLUTO building class letter. There is no "mixed"
+// class: a building that is shops at grade with flats above gets a MIX, and
+// its `class` is whichever leg is largest. See src/engine/mix.ts for why.
+export function assetClass(bldgclass, landuse, bldgarea) {
+  const c = (bldgclass ?? "").toUpperCase();
+  const L = c[0];
+  // "Land" means NOTHING IS STANDING ON IT. Every other route to that answer
+  // has to go through this test first, because a record that says vacant with
+  // a floor count on it is a lie the whole engine then prices off.
+  if (!bldgarea) return "land";
+  if (L === "V" || landuse === "11") return "land";
+  // A GARAGE IS A BUILDING. These letters — garages, transport, utility and
+  // misc structures — used to come back "land" while KEEPING their floor count
+  // and their building area, which produced 32 lots in New Alden alone that
+  // said "vacant land" on the record with a four-storey structure drawn on
+  // them. Worse, everything that prices dirt read them as dirt: an off-market
+  // approach on a 2011 garage quoted land value against a built appraisal and
+  // looked like a 95% discount.
+  //
+  // They are still the cheapest thing standing and the easiest to knock down —
+  // that is what `industrial` means in this model. Teardown economics come out
+  // of a low rent and an old frame, not out of pretending the frame is absent.
+  if (L === "G" || L === "T" || L === "Z" || L === "Q") return "industrial";
+  if (L === "E") return "industrial"; // lofts, sheds, warehouses
+  if (L === "O" || L === "H" || L === "I" || L === "J" || L === "Y" || L === "W" || L === "P") return "office";
+  if (L === "K" || L === "L") return "retail";
+  if (L === "S" || c === "RM" || L === "M") return "stacked";
+  if (L === "A" || L === "B" || L === "C" || L === "D" || L === "N" || L === "R") return "multifamily";
+  return "stacked";
+}
+
+/**
+ * A stacked building, resolved into what it is actually made of: retail on the
+ * ground floor and the rest above, leaning residential where PLUTO says there
+ * are units. Returns { class, mix } — the mix is the truth and the class is
+ * just the biggest leg, kept so everything that files buildings by type still
+ * has an answer.
+ *
+ * `upper` is what the generator says the floors above the shop hold (city
+ * plan 18, demand.mjs): "homes" is flats over a shop and nothing else. Absent,
+ * the upper floors split by the hash below, as every earlier town did.
+ */
+export function resolveMix(kind, floors, unitsRes, bbl, upper) {
+  if (kind !== "stacked") return { klass: kind, mix: kind === "land" ? undefined : { [kind]: 1 } };
+  let h = 2166136261;
+  for (let i = 0; i < bbl.length; i++) { h ^= bbl.charCodeAt(i); h = Math.imul(h, 16777619); }
+  const j = ((h >>> 0) % 10000) / 10000;
+  const fl = Math.max(1, floors || 1);
+  const retail = Math.max(0.06, Math.min(0.42, (1 / fl) * (1.05 + 0.3 * j)));
+  const rest = 1 - retail;
+  const resLean = upper === "homes" && unitsRes > 0 ? 1 : unitsRes > 0 ? 0.58 + 0.3 * j : 0.18 + 0.34 * j;
+  const raw = { retail, multifamily: rest * resLean, office: rest * (1 - resLean) };
+  const mix = {};
+  let tot = 0;
+  for (const k of Object.keys(raw)) if (raw[k] > 0.04) { mix[k] = raw[k]; tot += raw[k]; }
+  for (const k of Object.keys(mix)) mix[k] = +(mix[k] / tot).toFixed(4);
+  const klass = Object.keys(mix).sort((a, b) => mix[b] - mix[a])[0];
+  return { klass, mix };
+}
+
+
 export function buildCityData(src) {
   const { rawParcels, rawBuildings, rawStations, manifest, employment, parks } = src;
   const num = (v) => {
     const n = typeof v === "string" ? parseFloat(v) : v;
     return Number.isFinite(n) ? n : null;
   };
-
-  // Asset-class remap from PLUTO building class letter. There is no "mixed"
-  // class: a building that is shops at grade with flats above gets a MIX, and
-  // its `class` is whichever leg is largest. See src/engine/mix.ts for why.
-  function assetClass(bldgclass, landuse, bldgarea) {
-    const c = (bldgclass ?? "").toUpperCase();
-    const L = c[0];
-    // "Land" means NOTHING IS STANDING ON IT. Every other route to that answer
-    // has to go through this test first, because a record that says vacant with
-    // a floor count on it is a lie the whole engine then prices off.
-    if (!bldgarea) return "land";
-    if (L === "V" || landuse === "11") return "land";
-    // A GARAGE IS A BUILDING. These letters — garages, transport, utility and
-    // misc structures — used to come back "land" while KEEPING their floor count
-    // and their building area, which produced 32 lots in New Alden alone that
-    // said "vacant land" on the record with a four-storey structure drawn on
-    // them. Worse, everything that prices dirt read them as dirt: an off-market
-    // approach on a 2011 garage quoted land value against a built appraisal and
-    // looked like a 95% discount.
-    //
-    // They are still the cheapest thing standing and the easiest to knock down —
-    // that is what `industrial` means in this model. Teardown economics come out
-    // of a low rent and an old frame, not out of pretending the frame is absent.
-    if (L === "G" || L === "T" || L === "Z" || L === "Q") return "industrial";
-    if (L === "E") return "industrial"; // lofts, sheds, warehouses
-    if (L === "O" || L === "H" || L === "I" || L === "J" || L === "Y" || L === "W" || L === "P") return "office";
-    if (L === "K" || L === "L") return "retail";
-    if (L === "S" || c === "RM" || L === "M") return "stacked";
-    if (L === "A" || L === "B" || L === "C" || L === "D" || L === "N" || L === "R") return "multifamily";
-    return "stacked";
-  }
-
-  /**
-   * A stacked building, resolved into what it is actually made of: retail on the
-   * ground floor and the rest above, leaning residential where PLUTO says there
-   * are units. Returns { class, mix } — the mix is the truth and the class is
-   * just the biggest leg, kept so everything that files buildings by type still
-   * has an answer.
-   */
-  function resolveMix(kind, floors, unitsRes, bbl) {
-    if (kind !== "stacked") return { klass: kind, mix: kind === "land" ? undefined : { [kind]: 1 } };
-    let h = 2166136261;
-    for (let i = 0; i < bbl.length; i++) { h ^= bbl.charCodeAt(i); h = Math.imul(h, 16777619); }
-    const j = ((h >>> 0) % 10000) / 10000;
-    const fl = Math.max(1, floors || 1);
-    const retail = Math.max(0.06, Math.min(0.42, (1 / fl) * (1.05 + 0.3 * j)));
-    const rest = 1 - retail;
-    const resLean = unitsRes > 0 ? 0.58 + 0.3 * j : 0.18 + 0.34 * j;
-    const raw = { retail, multifamily: rest * resLean, office: rest * (1 - resLean) };
-    const mix = {};
-    let tot = 0;
-    for (const k of Object.keys(raw)) if (raw[k] > 0.04) { mix[k] = raw[k]; tot += raw[k]; }
-    for (const k of Object.keys(mix)) mix[k] = +(mix[k] / tot).toFixed(4);
-    const klass = Object.keys(mix).sort((a, b) => mix[b] - mix[a])[0];
-    return { klass, mix };
-  }
 
   // --- pass 1: extract, project, measure -------------------------------------
   // centroid of all features -> local meter frame
@@ -530,7 +535,7 @@ export function buildCityData(src) {
     const farMaxComm = num(p.commfar) ?? 0;
     const farMaxRes = num(p.resfar) ?? 0;
     const kind = assetClass(cls, p.landuse, bldgArea);
-    let { klass, mix } = resolveMix(kind, floors, num(p.unitsres) ?? 0, l.bbl);
+    let { klass, mix } = resolveMix(kind, floors, num(p.unitsres) ?? 0, l.bbl, p.upper);
     // THE INVARIANT, ENFORCED AT THE DOOR. Whatever the source letters say, a
     // lot with floor area on it is not vacant and a lot without any is. Every
     // downstream reader — the appraisal, the off-market ask, the 3D layer, the
@@ -556,6 +561,7 @@ export function buildCityData(src) {
       ...(mix && Object.keys(mix).length > 1 ? { mix } : {}),
       lotArea, bldgArea, floors, yearBuilt,
       unitsRes: num(p.unitsres) ?? 0,
+      ...(manifest?.region ? { regionShare: manifest.region.residentShare } : {}),
       assessedLand: assessLand,
       assessedTotal: assessTot,
       demandScore,

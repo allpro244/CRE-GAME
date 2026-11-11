@@ -1108,11 +1108,11 @@ export const BUILD_MONTHS = { office: [12, 30], retail: [18, 28], multifamily: [
 // measured fact about the business, in the same register as BUILD_MONTHS above
 // — not a shape parameter and not a tuning knob. It is not split by class
 // because the dominant term is the municipality, not the use.
-// [S≠ Oliner (Federal Reserve Board), as reported by Building Design +
+// [S] Oliner (Federal Reserve Board), as reported by Building Design +
 // Construction: ~17-month average planning time over 82,000 US projects;
-// Fairfax County VA commercial review 13-17 months (FY2017-18). The range's
-// mean (12) sits under that; to reconcile.]
-export const ENTITLE_MONTHS = [6, 18] as const;
+// Fairfax County VA commercial review 13-17 months (FY2017-18). Reconciled
+// 2026-11-11: the range was [6, 18] (mean 12); [10, 24] has the sourced mean.
+export const ENTITLE_MONTHS = [10, 24] as const;
 /** Loan documents, final permits and mobilization after approvals are in hand. */
 export const CONSTRUCTION_CLOSE_M = 2;
 

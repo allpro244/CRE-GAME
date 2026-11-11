@@ -1846,8 +1846,12 @@ export function tickBuildToSuit(s: GameState, parcels: ParcelTable) {
     // it pays is no longer folded in here as the city's value-to-replacement
     // (buildClimate): it is asked of THIS shell, at the table, in
     // mintBtsCommitment — the same fact counted once.
+    // Arrivals accumulate at that rate and an occupier comes when one is owed
+    // (deterministic: the expected flow, not a monthly coin).
     const p = Math.min(0.09, (0.004 + 0.045 * demand) * phaseHit / sizeHard);
-    if (rng(s, "leasing") >= p) continue;
+    offer.lookAcc = (offer.lookAcc ?? hash01(`${s.seed}:bts:${h.bbl}`)) + p;
+    if (offer.lookAcc < 1) continue;
+    offer.lookAcc -= 1;
     const met = mintBtsCommitment(s, parcels, h.bbl, offer.use, offer.floors, offer.coverage, btsTermY(offer.termY));
     if (!met) continue;
     if ("walked" in met) {
@@ -2876,6 +2880,17 @@ export function tickDevelopments(s: GameState, parcels: ParcelTable) {
  *               rather than as signed leases. Nearly nothing here.
  */
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+/**
+ * HOW MANY OF A MONTHLY RATE'S EVENTS FALL THIS MONTH, ON A SCHEDULE — no
+ * dice. The running count is floor(month x rate + phase), the phase hashed
+ * off the key so two schedules at the same rate do not fire together; this
+ * month's events are its step, floor(rate) or ceil(rate), averaging the rate.
+ */
+function onSchedule(s: GameState, key: string, rate: number): number {
+  if (!(rate > 0)) return 0;
+  const x = (s.month - 1) * rate + hash01(`${s.seed}:sched:${key}`);
+  return Math.floor(x + rate) - Math.floor(x);
+}
 const PRELET: Record<BuiltClass, { ceiling: number }> = {
   retail: { ceiling: 0.62 },
   office: { ceiling: 0.32 },
@@ -2936,15 +2951,20 @@ export function tickConstructionLeasing(s: GameState, parcels: ParcelTable) {
     // interest builds as the date approaches — the risk a tenant is taking
     // shrinks, and so does what they will hold out for
     const near = clamp(1.35 - months / 18, 0.35, 1.35);
-    const p = clamp(3 * fair * near, 0, 0.42);
-    if (rng(s, "dev") >= p) continue;
+    // The frame earns its share of the month's lettings as interest, in feet
+    // (fair share x nearness; capped as before at 0.42 of a mean letter a
+    // month), and a tenant signs once a mean letter's worth — a third of the
+    // open feet, never under a plate — has built up. Deterministic: the flow
+    // the odds used to stand for, not a coin on it.
+    const letter = Math.max(floorSf, Math.round(openSf / 3));
+    d.preletAcc = (d.preletAcc ?? 0) + clamp(3 * fair * near, 0, 0.42) * openSf / 3;
+    if (d.preletAcc < letter) continue;
 
     // The building is plates. A construction letter is a size, not a bite of
     // a pre-cut suite — rounding a 4,000 ft letter up to a 26,000 ft HQ was
-    // the 1/1-at-8% bug. Want is already drawn on the "dev" stream.
-    const want = Math.round(openSf * rrange(s, 0.16, 0.5, "dev"));
-    if (want < floorSf) continue;
-    const sfLet = Math.min(openSf, want);
+    // the 1/1-at-8% bug.
+    const sfLet = Math.min(openSf, Math.round(d.preletAcc));
+    d.preletAcc = Math.max(0, d.preletAcc - sfLet);
     // The delivery-risk discount: steep when the building is a frame and a
     // promise, nearly gone by the time the scaffolding comes down.
     const discount = clamp(1 - (0.16 * (months / Math.max(1, span))), 0.86, 0.99);
@@ -4639,7 +4659,8 @@ function tickIndustrialExit(s: GameState, parcels: ParcelTable, bbls: string[]) 
   // The pace follows how much of the stock is surplus, as the all-class
   // valve does: a market a third empty clears most months.
   const share = surplus / Math.max(1, stock);
-  if (rng(s, "indust") > (officeShort ? 0.12 : Math.min(0.9, 0.3 + 2.2 * share))) return;
+  // On a schedule at that pace (no dice): one clearance per 1/pace months.
+  if (!onSchedule(s, "indust-exit", officeShort ? 0.12 : Math.min(0.9, 0.3 + 2.2 * share))) return;
 
   // Pick the worst empty-ish anon shed: old, worn, low demand, preferably M.
   // Thirty-six SHEDS looked at, not thirty-six lots: sheds are a few per cent
@@ -4759,15 +4780,13 @@ function tickSurplusExit(s: GameState, parcels: ParcelTable, bbls: string[]) {
     cand.push({ use, surplus, stock });
   }
   if (!cand.length) return;
-  // Odds scale with the worst class's surplus share; the pick follows the
-  // surplus square footage, so the deepest glut clears first.
+  // The pace scales with the worst class's surplus share.
   const worstShare = Math.max(...cand.map((c) => c.surplus / Math.max(1, c.stock)));
   const p = Math.min(0.5, Math.max(0.06, worstShare * 2.2));
-  if (rng(s, "exit") > p) return;
-  const totSurplus = cand.reduce((a, c) => a + c.surplus, 0);
-  let roll = rng(s, "exit") * totSurplus;
-  let chosen = cand[0];
-  for (const c of cand) { roll -= c.surplus; if (roll <= 0) { chosen = c; break; } }
+  // On a schedule at that pace (no dice), and the deepest glut — the most
+  // surplus feet — is the one cleared.
+  if (!onSchedule(s, "surplus-exit", p)) return;
+  const chosen = cand.reduce((a, c) => (c.surplus > a.surplus ? c : a), cand[0]);
   {
     const { use, surplus } = chosen;
 
@@ -5014,7 +5033,8 @@ export function tickCityGrowth(
   const looksF = developerLooksPerMonth(s.econ);
   tickBuilders(s, looksF);
   breakCommittedPlans(s, parcels, adjacency);
-  let looks = Math.floor(looksF) + (rng(s, "dev") < looksF % 1 ? 1 : 0);
+  // The month's looks on a schedule at that rate (no dice for the fraction).
+  let looks = onSchedule(s, "dev-looks", looksF);
   while (looks-- > 0) developerLook(s, parcels, bbls, adjacency);
 }
 

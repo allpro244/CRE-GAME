@@ -2103,8 +2103,10 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         tiPsf: Math.round(rrange(s, tiBandPsfYr(s, rec, h, t.use ?? "office")[0], tiBandPsfYr(s, rec, h, t.use ?? "office")[1], "leasing") * (renewTermM / 12)
           * renewalRefreshShare((q - (t.fitM ?? t.startM)) / 12)
           * tiPressure(concessionPressure(s.econ, t.use ?? "office")) * tiCreditMult(t.credit)),
-        freeM: rng(s, "leasing") < 0.25 * concessionPressure(s.econ, t.use ?? "office")
-          ? Math.round(rrange(s, 1, 3, "leasing") * concessionPressure(s.econ, t.use ?? "office")) : 0,
+        // Free rent on a renewal is what the market's softness buys the
+        // incumbent — the expected value of the old one-in-four die times a
+        // 1-3 month draw, now asked for every time (2026-11-11).
+        freeM: Math.round(0.5 * concessionPressure(s.econ, t.use ?? "office") ** 2),
         // Renewals reopen the escalator a notch — incumbents usually ask to
         // flatten; a soft market helps them.
         bumpPct: Math.round(clampL(
@@ -2176,7 +2178,23 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       const odds = leasingOdds(s, parcels, rec, h, use);
       if (!odds) continue;
       const p = odds.loiOdds;
-      if (rng(s, "leasing") < p) {
+      // TOURS COME AS INTEREST BUILDS, NOT ON A DIE (2026-11-11). loiOdds is
+      // the building's expected tours a month (its capture of the market's
+      // requirement over a deal's size); it accrues on the holding, and a
+      // party comes through each time a whole tour's worth has built up. The
+      // clock starts at a phase hashed off the parcel, so buildings do not
+      // all tour in the same month.
+      const accs = (h.tourAcc ??= {});
+      let acc = accs[use];
+      if (acc === undefined) {
+        let hb = 2166136261;
+        for (let i = 0; i < h.bbl.length; i++) { hb ^= h.bbl.charCodeAt(i); hb = Math.imul(hb, 16777619); }
+        acc = ((hb >>> 0) % 1000) / 1000;
+      }
+      acc += p;
+      const tours = acc >= 1;
+      accs[use] = tours ? acc - 1 : acc;
+      if (tours) {
         const [tiLo, tiHi] = tiBandPsfYr(s, rec, h, use);
         const shell = specLive ? 0 : shellShare(rec, h, use, q);
         const concession = concessionPressure(s.econ, use);
@@ -2273,9 +2291,10 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // (`vacancyPull`, retired 2026-11-07: there is no vacancy norm).
         // Still two draws, so the leasing stream keeps its count.
         const theta = seekersPerVacantSf(s.econ, use);
-        const pTwo = 1 - Math.exp(-theta);
-        const pThree = 1 - Math.exp(-theta) * (1 + theta);
-        const nWant = 1 + (rng(s, "leasing") < pTwo ? 1 : 0) + (rng(s, "leasing") < pThree ? 1 : 0);
+        // The party is the first firm plus the expected others, theta of
+        // them rounded, at most two more (no dice, 2026-11-11) — and only as
+        // many as the pool actually holds (the loop below).
+        const nWant = 1 + Math.min(2, Math.round(theta));
         const bCond = h.condIdx ?? initialCondIdx(rec, s.month);
         const bScore = overallScore(rec, s.econ, use, bCond);
         // The other parties on the tour are other firms from the pool whose

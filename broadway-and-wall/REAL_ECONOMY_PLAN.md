@@ -190,11 +190,35 @@ The scoreboard is `pnpm mechanism` (coins, draws, unsourced constants, ledger ro
 
   - #28 tried 2026-11-11 (not shipped): winning the re-tender in proportion to heads now / heads at opening (economy.ts tenderOrders) is a unit root with positive feedback — seed 11 at year 25: jobs 87k vs 61k, flat rent 40.8 vs 21.3. It needs the restoring force first: establishments entering and leaving on their own costs (wages, rents) against the nation's.
 
+  - Tried 2026-11-11 (not shipped): street seekers touring after a fixed SEARCH_M-month search instead of a 1/SEARCH_M monthly die (streetRolls.ts). Conserve seed 22: the bot never signed a lease in 240 months — the player's desk draws its prospects from seekers early in their search, and a fixed clock let the street sign them all first. Needs the player's buildings on the same tour book (Phase 3) before the die can go.
+
 **Phase 5 — neighbourhood demand.** Density effects at the measured elasticity (rent 0.21, wages 0.04: Ahlfeldt & Pietrostefani 2019, Table 5); congestion (speed −0.11) and construction cost (+0.055) in dense areas; vacant and decaying buildings drag nearby demand; delete the hidden random drift of town centres (`POLE_DRIFT_SD`, `POLE_NOISE_SD` in demand.ts — a design dial).
 
 **Phase 6 (alongside) — sources.** The remaining ~390 unsourced constants, file by file, with a research helper; reconcile the `[S≠]` disagreements (office opex $4.17 vs the file's own BOMA cite ~$8.90; property tax; developer margin, soft costs, contingency; base cap rates).
 
 **Phase 7 (alongside) — measurement.** Six seeds the standard for any change that moves the economy; flags for impossible outcomes; conserve's bot surviving (a bot that goes broke in four years is a symptom to explain, not noise).
+
+## HANDOFF (2026-11-11, end of the fix-plan run) — START HERE
+
+**Scoreboard** (`pnpm mechanism`): coins 91 → 64, unsourced 372 → 292, ledger rows 6 → 5 (draws ~261). Merged to main: #721, #722, #723 (UI). **Open: #724** on `claude/office-space-answers-rent-n5xdqf` — check its CI and merge it first.
+
+**Done this run** (details in the PRs):
+- Phase 1 brakes: lender forbearance (modify/wait/file on its own numbers), LOC on annual reviewed values, covenant LTV on the lender's annual Geltner-smoothed appraisal (`debt.ts lenderValue`, α 0.4).
+- Phase 2 prices: 5-year revaluation at 70% assessment (Connecticut rulebook, sourced 1.809% rate); land as the development option (`value.ts landOption`, σ/drift measured yearly off the tape: `market.ts measurePropertyVol`, r = long rate, V*/K ≈ 1.2-1.3).
+- Phase 3: owners' annual hold/sell review replaces the listing quota (`sim.ts refreshListings`); vacant-lot owners review yearly; the player's tours accrue from capture (`leasing.ts tourAcc`) instead of a die.
+- Phase 4: ledger #32 closed (absorption reads measured availability).
+- Phase 5: density elasticity 0.21; pole drift deleted. Blight is already carried by occupied-stock demand.
+- **Banks (owner: "simulated and compete, nothing hard coded")**: senior income desks now solve their own advance (`debt.ts deskAdvance`): the LTV where the balloon's expected loss (Merton/lognormal, town σ credibility-blended with a 10% national prior, drift capped at expected inflation, recovery 0.85) meets PRIOR_EL × the desk's appetite. Standards read the credit index against its own 10-year mean (`econ.creditIdxMean`).
+- ~30 coins removed by helpers (rivals' calls, mergers, founders' exits, package sales, developer/homebuilder schedules), ~80 constants sourced, two [S≠] reconciled (foreclosure 20 months, entitlement mean 17).
+
+**Next, in order:**
+1. **Banks, the rest of the sheet.** Still hard-coded per product in `debt.ts` PRODUCTS: `spread` (the sheet the live spread starts from), `uwDscr`/`minDSCR` (coverage), `maxLTV`, `termM`, `amortYears`, `ioM`, plus `ADVANCE_BAND`/`CLASS_ADVANCE` for non-solved products (land, mezz, bridge), `RECOVERY` [K]. Same method as `deskAdvance`: coverage from the desk's view of income volatility (term default, not just balloon), spread from its funding + EL(L) + capital + competition (drop the sheet anchor in `pricing.ts liveSpread`), keep only statutory ceilings (12 CFR 34 App. A supervisory LTV limits) as caps. Check with `SEEDS=11,22 YEARS=20 node test/ltvdist.mjs` (now: office ~0.66, retail ~0.69, flats ~0.56, industrial ~0.58; recession rows came out identical before and after the change, so check whether the solver ever runs in a recession).
+2. **The player's buildings on the street's tour book** (Phase 3). `leasing.ts` still runs its own arrival law (`absorption.ts leasingOdds`); street seekers shop only street buildings (`streetRolls.ts shop`). Putting holdings in `shop()` would remove two coins in streetRolls (search die, tried and reverted: the player then got no tenants) and the separate formula.
+3. **Ledger #28** (industry orders): a unit root without a restoring force; establishments must enter/leave on their own costs first (note above). **#29** house prices from sales, **#30** mainland rent, **#31** online share (`ONLINE_MAX` set by playthrough), **#33** migration choice.
+4. Remaining coins (`--list coin`): actions.ts (seller refusal, late bidder), leasing.ts (partial-suite rounding), streetRolls (firm exit/failure hazards — check if sourced), privateCredit (its coin removal bankrupted the bot once: go carefully), owners.ts exit hazards (demography: probably legitimate), boards/votes (no voters modelled).
+5. Which class rents highest as an outcome (section below).
+
+**How to work fast:** two helpers at a time on disjoint files (more crashes the container: exit 137); each runs tsc + one `SEEDS=22 HZ=120 node test/conserve.mjs`; cherry-pick their local commits, resolve MECHANISM_* and playable conflicts with `--theirs`, regenerate (`node tools/mechanism-audit.mjs --update`, `pnpm -s package:playable` inside broadway-and-wall). Seed 22 sometimes leaves the bot with no lease (coverage FAIL on `leasing` with $0 unexplained); confirm on seed 55 before reading it as a fault. Never force-push (denied); after a merge, fast-forward the branch to origin/main.
 
 ## HANDOFF (2026-11-10) — where the economy work stands
 

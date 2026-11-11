@@ -546,6 +546,8 @@ export interface Holding {
    * it, not the month's mark. Unset: the mark (old saves, unlevered deeds).
    */
   apprV?: number; apprM?: number;
+  /** Accrued expected tours by use (leasing.ts): a party comes through each time it passes 1. */
+  tourAcc?: Partial<Record<BuiltClass, number>>;
   /** this building is part of a package you have taken to market as one ticket */
   inPackage?: boolean;
   /**
@@ -672,6 +674,8 @@ export interface Holding {
     termY?: number;
     /** The last occupier that looked and passed: the rent the shell needed against what they would pay. */
     lastWalk?: { m: number; name: string; needPsf: number; ceilingPsf: number };
+    /** Occupiers of this size owed a look, accumulated from the arrival rate (an anchor comes at 1). */
+    lookAcc?: number;
   };
   // Designated. No demolition, no bigger building, a rent premium forever.
   landmarked?: boolean;
@@ -1106,6 +1110,8 @@ export interface Development {
   // building that lets well on the way up opens covering its mini-perm, and
   // the one that lets nothing opens empty.
   signed?: { sf: number; use: string; discount: number; name: string }[];
+  /** Pre-let interest earned, sf: the frame's fair share of the class's lettings, accumulated until a tenant's worth signs. */
+  preletAcc?: number;
   /** Named tenant committed before groundbreak; absent means ordinary spec. */
   bts?: BtsCommitment;
   mode?: "ground" | "reuse";
@@ -2720,6 +2726,8 @@ export interface Econ {
    * sigma. Absent until the town has two years of its own record.
    */
   landSigma?: Record<BuiltClass, number>;
+  /** The same tape's mean twelve-month log change by class: the measured drift of property values (market.ts measurePropertyVol). */
+  landDrift?: Record<BuiltClass, number>;
   /** sf-weighted mean vintage factor, same job for the quality tilt. */
   vintageMean?: number;
   costIdx: number; // construction & operating cost inflation
@@ -2972,6 +2980,8 @@ export interface Econ {
   // that opened last year from one that opened in 1928.
   m?: number;
   creditIdx: number;
+  /** The credit index averaged over the trailing decade (market.ts, monthly EMA): what lenders read as an ordinary year (debt.ts underwritingStandards). */
+  creditIdxMean?: number;
   // The demand driver behind leasing velocity.
   employIdx: number;
   // THE SPACE MARKET, class by class. Stock is every square foot standing;
@@ -3399,6 +3409,14 @@ export interface Rival {
   lastPencilM?: number;
   /** Off-market calls this firm made: a building it will not ring again before the month given. */
   doors?: Record<string, number>;
+  /**
+   * The off-market desk's call clock (offmarket.ts): each month it adds the
+   * desk's call rate (appetite × credit × reach × deploy pressure) and makes a
+   * call each time it passes one. Unset: starts at a phase hashed off the id.
+   */
+  callAcc?: number;
+  /** Month this fund rang the player unprompted for a slice of their book (portfolio.ts); it rings once. */
+  rangPlayerM?: number;
   /** Private holders who will not take this firm's call before the month given — a lowball they remember. */
   coldHolders?: Record<string, number>;
   cash: number;

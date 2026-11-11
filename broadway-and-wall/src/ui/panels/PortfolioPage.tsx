@@ -554,7 +554,7 @@ export function PortfolioPage() {
                 : wk.stage === "forbearance" ? "extended"
                 : (h.loan && fundableNow(game, parcels) >= h.loan.monthlyPmt) ? "default · current"
                 : "default") : null,
-              dv ? "building" : null,
+              dv ? `building · ${monthLabel(dv.deliverM)}` : null,
               h.loan?.sweep ? "sweep" : null,
               h.sale ? "listed" : null,
               h.renovatingUntilM !== undefined && game.month < h.renovatingUntilM ? "reno" : null,
@@ -755,7 +755,8 @@ export function PortfolioPage() {
             </Fragment>
             );
           })}
-          {Object.values(game.developments).map((dv) => (
+          {/* a job on a deed you hold is that deed's row ("building"); Deals › Building has its budget */}
+          {Object.values(game.developments).filter((dv) => !game.holdings[dv.bbl]).map((dv) => (
             <tr key={dv.bbl} onClick={() => go(dv.bbl)}>
               {bundling && <td className="dim">·</td>}
               {ranked && <td className="num dim">—</td>}

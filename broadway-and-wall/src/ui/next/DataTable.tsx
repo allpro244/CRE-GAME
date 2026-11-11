@@ -21,6 +21,17 @@ export interface Col<R> {
   width?: number;
 }
 
+/**
+ * ONE RULE FOR RENT AGAINST MARKET, on every table (UI clean-up, 2026-11; two
+ * screens had read it opposite ways). From the owner's chair a lease well
+ * ABOVE market rolls down when it renews — red; well BELOW market rolls up —
+ * green. Within ten per cent it is noise and stays plain. `gap` = rent/market − 1.
+ */
+export function rollTone(gap: number | null | undefined): "pos" | "neg" | undefined {
+  if (gap == null || !Number.isFinite(gap)) return undefined;
+  return gap > 0.1 ? "neg" : gap < -0.1 ? "pos" : undefined;
+}
+
 const ROW = 30;
 const read = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
 const write = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* blocked */ } };

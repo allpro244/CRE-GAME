@@ -169,24 +169,22 @@ export function LoiCard({ loi, go }: { loi: import("@/engine/types").LOI; go: (b
       )}
       {/* NE on the card BEFORE you open Counter — otherwise Accept is a blind
           click against a face rent the tenant is not even judging. */}
-      <div className="loi-line mono">
-        NE ${nowNe.toFixed(2)}/sf
-        {" "}({pctSigned(nowNe / market - 1, 0)} vs market asking ~${market.toFixed(2)})
-        {!final && Math.abs(theirNe - nowNe) > 0.05 ? ` · opened NE $${theirNe.toFixed(2)}` : ""}
-      </div>
-      <div className="loi-line mono dim">
-        cash to sign {usd(cost)} net of deposit · {h?.broker ? "6% exclusive broker fee" : "broker commission"} deferred · expires {monthLabel(loi.expiresM - 1)}
-      </div>
+      {/* The desk's read on the letter rides on the NE line's hover (UI
+          clean-up, 2026-11): numbers on the card, the sentence on demand. */}
       {(() => {
-        // The desk's one line on the letter — same helpers as the lines
-        // above, signed by whoever covers the building.
         const read = loiRead(game, parcels, loi);
-        return read ? (
-          <div className="advisor-line">
-            {read} <span className="advisor-desk">· {leasingDeskName(game, loi.bbl)}</span>
+        return (
+          <div className={"loi-line mono" + (read ? " has-gloss" : "")}
+            title={read ? `${read} · ${leasingDeskName(game, loi.bbl)}` : undefined}>
+            NE ${nowNe.toFixed(2)}/sf
+            {" "}({pctSigned(nowNe / market - 1, 0)} vs market ~${market.toFixed(2)})
+            {!final && Math.abs(theirNe - nowNe) > 0.05 ? ` · opened $${theirNe.toFixed(2)}` : ""}
           </div>
-        ) : null;
+        );
       })()}
+      <div className="loi-line mono dim" title={`Net of deposit · ${h?.broker ? "6% exclusive broker fee" : "broker commission"} deferred`}>
+        to sign {usd(cost)} · expires {monthLabel(loi.expiresM - 1)}
+      </div>
       {countering && !final && !loi.countered && (
         <LoiCounterDraft
           loi={loi}

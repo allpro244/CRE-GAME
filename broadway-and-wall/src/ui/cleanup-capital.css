@@ -10,3 +10,8 @@
 /* Debt: the loan table leads, and its row actions stay on one line. */
 .app .debt-loans > tbody > tr > td:not([colspan]), .app .debt-loans > thead th { white-space: nowrap; }
 .app .debt-loans > tbody > tr > td:nth-child(2):not([colspan]) { white-space: normal; min-width: 140px; }
+/* At laptop width the row actions wrap rather than push the table 8px past
+   its panel (1366x768 measured). */
+@media (max-width: 1500px) {
+  .app .debt-loans > tbody > tr > td:last-child:not([colspan]) { white-space: normal; }
+}

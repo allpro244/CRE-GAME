@@ -4530,6 +4530,7 @@ export function generateCity(cfg) {
   // PLAN 18: THE TOWN IS BUILT FOR ITS PEOPLE. Every building the massing
   // drew stands; what each one is FOR is set by the region's demand (demand.mjs).
   // A surveyed plat keeps the uses its cadastre records.
+  const __t0 = performance.now();
   const demandMix = PLAN_V >= 18 && !cfg.plat
     ? balanceUses(builtLots, { seed: cfg.seed, density: cfg.density, districts: cfg.districts }) : null;
 

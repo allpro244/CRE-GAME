@@ -251,32 +251,43 @@ export function balanceUses(lots, { seed, density, districts }) {
   // is homes: the frames stand, and more of the region's people live on the
   // island. One lot at a time, the change that closes the most miss per foot
   // it moves, the best-sited first among equals, until no change helps.
-  const miss = (k, v) => (k === "multifamily" ? Math.max(0, target[k] - v) : Math.abs(v - target[k]));
+  // flat arrays: every candidate change as its move in each class, its fit, and its size
+  const T = CLASSES.map((k) => target[k]);
+  const S = CLASSES.map((k) => stock[k]);
+  const opts = [];
+  for (let n = 0; n < items.length; n++) {
+    const it = items[n];
+    const fit0 = fit(mainOf(it.legs), it);
+    for (const o of it.options) opts.push({ n, o, d: CLASSES.map((k) => o.legs[k] - it.legs[k]), inv: 1 / it.pp.bldgarea, fit: 0.5 * (fit(mainOf(o.legs), it) - fit0) });
+  }
+  const M = opts.length;
+  const D = new Float64Array(M * 4), INV = new Float64Array(M), FIT = new Float64Array(M), OWN = new Int32Array(M);
+  opts.forEach((x, j) => { for (let k = 0; k < 4; k++) D[j * 4 + k] = x.d[k]; INV[j] = x.inv; FIT[j] = x.fit; OWN[j] = x.n; });
+  const MF = CLASSES.indexOf("multifamily");
+  const miss = (k, v) => (k === MF ? Math.max(0, T[k] - v) : Math.abs(v - T[k]));
+  const moved = new Uint8Array(items.length);
   let moves = 0;
   for (let guard = 0; guard < items.length; guard++) {
-    let best = null;
-    for (const it of items) {
-      if (it.moved) continue;
-      const fit0 = fit(mainOf(it.legs), it);
-      for (const o of it.options) {
-        let gain = 0;
-        for (const k of CLASSES) {
-          const v1 = stock[k] - it.legs[k] + o.legs[k];
-          gain += miss(k, stock[k]) - miss(k, v1);
-        }
-        if (!(gain > 0)) continue;
-        const score = gain / it.pp.bldgarea + 0.5 * (fit(mainOf(o.legs), it) - fit0);
-        if (!best || score > best.score) best = { it, o, score };
-      }
+    const m0 = [miss(0, S[0]), miss(1, S[1]), miss(2, S[2]), miss(3, S[3])];
+    let bj = -1, bs = 0;
+    for (let j = 0; j < M; j++) {
+      if (moved[OWN[j]]) continue;
+      const b = j * 4;
+      const gain = m0[0] - miss(0, S[0] + D[b]) + m0[1] - miss(1, S[1] + D[b + 1])
+        + m0[2] - miss(2, S[2] + D[b + 2]) + m0[3] - miss(3, S[3] + D[b + 3]);
+      if (!(gain > 0)) continue;
+      const score = gain * INV[j] + FIT[j];
+      if (bj < 0 || score > bs) { bj = j; bs = score; }
     }
-    if (!best) break;
-    const { it, o } = best;
-    for (const k of CLASSES) stock[k] += o.legs[k] - it.legs[k];
+    if (bj < 0) break;
+    const it = items[OWN[bj]], o = opts[bj].o;
+    for (let k = 0; k < 4; k++) S[k] += D[bj * 4 + k];
     Object.assign(it.pp, o.rec);
     it.legs = o.legs;
-    it.moved = true;
+    moved[OWN[bj]] = 1;
     moves++;
   }
+  CLASSES.forEach((k, i) => { stock[k] = S[i]; });
   const pct = (o) => Object.fromEntries(CLASSES.map((k) => [k, +(o[k] / F).toFixed(4)]));
   return {
     metro: region.metro, coreMi: region.coreMi, ringShare: region.share,

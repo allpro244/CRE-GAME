@@ -135,6 +135,12 @@ export interface FirmBook {
 }
 
 export interface Tenant {
+  /**
+   * Its taste for the suite it signed (a standard Gumbel draw, streetRolls.ts
+   * `value`), kept for the life of the match: what made it choose this
+   * suite over the others it was shown does not vanish at the renewal.
+   */
+  tasteU?: number;
   name: string;
   /**
    * THE FIRM BEHIND THE LEASE (streetRolls.ts). A firm keeps its id, name and

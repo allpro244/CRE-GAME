@@ -774,7 +774,13 @@ function bringPaperToMarket(s: GameState, parcels: ParcelTable) {
     // not a synthetic face invented for the offer.
     const currentMine = mine.filter((b) => s.cityLoans?.[b]?.status === "current");
     const kind: "performing" | "nonperforming" = npl ? "nonperforming" : "performing";
-    const bbl = beat && rng(s) < 0.45 && r.bbls.includes(beat.bbl) ? beat.bbl
+    // The corner you lost is offered when it is THIS desk's paper to sell —
+    // its own row on the deed, current if this is a performing sale — not on a
+    // 45% coin. A desk sells loans it holds; when it holds that one, it is
+    // the one that reaches you.
+    const beatHeld = !!beat && r.bbls.includes(beat.bbl)
+      && (kind === "performing" ? currentMine.includes(beat.bbl) : mine.includes(beat.bbl));
+    const bbl = beatHeld ? beat!.bbl
       : kind === "performing" && currentMine.length
         ? currentMine[Math.floor(rng(s) * currentMine.length)]
       : mine.length ? mine[Math.floor(rng(s) * mine.length)]

@@ -1424,13 +1424,17 @@ export function tickLenders(s: GameState) {
         : Math.round(rrange(s, 24, 48, "lenders"));
       l.receiverUntilM = s.month + Math.round(rrange(s, 12, 30, "lenders"));
       l.appetite = 0;
-      // In most resolutions the acquirer assumes every deposit and the
-      // uninsured are made whole; in the rest it takes only the insured ones
-      // and the remainder is a claim on the receiver. Three in four is the
-      // rough post-2008 share of whole-bank and all-deposit transactions — a
-      // shape, not a measured constant.
+      // WHETHER THE UNINSURED ARE MADE WHOLE IS READ OFF THE BANK'S OWN BOOKS,
+      // not a three-in-four coin. The insurer must pick the least-costly
+      // resolution (12 U.S.C. 1823(c)(4)): it can only pass every deposit to
+      // the acquirer when that costs the fund no more than paying out the
+      // insured alone. A bank closed on the 90-day rule with its capital still
+      // above zero has assets that cover its deposits — the acquirer takes them
+      // all and nobody loses a dollar. One closed with its capital gone has a
+      // hole, and covering the uninsured would put that hole on the fund, so
+      // they become a claim on the receiver (seizeDeposits).
       if (wasOurs) {
-        if (l.kind === "bank" && rng(s, "lenders") < 0.75) {
+        if (l.kind === "bank" && l.capital > 0) {
           s.news.unshift({
             q: s.month, kind: "info",
             text: `${l.name} failed and was acquired the same weekend. All deposits transferred, `

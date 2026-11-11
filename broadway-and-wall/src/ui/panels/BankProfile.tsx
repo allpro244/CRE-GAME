@@ -7,7 +7,7 @@ import {
 import type { Lender } from "@/engine/lenders";
 import {
   PRODUCTS, statedLtv, advanceFactor, windowOpen, loanMin, holdMaxOf, singleNameCap, lenderRelOf, relCurve, relAdvance,
-  underwritingStandards, standardsWord, productSpread,
+  underwritingStandards, standardsWord, productSpread, onIncome,
 } from "@/engine/debt";
 import { bankRatePct, lossClassOf, costFloor } from "@/engine/pricing";
 import type { LossClass } from "@/engine/pricing";
@@ -393,7 +393,7 @@ function BankFile({ l }: { l: Lender }) {
                     <td className="num">{pc(sheet, 0)}</td>
                     <td className="num">{pc(sheet * adv, 0)}</td>
                     <td className="num">{rate.toFixed(2)}%<span className="dim"> ({p.floating ? "short" : "loan"} index + {(rate - bench).toFixed(2)})</span></td>
-                    <td className="num">{p.uwDscr > 0 ? `${p.uwDscr.toFixed(2)}× · ${pc(p.debtYield, 1)}` : "land"}</td>
+                    <td className="num">{onIncome(p) ? `own model · ${pc(p.debtYield, 1)}` : "land"}</td>
                     <td className="num">{Math.round(p.termM / 12)}y · {Math.round(p.ioM / 12)}y · {p.amortYears}y</td>
                     <td className="num">{min && max ? `${usd(min)} – ${usd(max)}` : min ? `from ${usd(min)}` : max ? `up to ${usd(max)}` : "any size"}</td>
                     <td className="dim">{p.minDSCR > 0 ? `DSCR ${p.minDSCR.toFixed(2)} · ` : ""}LTV {pc(p.maxLTV, 0)}</td>

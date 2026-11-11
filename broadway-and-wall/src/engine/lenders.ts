@@ -1867,6 +1867,18 @@ export function deskPricing(s: GameState, l: Lender): DeskPx {
  * and the glide are shape parameters, stated as such; the limits are the
  * desk's own balance sheet and costs, not a band.
  */
+/**
+ * THE OPENING PRICES: each desk's costs read off its books, no competitive
+ * margin yet — nobody has lent, so nobody is ahead or behind. newGame calls
+ * this so the opening's own deals are priced off the desks; it must not touch
+ * the usual shares, which are set once the opening book is named (below).
+ */
+export function publishOpeningPrices(s: GameState) {
+  const out: Record<string, DeskPx> = {};
+  for (const l of s.lenders ?? []) out[l.name] = deskPricing(s, l);
+  s.econ.deskPx = out;
+}
+
 export function priceDesks(s: GameState) {
   const lenders = s.lenders ?? [];
   if (lenders.some((l) => l.usual0 === undefined) && lenders.every((l) => l.namedOnly)) {

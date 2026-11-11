@@ -6,7 +6,7 @@ import { resolveRec } from "@/engine/value";
 import { lenderHealth, capitalRatio, lenderBlurb, targetCapital, cashSplit, depositApy, insuredLimit, stayingPower } from "@/engine/lenders";
 import { bankRatePct } from "@/engine/pricing";
 import { shortIndexOf } from "@/engine/market";
-import { relCurve, lenderRelOf, productSpread } from "@/engine/debt";
+import { relCurve, lenderRelOf, productSpread, onIncome } from "@/engine/debt";
 import { sweepApy } from "@/engine/types";
 import { PRODUCTS, statedLtv, underwritingStandards, standardsWord } from "@/engine/debt";
 import { LineChart } from "@/ui/Chart";
@@ -29,7 +29,7 @@ export function TheBanks() {
   // the owner said never moved. It moves here, and it says why.
   const standards = underwritingStandards(game);
   const sheetOf = (name: string) => {
-    const p = PRODUCTS.find((x) => x.lender === name && !x.mezz && x.uwDscr > 0);
+    const p = PRODUCTS.find((x) => x.lender === name && !x.mezz && onIncome(x));
     if (!p) return null;
     const sheet = statedLtv(game, p);
     return { p, sheet, today: sheet.ltv };
@@ -339,7 +339,7 @@ export function LenderCards() {
   const lenders = (game.lenders ?? []);
   if (!lenders.length) return null;
   const rows = lenders.map((l) => {
-    const p = PRODUCTS.find((x) => x.lender === l.name && !x.mezz && x.uwDscr > 0)
+    const p = PRODUCTS.find((x) => x.lender === l.name && !x.mezz && onIncome(x))
       ?? PRODUCTS.find((x) => x.lender === l.name && !x.mezz);
     const sp = stayingPower(game, l);
     const open = sp.word !== "closed";

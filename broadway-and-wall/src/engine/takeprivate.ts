@@ -46,7 +46,7 @@ import { buyQuote, executePurchase } from "./actions";
 import { transferTaxRate } from "./citygov";
 import { fundableNow, fundAndBook } from "./credit";
 import { isCivicLand } from "./demand";
-import { PRODUCTS, allInCostPct, productById } from "./debt";
+import { PRODUCTS, allInCostPct, productById, onIncome } from "./debt";
 import { newsChance } from "./market";
 import { BUY_CLOSING } from "./propmarket";
 
@@ -333,7 +333,7 @@ function bestProduct(s: GameState, parcels: ParcelTable, bbl: string, price: num
   let best = { id: "cash", principal: 0, equity: cash.equity, allIn: Infinity };
   for (const p of PRODUCTS) {
     if (p.mezz || p.bridge) continue;
-    if (land ? p.uwDscr > 0 : p.uwDscr <= 0) continue;   // land loans have no income test
+    if (land ? onIncome(p) : !onIncome(p)) continue;   // land loans have no income test
     const q = buyQuote(s, parcels, bbl, price, p.id, 1);
     if (!(q.principal > 0)) continue;
     const allIn = allInCostPct(productById(p.id), q.ratePct);

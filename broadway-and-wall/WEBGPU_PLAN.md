@@ -26,7 +26,8 @@ MapLibre canvas (WebGL)          overlay canvas (WebGPURenderer)
  custom layer render(matrix) ──►  RealCityLayer.render: same camera maths,
                                   same scene, same per-frame updates, then
                                   GpuBackend.render(): scene pass (MRT colour
-                                  + normals + depth) → GTAO → grade/tilt/bloom
+                                  + normals + metal/rough + float depth)
+                                  → GTAO → (SSR, Max) → grade/tilt/bloom → FXAA
 ```
 
 - **One layer, two renderers.** `RealCityLayer` (`real/RealCity.ts`) still
@@ -46,8 +47,16 @@ MapLibre canvas (WebGL)          overlay canvas (WebGPURenderer)
   street level in the city's scene. The city stands on it, the shadow catcher,
   the contact shades and the haze sheet fall on it, GTAO sees it, and the
   finishing pass grades the whole picture as one frame, as classic's did.
-  The lot outline drawn above the 3D layer (`bw-select-top`) lands under the
-  overlay — see Risks.
+  MapView keeps the 3D layer last in the style on the beta, so everything
+  MapLibre draws (the selected lot's outline included) is in that copy; the
+  outline then lies on the ground under the buildings rather than over them.
+- **A real view space for the passes.** RealCity's camera stands at the eye
+  unrotated and lets MapLibre's matrix do the turning. Screen-space passes
+  (GTAO, SSR) assume a camera looking down its own -Z, so the backend splits
+  the same matrix into the camera's rotation and the rest as the projection
+  (`orientCamera`; the transform is identical), converts the depth range for
+  WebGPU, and hands RealCity its camera back afterwards (picking unprojects
+  through it).
 - **Picking is unchanged.** It never used the GPU: `pickAt` walks a ray
   down a CPU height grid, and MapLibre keeps every pointer event.
 - **Tone mapping per material, as classic.** WebGLRenderer tone-maps each lit
@@ -61,6 +70,27 @@ MapLibre canvas (WebGL)          overlay canvas (WebGPURenderer)
   uniforms it adds, the code it splices) and its uniforms are read off that
   call (`real/gpu/ports.ts`). RealCity keeps one material and one set of
   numbers per surface.
+- **One program for every wall, as classic.** All ~250 facade materials build
+  the same node graph, so three compiles them once. That only works if every
+  per-family input is read *through the mesh* (`reference("material.bwWin")`,
+  `reference("material.map", "texture")`): a value node would be the first
+  family's for every wall in town (the first cut drew the whole city in one
+  elevation), and a plain material reference breaks in the shadow pass, which
+  builds the colour graph on its own depth material — under WebGPU an invalid
+  pipeline voids the whole frame's command buffer, not just one draw.
+- **Quality tiers** (same ladder as Classic; the setting rebuilds the graph):
+  Low and Medium draw the scene with 4x MSAA (Medium adds the grade); High
+  adds GTAO on float depth and swaps MSAA for FXAA; Max adds screen-space
+  reflections (glass, harbour, wet streets reflect what is on screen) on the
+  WebGPU backend — three r185's SSR shader does not compile on its WebGL 2
+  fallback. Diorama/Classic look drives the same grade uniforms as classic.
+- **Review switches**: `?renderer=webgpu|classic`, `?gpu=webgl2` (force the
+  fallback backend), `?gpu=offscreen` (render to a target and copy to a 2D
+  canvas — see Testing), `?gtao=off`, `?ssr=off`, `?post=off`,
+  `?gpudbg=mask|paint|orm|map` (one facade input instead of the wall);
+  `window.__gpu`, `__gpuStats` (backend, draw calls, CPU ms), `__gpuPorts`
+  (which classic patches were met and how each was handled).
+  `tools/gputest/*.html` check a port against the classic renderer in seconds.
 
 ## Inventory of custom shaders (counted 2026-11-11)
 
@@ -70,7 +100,7 @@ stock materials, 2 raw `ShaderMaterial`s in RealCity, 2 in `post.ts`
 
 | # | Shader | Where | What it does | Port order | Status |
 |---|---|---|---|---|---|
-| 1 | facade (PAINT, foot AO, farK, WINDOW_VARIATION, REVEAL, rooms, GLASS, oil-canning) | `buildFamily` | every wall in town | 1 | paint + foot shade + far calm: **ported**; window variation, reveals, rooms behind glass, coated-glass Fresnel/clouds: not yet |
+| 1 | facade (PAINT, foot AO, farK, WINDOW_VARIATION, REVEAL, rooms, GLASS, oil-canning) | `buildFamily` | every wall in town | 1 | paint, foot shade, far calm, pane variety (blinds, curtains, roughness), reveal jamb/sill/head, room behind the glass: **ported**; coated-glass Fresnel + clouds in the reflection, oil-canning: not yet (glass towers read a little bluer/brighter) |
 | 2 | haze + cloud shade | `addHaze` (all materials) | aerial perspective, cloud shadows on direct light | 1 | haze: **ported** (outputNode); cloud shade: not yet |
 | 3 | sky dome | `skyEnvironment` (ShaderMaterial) | what glass and water reflect | 1 | **ported** (node material) |
 | 4 | haze sheet | `hazeFor` (ShaderMaterial) | haze over MapLibre's ground | 1 | **ported** |
@@ -80,22 +110,58 @@ stock materials, 2 raw `ShaderMaterial`s in RealCity, 2 in `post.ts`
 | 8 | vehicles | `vehicleMat` | brake lights | 4 | **ported** (emissiveNode) |
 | 9 | walkers' gait | `buildStreetLife` | legs and arms swing | 5 | not yet (walkers glide) |
 | 10 | tree sway | `addSway` | crowns ripple in the wind | 5 | not yet (trees still) |
-| 11 | finishing pass | `post.ts` (2 ShaderMaterials) | AO, tilt-shift, bloom, clarity, grade, vignette | 1 | **rebuilt** on RenderPipeline: grade/tilt/bloom/clarity/vignette line for line; AO is GTAO |
+| 11 | finishing pass | `post.ts` (2 ShaderMaterials) | AO, tilt-shift, bloom, clarity, grade, vignette | 1 | **rebuilt** on RenderPipeline: grade/tilt/bloom/clarity/vignette line for line; AO is GTAO; + FXAA (High/Max), SSR (Max) |
 
 ## Measurements
 
-See the table filled in below by the spike run (same save, same camera, same
-machine; headless Chromium on SwiftShader — a CPU rasteriser — so absolute
-milliseconds mean little: compare ratios and draw calls).
+Same save (Jan 2004, a 48-month mid-game), same cameras, same container:
+headless Chromium on SwiftShader — a CPU rasteriser — at 1600x900, so
+absolute milliseconds mean little; compare ratios and draw calls.
+"Frame" is a forced repaint, MapLibre plus city plus finishing pass.
 
-MEASUREMENTS_PLACEHOLDER
+| view | renderer | frame (software) | draw calls | triangles | picks (7 pixels) |
+|---|---|---|---|---|---|
+| district (z16.2, 55°) | Classic | 10.8 s | 449 | 7.06 M | — |
+| district | WebGPU renderer, WebGL 2 backend | 5.7 s | 452 | 7.06 M | identical |
+| street (z17.6, 62°) | Classic | 10.5 s | 436 | 7.06 M | — |
+| street | WebGPU renderer, WebGL 2 backend | 8.5 s | 439 | 7.06 M | identical |
+
+- Draw calls are the same scene (+3: the ground plane, the post quad, the
+  FXAA pass); no instancing work has been done yet.
+- CPU time to submit the city frame on the beta: 20-50 ms on this CPU
+  (`__gpuStats.ms`); the classic number is not separable from MapLibre's.
+- The beta is faster here mainly because classic's AO renders the whole city
+  a second time (a distance pass) and copies the framebuffer back; GTAO reads
+  the depth the frame already wrote.
+- Build-to-ready on the beta: 130-210 s here vs classic's ~220 s (the facades
+  compile to one shared program).
+- The WebGPU backend itself could not be timed: see Testing.
+
+## Testing in this container
+
+Headless Chromium here exposes WebGPU (a SwiftShader adapter), and three's
+WebGPURenderer starts on it, but **the device is lost the moment a WebGPU
+canvas presents** — reproduced with a 20-line raw WebGPU page (no three):
+offscreen rendering survives, presenting does not. So:
+
+- the WebGL 2 backend (`?gpu=webgl2`) is what every parity shot, measurement
+  and the game session were taken on;
+- the WebGPU backend was exercised with `?gpu=offscreen`: the city builds,
+  every shader (facades, sea, GTAO, grade) compiles to WGSL and draws the
+  opening view correctly; after the camera moves the container's GPU process
+  stops servicing MapLibre's WebGL context, so later frames could not be
+  checked here. That is a property of this sandbox, not of Chrome on a GPU.
 
 ## Risks
 
-- **The overlay hides what MapLibre draws above the 3D layer**: today that is
-  the selected lot's outline (`bw-select-top`). It is copied into the ground
-  texture, so it shows on open ground, but a building stands in front of it.
-  Fix: draw the selected lot's outline in the city scene (planned, phase 2).
+- **The selected lot's outline is under the buildings** on the beta (it is
+  part of MapLibre's frame). On a vacant lot it shows; on a built one the
+  building's own selection glow does the job. Drawing it in the scene is a
+  small follow-up.
+- **TRAA is not in yet.** three's TRAANode jitters the camera with
+  `setViewOffset`, which recomputes the projection and would discard
+  MapLibre's matrix; it needs the jitter applied to our own matrix. FXAA
+  stands in on High/Max.
 - **The ground copy is one full-frame texture upload per frame.** Under WebGPU
   it is a GPU-to-GPU copy; under the WebGL 2 fallback it is `texImage2D` of a
   canvas, also GPU-side in Chrome. Measure on the owner's machine.
@@ -110,6 +176,11 @@ MEASUREMENTS_PLACEHOLDER
 
 1. **Spike** (done): own canvas, camera sync, MapLibre ground, picking,
    WebGPU + WebGL 2 backends, setting, measurements.
+   **Parity so far**: side by side with Classic the city is the same city —
+   same elevations, paint, rooms, shadows, haze, grade, tilt-shift. Left: the
+   coated-glass reflection, cloud shade, sea surf/ripples, grass detail, tree
+   sway and walking gait; the beta's shade side is a touch lighter (GTAO is
+   gentler than classic's crease AO).
 2. **Parity**: port the rest of the facade shader (window variation, reveals,
    rooms, glass), cloud shade, sea surf and ripples, grass, sway, gait; draw
    the selected lot outline in-scene; side-by-side shots until Classic and

@@ -650,6 +650,19 @@ export default function MapView() {
                 },
               });
             }
+            // THE WEBGPU BETA DRAWS OVER THE WHOLE MAP, with MapLibre's frame
+            // copied in as its ground at the moment the 3D layer is drawn, so
+            // anything MapLibre paints after that layer would never reach the
+            // screen. Keep the 3D layer last: the lot outline then lies on the
+            // ground under the buildings (the selected building glows anyway).
+            if (layer.gpu) {
+              const keepLast = () => {
+                const ids = map.getStyle()?.layers?.map((l) => l.id) ?? [];
+                if (map.getLayer(layer.id) && ids[ids.length - 1] !== layer.id) map.moveLayer(layer.id);
+              };
+              keepLast();
+              map.on("styledata", keepLast);
+            }
         };
         plantRef.current = plant;
         builtCityRef.current = city;

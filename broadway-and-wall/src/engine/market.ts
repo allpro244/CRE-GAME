@@ -307,8 +307,14 @@ const ONLINE_COST = 1.5;    // logit points per log point of a shop's rent over 
 const ONLINE_GOODS = 0.4;   // share of retail floor selling shippable goods [K: judgement, no source found]
 const ONLINE_SHED = 0.8;    // shed floor gained per unit of online share [K: judgement, no source found]
 const MANUF_FX = 0.1;       // share of factory floor sent abroad a year per unit of log dear dollar [K: judgement, no source found]
-/** Flats per adult: the national headship trend, its response to local job growth over the nation's, and that national job growth (a year). [K: the trend is a judgement, no source found.] */
-const HEADSHIP_TREND = 0.0015;
+/** Flats per adult: the national headship trend, a year. Households over the
+ *  civilian noninstitutional population 16+ went from 0.4815 in 1980 to 0.4961
+ *  in 2019, +0.076%/yr (Census CPS/HVS households, FRED TTLHH; BLS CPS
+ *  population, FRED CNP16OV, annual average) [S]; 2000-2019 gives 0.038%/yr,
+ *  1980-2000 0.113%/yr. It read 0.0015, twice the longest window (2026-11-11). */
+const HEADSHIP_TREND = 0.0008;
+/** Headship's response to local job growth over the nation's.
+ *  [K: judgement, no source found.] */
 const HEADSHIP_JOBS = 0.5;
 // The nation's payroll growth a year: the trades' 1990-2019 mean less the
 // labour-force slowdown (LABOUR_FORCE_SLOWDOWN, below).
@@ -347,7 +353,18 @@ export const SECTORS: Sector[] = [
   "finance", "law", "tech", "media", "insurance",
   "logistics", "apparel", "food", "medical", "design",
 ];
-/** [K: relative cyclicality by trade is a judgement, no source found.] */
+/**
+ * [K: relative cyclicality by trade is a judgement.]
+ * [S≠ BLS CES via FRED, 1990-2019: SD of the 12-month log change in payroll
+ * employment, scaled so the ten trades average the same 1.115 as here —
+ * tech 2.71 (CES6054150001 computer systems design), media 1.51 (USINFO),
+ * finance 1.04 (CES5552200001+CES5552300001), apparel 0.83 (USTRADE),
+ * design 1.45 (CES6054130001), logistics 1.19 (CES4300000001), food 0.68
+ * (CES7072000001), law 0.63 (CES6054110001), medical 0.36 (CES6562000001),
+ * insurance 0.75 (CES5552400001). The order mostly agrees; finance, apparel
+ * and insurance are off by a third or more. Employment volatility, not sales
+ * volatility, and the trade-to-series mapping is a choice. To reconcile.]
+ */
 export const INDUSTRY_VOL: Record<Sector, number> = {
   tech: 2.0, media: 1.6, finance: 1.4, apparel: 1.3, design: 1.2,
   logistics: 1.05, food: 0.8, law: 0.7, medical: 0.6, insurance: 0.5,
@@ -880,9 +897,14 @@ export function reletMonths(k: BuiltClass): number {
  * the next tenant even when the lease is signed before the last one leaves
  * (~10 weeks for a second-generation suite), re-rack and repair a shed, refit
  * a shop. Months. The rest of `reletMonths` is search, and search is what a
- * tight market shortens. [K: judgement, no source found.]
+ * tight market shortens.
+ * Flats: "many companies in the industry use seven (7) working days as an
+ * average guideline to turn an apartment home", with five and three expected
+ * (National Apartment Association, "Apartment Turnover", 2025) [S~]: seven
+ * working days is ~10 calendar days, 0.33 months; it read 0.4 (2026-11-11).
+ * Office, shop and shed: [K: judgement, no source found.]
  */
-export const MAKE_READY_M: Record<BuiltClass, number> = { office: 2.5, retail: 1.5, multifamily: 0.4, industrial: 1.0 };
+export const MAKE_READY_M: Record<BuiltClass, number> = { office: 2.5, retail: 1.5, multifamily: 0.33, industrial: 1.0 };
 
 /** Ordinary commercial term. Sector exit rolls on it. [D: LEASE_TERM_M.office / 12] */
 export const LEASE_TERM_YR = 8;
@@ -1131,6 +1153,12 @@ export const CONSTRUCTION_CLOSE_M = 2;
  * per worker (median 600), mercantile 1,243 (median 1,200); CBECS 2018
  * distribution centres 2,004. Those are gross building area per worker, the
  * code's are tighter; to reconcile. demand.ts carries the same ratios.]
+ * Office on an occupier's count instead of a building's: CoreNet Global's
+ * February 2012 survey of corporate real estate managers put space per
+ * office worker at 225 sf in 2010 and 176 sf in 2012 (FMLink, "CoreNet
+ * Global research: office space per worker to drop to 100 sq.ft. or below",
+ * March 2012), so office's 230 sits at the 2010 figure; shops and sheds
+ * still have no occupier-count source.
  */
 export const SF_PER_JOB: Record<BuiltClass, number> = { office: 230, industrial: 550, retail: 420, multifamily: 0 };
 /** Share of the population in the labour force. See the note at the unemployment term.
@@ -3120,7 +3148,11 @@ export const FIRM_PROFILE: Record<Sector, FirmProfile> = {
   medical:   { wage: 0.50, rent: 0.06, margin: 0.15, lev: 2.2, float: 0.30, spread: 0.025, rateDem: 0.0, space: { retail: 1 } },
   design:    { wage: 0.45, rent: 0.08, margin: 0.14, lev: 1.2, float: 0.50, spread: 0.030, rateDem: 1.0, space: { office: 1 } },
 };
-/** The interest cover a lender underwrites new debt to (bank leveraged-loan practice ~3x). [K: no source checked] */
+/** The interest cover a lender underwrites new debt to. New-issue M&A
+ *  leveraged loans carried a record 4x interest cover in 2021, "almost a full
+ *  turn above 2019 levels" — about 3x (S&P Global Market Intelligence / LCD,
+ *  "In blockbuster year for M&A, leverage ratios match record high", January
+ *  2022) [S~: 3x is the 2019 level, the low end of 3-4x]. */
 export const LENDER_COVER = 3;
 /**
  * A TOWN'S SHARE OF EACH NATIONAL TRADE WANDERS, FOR DECADES (2026-10-15).

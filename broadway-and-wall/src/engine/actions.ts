@@ -19,7 +19,7 @@ import { PREMARKET_M, beliefSignals } from "./beliefs";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg, holderSheet } from "./owners";
-import { payOffDue, payOffLoan, loanLender } from "./debt";
+import { payOffDue, payOffLoan, loanLender, statedLtv } from "./debt";
 import { originate, quote, productById, stabViewFor, recastPayment, capPremiumOn, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen, loanMin } from "./debt";
 import { takeoverDevelopment, takeoverEquityNeed, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
 import { demandNow, isCivicLand } from "./demand";
@@ -124,7 +124,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // refuses there used to leave the buyer paying only the equity on a quoted
   // principal nobody lent — see executePurchase.
   const grade = conveyedGrade(s, rec, bbl);
-  const noLoan = (bind: "condition" | "closed" | "minloan" | "income", ratePct = 0) => ({ principal: 0, ratePct, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind, ltvCap: prod.ltv, uwDscr: 0, appraised: 0, uwBasis: price, overpay: 0, allInPct: 0, sheetWhy: undefined as string | undefined, advanceWhy: undefined as string | undefined, guarantorWhy: undefined as string | undefined });
+  const noLoan = (bind: "condition" | "closed" | "minloan" | "income", ratePct = 0) => ({ principal: 0, ratePct, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind, ltvCap: statedLtv(s, prod).ltv, uwDscr: 0, appraised: 0, uwBasis: price, overpay: 0, allInPct: 0, sheetWhy: undefined as string | undefined, advanceWhy: undefined as string | undefined, guarantorWhy: undefined as string | undefined });
   if (!productOpen(s, prod) || !windowOpen(s, prod)) return noLoan("closed");
   // the life company will not finance a tired building, and the quote screen
   // has to say so before the closing table does
@@ -189,7 +189,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // file with the desk have already moved it (statedLtv). "ltv" below means
   // the loan sits at that number; "credit" means the window, the desk's
   // appetite or your standing cut it further.
-  const ltvCap = q.statedLtv ?? prod.ltv;
+  const ltvCap = q.statedLtv ?? statedLtv(s, prod).ltv;
   const capped = ltvCap * uwBasis;
   // Floating paper closes with a rate cap the lender insists on, and the
   // premium is part of the equity cheque — the cheaper coupon is not free.
@@ -284,7 +284,7 @@ export function executePurchase(
     return {
       s,
       err: `${prod.lender} will not write a loan on this. `
-        + (min > 0 && price * prod.ltv < min
+        + (min > 0 && price * statedLtv(s, prod).ltv < min
           ? `Their minimum loan is ${money(min)}; this building is too small. `
           : !windowOpen(s, prod) ? `They are not lending this month. `
           : `The building fails their underwriting. `)
@@ -945,7 +945,15 @@ export const GROUND_REVIEW_LABEL: Record<GroundReview, string> = {
  * plant a max-FAR tower on $2M of dirt and hand the bones back for free.
  */
 export const GROUND_TERM_MIN = 49;
-/** Minimum term before a tower-scale lessee program is allowed. */
+/**
+ * Minimum term before a tower-scale lessee program is allowed.
+ * [S≠] "What leasehold lenders underwrite" is not 75 years: Freddie Mac's
+ * Multifamily Seller/Servicer Guide ch. 30 (§30.2, 2026) asks for the ground
+ * lease to run 10 years past maturity on a fully amortising loan, the longer
+ * of amortisation + IO or 20 years past maturity on a subordinated one, and
+ * 30 years past maturity on an unsubordinated one — 40-60 years on a 10-30
+ * year loan. Still to be reconciled; left as a game floor.
+ */
 export const GROUND_TOWER_TERM_MIN = 75;
 
 function isTowerGroundUse(use: BuiltClass): boolean {
@@ -1663,7 +1671,10 @@ const VALUATION_AGE_M: Record<RivalStyle, number> = {
  * like one: private and individual CRE owners hold for a decade and more, and
  * the last time they had a professional opinion of value was the day they
  * signed for it. Eleven years is the middle of the reported private-investor
- * hold, and it is a MEAN, not a constant — the draw below is exponential,
+ * hold [S~]: Ghent, "What's Wrong with Pittsburgh? Delegated Investors and
+ * Liquidity Concentration" (2019, RCA and CBRE data), Table 4 — direct
+ * (non-delegated) buyers of 2001-03 held a median 12 years and a mean 9.9
+ * (the mean censored at 15 years, so a floor). And it is a MEAN, not a constant — the draw below is exponential,
  * which is the right shape for "time since the last event" and puts plenty of
  * owners at two years and a long tail at thirty.
  */

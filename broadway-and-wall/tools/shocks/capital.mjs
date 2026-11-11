@@ -204,9 +204,8 @@ let saved = null;
 function crunchApply(E) {
   saved = { prod: [], desk: [] };
   for (const p of [...E.PRODUCTS, ...E.INTERNAL_PRODUCTS]) {
-    saved.prod.push([p, { ltv: p.ltv, uwDscr: p.uwDscr, debtYield: p.debtYield }]);
-    p.ltv = p.ltv / 2;                          // the advance rate (debt.ts statedLtv starts here)
-    if (p.uwDscr > 0) p.uwDscr = p.uwDscr * 2;  // coverage sizing: NOI / (uwDscr + standards) — about half the proceeds
+    saved.prod.push([p, { maxLTV: p.maxLTV, debtYield: p.debtYield }]);
+    p.maxLTV = p.maxLTV / 2;                    // the ceiling every desk's own advance is clamped under (debt.ts statedLtv): about half
     if (p.debtYield > 0) p.debtYield = p.debtYield * 2;  // debt-yield sizing: NOI / floor — exactly half
   }
   for (const d of E.constructionDesks()) {

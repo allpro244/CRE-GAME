@@ -58,6 +58,7 @@ import { developmentProForma, marketConstructionQuote, underwritingEcon, constru
 import { dealView, maxPrice, bidderOf, sellerTerms, bidRound, forcedSalePrice, bankerHoldValue, holdValueFor, entrantBankerView, landBidRound, listingReserve, impliedCap, BUY_CLOSING } from "./propmarket";
 import { why } from "./why";
 import { beliefOf, beliefSignals } from "./beliefs";
+import { LAND_SHARE_TYPICAL } from "./tax";
 const CLASS_NOUN: Record<string, string> = { office: "office", multifamily: "apartments", retail: "retail", industrial: "industrial", land: "a site" };
 import { assembledBlock, reviewThesis, thesisFit, thesisLabel } from "./strategy";
 import { SURNAMES as OWNER_SURNAMES } from "./owners";
@@ -353,8 +354,7 @@ export function buildsWithoutBank(style: RivalStyle): boolean { return buildLtcC
 //    (beliefs.ts: its broker's comps, its own rolls and a survey two quarters
 //    old, remembered with half the weight on the last year) through
 //    delivery; -1 expects the gap to the ten-year average
-//    to close at the speed rent gaps close (Wheaton & Torto: about a quarter
-//    of the gap a year). Zero reads today's rent as the desk does. The style
+//    to close at the speed rent gaps close (REVERT_PER_YR below). Zero reads today's rent as the desk does. The style
 //    tilts the draw — merchant builders extrapolate, vultures and patient
 //    family money lean the other way — and the rest is the firm. Shape
 //    parameters, stated as such.
@@ -362,7 +362,16 @@ const OUTLOOK_TILT: Partial<Record<RivalStyle, number>> = {
   merchant: 0.35, developer: 0.25, opportunistic: 0.2, pe: 0.1,
   family: -0.2, core: -0.1, vulture: -0.5,
 };
-const REVERT_PER_YR = 0.25;
+/**
+ * HOW FAST A RENT GAP CLOSES, share of the gap a year. [S~] The rent-gap
+ * coefficient of the office rental-adjustment equation %dR = a(v* - v) +
+ * b(R* - R): b = 0.112 (Sydney, Hendershott 1996), 0.139 (Sydney re-estimated)
+ * and 0.201 (London, Hendershott, Lizieri & Matysiak 1999) — Hendershott &
+ * MacGregor, "Estimation of the Rental Adjustment Process", ERES 2001,
+ * Table 1. 0.20 is the top of that range (London, the deepest market). It
+ * was 0.25, credited to Wheaton & Torto, which could not be found there.
+ */
+const REVERT_PER_YR = 0.20;
 function idHash(id: string, salt: string): number {
   let h = 2166136261;
   const str = id + salt;
@@ -606,8 +615,6 @@ const TICKET_PCT: Record<RivalStyle, number> = {
   opportunistic: 0.01, developer: 0.01, merchant: 0.01,
   vulture: 0.006, family: 0.006, slumlord: 0.004, owneruser: 0,
 };
-/** Dirt is a fifth or so of what goes up on it: a lot is judged by the job it carries. */
-const LAND_SHARE_OF_JOB = 0.2;
 export function minTicket(r: Rival): number {
   const eq = Math.max(0, (r.aum ?? 0) - r.debt + r.cash);
   return (TICKET_PCT[r.style] ?? 0) * eq;
@@ -2702,6 +2709,11 @@ function spareFirmName(used: Set<string>, lead?: string): string | null {
 // big the answer was, and nothing in the expression could ever say no.
 //
 // Everything above the divide is a probability now. See maybeNewFirm.
+//
+// [S~] Preqin Real Estate Spotlight, August 2015 (via Hedgeweek, 12 Aug 2015):
+// the average closed-end real estate fund took 14.2 months to reach a final
+// close in 2010, rising to 19.5 months in 2014 and 19.8 in 2015 to date; the
+// top ten managers since 2013, 14.7 months. Fourteen sits at the fast end.
 const RAISE_M = 14;
 
 // WHAT A FULL-STRENGTH LEVERAGE STORY LOOKS LIKE IN THIS TOWN.
@@ -5804,9 +5816,12 @@ export function rivalBuys(
     if (st.classes && !st.classes.includes(rec.class)) return false;
     // CAPACITY: a small shop digests two deals a year, a platform eight.
     if (r.sheet && boughtLastYear(r, s.month) >= dealsPerYear(r.sheet)) return false;
-    // ...AND NOT BELOW ITS TICKET. A lot is sized by the job it carries.
+    // ...AND NOT BELOW ITS TICKET. A lot is sized by the job it carries: the
+    // dirt is the land share of value the rest of the engine uses (tax.ts
+    // LAND_SHARE_TYPICAL, Case 2007: land 31% of US real estate value), read
+    // here at call time. It was a separate 0.2 — one quantity, two answers.
     // A lot that grows a site the builder already holds is bought for the site.
-    if ((rec.class === "land" ? price / LAND_SHARE_OF_JOB : price) < minTicket(r)
+    if ((rec.class === "land" ? price / LAND_SHARE_TYPICAL : price) < minTicket(r)
       && !(rec.class === "land" && paramsOf(r).build > 0 && adjoinsOwnDirt(s, parcels, r, rec.bbl))) return false;
     const { debt, need, draw, aum } = drawFor(r);
     if (r.cash - contractedEquity(s, r) + draw < need) return false;

@@ -36,71 +36,53 @@ const setOutlook = (g, rise) => { if (g.econ.nat) g.econ.nat.uHist = [g.econ.nat
 const at = (ci, app, rise = 0) => { const g = structuredClone(base); g.econ.creditIdx = ci; g.bankApp = app; setOutlook(g, rise); return g; };
 const shut = at(0.5, 0.5, 0.015), mid = at(1.0, 0.9), loose = at(1.2, 1.15, -0.02);
 
-// --- 1. the standards index spans the scale and the sheets follow it --------
-const stS = E.underwritingStandards(shut), stM = E.underwritingStandards(mid), stL = E.underwritingStandards(loose);
-ok(stS <= -0.95 && near(stM, 0, 0.02) && stL >= 0.95, `standards: shut ${stS.toFixed(2)}, mid ${stM.toFixed(2)}, loose ${stL.toFixed(2)}`);
-for (const id of ["harbor", "savings", "savings25", "pelican", "conduit", "cordage", "mezz", "land"]) {
+// --- 1. every desk works out its own advance (debt.ts deskAdvance) ----------
+// The advance is where the loan's expected loss meets the desk's budget, so a
+// desk with less appetite reaches less far, and a more volatile town cuts
+// every desk's advance. There is no sheet and no band (2026-11-11).
+const withApp = (g, app) => { const x = structuredClone(g); for (const l of x.lenders) l.appetite = app; return x; };
+for (const id of ["harbor", "savings", "pelican", "conduit", "cordage", "mezz", "land"]) {
   const p = E.productById(id);
-  const a = E.statedLtv(shut, p).ltv, b = E.statedLtv(mid, p).ltv, c = E.statedLtv(loose, p).ltv;
-  ok(a < b && b < c && near(b, p.ltv), `${id.padEnd(9)} sheet shut ${pc(a)} < mid ${pc(b)} (= ${pc(p.ltv)}) < loose ${pc(c)}`);
+  const lo = E.statedLtv(withApp(mid, 0.4), p, "office", "standard", true).ltv, hi = E.statedLtv(withApp(mid, 1.1), p, "office", "standard", true).ltv;
+  ok(lo < hi || near(lo, 0.2, 1e-6), `${id.padEnd(9)} a desk short of appetite reaches less far: ${pc(lo)} < ${pc(hi)}`);
 }
 {
-  const h = E.productById("harbor"), sv = E.productById("savings"), ld = E.productById("land");
-  ok(near(E.statedLtv(shut, h).ltv, 0.58) && near(E.statedLtv(loose, h).ltv, 0.73), `harbor runs 58% shut to 73% loose around its 68% sheet`);
-  ok(near(E.statedLtv(shut, sv).ltv, 0.60) && near(E.statedLtv(loose, sv).ltv, 0.78), `regional runs 60% shut to 78% loose around its 72% sheet`);
-  ok(near(E.statedLtv(shut, ld).ltv, 0.35) && near(E.statedLtv(loose, ld).ltv, 0.60), `land money runs 35% shut to 60% loose — first to go, last back`);
-  ok(E.statedLtv(loose, E.productById("mezz"), "multifamily").ltv <= 0.95 - 0.03 + 1e-9, `the mezz stack never opens in breach of its own 95% covenant`);
+  const calm = structuredClone(mid), wild = structuredClone(mid);
+  const hist = Array.from({ length: 120 }, () => ({}));
+  for (const g of [calm, wild]) g.econ.history = [...(g.econ.history ?? []), ...hist];
+  calm.econ.landSigma = { office: 0.05, retail: 0.05, multifamily: 0.05, industrial: 0.05 };
+  wild.econ.landSigma = { office: 0.30, retail: 0.30, multifamily: 0.30, industrial: 0.30 };
+  for (const g of [calm, wild]) g.econ.landDrift = { office: 0, retail: 0, multifamily: 0, industrial: 0 };
+  const h = E.productById("harbor");
+  ok(E.statedLtv(wild, h, "office", "standard", true).ltv < E.statedLtv(calm, h, "office", "standard", true).ltv,
+    `a volatile town cuts the advance (${pc(E.statedLtv(wild, h, "office", "standard", true).ltv)} vs ${pc(E.statedLtv(calm, h, "office", "standard", true).ltv)})`);
 }
-
-// --- 2. property type, condition, and your file -----------------------------
 {
   const sv = E.productById("savings");
-  const office = E.statedLtv(mid, sv, "office", "standard").ltv;
-  ok(near(E.statedLtv(mid, sv, "multifamily", "standard").ltv, office + 0.05), `apartments: five points over the office sheet`);
-  ok(near(E.statedLtv(mid, sv, "industrial", "standard").ltv, office + 0.02), `warehouses: two over`);
-  ok(near(E.statedLtv(mid, sv, "retail", "standard").ltv, office - 0.02), `shops: two under`);
-  ok(near(E.statedLtv(mid, sv, "office", "worn").ltv, office - 0.03) && near(E.statedLtv(mid, sv, "office", "obsolete").ltv, office - 0.03),
+  const office = E.statedLtv(mid, sv, "office", "standard", true).ltv;
+  ok(near(E.statedLtv(mid, sv, "office", "worn", true).ltv, office - 0.03) && near(E.statedLtv(mid, sv, "office", "obsolete", true).ltv, office - 0.03),
     `a worn or obsolete building has three points held back for the repairs`);
-  ok(near(E.statedLtv(mid, sv, "office", "good").ltv, office), `a good building is the sheet`);
-  const ld = E.productById("land");
-  ok(near(E.statedLtv(mid, ld, "land", "worn").ltv, ld.ltv), `dirt has no class band and no engineer's report`);
   const g = structuredClone(mid); g.lenderRel = { "First Harbor Bank": 100, "Cordage Debt Partners": 100, "Meridian Street Capital": 100 };
   const h = E.productById("harbor");
   ok(near(E.statedLtv(g, h).ltv, E.statedLtv(mid, h).ltv + 0.04), `a full file at the hometown bank is worth four points of advance`);
   ok(near(E.statedLtv(g, E.productById("cordage")).ltv, E.statedLtv(mid, E.productById("cordage")).ltv)
     && near(E.statedLtv(g, E.productById("conduit")).ltv, E.statedLtv(mid, E.productById("conduit")).ltv), `the debt fund and the conduit have no file to reward`);
   const why = E.statedLtv(g, h, "multifamily", "worn").why.join(", ");
-  ok(/their 68% sheet/.test(why) && /\+5 for multifamily/.test(why) && /−3 held back/.test(why) && /\+4 for your file/.test(why), `the sheet says how it was built: "${why}"`);
+  ok(/own risk model/.test(why) && /−3 held back/.test(why) && /\+4 for your file/.test(why), `the advance says how it was worked out: "${why}"`);
   const before = JSON.stringify(mid); E.statedLtv(mid, sv, "office", "worn"); E.underwritingStandards(mid);
-  ok(JSON.stringify(mid) === before, `reading the sheet mutates nothing`);
+  ok(JSON.stringify(mid) === before, `reading the advance mutates nothing`);
 }
 
-// --- 3. coverage and debt yield loosen at the top, and only there -----------
+// --- 2. coverage is the desk's model on the building's own income -----------
 {
-  // the regional: its hold size and single-name room clear a $10M loan, so only the three legs speak
-  const p = E.productById("savings");
-  // the window fully open in both (tight = 0, same coupon); only the desks' appetite differs
-  const a = at(1.0, 0.9), b = at(1.0, 1.15);
-  const la = Math.max(0, E.underwritingStandards(a)), lb = Math.max(0, E.underwritingStandards(b));
-  // the desks' balance sheets are a quarter of the index (the outlook and the
-  // window are the rest), so the street flush moves it by its full weight
-  ok(lb > la + 0.2, `standards ${la.toFixed(2)} → ${lb.toFixed(2)} on the street's appetite alone`);
-  const qa = E.quote(a, p, 10_000_000, 700_000, "office", false, undefined, "standard");
-  const qb = E.quote(b, p, 10_000_000, 700_000, "office", false, undefined, "standard");
-  ok(near(qa.ratePct, qb.ratePct, 0.011), `same coupon in both (${qa.ratePct}% / ${qb.ratePct}%)`);
-  const expDscr = (p.uwDscr - 0.07 * la) / (p.uwDscr - 0.07 * lb);
-  const expDy = (1 - 0.12 * la) / (1 - 0.12 * lb);
-  const expLtv = E.statedLtv(b, p, "office", "standard").ltv / E.statedLtv(a, p, "office", "standard").ltv;
-  ok(near(qb.byDscr / qa.byDscr, expDscr, 0.003), `coverage leg: ${pc(qb.byDscr / qa.byDscr - 1)} more proceeds when standards loosen (expected ${pc(expDscr - 1)})`);
-  ok(near(qb.byDebtYield / qa.byDebtYield, expDy, 0.003), `debt-yield leg: ${pc(qb.byDebtYield / qa.byDebtYield - 1)} more (expected ${pc(expDy - 1)})`);
-  ok(!qa.holdCapped && !qb.holdCapped && near(qb.byLtv / qa.byLtv, expLtv, 0.003), `advance leg: ${pc(qb.byLtv / qa.byLtv - 1)} more (expected ${pc(expLtv - 1)})`);
-  // and a shut window does what it always did — the tight terms are untouched
-  const c = at(0.5, 0.5, 0.015);
-  const qc = E.quote(c, p, 10_000_000, 700_000, "office", false, undefined, "standard");
-  ok(qc.byDscr < qa.byDscr && qc.byDebtYield < qa.byDebtYield && qc.byLtv < qa.byLtv, `every leg is smaller with the window shut (advance ${pc(qc.byLtv / 1e7)} vs ${pc(qa.byLtv / 1e7)})`);
+  const p = E.productById("harbor");
+  const rich = E.quote(mid, p, 4_000_000, 400_000, "office", true, undefined, "standard");
+  const thin = E.quote(mid, p, 4_000_000, 120_000, "office", true, undefined, "standard");
+  ok(thin.byDscr < rich.byDscr, `a building earning less sizes smaller on income (${(thin.byDscr / 1e6).toFixed(2)}M vs ${(rich.byDscr / 1e6).toFixed(2)}M)`);
+  ok(thin.principal > 0 ? (thin.uwDscr ?? 0) >= 1 - 1e-6 : true, `a permanent loan never closes under 1.0x coverage (${(thin.uwDscr ?? 0).toFixed(2)}x)`);
 }
 
-// --- 4. the acquisition card reports today's sheet --------------------------
+// --- 3. the acquisition card reports the desk's own advance -----------------
 {
   let g = base; let done = false;
   for (const L of g.listings) {
@@ -109,7 +91,7 @@ for (const id of ["harbor", "savings", "savings25", "pelican", "conduit", "corda
     const q = E.buyQuote(g, parcels, L.bbl, L.ask, "harbor", 1);
     if (q.principal <= 0) continue;
     const sheet = E.statedLtv(g, E.productById("harbor"), rec.class, E.conveyedGrade(g, rec, L.bbl)).ltv;
-    ok(near(q.ltvCap, sheet) && typeof q.sheetWhy === "string" && /sheet/.test(q.sheetWhy), `buyQuote.ltvCap ${pc(q.ltvCap)} is the sheet today ${pc(sheet)} (${q.sheetWhy})`);
+    ok(near(q.ltvCap, sheet) && typeof q.sheetWhy === "string" && /risk model/.test(q.sheetWhy), `buyQuote.ltvCap ${pc(q.ltvCap)} is the desk's advance today ${pc(sheet)} (${q.sheetWhy})`);
     done = true; break;
   }
   ok(done, "found a financeable listing at the opening bell");

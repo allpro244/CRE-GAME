@@ -188,6 +188,8 @@ The scoreboard is `pnpm mechanism` (coins, draws, unsourced constants, ledger ro
 
 **Phase 4 — agents for the six top-down aggregates** (FORMULA_LEDGER #28-33): house prices from builders and buyers, migration from household choice, online retail share, the city's mood, rents outside the map, industry orders.
 
+  - #28 tried 2026-11-11 (not shipped): winning the re-tender in proportion to heads now / heads at opening (economy.ts tenderOrders) is a unit root with positive feedback — seed 11 at year 25: jobs 87k vs 61k, flat rent 40.8 vs 21.3. It needs the restoring force first: establishments entering and leaving on their own costs (wages, rents) against the nation's.
+
 **Phase 5 — neighbourhood demand.** Density effects at the measured elasticity (rent 0.21, wages 0.04: Ahlfeldt & Pietrostefani 2019, Table 5); congestion (speed −0.11) and construction cost (+0.055) in dense areas; vacant and decaying buildings drag nearby demand; delete the hidden random drift of town centres (`POLE_DRIFT_SD`, `POLE_NOISE_SD` in demand.ts — a design dial).
 
 **Phase 6 (alongside) — sources.** The remaining ~390 unsourced constants, file by file, with a research helper; reconcile the `[S≠]` disagreements (office opex $4.17 vs the file's own BOMA cite ~$8.90; property tax; developer margin, soft costs, contingency; base cap rates).

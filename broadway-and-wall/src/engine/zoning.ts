@@ -25,6 +25,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { GameState, VarianceApplication } from "./types";
 import { monthLabel, cloneState} from "./types";
+import { hash01 } from "./competitorTraits";
 import { rng } from "./market";
 import { resolveRec, landValue, demandLinear } from "./value";
 import { recordPropertyEvent } from "./history";
@@ -237,8 +238,16 @@ function decideVariance(s: GameState, parcels: ParcelTable) {
  * that trade is good depends entirely on whether the site was worth more than
  * the building, which is the same question every preservation fight is about.
  */
+/**
+ * How often the commission designates: about one building in fourteen years
+ * here [K: judgement — the old monthly 0.6%]. Designations are a flow, so the
+ * commission sits on that schedule (each seed at its own hashed phase in the
+ * count) rather than on a die each month (2026-11-11).
+ */
+const LANDMARK_RATE = 0.006;
 function tickLandmarks(s: GameState, parcels: ParcelTable, bbls: string[]) {
-  if (rng(s) > 0.006) return;
+  const x = s.month * LANDMARK_RATE + hash01(`${s.seed}:landmark`);
+  if (Math.floor(x + LANDMARK_RATE) === Math.floor(x)) return;
   // old, characterful, and somewhere that has become worth caring about
   const cands = bbls.filter((b) => {
     if (s.landmarks?.[b] !== undefined || s.developments[b]) return false;
@@ -247,7 +256,10 @@ function tickLandmarks(s: GameState, parcels: ParcelTable, bbls: string[]) {
       && rec.yearBuilt > 0 && rec.yearBuilt < 1940 && demandLinear(rec.demandScore) > 45;
   });
   if (!cands.length) return;
-  const bbl = cands[Math.floor(rng(s) * cands.length)];
+  // the case the preservationists make first: the oldest, then the most cared-about street
+  const age = (b: string) => resolveRec(parcels, s, b)!;
+  const bbl = cands.slice().sort((a, b) => age(a).yearBuilt - age(b).yearBuilt
+    || demandLinear(age(b).demandScore) - demandLinear(age(a).demandScore) || a.localeCompare(b))[0];
   const rec = resolveRec(parcels, s, bbl)!;
   if (!s.landmarks) s.landmarks = {};
   s.landmarks[bbl] = s.month;

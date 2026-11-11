@@ -55,8 +55,8 @@ import { holderOf } from "./owners";
 import type { Holder } from "./owners";
 import { holderNoteTerms, holderCfads, holderRefiAdvance, HOLDER_AMORT_M } from "./ownership";
 import { deskQuotes } from "./rivalDebt";
-import { productById, nameLimit } from "./debt";
-import { chargeLenderLoss, reoAsk, bookShareOf, targetCapital } from "./lenders";
+import { productById, nameLimit, productSpread } from "./debt";
+import { chargeLenderLoss, reoAsk, bookShareOf, targetCapital, deskPxOf } from "./lenders";
 import { cityLoanBook, deskTotals } from "./loanbook";
 import { NOTICE_M, FORECLOSE_M } from "./workout";
 import { forcedSalePrice } from "./propmarket";
@@ -66,12 +66,6 @@ import { bankRatePct, liveSpread } from "./pricing";
 import { why } from "./why";
 
 const usdK = (n: number) => `$${Math.round(n / 1000).toLocaleString("en-US")}k`;
-
-function hash01(str: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return ((h >>> 0) % 1_000_000) / 1_000_000;
-}
 
 /** Balance left after `k` months of a `n`-month schedule at `ratePct`. */
 function amortised(principal: number, ratePct: number, n: number, k: number): number {
@@ -268,7 +262,13 @@ function readHolders(s: GameState, parcels: ParcelTable) {
       room.set(l.name, target - (named[l.name]?.named ?? 0));
       nameCap.set(l.name, nameLimit({ kind: l.kind, book: target, capital: target * targetCapital(l.name) }));
     }
-    fresh.sort((a, b) => hash01(a.d.bbl + ":seed") - hash01(b.d.bbl + ":seed"));
+    // WHICH DEALS GET THE ROOM FIRST: the desks' own order, not a hash. A
+    // lender with limited room writes its best credit first, and the measure
+    // every commercial desk sizes on is debt yield — the building's NOI over
+    // the loan (MBA / CRE Finance Council underwriting practice). Dirt with no
+    // income comes last. Ties fall to the register's own order.
+    const dy = (f: (typeof fresh)[number]) => f.d.noi / Math.max(1, f.d.v * f.ltv);
+    fresh.sort((a, b) => dy(b) - dy(a) || (a.d.bbl < b.d.bbl ? -1 : a.d.bbl > b.d.bbl ? 1 : 0));
     for (const f of fresh) {
       const amt = f.d.v * f.ltv;
       const loan = writeLoan(s, f.d, amt, f.into, (q) => (room.get(q.lender) ?? 0) >= amt && amt <= (nameCap.get(q.lender) ?? 0));
@@ -429,8 +429,11 @@ function rollBalloon(s: GameState, x: StreetLoan, parcels: ParcelTable) {
       x.extensions = (x.extensions ?? 0) + 1;
       x.maturityM = s.month + 12;
       const p = productById(x.product);
-      if (p?.floating) x.spread = +liveSpread(s.econ.deskPx?.[x.lender], p.spread, x.klass === "land" ? "land" : "income", 1, "short").toFixed(2);
-      else x.ratePct = bankRatePct(s.econ.indexRate, liveSpread(s.econ.deskPx?.[x.lender], p?.spread ?? 2, x.klass === "land" ? "land" : "income"));
+      const ltvNow = x.value && x.value > 0 ? x.balance / x.value : undefined;
+      const spr = p ? productSpread(s, p, { ltv: ltvNow, klass: x.klass === "land" ? undefined : x.klass })
+        : liveSpread(deskPxOf(s, x.lender), x.klass === "land" ? "land" : "income");
+      if (p?.floating) x.spread = +spr.toFixed(2);
+      else x.ratePct = bankRatePct(s.econ.indexRate, spr);
       x.status = "watch";
       return;
     }

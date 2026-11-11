@@ -12,6 +12,8 @@ import { money } from "./money";
 import { appetiteAdvance, bankRatePct, liveSpread } from "./pricing";
 import { shortIndexOf } from "./market";
 import type { Lender } from "./lenders";
+import { deskPxOf } from "./lenders";
+import { productById } from "./debt";
 import { purseOf } from "./vehicles";
 
 /**
@@ -28,7 +30,6 @@ import { purseOf } from "./vehicles";
 export const LOC_LTV = 0.60;      // against net worth
 export const LOC_SPREAD = 4.0;    // prime + 400bps
 /** The line's floor over the LOAN index: a commercial bank's five-year fixed mortgage spread (debt.ts product sheet, 1.55). */
-export const LOC_FLOOR_SPREAD = 1.55;
 /**
  * Operating float left on hand when idle cash pays the revolver.
  * Everything above this goes to the most expensive money first.
@@ -143,11 +144,17 @@ export function locRate(s: GameState): number {
   // to the floor, the loan index still near four) index + 400 fell under the
   // loan index itself, 0.4 points under at worst over a thirty-year run, and
   // the line read as cheaper than the market's own mortgage rate. The floor
-  // is the bank's five-year fixed sheet (LOC_FLOOR_SPREAD), priced through the
-  // same law so it widens in a crunch the way the line does.
+  // is the same spread over the loan index, so it widens in a crunch the way
+  // the line does.
+  //
+  // PRICED OFF THE BANK'S COSTS (2026-11-11), on the junior loss class: the
+  // line is recourse to the firm and secured by no building, so it ranks
+  // behind every mortgage the firm has — its expected loss and the capital
+  // held against it are a subordinate loan's, not a first lien's.
+  const spr = liveSpread(px ?? deskPxOf(s, bank?.name ?? productById("harbor").lender), "junior");
   return Math.max(
-    bankRatePct(shortIndexOf(s.econ), liveSpread(px, LOC_SPREAD, "income", 1, "short"), terms),
-    bankRatePct(s.econ.indexRate, liveSpread(px, LOC_FLOOR_SPREAD, "income"), terms),
+    bankRatePct(shortIndexOf(s.econ), spr, terms),
+    bankRatePct(s.econ.indexRate, spr, terms),
   );
 }
 

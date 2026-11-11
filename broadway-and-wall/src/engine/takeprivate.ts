@@ -46,7 +46,7 @@ import { buyQuote, executePurchase } from "./actions";
 import { transferTaxRate } from "./citygov";
 import { fundableNow, fundAndBook } from "./credit";
 import { isCivicLand } from "./demand";
-import { PRODUCTS, allInCostPct, productById } from "./debt";
+import { PRODUCTS, allInCostPct, productById, onIncome } from "./debt";
 import { newsChance } from "./market";
 import { BUY_CLOSING } from "./propmarket";
 
@@ -333,7 +333,7 @@ function bestProduct(s: GameState, parcels: ParcelTable, bbl: string, price: num
   let best = { id: "cash", principal: 0, equity: cash.equity, allIn: Infinity };
   for (const p of PRODUCTS) {
     if (p.mezz || p.bridge) continue;
-    if (land ? p.uwDscr > 0 : p.uwDscr <= 0) continue;   // land loans have no income test
+    if (land ? onIncome(p) : !onIncome(p)) continue;   // land loans have no income test
     const q = buyQuote(s, parcels, bbl, price, p.id, 1);
     if (!(q.principal > 0)) continue;
     const allIn = allInCostPct(productById(p.id), q.ratePct);
@@ -626,8 +626,9 @@ export function tickTakePrivateApproach(s: GameState, parcels: ParcelTable) {
 // are the 2% the street pays on any purchase. The target's owners are paid
 // out and the name comes off the street.
 //
-// Once a year, mid-year; a raider looks at most once. The look is hashed
-// (no RNG stream), so a raid cannot re-roll anything it did not cause.
+// Once a year, mid-year; a raider looks at most once, and only when it has
+// bought no building in the past year. No RNG stream is touched, so a raid
+// cannot re-roll anything it did not cause.
 
 export function tickRivalTakeovers(s: GameState, parcels: ParcelTable) {
   if (s.month % 12 !== 6) return;
@@ -635,7 +636,11 @@ export function tickRivalTakeovers(s: GameState, parcels: ParcelTable) {
     const sh = raider.sheet;
     if (!sh || raider.stressMs) continue;
     const raids = raider.profile === "raider" || (sh.capacity >= 85 && sh.reach >= 75 && sh.distress >= 60);
-    if (!raids || hash01(`${s.seed}:raid:${raider.id}:${s.month}`) > 0.5) continue;
+    if (!raids) continue;
+    // A RAIDER TURNS TO CORPORATE M&A WHEN THE TAPE HAS NOT FED IT. No die: a
+    // desk that took a deed in the last twelve months is busy with buildings;
+    // one that has not looks for a whole company instead.
+    if (Object.values(raider.heldSince ?? {}).some((m) => s.month - m < 12)) continue;
     const rm = markRival(s, parcels, raider);
     let pick: { q: TakePrivateQuote; t: Rival; score: number } | null = null;
     for (const t of livingRivals(s)) {

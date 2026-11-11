@@ -14,9 +14,9 @@ import type { GameState } from "@/engine/types";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import { capitalRatio, lenderConstitution, lenderHealth, lenderPressure, stayingPower, type Lender } from "@/engine/lenders";
 import {
-  PRODUCTS, advanceFactor, holdMaxOf, loanMin, relCurve, singleNameCap, statedLtv, underwritingStandards, standardsWord, windowOpen,
+  PRODUCTS, advanceFactor, holdMaxOf, loanMin, relCurve, singleNameCap, statedLtv, underwritingStandards, standardsWord, windowOpen, productSpread, onIncome,
 } from "@/engine/debt";
-import { bankRatePct, liveSpread, lossClassOf, type DeskPx, type LossClass } from "@/engine/pricing";
+import { bankRatePct, type DeskPx, type LossClass } from "@/engine/pricing";
 import { shortIndexOf } from "@/engine/market";
 import { lineLender } from "@/engine/credit";
 import { ffAvailable, syndicateView } from "@/engine/syndicate";
@@ -123,10 +123,10 @@ function LenderTerms({ g, r }: { g: GameState; r: LRow }) {
   const rows: PRow[] = PRODUCTS.filter((p) => p.lender === l.name).map((p) => {
     const sheet = statedLtv(g, p, "office", "standard").ltv;
     const bench = p.floating ? shortIndexOf(e) : e.indexRate;
-    const rate = bankRatePct(bench, liveSpread(e.deskPx?.[l.name], p.spread, lossClassOf(p), 1, p.floating ? "short" : "long"), { rel: relCurve(g, l.name) });
+    const rate = bankRatePct(bench, productSpread(g, p), { rel: relCurve(g, l.name) });
     return {
       id: p.id, paper: p.label.split(" · ").slice(1).join(" · ") || p.label, sheet, after: sheet * adv, rate, spread: rate - bench, floating: !!p.floating,
-      dscr: p.uwDscr > 0 ? p.uwDscr : null, dy: p.uwDscr > 0 ? p.debtYield : null,
+      dscr: null, dy: onIncome(p) ? p.debtYield : null,
       term: `${Math.round(p.termM / 12)}y · ${Math.round(p.ioM / 12)}y IO · ${p.amortYears}y`,
       min: loanMin(g, p) || null, max: holdMaxOf(g, p) ?? null,
       cov: `${p.minDSCR > 0 ? `${p.minDSCR.toFixed(2)}× · ` : ""}${Math.round(p.maxLTV * 100)}%`, open: !failed && windowOpen(g, p),

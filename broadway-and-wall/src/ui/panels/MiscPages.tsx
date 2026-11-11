@@ -337,6 +337,7 @@ export function SettingsPage() {
       <div className="page-section" style={{ marginTop: 10 }} title="Looks only — the city, its numbers and your save are the same at every setting. If the map stutters, step down one.">Graphics</div>
       <div className="btn-row">
         {([
+          ["extreme", "Extreme", "For an RTX 4070 / 5070 Ti class card: everything on Max, drawn at 2x your screen's pixels, 16x texture filtering, sharper reflections, the city drawn further out. Step down to Max if the map stutters."],
           ["max", "Max", "For a strong graphics card: drawn at 1.5x your screen's pixels and scaled down, the sharpest sun shadows, props drawn twice as far."],
           ["high", "High", "The full picture: sharp shadows, native pixel density, every prop and passer-by."],
           ["medium", "Medium", "Softer shadows, capped pixel density, fewer people and cars; small props drop out sooner as you zoom out."],

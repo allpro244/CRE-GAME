@@ -27,7 +27,7 @@ import type { ParcelTable } from "@/data/types";
 import type { Exit, GameState, Holding, Rival } from "./types";
 import { logBooks, moveDeposit, moveFundCash, monthLabel, raiseAlert, cloneState, closeDeedLedger } from "./types";
 import { firmShort } from "./firm";
-import { rng, rrange } from "./market";
+import { rrange } from "./market";
 import { sweepLocIdleCash } from "./credit";
 import { ownedHoldingValue, ownedHoldingNoiYr, resolveRec, holdingNOIYr, asIfOwned, rentableSf, useRentableSf, inPlace } from "./value";
 import { depositsOn } from "./leasing";
@@ -37,7 +37,8 @@ import { FACILITY_MIN_ASSETS } from "./facility";
 import { sponsorStanding } from "./sponsor";
 import { money } from "./money";
 import { purseOf, partnerShare } from "./vehicles";
-import { livingRivals } from "./rivals";
+import { livingRivals, deployRamp } from "./rivals";
+import { hash01 } from "./competitorTraits";
 import { packageCanClose, packageFinance } from "./portfoliosale";
 import { financePackage } from "./rivalDebt";
 import { logFirm } from "./firmLog";
@@ -55,6 +56,10 @@ function occOf(rec: { bldgArea: number; floors: number }, h: Holding): number {
 
 /** How long a portfolio stays on the market before the process goes stale. */
 const RUN_M = 9;
+/** A desk underwrites a book only when its indicative is at least this share of the ask ([K], 2026-11-11: a quarter over is the walk-away). */
+const REACH = 0.8;
+/** An empty-book fund rings an owner unprompted once this far into its investment period (deployRamp, rivals.ts) — past half, with nothing bought ([K]). */
+const RING_RAMP = 0.5;
 
 /**
  * WHO WRITES PORTFOLIO CHEQUES IN THIS TOWN: the firms on the Players list
@@ -823,12 +828,18 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
           });
         }
       } else {
-        const eager = Math.min(1, q.indicative / Math.max(1, live.ask));
-        // Interest is a function of how far under the indicative your ask is,
-        // and it thins fast the longer it sits.
-        const arrive = 0.30 * Math.pow(eager, 3.2) * Math.max(0.25, 1 - age / (RUN_M + 3));
-        if (pool.length && rng(s) < arrive && live.bids.length < 3) {
-          const who = pool[Math.floor(rng(s) * pool.length)];
+        // WHO INDICATES, AND WHEN. No die: each desk that can fund the book
+        // underwrites it, which takes it one to three months (staggered by a
+        // hash of the firm and the listing), and indicates when it is done —
+        // if the ask is within reach of what the book bundles to. A desk does
+        // not spend a committee on a book asking more than a quarter over its
+        // indicative ([K] REACH). One new indication a month, three in all.
+        const due = (r: Rival) => live.listedM + 1 + Math.floor(hash01(`${s.seed}:pfdd:${r.id}:${live.listedM}`) * 3);
+        const ready = q.indicative >= live.ask * REACH
+          ? pool.filter((r) => s.month >= due(r)).sort((a, b) => due(a) - due(b) || (a.id < b.id ? -1 : 1))
+          : [];
+        if (ready.length && live.bids.length < 3) {
+          const who = ready[0];
           const price = Math.round(Math.min(live.ask, q.indicative * rrange(s, 0.88, 1.02)));
           live.bids.push({ name: who.name, firmId: who.id, price, expiresM: s.month + 3, limit: bidderLimit(s) });
           live.bids.sort((a, b) => b.price - a.price);
@@ -863,7 +874,14 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
   // never for the whole thing, never for the bad ones, and always for the
   // assets you would least like to part with, because those are the ones worth
   // buying.
-  if (!s.portfolioSale && Object.keys(s.holdings).length >= 5 && rng(s) < 0.012) {
+  // WHO RINGS. No die: a raised fund that has bought nothing and is past half
+  // its investment period (deployRamp) is the buyer that pays a premium to
+  // skip a contest, because the alternative is handing commitments back. It
+  // rings once. Funds with books do not cold-call for portfolios.
+  const ringers = !s.portfolioSale && Object.keys(s.holdings).length >= 5
+    ? livingRivals(s).filter((r) => r.rangPlayerM === undefined && deployRamp(s, r) >= RING_RAMP)
+    : [];
+  if (ringers.length) {
     const byClass = new Map<string, string[]>();
     for (const bbl of Object.keys(s.holdings)) {
       if (s.workouts?.[bbl] || s.holdings[bbl].sale) continue;
@@ -888,9 +906,11 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
       // entire reason to answer the phone. Only a firm that could write it
       // rings.
       const price = Math.round(q.indicative * rrange(s, 1.0, 1.09));
-      const who = q.indicative > 0 ? portfolioBuyers(s, parcels, bbls, price) : [];
+      const who = q.indicative > 0 ? ringers.filter((r) => packageCanClose(s, parcels, r, bbls, price)) : [];
       if (who.length) {
-        const buyer = who[Math.floor(rng(s) * who.length)];
+        // The most pressed fund rings: the one closest to its deadline.
+        const buyer = who.sort((a, b) => deployRamp(s, b) - deployRamp(s, a))[0];
+        buyer.rangPlayerM = s.month;
         // Declined at the switchboard (Deals page): drawn, not sent, so the
         // stream does not shift with the setting.
         if (s.noUnsolicited) return;

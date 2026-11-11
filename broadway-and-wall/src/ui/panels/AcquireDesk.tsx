@@ -19,7 +19,7 @@ import {
 import { sellerOf, sellerProfile, closingBand, phaseShift, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { ownerAt } from "@/engine/ownership";
 import { unitStatus, buyoutQuote, BUYOUT_PREMIUM } from "@/engine/leasing";
-import { PRODUCTS, deskAdvice } from "@/engine/debt";
+import { PRODUCTS, deskAdvice, onIncome } from "@/engine/debt";
 import { stayingPower, lenderByName } from "@/engine/lenders";
 import { WhyButton } from "@/ui/WhyChain";
 import { loanWhy, loanLead } from "@/ui/whyLinks";
@@ -28,7 +28,8 @@ import { uses as usesOf, useSf } from "@/engine/mix";
 import { gradeOf } from "@/engine/rivals";
 import { spendable } from "@/engine/credit";
 import { Gloss } from "@/ui/Glossary";
-import { leasingOdds } from "@/engine/absorption";
+import { lookingFor } from "@/engine/streetRolls";
+import { useVacantSf } from "@/engine/leasing";
 import { usd, sf, termLeft, pctSigned } from "@/ui/format";
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
 import { useLabel, physicalOcc, band, apMid, annualPayment, Row, LocSplitHint, Verdict } from "@/ui/panels/shared";
@@ -966,10 +967,12 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
           {/* WHETHER TENANTS WILL COME — the leasing desk's own pace, read on
               the disclosed roll before you own it rather than after. */}
           {ip?.h && rec && rec.class !== "land" && (() => {
-            const odds = leasingOdds(game, parcels, rec, ip.h, rec.class as BuiltClass);
-            if (!odds || odds.availSf <= 0) return null;
+            const use = rec.class as BuiltClass;
+            const avail = useVacantSf(rec, ip.h, use, game.month);
+            if (!(avail > 0)) return null;
+            const look = lookingFor(game, use);
             return (
-              <Row k="Leasing outlook" v={`${Math.round(odds.availSf).toLocaleString()} sf vacant · ~${Math.round(odds.loiOdds * 100)}% LOI odds/mo${odds.monthsToLet !== null ? ` · ~${Math.max(1, Math.round(odds.monthsToLet))} mo to 85%` : " · 85% not reached"}`} bad={odds.loiOdds < 0.05} />
+              <Row k="Leasing outlook" v={`${Math.round(avail).toLocaleString()} sf vacant · ${look.firms} firms looking for ${use} space in town (${Math.round(look.sf / 1000).toLocaleString()}k sf)`} bad={look.firms === 0} />
             );
           })()}
         </div>
@@ -1122,7 +1125,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
     if (!q) { q = buyQuote(game, parcels, bbl, offerPrice, id, 1); qCache.set(id, q); }
     return q;
   };
-  const productChoices = PRODUCTS.filter((p) => !p.mezz && (isLand ? p.uwDscr <= 0 : p.uwDscr > 0))
+  const productChoices = PRODUCTS.filter((p) => !p.mezz && (isLand ? !onIncome(p) : onIncome(p)))
     .map((p) => ({ p, q: quoteOf(p.id) }))
     .sort((a, b) => (b.q.principal > 0 ? 1 : 0) - (a.q.principal > 0 ? 1 : 0) || a.q.allInPct - b.q.allInPct)
     .map((x) => x.p);
@@ -1305,7 +1308,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                 ? `LTV-constrained: ${(max.ltvCap * 100).toFixed(0)}% max (${max.sheetWhy ?? "lender terms"}).`
                 : max.bind === "dscr"
                   ? `DSCR-constrained: ${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% LTV vs ${(max.ltvCap * 100).toFixed(0)}% max. `
-                    + `${max.ratePct}% coupon at ${max.uwDscr.toFixed(2)}x min DSCR.`
+                    + `${max.ratePct}% coupon, closing at ${max.uwDscr.toFixed(2)}x coverage on the lender's own risk model.`
                   : max.bind === "dy"
                     ? `Debt-yield constrained: ${(max.ltvCap * 100).toFixed(0)}% max LTV not reached.`
                     : `${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% LTV vs ${(max.ltvCap * 100).toFixed(0)}% max (${max.sheetWhy ?? "lender terms"}) · ${max.advanceWhy ?? "reduced by credit conditions and track record"}.`}

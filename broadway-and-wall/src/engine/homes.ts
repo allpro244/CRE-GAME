@@ -48,7 +48,7 @@ import {
 
 /**
  * A homebuilder notices a plat with lots for sale and a residual worth paying
- * within a few months: a quarter a month [K]; twice that when the plat is
+ * within a few months: it looks every fourth month [K]; twice as often when the plat is
  * listed to the builders, which is what a land broker is paid for. An offer
  * stands two months.
  */
@@ -660,7 +660,12 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
     if (u.soldM === undefined || u.closedM !== undefined || s.month < u.doneM || u.spent < u.budget) continue;
     u.closedM = s.month;
     // who bought it, and the household it houses: one fewer renting a flat (market.ts)
-    u.tenure = rng(s, "homes") < sfrShare(START_YEAR + Math.floor(s.month / 12)) ? "sfr" : "owner";
+    // Investors take their share of the town's closings (sfrShare, sourced), accrued
+    // closing by closing: the house goes to a rental investor when a whole one is
+    // owed (2026-11-11; it was a die on the share for each house).
+    h.sfrAcc = (h.sfrAcc ?? 0) + sfrShare(START_YEAR + Math.floor(s.month / 12));
+    u.tenure = h.sfrAcc >= 1 ? "sfr" : "owner";
+    if (h.sfrAcc >= 1) h.sfrAcc -= 1;
     s.econ.newHomes = (s.econ.newHomes ?? 0) + 1;
     s.econ.newHomesRef ??= Math.max(1, s.econ.occupied?.multifamily ?? 1);
     const b = h.builders[u.by];
@@ -714,8 +719,12 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
     const crowded = salesPace(e, q.price / pm.loc, 0, Math.max(1, n)) > COMMUNITY_SALES_CAP;
     const canEnter = !here.size || crowded;
     const want = spare.length > 0 && !h.offers?.[parent];
-    const entryP = listing ? LISTED_ENTRY_P : BUILDER_ENTRY_P;
-    if (q.residual > 0 && ((want && (listing || canEnter)) || (canEnter && f.market.length)) && rng(s, "homes") < entryP) {
+    // A builder's rounds: it looks at each plat every 1/entryP months (every
+    // fourth month; every second when listed), on a schedule staggered by the
+    // plat's id — no dice. When it looks, the residual and the room decide.
+    const every = Math.round(1 / (listing ? LISTED_ENTRY_P : BUILDER_ENTRY_P));
+    const looksNow = (s.month + Math.floor(hash01(`hb-look:${s.seed}:${parent}`) * every)) % every === 0;
+    if (q.residual > 0 && ((want && (listing || canEnter)) || (canEnter && f.market.length)) && looksNow) {
       let name: string;
       const existing = [...here].sort()[0];
       if (existing && !canEnter) name = existing;

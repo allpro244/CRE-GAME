@@ -4,11 +4,11 @@ import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { resolveRec } from "@/engine/value";
 import { lenderHealth, capitalRatio, lenderBlurb, targetCapital, cashSplit, depositApy, insuredLimit, stayingPower } from "@/engine/lenders";
-import { bankRatePct, liveSpread, lossClassOf } from "@/engine/pricing";
+import { bankRatePct } from "@/engine/pricing";
 import { shortIndexOf } from "@/engine/market";
-import { relCurve, lenderRelOf } from "@/engine/debt";
+import { relCurve, lenderRelOf, productSpread, onIncome } from "@/engine/debt";
 import { sweepApy } from "@/engine/types";
-import { PRODUCTS, advanceFactor, statedLtv, underwritingStandards, standardsWord } from "@/engine/debt";
+import { PRODUCTS, statedLtv, underwritingStandards, standardsWord } from "@/engine/debt";
 import { LineChart } from "@/ui/Chart";
 import { usd } from "@/ui/format";
 import { bankStatement, CapSpark } from "@/ui/panels/NotesPage";
@@ -29,10 +29,10 @@ export function TheBanks() {
   // the owner said never moved. It moves here, and it says why.
   const standards = underwritingStandards(game);
   const sheetOf = (name: string) => {
-    const p = PRODUCTS.find((x) => x.lender === name && !x.mezz && x.uwDscr > 0);
+    const p = PRODUCTS.find((x) => x.lender === name && !x.mezz && onIncome(x));
     if (!p) return null;
     const sheet = statedLtv(game, p);
-    return { p, sheet, today: sheet.ltv * advanceFactor(game, name) };
+    return { p, sheet, today: sheet.ltv };
   };
   return (
     <>
@@ -339,12 +339,12 @@ export function LenderCards() {
   const lenders = (game.lenders ?? []);
   if (!lenders.length) return null;
   const rows = lenders.map((l) => {
-    const p = PRODUCTS.find((x) => x.lender === l.name && !x.mezz && x.uwDscr > 0)
+    const p = PRODUCTS.find((x) => x.lender === l.name && !x.mezz && onIncome(x))
       ?? PRODUCTS.find((x) => x.lender === l.name && !x.mezz);
     const sp = stayingPower(game, l);
     const open = sp.word !== "closed";
-    const rate = p ? bankRatePct(p.floating ? shortIndexOf(game.econ) : game.econ.indexRate, liveSpread(game.econ.deskPx?.[l.name], p.spread, lossClassOf(p), 1, p.floating ? "short" : "long"), { rel: relCurve(game, l.name) }) : null;
-    const reach = p ? statedLtv(game, p).ltv * advanceFactor(game, l.name) : null;
+    const rate = p ? bankRatePct(p.floating ? shortIndexOf(game.econ) : game.econ.indexRate, productSpread(game, p), { rel: relCurve(game, l.name) }) : null;
+    const reach = p ? statedLtv(game, p).ltv : null;
     return { l, p, sp, open, rate, reach };
   });
   const quoting = rows.filter((r) => r.open && r.rate !== null).map((r) => r.rate!).sort((a, b) => a - b);

@@ -64,7 +64,7 @@ import { logBooks, monthLabel, cloneState, poolDeedLedger, moveDeposit, closeDee
 import { depositsOn } from "./leasing";
 import { transferGroundLeaseOffBook } from "./actions";
 import { ownedHoldingNoiYr, ownedHoldingValue, ownedMonthlyNoi, resolveRec } from "./value";
-import { PRODUCTS, productById, bumpLenderRel, windowOpen, quote, advanceFactor, statedLtv, stackPayoff } from "./debt";
+import { PRODUCTS, productById, bumpLenderRel, windowOpen, quote, statedLtv, stackPayoff } from "./debt";
 import { shortIndexOf } from "./market";
 import { sponsorStanding, markSponsor } from "./sponsor";
 import { foreclosureSale } from "./propmarket";
@@ -319,7 +319,7 @@ export function facilityQuotes(s: GameState, parcels: ParcelTable, bbls: string[
     // own record exactly as it is on a single building. At score 0 this is a
     // mortgage with extra paperwork and gets nothing.
     const advance = Math.min(0.85,
-      statedLtv(s, p).ltv * advanceFactor(s, p.lender) * (1 - st.advanceCut) + 0.06 * q.score);
+      statedLtv(s, p).ltv * (1 - st.advanceCut) + 0.06 * q.score);
     const byLtv = advance * q.value;
     // Coverage: the balance whose level payment pool NOI covers minDSCR times.
     const pmtPerDollar = facilityPmtPerDollar(ratePct, p.ioM, p.amortYears);

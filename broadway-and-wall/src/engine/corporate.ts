@@ -58,6 +58,14 @@ function overlap(a: Rival, b: Rival): number {
   return 1 - d / (ks.length * 100);
 }
 
+/** Equity multiple over the last ten year-ends on the race chart; -Infinity when there is no decade to read. */
+function decadeGrowth(r: Rival): number {
+  const h = r.eqHist ?? [];
+  if (h.length < 11) return -Infinity;
+  const e0 = h[h.length - 11][1], e1 = h[h.length - 1][1];
+  return e0 > 0 ? e1 / e0 : -Infinity;
+}
+
 function mergers(s: GameState, parcels: ParcelTable) {
   // A firm under an ONLY rule does not merge: the other book would break it.
   const live = livingRivals(s).filter((r) => r.sheet && !r.stressMs && r.bbls.length >= 2 && !r.rules?.includes("neverSells")
@@ -71,8 +79,14 @@ function mergers(s: GameState, parcels: ParcelTable) {
     const o = overlap(mid[i], mid[j]);
     if (o > 0.82 && (!best || o > best.o)) best = { a: mid[i], b: mid[j], o };
   }
-  if (!best || hash01(`${s.seed}:merge:${best.a.id}:${best.b.id}:${s.month}`) > 0.35) return;
+  if (!best) return;
   const [into, from] = (best.a.aum ?? 0) >= (best.b.aum ?? 0) ? [best.a, best.b] : [best.b, best.a];
+  // THE SMALLER FIRM HAS TO WANT IT. No die: its partners fold their book
+  // into the larger one's only when their own equity has grown more slowly
+  // over the decade on the race chart (eqHist) — a firm out-compounding its
+  // would-be partner keeps its name. A firm with under a decade of history
+  // has no record to argue from and takes the larger firm's case.
+  if (decadeGrowth(from) > decadeGrowth(into)) return;
   // The combined book has to sit inside the survivor's own covenant.
   const aum = (into.aum ?? 0) + (from.aum ?? 0);
   if (aum <= 0 || (into.debt + from.debt) / aum > paramsOf(into).maxLtv) return;
@@ -104,7 +118,12 @@ function salesToInstitutions(s: GameState) {
     if (h.length < 11) continue;
     const e0 = h[h.length - 11][1], e1 = h[h.length - 1][1];
     if (!(e0 > 0) || e1 / e0 < 2) continue;
-    if (hash01(`${s.seed}:inst:${r.id}:${s.month}`) > 0.08) continue;
+    // THE FOUNDERS' DECISION. No die: they sell when two things hold — they
+    // have reached their own exit horizon (fifteen to thirty-four years in,
+    // staggered by a hash of the firm), and the credit window is open, so the
+    // institutions that buy platforms are buying (creditIdx at or above par).
+    const horizon = 180 + 12 * Math.floor(hash01(`${s.seed}:inst:${r.id}`) * 20);
+    if (s.month - (r.bornM ?? 0) < horizon || (s.econ.creditIdx ?? 1) < 1) continue;
     const buyer = INSTITUTIONS[Math.floor(hash01(`${s.seed}:instname:${r.id}`) * INSTITUTIONS.length)];
     const was = r.name;
     r.soldToM = s.month;
@@ -134,8 +153,11 @@ function successions(s: GameState, parcels: ParcelTable) {
     const family = r.style === "family" || r.profile === "dynasty" || r.profile === "preservationist";
     if (!family) continue;
     const since = r.genM ?? r.bornM ?? 0;
-    if (s.month - since < 300) continue;
-    if (hash01(`${s.seed}:heir:${r.id}:${s.month}`) > 0.25) continue;
+    // A GENERATION. Not a decision anybody takes and not a die: twenty-five
+    // years and then up to seven more, staggered by a hash of the firm and the
+    // generation, so families do not all hand over in the same September.
+    const generation = 300 + 12 * Math.floor(hash01(`${s.seed}:heir:${r.id}:${since}`) * 8);
+    if (s.month - since < generation) continue;
     r.genM = s.month;
     const sh = r.sheet;
     if (sh.grudge >= 70 && r.bbls.length >= 4) {

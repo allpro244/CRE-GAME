@@ -231,7 +231,8 @@ function test6() {
       g = keepSolvent(g);
       if (m === 12) {
         const rec = E.resolveRec(parcels, g, subj), h = g.holdings[subj];
-        odds = rec && h ? E.leasingOdds(g, parcels, rec, h, E.leasableUses(rec)[0]) : null;
+        // the subject's tours over its last year (firms whose broker put it first)
+        odds = rec && h ? { loiOdds: (h.tourLog ?? []).filter((x) => x > g.month - 12).length / 12 } : null;
       }
     }
     return {
@@ -284,7 +285,7 @@ function test6() {
   note("6", "Tenant pool conservation", verdict,
     `${supplyX.toFixed(2)}x the vacant sf in one submarket produced ${leaseX.toFixed(2)}x the total leased sf, and the shared `
     + `6-building cohort gave up only ${(-100 * cann).toFixed(1)}%. Conservation ${conserved.toFixed(2)} of 1.00. The competition wire exists `
-    + `(the subject's arrival odds fall ${mean(oB.map((o) => o.loiOdds)).toFixed(3)} -> ${mean(oT.map((o) => o.loiOdds)).toFixed(3)}) and is nowhere near strong enough to conserve anything.`);
+    + `(the subject's tours a month fall ${mean(oB.map((o) => o.loiOdds)).toFixed(3)} -> ${mean(oT.map((o) => o.loiOdds)).toFixed(3)}) and is nowhere near strong enough to conserve anything.`);
   return { conserved, supplyX, leaseX, cann };
 }
 

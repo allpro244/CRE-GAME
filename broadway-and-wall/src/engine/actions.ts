@@ -19,7 +19,7 @@ import { PREMARKET_M, beliefSignals } from "./beliefs";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg, holderSheet } from "./owners";
-import { payOffDue, payOffLoan, loanLender } from "./debt";
+import { payOffDue, payOffLoan, loanLender, statedLtv } from "./debt";
 import { originate, quote, productById, stabViewFor, recastPayment, capPremiumOn, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen, loanMin } from "./debt";
 import { takeoverDevelopment, takeoverEquityNeed, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
 import { demandNow, isCivicLand } from "./demand";
@@ -124,7 +124,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // refuses there used to leave the buyer paying only the equity on a quoted
   // principal nobody lent — see executePurchase.
   const grade = conveyedGrade(s, rec, bbl);
-  const noLoan = (bind: "condition" | "closed" | "minloan" | "income", ratePct = 0) => ({ principal: 0, ratePct, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind, ltvCap: prod.ltv, uwDscr: prod.uwDscr, appraised: 0, uwBasis: price, overpay: 0, allInPct: 0, sheetWhy: undefined as string | undefined, advanceWhy: undefined as string | undefined, guarantorWhy: undefined as string | undefined });
+  const noLoan = (bind: "condition" | "closed" | "minloan" | "income", ratePct = 0) => ({ principal: 0, ratePct, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind, ltvCap: statedLtv(s, prod).ltv, uwDscr: 0, appraised: 0, uwBasis: price, overpay: 0, allInPct: 0, sheetWhy: undefined as string | undefined, advanceWhy: undefined as string | undefined, guarantorWhy: undefined as string | undefined });
   if (!productOpen(s, prod) || !windowOpen(s, prod)) return noLoan("closed");
   // the life company will not finance a tired building, and the quote screen
   // has to say so before the closing table does
@@ -189,7 +189,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // file with the desk have already moved it (statedLtv). "ltv" below means
   // the loan sits at that number; "credit" means the window, the desk's
   // appetite or your standing cut it further.
-  const ltvCap = q.statedLtv ?? prod.ltv;
+  const ltvCap = q.statedLtv ?? statedLtv(s, prod).ltv;
   const capped = ltvCap * uwBasis;
   // Floating paper closes with a rate cap the lender insists on, and the
   // premium is part of the equity cheque — the cheaper coupon is not free.
@@ -213,7 +213,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
       : q.dyConstrained ? "dy"
       : q.principal < capped * 0.995 ? "credit"
       : "ltv",
-    ltvCap, uwDscr: prod.uwDscr,
+    ltvCap, uwDscr: q.uwDscr ?? 0,
     /** How today's sheet was built, and why the loan is under it when it is. */
     sheetWhy: q.sheetWhy, advanceWhy: q.advanceWhy,
     /** What the money costs a year, all in — see allInCostPct. */
@@ -284,7 +284,7 @@ export function executePurchase(
     return {
       s,
       err: `${prod.lender} will not write a loan on this. `
-        + (min > 0 && price * prod.ltv < min
+        + (min > 0 && price * statedLtv(s, prod).ltv < min
           ? `Their minimum loan is ${money(min)}; this building is too small. `
           : !windowOpen(s, prod) ? `They are not lending this month. `
           : `The building fails their underwriting. `)
@@ -945,7 +945,15 @@ export const GROUND_REVIEW_LABEL: Record<GroundReview, string> = {
  * plant a max-FAR tower on $2M of dirt and hand the bones back for free.
  */
 export const GROUND_TERM_MIN = 49;
-/** Minimum term before a tower-scale lessee program is allowed. */
+/**
+ * Minimum term before a tower-scale lessee program is allowed.
+ * [S≠] "What leasehold lenders underwrite" is not 75 years: Freddie Mac's
+ * Multifamily Seller/Servicer Guide ch. 30 (§30.2, 2026) asks for the ground
+ * lease to run 10 years past maturity on a fully amortising loan, the longer
+ * of amortisation + IO or 20 years past maturity on a subordinated one, and
+ * 30 years past maturity on an unsubordinated one — 40-60 years on a 10-30
+ * year loan. Still to be reconciled; left as a game floor.
+ */
 export const GROUND_TOWER_TERM_MIN = 75;
 
 function isTowerGroundUse(use: BuiltClass): boolean {
@@ -1461,7 +1469,13 @@ export function tickGroundLeases(s: GameState, parcels: ParcelTable) {
     if (!q) { delete h.groundOffer; continue; }
     const climate = buildClimate(s);
     const p = Math.min(0.14, (0.006 + 0.075 * (demandNow(s, rec) / 100) * climate) * q.takeMult);
-    if (rng(s, "sales") >= p) continue;
+    // Lessees arrive at that monthly rate, accumulated on the offer, and one
+    // takes when a whole one is owed (2026-11-11). It was a coin on p each
+    // month; now the wait is the expected one, 1/p months at a steady rate,
+    // and it moves with demand and the build climate month by month.
+    offer.takeAcc = (offer.takeAcc ?? 0) + p;
+    if (offer.takeAcc < 1) continue;
+    offer.takeAcc -= 1;
     const who = pickGroundTenant(s, parcels, h.bbl, offer.years);
     const prog = lesseeProgram(s, parcels, h.bbl, who.use, who.lead, offer.years);
     if (!prog) continue;
@@ -1657,7 +1671,10 @@ const VALUATION_AGE_M: Record<RivalStyle, number> = {
  * like one: private and individual CRE owners hold for a decade and more, and
  * the last time they had a professional opinion of value was the day they
  * signed for it. Eleven years is the middle of the reported private-investor
- * hold, and it is a MEAN, not a constant — the draw below is exponential,
+ * hold [S~]: Ghent, "What's Wrong with Pittsburgh? Delegated Investors and
+ * Liquidity Concentration" (2019, RCA and CBRE data), Table 4 — direct
+ * (non-delegated) buyers of 2001-03 held a median 12 years and a mean 9.9
+ * (the mean censored at 15 years, so a floor). And it is a MEAN, not a constant — the draw below is exponential,
  * which is the right shape for "time since the last event" and puts plenty of
  * owners at two years and a long tail at thirty.
  */
@@ -2674,7 +2691,11 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
   const phase = 0.35 + 1.0 * hotA + 0.45 * (1 - hotA) * (1 - downA);
   // how many people actually turned up
   const expected = Math.max(0, 3.4 * phase * Math.max(0.3, appetite) * Math.max(0.25, 2.1 - ratio));
-  let n = Math.floor(expected) + (rng(s, "sales") < expected % 1 ? 1 : 0);
+  // The expected turnout, to the nearest whole firm (2026-11-11). It was
+  // floor + a coin on the fraction; a turnout is a count, and the count the
+  // market's appetite stands for is its nearest whole number. Only the leased
+  // fee reads it — every other building's room is the firms themselves.
+  let n = Math.round(expected);
   n = Math.min(6, n);
   const bids: Bid[] = [];
   const used = new Set<string>();
@@ -3878,7 +3899,13 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
         const prem = asm ? 1.15 + 0.5 * (1 - asm.r.sheet!.discipline / 100) : 1;
         const px = Math.round(v * prem);
         // ...and it rings only if it could write the cheque it is offering.
-        if (asm && hash01(`${s.seed}:holdout:${h.bbl}:${s.month}`) < 0.05 && rivalCanClose(s, parcels, asm.r, rec0, px)) {
+        // ONCE, AND WHEN IT CAN PAY (2026-11-11). This was a hashed 5% coin
+        // each month, so the same assembler rang again and again after a no.
+        // Now it rings the first month its own cash and line clear the cheque
+        // (rivalCanClose), and a firm you have turned down builds around you,
+        // as the paragraph above says: it does not ring about this deed again.
+        if (asm && !(h.holdoutRung ?? []).includes(asm.r.id) && rivalCanClose(s, parcels, asm.r, rec0, px)) {
+          (h.holdoutRung ??= []).push(asm.r.id);
           s.lastUnsolicitedM = s.month;
           h.sale = { ask: px, listedM: s.month, unsolicited: true };
           h.sale.offer = { price: px, expiresM: s.month + 3, from: asm.r.name, firmId: asm.r.id };
@@ -3894,7 +3921,14 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
       if (rec0 && s.month - h.boughtM > 18 && !anyLive && quiet) {
         const creditEase = Math.max(0.4, s.econ.creditIdx ?? 1);
         const p = (0.0006 + 0.0014 * cycleHot(s.econ)) * creditEase * (1 + rec0.demandScore / 140);
-        if (rng(s, "sales") < p) {
+        // Callers accrue on the deed at that monthly rate while one may ring,
+        // and the phone rings when a whole one is owed (2026-11-11; it was a
+        // coin on p). Each deed starts at its own hashed point in the count,
+        // so a book bought together does not ring together, and the book-wide
+        // pace is the old one: rate x eligible building-months.
+        h.unsolAcc = (h.unsolAcc ?? hash01(`${s.seed}:unsol:${h.bbl}`)) + p;
+        if (h.unsolAcc >= 1) {
+          h.unsolAcc -= 1;
           s.lastUnsolicitedM = s.month;
           const v = ownedHoldingValue(s, parcels, h);
           // WHO IS CALLING, AND WHY.
@@ -3999,22 +4033,29 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
       continue;
     }
     if (sale.offer) {
-      const value = ownedHoldingValue(s, parcels, h);
-      if (sale.offer.price < sale.ask && sale.ask / Math.max(1, value) < 1.1 && rng(s, "sales") < 0.12) {
-        const bumped = Math.min(sale.ask, Math.round(sale.offer.price * rrange(s, 1.02, 1.06, "sales")));
-        // A signed contract is not re-opened by a late bidder. The draws
-        // above still happen so the sales stream does not move.
-        // The second bidder is another firm on the street that can pay it.
-        const rival2 = bumped > sale.offer.price && !sale.offer.contract
-          ? rivalsWhoCanClose(s, parcels, rec, bumped).find((r) => r.id !== sale.offer!.firmId && r.name !== sale.offer!.from)
-          : undefined;
-        if (rival2) {
-          sale.offer = { price: bumped, expiresM: s.month + 2, from: rival2.name, firmId: rival2.id };
-          s.news.unshift({
-            q: s.month, kind: "deal",
-            text: `${rival2.name} · ${rec.address} · offer raised to ${money(bumped)}.`,
-          });
-        }
+      // A LATE BIDDER IS ANOTHER FIRM'S OWN NUMBER (2026-11-11). This was a
+      // 12% coin worth a 2-6% bump drawn from the air. Now the standing offer
+      // after a campaign meets the whole town's round on today's market
+      // (roomForYourSale), as a quiet listing's offer does each month: another
+      // firm whose own bid beats the number on your desk puts it in, at its
+      // bid or the ask, whichever is lower. A signed contract, a retrade, an
+      // agreed counter or a package is not re-opened. A leased fee has no
+      // round to price it (null), so no late bidder.
+      const o = sale.offer;
+      const late = !o.contract && !o.retrade && !o.countered && !o.pkg && o.price < sale.ask
+        ? roomForYourSale(s, parcels, rec, h, true) : null;
+      const q = late
+        ? quietOffer(late.filter((b) => b.r.id !== o.firmId && b.r.name !== o.from), sale.ask, sale.passed)
+        : null;
+      if (q && q.price > o.price) {
+        sale.offer = {
+          price: q.price, expiresM: s.month + 2, from: q.top.r.name, firmId: q.top.r.id, max: q.top.walk,
+          ...(q.cover ? { cover: { from: q.cover.r.name, price: q.cover.bid } } : {}),
+        };
+        s.news.unshift({
+          q: s.month, kind: "deal",
+          text: `${q.top.r.name} · ${rec.address} · offer raised to ${money(q.price)}.`,
+        });
       }
       continue;
     }
@@ -4085,7 +4126,12 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
     const phaseAdj = marketAppetite(s);
     const staleness = Math.min(0.06, (s.month - sale.listedM) * 0.004); // word gets around
     const p = Math.max(0.01, Math.min(0.5, (0.55 - 0.42 * ratio) * phaseAdj + staleness));
-    if (rng(s, "sales") < p) {
+    // Callers accrue on the listing at that monthly rate and an offer comes
+    // when a whole one is owed (2026-11-11; it was a coin on p): the expected
+    // wait, 1/p months at a steady rate, moving with the ask and the street.
+    sale.arriveAcc = (sale.arriveAcc ?? 0) + p;
+    if (sale.arriveAcc >= 1) {
+      sale.arriveAcc -= 1;
       const bid = Math.round(Math.min(sale.ask, value * (0.9 + rng(s, "sales") * 0.13)));
       // THE CALLER IS A FIRM ON THE STREET, one that could close at the
       // number. A quiet listing with nobody in town able to pay for it gets

@@ -546,6 +546,9 @@ export interface Holding {
    * it, not the month's mark. Unset: the mark (old saves, unlevered deeds).
    */
   apprV?: number; apprM?: number;
+  /** Accrued expected tours by use (leasing.ts): a party comes through each time it passes 1. */
+  /** Months a firm toured this building because its broker put it first (leasing.ts), the last two years. */
+  tourLog?: number[];
   /** this building is part of a package you have taken to market as one ticket */
   inPackage?: boolean;
   /**
@@ -659,7 +662,15 @@ export interface Holding {
   // tickGroundLeases, at odds set by the corner's live demand and the same
   // development climate that governs the city's own starts. Optional, with
   // fallbacks everywhere it is read, so old saves load untouched.
-  groundOffer?: { years: number; sinceM: number; review?: GroundReview };
+  /** Unsolicited callers owed on this deed, accumulated from the monthly rate while one may ring (a call at 1). */
+  unsolAcc?: number;
+  /** Assemblers that have already made their holdout offer on this deed; one you turned down builds around you. */
+  holdoutRung?: string[];
+  groundOffer?: {
+    years: number; sinceM: number; review?: GroundReview;
+    /** Lessees owed a look, accumulated from the monthly arrival rate (one takes at 1). */
+    takeAcc?: number;
+  };
   /**
    * Shopping the site for a build-to-suit occupier — a listing, not a signed
    * commitment. Anchors arrive through tickBuildToSuit the way ground lessees
@@ -672,6 +683,8 @@ export interface Holding {
     termY?: number;
     /** The last occupier that looked and passed: the rent the shell needed against what they would pay. */
     lastWalk?: { m: number; name: string; needPsf: number; ceilingPsf: number };
+    /** Occupiers of this size owed a look, accumulated from the arrival rate (an anchor comes at 1). */
+    lookAcc?: number;
   };
   // Designated. No demolition, no bigger building, a rent premium forever.
   landmarked?: boolean;
@@ -793,6 +806,8 @@ export interface Holding {
    */
   sale?: {
     ask: number; listedM: number; unsolicited?: boolean;
+    /** Leased fee only: callers owed, accumulated from the monthly arrival rate (an offer comes at 1). */
+    arriveAcc?: number;
     mode?: "quiet" | "marketed";
     callM?: number;                    // when offers are due
     bids?: Bid[];                      // the list, once they are in
@@ -1106,6 +1121,8 @@ export interface Development {
   // building that lets well on the way up opens covering its mini-perm, and
   // the one that lets nothing opens empty.
   signed?: { sf: number; use: string; discount: number; name: string }[];
+  /** Pre-let interest earned, sf: the frame's fair share of the class's lettings, accumulated until a tenant's worth signs. */
+  preletAcc?: number;
   /** Named tenant committed before groundbreak; absent means ordinary spec. */
   bts?: BtsCommitment;
   mode?: "ground" | "reuse";
@@ -1511,6 +1528,8 @@ export interface HomesState {
   pl?: Record<string, PlatPL>;
   /** the town's population, the last thirteen months */
   popHist?: number[];
+  /** single-family-rental investors' share of closings owed and not yet taken, in houses (homes.ts sfrShare) */
+  sfrAcc?: number;
 }
 
 export interface VarianceApplication {
@@ -2377,6 +2396,8 @@ export interface Econ {
    * pool, toured by the street's buildings and the player's alike.
    */
   seekers?: import("./streetRolls").Seeker[];
+  /** Firms whose broker's best option this month is one of the player's buildings: the party the player's desk tours (streetRolls.ts shop → leasing.ts). */
+  playerTours?: { fid: number; bbl: string; use: BuiltClass; want: number; m: number; done?: boolean }[];
   nextFid?: number;
   /**
    * THE FLATS' COMPS (market.ts recordDeal): every flat let or renewed in
@@ -2720,6 +2741,8 @@ export interface Econ {
    * sigma. Absent until the town has two years of its own record.
    */
   landSigma?: Record<BuiltClass, number>;
+  /** The same tape's mean twelve-month log change by class: the measured drift of property values (market.ts measurePropertyVol). */
+  landDrift?: Record<BuiltClass, number>;
   /** sf-weighted mean vintage factor, same job for the quality tilt. */
   vintageMean?: number;
   costIdx: number; // construction & operating cost inflation
@@ -2972,6 +2995,8 @@ export interface Econ {
   // that opened last year from one that opened in 1928.
   m?: number;
   creditIdx: number;
+  /** The credit index averaged over the trailing decade (market.ts, monthly EMA): what lenders read as an ordinary year (debt.ts underwritingStandards). */
+  creditIdxMean?: number;
   // The demand driver behind leasing velocity.
   employIdx: number;
   // THE SPACE MARKET, class by class. Stock is every square foot standing;
@@ -3399,6 +3424,14 @@ export interface Rival {
   lastPencilM?: number;
   /** Off-market calls this firm made: a building it will not ring again before the month given. */
   doors?: Record<string, number>;
+  /**
+   * The off-market desk's call clock (offmarket.ts): each month it adds the
+   * desk's call rate (appetite × credit × reach × deploy pressure) and makes a
+   * call each time it passes one. Unset: starts at a phase hashed off the id.
+   */
+  callAcc?: number;
+  /** Month this fund rang the player unprompted for a slice of their book (portfolio.ts); it rings once. */
+  rangPlayerM?: number;
   /** Private holders who will not take this firm's call before the month given — a lowball they remember. */
   coldHolders?: Record<string, number>;
   cash: number;
@@ -3990,6 +4023,13 @@ export interface GameState {
   builderFirms?: boolean;
   /** Months a rival's first close was slowed by a thin investor pool (rivals.ts; measured, display only). */
   poolBindMs?: number;
+  /**
+   * THE STREET'S FIRST CLOSE IN PROGRESS (rivals.ts maybeNewFirm): the
+   * expected progress of the sponsors pitching the town's LPs, accrued each
+   * open month at the entry hazard (pitch x slots / RAISE_M x pool). A fund
+   * closes when it reaches one; a window that shuts loses it.
+   */
+  entryProgress?: number;
   /** Deal-by-deal raises in progress, keyed by the lot (raise.ts). */
   raises?: Record<string, import("./investors").Raise>;
   /**

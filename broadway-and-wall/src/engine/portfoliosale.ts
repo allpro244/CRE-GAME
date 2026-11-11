@@ -23,7 +23,7 @@
 // tape at a number nobody will pay.
 import type { GameState, PortfolioListing, Rival } from "./types";
 import type { ParcelRecord, ParcelTable } from "../data/types";
-import { dollarLevel, rng, rrange } from "./market";
+import { dollarLevel, rrange } from "./market";
 import { assetValue, capRateFor, collateralAsIs, inPlace, resolveRec } from "./value";
 import { livingRivals, gradeOf, ownerOf, paramsOf, receiverDeskFor, forgetDeed, fitOf, streetSaleCost } from "./rivals";
 import { packageBids, sellerTerms, forcedSalePrice, BUY_CLOSING } from "./propmarket";
@@ -32,8 +32,11 @@ import { streetRefiProceeds } from "./debt";
 import { financePackage, settleSale } from "./rivalDebt";
 import { acceptSaleOffer, executePurchase } from "./actions";
 import { cloneState } from "./types";
+import { hash01 } from "./competitorTraits";
 import { sweepLocIdleCash, fundableNow } from "./credit";
 
+/** Months past its hold clock a fund runs before it liquidates as one ticket: two one-year extensions, the usual closed-end fund term ([K]). */
+const WIND_DOWN_EXT_M = 24;
 const money = (n: number) =>
   Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${Math.round(n / 1000)}K`;
 
@@ -721,12 +724,26 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
   // --- 4. a rival winds a book down as one ticket --------------------------
   // Rare, and it is the other side of the hold clock: a fund at the end of its
   // life would rather do one closing than eleven.
-  if (s.portfolios.filter((p) => !p.player).length < 3 && rng(s) < 0.010) {
-    const cands = livingRivals(s).filter((r) => r.bbls.length >= 4 && !r.stressMs
-      && paramsOf(r).holdM > 0 && s.month - (r.bornM ?? 0) > paramsOf(r).holdM);
-    if (cands.length) {
-      const r = cands[Math.floor(rng(s) * cands.length)];
-      const take = r.bbls.filter((b) => !s.holdings[b] && !s.listings.some((l) => l.bbl === b)).slice(0, 3 + Math.floor(rng(s) * 6));
+  //
+  // No die. A closed-end fund has a term and, usually, two one-year
+  // extensions; a firm still holding four or more buildings two years past
+  // its hold clock has run out of both, and at its annual review (a month
+  // staggered by a hash of its id) it puts up to eight of its longest-held
+  // buildings out as one ticket — unless it already has a package on the
+  // market. Three non-player packages at a time, most overdue first.
+  const open = () => (s.portfolios ?? []).filter((p) => !p.player).length;
+  const cands = open() < 3 ? livingRivals(s).filter((r) => r.bbls.length >= 4 && !r.stressMs
+    && paramsOf(r).holdM > 0 && s.month - (r.bornM ?? 0) > paramsOf(r).holdM + WIND_DOWN_EXT_M
+    && (s.month + Math.floor(hash01(`${s.seed}:windrev:${r.id}`) * 12)) % 12 === 0
+    && !(s.portfolios ?? []).some((p) => p.sellerId === r.id))
+    .sort((a, b) => (s.month - (b.bornM ?? 0) - paramsOf(b).holdM) - (s.month - (a.bornM ?? 0) - paramsOf(a).holdM))
+    : [];
+  for (const r of cands) {
+    if (open() >= 3) break;
+    {
+      const since = r.heldSince ?? {};
+      const take = r.bbls.filter((b) => !s.holdings[b] && !s.listings.some((l) => l.bbl === b))
+        .sort((a, b) => (since[a] ?? 0) - (since[b] ?? 0)).slice(0, 8);
       if (take.length >= 3) {
         const gross = grossOf(s, parcels, take);
         // A FUND AT THE END OF ITS LIFE must sell, but not for less than

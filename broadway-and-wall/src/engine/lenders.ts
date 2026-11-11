@@ -22,7 +22,7 @@ import { PRODUCTS, underwritingStandards, windowOpen } from "./debt";
 import { rng, rrange, RENT_BASE, OPENING_VAC, CAP_BASE, shortIndexOf } from "./market";
 import type { DeskPx, LossClass } from "./pricing";
 import { why } from "./why";
-import { lossClassOf as lossClassOfSheet } from "./pricing";
+import { economicCost } from "./pricing";
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
 export type LenderKind = "bank" | "life" | "conduit" | "fund";
@@ -485,6 +485,20 @@ export function lenderPressure(l: Lender | undefined): number {
   if (l.failedM !== undefined) return 1;   // a receiver is a forced seller by definition
   const t = targetCapital(l.name);
   return Math.max(0, Math.min(1, (t * 1.15 - capitalRatio(l)) / (t * 0.85)));
+}
+
+/**
+ * A DESK'S PRICE PARTS, published or worked out now: what priceDesks wrote
+ * this month, or — for a desk that has not priced yet (a save from before the
+ * desks published, a state built without them) — its costs read off its
+ * books today with no competitive margin. A desk this town does not have is
+ * read off the reference island's.
+ */
+export function deskPxOf(s: GameState, name: string): DeskPx {
+  const pub = s.econ.deskPx?.[name];
+  if (pub) return pub;
+  const l = lenderByName(s, name) ?? initLenders().find((x) => x.name === name) ?? initLenders()[0];
+  return deskPricing(s, l);
 }
 
 export function lenderByName(s: GameState, name: string): Lender | undefined {
@@ -1410,13 +1424,17 @@ export function tickLenders(s: GameState) {
         : Math.round(rrange(s, 24, 48, "lenders"));
       l.receiverUntilM = s.month + Math.round(rrange(s, 12, 30, "lenders"));
       l.appetite = 0;
-      // In most resolutions the acquirer assumes every deposit and the
-      // uninsured are made whole; in the rest it takes only the insured ones
-      // and the remainder is a claim on the receiver. Three in four is the
-      // rough post-2008 share of whole-bank and all-deposit transactions — a
-      // shape, not a measured constant.
+      // WHETHER THE UNINSURED ARE MADE WHOLE IS READ OFF THE BANK'S OWN BOOKS,
+      // not a three-in-four coin. The insurer must pick the least-costly
+      // resolution (12 U.S.C. 1823(c)(4)): it can only pass every deposit to
+      // the acquirer when that costs the fund no more than paying out the
+      // insured alone. A bank closed on the 90-day rule with its capital still
+      // above zero has assets that cover its deposits — the acquirer takes them
+      // all and nobody loses a dollar. One closed with its capital gone has a
+      // hole, and covering the uninsured would put that hole on the fund, so
+      // they become a claim on the receiver (seizeDeposits).
       if (wasOurs) {
-        if (l.kind === "bank" && rng(s, "lenders") < 0.75) {
+        if (l.kind === "bank" && l.capital > 0) {
           s.news.unshift({
             q: s.month, kind: "info",
             text: `${l.name} failed and was acquired the same weekend. All deposits transferred, `
@@ -1797,19 +1815,24 @@ export function deskPricing(s: GameState, l: Lender): DeskPx {
   }
   const el: DeskPx["el"] = {}, dEl: DeskPx["dEl"] = {}, cap: DeskPx["cap"] = {};
   const tax = TAX_RATE[l.kind] ?? 0;
+  // THE CAPITAL CHARGE IS THE HURDLE OVER THE MONEY IT REPLACES. A dollar of
+  // the desk's own equity in a loan is a dollar it does not borrow, so what
+  // the capital costs on top of funding is its pre-tax hurdle less the rate
+  // the desk's money costs it (RAROC's credit for capital funding: Zaik,
+  // Walter, Kelling & James 1996, "RAROC at Bank of America") [S]. Charging
+  // the whole hurdle counted the equity's dollar as funded twice.
+  const money = (l.kind === "bank" || l.kind === "fund" ? short : e.indexRate) + fund;
   for (const c of CLASSES) {
     el[c] = +expectedLoss(l, c).toFixed(3);
     dEl[c] = +(el[c]! - PRIOR_EL[c]).toFixed(3);
-    cap[c] = +(capitalPerDollar(l, k) * RISK_WEIGHT[c] * (HURDLE[l.kind] ?? 11) / (1 - tax)).toFixed(3);
+    cap[c] = +(capitalPerDollar(l, k) * RISK_WEIGHT[c] * Math.max(0, (HURDLE[l.kind] ?? 11) / (1 - tax) - money)).toFixed(3);
   }
   const app = l.failedM !== undefined ? 0 : l.appetite;
-  // Banks and the fund are priced off the short rate; insurers and the
-  // conduit off the long one. The same money, measured against each.
-  const offShort = l.kind === "bank" || l.kind === "fund";
-  const fundLong = offShort ? fund + short - e.indexRate : fund;
-  const fundShort = offShort ? fund : fund + e.indexRate - short;
+  // One funding spread, charged against whichever benchmark the loan is
+  // written on (matched-maturity funds-transfer pricing: pricing.ts
+  // liveSpread).
   return {
-    fund: +fund.toFixed(3), fundLong: +fundLong.toFixed(3), fundShort: +fundShort.toFixed(3), dFund: +dFund.toFixed(3), el, dEl, cap,
+    fund: +fund.toFixed(3), dFund: +dFund.toFixed(3), el, dEl, cap,
     opex: OPEX_PCT[l.kind] ?? 0, pull: +(0.8 * Math.max(0, 1 - app)).toFixed(3), chase: +(l.chase ?? 0).toFixed(3),
   };
 }
@@ -1848,6 +1871,18 @@ export function deskPricing(s: GameState, l: Lender): DeskPx {
  * and the glide are shape parameters, stated as such; the limits are the
  * desk's own balance sheet and costs, not a band.
  */
+/**
+ * THE OPENING PRICES: each desk's costs read off its books, no competitive
+ * margin yet — nobody has lent, so nobody is ahead or behind. newGame calls
+ * this so the opening's own deals are priced off the desks; it must not touch
+ * the usual shares, which are set once the opening book is named (below).
+ */
+export function publishOpeningPrices(s: GameState) {
+  const out: Record<string, DeskPx> = {};
+  for (const l of s.lenders ?? []) out[l.name] = deskPricing(s, l);
+  s.econ.deskPx = out;
+}
+
 export function priceDesks(s: GameState) {
   const lenders = s.lenders ?? [];
   if (lenders.some((l) => l.usual0 === undefined) && lenders.every((l) => l.namedOnly)) {
@@ -1866,7 +1901,13 @@ export function priceDesks(s: GameState) {
   const shareSum = live.reduce((a, l) => a + usualOf(l), 0) || 1;
   const px = new Map<Lender, DeskPx>();
   for (const l of lenders) px.set(l, deskPricing(s, l));
-  const own = (l: Lender) => px.get(l)!.dFund + (px.get(l)!.dEl.income ?? 0);
+  // WHAT A DESK'S FLAGSHIP INCOME LOAN COSTS IT, over the benchmark the loan
+  // is written on: funding, expected loss, running cost, the return on the
+  // capital it ties up, and its rationing charge. Spreads, not coupons: with
+  // funding matched to the loan (pricing.ts liveSpread) a floater's spread
+  // and a fixed loan's are the same thing measured off different rates, and
+  // comparing coupons would read the yield curve as a rival's margin.
+  const own = (l: Lender) => { const q = px.get(l)!; return economicCost(q, "income") + q.pull; };
   for (const l of live) {
     const usual = usualOf(l) / shareSum;
     l.usualShare = +usual.toFixed(4);
@@ -1911,18 +1952,13 @@ export function priceDesks(s: GameState) {
     let want = behind < -0.15 ? rivals - own(l) - 0.25 * Math.min(1, -behind) * canFund
       : behind > 0.25 ? rivals - own(l) + 0.25 * Math.min(1, behind - 0.25) * filling
       : chase;
-    // ...and never under its own economic cost on its flagship paper.
-    const q = px.get(l)!;
-    const flag = PRODUCTS.find((p) => p.lender === l.name && lossClassOfSheet(p) === "income");
-    if (flag) {
-      const econ = (flag.floating ? (q.fundShort ?? q.fund) : (q.fundLong ?? q.fund)) + (q.el.income ?? 0) + (q.cap.income ?? 0) + q.opex;
-      const live = flag.spread + q.dFund + (q.dEl.income ?? 0) + q.pull;
-      // a desk cutting its price stops cutting where its own economic cost
-      // is; it is not forced back up to it — that is the rationing charge's
-      // job, once the thin margin has actually reached its capital
-      if (want < chase) want = Math.max(want, Math.min(chase, econ - live));
-    }
+    // ...and never under its own economic cost on its flagship paper: the
+    // margin can go to zero, not below. A desk cutting its price stops
+    // cutting where its own cost is; it is not forced back up to it — that is
+    // the rationing charge's job, once the thin margin has reached its capital.
+    if (want < chase) want = Math.max(want, Math.min(chase, 0));
     l.chase = +(chase + (want - chase) / 6).toFixed(4);
+    const q = px.get(l)!;
     q.chase = +l.chase.toFixed(3);
   }
   const out: Record<string, DeskPx> = {};

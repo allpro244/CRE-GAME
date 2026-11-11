@@ -7,9 +7,9 @@ import {
 import type { Lender } from "@/engine/lenders";
 import {
   PRODUCTS, statedLtv, advanceFactor, windowOpen, loanMin, holdMaxOf, singleNameCap, lenderRelOf, relCurve, relAdvance,
-  underwritingStandards, standardsWord,
+  underwritingStandards, standardsWord, productSpread, onIncome,
 } from "@/engine/debt";
-import { bankRatePct, liveSpread, lossClassOf, costFloor } from "@/engine/pricing";
+import { bankRatePct, lossClassOf, costFloor } from "@/engine/pricing";
 import type { LossClass } from "@/engine/pricing";
 import { shortIndexOf } from "@/engine/market";
 import { cityLoanBook } from "@/engine/loanbook";
@@ -106,10 +106,9 @@ export function BanksPage() {
             const sp = stayingPower(game, x);
             const failed = x.failedM !== undefined;
             const mult = capitalRatio(x) / Math.max(0.01, lenderConstitution(x).target);
-            const px = e.deskPx?.[x.name];
             const rates = failed ? [] : PRODUCTS.filter((p) => p.lender === x.name && windowOpen(game, p)).map((p) => {
               const bench = p.floating ? shortIndexOf(e) : e.indexRate;
-              return bankRatePct(bench, liveSpread(px, p.spread, lossClassOf(p), 1, p.floating ? "short" : "long"), { rel: relCurve(game, x.name) });
+              return bankRatePct(bench, productSpread(game, p), { rel: relCurve(game, x.name) });
             });
             const best = rates.length ? Math.min(...rates) : null;
             const on = l?.name === x.name;
@@ -360,7 +359,7 @@ function BankFile({ l }: { l: Lender }) {
                   <td className={"num" + ((px.dEl[c] ?? 0) > 0.25 ? " neg" : "")}>{(px.el[c] ?? 0).toFixed(2)}{(px.dEl[c] ?? 0) !== 0 ? <span className="dim"> ({(px.dEl[c] ?? 0) >= 0 ? "+" : ""}{(px.dEl[c] ?? 0).toFixed(2)})</span> : null}</td>
                   <td className="num">{(px.cap[c] ?? 0).toFixed(2)}</td>
                   <td className="num">{costFloor(px, c).toFixed(2)}</td>
-                  {flagship && <td className="num">{c === "income" ? `${flagship.spread.toFixed(2)} → ${liveSpread(px, flagship.spread, c).toFixed(2)}` : ""}</td>}
+                  {flagship && <td className="num">{c === "income" ? `${productSpread(game, flagship).toFixed(2)}` : ""}</td>}
                 </tr>
               ))}
             </tbody>
@@ -384,7 +383,7 @@ function BankFile({ l }: { l: Lender }) {
               {products.map((p) => {
                 const sheet = statedLtv(game, p, "office", "standard").ltv;
                 const bench = p.floating ? shortIndexOf(e) : e.indexRate;
-                const rate = bankRatePct(bench, liveSpread(px, p.spread, lossClassOf(p), 1, p.floating ? "short" : "long"), { rel: relCurve(game, l.name) });
+                const rate = bankRatePct(bench, productSpread(game, p), { rel: relCurve(game, l.name) });
                 const open = !failed && windowOpen(game, p);
                 const min = loanMin(game, p);
                 const max = holdMaxOf(game, p) ?? 0;
@@ -394,7 +393,7 @@ function BankFile({ l }: { l: Lender }) {
                     <td className="num">{pc(sheet, 0)}</td>
                     <td className="num">{pc(sheet * adv, 0)}</td>
                     <td className="num">{rate.toFixed(2)}%<span className="dim"> ({p.floating ? "short" : "loan"} index + {(rate - bench).toFixed(2)})</span></td>
-                    <td className="num">{p.uwDscr > 0 ? `${p.uwDscr.toFixed(2)}× · ${pc(p.debtYield, 1)}` : "land"}</td>
+                    <td className="num">{onIncome(p) ? `own model · ${pc(p.debtYield, 1)}` : "land"}</td>
                     <td className="num">{Math.round(p.termM / 12)}y · {Math.round(p.ioM / 12)}y · {p.amortYears}y</td>
                     <td className="num">{min && max ? `${usd(min)} – ${usd(max)}` : min ? `from ${usd(min)}` : max ? `up to ${usd(max)}` : "any size"}</td>
                     <td className="dim">{p.minDSCR > 0 ? `DSCR ${p.minDSCR.toFixed(2)} · ` : ""}LTV {pc(p.maxLTV, 0)}</td>

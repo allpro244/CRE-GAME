@@ -38,7 +38,6 @@ import { openFacility, refinanceFacility, repayFacility, releaseFromFacility } f
 import { raiseFund, callFundCapital, distributeFund } from "@/engine/fund";
 import { clearBuildToSuit, proposeBuildToSuit, startAdaptiveReuse, startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demolish } from "@/engine/dev";
 import { netWorth, resolveRec, ownedHoldingValue } from "@/engine/value";
-import { leasingOdds } from "@/engine/absorption";
 import { usd as usdShort, usdSigned } from "@/ui/format";
 import { periodRecap, firmTier, yearReview } from "@/engine/standing";
 import { generateFirmName } from "@/engine/firm";
@@ -62,7 +61,7 @@ export type DesignCamOp = "left" | "right" | "up" | "down" | "in" | "out" | "res
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "vacancy" | "pencils" | "listings";
 /** Map emphasis filter — dims non-matching massing; never hides the city. */
 export type MapFilter = "all" | "owned" | "construction" | "firm";
-export type GraphicsQuality = "low" | "medium" | "high" | "max";
+export type GraphicsQuality = "low" | "medium" | "high" | "max" | "extreme";
 /** A scheme being designed: drawn finished, on its lot, in the 3D city. */
 export interface DesignPreview {
   bbl: string; use: DevUse; floors: number; cov: number; design: BuildingDesign;
@@ -642,13 +641,12 @@ function queueDeliveryCeremony(
   const h = next.holdings[bbl];
   // The same marks every other desk reads: ownedHoldingValue is the
   // Portfolio's value, costBasis is the all-in the holding now carries (land
-  // plus the job), leasingOdds is the leasing desk's own pace.
+  // plus the job).
   let value: number | undefined, basis: number | undefined, monthsToLet: number | null | undefined, letPct: number | undefined;
   if (mine && h && parcels && rec) {
     value = ownedHoldingValue(next, parcels, h);
     basis = h.costBasis;
-    const use = (built?.class ?? rec.class) as BuiltClass;
-    monthsToLet = leasingOdds(next, parcels, rec, h, use)?.monthsToLet;
+    // No lease-up forecast: tenants come when firms choose the building (streetRolls.ts shop).
     const let_ = h.tenants.reduce((a, t) => a + t.sf, 0);
     letPct = rec.bldgArea > 0 ? Math.min(1, let_ / rec.bldgArea) : undefined;
   }
@@ -1026,7 +1024,7 @@ export const useStore = create<AppState>(holdWhileTicking((set, get) => ({
   graphics: (() => {
     try {
       const g = localStorage.getItem("bw:graphics");
-      if (g === "low" || g === "medium" || g === "high" || g === "max") return g;
+      if (g === "low" || g === "medium" || g === "high" || g === "max" || g === "extreme") return g;
       // In Unreal, medium is DLSS Quality: 50 fps at 1080p on an RTX 2080
       // against 37 at native (UE58_PLAN.md), so a first run starts there
       if (new URLSearchParams(location.search).get("host") === "unreal") return "medium";
@@ -1039,7 +1037,7 @@ export const useStore = create<AppState>(holdWhileTicking((set, get) => ({
       return g ? g === "low" || g === "medium" : localStorage.getItem("bw:prefer-fps") === "on";
     } catch { return false; }
   })(),
-  gfx: loadGfx((() => { try { const g = localStorage.getItem("bw:graphics"); return g === "low" || g === "high" || g === "max" ? g : "medium"; } catch { return "medium"; } })()),
+  gfx: loadGfx((() => { try { const g = localStorage.getItem("bw:graphics"); return g === "extreme" ? "max" : g === "low" || g === "high" || g === "max" ? g : "medium"; } catch { return "medium"; } })()),
   designPreview: null,
   designSigFits: null,
   setDesignPreview: (p) => set(p ? { designPreview: p } : { designPreview: p, designSigFits: null }),

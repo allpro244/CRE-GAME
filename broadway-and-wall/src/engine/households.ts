@@ -869,7 +869,7 @@ export interface HouseholdRegister {
    * (log of each looking household's budget over the going rent) and the
    * weight that signed. Absent until the first month a save runs it.
    */
-  mk?: { homes: number; homes0: number; ask0: number; cap0: number; cost0: number; occ: number; roll: FlatRoll; pipe: { m: number; n: number }[]; cards: number[]; signed: number; ask12?: number[] };
+  mk?: { homes: number; homes0: number; ask0: number; cap0: number; cost0: number; occ: number; roll: FlatRoll; pipe: { m: number; n: number }[]; cards: number[]; signed: number; ask12?: number[]; turn?: number[]; idle?: number };
   /** Each island block of flats an agent can point at (bbl), append-only. */
   blocks: string[];
   /** Each street block's flat size: [sf, month read, month last seen] (see blockUnitSf). */
@@ -1948,6 +1948,8 @@ function signMainland(r: HouseholdRegister, a: HouseholdArrays, i: number): numb
 
 /** Census Survey of Construction 2023: months from start to completion, buildings of 5+ units, about 18 [S~]. */
 const MAIN_BUILD_M = 18;
+/** Renter households that move in a year: ~20% (Census CPS ASEC 2019-2022 one-year mover rate of renters) [S~]. */
+const RENTER_MOVE_YR = 0.20;
 /** An apartment's operating cost, taxes and insurance over its potential rent: NAA Survey of Operating Income & Expenses 2023, ~42% [S~]. */
 const MAIN_OPEX = 0.42;
 /**
@@ -1985,19 +1987,34 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): number {
   }
   const mk = r.mk;
   while (mk.pipe.length && mk.pipe[0].m <= m) mk.homes += mk.pipe.shift()!.n;
-  // A FULL MAINLAND DOUBLES UP: renters the homes cannot hold move in with
-  // family or friends, the lowest-paid first — they are the ones the going
-  // rent outbids (doubled-up households take a flat again with work and a
-  // deposit, `tickMoney`)
-  // the flats this month's movers left (before any doubling up, which frees no flat)
+  // TURNOVER: the flats this month's movers left — those who left the
+  // mainland's rented stock (to the island, to own, gone) and those who moved
+  // within it, a flow of RENTER_MOVE_YR of its renters (no dice: a share of
+  // every agent's weight). Each stands empty while it is made ready and
+  // marketed (MAKE_READY_M) — the turnover vacancy a market runs at. A move
+  // within the mainland frees one flat and takes another, so its landlords see
+  // it in neither their exposure nor their cards.
   const out = Math.max(0, mk.occ + mk.signed - occ);
+  const within = occ * RENTER_MOVE_YR / 12;
+  const turning = (mk.turn ??= []);
+  turning.push(out + within);
+  const downM = MAKE_READY_M;
+  while (turning.length > Math.ceil(downM) + 1) turning.shift();
+  let idle = 0;
+  for (let k = 0; k < turning.length; k++) idle += turning[turning.length - 1 - k] * Math.max(0, Math.min(1, downM - k));
+  const cap0 = Math.max(0, mk.homes - idle);
+  mk.idle = idle;
   const free = Math.max(0, mk.homes - occ) + out;
-  if (occ > mk.homes) {
+  // A FULL MAINLAND DOUBLES UP: renters the flats ready to let cannot hold
+  // move in with family or friends, the lowest-paid first — they are the ones
+  // the going rent outbids (doubled-up households take a flat again with work
+  // and a deposit, `tickMoney`). Doubling up frees no flat.
+  if (occ > cap0) {
     const idx: number[] = [];
     for (let i = 0; i < r.n; i++) if (a.ten[i] === TEN_MAINLAND) idx.push(i);
     idx.sort((p, q) => payOf(a, p) - payOf(a, q));
     for (const i of idx) {
-      if (occ <= mk.homes) break;
+      if (occ <= cap0) break;
       a.ten[i] = TEN_DOUBLED; a.rent[i] = 0; a.blk[i] = -1;
       occ -= a.wt[i];
     }
@@ -3052,7 +3069,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       // a doubled-up household with work and a deposit takes its own flat
       // across the water — if one is free; if not it is still at the doors,
       // a guest card every month it looks (the demand a full market hides)
-      if (!r.mk || r.mk.occ + r.mk.signed + a.wt[i] <= r.mk.homes) { a.ten[i] = TEN_MAINLAND; a.rent[i] = signMainland(r, a, i); }
+      if (!r.mk || r.mk.occ + r.mk.signed + a.wt[i] <= r.mk.homes - (r.mk.idle ?? 0)) { a.ten[i] = TEN_MAINLAND; a.rent[i] = signMainland(r, a, i); }
       else mainCard(r, a, i);
     }
     // a year older on its month — and past fifty, at its age's rate, retired (LF_AGE)

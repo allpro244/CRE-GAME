@@ -1354,7 +1354,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     // The opening's years grow the town on its opening economy held still: firms sign one by one, as found.
     for (const sk of pool) {
       if (sk.tourM !== undefined && m - sk.tourM < 3) continue;          // in talks at one of the player's buildings
-      if (rng(s, "leasing") > 1 / SEARCH_M[sk.use]) continue;            // still looking
+      if (m - sk.since + 1 < SEARCH_M[sk.use]) continue;                 // still touring: a search takes its months (SEARCH_M), not a die
       const k = sk.use;
       const firm = sk.from ? R[sk.from]?.t.find((t) => t.fid === sk.fid) : sk.t;
       if (!firm) continue;
@@ -1381,7 +1381,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     let live: Bidder[] = [];
     for (const sk of pool) {
       if (sk.tourM !== undefined && m - sk.tourM < 3) continue;          // in talks at one of the player's buildings
-      if (rng(s, "leasing") > 1 / SEARCH_M[sk.use]) continue;            // still looking
+      if (m - sk.since + 1 < SEARCH_M[sk.use]) continue;                 // still touring: a search takes its months (SEARCH_M), not a die
       const k = sk.use;
       const firm = sk.from ? R[sk.from]?.t.find((t) => t.fid === sk.fid) : sk.t;
       if (!firm) continue;

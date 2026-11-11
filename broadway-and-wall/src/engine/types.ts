@@ -3403,6 +3403,14 @@ export interface Rival {
   lastPencilM?: number;
   /** Off-market calls this firm made: a building it will not ring again before the month given. */
   doors?: Record<string, number>;
+  /**
+   * The off-market desk's call clock (offmarket.ts): each month it adds the
+   * desk's call rate (appetite × credit × reach × deploy pressure) and makes a
+   * call each time it passes one. Unset: starts at a phase hashed off the id.
+   */
+  callAcc?: number;
+  /** Month this fund rang the player unprompted for a slice of their book (portfolio.ts); it rings once. */
+  rangPlayerM?: number;
   /** Private holders who will not take this firm's call before the month given — a lowball they remember. */
   coldHolders?: Record<string, number>;
   cash: number;

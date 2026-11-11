@@ -67,12 +67,6 @@ import { why } from "./why";
 
 const usdK = (n: number) => `$${Math.round(n / 1000).toLocaleString("en-US")}k`;
 
-function hash01(str: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return ((h >>> 0) % 1_000_000) / 1_000_000;
-}
-
 /** Balance left after `k` months of a `n`-month schedule at `ratePct`. */
 function amortised(principal: number, ratePct: number, n: number, k: number): number {
   const i = ratePct / 100 / 12;
@@ -268,7 +262,13 @@ function readHolders(s: GameState, parcels: ParcelTable) {
       room.set(l.name, target - (named[l.name]?.named ?? 0));
       nameCap.set(l.name, nameLimit({ kind: l.kind, book: target, capital: target * targetCapital(l.name) }));
     }
-    fresh.sort((a, b) => hash01(a.d.bbl + ":seed") - hash01(b.d.bbl + ":seed"));
+    // WHICH DEALS GET THE ROOM FIRST: the desks' own order, not a hash. A
+    // lender with limited room writes its best credit first, and the measure
+    // every commercial desk sizes on is debt yield — the building's NOI over
+    // the loan (MBA / CRE Finance Council underwriting practice). Dirt with no
+    // income comes last. Ties fall to the register's own order.
+    const dy = (f: (typeof fresh)[number]) => f.d.noi / Math.max(1, f.d.v * f.ltv);
+    fresh.sort((a, b) => dy(b) - dy(a) || (a.d.bbl < b.d.bbl ? -1 : a.d.bbl > b.d.bbl ? 1 : 0));
     for (const f of fresh) {
       const amt = f.d.v * f.ltv;
       const loan = writeLoan(s, f.d, amt, f.into, (q) => (room.get(q.lender) ?? 0) >= amt && amt <= (nameCap.get(q.lender) ?? 0));

@@ -582,7 +582,7 @@ export function developmentHurdle(yieldOnCost: number, exitCap: number): {
  * (`econ.landSigma`, market.ts measurePropertyVol), delta the payout the
  * finished building would throw off (its exit yield: what a holder of the
  * option forgoes by waiting), and r the land rate the residual already
- * discounts the wait at (`LAND_CARRY_RATE`). This replaced a holder bid
+ * discounts the wait at — the town's long rate (`econ.indexRate`), risk-neutral. This replaced a holder bid
  * struck at a hand-set "peak" (rents x 1.25) and a hand-set five-year wait
  * (x 0.567).
  *
@@ -868,7 +868,11 @@ function residualCore(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: Land
 
   let best: ResidualScheme | null = null;
   let opt: LandOption | null = null;
-  const r = LAND_CARRY_RATE;
+  // r is the RISK-FREE rate, not a developer's hurdle: the option is priced
+  // risk-neutrally (McDonald & Siegel 1986), and the risk lives in sigma.
+  // Struck at a 12% hurdle the trigger sat at V ~ 2K and almost no lot was
+  // ever ripe; at the long rate it lands near 1.3K, where Quigg (1993) found it.
+  const r = Math.max(0.005, (econ.indexRate ?? LAND_CARRY_RATE * 100) / 100);
   const consider = (use: BuiltClass, value: number, nonLand: number, carry: number, exitYieldPct: number): void => {
     const v = value / (1 + DEV_MARGIN) / (1 + carry) / rec.lotArea;
     const k = nonLand / (1 + carry) / rec.lotArea;

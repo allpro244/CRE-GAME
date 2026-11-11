@@ -1366,7 +1366,7 @@ export function generateCity(cfg) {
       const [sp, lp] = pitchOf(d);
       return {
         name: n, bearingDeg: d.bearingDeg ?? 0, shortPitch: sp, longPitch: lp,
-        old: d.flavor === "old", regular: d.kind === "lattice" || d.kind === "chamfer" || d.kind === "superblock" || d.regular === true,
+        old: d.flavor === "old", core: d.flavor === "core", regular: d.kind === "lattice" || d.kind === "chamfer" || d.kind === "superblock" || d.regular === true,
       };
     });
     const idx = new Map(names.map((n, i) => [n, i]));
@@ -1414,7 +1414,16 @@ export function generateCity(cfg) {
     graph.push({ pts: [...innerRing, innerRing[0]], cls: "shore", closed: true });
     for (const r of PARK_RES) graph.push({ pts: [...r, r[0]], cls: "park", closed: true });
     for (const r of STILL) graph.push({ pts: [...r, r[0]], cls: "park", closed: true });
-    const { faces, segs } = polygonize(graph, { snap: 0.6, extend: (p) => 0.75 * field.sep(p, 1) });
+    const { faces, segs } = polygonize(graph, {
+      snap: 0.6, extend: (p) => 0.75 * field.sep(p, 1),
+      // a face under 40% of the local block, or narrower than 30 m on average
+      // (twice area over perimeter), is merged into a neighbour — a 30 m block
+      // holds one row of the shallowest lot a plat sells (15 m) back to back
+      small: (R, area, per) => {
+        const c = centroid(R);
+        return area < Math.max(1800, 0.4 * field.sep(c, 0) * field.sep(c, 1)) || (2 * area) / per < 15;
+      },
+    });
     // A PARTY LINE IS NOT A STREET. A face of the graph that is too concave to
     // be one convex block is cut into convex pieces (natural.mjs convexCells)
     // only because everything downstream cuts convex blocks; the cut is where

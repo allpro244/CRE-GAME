@@ -247,7 +247,7 @@ export function buildField(spec) {
     const old = Math.exp(-((dF / oldR) ** 2));
     // Faded out over the last ~80 m to the centre: the spokes of a pure radial
     // field all meet in one point, which is a knot of slivers, not a square.
-    if (dF > 1) add(1.1 * old * (1 - Math.exp(-((dF / 80) ** 2))), Math.atan2(p[1] - F[1], p[0] - F[0]) + Math.PI / 2);
+    if (dF > 1) add(0.8 * old * (1 - Math.exp(-((dF / 80) ** 2))), Math.atan2(p[1] - F[1], p[0] - F[0]) + Math.PI / 2);
     // squares: the streets frame them. A round green pulls a ring.
     for (const pk of parks) {
       const d = pk.dist(p);
@@ -255,7 +255,9 @@ export function buildField(spec) {
       // of slivers round a 60 m circle. The streets simply stop at its
       // frontage road, as they do at Columbus Circle.
       if (pk.round) continue;
-      const w = 2.2 * Math.exp(-((Math.max(0, d) / 110) ** 2));
+      // two blocks' reach (set by eye: the streets round Washington Square and
+      // Rittenhouse run square to the square for a block or two, then bend)
+      const w = 3.0 * Math.exp(-((Math.max(0, d) / 170) ** 2));
       if (w < 0.01) continue;
       add(w, pk.ang);
     }
@@ -264,7 +266,9 @@ export function buildField(spec) {
       const u = (p[0] - b.cx) * b.ux + (p[1] - b.cy) * b.uy;
       const v = -(p[0] - b.cx) * b.uy + (p[1] - b.cy) * b.ux;
       const over = Math.max(0, Math.abs(u) - b.w / 2);
-      const w = 1.8 * Math.exp(-(((Math.abs(v) + over) / 120) ** 2));
+      // a block and a half either side (set by eye): the fabric is laid square
+      // to the boulevard, so the blocks it cuts are clean trapezoids
+      const w = 3.0 * Math.exp(-(((Math.abs(v) + over) / 170) ** 2));
       if (w > 0.01) add(w, b.ang);
     }
     // creeks, like a small shore
@@ -317,7 +321,8 @@ export function buildField(spec) {
         if (w0 < 1e-3) continue;
         // a planned extension is held to its survey hardest; the old town
         // least — it was walked into shape before anyone surveyed it
-        const firm = spec.districts[l].old ? 0.45 : spec.districts[l].regular ? 1.25 : 0.9;
+        // and downtown, surveyed for sale by the lot, hardest of all
+        const firm = spec.districts[l].old ? 0.45 : spec.districts[l].core ? 1.8 : spec.districts[l].regular ? 1.25 : 0.9;
         const w = w0 * firm;
         cx += w * Math.cos(2 * dAng[l]); cy += w * Math.sin(2 * dAng[l]);
         ws += w0;
@@ -588,7 +593,7 @@ function segX(a, b, c, d) {
  * Returns { faces: [{ ring, cls: [per edge] }], segs } — `segs` are the noded
  * edges with their class, for classifying block edges later.
  */
-export function polygonize(lines, { snap = 0.6, extend = 0 } = {}) {
+export function polygonize(lines, { snap = 0.6, extend = 0, small = null } = {}) {
   // 1. dangling ends reach forward to meet the next street (Chen et al. 5.3):
   // a street that stopped short of a crossing is extended up to `extend(p)`.
   const segs = [];
@@ -741,26 +746,104 @@ export function polygonize(lines, { snap = 0.6, extend = 0 } = {}) {
   for (let u = 0; u < V.length; u++) {
     for (const v0 of order[u]) {
       if (used.has(`${u}>${v0}`)) continue;
-      const ring = [], cls = [];
+      const ids = [];
       let a = u, b = v0, guard = 0;
       while (!used.has(`${a}>${b}`) && guard++ < 5000) {
         used.add(`${a}>${b}`);
-        ring.push(V[a]);
-        cls.push(E.get(a < b ? `${a},${b}` : `${b},${a}`));
+        ids.push(a);
         const nb = order[b];
         const k = nb.indexOf(a);
         const c = nb[(k - 1 + nb.length) % nb.length];
         a = b; b = c;
       }
-      if (ring.length >= 3 && ringAreaSigned(ring) > 1) faces.push({ ring, cls });
+      if (ids.length >= 3 && ringAreaSigned(ids.map((i) => V[i])) > 1) faces.push(ids);
     }
   }
-  const outSegs = [];
-  for (const [key, cls] of E) {
-    const [u, v] = key.split(",").map(Number);
-    if (adj[u].has(v)) outSegs.push({ a: V[u], b: V[v], cls });
+  const clsOf = (a, b) => E.get(a < b ? `${a},${b}` : `${b},${a}`);
+  // 6. A SLIVER IS NOT A BLOCK. Where streets of the two families meet at a
+  // shallow angle, or two near-parallel streets run close, the graph leaves
+  // triangles and ribbons no surveyor would sell as a block. Each is merged
+  // into the neighbour it shares the most street with — the street between
+  // them is simply not built — smallest first.
+  const live = faces.map(() => true);
+  if (small) {
+    const owner = new Map();
+    const reg = (fi) => { const f = faces[fi]; for (let i = 0; i < f.length; i++) owner.set(`${f[i]}>${f[(i + 1) % f.length]}`, fi); };
+    faces.forEach((_, fi) => reg(fi));
+    const areaOf = (f) => ringAreaSigned(f.map((i) => V[i]));
+    const isSmall = (f) => {
+      const R = f.map((i) => V[i]);
+      let per = 0;
+      for (let i = 0; i < R.length; i++) per += Math.hypot(R[(i + 1) % R.length][0] - R[i][0], R[(i + 1) % R.length][1] - R[i][1]);
+      return small(R, areaOf(f), per);
+    };
+    for (let pass = 0; pass < 6; pass++) {
+      let merged = 0;
+      const order2 = faces.map((f, fi) => fi).filter((fi) => live[fi] && isSmall(faces[fi])).sort((x, y) => areaOf(faces[x]) - areaOf(faces[y]));
+      for (const fi of order2) {
+        if (!live[fi]) continue;
+        const f = faces[fi];
+        if (!isSmall(f)) continue;
+        const shared = new Map();
+        for (let i = 0; i < f.length; i++) {
+          const a = f[i], b = f[(i + 1) % f.length];
+          const c = clsOf(a, b);
+          if (c !== "street" && c !== "arterial") continue;   // never across the shore or a square's frontage
+          const g = owner.get(`${b}>${a}`);
+          if (g === undefined || g === fi || !live[g]) continue;
+          shared.set(g, (shared.get(g) ?? 0) + Math.hypot(V[b][0] - V[a][0], V[b][1] - V[a][1]) * (c === "arterial" ? 0.3 : 1));
+        }
+        const best = [...shared.entries()].sort((x, y) => y[1] - x[1]);
+        for (const [gi] of best) {
+          const g = faces[gi];
+          // directed edges of both, less the ones they share
+          const next = new Map();
+          let bad = false;
+          const drop = new Set();
+          for (let i = 0; i < f.length; i++) {
+            const a = f[i], b = f[(i + 1) % f.length];
+            if (owner.get(`${b}>${a}`) === gi) { drop.add(`${a}>${b}`); drop.add(`${b}>${a}`); }
+          }
+          for (const h of [f, g]) {
+            for (let i = 0; i < h.length; i++) {
+              const a = h[i], b = h[(i + 1) % h.length];
+              if (drop.has(`${a}>${b}`)) continue;
+              if (next.has(a)) { bad = true; break; }      // a pinch: not one ring
+              next.set(a, b);
+            }
+          }
+          if (bad || next.size < 3) continue;
+          const start = next.keys().next().value;
+          const ids = [start];
+          let c = next.get(start), guard = 0;
+          while (c !== start && guard++ < 10000) { ids.push(c); c = next.get(c); if (c === undefined) { bad = true; break; } }
+          if (bad || ids.length !== next.size || ringAreaSigned(ids.map((i) => V[i])) <= 1) continue;
+          live[fi] = false;
+          faces[gi] = ids;
+          reg(gi);
+          merged++;
+          break;
+        }
+      }
+      if (!merged) break;
+    }
   }
-  return { faces, segs: outSegs };
+  const out = [];
+  const edgesUsed = new Map();
+  faces.forEach((f, fi) => {
+    if (!live[fi]) return;
+    out.push({ ring: f.map((i) => V[i]), cls: f.map((a, i) => clsOf(a, f[(i + 1) % f.length])) });
+    for (let i = 0; i < f.length; i++) {
+      const a = f[i], b = f[(i + 1) % f.length];
+      edgesUsed.set(a < b ? `${a},${b}` : `${b},${a}`, clsOf(a, b));
+    }
+  });
+  const outSegs = [];
+  for (const [key, cls] of edgesUsed) {
+    const [u, v] = key.split(",").map(Number);
+    outSegs.push({ a: V[u], b: V[v], cls });
+  }
+  return { faces: out, segs: outSegs };
 }
 
 // ------------------------------------------------------- faces into blocks

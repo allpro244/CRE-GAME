@@ -19,7 +19,7 @@ import { tickGrowth } from "./growth";
 import { tickHouseholdRegister } from "./households";
 import { tickFirms, tickEconomy, economyToEngine, migrateEconomy } from "./economy";
 import { materializeNeighbourhoods, materializeNeighbourhood } from "./unpack";
-import { useRentableSf, overallScore, N_BANDS } from "./value";
+import { useRentableSf, overallScore, N_BANDS, isRevaluation } from "./value";
 import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls";
 import { settleLeasingPayables, tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCash, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
@@ -1143,17 +1143,19 @@ function tickMonth(
     for (const h of Object.values(s.holdings)) {
       const rec = resolveRec(parcels, s, h.bbl);
       if (!rec) continue;
-      // phased reassessment: assessed value closes a quarter of the gap to market
-      // THE ASSESSOR RATCHETS. This closed a quarter of the gap in both
-      // directions, which is not how a tax roll behaves anywhere on earth: an
-      // assessment chases a rising market almost at once and comes down
-      // grudgingly, over years, and only if somebody files and wins. That
-      // asymmetry is most of what makes a downturn expensive for an owner with
-      // no debt — the mortgage is the levered owner's problem, and a 1.1% bill
-      // on a value that no longer exists is everybody's.
+      // THE TOWN REVALUES ON A CYCLE, NOT EVERY JANUARY (value.ts
+      // REVAL_YEARS, CGS §12-62(b)). Between revaluations the roll value
+      // stands where the last one left it: in a rising market the bill trails
+      // the price, in a falling one it sits on a value that no longer exists
+      // until the next revaluation — or until the owner files and wins
+      // (tax.ts). A revaluation re-marks to the appraisal in BOTH directions:
+      // Connecticut lets a town phase in increases but not decreases (CGS
+      // §12-62c), and no phase-in is modelled. This used to close 32% of the
+      // gap up and 9% down every January — a ratchet with no statute behind
+      // either number. The city's own grand list follows the same schedule
+      // (citygov.ts), as does every other deed in town.
       const v = ownedHoldingValue(s, parcels, h);
-      const prior = h.assessed ?? h.costBasis;
-      h.assessed = Math.round(prior + (v > prior ? 0.32 : 0.09) * (v - prior));
+      h.assessed = isRevaluation(s.month) ? Math.round(v) : (h.assessed ?? h.costBasis);
       // taxable income: NOI less interest less straight-line depreciation on
       // the improvement half of the basis.
       // Taxable income includes the ground coupon on a leased fee — same deed

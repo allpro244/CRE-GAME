@@ -54,7 +54,7 @@
 import type { Econ, GameState } from "./types";
 import { BUILT_CLASSES, START_YEAR, raiseAlert } from "./types";
 import { rng, pushNewsPublic, islandResidents, SF_PER_HOME, PEOPLE_PER_HOME, openingVac } from "./market";
-import { TAX_RATE, classValuePsf } from "./value";
+import { TAX_RATE, classValuePsf, isRevaluation } from "./value";
 import { why as whyEv, whyAt, whyMark, whyNation } from "./why";
 import { whyTown } from "./economy";
 import { HH_SIZE, fundamentalHomePsf, medianIncome } from "./homeprice";
@@ -177,8 +177,6 @@ const MUNI_RATIO = 0.80;
 const BOND_YEARS = 20, STATE_YEARS = 15, NOTE_M = 12;
 /** GFOA: an unrestricted reserve of at least two months of operating spending. */
 const RESERVE_MONTHS = 2;
-/** Assessments trail the market — most US rolls are reassessed every one to three years, New York phases in over five. */
-const ASSESS_LAG_M = 36;
 /**
  * THE SPREAD, in points over the tax-exempt curve — a shape read off the
  * rating scorecards and the record, not fitted to anything in this game.
@@ -273,7 +271,16 @@ export interface CityGov {
   inc0?: number;
   policy: CityPolicy;
   policy0: { propRate: number; wageRate: number };
+  /** The grand list: the roll value of every built foot and home in town, at the last revaluation's prices (value.ts). */
   assessed: number;
+  /**
+   * THE LAST REVALUATION: the value per foot of each built class (BUILT_CLASSES
+   * order) and per household the assessor struck that January. Between
+   * revaluations the roll is the stock today at those prices — what is built
+   * joins the list, what is torn down leaves it, and the market moves nothing.
+   * Unset on an old save: struck the first month it is read.
+   */
+  reval?: { m: number; psf: number[]; perHh: number };
   abated: { endM: number; pct: number; sf: number[] }[];
   prevStock: number[];
   mo: BudgetLines;
@@ -391,14 +398,36 @@ export function marketRoll(e: Econ): { commercial: number; homes: number } {
   return { commercial, homes: owners * homePrice + (off - owners) * flat };
 }
 
-/** The tax the roll would raise this year before abatements, and what the abatements forgive. */
+/** The roll value the abatements forgive: the abated feet at the roll's prices. */
 function abatedValue(e: Econ, g: CityGov, m: number): number {
   let v = 0;
   for (const c of g.abated) {
     if (c.endM <= m) continue;
-    BUILT_CLASSES.forEach((k, i) => { if (c.sf[i] > 0) v += c.sf[i] * Math.max(0, classValuePsf(e, k)) * c.pct; });
+    BUILT_CLASSES.forEach((k, i) => { if (c.sf[i] > 0) v += c.sf[i] * (g.reval?.psf[i] ?? Math.max(0, classValuePsf(e, k))) * c.pct; });
   }
   return v;
+}
+
+/**
+ * THE ASSESSOR'S REVALUATION: today's market roll, struck per foot of each
+ * class and per household so the list can carry the stock between
+ * revaluations at these prices (value.ts REVAL_YEARS, CGS §12-62(b)).
+ */
+function revalue(e: Econ, m: number): NonNullable<CityGov["reval"]> {
+  const psf = BUILT_CLASSES.map((k) => {
+    const stk = e.stock?.[k] ?? 0;
+    if (!(stk > 0)) return Math.max(0, classValuePsf(e, k));
+    const occ = clamp((e.occupied?.[k] ?? stk * (1 - openingVac(k))) / stk, 0, 1);
+    return Math.max(0, classValuePsf(e, k, occ));
+  });
+  return { m, psf, perHh: marketRoll(e).homes / Math.max(1, cityPeople(e).households) };
+}
+
+/** The grand list this month: the stock standing today at the last revaluation's prices. */
+function grandList(e: Econ, r: NonNullable<CityGov["reval"]>): number {
+  let v = 0;
+  BUILT_CLASSES.forEach((k, i) => { v += Math.max(0, e.stock?.[k] ?? 0) * r.psf[i]; });
+  return v + cityPeople(e).households * r.perHh;
 }
 
 function payrollBase(e: Econ): number { return (e.eco?.island?.jobs || e.jobs || 0) * AVG_PAY * (e.wageIdx ?? 1); }
@@ -515,7 +544,7 @@ export function openCityGov(s: GameState): CityGov {
     cash: 0, bonds: [], pension: { liab: 0, assets: 0 },
     policy: { propRate: TAX_RATE * (e.taxMult ?? 1), wageRate: 0, salesRate: SALES_RATE, transferRate: TRANSFER_TAX, abate: null, rentCap: null, service: 1 },
     policy0: { propRate: 0, wageRate: 0 },
-    assessed: roll.commercial + roll.homes, abated: [],
+    assessed: roll.commercial + roll.homes, reval: revalue(e, m), abated: [],
     prevStock: BUILT_CLASSES.map((k) => e.stock?.[k] ?? 0),
     mo: zeroLines(), fy: zeroLines(), rev12: 0, op12: 0, defShare: 0, spread: SPREAD.base, open: true, shut: false,
     capUnfunded: 0, works: [],
@@ -573,9 +602,32 @@ export function tickCityGov(s: GameState) {
   g.pension.assumed = was + (expRet - was) / PEN_ASSUME_M;
   g.pension.liab *= Math.exp(-PEN_DURATION * (g.pension.assumed - was));
 
-  // THE ROLL: the assessor chases the market, years behind.
-  const roll = marketRoll(e);
-  g.assessed += (roll.commercial + roll.homes - g.assessed) / ASSESS_LAG_M;
+  // THE ROLL: revalued every REVAL_YEARS (value.ts), the same January every
+  // deed in town is re-marked (sim.ts); in between, the stock at the last
+  // revaluation's prices. This was a 36-month moving average of the market —
+  // a roll that followed every month's price, only slowly, which no assessor
+  // does: the grand list is struck on the revaluation date and stands.
+  //
+  // A REVALUATION MOVES THE LIST, NOT THE LEVY. A mill rate is the levy the
+  // budget needs divided by the taxable list [D: the definition of the rate];
+  // the council decides dollars, and the rate is what is left when the new
+  // list comes in. Where the statute says so outright it is the "rolled-back
+  // rate" — the rate that raises the prior year's levy on the revalued list,
+  // new construction aside (Florida Statutes §200.065(1); Texas's "no-new-
+  // revenue rate", Tax Code §26.04) [S]. So the rate is rescaled by old list
+  // over new on the same stock, and the July budget (`fiscalYear`) then moves
+  // it as it would any year. Without this, a revaluation after a 50% boom
+  // handed the town a 50% raise its council could only give back a twelfth
+  // at a time (seed 11: $24M of surplus on $28M of spending).
+  if (!g.reval || isRevaluation(m)) {
+    const next = revalue(e, m);
+    if (g.reval) {
+      const was = grandList(e, g.reval), now = grandList(e, next);
+      if (was > 0 && now > 0) P.propRate = clamp(P.propRate * was / now, TAX_RATE * PROP_LO, TAX_RATE * PROP_HI);
+    }
+    g.reval = next;
+  }
+  g.assessed = grandList(e, g.reval);
   // What delivered this month (stock up) under an abatement joins the abated roll.
   const stockNow = BUILT_CLASSES.map((k) => e.stock?.[k] ?? 0);
   const added = stockNow.map((v, i) => Math.max(0, v - (g.prevStock[i] ?? v)));

@@ -16,3 +16,4 @@ argument (`$PWD` from `broadway-and-wall/`), then a seed and years, and reads
 | `cprobe.mjs ROOT SEED YEARS` | construction and land-loan coupons over the index |
 | `finprobe.mjs ROOT SEED YEARS` | finance decisions a year: loans offered / taken by firms, bank foreclosures noticed and reinstated, July lots, private-credit asks, holder-exit rumours, desks shutting |
 | `bprobe.mjs ROOT SEED YEARS` | builder firms by decade: alive, entries, retirements, failures, construction starts and square feet a year, stalled frames taken over |
+| `assessprobe.mjs ROOT SEED YEARS` | each January: the town's grand list over the market roll, the property tax levied over the market roll (effective rate), the adopted rate, and the player's (inherited) deeds' assessed value and tax bill over their appraisal |

@@ -3436,11 +3436,67 @@ export function recoveryFor(
   return { opex: total * share, tax: total * (1 - share) };
 }
 
-// Property tax: ~1.1% of assessed value a year. On net leases the tenant
+// PROPERTY TAX, BILLED THE WAY A TOWN BILLS IT. On net leases the tenant
 // reimburses it; the landlord eats the share on vacant space and gross leases.
-// (NAHB from the 2024 ACS: $370.0B of real-estate tax on $41.7T of owner-
-// occupied home value = 0.89%) [S≠: source disagrees — and it is owner-occupied homes, not commercial property; to reconcile]
-export const TAX_RATE = 0.011;
+//
+//   bill = roll value x ASSESS_RATIO x MILL_RATE x taxMult
+//
+// `h.assessed` (and citygov's `g.assessed`) is the ROLL VALUE — the assessor's
+// fair market value as of the last revaluation, not today's price. The taxable
+// assessment is a statutory fraction of it, and the mill rate is levied on
+// that. This is the formula the Lincoln Institute / Minnesota Center for
+// Fiscal Excellence study computes every city's bill with: "Net Tax Bill =
+// [(Market Value x Sales Ratio) - Exemptions] x Assessment Ratio x Tax Rate"
+// (50-State Property Tax Comparison Study for Taxes Paid in 2023, July 2024,
+// p. 8). The sales ratio is not a constant here: it is the roll's lag behind
+// the market, produced by the revaluation cycle below.
+//
+// THE CONVENTION IS CONNECTICUT'S, because one state's whole rulebook is
+// coherent where a pick of numbers from several is not:
+//   - ASSESS_RATIO: real property is assessed at 70% of its fair market value
+//     at the last revaluation (CGS §12-62a(b); CT OPM, "Phase-In Revaluation
+//     Overview": "70% of the property's revalued fair market value") [S].
+//   - REVAL_YEARS: "Each municipality shall implement a revaluation not later
+//     than the first day of October and every five years thereafter" (CGS
+//     §12-62(b); CT OPM, Revaluation Date by Municipality) [S]. Between
+//     revaluations the grand list does not follow the market.
+//   - Not modelled: the local-option phase-in of increases over up to five
+//     years (CGS §12-62c) — a town that adopts none bills the full new value
+//     at once, which is what is built.
+//   - WHERE THIS DEPARTS FROM CONNECTICUT: a SALE re-marks the deed at the
+//     price (actions.ts executePurchase, `asIfOwned` below, every buyer's
+//     quote). Connecticut does not reassess on sale; that is California's rule
+//     (a change in ownership sets a new base-year value, Cal. Const. art. XIII
+//     A §2, R&T Code §110.1). It stays because changing it reaches the
+//     closing, the comps and every quote — recorded as a follow-up in
+//     REAL_ECONOMY_PLAN.md, not hidden.
+//
+// THE LEVEL: the effective tax on a $1M commercial property averaged 1.809%
+// of market value across the largest city in each state (53 cities) in 2023
+// (median of the 53: 1.79%) (Lincoln Institute / MCFE, same study, p. 26)
+// [S]. COMMERCIAL_EFFECTIVE is that figure on a FRESH roll (sales ratio 1,
+// the level an IAAO ratio study targets); the study's cities carry their own
+// sales ratios, so the bill this town actually levies on market value runs
+// below it by exactly as much as its roll lags — which is the point. (This
+// was 1.1%, tagged [S≠]: its only source was NAHB's 0.89% on owner-occupied
+// homes, not commercial property.)
+/** Assessed at 70% of fair market value (CGS §12-62a(b); CT OPM) [S]. */
+export const ASSESS_RATIO = 0.70;
+/** A revaluation every five years (CGS §12-62(b); CT OPM) [S]. */
+export const REVAL_YEARS = 5;
+/** Commercial effective rate, $1M property, 53 largest cities, 2023: 1.809% (Lincoln Institute / MCFE 50-State Study, 2024) [S]. */
+export const COMMERCIAL_EFFECTIVE = 0.01809;
+/** The statutory rate on the taxable assessment (2.584%, 25.84 mills) — derived, not chosen [D]. */
+export const MILL_RATE = COMMERCIAL_EFFECTIVE / ASSESS_RATIO;
+/** The bill per dollar of ROLL value at the adopted rate: mill rate x assessment ratio [D]. */
+export const TAX_RATE = MILL_RATE * ASSESS_RATIO;
+/**
+ * IS THIS JANUARY A REVALUATION? Every REVAL_YEARS years from the town's
+ * founding (which opens on a fresh roll). One schedule for the whole town:
+ * the city's grand list (citygov.ts) and every deed on it (sim.ts) are
+ * re-marked the same January, the player's and everyone else's.
+ */
+export const isRevaluation = (m: number) => m > 0 && m % 12 === 0 && (m / 12) % REVAL_YEARS === 0;
 /**
  * The rate this year: the statutory one times what City Hall levies against
  * it (`taxMult`, set every month by citygov.ts from the rate the council
@@ -3937,11 +3993,14 @@ export function ownedContractNoiYr(
 // so you pay on the vacant + gross-leased fraction of the building.
 /** The gross property-tax bill, before anyone reimburses anything. */
 export function grossTaxYr(rec: ParcelRecord, h: Holding, econ?: { taxMult?: number; m?: number }): number {
-  const assessed = h.assessed ?? h.costBasis;
+  const roll = h.assessed ?? h.costBasis;
   if (rec.class === "land" || !rec.bldgArea) return 0; // land carry already covers it
+  // roll value x assessment ratio x mill rate (x the council's levy): the
+  // value on the roll since the last revaluation, not today's price.
+  const bill = roll * ASSESS_RATIO * MILL_RATE * (econ?.taxMult ?? 1);
   // An abated building is assessed at full value and billed less (citygov.ts).
   const ab = abatedShare(h, econ);
-  return ab ? assessed * taxRate(econ) * (1 - ab) : assessed * taxRate(econ);
+  return ab ? bill * (1 - ab) : bill;
 }
 
 /**

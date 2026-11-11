@@ -1,7 +1,7 @@
 import { useStore } from "@/state/store";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import { PLATFORM_LABEL, PLATFORM_PARTY, revTotal, opSpend, cityDebt, type BudgetLines } from "@/engine/citygov";
-import { TAX_RATE } from "@/engine/value";
+import { TAX_RATE, ASSESS_RATIO, REVAL_YEARS } from "@/engine/value";
 import { Row } from "@/ui/panels/shared";
 
 const M = (v: number) => `${v < 0 ? "−" : ""}$${(Math.abs(v) / 1e6).toFixed(1)}M`;
@@ -71,7 +71,7 @@ export function CityHallBox({ open = false, record = true }: { open?: boolean; r
       </div>
       <div className="page-section" style={{ marginTop: 10 }}>Policy</div>
       <div className="grid">
-        <Row k="Property tax" v={`${P(pol.propRate)} of value`} strong title={`Statutory ${P(TAX_RATE)}`} />
+        <Row k="Property tax" v={`${(pol.propRate / ASSESS_RATIO * 1000).toFixed(2)} mills`} strong title={`${(pol.propRate / ASSESS_RATIO * 1000).toFixed(2)} mills on ${P(ASSESS_RATIO, 0)} of the roll value, ${P(pol.propRate)} of it (opening ${P(TAX_RATE)}); the town revalues every ${REVAL_YEARS} years${g.reval ? `, last in ${yr(g.reval.m)}` : ""}`} />
         <Row k="Payroll tax" v={P(pol.wageRate)} />
         <Row k="Sales tax, local" v={P(pol.salesRate, 1)} />
         <Row k="Transfer tax" v={P(pol.transferRate, 1)} title="Paid by the seller at closing" />

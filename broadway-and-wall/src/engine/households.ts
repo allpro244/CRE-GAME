@@ -689,13 +689,12 @@ const SPLIT_YR = [0.06, 0.04, 0.03, 0.02, 0.012, 0.005];
 const TAX_RATES = [0.046, 0.109, 0.170, 0.214, 0.297];
 /**
  * The state-and-local income and sales tax inside every TAX_RATES row (ITEP, above): the part the town's government collects.
- * [S≠: source disagrees — ITEP, Who Pays? 7th ed. (January 2024), U.S.
- * average: state and local sales & excise plus income taxes are 6.8 / 7.1 /
- * 7.2 / 7.0% of income for the four lower quintiles and 6.3 / 5.5 / 5.1% for
- * the next 15% / next 4% / top 1% (property taxes, a further 1.9-4.4%,
- * excluded) — about 7%, not 4%.]
+ * ITEP, Who Pays? 7th ed. (January 2024), U.S. average: state and local
+ * sales & excise plus income taxes are 6.8 / 7.1 / 7.2 / 7.0% of income for
+ * the four lower quintiles and 6.3 / 5.5 / 5.1% for the next 15% / next 4% /
+ * top 1% (property taxes excluded) — about 7% [S]. It read 4%.
  */
-const STATE_LOCAL_TAX = 0.04;
+const STATE_LOCAL_TAX = 0.07;
 /** [M: standard normal quantiles at 10/30/50/70/90% — the midpoints of the income quintiles.] */
 const TAX_Z = [-1.2816, -0.5244, 0, 0.5244, 1.2816];
 /**

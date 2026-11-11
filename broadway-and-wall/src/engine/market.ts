@@ -1054,9 +1054,9 @@ export function noteTenantSfChange(s: GameState, use: BuiltClass, deltaSf: numbe
  * feet standing; it is the point where the employment term is exactly neutral,
  * so it moves nothing about the existing calibration and only prices the swing.
  * (BLS CES via FRED USCONS / PAYEMS: construction 7.49M of 150.9M nonfarm
- * jobs in 2019 = 4.97%; 5.14% in 2000 and in 2023) [S≠: source disagrees — 4.8% is a little low; to reconcile]
+ * jobs in 2019 = 4.97%; 5.14% in 2000 and in 2023) [S]; it read 4.8%
  */
-export const CONSTRUCTION_JOB_SHARE = 0.048;
+export const CONSTRUCTION_JOB_SHARE = 0.050;
 /**
  * ...AND THE NEUTRAL POINT WAS MEASURED OFF A BROKEN MODEL, THEN THE MODEL WAS
  * FIXED AND THIS WAS NOT.

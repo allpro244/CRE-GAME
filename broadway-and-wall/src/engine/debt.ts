@@ -1155,14 +1155,12 @@ export function stabViewFor(
  * practice for a small sponsor; the cap grows as you do, which is the
  * mid-game the sponsor record never had a positive side to.
  *
- * [S≠: source disagrees — Freddie Mac Small Balance Loan term sheets
- * (program launched 2014, folded into Conventional Small in 2026): guarantor
- * net worth at least equal to the loan amount and liquidity of 9 months'
- * principal and interest, i.e. a multiple of 1.0, not 2.0. No published
- * figure found for community-bank practice at half the loan.]
+ * Freddie Mac Small Balance Loan term sheets: guarantor net worth at least
+ * equal to the loan amount, with liquidity of 9 months' principal and
+ * interest — a multiple of 1.0 [S]. It read 2.0, which no source gave.
  */
 export interface Guarantor { nw: number }
-const GUARANTOR_NW_MULT = 2.0;
+const GUARANTOR_NW_MULT = 1.0;
 export function guarantorCap(g: Guarantor | undefined, p: LoanProduct): number {
   if (!g || !p.recourse) return Infinity;
   return Math.max(0, Math.round(g.nw * GUARANTOR_NW_MULT));

@@ -1716,6 +1716,8 @@ export class RealCityLayer {
   private cullM = 2600;
   /** Max: High with a sharper sun shadow and props drawn farther (setQuality). */
   private maxQ = false;
+  /** Extreme: Max, plus 2x supersampling (MapView), 16x texture filtering, a 1024 reflection probe and a longer draw distance. */
+  private extremeQ = false;
   private catcher: THREE.Mesh | null = null;
   private lotRingLL: Record<string, P2[]>;
   private visibleOn = true;
@@ -1997,6 +1999,8 @@ export class RealCityLayer {
   private captureReflections(at?: [number, number]) {
     this.probeDue = false;
     if (this.quality !== "high" || !this.renderer) return;
+    // the city rebuilds its meshes as it grows; pick up any new textures
+    if (this.extremeQ) this.applyAnisotropy();
     let best: Deed | null = null;
     for (const d of this.deeds.values()) if (d.ring && (!best || d.height > best.height)) best = d;
     let px = 0, py = 0;
@@ -2012,7 +2016,7 @@ export class RealCityLayer {
     for (const o of kids) this.scene.add(o);
     const pm = new THREE.PMREMGenerator(this.renderer);
     this.renderer.resetState();
-    const rt = pm.fromScene(this.scene, 0.015, 2, 7000, { size: this.maxQ ? 512 : 256, position: new THREE.Vector3(px, py, pz) });
+    const rt = pm.fromScene(this.scene, 0.015, 2, 7000, { size: this.extremeQ ? 1024 : this.maxQ ? 512 : 256, position: new THREE.Vector3(px, py, pz) });
     pm.dispose();
     for (const o of kids) this.scene.remove(o);
     this.renderer.resetState();
@@ -8922,20 +8926,22 @@ export class RealCityLayer {
    * shadows and the falling rain and snow. Looks only — nothing here reads the
    * game state, and the city underneath is the same city.
    */
-  setQuality(q0: "low" | "medium" | "high" | "max") {
+  setQuality(q0: "low" | "medium" | "high" | "max" | "extreme") {
     if (this.defer("setQuality", () => this.setQuality(q0))) return;
-    const q = q0 === "max" ? "high" : q0;
-    const wasMax = this.maxQ;
-    this.maxQ = q0 === "max";
+    const q = q0 === "max" || q0 === "extreme" ? "high" : q0;
+    const wasMax = this.maxQ, wasExtreme = this.extremeQ;
+    this.maxQ = q0 === "max" || q0 === "extreme";
+    this.extremeQ = q0 === "extreme";
+    if (wasExtreme !== this.extremeQ) this.applyAnisotropy();
     this.quality = q;
     this.setPreferFps(q !== "high");
     this.crowdK = q === "high" ? 1 : q === "medium" ? 0.6 : 0.3;
-    this.cullM = this.maxQ ? 4200 : q === "high" ? 2600 : q === "medium" ? 1800 : 1100;
+    this.cullM = this.extremeQ ? 6000 : this.maxQ ? 4200 : q === "high" ? 2600 : q === "medium" ? 1800 : 1100;
     this.sun.castShadow = q !== "low" && !NO_SHADOWS;
     // the finishing pass: all of it on High, the grade alone on Medium, none on Low
     this.post.level = q === "high" ? "full" : q === "medium" ? "grade" : "off";
     this.post.liveAO = this.maxQ;
-    if (q === "high" && this.live && (!this.reflEnv || wasMax !== this.maxQ)) this.probeDue = true;
+    if (q === "high" && this.live && (!this.reflEnv || wasMax !== this.maxQ || wasExtreme !== this.extremeQ)) this.probeDue = true;
     if (this.catcher) this.catcher.visible = q !== "low" && !NO_SHADOWS;
     // the ground contact shade is transparent overdraw under every building
     const cm = this.meshes.get("contact"); if (cm) cm.visible = q !== "low";
@@ -8944,6 +8950,31 @@ export class RealCityLayer {
     if (this.precip) this.precip.visible = q !== "low";
     if (this.fleets.length) this.applyCrowd();
     this.applyLight();   // the cloud shadows ride the catcher: off on Low
+  }
+  /**
+   * TEXTURE FILTERING. Every texture is made at 4-8x anisotropy; Extreme raises
+   * them all to what the card allows (16x on any discrete GPU), which is what
+   * keeps streets, plazas and facades sharp at a shallow camera angle. Each
+   * texture remembers its own level, so leaving Extreme puts it back.
+   */
+  private applyAnisotropy() {
+    if (!this.renderer) return;
+    const top = Math.min(16, this.renderer.capabilities.getMaxAnisotropy());
+    const seen = new Set<THREE.Texture>();
+    this.scene.traverse((o) => {
+      const mats = (o as THREE.Mesh).material;
+      for (const m of (Array.isArray(mats) ? mats : mats ? [mats] : []) as unknown as Record<string, unknown>[]) {
+        for (const v of Object.values(m)) {
+          const t = v as THREE.Texture;
+          if (!t || !(t as { isTexture?: boolean }).isTexture || seen.has(t)) continue;
+          seen.add(t);
+          const base = (t.userData.aniso0 ??= t.anisotropy) as number;
+          const want = this.extremeQ ? Math.max(base, top) : base;
+          if (t.anisotropy !== want) { t.anisotropy = want; t.needsUpdate = true; }
+        }
+      }
+    });
+    this.map?.triggerRepaint();
   }
   setPaused(on: boolean) { this.paused = on; if (!on) this.map?.triggerRepaint(); }
   setOpacity(o: number) {

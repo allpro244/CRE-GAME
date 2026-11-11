@@ -5150,6 +5150,8 @@ export function tickEcon(s: GameState) {
   if (s.month % 12 === 0) {
     const vol = measurePropertyVol(e);
     if (vol) e.landSigma = vol; else delete e.landSigma;
+    const drift = measurePropertyVol(e, true);
+    if (drift) e.landDrift = drift; else delete e.landDrift;
   }
   // What moved on the screens this month, and why (whyReads.ts): ledger writes only.
   noteReads(s);
@@ -5261,7 +5263,8 @@ export function seekersPerVacantSf(e: Econ, use: BuiltClass): number {
  */
 const VOL_WINDOW_M = 120;   // [K: "trailing 10 years" — the window the brief names; a judgement of how long a market remembers]
 const VOL_MIN_M = 24;       // [K: twelve twelve-month changes is the least that reads as a spread]
-export function measurePropertyVol(e: Econ): Record<BuiltClass, number> | undefined {
+/** `mean`: the trailing mean of the same twelve-month log changes instead — the class's measured drift, what a lender extrapolates (debt.ts deskAdvance). */
+export function measurePropertyVol(e: Econ, mean = false): Record<BuiltClass, number> | undefined {
   const h = e.history ?? [];
   if (h.length < VOL_MIN_M + 1) return undefined;
   const from = Math.max(0, h.length - VOL_WINDOW_M - 12);
@@ -5280,7 +5283,7 @@ export function measurePropertyVol(e: Econ): Record<BuiltClass, number> | undefi
     if (xs.length < VOL_MIN_M / 2) return undefined;
     const m = xs.reduce((x, y) => x + y, 0) / xs.length;
     const sd = Math.sqrt(xs.reduce((x, y) => x + (y - m) * (y - m), 0) / Math.max(1, xs.length - 1));
-    out[c] = +sd.toFixed(4);
+    out[c] = +(mean ? m : sd).toFixed(4);
   }
   return out;
 }

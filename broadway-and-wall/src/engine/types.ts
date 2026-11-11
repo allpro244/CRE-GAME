@@ -2726,6 +2726,8 @@ export interface Econ {
    * sigma. Absent until the town has two years of its own record.
    */
   landSigma?: Record<BuiltClass, number>;
+  /** The same tape's mean twelve-month log change by class: the measured drift of property values (market.ts measurePropertyVol). */
+  landDrift?: Record<BuiltClass, number>;
   /** sf-weighted mean vintage factor, same job for the quality tilt. */
   vintageMean?: number;
   costIdx: number; // construction & operating cost inflation

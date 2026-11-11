@@ -8,7 +8,7 @@ import { commercialShare } from "./mix";
 import type { Condition, Econ, GameState, Holding, Loan } from "./types";
 import { logBooks, monthLabel, cloneState} from "./types";
 import { openWorkout } from "./workout";
-import { lenderAppetite } from "./lenders";
+import { lenderAppetite, PRIOR_EL } from "./lenders";
 import {
   ownedHoldingNoiYrFromRec, ownedHoldingValue, ownedContractNoiYr,
   ownedHoldingValueFromRec, proFormaNOIYr, capRateFor,
@@ -783,9 +783,86 @@ export function relAdvance(s: GameState, p: LoanProduct): number {
  * Clamped a hair under the covenant `maxLTV`: no desk writes a loan that is
  * in breach of its own covenant on the day it closes.
  */
+/**
+ * HOW FAR A DESK WILL ADVANCE ON INCOME PROPERTY, worked out by the desk
+ * (owner, 2026-11-11: "banks need to be simulated and compete without
+ * anything hard coded"). Not a sheet: the advance at which the loan's
+ * expected loss, a year, comes to the loss the desk is prepared to carry.
+ *
+ * The loss is the balloon's: value at maturity is lognormal off today's,
+ * drifting at the class's MEASURED drift and spreading at its MEASURED
+ * volatility (market.ts measurePropertyVol, the town's own tape; the drift
+ * is what a loan officer extrapolates). The desk loses what the balance is
+ * over what a foreclosure recovers, R times value (Merton 1974; the
+ * structural model of mortgage default, Kau, Keenan, Muller & Epperson
+ * 1987 / Titman & Torous 1989):
+ *
+ *   EL = L N(-d2) - R e^{mu T} N(-d1),  d1 = (ln(R/L) + (mu + sigma^2/2) T) / (sigma sqrt T)
+ *
+ * The budget is the industry's long-run income-property loss rate (PRIOR_EL,
+ * Fed/FDIC charge-offs) scaled by the desk's own appetite — a desk with
+ * capital to spare and a quiet watch list reaches further, a stretched one
+ * pulls in — so desks with different books quote different advances on the
+ * same building and compete on it. A volatile or falling market cuts every
+ * desk's advance; a calm rising one lifts it. Null where the tape is too
+ * short to measure (the town's first two years): the desk's sheet stands.
+ */
+/** US commercial property price volatility, annual, ~10% (transaction-based indices: MIT/NCREIF TBI, RCA/Green Street CPPI, 1985-2020) [S~]. */
+const NATIONAL_PROPERTY_VOL = 0.10;
+/** The national record counts as ten years of local evidence [K: a credibility weight]. */
+const PRIOR_YEARS = 10;
+const RECOVERY = 0.85;   // [K: value net of foreclosure, carry and resale costs; liquidation costs of ~10-20% of value are the range the CMBS loss-severity literature reports]
+export function deskAdvance(s: GameState, product: LoanProduct, klass: string): number | null {
+  const sig = (s.econ.landSigma as Record<string, number> | undefined)?.[klass];
+  const drift = (s.econ.landDrift as Record<string, number> | undefined)?.[klass];
+  if (!(sig !== undefined && sig > 0.005) || drift === undefined) return null;
+  // An underwriter counts on no appreciation beyond inflation, but does
+  // believe a falling market: the drift is the measured one, capped at the
+  // nation's expected inflation (log terms).
+  const mu = Math.min(drift, Math.log(1 + (s.econ.nat?.inflExp ?? 0.02)));
+  // A LENDER READS THE TOWN AGAINST WHAT IT KNOWS OF EVERYWHERE ELSE: the
+  // local record, weighted by its years, blended with the national price
+  // volatility as ten years' worth of prior (a credibility weight). Two years
+  // of a town settling from its opening do not set a desk's view alone.
+  const yrs = Math.min(10, (s.econ.history?.length ?? 0) / 12);
+  const w = yrs / (yrs + PRIOR_YEARS);
+  const sigma = Math.sqrt(w * sig * sig + (1 - w) * NATIONAL_PROPERTY_VOL * NATIONAL_PROPERTY_VOL);
+  const T = Math.max(1, product.termM / 12);
+  const budget = (PRIOR_EL.income / 100) * Math.max(0.2, lenderAppetite(s, product.lender));
+  const N = (x: number) => 0.5 * (1 + erf(x / Math.SQRT2));
+  const elRate = (L: number) => {
+    const sd = sigma * Math.sqrt(T);
+    const d1 = (Math.log(RECOVERY / L) + (mu + sigma * sigma / 2) * T) / sd, d2 = d1 - sd;
+    return (L * N(-d2) - RECOVERY * Math.exp(mu * T) * N(-d1)) / (L * T);
+  };
+  let lo = 0.2, hi = 0.99;
+  if (elRate(lo) > budget) return lo;
+  for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (elRate(m) < budget) lo = m; else hi = m; }
+  return lo;
+}
+/** Abramowitz & Stegun 7.1.26 (max error 1.5e-7) [M]. */
+function erf(x: number): number {
+  const t = 1 / (1 + 0.3275911 * Math.abs(x));
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return x >= 0 ? y : -y;
+}
+
 export function statedLtv(
   s: GameState, product: LoanProduct, klass?: string, condition?: string, street = false, ease = 1,
-): { ltv: number; why: string[] } {
+): { ltv: number; why: string[]; solved?: boolean } {
+  // THE DESK'S OWN ADVANCE on senior income paper, where the town has a tape.
+  if (product.uwDscr > 0 && !product.mezz && klass && klass !== "land") {
+    const own = deskAdvance(s, product, klass);
+    if (own !== null) {
+      const worn = condition === "worn" || condition === "obsolete" ? -REPAIRS_HOLDBACK : 0;
+      const rel = street ? 0 : relAdvance(s, product);
+      const ltv = Math.max(0.20, Math.min(product.maxLTV - 0.03, own + worn + rel));
+      const why = [`their own risk model: ${Math.round(own * 100)}% on ${klass} here`];
+      if (worn) why.push(`−${Math.round(-worn * 100)} held back for the repairs on the engineer's report`);
+      if (rel >= 0.005) why.push(`+${Math.round(rel * 100)} for your file with them`);
+      return { ltv: +ltv.toFixed(4), why, solved: true };
+    }
+  }
   const st = underwritingStandards(s);
   const band = ADVANCE_BAND[product.id] ?? { up: 0.05, down: 0.10 };
   // `ease` is the hometown bank cutting a friend slack in a crunch: half the
@@ -1209,9 +1286,10 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   const ratePct = bankRatePct(bench, liveSpread(s.econ.deskPx?.[product.lender], product.spread, lossClassOf(product), crunchEase, product.floating ? "short" : "long"), {
     standingAdd: st.spreadAdd, rel, dealAdd: qualityAdd - strongName,
   });
-  const adv = advanceFactor(s, product.lender);
-  // THE SHEET TODAY, not the sheet on the brochure — see statedLtv.
+  // THE SHEET TODAY, not the sheet on the brochure — see statedLtv. A desk
+  // that solved its own advance has its appetite in it already (deskAdvance).
   const sheet = statedLtv(s, product, klass, condition, street, crunchEase);
+  const adv = sheet.solved ? 1 : advanceFactor(s, product.lender);
   const byLtv = Math.min(conc.capRoom,
     sheet.ltv * adv * (1 - st.advanceCut) * conc.mult * price);
   // WHAT "ADVANCE RATE" MEANS TODAY. The desk's stated advance is a number on

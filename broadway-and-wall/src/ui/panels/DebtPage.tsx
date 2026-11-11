@@ -6,7 +6,7 @@ import { useStore } from "@/state/store";
 import { CLASS_LABEL } from "@/data/types";
 import { monthLabel } from "@/engine/types";
 import { ownedHoldingValue, resolveRec, ownedContractNoiYr } from "@/engine/value";
-import { PRODUCTS, productById, payOffDue, rateCapCost, capStrikeFor, loanLender, dscr as loanDscr, ltv as loanLtv } from "@/engine/debt";
+import { PRODUCTS, productById, payOffDue, rateCapCost, capStrikeFor, loanLender, dscr as loanDscr, ltv as loanLtv, statedLtv } from "@/engine/debt";
 import { fundableNow, locRate, spendable } from "@/engine/credit";
 import type { FacilityQuote } from "@/engine/facility";
 import { facilityQuotes, facilityMetrics, facilityStatus, facilityDrawTerms, pledgeable, pledged, releaseCost, allocatedAmount, FACILITY_MIN_ASSETS, RELEASE_PREMIUM } from "@/engine/facility";
@@ -789,7 +789,7 @@ export function DebtPage() {
               <PoolRefusal quotes={quotes} />
               <div className="grid">
                 <Row k="Pool" v={`${pool.length} buildings · ${usd(Math.round(qt.quality.value))} · ${qt.quality.why}`} />
-                <Row k="Diversification" v={`${(qt.quality.score * 100).toFixed(0)}/100 · +${((qt.advance - PRODUCTS.find((p) => p.id === qt.productId)!.ltv) * 100).toFixed(1)} pts advance · −${(qt.spreadCut * 100).toFixed(0)}bp coupon`} />
+                <Row k="Diversification" v={`${(qt.quality.score * 100).toFixed(0)}/100 · +${((qt.advance - statedLtv(game, PRODUCTS.find((p) => p.id === qt.productId)!).ltv) * 100).toFixed(1)} pts advance · −${(qt.spreadCut * 100).toFixed(0)}bp coupon`} />
                 <Row k="Borrowing base" v={`${usd(qt.base)} · ${(qt.advance * 100).toFixed(0)}% advance · capped by ${qt.binding}`} strong />
                 <Row k="Mortgages repaid" v={qt.payoff > 0 ? `${usd(qt.payoff)}${qt.penalties > 0 ? ` + ${usd(qt.penalties)} prepayment` : ""}` : "None"} bad={qt.penalties > 0} />
                 {(() => {

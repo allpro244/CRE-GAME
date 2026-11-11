@@ -602,13 +602,13 @@ function ParcelPanelInner({
         const hint = dirt
           ? (pencils
             ? `Residual land value $${read.builder.toFixed(0)}/sf · ${(room * 100).toFixed(0)}% of envelope unused.`
-            : `Holder bid $${read.holder.toFixed(0)}/sf sets value.`)
+            : `Option to build: $${read.holder.toFixed(0)}/sf sets value.`)
           : (pencils
             ? `Residual $${read.builder.toFixed(0)}/sf of lot vs existing building $${standingPsf.toFixed(0)}/sf of lot.`
             : `Rebuild not feasible`
               + (read.builder > 0
                 ? ` · residual $${read.builder.toFixed(0)}/sf of lot vs existing $${standingPsf.toFixed(0)}/sf`
-                : ` · no use clears margin at current rents` + (read.holder > 0 ? ` or next peak` : ""))
+                : ` · no use clears margin at current rents` + (read.holder > 0 ? ` — priced on the option to wait` : ""))
               + ` · ${dirtLine}.`);
         return (
           <div className="deal" style={{ marginTop: 0, marginBottom: 10 }}>

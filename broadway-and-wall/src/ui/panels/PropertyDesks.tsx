@@ -537,7 +537,7 @@ export function ResidualRead({ bbl }: { bbl: string }) {
         // scheme leaves less for the dirt than a holder or the street will pay.
         ? <Row k="Not feasible" v={`Best: ${USE_LABEL[s.use] ?? s.use} · value $${s.valuePsf.toFixed(0)}/sf · cost $${s.costPsf.toFixed(0)}/sf · residual ${read.builder > 0 ? `$${read.builder.toFixed(0)}/sf vs market $${read.psf.toFixed(0)}/sf` : "$0"}`} strong />
         : <Row k="Not feasible" v="No use covers construction cost" strong />}
-      <Row k="Hold value" v={`${usd(Math.round(read.holder * lot))} · $${read.holder.toFixed(0)}/sf · peak residual, discounted`} />
+      <Row k="Hold value" v={`${usd(Math.round(read.holder * lot))} · $${read.holder.toFixed(0)}/sf · the option to build`} />
       <Row k="Market land value" v={`${usd(Math.round(read.psf * lot))} · $${read.psf.toFixed(0)}/sf · ${read.winner === "holder" ? "set by holder" : "location floor"}`} />
     </div>
   );

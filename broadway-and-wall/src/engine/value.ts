@@ -10,7 +10,7 @@ import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, openingVac, CAP_BASE, developerOptimism, LEASE_TERM_M, forwardVacancy, RENT_BASE, underwrittenGrowthPct } from "./market";
 import { gpInterestInFund } from "./fund";
-import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE, leaseUpMonthsOf, stabilisedVacancy } from "./proforma";
+import { developmentProForma, LAND_CARRY_RATE, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE, leaseUpMonthsOf, stabilisedVacancy } from "./proforma";
 import { splitRule, coverageMax, MINOR_FIXED, MINOR_PER_LOT, CORNER_K } from "./lotcode";
 import { productOf, PRODUCT_TYPES, PRODUCT_KEYS, layoutProduct, type ProductKey } from "./products";
 import { homeLotBidPsf } from "./homeprice";
@@ -564,19 +564,65 @@ export function developmentHurdle(yieldOnCost: number, exitCap: number): {
  * and the desk carries the identical charge in its basis.
  */
 /**
- * AND WHEN NOTHING PENCILS TODAY, THE DIRT IS STILL WORTH SOMETHING.
+ * AND WHEN NOTHING PENCILS TODAY, THE DIRT IS STILL WORTH SOMETHING — the
+ * option to develop it (McDonald & Siegel 1986; Capozza & Helsley 1990;
+ * Williams 1991). An owner holds the right, not the duty, to put up the
+ * building: V, the finished value net of the developer's margin, against K,
+ * the non-land cost, both in today's money per square foot of land. V moves
+ * as the town's property value moves. The owner builds when V first reaches
  *
- * Most land in most cities does not support a new building at today's rents,
- * and it does not therefore trade at zero — it trades on the option. Somebody
- * holds it, pays the taxes and waits for the rent to arrive, and what they
- * will pay is the residual at the rents they expect at the next peak,
- * discounted for the wait. About five years at the same 12%:
- *   1 / 1.12^5 = 0.567
- * and a peak is worth roughly a quarter more than the middle of the cycle,
- * which is the amplitude the rent index actually runs at.
+ *   V* = beta/(beta-1) * K
+ *
+ * and until then the dirt is worth (V/V*)^beta * (V* - K), which is more than
+ * V - K whenever there is anything to wait for. beta is the positive root of
+ *
+ *   1/2 sigma^2 beta(beta-1) + (r - delta) beta - r = 0
+ *
+ * with sigma the town's OWN measured volatility of the class's property value
+ * (`econ.landSigma`, market.ts measurePropertyVol), delta the payout the
+ * finished building would throw off (its exit yield: what a holder of the
+ * option forgoes by waiting), and r the land rate the residual already
+ * discounts the wait at (`LAND_CARRY_RATE`). This replaced a holder bid
+ * struck at a hand-set "peak" (rents x 1.25) and a hand-set five-year wait
+ * (x 0.567).
+ *
+ * With no measured sigma (a town's first two years) the root is the
+ * deterministic limit r/(r - delta): the wait is still worth what the drift
+ * alone makes it.
  */
-const WAIT_DISCOUNT = 0.567;   // [K: 1/1.12^5; the five years is a judgement and LAND_CARRY_RATE is unsourced]
-const PEAK_RENT_MULT = 1.25;   // [K: judgement, no source found]
+export type LandOption = {
+  /** The option's price, $/sf of land, after the build queue. */
+  psf: number;
+  /** V - K, $/sf of land, before the queue: what building today would pay. */
+  intrinsicPsf: number;
+  /** V, K and the trigger V*, $/sf of land (today's money). */
+  v: number; k: number; vStar: number;
+  beta: number; sigma: number; delta: number;
+  /** V >= V*: the owner builds now; the dirt is worth what building pays. */
+  exercise: boolean;
+  use: BuiltClass;
+};
+
+/** The positive root beta of 1/2 sigma^2 beta(beta-1) + (r-delta) beta - r = 0 (Infinity: never worth waiting). */
+export function optionBeta(sigma: number, r: number, delta: number): number {
+  const a = 0.5 * sigma * sigma;
+  const b = r - delta - a;
+  const d = Math.sqrt(b * b + 4 * a * r);
+  // the stable form of (-b + sqrt D)/2a: it holds as sigma -> 0
+  const den = b + d;
+  return den > 1e-12 ? (2 * r) / den : Infinity;
+}
+
+/** The development option: the price of dirt whose building is worth V and costs K. */
+function optionValue(v: number, k: number, beta: number): { f: number; vStar: number; exercise: boolean } {
+  const finite = Number.isFinite(beta) && beta < 1e6;
+  if (!(k > 0)) return { f: Math.max(0, v), vStar: 0, exercise: v > 0 };
+  if (!finite) return { f: Math.max(0, v - k), vStar: k, exercise: v >= k };
+  const vStar = (beta / (beta - 1)) * k;
+  if (!(v > 0)) return { f: 0, vStar, exercise: false };
+  if (v >= vStar) return { f: v - k, vStar, exercise: true };
+  return { f: Math.pow(v / vStar, beta) * (vStar - k), vStar, exercise: false };
+}
 
 /**
  * THE SHAPE EACH USE HAS. Shops and sheds are flat — two floor plates is the
@@ -760,12 +806,26 @@ export function residualLandPsf(rec: ParcelRecord, econ: Econ, rentMult = 1): nu
 }
 
 export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): ResidualScheme | null {
-  return residualSchemeIn(rec, econ, rentMult, null);
+  return residualCore(rec, econ, rentMult, null).best;
 }
 
-/** `ctx` is landPsfNow's per-market cache; null everywhere else. Same numbers. */
-function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: LandCtx | null): ResidualScheme | null {
-  if (!rec.lotArea) return null;
+/** The development option on this lot (see `LandOption`); null where nothing can be built. */
+export function landOption(rec: ParcelRecord, econ: Econ): LandOption | null {
+  return residualCore(rec, econ, 1, null).opt;
+}
+
+type ResidualCore = { best: ResidualScheme | null; opt: LandOption | null };
+
+/**
+ * `ctx` is landPsfNow's per-market cache; null everywhere else. Same numbers.
+ * One pass over the schemes gives both today's residual (`best`, the winner
+ * among schemes that pay for their own dirt) and the development option
+ * (`opt`, the best option over EVERY scheme: one that cannot pay today
+ * still carries the right to wait for the day it can).
+ */
+function residualCore(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: LandCtx | null): ResidualCore {
+  const none: ResidualCore = { best: null, opt: null };
+  if (!rec.lotArea) return none;
   // The envelope you can actually reach, not the one the zoning text allows.
   // This is what siteQualityMult was reaching for and could not express as a
   // price multiplier: a narrow lot that cannot fit an efficient floor plate
@@ -804,9 +864,24 @@ function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: 
   const legalFar = farMaxFor(rec) * envelopeRealisation(rec);
   const known = rec.cornice !== undefined && rec.maturity !== undefined;
   const far = known ? legalFar : legalFar * clamp(econ.infillShare ?? 1, 0.15, 1);
-  if (!(far > 0)) return null;
+  if (!(far > 0)) return none;
 
   let best: ResidualScheme | null = null;
+  let opt: LandOption | null = null;
+  const r = LAND_CARRY_RATE;
+  const consider = (use: BuiltClass, value: number, nonLand: number, carry: number, exitYieldPct: number): void => {
+    const v = value / (1 + DEV_MARGIN) / (1 + carry) / rec.lotArea;
+    const k = nonLand / (1 + carry) / rec.lotArea;
+    const sigma = econ.landSigma?.[use] ?? 0;
+    const delta = exitYieldPct / 100;
+    const beta = optionBeta(sigma, r, delta);
+    const o = optionValue(v, k, beta);
+    if (!(o.f > 0)) return;
+    const psf = o.f * queueFactor(econ, use, o.f);
+    if (!opt || psf > opt.psf) {
+      opt = { psf, intrinsicPsf: v - k, v, k, vStar: o.vStar, beta, sigma, delta, exercise: o.exercise, use };
+    }
+  };
   const all: { use: BuiltClass; psf: number }[] = [];
   const uw = ctx ? ctxUnderwriting(ctx, econ, rentMult) : underwritingEcon(econ, rentMult);
   const quote = ctx
@@ -853,6 +928,7 @@ function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: 
       if (!pf || !(pf.exitYieldPct > 0)) continue;
       const value = pf.stabNoi / (pf.exitYieldPct / 100);
       const nowTotal = (value / (1 + DEV_MARGIN) - pf.nonLandBasis) / (1 + pf.landCarryRate);
+      consider(use, value, pf.nonLandBasis, pf.landCarryRate, pf.exitYieldPct);
       // ...AND THE LOT WAITS ITS TURN. See `queueFactor`.
       const landTotal = nowTotal > 0 ? nowTotal * queueFactor(econ, use, nowTotal / rec.lotArea) : nowTotal;
       const psf = landTotal / rec.lotArea;
@@ -894,6 +970,7 @@ function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: 
       if (!pf || !(pf.exitYieldPct > 0)) continue;
       const value = pf.stabNoi / (pf.exitYieldPct / 100);
       const nowTotal = (value / (1 + DEV_MARGIN) - pf.nonLandBasis) / (1 + pf.landCarryRate);
+      consider(p.use, value, pf.nonLandBasis, pf.landCarryRate, pf.exitYieldPct);
       const landTotal = nowTotal > 0 ? nowTotal * queueFactor(econ, p.use, nowTotal / rec.lotArea) : nowTotal;
       const psf = landTotal / rec.lotArea;
       const row = all.find((x) => x.use === p.use);
@@ -908,7 +985,8 @@ function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: 
       }
     }
   }
-  return best && { ...best, all };
+  const b = best as ResidualScheme | null;
+  return { best: b && { ...b, all }, opt };
 }
 /** The smallest site any product comes on: a pad's half-acre outparcel, less the 20% layoutProduct allows. */
 const PRODUCT_LOT_MIN_SF = 0.5 * 43_560 * 0.8;
@@ -1167,6 +1245,8 @@ export type LandRead = {
   /** Which bid set the price, and the scheme behind the builder's. */
   winner: "builder" | "holder" | "texture" | "farm" | "homes" | "subdivider";
   scheme: ResidualScheme | null;
+  /** The development option the price was struck on (see LandOption); null where nothing can be built. */
+  option?: LandOption | null;
   /** A homebuilder's bid for a finished lot on a plat, $/sf (homeprice.ts homeLotBidPsf); 0 elsewhere. */
   homes?: number;
 };
@@ -1369,11 +1449,9 @@ type LandMemoEntry = {
   cornice: number | undefined; maturity: number | undefined;
   psf?: number;
   read?: LandRead;
-  /** residualSchemeIn at rentMult 1 and at PEAK_RENT_MULT; undefined until run. */
-  now?: ResidualScheme | null;
-  peak?: ResidualScheme | null;
+  /** residualCore at today's rents (the residual and the option); undefined until run. */
+  now?: ResidualCore;
   nowAt?: ResidualGate;
-  peakAt?: ResidualGate;
 };
 /**
  * WHAT THE MEMO KEY DOES NOT COVER AND A RESIDUAL STILL READS. The price and
@@ -1426,6 +1504,8 @@ const LAND_DICTS = [
   // between-tenants floor read the occupied stock, its measured turnover, net
   // take-up, the looking pool and the dark floors)
   "occupied", "absorb12", "turnMeas", "pool", "darkSf",
+  // the land option's sigma (market.ts measurePropertyVol), re-measured yearly
+  "landSigma",
 ] as const;
 const LAND_SCALARS = [
   "locIdxMean", "landIdx", "cpi", "infillShare", "costIdx", "indexRate",
@@ -1541,36 +1621,27 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
   const mean = econ.locIdxMean ?? 0.62;
   const level = Math.max(0.35, 1 + 0.85 * (demandIdx(rec.demandScore) - mean));
 
-  // THE PRICE OF DIRT IS THE BETTER OF TWO OFFERS, WHICH IS WHAT AN AUCTION IS.
+  // THE PRICE OF DIRT IS WHAT THE RIGHT TO BUILD ON IT IS WORTH.
   //
-  // A BUILDER bids the residual: what the finished building is worth less what
-  // it costs to build less the margin the trade requires. See residualLandPsf.
-  //
-  // A HOLDER bids the option: most land in most cities does not support a new
-  // building at today's rents and does not therefore trade at nothing. Somebody
-  // pays the taxes and waits for the rent to arrive, and what they will pay is
-  // the residual at the rents they expect at the next peak, discounted for the
-  // wait. That bid is what puts a floor under fringe dirt, and it is why a
-  // vacant lot on a bad street still costs money.
-  //
-  // Whichever of them wants it more sets the price. On a prime corner in a good
-  // market the builder wins and the number is large; on a fringe lot in a slump
-  // the holder wins and the number is small but real; and the crossover between
-  // them is exactly where redevelopment pressure starts, which is the most
-  // important line in a city and the game could not draw it before.
-  // (`memo` is the lot's memo entry: each residual is run at most once a market.)
-  let scheme: ResidualScheme | null;
-  if (memo && memo.now !== undefined && residualGateHolds(memo.nowAt!, econ)) scheme = memo.now;
-  else { scheme = residualSchemeIn(rec, econ, 1, ctx); if (memo) { memo.now = scheme; memo.nowAt = residualGate(econ); } }
+  // A BUILDER's residual is what the finished building is worth less what it
+  // costs to build less the margin the trade requires (see residualLandPsf).
+  // That is the option's intrinsic value, and it is the price only when the
+  // owner would build NOW: when V has reached the trigger V* (see LandOption).
+  // Below the trigger the dirt trades on the option, which is worth more than
+  // the residual (more than nothing where nothing pencils) because the right
+  // to wait for the rent is itself worth something. The crossover, V = V*, is
+  // where redevelopment starts, which is the most important line in a city.
+  // (`memo` is the lot's memo entry: the residual is run at most once a market.)
+  let core: ResidualCore;
+  if (memo && memo.now !== undefined && residualGateHolds(memo.nowAt!, econ)) core = memo.now;
+  else { core = residualCore(rec, econ, 1, ctx); if (memo) { memo.now = core; memo.nowAt = residualGate(econ); } }
+  const scheme = core.best;
+  const option = core.opt;
   const builder = scheme?.psf ?? 0;
-  let peak: ResidualScheme | null = null;
-  if (whole || !(builder > 0)) {
-    if (memo && memo.peak !== undefined && residualGateHolds(memo.peakAt!, econ)) peak = memo.peak;
-    else { peak = residualSchemeIn(rec, econ, PEAK_RENT_MULT, ctx); if (memo) { memo.peak = peak; memo.peakAt = residualGate(econ); } }
-  }
-  const holder = whole || !(builder > 0)
-    ? (peak?.psf ?? 0) * WAIT_DISCOUNT
-    : 0;
+  const ripe = !!option?.exercise && builder > 0;
+  // `holder` is the option's price where the owner would rather wait
+  const holder = ripe ? 0 : option?.psf ?? 0;
+  void whole;
 
   // AND WHAT THE CITY GENERATOR THOUGHT, which is not nothing.
   //
@@ -1669,8 +1740,10 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
   // finding in REALISM_AUDIT_2026-08.md rather than half-shipped here.
   let base: number;
   let winner: LandRead["winner"];
-  if (builder > 0) {
-    base = builder;
+  if (ripe) {
+    // exercise: the option is worth what building pays (the best option and
+    // the best residual can be different schemes; the higher is the price)
+    base = Math.max(builder, option?.psf ?? 0);
     winner = "builder";
     if (softDiscount < 0) base = builder * (1 + softDiscount);
     // ...BUT NEVER BELOW THE SALES-COMPARISON FLOOR. A residual that has
@@ -1719,6 +1792,7 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
     builder, holder, texture: floor,
     winner,
     scheme,
+    option,
     homes,
   };
 }

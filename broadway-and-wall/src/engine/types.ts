@@ -2706,6 +2706,14 @@ export interface Econ {
   /** The previous year's queue measurement, and how far the current one has glided in (value.ts queueFactor). */
   landQueuePrev?: Partial<Record<BuiltClass, { psf: number[]; ahead: number[]; total: number; absYr: number; r: number }>>;
   landQueueW?: number;
+  /**
+   * THE TOWN'S OWN MEASURED PROPERTY VOLATILITY, by class: the standard
+   * deviation of the twelve-month change in log value (effective rent over
+   * the cap rate) across the trailing ten years of the tape. Measured once a
+   * year (market.ts measurePropertyVol); the land option (value.ts) reads it as
+   * sigma. Absent until the town has two years of its own record.
+   */
+  landSigma?: Record<BuiltClass, number>;
   /** sf-weighted mean vintage factor, same job for the quality tilt. */
   vintageMean?: number;
   costIdx: number; // construction & operating cost inflation

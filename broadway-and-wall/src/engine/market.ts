@@ -4,7 +4,7 @@
 import { leaseUpMonthsOf } from "./proforma";
 import { tickBands } from "./bands";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { BuiltClass, Econ, FirmBook, GameState, MarketPhase, NewsItem, Sector } from "./types";
+import type { BuiltClass, Econ, EconHistoryPoint, FirmBook, GameState, MarketPhase, NewsItem, Sector } from "./types";
 import { OFF_FLOOR_SHARE_NAT } from "./industries";
 import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert } from "./types";
 import { tickStreetTenants } from "./tenantBooks";
@@ -5130,6 +5130,12 @@ export function tickEcon(s: GameState) {
   }
 
   recordHistory(e, s.month, monthAbs, monthComp);
+  // THE TOWN'S PROPERTY VOLATILITY, measured once a year off its own tape —
+  // the sigma the land option is priced on (value.ts landOption).
+  if (s.month % 12 === 0) {
+    const vol = measurePropertyVol(e);
+    if (vol) e.landSigma = vol; else delete e.landSigma;
+  }
   // What moved on the screens this month, and why (whyReads.ts): ledger writes only.
   noteReads(s);
 
@@ -5228,6 +5234,40 @@ export function seekersPerVacantSf(e: Econ, use: BuiltClass): number {
     ? sp.cap - sp.let
     : housableStock(e, use) - (e.occupied?.[use] ?? 0);
   return want / Math.max(1, vacant);
+}
+
+/**
+ * HOW MUCH THIS TOWN'S PROPERTY VALUES MOVE, by class: the standard deviation
+ * of the twelve-month change in log value, value read as effective rent over
+ * the cap rate, over every month of the trailing ten years (overlapping
+ * twelve-month windows). Not set: measured, so a town whose rents swing has
+ * land that carries more option value, and a calm one less. Undefined until
+ * there are two years of the town's own record — no record, no measurement.
+ */
+const VOL_WINDOW_M = 120;   // [K: "trailing 10 years" — the window the brief names; a judgement of how long a market remembers]
+const VOL_MIN_M = 24;       // [K: twelve twelve-month changes is the least that reads as a spread]
+export function measurePropertyVol(e: Econ): Record<BuiltClass, number> | undefined {
+  const h = e.history ?? [];
+  if (h.length < VOL_MIN_M + 1) return undefined;
+  const from = Math.max(0, h.length - VOL_WINDOW_M - 12);
+  const out = {} as Record<BuiltClass, number>;
+  for (const c of ["office", "retail", "multifamily", "industrial"] as BuiltClass[]) {
+    const v = (p: EconHistoryPoint): number => {
+      const rent = p.effRent?.[c] ?? p.rent?.[c];
+      const cap = p.cap?.[c];
+      return rent && cap && rent > 0 && cap > 0 ? rent / cap : NaN;
+    };
+    const xs: number[] = [];
+    for (let i = from + 12; i < h.length; i++) {
+      const a = v(h[i - 12]), b = v(h[i]);
+      if (a > 0 && b > 0) xs.push(Math.log(b / a));
+    }
+    if (xs.length < VOL_MIN_M / 2) return undefined;
+    const m = xs.reduce((x, y) => x + y, 0) / xs.length;
+    const sd = Math.sqrt(xs.reduce((x, y) => x + (y - m) * (y - m), 0) / Math.max(1, xs.length - 1));
+    out[c] = +sd.toFixed(4);
+  }
+  return out;
 }
 
 function recordHistory(e: Econ, q: number, abs?: Record<string, number>, comp?: Record<string, number>) {

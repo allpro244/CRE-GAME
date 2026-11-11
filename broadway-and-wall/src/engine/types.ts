@@ -540,6 +540,12 @@ export interface Loan {
 }
 
 export interface Holding {
+  /**
+   * THE LENDER'S APPRAISAL (debt.ts lenderValue): re-struck once a year, and
+   * smoothed the way appraisals are — Geltner (1993). Covenant LTV tests read
+   * it, not the month's mark. Unset: the mark (old saves, unlevered deeds).
+   */
+  apprV?: number; apprM?: number;
   /** this building is part of a package you have taken to market as one ticket */
   inPackage?: boolean;
   /**

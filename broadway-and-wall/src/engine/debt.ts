@@ -1473,9 +1473,30 @@ export function dscr(rec: ParcelRecord, s: GameState, h: Holding): number | null
   return ownedHoldingNoiYrFromRec(s, rec, h) / ds;
 }
 
+/**
+ * WHAT THE LENDER THINKS THE BUILDING IS WORTH. A covenant is tested against
+ * an appraisal, and a lender orders one a year, not every month; an appraiser
+ * anchors on last year's figure and the comps behind it, so the appraisal
+ * trails the market. Geltner (1993, "Estimating Market Values from Appraised
+ * Values without Assuming an Efficient Market", JRER) puts the weight an
+ * annual appraisal gives the current year's market value at about 0.4 [S~].
+ * Below the market in a rise, above it in a fall: one bad quarter no longer
+ * trips every LTV covenant at once.
+ */
+const APPRAISAL_ALPHA = 0.4;   // [S~] Geltner 1993, annual appraisal smoothing parameter
+export function lenderValue(s: GameState, rec: ParcelRecord, h: Holding): number {
+  return h.apprV ?? ownedHoldingValueFromRec(s, rec, h);
+}
+function reappraise(s: GameState, rec: ParcelRecord, h: Holding): void {
+  if (h.apprM !== undefined && s.month - h.apprM < 12) return;
+  const mark = ownedHoldingValueFromRec(s, rec, h);
+  h.apprV = Math.round(h.apprV === undefined ? mark : APPRAISAL_ALPHA * mark + (1 - APPRAISAL_ALPHA) * h.apprV);
+  h.apprM = s.month;
+}
+
 export function ltv(rec: ParcelRecord, s: GameState, h: Holding): number | null {
   if (!h.loan) return null;
-  const v = ownedHoldingValueFromRec(s, rec, h);
+  const v = lenderValue(s, rec, h);
   return v > 0 ? h.loan.balance / v : null;
 }
 
@@ -1514,6 +1535,7 @@ export function tickLoan(
   const loan = h.loan;
   if (!loan || !rec) return 0;
   const q = s.month;
+  reappraise(s, rec, h);
 
   // AN ACCELERATED LOAN IS NOT SERVICED. Once the lender has filed, the whole
   // balance is due and nobody sends the monthly cheque any more — the meter

@@ -168,6 +168,32 @@ Walk probe (scratchpad `walk-probe/probe2.mjs` + `dec2.py`; 12-month changes on 
 5. **The ten-year under a held off-rule policy** moves +0.6pp against +1 to +2.5 in the record; no engine code holds a rate off its rule, so this is a harness question, not an engine one.
 6. **Investment volatility** 4.9x output (record ~3): source `TAU_K` and `I_LAG`.
 
+## THE FIX PLAN (owner-approved 2026-11-11) — work it in this order
+
+The scoreboard is `pnpm mechanism` (coins, draws, unsourced constants, ledger rows); every PR lowers it or says why not, and passes conserve. The outputs need not match US history (CLAUDE.md, "THE GOAL IS SIMULATION, NOT HISTORY"). Helpers may run two at a time on disjoint files.
+
+**Phase 1 — brakes, so the economy can absorb a shock (first: every later change lands safer on a stable base).** Small changes this session set off fire-sale cascades (a dip → forced sales → falling marks → smaller credit lines → more forced sellers). Real markets have brakes the engine lacks:
+- lenders choose between foreclosing and extending/modifying a loan on their own recovery numbers ("extend and pretend", 2009-12);
+- owners who are not in default hold through a slump rather than being pushed to sell;
+- value buyers step in when prices fall far below replacement cost;
+- credit lines sized on lagged appraisals, so one bad quarter does not call everyone's lines.
+
+**Phase 2 — how prices are set.**
+- Tax assessments: fractional by statute and reassessed on a cycle (sourced), so the bill lags and sits below sale prices; reconcile the property-tax rate against them.
+- Appraisals smoothed and lagged against sale prices (Geltner): below prices in a rising market, above in a falling one.
+- Land priced as the development option (McDonald & Siegel; Williams 1991), replacing WAIT_DISCOUNT / PEAK_RENT_MULT.
+- Buyers' required returns by investor type from sourced investor surveys, replacing the hand-set EQUITY_PREMIUM table.
+
+**Phase 3 — market structure.** Owners decide when to sell (replacing the listings quota in `sim.ts refreshListings`); the player's buildings lease from the street's tenant shortlists; tenant turnover and renewals; then the office rent response; which class rents highest becomes an outcome.
+
+**Phase 4 — agents for the six top-down aggregates** (FORMULA_LEDGER #28-33): house prices from builders and buyers, migration from household choice, online retail share, the city's mood, rents outside the map, industry orders.
+
+**Phase 5 — neighbourhood demand.** Density effects at the measured elasticity (rent 0.21, wages 0.04: Ahlfeldt & Pietrostefani 2019, Table 5); congestion (speed −0.11) and construction cost (+0.055) in dense areas; vacant and decaying buildings drag nearby demand; delete the hidden random drift of town centres (`POLE_DRIFT_SD`, `POLE_NOISE_SD` in demand.ts — a design dial).
+
+**Phase 6 (alongside) — sources.** The remaining ~390 unsourced constants, file by file, with a research helper; reconcile the `[S≠]` disagreements (office opex $4.17 vs the file's own BOMA cite ~$8.90; property tax; developer margin, soft costs, contingency; base cap rates).
+
+**Phase 7 (alongside) — measurement.** Six seeds the standard for any change that moves the economy; flags for impossible outcomes; conserve's bot surviving (a bot that goes broke in four years is a symptom to explain, not noise).
+
 ## HANDOFF (2026-11-10) — where the economy work stands
 
 **On main (merged this run, #662-#695):** jobs fill in ~a month (JOLTS); stronger recessions; layoffs where cuts happen; short-of-hands pro rata; credit spreads widen in slumps; investment speed sourced (TAU_K 68); labour flows CPS-sourced and answering tightness; the finding rate reads JOLTS month-end openings (#690); cap rates answer rates (quarterly broker survey) and the ten-year prices a held rate; shops (then all classes) never sign at a loss; "normal vacancy" deleted, steps 0-9b (leasing, lease-up, builder gate, appraisal, demolition all read the market); land: interim income, index no longer freezes, answers construction cost; new space leases at the market's pace; firm turnover counted as BDS does; office tenants' price sensitivity recalibrated + office landlords trade rent against months dark (#688); player sale offers come from the street's bid round (#693); paydown draws the LOC (#695); the sim worker load fix + a CI guard (#679, #681). Century (3×60): about PASS 32 · WATCH 14 · FAIL 0-2.

@@ -49,7 +49,7 @@ import { START_YEAR } from "./types";
 import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, useOccupancy, N_BANDS, scoreRentMult, locationRentMult, managedRentPsfYr } from "./value";
 import { isCommercial, bumpOf, minLettableSf, streetLease, pickSector, pickName, termBandM, depositFor, chosenTermM, useVacantSf, vacantSf } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
-import { tickTenantFin, tenantFailOdds, entrantMargin, rentCapacity, finGrade } from "./tenantBooks";
+import { tickTenantFin, tenantInsolvent, BACKGROUND_FAIL, entrantMargin, rentCapacity, finGrade } from "./tenantBooks";
 import { rng, rrange, reletMonths, recordDeal, FIRM_PROFILE, turnoverYr, priceLevel12, CONC_DEPTH, SECTOR_LABEL, SF_PER_JOB } from "./market";
 import { staleDiscount } from "./absorption";
 import { leaseUpMonthsOf } from "./proforma";
@@ -977,7 +977,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       const age = m - t.startM;
       if (age > 0 && age % 12 === 0) t.rentPsf = +(t.rentPsf * (1 + bumpOf(t) / 100)).toFixed(2);
       const f = tickTenantFin(e, t, m < (t.freeUntilM ?? -1) ? 0 : t.rentPsf * t.sf, e.creditIdx ?? 1);
-      if (rng(s, "leasing") < tenantFailOdds(f, t.credit)) {
+      if (tenantInsolvent(f) || rng(s, "leasing") < BACKGROUND_FAIL[t.credit]) {
         if (k in lost) lost[k] += firmHc(t);
         // WHY (why.ts): a firm the size of an anchor (rivals.ts reads them) writes what failed it
         const whyId = t.sf >= 8000 ? whyFirmDark(s, t, f, bbl) : undefined;

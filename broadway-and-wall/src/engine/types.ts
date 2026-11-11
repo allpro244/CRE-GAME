@@ -4008,6 +4008,13 @@ export interface GameState {
   builderFirms?: boolean;
   /** Months a rival's first close was slowed by a thin investor pool (rivals.ts; measured, display only). */
   poolBindMs?: number;
+  /**
+   * THE STREET'S FIRST CLOSE IN PROGRESS (rivals.ts maybeNewFirm): the
+   * expected progress of the sponsors pitching the town's LPs, accrued each
+   * open month at the entry hazard (pitch x slots / RAISE_M x pool). A fund
+   * closes when it reaches one; a window that shuts loses it.
+   */
+  entryProgress?: number;
   /** Deal-by-deal raises in progress, keyed by the lot (raise.ts). */
   raises?: Record<string, import("./investors").Raise>;
   /**

@@ -44,7 +44,7 @@ import { BAND_TERMS, bandIdx, floorBand, inheritRecord, rivalBand, scoreOf, type
 import { cityCoverage, cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, ownerRedevelopment, openConstructionDesks, planReuseAt, reuseZoneBar, projectedDevIrr, equityStretch } from "./dev";
 import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
 import { streetRefiProceeds, stabViewFor } from "./debt";
-import { stampApproach, conveyedValue, conveyedDeed } from "./leasing";
+import { stampApproach, conveyedValue, conveyedDeed, renewalIntent } from "./leasing";
 import { deskWillExtend, extensionFeePct, extensionMonths, NOTICE_M, FORECLOSE_M } from "./workout";
 import { recordComp } from "./comps";
 import { programmeSf, queueSupplyProject, rescheduleSupplyProject, stallSupplyProject } from "./supply";
@@ -1663,13 +1663,21 @@ export function initRivals(s: GameState, parcels: ParcelTable, bbls: string[]): 
       let landSpend = 0;
       let lots = 0;
       let landGuard = 0;
+      // Fit taken so far toward the next lot (see the opening book below).
+      let landFit = 0;
       while (landSpend < landBudget && lots < maxLots && landGuard++ < 800) {
         const bbl = vacant[Math.floor(rng(s, "rivals") * vacant.length)];
         if (!bbl || taken.has(bbl)) continue;
         const rec = parcels[bbl];
         // Its dirt is where its buildings will go: a trophy builder's land
         // bank is downtown, an industrial developer's is on the edge.
-        if (r.sheet && rng(s, "rivals") > Math.min(1, fitOf(s, parcels, r, rec) / 1.4)) continue;
+        // It takes a lot when the fit of the sites it has walked adds up to a
+        // whole one (same rate as the old fit/1.4 coin, decided on its fit).
+        if (r.sheet) {
+          landFit += Math.min(1, fitOf(s, parcels, r, rec) / 1.4);
+          if (landFit < 1) continue;
+          landFit -= 1;
+        }
         const v = landValue(rec, s.econ);
         if (v <= 0 || v > landBudget - landSpend + spend * 0.05) continue;
         // Prefer sites a first equity draw can actually verticalize.
@@ -1686,6 +1694,11 @@ export function initRivals(s: GameState, parcels: ParcelTable, bbls: string[]): 
 
     // buy income product until the remaining deployable equity is spent
     let guard = 0;
+    // THE FIT IT HAS WALKED PAST. Each building it looks at adds its fit
+    // (fitOf / 1.4, the share the opening book always took); it buys when
+    // that reaches a whole building. The book takes the rate the fit coin
+    // took, decided by the firm's own read of the street instead of a die.
+    let bookFit = 0;
     while (spend > 0 && guard++ < 3000) {
       const bbl = built[Math.floor(rng(s, "rivals") * built.length)];
       if (!bbl || taken.has(bbl)) continue;
@@ -1695,7 +1708,9 @@ export function initRivals(s: GameState, parcels: ParcelTable, bbls: string[]): 
       // THE OPENING BOOK LOOKS LIKE THE FIRM: what it owns on day one is drawn
       // through the same fit it will buy with, so the map shows a trophy
       // owner downtown and a slumlord on the fringe from the first month.
-      if (rng(s, "rivals") > Math.min(1, fitOf(s, parcels, r, rec) / 1.4)) continue;
+      bookFit += Math.min(1, fitOf(s, parcels, r, rec) / 1.4);
+      if (bookFit < 1) continue;
+      bookFit -= 1;
       /**
        * THE ROSTER'S DEBT IS SIZED BY THE TOWN'S OWN DESKS, not asserted.
        *
@@ -2195,14 +2210,17 @@ function playerHotDistricts(s: GameState, parcels: ParcelTable): Set<string> {
  * yours. When one of these firms starts a job, the largest tenant of yours in
  * that use whose lease runs out around delivery (from six months before to a
  * year and a half after) has committed to the new building: it will not
- * renew, and the notice will say where it is going. Half the time (hashed —
- * no RNG stream); a tenant already leaving or already committed is skipped.
+ * renew, and the notice will say where it is going — if its own renewal read
+ * (leasing.ts renewalIntent: your operations, the plant, its trade, its fit,
+ * the street's offers) says it is likelier to go than to stay. That was a
+ * hashed coin, half the time, whoever the tenant and whatever its building.
+ * A tenant already leaving or already committed is skipped.
  */
 export function poachForBuildToSuit(
   s: GameState, parcels: ParcelTable, r: Rival, rec: ParcelRecord, use: string, sf: number, deliverM: number,
 ) {
   const bts = r.profile === "bts" || (!!r.sheet && r.sheet.reach >= 80 && r.sheet.build >= 70);
-  if (!bts || hash01(`${s.seed}:bts:${r.id}:${rec.bbl}:${s.month}`) >= 0.5) return;
+  if (!bts) return;
   let pick: { t: NonNullable<GameState["holdings"][string]["tenants"]>[number]; addr: string } | null = null;
   for (const h of Object.values(s.holdings)) {
     const hr = parcels[h.bbl];
@@ -2210,7 +2228,10 @@ export function poachForBuildToSuit(
     for (const t of h.tenants ?? []) {
       if ((t.use ?? hr.class) !== use || t.nonRenewM !== undefined || t.leavingFor) continue;
       if (t.endM < deliverM - 6 || t.endM > deliverM + 18 || t.sf < 4000 || t.sf > sf * 1.1) continue;
-      if (!pick || t.sf > pick.t.sf) pick = { t, addr: hr.address ?? h.bbl };
+      if (pick && t.sf <= pick.t.sf) continue;
+      // It signs only if it would rather leave you than renew.
+      if (renewalIntent(s, hr, h, t, parcels).p >= 0.5) continue;
+      pick = { t, addr: hr.address ?? h.bbl };
     }
   }
   if (!pick) return;
@@ -3007,7 +3028,9 @@ function maybeNewFirm(s: GameState) {
   // month leverage turns positive.
   if (founder && streetOpen) founder.openMs = (founder.openMs ?? 0) + 1;
 
-  if (!streetOpen && !distressOpen) return;
+  // A pitch in flight dies with the window: the LPs who were leaning in when
+  // buildings out-earned the money do not close once they stop doing so.
+  if (!streetOpen && !distressOpen) { s.entryProgress = 0; return; }
   // A spinout is a levered fund: it waits out a distress window (its pitching
   // clock above only runs while the street is open to it).
   if (!streetOpen) founder = null;
@@ -3021,8 +3044,7 @@ function maybeNewFirm(s: GameState) {
   // local and family-office money (investors.ts); when this year's has mostly
   // gone — to firms already raised, or to the player — fewer first closes
   // clear, in proportion to what is left against a typical raise. With money
-  // to spare the factor is 1 and entry is exactly what it was (the same
-  // single draw).
+  // to spare the factor is 1 and entry accrues at the full hazard.
   const poolOn = !!s.poolEntry;
   // A SPINOUT RAISES ON ITS TEAM'S RECORD (reputation.ts inheritRecord;
   // GameState.rivalReputation). A new name is Unknown and raises as every new
@@ -3040,9 +3062,16 @@ function maybeNewFirm(s: GameState) {
   const typicalRaise = firstCloseOf(s, raiseIds);
   const poolFactor = poolOn ? Math.min(1, poolAvail / Math.max(1, typicalRaise)) : 1;
   if (poolFactor < 1) s.poolBindMs = (s.poolBindMs ?? 0) + 1;
-  if (rng(s, "rivals") > Math.min(1, pitch * Math.max(1, slots) / RAISE_M) * poolFactor) {
-    // Not this month. Founders keep the slot and try again — a single roll
-    // must not erase a career. Only the window expiring sends them elsewhere.
+  // THE RAISE ACCRUES, IT IS NOT ROLLED. This was a die against the monthly
+  // hazard below. The same hazard is now the month's expected progress of the
+  // sponsors pitching — the pitch, the slots the tape carries, the
+  // fourteen-month raise and what the pool has left — and a fund closes when
+  // that progress reaches one. Same rate in expectation; decided by the
+  // market's own numbers, not by dice.
+  s.entryProgress = (s.entryProgress ?? 0) + Math.min(1, pitch * Math.max(1, slots) / RAISE_M) * poolFactor;
+  if (s.entryProgress < 1) {
+    // Not this month. Founders keep the slot and try again. Only the window
+    // expiring sends them elsewhere.
     if (founder && (founder.openMs ?? 0) >= FOUNDER_WINDOW_M) {
       s.founderBids = bids.filter((_, i) => i !== readyIdx);
       s.news.unshift({
@@ -3053,6 +3082,7 @@ function maybeNewFirm(s: GameState) {
     }
     return;
   }
+  s.entryProgress -= 1;
 
   const used = new Set((s.rivals ?? []).map((r) => r.name));
   let name: string;
@@ -3276,11 +3306,13 @@ const LAND_FUNDS = [
  * close the smaller of the pipeline it saw and the bottom of the street's
  * first-close band (maybeNewFirm's $4M at the opening's dollars, scaled to the
  * island) — never more than the city's pool has left. It raises on the same
- * monthly hazard as any first close (RAISE_M). Hash draws: the rivals stream
- * is untouched unless a fund is raised.
+ * raise as any first close (RAISE_M): a sponsor's study is read once every
+ * RAISE_M months, the time a raise takes, instead of a hashed 1-in-RAISE_M
+ * coin each month. Hash draws: the rivals stream is untouched unless a fund
+ * is raised.
  */
 function maybeLandFund(s: GameState, parcels: ParcelTable) {
-  if (hash01(`${s.seed}:landfund:${s.month}`) >= 1 / RAISE_M) return;
+  if (s.month % RAISE_M !== RAISE_M - 1) return;
   const bv = entrantBankerView();
   let pipeline = 0, lots = 0;
   for (const li of s.listings ?? []) {

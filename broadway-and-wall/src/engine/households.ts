@@ -1927,10 +1927,12 @@ function signMainland(r: HouseholdRegister, a: HouseholdArrays, i: number): numb
     const inc = verifiedPay(a, i);
     if (inc > 0) {
       let b = (SCREEN * inc) / 12;
-      if (CTX && r.locMu !== undefined) b = Math.min(b, CTX.letAvg * Math.exp(-islandPull(r, a, i, CTX.e)));
+      // a household not yet drawn its taste for the island (a new one, this month) has no island figure yet
+      const alt = CTX && r.locMu !== undefined ? CTX.letAvg * Math.exp(-islandPull(r, a, i, CTX.e)) : NaN;
+      if (alt > 0) b = Math.min(b, alt);
       const x = Math.log(Math.max(1, b) / Math.max(1, r.mainRent));
       // a regional agent stands for its weight in households, each a card
-      for (let k = 0, w = Math.min(64, Math.max(1, Math.round(a.wt[i]))); k < w; k++) mk.cards.push(x);
+      if (Number.isFinite(x)) for (let k = 0, w = Math.min(64, Math.max(1, Math.round(a.wt[i]))); k < w; k++) mk.cards.push(x);
     }
     mk.signed += a.wt[i];
   }

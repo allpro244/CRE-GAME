@@ -72,7 +72,7 @@ export const TRANSFER_TAX = 0.006;
 const SERVICES_PC = 1_400;
 /** Current spending per public-school pupil (Census, Public Elementary-Secondary Education Finances FY2022: $15,633). */
 const PER_PUPIL = 15_600;
-/** Public K-12 pupils per resident under 18 (NCES: 49.6M enrolled / ~73M children). */
+/** Public K-12 pupils per resident under 18 [S: NCES Common Core of Data, fall 2022 public PreK-12 enrollment 49.6M (press release 2024) / ~73M US residents under 18 (Census 2022)]. */
 const PUPILS_PER_CHILD = 0.68;
 /** State revenue sharing toward general government: a few per cent of municipal spending (Census, intergovernmental revenue). */
 const AID_GENERAL = 0.04;
@@ -125,7 +125,10 @@ const LABOR_SHARE = 0.60;
 /** Homeownership (Census HVS 2023: 65.7%); the median existing house, sf (AHS ~1,800). */
 const OWN_RATE = 0.657, HOME_SF = 1_800;
 /**
- * PENSIONS (NASRA / Pew, public plans). Accrued liability about 5.5 years of
+ * PENSIONS (NASRA / Pew, public plans). [S: the 7.0% median assumed return is
+ * the NASRA Public Fund Survey median for FY2022 (8.0% in FY2010); the other
+ * entries are [S~] NASRA/Pew ranges, not re-verified line by line in 2026.]
+ * Accrued liability about 5.5 years of
  * covered payroll, funded about three-quarters; liabilities discounted at the
  * 7.0% median assumed return; normal cost 12% of payroll of which members pay
  * 5%; benefits paid about 5.5% of the liability a year; the unfunded part
@@ -169,7 +172,12 @@ const amortFactor = (r: number) => (r > 1e-6 ? r / (1 - Math.pow(1 + r, -30)) : 
  * real income per resident, smoothed over five years, against the opening.
  */
 const WAGNER_ELAST = 0.5, WAGNER_EMA_M = 60;
-/** The funded ratio past which a surplus turns into richer benefits (see tickCityGov). */
+/**
+ * The funded ratio past which a surplus turns into richer benefits (see tickCityGov).
+ * [S~: CalPERS's SB 400 benefit increase (1999) was passed on a surplus, with the
+ * plan reported 128-137% funded (CalPERS; Fox & Hounds 2018); 1.2 sits a little
+ * under that episode — one case, not a measured distribution.]
+ */
 const PEN_SWEETEN = 1.2;
 /** AAA tax-exempt yields run at 70-90% of the Treasury ten-year (MMD/UST, 2000-2024). */
 const MUNI_RATIO = 0.80;
@@ -231,10 +239,17 @@ const ABATE = { pct: 0.7, years: 15 };
  * tenants stay: about 85% renew against about 55% at market (NYC HVS tenure).
  */
 const RGB_SHARE = 0.7, RENEW_STAB = 0.85;
-/** The populist's transfer tax (New York's mansion-tax era: ~1% and up); the civic works' cost and the city's share of it. */
+/** The populist's transfer tax [S: New York State's "mansion tax", 1% of residential sales of $1M+, enacted 1989; made progressive to 3.9% in NYC in 2019]. */
 const TRANSFER_POPULIST = 0.010;
+/** The civic works' cost. [K: judgement, no source found — round figures for an infill station, a park and a bridge.] */
 const WORK_COST: Record<string, number> = { station: 40e6, park: 10e6, bridge: 120e6 };
-/** Federal and state capital grants carry half a station or a bridge (FTA Capital Investment Grants); a park is the city's alone. */
+/**
+ * Federal and state capital grants carry half a station or a bridge; a park is the city's alone.
+ * Station: [S~] FTA Capital Investment Grants are capped at 60% for New Starts (49 U.S.C. 5309)
+ * and recent awards run near 50% (FTA FY27 Annual Report project profiles, 2026). Bridge:
+ * [S≠ source says the federal-aid highway share is normally 80% (23 U.S.C. 120), so the
+ * city's part of a bridge would be well under half; to reconcile].
+ */
 const WORK_CITY_SHARE: Record<string, number> = { station: 0.5, park: 1, bridge: 0.5 };
 /** The long-run average US unemployment rate (BLS 1948-2024), what voters read the local rate against. */
 const U_NORM = 0.057;

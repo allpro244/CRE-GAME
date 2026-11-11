@@ -105,7 +105,7 @@ export interface Seeker {
   midLease?: boolean;
 }
 
-/** Months a looking firm takes to find and sign space, on average (market.ts MOVE_IN_M). */
+/** Months a looking firm takes to find and sign space, on average (market.ts MOVE_IN_M). Office [S~: broker guides put a straightforward office search at 3-6 months from first tour to signed lease (Partners Real Estate; LoopNet leasing timeline)]; retail and industrial [K: judgement, no source found]. */
 const SEARCH_M: Record<Comm, number> = { office: 6, retail: 4, industrial: 3 };
 /** How long a new or arriving firm keeps looking before it settles elsewhere. */
 const PATIENCE_M: Record<Comm, number> = { office: 15, retail: 10, industrial: 9 };
@@ -1755,6 +1755,7 @@ function readFlats(s: GameState, fs: { roll: FlatRoll; cap: number; mkt: number 
   }
 }
 
+/** The most of a new block's flats that let in one month. [S~: Census Survey of Market Absorption — about 86% of new apartments absorbed within 12 months (Q1-2020 completions, NAHB 2021), ~7%/month; 3-month absorption runs 50-62% (Census 2015), so the opening months run faster than this cap.] */
 const MF_LEASEUP = 0.08;
 
 function flatsEligible(s: GameState, parcels: ParcelTable, bbl: string) {

@@ -17,6 +17,7 @@ import * as TSL from "three/tsl";
 import { ao } from "three/examples/jsm/tsl/display/GTAONode.js";
 import { ssr } from "three/examples/jsm/tsl/display/SSRNode.js";
 import { fxaa } from "three/examples/jsm/tsl/display/FXAANode.js";
+import { traa } from "three/examples/jsm/tsl/display/TRAANode.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any;
@@ -40,6 +41,7 @@ const AO_OFF = typeof location !== "undefined" && new URLSearchParams(location.s
 
 const Q = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams();
 const SSR_OFF = Q.get("ssr") === "off";
+const TRAA_OFF = Q.get("traa") === "off";
 
 /**
  * The graph per tier (the level key is "off" | "grade" | "full" | "max"):
@@ -57,8 +59,10 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
   const withAO = hi && !AO_OFF;
   // SSR on WebGPU only: three r185's SSR shader does not compile for its WebGL 2 fallback
   const withSSR = level === "max" && !SSR_OFF && (renderer.backend as N).isWebGPUBackend === true;
+  // Max: temporal anti-aliasing (jittered camera, history reprojected by velocity) in place of FXAA
+  const withTRAA = level === "max" && !TRAA_OFF;
   const scenePass = T.pass(scene, camera, { samples: hi ? 0 : 4 });
-  if (hi) scenePass.setMRT(T.mrt({ output: T.output, normal: T.packNormalToRGB(T.normalView), metalrough: T.vec2(T.metalness, T.roughness) }));
+  if (hi) scenePass.setMRT(T.mrt({ output: T.output, normal: T.packNormalToRGB(T.normalView), metalrough: T.vec2(T.metalness, T.roughness), ...(withTRAA ? { velocity: T.velocity } : {}) }));
   // a float depth buffer: the map's perspective spans metres to kilometres, and
   // 24-bit depth bands flat roofs into stripes once GTAO reads it back
   if (hi) (scenePass as N).renderTarget.depthTexture.type = THREE.FloatType;
@@ -77,6 +81,7 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
     ssrPass.maxLuminance.value = 1.2;
     col = T.convertToTexture(T.blendColor(col, ssrPass));
   }
+  if (withTRAA) col = T.convertToTexture(traa(col, scenePass.getTextureNode("depth"), scenePass.getTextureNode("velocity"), camera));
   let aoTex: N = null;
   const depthTex = scenePass.getTextureNode("depth");
   const projInv = T.uniform((camera as THREE.PerspectiveCamera).projectionMatrixInverse);
@@ -144,7 +149,7 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
     c.mulAssign(T.float(1).sub(T.float(0.16).add(u.toy.mul(0.06)).mul(u.grade).mul(T.smoothstep(0.4, 1.0, T.dot(q, q).mul(2.2)))));
     return T.vec4(T.clamp(c, 0.0, 1.0), 1.0);
   });
-  pipeline.outputNode = hi ? fxaa(out()) : out();
+  pipeline.outputNode = hi && !withTRAA ? fxaa(out()) : out();
   const forcedOff = typeof location !== "undefined" && new URLSearchParams(location.search).get("post") === "off";
   return {
     pipeline,

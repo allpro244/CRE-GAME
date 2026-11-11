@@ -62,6 +62,8 @@ export class GpuBackend {
   private pipeline: THREE.RenderPipeline | null = null;
   private post: PostUniforms | null = null;
   readonly shared: Shared;
+  private readonly lastC = new THREE.Matrix4();
+  private settle = 0;
   /** Review switches (window.__gpu.debug): hold a uniform at a value regardless of the city. */
   debug: Record<string, number> = {};
   private readonly dressed = new WeakSet<THREE.Material>();
@@ -140,6 +142,7 @@ export class GpuBackend {
       b.off = { rt: new THREE.RenderTarget(2, 2), view, busy: false, again: false };
     }
     camera.coordinateSystem = renderer.coordinateSystem;
+    b.patchCamera();
     b.fit();
     console.info(`[bw] city renderer: ${b.backendName === "webgpu" ? "WebGPU" : "WebGL 2 (WebGPU unavailable or forced off)"}`);
     return b;
@@ -177,6 +180,28 @@ export class GpuBackend {
       this.stats.offscreenFrames = (this.stats.offscreenFrames ?? 0) + 1;
       if (o.again) { o.again = false; this.map.triggerRepaint(); }
     }).catch(() => { o.busy = false; });
+  }
+
+  /**
+   * TRAA JITTERS THE CAMERA through setViewOffset, which on a stock camera
+   * recomputes the projection from fov and aspect — MapLibre's matrix would be
+   * thrown away. On this camera the projection is whatever orientCamera set,
+   * and a view offset is a sub-pixel shift of it in clip space.
+   */
+  private patchCamera() {
+    const cam = this.camera as THREE.PerspectiveCamera & { _bwUnjittered?: THREE.Matrix4 };
+    cam.updateProjectionMatrix = () => {};
+    cam.setViewOffset = (fullW: number, fullH: number, x: number, y: number) => {
+      cam._bwUnjittered = (cam._bwUnjittered ?? new THREE.Matrix4()).copy(cam.projectionMatrix);
+      cam.projectionMatrix.premultiply(new THREE.Matrix4().makeTranslation((-2 * x) / fullW, (2 * y) / fullH, 0));
+      cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
+    };
+    cam.clearViewOffset = () => {
+      if (!cam._bwUnjittered) return;
+      cam.projectionMatrix.copy(cam._bwUnjittered);
+      cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
+      cam._bwUnjittered = undefined;
+    };
   }
 
   shadowNeedsUpdate() { this.sun.shadow.needsUpdate = true; }
@@ -291,6 +316,14 @@ export class GpuBackend {
     const info = this.renderer.info as N;
     if (this.off) this.renderOffscreen();
     else this.pipeline.render();
+    // TEMPORAL AA SETTLES OVER FRAMES. MapLibre paints on demand, so after the
+    // camera stops a few more frames are asked for, until the history has
+    // converged (the traffic keeps painting anyway when it runs)
+    if (tier === "max") {
+      const moved = !this.lastC.equals(_c);
+      if (moved) { this.lastC.copy(_c); this.settle = 16; } else if (this.settle > 0) this.settle--;
+      if (this.settle > 0) requestAnimationFrame(() => this.map.triggerRepaint());
+    }
     // hand RealCity its camera back as it set it (its picking unprojects through it)
     this.camera.projectionMatrix.copy(_c);
     this.camera.projectionMatrixInverse.copy(_ci);

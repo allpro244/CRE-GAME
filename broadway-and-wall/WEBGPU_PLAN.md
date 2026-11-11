@@ -80,10 +80,15 @@ MapLibre canvas (WebGL)          overlay canvas (WebGPURenderer)
   pipeline voids the whole frame's command buffer, not just one draw.
 - **Quality tiers** (same ladder as Classic; the setting rebuilds the graph):
   Low and Medium draw the scene with 4x MSAA (Medium adds the grade); High
-  adds GTAO on float depth and swaps MSAA for FXAA; Max adds screen-space
+  adds GTAO on float depth and swaps MSAA for FXAA; Max/Extreme replace FXAA
+  with TEMPORAL AA (three's TRAA, the camera jittered through our own matrix,
+  history reprojected by per-object velocity; a few extra frames are asked
+  for after the camera stops so it converges) and add screen-space
   reflections (glass, harbour, wet streets reflect what is on screen) on the
   WebGPU backend — three r185's SSR shader does not compile on its WebGL 2
   fallback. Diorama/Classic look drives the same grade uniforms as classic.
+  GTAO fades out between 1.2 and 3 km (it found false creases on the far,
+  flat ground) and is applied after the tilt blur.
 - **Review switches**: `?renderer=webgpu|classic`, `?gpu=webgl2` (force the
   fallback backend), `?gpu=offscreen` (render to a target and copy to a 2D
   canvas — see Testing), `?gtao=off`, `?ssr=off`, `?post=off`,
@@ -101,7 +106,7 @@ stock materials, 2 raw `ShaderMaterial`s in RealCity, 2 in `post.ts`
 | # | Shader | Where | What it does | Port order | Status |
 |---|---|---|---|---|---|
 | 1 | facade (PAINT, foot AO, farK, WINDOW_VARIATION, REVEAL, rooms, GLASS, oil-canning) | `buildFamily` | every wall in town | 1 | paint, foot shade, far calm, pane variety (blinds, curtains, roughness), reveal jamb/sill/head, room behind the glass: **ported**; coated-glass Fresnel + clouds in the reflection, oil-canning: not yet (glass towers read a little bluer/brighter) |
-| 2 | haze + cloud shade | `addHaze` (all materials) | aerial perspective, cloud shadows on direct light | 1 | haze: **ported** (outputNode); cloud shade: not yet |
+| 2 | haze + cloud shade | `addHaze` (all materials) | aerial perspective, cloud shadows on direct light | 1 | haze: **ported** (outputNode); cloud shade: **ported** (the cloud field multiplies the sun's shadow term, `receivedShadowNode`) |
 | 3 | sky dome | `skyEnvironment` (ShaderMaterial) | what glass and water reflect | 1 | **ported** (node material) |
 | 4 | haze sheet | `hazeFor` (ShaderMaterial) | haze over MapLibre's ground | 1 | **ported** |
 | 5 | contact shade | `contactMat` | soft dark under every building | 1 | **ported** |
@@ -158,10 +163,9 @@ offscreen rendering survives, presenting does not. So:
   part of MapLibre's frame). On a vacant lot it shows; on a built one the
   building's own selection glow does the job. Drawing it in the scene is a
   small follow-up.
-- **TRAA is not in yet.** three's TRAANode jitters the camera with
-  `setViewOffset`, which recomputes the projection and would discard
-  MapLibre's matrix; it needs the jitter applied to our own matrix. FXAA
-  stands in on High/Max.
+- **TRAA on the WebGL 2 fallback** logs one `glBlitFramebuffer` warning (it
+  cannot copy the float depth into its history), so its disocclusion test
+  reads a stale depth there; watch for ghosting behind moving cars on Max.
 - **The ground copy is one full-frame texture upload per frame.** Under WebGPU
   it is a GPU-to-GPU copy; under the WebGL 2 fallback it is `texImage2D` of a
   canvas, also GPU-side in Chrome. Measure on the owner's machine.
@@ -178,8 +182,8 @@ offscreen rendering survives, presenting does not. So:
    WebGPU + WebGL 2 backends, setting, measurements.
    **Parity so far**: side by side with Classic the city is the same city —
    same elevations, paint, rooms, shadows, haze, grade, tilt-shift. Left: the
-   coated-glass reflection, cloud shade, sea surf/ripples, grass detail, tree
-   sway and walking gait; the beta's shade side is a touch lighter (GTAO is
+   coated-glass reflection, sea surf/ripples, grass detail, tree sway and
+   walking gait; the beta's shade side is a touch lighter (GTAO is
    gentler than classic's crease AO).
 2. **Parity**: port the rest of the facade shader (window variation, reveals,
    rooms, glass), cloud shade, sea surf and ripples, grass, sway, gait; draw

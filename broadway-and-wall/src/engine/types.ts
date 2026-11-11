@@ -540,6 +540,12 @@ export interface Loan {
 }
 
 export interface Holding {
+  /**
+   * THE LENDER'S APPRAISAL (debt.ts lenderValue): re-struck once a year, and
+   * smoothed the way appraisals are — Geltner (1993). Covenant LTV tests read
+   * it, not the month's mark. Unset: the mark (old saves, unlevered deeds).
+   */
+  apprV?: number; apprM?: number;
   /** this building is part of a package you have taken to market as one ticket */
   inPackage?: boolean;
   /**
@@ -2706,6 +2712,14 @@ export interface Econ {
   /** The previous year's queue measurement, and how far the current one has glided in (value.ts queueFactor). */
   landQueuePrev?: Partial<Record<BuiltClass, { psf: number[]; ahead: number[]; total: number; absYr: number; r: number }>>;
   landQueueW?: number;
+  /**
+   * THE TOWN'S OWN MEASURED PROPERTY VOLATILITY, by class: the standard
+   * deviation of the twelve-month change in log value (effective rent over
+   * the cap rate) across the trailing ten years of the tape. Measured once a
+   * year (market.ts measurePropertyVol); the land option (value.ts) reads it as
+   * sigma. Absent until the town has two years of its own record.
+   */
+  landSigma?: Record<BuiltClass, number>;
   /** sf-weighted mean vintage factor, same job for the quality tilt. */
   vintageMean?: number;
   costIdx: number; // construction & operating cost inflation

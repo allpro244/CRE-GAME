@@ -10,7 +10,7 @@ import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, openingVac, CAP_BASE, developerOptimism, LEASE_TERM_M, forwardVacancy, RENT_BASE, underwrittenGrowthPct } from "./market";
 import { gpInterestInFund } from "./fund";
-import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE, leaseUpMonthsOf, stabilisedVacancy } from "./proforma";
+import { developmentProForma, LAND_CARRY_RATE, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE, leaseUpMonthsOf, stabilisedVacancy } from "./proforma";
 import { splitRule, coverageMax, MINOR_FIXED, MINOR_PER_LOT, CORNER_K } from "./lotcode";
 import { productOf, PRODUCT_TYPES, PRODUCT_KEYS, layoutProduct, type ProductKey } from "./products";
 import { homeLotBidPsf } from "./homeprice";
@@ -534,14 +534,27 @@ export function constructionTypeMult(use: BuiltClass, floors: number): number {
   const fl = Math.max(1, floors || 1);
   return fl <= 3 ? 0.68 : fl <= 7 ? 0.83 : 1;
 }
-export const SOFT_COST = 0.16;    // design, legal, permits, insurance, financing fees [K: no source found]
-export const CONTINGENCY = 0.06;  // held against change orders; unspent is yours [K: no source found]
+// [S~] Soft cost as a share of TOTAL development cost: 15-25% for multifamily
+// (Fannie Mae Multifamily / RSMeans, "Location, location, location: multifamily
+// construction"); 16.2% for seniors housing (CBRE 2026 Senior Housing
+// Development Costs, Q2 2026; 18.5% in its 2022 survey). 0.16 of hard cost is
+// ~14% of hard + soft, at the bottom of that band. Kept, not raised: the
+// surveys' totals carry items (land carry, developer fee) this engine books
+// elsewhere.
+export const SOFT_COST = 0.16;    // design, legal, permits, insurance, financing fees
+// [S~] Hard-cost contingency: most commercial projects carry 5-10% of hard cost,
+// 5-8% with complete documents and a bid GC contract (Terrapin, "Commercial
+// Construction Contingency by Project Type", 2026).
+export const CONTINGENCY = 0.06;  // held against change orders; unspent is yours
 
 /**
  * THE DEVELOPER'S MARGIN — what the trade requires to take the risk, as a
  * share of cost. 15-20% on cost is the standard hurdle a lender underwrites
  * to and a developer will not go below; below it, nobody breaks ground.
- * [K: a judgement inside that band, no source found.]
+ * [S~] RICS Land Journal, "Approaches to developer returns in appraisals": the
+ * margin most small and medium developers required was 15-20%; NSW Local
+ * Government Housing Kit, Module 4: developer's margin on total project cost
+ * typically 15-20%. 0.17 sits inside both.
  */
 export const DEV_MARGIN = 0.17;
 
@@ -564,19 +577,65 @@ export function developmentHurdle(yieldOnCost: number, exitCap: number): {
  * and the desk carries the identical charge in its basis.
  */
 /**
- * AND WHEN NOTHING PENCILS TODAY, THE DIRT IS STILL WORTH SOMETHING.
+ * AND WHEN NOTHING PENCILS TODAY, THE DIRT IS STILL WORTH SOMETHING — the
+ * option to develop it (McDonald & Siegel 1986; Capozza & Helsley 1990;
+ * Williams 1991). An owner holds the right, not the duty, to put up the
+ * building: V, the finished value net of the developer's margin, against K,
+ * the non-land cost, both in today's money per square foot of land. V moves
+ * as the town's property value moves. The owner builds when V first reaches
  *
- * Most land in most cities does not support a new building at today's rents,
- * and it does not therefore trade at zero — it trades on the option. Somebody
- * holds it, pays the taxes and waits for the rent to arrive, and what they
- * will pay is the residual at the rents they expect at the next peak,
- * discounted for the wait. About five years at the same 12%:
- *   1 / 1.12^5 = 0.567
- * and a peak is worth roughly a quarter more than the middle of the cycle,
- * which is the amplitude the rent index actually runs at.
+ *   V* = beta/(beta-1) * K
+ *
+ * and until then the dirt is worth (V/V*)^beta * (V* - K), which is more than
+ * V - K whenever there is anything to wait for. beta is the positive root of
+ *
+ *   1/2 sigma^2 beta(beta-1) + (r - delta) beta - r = 0
+ *
+ * with sigma the town's OWN measured volatility of the class's property value
+ * (`econ.landSigma`, market.ts measurePropertyVol), delta the payout the
+ * finished building would throw off (its exit yield: what a holder of the
+ * option forgoes by waiting), and r the land rate the residual already
+ * discounts the wait at — the town's long rate (`econ.indexRate`), risk-neutral. This replaced a holder bid
+ * struck at a hand-set "peak" (rents x 1.25) and a hand-set five-year wait
+ * (x 0.567).
+ *
+ * With no measured sigma (a town's first two years) the root is the
+ * deterministic limit r/(r - delta): the wait is still worth what the drift
+ * alone makes it.
  */
-const WAIT_DISCOUNT = 0.567;   // [K: 1/1.12^5; the five years is a judgement and LAND_CARRY_RATE is unsourced]
-const PEAK_RENT_MULT = 1.25;   // [K: judgement, no source found]
+export type LandOption = {
+  /** The option's price, $/sf of land, after the build queue. */
+  psf: number;
+  /** V - K, $/sf of land, before the queue: what building today would pay. */
+  intrinsicPsf: number;
+  /** V, K and the trigger V*, $/sf of land (today's money). */
+  v: number; k: number; vStar: number;
+  beta: number; sigma: number; delta: number;
+  /** V >= V*: the owner builds now; the dirt is worth what building pays. */
+  exercise: boolean;
+  use: BuiltClass;
+};
+
+/** The positive root beta of 1/2 sigma^2 beta(beta-1) + (r-delta) beta - r = 0 (Infinity: never worth waiting). */
+export function optionBeta(sigma: number, r: number, delta: number): number {
+  const a = 0.5 * sigma * sigma;
+  const b = r - delta - a;
+  const d = Math.sqrt(b * b + 4 * a * r);
+  // the stable form of (-b + sqrt D)/2a: it holds as sigma -> 0
+  const den = b + d;
+  return den > 1e-12 ? (2 * r) / den : Infinity;
+}
+
+/** The development option: the price of dirt whose building is worth V and costs K. */
+function optionValue(v: number, k: number, beta: number): { f: number; vStar: number; exercise: boolean } {
+  const finite = Number.isFinite(beta) && beta < 1e6;
+  if (!(k > 0)) return { f: Math.max(0, v), vStar: 0, exercise: v > 0 };
+  if (!finite) return { f: Math.max(0, v - k), vStar: k, exercise: v >= k };
+  const vStar = (beta / (beta - 1)) * k;
+  if (!(v > 0)) return { f: 0, vStar, exercise: false };
+  if (v >= vStar) return { f: v - k, vStar, exercise: true };
+  return { f: Math.pow(v / vStar, beta) * (vStar - k), vStar, exercise: false };
+}
 
 /**
  * THE SHAPE EACH USE HAS. Shops and sheds are flat — two floor plates is the
@@ -760,12 +819,26 @@ export function residualLandPsf(rec: ParcelRecord, econ: Econ, rentMult = 1): nu
 }
 
 export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): ResidualScheme | null {
-  return residualSchemeIn(rec, econ, rentMult, null);
+  return residualCore(rec, econ, rentMult, null).best;
 }
 
-/** `ctx` is landPsfNow's per-market cache; null everywhere else. Same numbers. */
-function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: LandCtx | null): ResidualScheme | null {
-  if (!rec.lotArea) return null;
+/** The development option on this lot (see `LandOption`); null where nothing can be built. */
+export function landOption(rec: ParcelRecord, econ: Econ): LandOption | null {
+  return residualCore(rec, econ, 1, null).opt;
+}
+
+type ResidualCore = { best: ResidualScheme | null; opt: LandOption | null };
+
+/**
+ * `ctx` is landPsfNow's per-market cache; null everywhere else. Same numbers.
+ * One pass over the schemes gives both today's residual (`best`, the winner
+ * among schemes that pay for their own dirt) and the development option
+ * (`opt`, the best option over EVERY scheme: one that cannot pay today
+ * still carries the right to wait for the day it can).
+ */
+function residualCore(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: LandCtx | null): ResidualCore {
+  const none: ResidualCore = { best: null, opt: null };
+  if (!rec.lotArea) return none;
   // The envelope you can actually reach, not the one the zoning text allows.
   // This is what siteQualityMult was reaching for and could not express as a
   // price multiplier: a narrow lot that cannot fit an efficient floor plate
@@ -804,9 +877,28 @@ function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: 
   const legalFar = farMaxFor(rec) * envelopeRealisation(rec);
   const known = rec.cornice !== undefined && rec.maturity !== undefined;
   const far = known ? legalFar : legalFar * clamp(econ.infillShare ?? 1, 0.15, 1);
-  if (!(far > 0)) return null;
+  if (!(far > 0)) return none;
 
   let best: ResidualScheme | null = null;
+  let opt: LandOption | null = null;
+  // r is the RISK-FREE rate, not a developer's hurdle: the option is priced
+  // risk-neutrally (McDonald & Siegel 1986), and the risk lives in sigma.
+  // Struck at a 12% hurdle the trigger sat at V ~ 2K and almost no lot was
+  // ever ripe; at the long rate it lands near 1.3K, where Quigg (1993) found it.
+  const r = Math.max(0.005, (econ.indexRate ?? LAND_CARRY_RATE * 100) / 100);
+  const consider = (use: BuiltClass, value: number, nonLand: number, carry: number, exitYieldPct: number): void => {
+    const v = value / (1 + DEV_MARGIN) / (1 + carry) / rec.lotArea;
+    const k = nonLand / (1 + carry) / rec.lotArea;
+    const sigma = econ.landSigma?.[use] ?? 0;
+    const delta = exitYieldPct / 100;
+    const beta = optionBeta(sigma, r, delta);
+    const o = optionValue(v, k, beta);
+    if (!(o.f > 0)) return;
+    const psf = o.f * queueFactor(econ, use, o.f);
+    if (!opt || psf > opt.psf) {
+      opt = { psf, intrinsicPsf: v - k, v, k, vStar: o.vStar, beta, sigma, delta, exercise: o.exercise, use };
+    }
+  };
   const all: { use: BuiltClass; psf: number }[] = [];
   const uw = ctx ? ctxUnderwriting(ctx, econ, rentMult) : underwritingEcon(econ, rentMult);
   const quote = ctx
@@ -853,6 +945,7 @@ function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: 
       if (!pf || !(pf.exitYieldPct > 0)) continue;
       const value = pf.stabNoi / (pf.exitYieldPct / 100);
       const nowTotal = (value / (1 + DEV_MARGIN) - pf.nonLandBasis) / (1 + pf.landCarryRate);
+      consider(use, value, pf.nonLandBasis, pf.landCarryRate, pf.exitYieldPct);
       // ...AND THE LOT WAITS ITS TURN. See `queueFactor`.
       const landTotal = nowTotal > 0 ? nowTotal * queueFactor(econ, use, nowTotal / rec.lotArea) : nowTotal;
       const psf = landTotal / rec.lotArea;
@@ -894,6 +987,7 @@ function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: 
       if (!pf || !(pf.exitYieldPct > 0)) continue;
       const value = pf.stabNoi / (pf.exitYieldPct / 100);
       const nowTotal = (value / (1 + DEV_MARGIN) - pf.nonLandBasis) / (1 + pf.landCarryRate);
+      consider(p.use, value, pf.nonLandBasis, pf.landCarryRate, pf.exitYieldPct);
       const landTotal = nowTotal > 0 ? nowTotal * queueFactor(econ, p.use, nowTotal / rec.lotArea) : nowTotal;
       const psf = landTotal / rec.lotArea;
       const row = all.find((x) => x.use === p.use);
@@ -908,7 +1002,8 @@ function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: 
       }
     }
   }
-  return best && { ...best, all };
+  const b = best as ResidualScheme | null;
+  return { best: b && { ...b, all }, opt };
 }
 /** The smallest site any product comes on: a pad's half-acre outparcel, less the 20% layoutProduct allows. */
 const PRODUCT_LOT_MIN_SF = 0.5 * 43_560 * 0.8;
@@ -1167,6 +1262,8 @@ export type LandRead = {
   /** Which bid set the price, and the scheme behind the builder's. */
   winner: "builder" | "holder" | "texture" | "farm" | "homes" | "subdivider";
   scheme: ResidualScheme | null;
+  /** The development option the price was struck on (see LandOption); null where nothing can be built. */
+  option?: LandOption | null;
   /** A homebuilder's bid for a finished lot on a plat, $/sf (homeprice.ts homeLotBidPsf); 0 elsewhere. */
   homes?: number;
 };
@@ -1332,7 +1429,7 @@ export function devPencils(
   // appetite.
   return Math.min(3, Math.pow(Math.max(0, hurdle.hurdleRatio), Q_ELASTICITY_DEV));
 }
-/** Same supply elasticity `buildClimate` uses; see the note there. [K: dev.ts Q_ELASTICITY is unsourced too] */
+/** Same supply elasticity `buildClimate` uses; see the note there. [D: equal to dev.ts Q_ELASTICITY, which cites Saiz 2010] */
 const Q_ELASTICITY_DEV = 1.2;
 
 export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
@@ -1369,11 +1466,9 @@ type LandMemoEntry = {
   cornice: number | undefined; maturity: number | undefined;
   psf?: number;
   read?: LandRead;
-  /** residualSchemeIn at rentMult 1 and at PEAK_RENT_MULT; undefined until run. */
-  now?: ResidualScheme | null;
-  peak?: ResidualScheme | null;
+  /** residualCore at today's rents (the residual and the option); undefined until run. */
+  now?: ResidualCore;
   nowAt?: ResidualGate;
-  peakAt?: ResidualGate;
 };
 /**
  * WHAT THE MEMO KEY DOES NOT COVER AND A RESIDUAL STILL READS. The price and
@@ -1426,6 +1521,8 @@ const LAND_DICTS = [
   // between-tenants floor read the occupied stock, its measured turnover, net
   // take-up, the looking pool and the dark floors)
   "occupied", "absorb12", "turnMeas", "pool", "darkSf",
+  // the land option's sigma (market.ts measurePropertyVol), re-measured yearly
+  "landSigma",
 ] as const;
 const LAND_SCALARS = [
   "locIdxMean", "landIdx", "cpi", "infillShare", "costIdx", "indexRate",
@@ -1541,36 +1638,27 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
   const mean = econ.locIdxMean ?? 0.62;
   const level = Math.max(0.35, 1 + 0.85 * (demandIdx(rec.demandScore) - mean));
 
-  // THE PRICE OF DIRT IS THE BETTER OF TWO OFFERS, WHICH IS WHAT AN AUCTION IS.
+  // THE PRICE OF DIRT IS WHAT THE RIGHT TO BUILD ON IT IS WORTH.
   //
-  // A BUILDER bids the residual: what the finished building is worth less what
-  // it costs to build less the margin the trade requires. See residualLandPsf.
-  //
-  // A HOLDER bids the option: most land in most cities does not support a new
-  // building at today's rents and does not therefore trade at nothing. Somebody
-  // pays the taxes and waits for the rent to arrive, and what they will pay is
-  // the residual at the rents they expect at the next peak, discounted for the
-  // wait. That bid is what puts a floor under fringe dirt, and it is why a
-  // vacant lot on a bad street still costs money.
-  //
-  // Whichever of them wants it more sets the price. On a prime corner in a good
-  // market the builder wins and the number is large; on a fringe lot in a slump
-  // the holder wins and the number is small but real; and the crossover between
-  // them is exactly where redevelopment pressure starts, which is the most
-  // important line in a city and the game could not draw it before.
-  // (`memo` is the lot's memo entry: each residual is run at most once a market.)
-  let scheme: ResidualScheme | null;
-  if (memo && memo.now !== undefined && residualGateHolds(memo.nowAt!, econ)) scheme = memo.now;
-  else { scheme = residualSchemeIn(rec, econ, 1, ctx); if (memo) { memo.now = scheme; memo.nowAt = residualGate(econ); } }
+  // A BUILDER's residual is what the finished building is worth less what it
+  // costs to build less the margin the trade requires (see residualLandPsf).
+  // That is the option's intrinsic value, and it is the price only when the
+  // owner would build NOW: when V has reached the trigger V* (see LandOption).
+  // Below the trigger the dirt trades on the option, which is worth more than
+  // the residual (more than nothing where nothing pencils) because the right
+  // to wait for the rent is itself worth something. The crossover, V = V*, is
+  // where redevelopment starts, which is the most important line in a city.
+  // (`memo` is the lot's memo entry: the residual is run at most once a market.)
+  let core: ResidualCore;
+  if (memo && memo.now !== undefined && residualGateHolds(memo.nowAt!, econ)) core = memo.now;
+  else { core = residualCore(rec, econ, 1, ctx); if (memo) { memo.now = core; memo.nowAt = residualGate(econ); } }
+  const scheme = core.best;
+  const option = core.opt;
   const builder = scheme?.psf ?? 0;
-  let peak: ResidualScheme | null = null;
-  if (whole || !(builder > 0)) {
-    if (memo && memo.peak !== undefined && residualGateHolds(memo.peakAt!, econ)) peak = memo.peak;
-    else { peak = residualSchemeIn(rec, econ, PEAK_RENT_MULT, ctx); if (memo) { memo.peak = peak; memo.peakAt = residualGate(econ); } }
-  }
-  const holder = whole || !(builder > 0)
-    ? (peak?.psf ?? 0) * WAIT_DISCOUNT
-    : 0;
+  const ripe = !!option?.exercise && builder > 0;
+  // `holder` is the option's price where the owner would rather wait
+  const holder = ripe ? 0 : option?.psf ?? 0;
+  void whole;
 
   // AND WHAT THE CITY GENERATOR THOUGHT, which is not nothing.
   //
@@ -1669,8 +1757,10 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
   // finding in REALISM_AUDIT_2026-08.md rather than half-shipped here.
   let base: number;
   let winner: LandRead["winner"];
-  if (builder > 0) {
-    base = builder;
+  if (ripe) {
+    // exercise: the option is worth what building pays (the best option and
+    // the best residual can be different schemes; the higher is the price)
+    base = Math.max(builder, option?.psf ?? 0);
     winner = "builder";
     if (softDiscount < 0) base = builder * (1 + softDiscount);
     // ...BUT NEVER BELOW THE SALES-COMPARISON FLOOR. A residual that has
@@ -1719,6 +1809,7 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
     builder, holder, texture: floor,
     winner,
     scheme,
+    option,
     homes,
   };
 }
@@ -1747,7 +1838,11 @@ export function landAppraisalFloor(rec: ParcelRecord, econ: Econ, inLeaseUp: boo
   return land * (0.92 + 0.08 * w);
 }
 
-/** [K: rent by grade is a judgement, no source found.] */
+/**
+ * Rent by grade. good : standard = 1.20 against a Class A premium over lower
+ * grades of ~25% (Savills, late 2023; 25.5% over Class B, Q1 2026, ConnectCRE)
+ * [S~]. The worn and obsolete steps below standard are still judgements [K].
+ */
 export const CONDITION_RENT_MULT: Record<Condition, number> = {
   obsolete: 0.62, worn: 0.82, standard: 1.0, good: 1.2,
 };
@@ -3152,7 +3247,7 @@ export function physicalOcc(rec: ParcelRecord, h: Holding): number {
  */
 export const OPEX_CONTROLLABLE: Record<BuiltClass, number> = { office: 4.17, retail: 3.20, multifamily: 6.21, industrial: 0.50 };
 export const OPEX_FIXED: Record<BuiltClass, number> = { office: 1.72, retail: 1.54, multifamily: 2.01, industrial: 0.30 };
-export const MGMT_FEE = 0.04;   // of effective gross income, industry standard
+export const MGMT_FEE = 0.04;   // of effective gross income; office fees run 3-4% Class A, 4-5.5% Class B (CORE Advisors, Commercial Property Management Fees 2026) [S~]
 /**
  * THE REPLACEMENT RESERVE ON A BLOCK OF FLATS, and it is NOT the management
  * fee — which is the confusion this constant exists to end.
@@ -3358,11 +3453,67 @@ export function recoveryFor(
   return { opex: total * share, tax: total * (1 - share) };
 }
 
-// Property tax: ~1.1% of assessed value a year. On net leases the tenant
+// PROPERTY TAX, BILLED THE WAY A TOWN BILLS IT. On net leases the tenant
 // reimburses it; the landlord eats the share on vacant space and gross leases.
-// (NAHB from the 2024 ACS: $370.0B of real-estate tax on $41.7T of owner-
-// occupied home value = 0.89%) [S≠: source disagrees — and it is owner-occupied homes, not commercial property; to reconcile]
-export const TAX_RATE = 0.011;
+//
+//   bill = roll value x ASSESS_RATIO x MILL_RATE x taxMult
+//
+// `h.assessed` (and citygov's `g.assessed`) is the ROLL VALUE — the assessor's
+// fair market value as of the last revaluation, not today's price. The taxable
+// assessment is a statutory fraction of it, and the mill rate is levied on
+// that. This is the formula the Lincoln Institute / Minnesota Center for
+// Fiscal Excellence study computes every city's bill with: "Net Tax Bill =
+// [(Market Value x Sales Ratio) - Exemptions] x Assessment Ratio x Tax Rate"
+// (50-State Property Tax Comparison Study for Taxes Paid in 2023, July 2024,
+// p. 8). The sales ratio is not a constant here: it is the roll's lag behind
+// the market, produced by the revaluation cycle below.
+//
+// THE CONVENTION IS CONNECTICUT'S, because one state's whole rulebook is
+// coherent where a pick of numbers from several is not:
+//   - ASSESS_RATIO: real property is assessed at 70% of its fair market value
+//     at the last revaluation (CGS §12-62a(b); CT OPM, "Phase-In Revaluation
+//     Overview": "70% of the property's revalued fair market value") [S].
+//   - REVAL_YEARS: "Each municipality shall implement a revaluation not later
+//     than the first day of October and every five years thereafter" (CGS
+//     §12-62(b); CT OPM, Revaluation Date by Municipality) [S]. Between
+//     revaluations the grand list does not follow the market.
+//   - Not modelled: the local-option phase-in of increases over up to five
+//     years (CGS §12-62c) — a town that adopts none bills the full new value
+//     at once, which is what is built.
+//   - WHERE THIS DEPARTS FROM CONNECTICUT: a SALE re-marks the deed at the
+//     price (actions.ts executePurchase, `asIfOwned` below, every buyer's
+//     quote). Connecticut does not reassess on sale; that is California's rule
+//     (a change in ownership sets a new base-year value, Cal. Const. art. XIII
+//     A §2, R&T Code §110.1). It stays because changing it reaches the
+//     closing, the comps and every quote — recorded as a follow-up in
+//     REAL_ECONOMY_PLAN.md, not hidden.
+//
+// THE LEVEL: the effective tax on a $1M commercial property averaged 1.809%
+// of market value across the largest city in each state (53 cities) in 2023
+// (median of the 53: 1.79%) (Lincoln Institute / MCFE, same study, p. 26)
+// [S]. COMMERCIAL_EFFECTIVE is that figure on a FRESH roll (sales ratio 1,
+// the level an IAAO ratio study targets); the study's cities carry their own
+// sales ratios, so the bill this town actually levies on market value runs
+// below it by exactly as much as its roll lags — which is the point. (This
+// was 1.1%, tagged as disputed: its only source was NAHB's 0.89% on owner-occupied
+// homes, not commercial property.)
+/** Assessed at 70% of fair market value (CGS §12-62a(b); CT OPM) [S]. */
+export const ASSESS_RATIO = 0.70;
+/** A revaluation every five years (CGS §12-62(b); CT OPM) [S]. */
+export const REVAL_YEARS = 5;
+/** Commercial effective rate, $1M property, 53 largest cities, 2023: 1.809% (Lincoln Institute / MCFE 50-State Study, 2024) [S]. */
+export const COMMERCIAL_EFFECTIVE = 0.01809;
+/** The statutory rate on the taxable assessment (2.584%, 25.84 mills) — derived, not chosen [D]. */
+export const MILL_RATE = COMMERCIAL_EFFECTIVE / ASSESS_RATIO;
+/** The bill per dollar of ROLL value at the adopted rate: mill rate x assessment ratio [D]. */
+export const TAX_RATE = MILL_RATE * ASSESS_RATIO;
+/**
+ * IS THIS JANUARY A REVALUATION? Every REVAL_YEARS years from the town's
+ * founding (which opens on a fresh roll). One schedule for the whole town:
+ * the city's grand list (citygov.ts) and every deed on it (sim.ts) are
+ * re-marked the same January, the player's and everyone else's.
+ */
+export const isRevaluation = (m: number) => m > 0 && m % 12 === 0 && (m / 12) % REVAL_YEARS === 0;
 /**
  * The rate this year: the statutory one times what City Hall levies against
  * it (`taxMult`, set every month by citygov.ts from the rate the council
@@ -3859,11 +4010,14 @@ export function ownedContractNoiYr(
 // so you pay on the vacant + gross-leased fraction of the building.
 /** The gross property-tax bill, before anyone reimburses anything. */
 export function grossTaxYr(rec: ParcelRecord, h: Holding, econ?: { taxMult?: number; m?: number }): number {
-  const assessed = h.assessed ?? h.costBasis;
+  const roll = h.assessed ?? h.costBasis;
   if (rec.class === "land" || !rec.bldgArea) return 0; // land carry already covers it
+  // roll value x assessment ratio x mill rate (x the council's levy): the
+  // value on the roll since the last revaluation, not today's price.
+  const bill = roll * ASSESS_RATIO * MILL_RATE * (econ?.taxMult ?? 1);
   // An abated building is assessed at full value and billed less (citygov.ts).
   const ab = abatedShare(h, econ);
-  return ab ? assessed * taxRate(econ) * (1 - ab) : assessed * taxRate(econ);
+  return ab ? bill * (1 - ab) : bill;
 }
 
 /**
@@ -4991,8 +5145,13 @@ export function monthlyNOI(rec: ParcelRecord, econ: Econ, h: Holding, currentQ: 
   return holdingNOIYr(rec, econ, h, currentQ) / 12;
 }
 
-// [K: renovation cost and time are judgements, no cost survey checked.]
+// Office: JLL's average office renovation cost runs $297-303/sf in the dearest
+// markets (San Francisco, New York, San Jose; CoStar, "Here's what it costs to
+// build the office tenants say they want") and mid-range remodels $70-150/sf
+// (Atlanta, swivl cost guide); $210 sits between [S~]. Retail, flats and
+// industrial are still judgements [K].
 export const RENO_COST_PSF: Record<BuiltClass, number> = { office: 210, retail: 150, multifamily: 165, industrial: 90 };
+// [K: renovation time is a judgement, no schedule survey checked.]
 export const RENO_MONTHS = 6;
 
 export function renovationCost(rec: ParcelRecord, econ: Econ): number {

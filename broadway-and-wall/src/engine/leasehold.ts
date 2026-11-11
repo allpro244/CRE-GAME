@@ -35,6 +35,9 @@ export const LEASEHOLD_TERM_M = 99 * 12;
 /**
  * Fixed annual steps. Modern ground leases run either CPI or fixed bumps of
  * about 2% a year; fixed is the common institutional form and needs no index.
+ * [S~: fixed steps of 2% a year, or 10% every five years, are the usual form
+ * in ground-lease practice guides; Safehold's 10-K (2021) pairs contractual
+ * increases with CPI lookbacks capped at 3.0-3.5%.]
  */
 export const LEASEHOLD_STEP = 0.02;
 /** Counsel, title and the ground buyer's advisers on a fee sale — about a point, a fact of the trade. */

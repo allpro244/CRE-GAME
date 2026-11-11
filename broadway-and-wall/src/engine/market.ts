@@ -4,7 +4,7 @@
 import { leaseUpMonthsOf } from "./proforma";
 import { tickBands } from "./bands";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { BuiltClass, Econ, FirmBook, GameState, MarketPhase, NewsItem, Sector } from "./types";
+import type { BuiltClass, Econ, EconHistoryPoint, FirmBook, GameState, MarketPhase, NewsItem, Sector } from "./types";
 import { OFF_FLOOR_SHARE_NAT } from "./industries";
 import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert } from "./types";
 import { tickStreetTenants } from "./tenantBooks";
@@ -268,8 +268,11 @@ const MOVE_OUT_M: Record<BuiltClass, number> = { office: 24, retail: 18, industr
 
 /** The typical lease term by class, months — eight years of office paper,
  *  seven of retail, six of industrial, one of housing.
- *  [K: the terms as the trade quotes them, no survey found; twelve months is the
- *  standard residential lease.] */
+ *  [S~] Office: Avison Young, US office leases 2023 averaged 74 months new /
+ *  60 renewal nationally; CompStak gateway-market renewals 94.1 months
+ *  (Q2 2024) — 96 sits at the gateway end, which is this city. Industrial:
+ *  CompStak, deals of 200k+ sf averaged 80.2 months (Q1 2026). Retail is
+ *  still a judgement; twelve months is the standard residential lease. */
 export const LEASE_TERM_M: Record<BuiltClass, number> = { office: 96, retail: 84, industrial: 72, multifamily: 12 };
 /** The share of a class's leases that roll in a month: what the in-place rent moves at. [D: 1 / LEASE_TERM_M] */
 const LEASE_ROLL: Record<BuiltClass, number> = {
@@ -1054,9 +1057,9 @@ export function noteTenantSfChange(s: GameState, use: BuiltClass, deltaSf: numbe
  * feet standing; it is the point where the employment term is exactly neutral,
  * so it moves nothing about the existing calibration and only prices the swing.
  * (BLS CES via FRED USCONS / PAYEMS: construction 7.49M of 150.9M nonfarm
- * jobs in 2019 = 4.97%; 5.14% in 2000 and in 2023) [S≠: source disagrees — 4.8% is a little low; to reconcile]
+ * jobs in 2019 = 4.97%; 5.14% in 2000 and in 2023) [S]; it read 4.8%
  */
-export const CONSTRUCTION_JOB_SHARE = 0.048;
+export const CONSTRUCTION_JOB_SHARE = 0.050;
 /**
  * ...AND THE NEUTRAL POINT WAS MEASURED OFF A BROKEN MODEL, THEN THE MODEL WAS
  * FIXED AND THIS WAS NOT.
@@ -1105,8 +1108,11 @@ export const BUILD_MONTHS = { office: [12, 30], retail: [18, 28], multifamily: [
 // measured fact about the business, in the same register as BUILD_MONTHS above
 // — not a shape parameter and not a tuning knob. It is not split by class
 // because the dominant term is the municipality, not the use.
-// [K: no source found for the range.]
-export const ENTITLE_MONTHS = [6, 18] as const;
+// [S] Oliner (Federal Reserve Board), as reported by Building Design +
+// Construction: ~17-month average planning time over 82,000 US projects;
+// Fairfax County VA commercial review 13-17 months (FY2017-18). Reconciled
+// 2026-11-11: the range was [6, 18] (mean 12); [10, 24] has the sourced mean.
+export const ENTITLE_MONTHS = [10, 24] as const;
 /** Loan documents, final permits and mobilization after approvals are in hand. */
 export const CONSTRUCTION_CLOSE_M = 2;
 
@@ -1119,7 +1125,10 @@ export const CONSTRUCTION_CLOSE_M = 2;
  * game has been bitten by it before. An office floor is 230 sf a head, a shed
  * is 550, a shop is 420. Flats employ nobody; they house people, and people
  * arrive here through the labour force rather than through the roof.
- * [K: no source found; demand.ts carries the same ratios unsourced.]
+ * [S≠ EIA CBECS 2012 Table B2: office buildings average 473 sf of floor
+ * per worker (median 600), mercantile 1,243 (median 1,200); CBECS 2018
+ * distribution centres 2,004. Those are gross building area per worker, the
+ * code's are tighter; to reconcile. demand.ts carries the same ratios.]
  */
 export const SF_PER_JOB: Record<BuiltClass, number> = { office: 230, industrial: 550, retail: 420, multifamily: 0 };
 /** Share of the population in the labour force. See the note at the unemployment term.
@@ -3411,7 +3420,9 @@ export function tickEcon(s: GameState) {
   // same sentiment now builds at 1.8x trailing-year payroll growth, which is
   // those two numbers at +1.5%/yr and -3%/yr, continuously. It feeds cap
   // rates and land through `cycleDev`, so that channel is now caused.
-  const step = clamp(1.8 * payrollGrowth12(e), -0.08, 0.06) + rrange(s, -0.03, 0.03);
+  // ...and nothing else (2026-11-11): the ±0.03 monthly die on top is gone, so
+  // the index is a smoothed reading of the town's own payrolls, not a walk.
+  const step = clamp(1.8 * payrollGrowth12(e), -0.08, 0.06);
   const spring = -0.048 * e.cycleDev;
   e.cycleDev = clamp(e.cycleDev + step + spring, -1, 1);
 
@@ -5128,6 +5139,12 @@ export function tickEcon(s: GameState) {
   }
 
   recordHistory(e, s.month, monthAbs, monthComp);
+  // THE TOWN'S PROPERTY VOLATILITY, measured once a year off its own tape —
+  // the sigma the land option is priced on (value.ts landOption).
+  if (s.month % 12 === 0) {
+    const vol = measurePropertyVol(e);
+    if (vol) e.landSigma = vol; else delete e.landSigma;
+  }
   // What moved on the screens this month, and why (whyReads.ts): ledger writes only.
   noteReads(s);
 
@@ -5226,6 +5243,40 @@ export function seekersPerVacantSf(e: Econ, use: BuiltClass): number {
     ? sp.cap - sp.let
     : housableStock(e, use) - (e.occupied?.[use] ?? 0);
   return want / Math.max(1, vacant);
+}
+
+/**
+ * HOW MUCH THIS TOWN'S PROPERTY VALUES MOVE, by class: the standard deviation
+ * of the twelve-month change in log value, value read as effective rent over
+ * the cap rate, over every month of the trailing ten years (overlapping
+ * twelve-month windows). Not set: measured, so a town whose rents swing has
+ * land that carries more option value, and a calm one less. Undefined until
+ * there are two years of the town's own record — no record, no measurement.
+ */
+const VOL_WINDOW_M = 120;   // [K: "trailing 10 years" — the window the brief names; a judgement of how long a market remembers]
+const VOL_MIN_M = 24;       // [K: twelve twelve-month changes is the least that reads as a spread]
+export function measurePropertyVol(e: Econ): Record<BuiltClass, number> | undefined {
+  const h = e.history ?? [];
+  if (h.length < VOL_MIN_M + 1) return undefined;
+  const from = Math.max(0, h.length - VOL_WINDOW_M - 12);
+  const out = {} as Record<BuiltClass, number>;
+  for (const c of ["office", "retail", "multifamily", "industrial"] as BuiltClass[]) {
+    const v = (p: EconHistoryPoint): number => {
+      const rent = p.effRent?.[c] ?? p.rent?.[c];
+      const cap = p.cap?.[c];
+      return rent && cap && rent > 0 && cap > 0 ? rent / cap : NaN;
+    };
+    const xs: number[] = [];
+    for (let i = from + 12; i < h.length; i++) {
+      const a = v(h[i - 12]), b = v(h[i]);
+      if (a > 0 && b > 0) xs.push(Math.log(b / a));
+    }
+    if (xs.length < VOL_MIN_M / 2) return undefined;
+    const m = xs.reduce((x, y) => x + y, 0) / xs.length;
+    const sd = Math.sqrt(xs.reduce((x, y) => x + (y - m) * (y - m), 0) / Math.max(1, xs.length - 1));
+    out[c] = +sd.toFixed(4);
+  }
+  return out;
 }
 
 function recordHistory(e: Econ, q: number, abs?: Record<string, number>, comp?: Record<string, number>) {

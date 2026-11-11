@@ -673,7 +673,8 @@ export const MAX_TALKS = 4;
 /**
  * EARNEST MONEY, HARD ON SIGNATURE. One and a half per cent, which is what a
  * deposit on a building of this size actually is. Credited at closing; kept by
- * the seller if the clock runs out.
+ * the seller if the clock runs out. [S~: commercial earnest money runs 1-3%
+ * of price, going hard after diligence (broker and M&A deal guides).]
  */
 export const DEPOSIT_PCT = 0.015;
 

@@ -623,11 +623,16 @@ export function nameAnchors(bbl: string, month: number, key: ProductKey, anchors
  *     ~sqrt(plate) wide at ~15:1 gives floors ≤ 1.2·√plate
  *   - and 90 floors is the ceiling money has actually reached
  */
-/** Floor to floor, feet. */
+/** Floor to floor, feet. CTBUH Height Calculator assumes 3.9 m (12.8 ft) office,
+ *  3.5 m (11.5 ft) mixed-use, 3.1 m residential; 12.5 ft = 3.81 m [S~]. */
 export const FLOOR_HEIGHT_FT = 12.5;
-/** Height : plate width. The 57th Street limit, and about where money stops. */
+/** Height : plate width. 432 Park Avenue is 1:15 (Skyscraper Museum, "Super
+ *  Slenders"; STRUCTURE magazine, 2018) [S]; 1:10-1:12 is where engineers start
+ *  calling a tower slender. (111 W 57th reaches ~1:24, an outlier.) */
 export const MAX_SLENDERNESS = 15;
-export const ABS_MAX_FLOORS = 90;
+/** Central Park Tower, the tallest residential building, has 98 floors above
+ *  ground (CTBUH Skyscraper Center) [S]. Was 90, unsourced. */
+export const ABS_MAX_FLOORS = 98;
 
 /**
  * HOW TALL THE STRUCTURE WILL GO, and why it was a cliff.
@@ -821,6 +826,9 @@ export function cityValueToReplacement(s: GameState): number {
  * across metros with a central value near 1.5, and a land-constrained harbour
  * peninsula sits at the low end of that. Expressed as a power, which is what an
  * elasticity is, so a 10% move in q is a 12% move in starts.
+ * [S~] Saiz (2010, QJE 125(3)): population-weighted metro supply elasticity
+ * 1.75, below one in land-constrained cities (coastal California, Miami, New
+ * York, Boston). A stock elasticity read onto starts, hence approximate.
  *
  * The rails are guards again rather than structure. Measured over 3 towns x 50
  * years the floor binds in 0% of months and the cap in 3%, against the old
@@ -1579,8 +1587,10 @@ export function refreshDevelopmentFeasibility(
  * would charge it for new space: past that it leases something standing, or
  * builds its own. The premium is the fit (a floor plate, a loading court, a
  * data hall drawn to its operation) plus never moving twice. Estimate, not a
- * fit to any test: BTS deals are widely reported to price at roughly 5-15%
- * over comparable speculative space; this is the middle of that range.
+ * fit to any test: GlobeSt (2026-04-17, "Build-to-suit gains momentum in tight
+ * logistics markets") puts the BTS premium at 10-25% over comparable-spec
+ * development; under rent-constant pricing the rent premium follows the cost
+ * premium, so this is the low end [S~].
  */
 export const BTS_FIT_PREMIUM = 0.10;
 /**
@@ -1596,6 +1606,9 @@ export const BTS_START_WINDOW_M = 12;
  * a credit lease, and 50 is the long end of ground-up net lease (big-box,
  * distribution, headquarters with the options folded in). The developer names
  * it on the listing; the anchor who signs, signs for it.
+ * [S~] BTS net leases run 10-20 years, most often 15-20 (W. P. Carey, "Commercial
+ * lease types explained"; Lev, "Build-to-suit"); ground leases 50-99 years
+ * (Holland & Knight, "Ground Leases", 2025), so 50 is the short end of those.
  */
 export const BTS_TERM_MIN_Y = 15;
 export const BTS_TERM_MAX_Y = 50;
@@ -1910,14 +1923,21 @@ export function devFundingNeed(plan: { equity: number; equityAtClose: number; po
  *          calibrated to a vol surface, and said so.
  *   fixed  a forward rate lock: the takeout converts at today's index + 2.1
  *          + 0.75 for the lock's optionality, for a 1% commitment fee.
- *          Forward commitments ran 50-100bp over spot with a 1-2% fee.
+ *          [S~] Fannie Mae forward commitment: 1% of the loan due at
+ *          issuance (Lument term sheet) [S]; a rate held past 90 days costs
+ *          3-5 bp a month (Northmarq, "Forward Commitments"), about 0.6-1.0
+ *          point over a two-year build, so 0.75 [D].
  *   float  naked; allowed only at or below 60% of cost.
  */
-export const TAKEOUT_CAP_STRIKE_OVER = 1.5;
 export const TAKEOUT_LOCK_PREMIUM = 0.75;
 export const TAKEOUT_LOCK_FEE = 0.01;
+// [K: the cap strike and the naked-float limit are shape parameters, unsourced.]
+export const TAKEOUT_CAP_STRIKE_OVER = 1.5;
 export const TAKEOUT_HEDGE_LTC = 0.6;
 export type TakeoutKind = "float" | "cap" | "fixed";
+/** Closed commercial mortgage spreads averaged 183 bp in Q2 2024 (CBRE, Q2 2024
+ *  lending momentum release); a mini-perm on a fresh building prices a little
+ *  over [S~]. */
 export const MINI_PERM_SPREAD = 2.1;
 export function takeoutHedgeCost(plan: { commitment: number; months: number }, kind: TakeoutKind): number {
   if (!(plan.commitment > 0) || kind === "float") return 0;
@@ -3289,10 +3309,14 @@ export const PROGRAMS: CapProgram[] = [
  * repositioning is a fraction of a rebuild. A lobby is a first impression and
  * buys a third of a grade. This is now the whole answer to age, and it is a
  * decision taken once a decade per building, not once a month.
+ * [K: the lifts are judgements.]
  */
 export const PROGRAM_LIFT: Record<string, number> = { lobby: 0.08, systems: 0.17, facade: 0.21 };
 
-/** How long each job holds before the same one is due again. */
+/** How long each job holds before the same one is due again. Finishes 15 years,
+ *  shell 30 (Texas Comptroller FMX building definitions); HVAC 15-30 by system
+ *  (ASHRAE service-life database; Cooperator, "Life spans of building systems")
+ *  [S~]: lobby 15y, systems 25y, facade 35y. */
 export const PROGRAM_CYCLE_M: Record<string, number> = { lobby: 180, systems: 300, facade: 420 };
 
 export function programCost(rec: { bldgArea: number }, s: GameState, p: CapProgram): number {
@@ -3797,6 +3821,9 @@ const normalPipeShare = () => REF_PIPE_SHARE;
  * Repair, renovation and fit-out as a share of all construction work — the part
  * of the trades' order book that is not speculative new build and does not stop
  * when the cranes do. Roughly 45% of US construction spend.
+ * [S~] Census C30 (value put in place), 2025: residential improvements $383.8B,
+ * 41.6% of private residential construction. Residential only; no all-sector
+ * split is published.
  */
 const MAINTENANCE_SHARE = 0.45;
 
@@ -3916,6 +3943,7 @@ function tickCrews(s: GameState, bbls: string[]) {
  * and leaving the old figure in place silently halved the square footage the
  * space market ordered. The market's demand arrives as more, smaller buildings
  * now — which is what a low town growing visibly looks like.
+ * [D: the measured median building of the generated city.]
  */
 const TYPICAL_SF = 26_000;
 
@@ -5837,10 +5865,14 @@ export function bumpLand(s: GameState, bbl: string, mult: number) {
 export const SUITE_BOUNDS: Record<BuiltClass, { min: number; max: number; typical: number }> = {
   // 2,000 sf is the floor for any commercial tenancy — see COMMERCIAL_SUITE_MIN
   // in leasing.ts. Below it you are describing a kiosk or a serviced desk.
-  office:      { min: 2_000, max: 60_000,  typical: 4_500 },
+  // typical office: average new US office lease ~3,500 sf in 2025 (CoStar Group
+  // investor release, 2026) [S]; was 4,500. Flats: average new apartment 908 sf
+  // in 2024 (RentCafe / Yardi Matrix) [S]; was 850. Retail and industrial
+  // typicals and all the bounds are judgements [K].
+  office:      { min: 2_000, max: 60_000,  typical: 3_500 },
   retail:      { min: 2_000, max: 30_000,  typical: 3_200 },
   industrial:  { min: 5_000, max: 200_000, typical: 25_000 },
-  multifamily: { min: 450,   max: 2_200,   typical: 850 },
+  multifamily: { min: 450,   max: 2_200,   typical: 908 },
 };
 
 /** The legal range of unit counts for a given amount of floor area in a use. */

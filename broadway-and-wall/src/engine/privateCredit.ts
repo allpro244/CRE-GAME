@@ -60,6 +60,8 @@ const PRIVATE_LENDER_STYLES = new Set(["opportunistic", "pe", "vulture", "mercha
  * and a cheque that clears this month are worth. 2.5-5 points over the fund
  * is the private-bridge / hard-money band over institutional bridge; the draw
  * stays a draw because who is lending, and how badly they want it, varies.
+ * [S~: commercial-mortgage brokers put hard money 200-400 bp over
+ * institutional bridge, with 2-5 points of fees against 1-2.]
  */
 const PRIVATE_PREMIUM: [number, number] = [2.5, 5.0];
 function privateBase(s: GameState): number {

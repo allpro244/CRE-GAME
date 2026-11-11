@@ -35,9 +35,20 @@ export const INCOME_SIGMA = 0.92;
 export const DTI = 0.28;
 /** Down payment: 10%, about the median for all buyers (NAR Profile of Home Buyers and Sellers 2024: 9% first-time, 23% repeat). */
 export const DOWN = 0.10;
-/** Property tax (~1.0% effective, US median) and homeowner's insurance (~0.5%), a year, as a share of the price. */
-export const TAX_INS = 0.015;
-/** The 30-year mortgage over the loan index — the same 1.7 points the households' block uses (market.ts tickHouseholds). */
+/**
+ * Property tax and homeowner's insurance, a year, as a share of the price.
+ * [S: ATTOM 2024 average effective property-tax rate 0.86% (NAHB, 2024 ACS:
+ * 0.89%); Freddie Mac 2023 average insurance premium $4.90 per $1,000 of home
+ * value, 0.49% — together ~1.4%. Was 0.015 (an assumed 1.0% + 0.5%), lowered
+ * to the sources.]
+ */
+export const TAX_INS = 0.014;
+/**
+ * The 30-year mortgage over the loan index (a ten-year yield) — the same 1.7
+ * points the households' block uses (market.ts tickHouseholds). [S: Freddie Mac
+ * PMMS over the 10-year Treasury averaged 1.72 points 2005-2019, and ~1.7 since
+ * the end of the Great Recession (First American analysis).]
+ */
 export const MORTGAGE_SPREAD = 0.017;
 /**
  * THE REFERENCE NEW HOUSE, 2024: Census New Residential Sales median sales

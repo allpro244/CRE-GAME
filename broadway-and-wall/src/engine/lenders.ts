@@ -1691,7 +1691,9 @@ export const PRIOR_EL: Record<LossClass, number> = { income: 0.35, construction:
 /**
  * CAPITAL HELD PER DOLLAR, as a multiple of the desk's own target: income
  * property at 100% risk weight, construction and land at 150% (the HVCRE
- * weight, 12 CFR 324.32(j)), subordinate and bridge paper at 150%.
+ * weight, 12 CFR 324.32(j)) [S: US Basel III standardized-approach rule, 2013,
+ * for income, construction and land]; subordinate and bridge paper at 150% is
+ * [K: judgement — the rule weights a non-HVCRE junior CRE loan at 100%].
  */
 const RISK_WEIGHT: Record<LossClass, number> = { income: 1, construction: 1.5, land: 1.5, junior: 1.5 };
 /**

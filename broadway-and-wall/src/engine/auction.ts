@@ -50,8 +50,14 @@ import { routeProceeds } from "./vehicles";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
-/** Down the day you register, forfeit if you cannot close. */
+/**
+ * Down the day you register, forfeit if you cannot close. [S: New York
+ * foreclosure terms of sale — 10% of the bid by certified check to the referee
+ * at the sale, the balance within 30 days (NY courts' Queens and New York County
+ * auction rules).]
+ */
 export const DEPOSIT_PCT = 0.10;
+/** Lots on one docket. [K] a size for the screen, not a fact. */
 const MAX_LOTS = 8;
 
 /**

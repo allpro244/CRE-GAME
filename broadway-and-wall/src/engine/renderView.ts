@@ -29,7 +29,11 @@ import { START_YEAR } from "./types";
 import { ownerOf } from "./rivals";
 import { STYLE_KITS } from "./styleKits";
 
-/** Storey height the generator and both renderers build with (citygen, MapView). */
+/**
+ * Storey height the generator and both renderers build with (citygen, MapView).
+ * [S~: CTBUH Tall Building Height Calculator — 3.5 m floor-to-floor for
+ * mixed-use or unknown function (3.9 office, 3.1 residential).]
+ */
 export const FLOOR_M = 3.55;
 
 export const RENDER_VIEW_FORMAT = "bw-render/1";

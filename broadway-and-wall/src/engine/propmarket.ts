@@ -96,7 +96,10 @@ const BEND = 2, BEND_REF = 5.4;
 const bentIndex = (i: number) => i + BEND * (Math.exp(-i / BEND) - Math.exp(-BEND_REF / BEND));
 /** Closing costs a buyer carries on top of the price: legal, title, diligence (closingFinance). */
 export const BUY_CLOSING = 0.02;
-/** Points on the acquisition loan (streetLoanCost charges about one). */
+/** Points on the acquisition loan (streetLoanCost charges about one).
+ *  [S~] Commercial origination fees run 0.5-1% of the loan amount (CommLoan,
+ *  "Loan origination fees"; commercialrealestate.loans glossary); one point is
+ *  the top of that range. */
 const LOAN_POINTS = 0.01;
 /**
  * RENT GROWTH MEAN-REVERTS: annual rent-growth autocorrelation runs 0.5-0.7 in
@@ -122,6 +125,12 @@ export const loneBid = (max: number) => max * (1 - SHADE);
  * allowance (TI_ASK, per foot per year of term) and a 4.5% commission
  * (rolloverReserve); a renewal: a refresh of a five-year-old fit-out
  * (renewalRefreshShare) and the 2% renewal commission.
+ * [S~] office checked 2026-11: Altus Group ("The Darwinian evolution of the NYC
+ * office market") reports overall office renewal probability recently below
+ * 65% (older stock) and ~75% for newer buildings; an MIT thesis on 15,000+
+ * leases (DSpace 1721.1/26714) finds realised renewal under the industry's
+ * conventional 75%. The PwC attribution and the retail/industrial figures were
+ * not re-checked.
  */
 const RENEW_P: Partial<Record<BuiltClass, number>> = { office: 0.60, retail: 0.65, industrial: 0.70 };
 const LC_NEW = 0.045, LC_RENEW = 0.02;
@@ -736,11 +745,13 @@ const LAND_Q0 = 0.20;
 const Q_PRIOR_YRS = 5;
 /** Huber's tuning constant (Huber 1964): 95% efficiency at the normal. A statistical constant, not a fit. */
 const HUBER_K = 1.345;
-/** E[psi(Z)^2] for Huber's psi at HUBER_K, Z standard normal: the consistency factor of the Huber scale (a statistical constant). */
+/** E[psi(Z)^2] for Huber's psi at HUBER_K, Z standard normal: the consistency factor of the Huber scale (a statistical constant).
+ *  [M] = 2Φ(k) - 1 - 2kφ(k) + 2k²(1 - Φ(k)) at k = 1.345 ≈ 0.710. */
 const HUBER_PSI2 = 0.7102;
 /** Closed years' means kept for the volatility record. */
 const YRS_KEPT = 40;
-/** The standard lot a land read is quoted for: 25 x 100 ft, the Manhattan standard lot. */
+/** The standard lot a land read is quoted for: 25 x 100 ft, the Manhattan standard lot.
+ *  [S~] the 25 x 100 ft city lot laid out under the Commissioners' Plan of 1811. */
 const LAND_REF_LOT = 2500;
 
 const dot = (a: number[], b: number[]) => a.reduce((t, v, i) => t + v * b[i], 0);
@@ -922,6 +933,8 @@ const CLASS_WORD: Record<BuiltClass, string> = { office: "office", retail: "reta
  * each carry a bidder's own idiosyncrasy moved office two and a half points in
  * a year in a measured run. Widening the window instead trades that noise for
  * lag, which is what a thin market is.
+ * [S~] Fannie Mae Selling Guide B4-1.3-08: an appraisal must report at least
+ * three closed comparable sales; five sits at the top of the usual 3-5.
  */
 const MIN_EVIDENCE = 5;
 export function tickCapRead(s: GameState): void {

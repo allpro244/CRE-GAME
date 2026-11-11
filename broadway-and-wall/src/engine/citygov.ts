@@ -54,7 +54,7 @@
 import type { Econ, GameState } from "./types";
 import { BUILT_CLASSES, START_YEAR, raiseAlert } from "./types";
 import { rng, pushNewsPublic, islandResidents, SF_PER_HOME, PEOPLE_PER_HOME, openingVac } from "./market";
-import { TAX_RATE, classValuePsf } from "./value";
+import { TAX_RATE, classValuePsf, isRevaluation } from "./value";
 import { why as whyEv, whyAt, whyMark, whyNation } from "./why";
 import { whyTown } from "./economy";
 import { HH_SIZE, fundamentalHomePsf, medianIncome } from "./homeprice";
@@ -72,7 +72,7 @@ export const TRANSFER_TAX = 0.006;
 const SERVICES_PC = 1_400;
 /** Current spending per public-school pupil (Census, Public Elementary-Secondary Education Finances FY2022: $15,633). */
 const PER_PUPIL = 15_600;
-/** Public K-12 pupils per resident under 18 (NCES: 49.6M enrolled / ~73M children). */
+/** Public K-12 pupils per resident under 18 [S: NCES Common Core of Data, fall 2022 public PreK-12 enrollment 49.6M (press release 2024) / ~73M US residents under 18 (Census 2022)]. */
 const PUPILS_PER_CHILD = 0.68;
 /** State revenue sharing toward general government: a few per cent of municipal spending (Census, intergovernmental revenue). */
 const AID_GENERAL = 0.04;
@@ -125,7 +125,10 @@ const LABOR_SHARE = 0.60;
 /** Homeownership (Census HVS 2023: 65.7%); the median existing house, sf (AHS ~1,800). */
 const OWN_RATE = 0.657, HOME_SF = 1_800;
 /**
- * PENSIONS (NASRA / Pew, public plans). Accrued liability about 5.5 years of
+ * PENSIONS (NASRA / Pew, public plans). [S: the 7.0% median assumed return is
+ * the NASRA Public Fund Survey median for FY2022 (8.0% in FY2010); the other
+ * entries are [S~] NASRA/Pew ranges, not re-verified line by line in 2026.]
+ * Accrued liability about 5.5 years of
  * covered payroll, funded about three-quarters; liabilities discounted at the
  * 7.0% median assumed return; normal cost 12% of payroll of which members pay
  * 5%; benefits paid about 5.5% of the liability a year; the unfunded part
@@ -169,7 +172,12 @@ const amortFactor = (r: number) => (r > 1e-6 ? r / (1 - Math.pow(1 + r, -30)) : 
  * real income per resident, smoothed over five years, against the opening.
  */
 const WAGNER_ELAST = 0.5, WAGNER_EMA_M = 60;
-/** The funded ratio past which a surplus turns into richer benefits (see tickCityGov). */
+/**
+ * The funded ratio past which a surplus turns into richer benefits (see tickCityGov).
+ * [S~: CalPERS's SB 400 benefit increase (1999) was passed on a surplus, with the
+ * plan reported 128-137% funded (CalPERS; Fox & Hounds 2018); 1.2 sits a little
+ * under that episode — one case, not a measured distribution.]
+ */
 const PEN_SWEETEN = 1.2;
 /** AAA tax-exempt yields run at 70-90% of the Treasury ten-year (MMD/UST, 2000-2024). */
 const MUNI_RATIO = 0.80;
@@ -177,8 +185,6 @@ const MUNI_RATIO = 0.80;
 const BOND_YEARS = 20, STATE_YEARS = 15, NOTE_M = 12;
 /** GFOA: an unrestricted reserve of at least two months of operating spending. */
 const RESERVE_MONTHS = 2;
-/** Assessments trail the market — most US rolls are reassessed every one to three years, New York phases in over five. */
-const ASSESS_LAG_M = 36;
 /**
  * THE SPREAD, in points over the tax-exempt curve — a shape read off the
  * rating scorecards and the record, not fitted to anything in this game.
@@ -233,10 +239,17 @@ const ABATE = { pct: 0.7, years: 15 };
  * tenants stay: about 85% renew against about 55% at market (NYC HVS tenure).
  */
 const RGB_SHARE = 0.7, RENEW_STAB = 0.85;
-/** The populist's transfer tax (New York's mansion-tax era: ~1% and up); the civic works' cost and the city's share of it. */
+/** The populist's transfer tax [S: New York State's "mansion tax", 1% of residential sales of $1M+, enacted 1989; made progressive to 3.9% in NYC in 2019]. */
 const TRANSFER_POPULIST = 0.010;
+/** The civic works' cost. [K: judgement, no source found — round figures for an infill station, a park and a bridge.] */
 const WORK_COST: Record<string, number> = { station: 40e6, park: 10e6, bridge: 120e6 };
-/** Federal and state capital grants carry half a station or a bridge (FTA Capital Investment Grants); a park is the city's alone. */
+/**
+ * Federal and state capital grants carry half a station or a bridge; a park is the city's alone.
+ * Station: [S~] FTA Capital Investment Grants are capped at 60% for New Starts (49 U.S.C. 5309)
+ * and recent awards run near 50% (FTA FY27 Annual Report project profiles, 2026). Bridge:
+ * [S≠ source says the federal-aid highway share is normally 80% (23 U.S.C. 120), so the
+ * city's part of a bridge would be well under half; to reconcile].
+ */
 const WORK_CITY_SHARE: Record<string, number> = { station: 0.5, park: 1, bridge: 0.5 };
 /** The long-run average US unemployment rate (BLS 1948-2024), what voters read the local rate against. */
 const U_NORM = 0.057;
@@ -273,7 +286,16 @@ export interface CityGov {
   inc0?: number;
   policy: CityPolicy;
   policy0: { propRate: number; wageRate: number };
+  /** The grand list: the roll value of every built foot and home in town, at the last revaluation's prices (value.ts). */
   assessed: number;
+  /**
+   * THE LAST REVALUATION: the value per foot of each built class (BUILT_CLASSES
+   * order) and per household the assessor struck that January. Between
+   * revaluations the roll is the stock today at those prices — what is built
+   * joins the list, what is torn down leaves it, and the market moves nothing.
+   * Unset on an old save: struck the first month it is read.
+   */
+  reval?: { m: number; psf: number[]; perHh: number };
   abated: { endM: number; pct: number; sf: number[] }[];
   prevStock: number[];
   mo: BudgetLines;
@@ -391,14 +413,36 @@ export function marketRoll(e: Econ): { commercial: number; homes: number } {
   return { commercial, homes: owners * homePrice + (off - owners) * flat };
 }
 
-/** The tax the roll would raise this year before abatements, and what the abatements forgive. */
+/** The roll value the abatements forgive: the abated feet at the roll's prices. */
 function abatedValue(e: Econ, g: CityGov, m: number): number {
   let v = 0;
   for (const c of g.abated) {
     if (c.endM <= m) continue;
-    BUILT_CLASSES.forEach((k, i) => { if (c.sf[i] > 0) v += c.sf[i] * Math.max(0, classValuePsf(e, k)) * c.pct; });
+    BUILT_CLASSES.forEach((k, i) => { if (c.sf[i] > 0) v += c.sf[i] * (g.reval?.psf[i] ?? Math.max(0, classValuePsf(e, k))) * c.pct; });
   }
   return v;
+}
+
+/**
+ * THE ASSESSOR'S REVALUATION: today's market roll, struck per foot of each
+ * class and per household so the list can carry the stock between
+ * revaluations at these prices (value.ts REVAL_YEARS, CGS §12-62(b)).
+ */
+function revalue(e: Econ, m: number): NonNullable<CityGov["reval"]> {
+  const psf = BUILT_CLASSES.map((k) => {
+    const stk = e.stock?.[k] ?? 0;
+    if (!(stk > 0)) return Math.max(0, classValuePsf(e, k));
+    const occ = clamp((e.occupied?.[k] ?? stk * (1 - openingVac(k))) / stk, 0, 1);
+    return Math.max(0, classValuePsf(e, k, occ));
+  });
+  return { m, psf, perHh: marketRoll(e).homes / Math.max(1, cityPeople(e).households) };
+}
+
+/** The grand list this month: the stock standing today at the last revaluation's prices. */
+function grandList(e: Econ, r: NonNullable<CityGov["reval"]>): number {
+  let v = 0;
+  BUILT_CLASSES.forEach((k, i) => { v += Math.max(0, e.stock?.[k] ?? 0) * r.psf[i]; });
+  return v + cityPeople(e).households * r.perHh;
 }
 
 function payrollBase(e: Econ): number { return (e.eco?.island?.jobs || e.jobs || 0) * AVG_PAY * (e.wageIdx ?? 1); }
@@ -515,7 +559,7 @@ export function openCityGov(s: GameState): CityGov {
     cash: 0, bonds: [], pension: { liab: 0, assets: 0 },
     policy: { propRate: TAX_RATE * (e.taxMult ?? 1), wageRate: 0, salesRate: SALES_RATE, transferRate: TRANSFER_TAX, abate: null, rentCap: null, service: 1 },
     policy0: { propRate: 0, wageRate: 0 },
-    assessed: roll.commercial + roll.homes, abated: [],
+    assessed: roll.commercial + roll.homes, reval: revalue(e, m), abated: [],
     prevStock: BUILT_CLASSES.map((k) => e.stock?.[k] ?? 0),
     mo: zeroLines(), fy: zeroLines(), rev12: 0, op12: 0, defShare: 0, spread: SPREAD.base, open: true, shut: false,
     capUnfunded: 0, works: [],
@@ -573,9 +617,32 @@ export function tickCityGov(s: GameState) {
   g.pension.assumed = was + (expRet - was) / PEN_ASSUME_M;
   g.pension.liab *= Math.exp(-PEN_DURATION * (g.pension.assumed - was));
 
-  // THE ROLL: the assessor chases the market, years behind.
-  const roll = marketRoll(e);
-  g.assessed += (roll.commercial + roll.homes - g.assessed) / ASSESS_LAG_M;
+  // THE ROLL: revalued every REVAL_YEARS (value.ts), the same January every
+  // deed in town is re-marked (sim.ts); in between, the stock at the last
+  // revaluation's prices. This was a 36-month moving average of the market —
+  // a roll that followed every month's price, only slowly, which no assessor
+  // does: the grand list is struck on the revaluation date and stands.
+  //
+  // A REVALUATION MOVES THE LIST, NOT THE LEVY. A mill rate is the levy the
+  // budget needs divided by the taxable list [D: the definition of the rate];
+  // the council decides dollars, and the rate is what is left when the new
+  // list comes in. Where the statute says so outright it is the "rolled-back
+  // rate" — the rate that raises the prior year's levy on the revalued list,
+  // new construction aside (Florida Statutes §200.065(1); Texas's "no-new-
+  // revenue rate", Tax Code §26.04) [S]. So the rate is rescaled by old list
+  // over new on the same stock, and the July budget (`fiscalYear`) then moves
+  // it as it would any year. Without this, a revaluation after a 50% boom
+  // handed the town a 50% raise its council could only give back a twelfth
+  // at a time (seed 11: $24M of surplus on $28M of spending).
+  if (!g.reval || isRevaluation(m)) {
+    const next = revalue(e, m);
+    if (g.reval) {
+      const was = grandList(e, g.reval), now = grandList(e, next);
+      if (was > 0 && now > 0) P.propRate = clamp(P.propRate * was / now, TAX_RATE * PROP_LO, TAX_RATE * PROP_HI);
+    }
+    g.reval = next;
+  }
+  g.assessed = grandList(e, g.reval);
   // What delivered this month (stock up) under an abatement joins the abated roll.
   const stockNow = BUILT_CLASSES.map((k) => e.stock?.[k] ?? 0);
   const added = stockNow.map((v, i) => Math.max(0, v - (g.prevStock[i] ?? v)));

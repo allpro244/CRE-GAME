@@ -137,6 +137,10 @@ export function facilityDrawTerms(
  * exists. It is also the number that makes a facility a decision rather than a
  * free upgrade: your book is no longer something you can sell one building at
  * a time without thinking about it.
+ *
+ * [S~: release prices run 110-125% of the allocated loan amount — CMBS
+ * portfolio loans tier 105-125% (Academy Securities CMBS credit note), land
+ * and construction loans 115-125%. 1.15 is the middle.]
  */
 export const RELEASE_PREMIUM = 1.15;
 

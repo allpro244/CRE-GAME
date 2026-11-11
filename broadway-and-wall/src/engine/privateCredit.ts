@@ -20,8 +20,8 @@ import { loanBookTouched, syncDebt } from "./rivalDebt";
 import { firmShort } from "./firm";
 import { lenderByName } from "./lenders";
 import { coverCashShortfall, fundableNow, sweepLocIdleCash } from "./credit";
-import { prepayPenalty, refiQuotes, isPrivatePaper, productById, underwritingStandards } from "./debt";
-import { deskRatePct } from "./pricing";
+import { prepayPenalty, refiQuotes, isPrivatePaper, productById, productSpread, underwritingStandards } from "./debt";
+import { bankRatePct } from "./pricing";
 import { shortIndexOf } from "./market";
 import { money } from "./money";
 
@@ -66,10 +66,9 @@ const PRIVATE_LENDER_STYLES = new Set(["opportunistic", "pe", "vulture", "mercha
 const PRIVATE_PREMIUM: [number, number] = [2.5, 5.0];
 function privateBase(s: GameState): number {
   const fund = productById("cordage");
-  return deskRatePct(shortIndexOf(s.econ), fund.spread, {
-    ci: s.econ.creditIdx ?? 1,
-    app: lenderByName(s, fund.lender)?.appetite ?? 1,
-  });
+  // The fund's own bridge price today (debt.ts productSpread: its costs and
+  // its competitive margin), which private money prices over.
+  return bankRatePct(shortIndexOf(s.econ), productSpread(s, fund));
 }
 /**
  * HOW FAR PRIVATE MONEY ADVANCES, before the borrower's own distress. It sat

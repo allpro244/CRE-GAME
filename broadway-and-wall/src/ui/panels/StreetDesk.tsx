@@ -191,12 +191,18 @@ export function TheStreet({ q = "", scrollToYou = 0 }: { q?: string; scrollToYou
   for (const x of game.firmLog ?? []) {
     if (x.m > game.month - 12 && (x.kind === "buy" || x.kind === "sell")) deals.set(x.firmId, (deals.get(x.firmId) ?? 0) + 1);
   }
+  // Your own row counts the same thing from your deeds: buys still held, plus
+  // every buy and every sale on the exits record, inside the twelve months.
+  // (month 0 is the family book handed over at the start, not a trade)
+  const since = Math.max(0, game.month - 12);
+  const yours = Object.values(game.holdings).filter((h) => h.boughtM > since).length
+    + (game.exits ?? []).reduce((n, e) => n + (e.soldM > since ? 1 : 0) + (e.boughtM > since ? 1 : 0), 0);
   const live = marked.filter(({ r }) => r.failedM === undefined);
   const rank = live.filter(({ r, m }) => rivalEquity(m, r) > playerEquity).length + 1;
   const rows: FirmRow[] = [
     {
       id: YOU, name: firmName(game), you: true, dead: false, style: "Yours", bldgs: mine.buildings, gav: mine.gav,
-      debt: mine.debt, eq: playerEquity, ltv: mine.gav > 0 ? mine.ltv : null, cash: mine.cash, deals: null,
+      debt: mine.debt, eq: playerEquity, ltv: mine.gav > 0 ? mine.ltv : null, cash: mine.cash, deals: yours,
       status: `${rank} of ${live.length + 1} by net equity`, from: "",
     },
     ...marked.map(({ r, m }): FirmRow => {

@@ -17,7 +17,7 @@ import { initialCondition, marketRentPsfYr, resolveRec } from "@/engine/value";
 import { exclusiveFeeRate, loiSigningCash, occupancyRead, vacantSf } from "@/engine/leasing";
 import { LoiCounterDraft, loiMarketPsf } from "@/ui/panels/LoiNegotiate";
 import { usd } from "@/ui/format";
-import { DataTable, Stat, StatStrip, type Col } from "./DataTable";
+import { DataTable, Stat, StatStrip, type Col, rollTone } from "./DataTable";
 import { Figure, fmtFig } from "./Figure";
 import { LeasingPlan } from "./FileTabs";
 import { BizLink } from "@/ui/BizSheet";
@@ -128,7 +128,7 @@ export function LeasingExpiring() {
     { id: "addr", label: "Building", get: (r) => r.addr },
     { id: "sf", label: "sf", get: (r) => r.sf, fmt: "n" },
     { id: "rent", label: "$/sf", get: (r) => r.rent, fmt: "psf" },
-    { id: "vs", label: "vs mkt", get: (r) => (r.mkt > 0 ? r.rent / r.mkt - 1 : null), fmt: "pct", tone: (r) => (r.rent > r.mkt ? "neg" : "pos") },
+    { id: "vs", label: "vs mkt", get: (r) => (r.mkt > 0 ? r.rent / r.mkt - 1 : null), fmt: "pct", tone: (r) => rollTone(r.mkt > 0 ? r.rent / r.mkt - 1 : null) },
     { id: "end", label: "Ends", get: (r) => r.endM, cell: (r) => <span className="mono">{monthLabel(r.endM)}</span>, tone: (r) => (r.endM - game.month <= 12 ? "neg" : undefined) },
     { id: "left", label: "Months", get: (r) => r.endM - game.month, fmt: "n" },
   ];

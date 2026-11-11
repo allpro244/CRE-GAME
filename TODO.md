@@ -10,12 +10,9 @@ Updated 2026-10-23. Classic is the only interface; the new shell is shelved (`?u
 - [ ] Platted lots show in the portfolio as one neighborhood (lots, sold, value), not one holding per lot.
 
 ## UI clean-up follow-ups (2026-11-10, ui-revamp/CLEANUP_PLAN.md)
-- [ ] Letter cards (LoiCard in DealsPage.tsx) still carry ~8 sentences each.
-- [ ] Rent vs market colours read opposite ways: Leasing's rent roll marks rent well BELOW market red; the new shell's Expiring table marks ABOVE market red. Pick one rule.
-- [ ] Players' "Deals 12m" counts the street log, which keeps 600 entries; a bigger town could truncate it. The player's own row shows "—".
-- [ ] A building under construction appears twice in Portfolio (holding row and development row).
+Done 2026-11-11: letter cards' prose to hover; one rent-vs-market colour rule (above market red, below green, ±10% plain); a held building under construction is one Portfolio row; the Debt table fits at 1366px; your own Deals 12m.
+- [ ] Players' "Deals 12m" counts the street log, which keeps 600 entries; a bigger town could truncate it.
 - [ ] Lender capital multiples like 115.81× and 1111× (Tidewater, Bowline): engine numbers, worth a look by whoever owns lenders.ts.
-- [ ] Debt table is 8px wider than its panel at 1366px.
 - [ ] Investor rows are named by matching the engine's "N.NNx held" label to `reputation.held` in order; an engine-side `bbl` on the evidence row would make it exact.
 - [ ] Not checked inside Unreal itself (the unreal MCP server was unreachable); checked in Chromium at 1920x1080 with ?host=unreal and at 1366x768.
 

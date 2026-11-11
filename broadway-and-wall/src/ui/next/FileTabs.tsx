@@ -18,7 +18,7 @@ import { loiMarketPsf } from "@/ui/panels/LoiNegotiate";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { derive } from "@/ui/derive";
 import { usd } from "@/ui/format";
-import { DataTable, Stat, StatStrip, type Col } from "./DataTable";
+import { DataTable, Stat, StatStrip, type Col, rollTone } from "./DataTable";
 import { Figure, fmtFig } from "./Figure";
 import { VerbButton } from "./Drawer";
 import { CapitalDesk } from "./CapitalDesk";
@@ -61,7 +61,7 @@ export function RentRollTab({ game, parcels, bbl, h }: { game: GameState; parcel
     { id: "sector", label: "Sector", get: (r) => r.t.sector, hidden: true },
     { id: "sf", label: "sf", get: (r) => r.t.sf, fmt: "n" },
     { id: "rent", label: "$/sf", get: (r) => r.t.rentPsf, fmt: "psf" },
-    { id: "vs", label: "vs mkt", get: (r) => (mkt > 0 ? r.t.rentPsf / mkt - 1 : null), fmt: "pct", tone: (r) => (r.t.rentPsf < mkt ? "neg" : "pos") },
+    { id: "vs", label: "vs mkt", get: (r) => (mkt > 0 ? r.t.rentPsf / mkt - 1 : null), fmt: "pct", tone: (r) => rollTone(mkt > 0 ? r.t.rentPsf / mkt - 1 : null) },
     { id: "yr", label: "Rent / yr", get: (r) => r.t.rentPsf * r.t.sf, fmt: "usd" },
     { id: "start", label: "Start", get: (r) => r.t.startM, cell: (r) => <span className="mono">{monthLabel(r.t.startM)}</span>, hidden: true },
     { id: "end", label: "Ends", get: (r) => r.t.endM, cell: (r) => <span className="mono">{monthLabel(r.t.endM)}</span>, tone: (r) => (r.t.endM - game.month <= 12 ? "neg" : undefined) },

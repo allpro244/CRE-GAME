@@ -3411,7 +3411,9 @@ export function tickEcon(s: GameState) {
   // same sentiment now builds at 1.8x trailing-year payroll growth, which is
   // those two numbers at +1.5%/yr and -3%/yr, continuously. It feeds cap
   // rates and land through `cycleDev`, so that channel is now caused.
-  const step = clamp(1.8 * payrollGrowth12(e), -0.08, 0.06) + rrange(s, -0.03, 0.03);
+  // ...and nothing else (2026-11-11): the ±0.03 monthly die on top is gone, so
+  // the index is a smoothed reading of the town's own payrolls, not a walk.
+  const step = clamp(1.8 * payrollGrowth12(e), -0.08, 0.06);
   const spring = -0.048 * e.cycleDev;
   e.cycleDev = clamp(e.cycleDev + step + spring, -1, 1);
 

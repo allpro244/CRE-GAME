@@ -18,6 +18,7 @@
 // AND a different town on it; keep it and you get the same island back on
 // every reload, forever, down to the byte.
 import { generateCity } from "./citygen.mjs";
+import { landingPoint, coastBearingAt } from "./natural.mjs";
 import { buildCityData } from "./build.mjs";
 import { SIZES, DEFAULT_SIZE, scaleCity } from "./cities.mjs";
 import { islandConfig, islandName } from "./island.mjs";
@@ -277,7 +278,51 @@ export const PARK_AMOUNTS = [
 ];
 export const DEFAULT_PARKS = "medium";
 
+/**
+ * WHICH STREET GENERATOR CUTS THE TOWN, from the setup page. Classic lays
+ * each district out under its own template and survey; Natural grows one
+ * street network over the whole island from the shore, the landing and the
+ * surveys (natural.mjs, CITYGEN_NEXT_PLAN.md). Part of the town's identity:
+ * a save stores it and rebuilds the same town; absent is classic.
+ */
+export const STREET_PLANS = [
+  { id: "classic", name: "Classic", note: "Each district laid out on its own survey and template, meeting its neighbours at straight seams." },
+  { id: "natural", name: "Natural (beta)", note: "One street network grown from the shore and the old landing outward, the surveys bending into each other. Beta: a new generator still being tuned." },
+];
+export const DEFAULT_STREETS = "classic";
+
 export const CITY_PLAN = 17;   // 17: the region town tapers into its suburbs, no floodplain, small strips (region/*)
+
+/**
+ * THE NATURAL TOWN'S CONFIG: the classic island minus its survey seams, plus
+ * where the town started and the square it started round.
+ *
+ * THE LANDING SQUARE. Every old port grew out of an open place at the
+ * landing — Boston's Dock Square, the Strand at New Amsterdam, every market
+ * square at the head of a harbour — and it is also what a street network
+ * needs at the point all its oldest roads converge on: without it the radial
+ * old town ties itself into a knot of wedges there. 60 x 44 m, Dock Square's
+ * order of size (set by eye against it), squared to the shore, flavour
+ * "market" (setts, not lawn). Skipped where a programmed park already sits
+ * within 150 m.
+ */
+function naturalConfig(cfg0, k) {
+  const harbour = cfg0.plan?.harbour ? cfg0.plan.harbour.map((v) => v * k) : null;   // scaleCity leaves `plan` unscaled
+  const core = cfg0.cores?.[0]?.xy ?? [0, 0];
+  const founding = landingPoint(cfg0.coast, harbour, core, 120 + (cfg0.esplanade ?? 26));
+  const parks = [...(cfg0.parks ?? [])];
+  if (!parks.some((p) => Math.hypot(p.cx - founding[0], p.cy - founding[1]) < 150)) {
+    parks.push({
+      cx: Math.round(founding[0]), cy: Math.round(founding[1]), w: 60, h: 44,
+      deg: +coastBearingAt(cfg0.coast, founding).toFixed(1),
+      name: "Market Square", shape: "square", flavour: "market",
+    });
+  }
+  return {
+    ...cfg0, streetPlan: "natural", founding, parks,
+    diagonals: (cfg0.diagonals ?? []).slice(cfg0.plan?.seams ?? 0),
+  };
+}
 
 /**
  * Build a whole city. Deterministic: the same id and seed give byte-identical
@@ -301,9 +346,14 @@ export function makeCity(cityId, seed, opts) {
   const sizeId = manhattan
     ? (opts?.size && EXTENTS[opts.size] ? opts.size : DEFAULT_EXTENT)
     : (opts?.size && SIZES[opts.size] ? opts.size : DEFAULT_SIZE);
-  const cfg = manhattan
+  const cfg0 = manhattan
     ? manhattanConfig(seed, { extent: sizeId, planV: opts?.planV ?? CITY_PLAN })
     : scaleCity(islandConfig(seed, { planV: opts?.planV ?? CITY_PLAN, parks: opts?.parks }), SIZES[sizeId].k);
+  // NATURAL STREETS (beta): the same island, coast, parks, boulevards and
+  // names, with one street network grown over it instead of a template per
+  // district (natural.mjs). The survey SEAMS go — they are the hard lines the
+  // natural network exists to remove; the boulevards stay.
+  const cfg = !manhattan && opts?.streets === "natural" ? naturalConfig(cfg0, SIZES[sizeId].k) : cfg0;
   // The street plan: the current one unless a save asks for the plan its
   // town was cut with (see CITY_PLAN and GameState.cityPlan).
   const city = generateCity({ ...cfg, seed: seed >>> 0, density: opts?.density, planV: opts?.planV ?? CITY_PLAN });

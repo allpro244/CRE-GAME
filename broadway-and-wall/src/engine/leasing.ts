@@ -1947,7 +1947,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       if (room < minLettableSf(rec, use)) continue;
       const wantSf = fitWantSf(rec, Math.min(free, room, need - t.sf), free, use);
       if (!wantSf || wantSf > room + typicalSuiteSf(rec, use) * 0.15) continue;
-      if (rng(s, "leasing") > 0.16) continue;                // they get round to it
+      // No die for "they get round to it" (2026-11-11): a firm that needs the
+      // feet and has them next door asks; askedM keeps it from asking twice.
       t.askedM = q;
       const market = managedRentPsfYr(rec, s.econ, h, use);
       s.lois.push({

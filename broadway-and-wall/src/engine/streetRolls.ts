@@ -1005,7 +1005,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
           // of the kind to let.
           if (!opts.some((o) => !o.stay) && availOf(b, roll, kk) < minSfOf(b, kk)) noteLetting(bookOf(b, roll, kk), kk, 0, 1, V.monthsToLet(kk), opening);
         }
-      } else if (need > t.sf * 1.5 && rng(s, "leasing") < 0.03) {
+      } else if (need > t.sf * 1.5) {   // half again its feet: it acts (no monthly die, 2026-11-11) [K]
         // Outgrown mid-lease: next door if the building has it, else go looking.
         const room = availOf(b, roll, k);
         if (room >= need - t.sf) { t.sf = premises(b, roll, t, need); noteRoll(roll); }

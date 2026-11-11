@@ -28,7 +28,8 @@ import { uses as usesOf, useSf } from "@/engine/mix";
 import { gradeOf } from "@/engine/rivals";
 import { spendable } from "@/engine/credit";
 import { Gloss } from "@/ui/Glossary";
-import { leasingOdds } from "@/engine/absorption";
+import { lookingFor } from "@/engine/streetRolls";
+import { useVacantSf } from "@/engine/leasing";
 import { usd, sf, termLeft, pctSigned } from "@/ui/format";
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
 import { useLabel, physicalOcc, band, apMid, annualPayment, Row, LocSplitHint, Verdict } from "@/ui/panels/shared";
@@ -966,10 +967,12 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
           {/* WHETHER TENANTS WILL COME — the leasing desk's own pace, read on
               the disclosed roll before you own it rather than after. */}
           {ip?.h && rec && rec.class !== "land" && (() => {
-            const odds = leasingOdds(game, parcels, rec, ip.h, rec.class as BuiltClass);
-            if (!odds || odds.availSf <= 0) return null;
+            const use = rec.class as BuiltClass;
+            const avail = useVacantSf(rec, ip.h, use, game.month);
+            if (!(avail > 0)) return null;
+            const look = lookingFor(game, use);
             return (
-              <Row k="Leasing outlook" v={`${Math.round(odds.availSf).toLocaleString()} sf vacant · ~${Math.round(odds.loiOdds * 100)}% LOI odds/mo${odds.monthsToLet !== null ? ` · ~${Math.max(1, Math.round(odds.monthsToLet))} mo to 85%` : " · 85% not reached"}`} bad={odds.loiOdds < 0.05} />
+              <Row k="Leasing outlook" v={`${Math.round(avail).toLocaleString()} sf vacant · ${look.firms} firms looking for ${use} space in town (${Math.round(look.sf / 1000).toLocaleString()}k sf)`} bad={look.firms === 0} />
             );
           })()}
         </div>

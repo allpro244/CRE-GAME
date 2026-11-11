@@ -12,8 +12,8 @@ import { LineChart } from "@/ui/Chart";
 import Slider from "@/ui/Slider";
 import { USE_WORD } from "@/engine/mix";
 import { specSuiteQuote, blendExtendQuote, useVacantSf, leasableUses, minLettableSf } from "@/engine/leasing";
-import { useRentableSf } from "@/engine/value";
-import { leasingOdds } from "@/engine/absorption";
+import { useRentableSf, managedRentPsfYr, useRentPsfYr } from "@/engine/value";
+import { lookingFor } from "@/engine/streetRolls";
 import {
   groundLeaseExpenseBreakdown, groundLeaseQuote, GROUND_REVIEW_LABEL, GROUND_TERM_MIN, GROUND_TOWER_TERM_MIN,
   mergeCost, siteDeeds, siteLotArea, contiguousOwnedRoots, hasOwnedSiteNeighbor, assemblyPayoff,
@@ -325,6 +325,13 @@ export function MinDealSize({ bbl }: { bbl: string }) {
   );
 }
 
+/**
+ * WHO IS LOOKING, AND WHO CAME. No forecast: a firm tours this building when
+ * its broker puts it first on the same shortlist the street is shown
+ * (streetRolls.ts shop). What the desk can show is the evidence — the tours
+ * the building drew this past year, the firms in town looking for this kind
+ * of space now, and what you ask against the market.
+ */
 export function LettingOdds({ bbl }: { bbl: string }) {
   const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
@@ -332,55 +339,33 @@ export function LettingOdds({ bbl }: { bbl: string }) {
   const rec = h ? resolveRec(parcels, game, bbl) : null;
   if (!h || !rec || h.leasingHold) return null;
   const legs = leasableUses(rec)
-    .map((u) => leasingOdds(game, parcels, rec, h, u))
-    .filter((o): o is NonNullable<typeof o> => !!o && o.availSf > 1500);
+    .map((u) => ({ use: u, availSf: useVacantSf(rec, h, u, game.month) }))
+    .filter((o) => o.availSf > 1500);
   if (!legs.length) return null;
+  const tours12 = (h.tourLog ?? []).filter((m) => m > game.month - 12).length;
   return (
     <div className="deal">
-      <div className="deal-head">Leasing odds</div>
-      {legs.map((o) => (
-        <div key={o.use}>
-          {legs.length > 1 && (
-            <div className="page-section" style={{ marginTop: 2 }}>{SECTOR_LABEL[o.use]}</div>
-          )}
-          <div className="grid">
-            <Row k="Marketed" v={`${sf(Math.round(o.availSf))} · ${sf(Math.round(o.marketedSf))} usable`} />
-            <Row
-              k="Vacancy · city / local"
-              v={`${(o.cityVac * 100).toFixed(1)}% / ${(o.localVac * 100).toFixed(1)}%`}
-              bad={o.localVac > o.cityVac * 1.12}
-            />
-            <Row k="Competing supply" v={`${sf(Math.round(o.competingSf))} available or rolling`} />
-            <Row k="Tenant demand" v={`${sf(Math.round(o.requirementSf))} / mo`} />
-            <Row k="Capture" v={`${(o.shareOfMarket * 100).toFixed(2)}% · ~${sf(Math.round(o.captureSf))} / mo`} />
-            <Row
-              k="Ask vs market"
-              v={`${o.askPsf.toFixed(2)} vs ${o.marketPsf.toFixed(2)}`}
-              bad={o.askPsf > o.marketPsf * 1.04}
-            />
-            <Row
-              k="Time to 85% leased"
-              v={o.monthsToLet === null ? "Not reached" : o.monthsToLet <= 0 ? "Reached" : `${o.monthsToLet} mo`}
-              strong
-              bad={o.monthsToLet === null || o.monthsToLet > 48}
-            />
-          </div>
-          <div className="roll">
-            {o.factors.map((f) => (
-              <div className="roll-row" key={f.label}>
-                <span className="roll-name">
-                  {f.label} · <span className="dim">{f.detail}</span>
-                </span>
-                <span className="roll-meta mono">×{f.mult.toFixed(2)}</span>
-              </div>
-            ))}
-            <div className="roll-row roll-group">
-              <span className="roll-name">Vs. average building</span>
-              <span className="roll-meta mono">×{o.weight.toFixed(2)}</span>
+      <div className="deal-head">Who is looking</div>
+      <div className="grid">
+        <Row k="Tours, last 12 months" v={`${tours12}`} strong bad={tours12 === 0} />
+      </div>
+      {legs.map((o) => {
+        const look = lookingFor(game, o.use);
+        const ask = managedRentPsfYr(rec, game.econ, h, o.use);
+        const mkt = useRentPsfYr(rec, game.econ, h.condition, o.use, h.condIdx);
+        return (
+          <div key={o.use}>
+            {legs.length > 1 && (
+              <div className="page-section" style={{ marginTop: 2 }}>{SECTOR_LABEL[o.use]}</div>
+            )}
+            <div className="grid">
+              <Row k="Vacant" v={sf(Math.round(o.availSf))} />
+              <Row k="Firms looking in town" v={`${look.firms} · ${sf(Math.round(look.sf))} between them`} bad={look.firms === 0} />
+              <Row k="Ask vs market" v={`${ask.toFixed(2)} vs ${mkt.toFixed(2)}`} bad={ask > mkt * 1.04} />
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

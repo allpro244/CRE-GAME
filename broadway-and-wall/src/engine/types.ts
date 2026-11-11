@@ -547,7 +547,8 @@ export interface Holding {
    */
   apprV?: number; apprM?: number;
   /** Accrued expected tours by use (leasing.ts): a party comes through each time it passes 1. */
-  tourAcc?: Partial<Record<BuiltClass, number>>;
+  /** Months a firm toured this building because its broker put it first (leasing.ts), the last two years. */
+  tourLog?: number[];
   /** this building is part of a package you have taken to market as one ticket */
   inPackage?: boolean;
   /**
@@ -2393,6 +2394,8 @@ export interface Econ {
    * pool, toured by the street's buildings and the player's alike.
    */
   seekers?: import("./streetRolls").Seeker[];
+  /** Firms whose broker's best option this month is one of the player's buildings: the party the player's desk tours (streetRolls.ts shop → leasing.ts). */
+  playerTours?: { fid: number; bbl: string; use: BuiltClass; want: number; m: number; done?: boolean }[];
   nextFid?: number;
   /**
    * THE FLATS' COMPS (market.ts recordDeal): every flat let or renewed in

@@ -14,7 +14,7 @@ import type { GameState } from "@/engine/types";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import { capitalRatio, lenderConstitution, lenderHealth, lenderPressure, stayingPower, type Lender } from "@/engine/lenders";
 import {
-  PRODUCTS, advanceFactor, holdMaxOf, loanMin, relCurve, singleNameCap, statedLtv, underwritingStandards, standardsWord, windowOpen, productSpread,
+  PRODUCTS, advanceFactor, holdMaxOf, loanMin, relCurve, singleNameCap, statedLtv, underwritingStandards, standardsWord, windowOpen, productSpread, onIncome,
 } from "@/engine/debt";
 import { bankRatePct, type DeskPx, type LossClass } from "@/engine/pricing";
 import { shortIndexOf } from "@/engine/market";
@@ -126,7 +126,7 @@ function LenderTerms({ g, r }: { g: GameState; r: LRow }) {
     const rate = bankRatePct(bench, productSpread(g, p), { rel: relCurve(g, l.name) });
     return {
       id: p.id, paper: p.label.split(" · ").slice(1).join(" · ") || p.label, sheet, after: sheet * adv, rate, spread: rate - bench, floating: !!p.floating,
-      dscr: p.uwDscr > 0 ? p.uwDscr : null, dy: p.uwDscr > 0 ? p.debtYield : null,
+      dscr: null, dy: onIncome(p) ? p.debtYield : null,
       term: `${Math.round(p.termM / 12)}y · ${Math.round(p.ioM / 12)}y IO · ${p.amortYears}y`,
       min: loanMin(g, p) || null, max: holdMaxOf(g, p) ?? null,
       cov: `${p.minDSCR > 0 ? `${p.minDSCR.toFixed(2)}× · ` : ""}${Math.round(p.maxLTV * 100)}%`, open: !failed && windowOpen(g, p),

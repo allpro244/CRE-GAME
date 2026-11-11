@@ -124,7 +124,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // refuses there used to leave the buyer paying only the equity on a quoted
   // principal nobody lent — see executePurchase.
   const grade = conveyedGrade(s, rec, bbl);
-  const noLoan = (bind: "condition" | "closed" | "minloan" | "income", ratePct = 0) => ({ principal: 0, ratePct, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind, ltvCap: prod.ltv, uwDscr: prod.uwDscr, appraised: 0, uwBasis: price, overpay: 0, allInPct: 0, sheetWhy: undefined as string | undefined, advanceWhy: undefined as string | undefined, guarantorWhy: undefined as string | undefined });
+  const noLoan = (bind: "condition" | "closed" | "minloan" | "income", ratePct = 0) => ({ principal: 0, ratePct, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind, ltvCap: prod.ltv, uwDscr: 0, appraised: 0, uwBasis: price, overpay: 0, allInPct: 0, sheetWhy: undefined as string | undefined, advanceWhy: undefined as string | undefined, guarantorWhy: undefined as string | undefined });
   if (!productOpen(s, prod) || !windowOpen(s, prod)) return noLoan("closed");
   // the life company will not finance a tired building, and the quote screen
   // has to say so before the closing table does
@@ -213,7 +213,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
       : q.dyConstrained ? "dy"
       : q.principal < capped * 0.995 ? "credit"
       : "ltv",
-    ltvCap, uwDscr: prod.uwDscr,
+    ltvCap, uwDscr: q.uwDscr ?? 0,
     /** How today's sheet was built, and why the loan is under it when it is. */
     sheetWhy: q.sheetWhy, advanceWhy: q.advanceWhy,
     /** What the money costs a year, all in — see allInCostPct. */

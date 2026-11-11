@@ -8,7 +8,7 @@
 import type { GameState } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import { buyQuote } from "@/engine/actions";
-import { PRODUCTS } from "@/engine/debt";
+import { PRODUCTS, onIncome } from "@/engine/debt";
 import { inPlace, resolveRec } from "@/engine/value";
 import { annualPayment } from "@/ui/panels/shared";
 import type { BuyPreset } from "./nextStore";
@@ -29,7 +29,7 @@ export interface BuyPreview {
 
 export function buyPreview(g: GameState, p: ParcelTable, bbl: string, price: number, preset: BuyPreset): BuyPreview {
   const isLand = p[bbl]?.class === "land";
-  const choices = PRODUCTS.filter((x) => !x.mezz && (isLand ? x.uwDscr <= 0 : x.uwDscr > 0))
+  const choices = PRODUCTS.filter((x) => !x.mezz && (isLand ? !onIncome(x) : onIncome(x)))
     .map((x) => ({ x, q: buyQuote(g, p, bbl, price, x.id, 1) }))
     .filter((c) => c.q.principal > 0)
     .sort((a, b) => a.q.allInPct - b.q.allInPct);
@@ -64,5 +64,5 @@ export function buyPreview(g: GameState, p: ParcelTable, bbl: string, price: num
 
 /** The desks a purchase can be financed by, for the preset control. */
 export function buyDesks(isLand: boolean) {
-  return PRODUCTS.filter((x) => !x.mezz && (isLand ? x.uwDscr <= 0 : x.uwDscr > 0)).map((x) => ({ id: x.id, lender: x.lender }));
+  return PRODUCTS.filter((x) => !x.mezz && (isLand ? !onIncome(x) : onIncome(x))).map((x) => ({ id: x.id, lender: x.lender }));
 }

@@ -15,3 +15,4 @@ argument (`$PWD` from `broadway-and-wall/`), then a seed and years, and reads
 | `dark.mjs ROOT SEED YEARS` | street tenants going dark and leaving town, % of let feet a year, by class |
 | `cprobe.mjs ROOT SEED YEARS` | construction and land-loan coupons over the index |
 | `finprobe.mjs ROOT SEED YEARS` | finance decisions a year: loans offered / taken by firms, bank foreclosures noticed and reinstated, July lots, private-credit asks, holder-exit rumours, desks shutting |
+| `bprobe.mjs ROOT SEED YEARS` | builder firms by decade: alive, entries, retirements, failures, construction starts and square feet a year, stalled frames taken over |

@@ -67,7 +67,11 @@ export type WantsKey = BuiltClass | "mixed";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
-/** How far a neighbourhood reaches, in metres. About two blocks. */
+/**
+ * How far a neighbourhood reaches, in metres. About two blocks.
+ * [K: judgement, no source found — a shape parameter; the planner's usual walk
+ * radius is a quarter mile (~400 m), and this is set tighter by eye.]
+ */
 const REACH_M = 270;
 /**
  * THE FUEL TANK WAS EMPTY, AND THIS IS WHY.
@@ -86,24 +90,31 @@ const REACH_M = 270;
  * worth the same number of points whether the corner started dead or busy.
  * `RESPONSE` is points per log unit — 52 makes a doubled neighbourhood worth
  * about 12 points, which is a corner going from ordinary to good.
+ * [K: judgement, no source found — a response gain in game "demand points",
+ * a unit with no real-world counterpart; set by eye, not fitted.]
  */
 const RESPONSE = 52;
-/** A neighbourhood can at most double, or halve, what it is made of. */
+/**
+ * A neighbourhood can at most double, or halve, what it is made of.
+ * [K: judgement, no source found — a guard rail; e^0.62 ≈ 1.86, so "double"
+ * is approximate.]
+ */
 const LOG_CAP = 0.62;
-/** A leg that is missing entirely is thin, not infinite. */
+/** A leg that is missing entirely is thin, not infinite. [K: judgement, no source found — a floor on a log, set by eye.] */
 const LEG_FLOOR = 0.06;
-/** How fast a block's desirability moves toward its target each month. */
+/** How fast a block's desirability moves toward its target each month. [K: judgement, no source found — a ~10-month half-life, set by eye.] */
 const MOMENTUM = 0.07;
-/** Active construction nearby — a fraction of eventual occupied pull, ramping with progress. */
+/** Active construction nearby — a fraction of eventual occupied pull, ramping with progress. [K: judgement, no source found — game demand points, set by eye.] */
 const CONSTRUCTION_PTS_PER_100K = 3.2;
-/** A neighbourhood can remake itself, but it cannot become somewhere else. */
+/** A neighbourhood can remake itself, but it cannot become somewhere else. [K: judgement, no source found — a rail in game demand points.] */
 const DRIFT_CAP = 34;
-/** Anchor plus drift, kept inside what the invariant sweep will allow. */
+/** Anchor plus drift, kept inside what the invariant sweep will allow. [K: judgement, no source found — a rail matched to the invariant sweep, not to the world.] */
 const TOTAL_CAP = 36;
 /**
  * The economy at mid-cycle, for the zero point only. `useOccupancy` reads
  * cityVac and vintageMean and tolerates both being absent, which is what mid-
  * cycle means: no boom, no slump, no flight to quality.
+ * [M: a definition — mid-cycle is zero deviation from trend.]
  */
 const MID_CYCLE = { cycleDev: 0 } as unknown as Econ;
 
@@ -130,11 +141,11 @@ const MID_CYCLE = { cycleDev: 0 } as unknown as Econ;
 // anything through: take the local maxima of the generator's own anchor, keep
 // them apart, and those are the town's centres by construction.
 
-/** How many centres a town has. Real towns of this size have three or four. */
+/** How many centres a town has. Real towns of this size have three or four. [K: judgement, no source found for the count.] */
 const POLE_MAX = 4;
-/** Two centres closer than this are one centre. */
+/** Two centres closer than this are one centre. [K: judgement, no source found — set by eye on the generator's maps.] */
 const POLE_SPACING_M = 420;
-/** How far a centre's fortune reaches. Matches the generator's own core radii. */
+/** How far a centre's fortune reaches. Matches the generator's own core radii. [K: judgement, no source found — mirrors citygen's core radii, themselves design choices.] */
 const POLE_RADIUS_M = 340;
 /**
  * The hidden long-run trajectory, in demand points per month. Drawn once. Over
@@ -142,6 +153,8 @@ const POLE_RADIUS_M = 340;
  * difference between neighbourhoods, and the same order as the drift the
  * density feedback produces, so a centre's luck never swamps what the player
  * actually does with it.
+ * [K: judgement, no source found — a design choice about when the winner
+ * becomes legible, in game demand points.]
  */
 const POLE_DRIFT_SD = 0.016;
 /**
@@ -160,9 +173,11 @@ const POLE_DRIFT_SD = 0.016;
  * At 0.26 the crossover is month 264 — year twenty-two. The first decade is
  * genuinely close to noise, the second is where reading the tape early pays,
  * and by the fourth everybody can see it and the ground is long gone.
+ * [K: judgement, no source found — chosen for the crossover month it gives,
+ * a design target rather than a measured volatility.]
  */
 const POLE_NOISE_SD = 0.26;
-/** Nothing runs away: a centre's fortune is bounded either side. */
+/** Nothing runs away: a centre's fortune is bounded either side. [K: judgement, no source found — a rail in game demand points.] */
 const POLE_CAP = 16;
 
 /**
@@ -279,12 +294,13 @@ function poleLift(s: GameState, b: BlockGeom): number {
 // firms follow it, rents rise to meet it, and in ten years the corner is
 // expensive rather than cheap. Nothing here asks the player for anything. It
 // is a number on the neighbourhood panel and a line in the news.
-/** Points of demand per unit of a block's trades out-hiring the city. */
+/** Points of demand per unit of a block's trades out-hiring the city. [K: judgement, no source found — a gain in game demand points.] */
 const EMP_RESPONSE = 70;
-/** …and how fast that advantage is competed away. Ten-year half-life. */
+/** …and how fast that advantage is competed away. Ten-year half-life (ln 2 / 0.006 = 116 months). [K: judgement, no source found for the half-life.] */
 const EMP_DECAY = 0.006;
+/** The most that advantage can be worth. [K: judgement, no source found — a rail in game demand points.] */
 const EMP_CAP = 16;
-/** How specialised a block's trade mix is. 1 would be the city average. */
+/** How specialised a block's trade mix is. 1 would be the city average. [K: judgement, no source found — not fitted to a location quotient.] */
 const EMP_CONC = 2.2;
 
 // -------------------------------------------------------------- THE NEW LINE
@@ -296,7 +312,13 @@ const EMP_CONC = 2.2;
 // news, a lens on the map, and a number on the panel.
 /** Odds of a civic work being rumoured in any given year. */
 const LINE_ODDS = 1 / 14;
-/** How far a station's pull reaches, in metres. */
+/**
+ * How far a station's pull reaches, in metres. [S~: Debrezion, Pels &
+ * Rietveld 2007, "The Impact of Railway Stations on Residential and
+ * Commercial Property Value: A Meta-analysis", J. Real Estate Finance &
+ * Economics 35:161-180 — the commercial station premium sits within 1/4 mile
+ * (~400 m) of the station. The Gaussian fall-off is the engine's shape.]
+ */
 const LINE_SIGMA = 380;
 /** What the market prices before it opens: on the news, and once it is dug. */
 const LINE_EARLY = 0.18, LINE_DIGGING = 0.45;
@@ -311,7 +333,9 @@ const LINE_EARLY = 0.18, LINE_DIGGING = 0.45;
  * coupon.
  */
 const RUMOR_M = 24;
+/** [K: judgement, no source found — the share of a station's value priced on a rumour.] */
 const LINE_RUMOR = 0.06;
+/** [K: judgement, no source found — no published rate found for how many announced transit plans are shelved.] */
 const SHELVE_ODDS = 0.25;
 /**
  * What each kind of work is worth and how far it reaches. Stations reach the
@@ -370,6 +394,8 @@ export interface DemandModel {
 /**
  * Which trades live in which kind of building. Not a claim that a warehouse
  * cannot hold a law firm — a claim about where the mass of each trade sits.
+ * [K: judgement, no source found — relative weights set by eye, not read off
+ * an employment-by-building-type table.]
  */
 const TRADE_AFFINITY: Record<BuiltClass, Partial<Record<Sector, number>>> = {
   office:      { finance: 3, law: 3, tech: 2.4, media: 1.6, insurance: 2, design: 1.2, medical: 1, food: 0.4, apparel: 0.5, logistics: 0.2 },
@@ -403,6 +429,12 @@ function hash01(str: string): number {
 const CACHE = new WeakMap<ParcelTable, DemandModel>();
 const CACHE_V = new WeakMap<ParcelTable, number>();
 
+/**
+ * Metres in a degree of latitude. [M: 2π × 6,378,137 m (the WGS-84 equatorial
+ * radius) / 360 = 111,319.5 m. Strictly that is a degree of longitude at the
+ * equator; a degree of latitude runs 110,574 m at the equator to 111,694 m at
+ * the pole — 0.2% either way, immaterial across one town.]
+ */
 const M_PER_DEG_LAT = 111_320;
 
 /**
@@ -488,7 +520,7 @@ function flatOccupancy(
   return { start, codes, vals, nb: ix.nb };
 }
 
-/** A canonical mixed-use stack, for the "what should I build here" probe. */
+/** A canonical mixed-use stack, for the "what should I build here" probe. [K: judgement, no source found — an illustrative stack, not a surveyed one.] */
 const MIXED_PROBE: UseMix = { retail: 0.15, office: 0.45, multifamily: 0.40 };
 
 export function demandModel(parcels: ParcelTable): DemandModel {

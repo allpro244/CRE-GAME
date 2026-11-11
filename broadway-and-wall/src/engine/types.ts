@@ -1822,6 +1822,8 @@ export interface Builder {
   /** Profit booked to the firm over its life. */
   profit: number;
   lastStartM?: number;
+  /** Month one of its looks last found a scheme clearing its bar, funded or not. */
+  lastPencilM?: number;
   /** Its best and worst openings: value against cost. */
   best?: number;
   worst?: number;
@@ -3379,6 +3381,8 @@ export interface Rival {
   style: RivalStyle;
   /** Month this firm last broke ground on a city job — builders get hungry when idle (firmMargin). */
   lastBuildM?: number;
+  /** Month one of this builder's own looks last found a scheme clearing its bar, whether or not it could fund it (dev.ts). */
+  lastPencilM?: number;
   /** Off-market calls this firm made: a building it will not ring again before the month given. */
   doors?: Record<string, number>;
   /** Private holders who will not take this firm's call before the month given — a lowball they remember. */
@@ -4140,6 +4144,14 @@ export interface GameState {
   /** The street's named developers, living and gone (dev.ts). */
   builders?: Builder[];
   nextBuilderId?: number;
+  /**
+   * WORK NOBODY ON THE STREET COULD CARRY (dev.ts developerLook): schemes a
+   * developer's look found clearing its own bar, on terms a construction desk
+   * would lend on, that the looking shop could not put its own cheque into —
+   * or that nobody looked at because no builder was left. What a new shop
+   * sets up for; read and cleared by the roster tick.
+   */
+  builderOpenings?: { bbl: string; basis: number; ltc: number; m: number }[];
   cityPlans?: {
     bbl: string; use: string; floors: number; plate: number; spec: number; ltc: number; decidedM: number; breakM: number;
     /** The scheme's lead class and its square feet in that class, as decided (the order book counts them). */
@@ -4864,6 +4876,7 @@ export function pnlAdd(s: GameState, key: keyof Omit<PnlYear, "yr" | "deprFinal"
  * to the owner is positive; cash the owner puts in is negative. `taxes` is
  * absent on purpose — the deed ledger is PRE-TAX — and `ga` and `interest` are
  * firm-level by definition and never belong to one building.
+ * [M: accounting signs, not quantities.]
  */
 const DEED_SIGN: Partial<Record<keyof Omit<BooksYear, "yr">, 1 | -1>> = {
   noi: 1, sold: 1, borrowed: 1, lpCalled: 1,
@@ -5327,6 +5340,9 @@ export interface Talks {
  * still finite capital rather than a sandbox. An idle firm with $6M went
  * insolvent in year fifteen on overhead alone — at $1M it has closer to five,
  * which is why this is a starting choice and not a slider.
+ *
+ * [K: judgement, no source found — the player's opening bankroll is a game
+ * setup choice, not a fact about the world.]
  */
 export const START_CASH_CHOICES = [
   1_000_000,
@@ -5336,6 +5352,7 @@ export const START_CASH_CHOICES = [
   20_000_000,
 ] as const;
 export type StartCash = (typeof START_CASH_CHOICES)[number];
+/** [K: judgement, no source found — the default of the game setup choice above.] */
 export const DEFAULT_START_CASH: StartCash = 2_500_000;
 /** @deprecated the opening bankroll is chosen — see START_CASH_CHOICES. */
 export const START_CASH = DEFAULT_START_CASH;
@@ -5408,6 +5425,12 @@ export function sweepApy(econ: { nat?: { policy?: number } } | undefined): numbe
  * It is deliberately NOT enough on its own to hold an old building level. It
  * buys you time; the programmes in dev.ts buy you a grade. That is the whole
  * shape of the decision — the plan is the floor, the programme is the choice.
+ *
+ * [S≠: source disagrees — Fannie Mae Multifamily Selling & Servicing Guide,
+ * Part III §105.01: minimum replacement reserve $250 per unit per year,
+ * which is 0.125% of a $200,000 apartment, against 0.34% here. That is a
+ * floor for apartments only; no all-class reserve rate as a share of value
+ * was found.]
  */
 export const CAP_PLAN_RATE = 0.0034;
 
@@ -5424,6 +5447,9 @@ export const CAP_PLAN_RATE = 0.0034;
  * into whether tenants renew. A landlord who takes a point of NOI back off the
  * cleaning contract and loses a floor to it has made the oldest mistake in
  * this business, and until now the game could not represent it.
+ *
+ * [K: judgement, no source found — the opex multipliers and the service aims
+ * are set by eye; Market at 1.00 is the definition of the sheet.]
  */
 export const OPS_SERVICE = [
   { key: -1 as const, label: "Lean", opex: 0.90, aim: 0.22,
@@ -5450,6 +5476,8 @@ export function serviceSpec(v?: -1 | 0 | 1) { return OPS_SERVICE[(v ?? 0) + 1]; 
  * building you are emptying for demolition, for a month when the bank is on
  * you. It is ruinous over a twenty-year hold. That is the entire decision, and
  * it is the first time hold period has been a strategic variable.
+ *
+ * [K: judgement, no source found — spend multiples and lifts set by eye.]
  */
 export const OPS_PLAN = [
   { key: 0 as const, label: "Defer", mult: 0, lift: 0,
@@ -5461,8 +5489,9 @@ export const OPS_PLAN = [
 ];
 export function planSpec(v?: 0 | 1 | 2) { return OPS_PLAN[v ?? 1]; }
 
-/** How fast tenants notice a change of service. 0.022/month is a 31-month half-life. */
+/** How fast tenants notice a change of service. 0.022/month is a 31-month half-life. [K: judgement, no source found for the half-life.] */
 export const SVC_SPEED = 0.022;
+/** Where a building's service index starts: OPS_SERVICE's Market aim. [K: judgement — equal to that aim, itself a judgement.] */
 export const SVC_START = 0.55;
 // The century is a MILESTONE, not a wall. A hundred years used to end the run
 // on the spot, which turned the back half of a good campaign into a countdown

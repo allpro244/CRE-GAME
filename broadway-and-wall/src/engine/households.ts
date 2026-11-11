@@ -95,29 +95,29 @@ import { INDUSTRIES, INDUSTRY_IDS, N_IND, COMP_PER_WORKER_2023, PAY_SPLIT, type 
 // `tools/households.mjs` reports the gap.
 
 // ---------------------------------------------------------------- codes
-/** Tenure. */
+/** Tenure. [M: codes, not quantities — labels in a typed array.] */
 export const TEN_RENT = 0;      // renting a flat on the island (a block in `blocks`)
 export const TEN_OWN = 1;       // owning, somewhere in the region
 export const TEN_DOUBLED = 2;   // doubled up with family or friends: no rent of its own
 export const TEN_MAINLAND = 3;  // renting across the water
-/** An earner slot's employer. A firm's id (`Tenant.fid`) is >= 0. */
+/** An earner slot's employer. A firm's id (`Tenant.fid`) is >= 0. [M: codes, not quantities — negative sentinels below every firm id.] */
 export const EMP_NONE = -1;     // no earner in this slot
 export const EMP_UNEMP = -2;    // in the labour force, out of work
 export const EMP_OTHER = -3;    // working, but not yet placed with one of the city's firms (a household that arrived with a job, or the register before the firm books open)
 export const EMP_RETIRED = -4;  // a pension (Social Security), not a wage
-/** An off-map firm of the books (economy.ts ids -1, -2, ...) is employer EMP_OFF + id: -17, -18, ... */
+/** An off-map firm of the books (economy.ts ids -1, -2, ...) is employer EMP_OFF + id: -17, -18, ... [M: a code offset, not a quantity.] */
 export const EMP_OFF = -16;
 /** Working for one of the city's firms (named or off-map). */
 export const isPlaced = (x: number) => x >= 0 || x < EMP_OFF;
 /** In work: placed, or not yet placed. */
 export const isWorking = (x: number) => isPlaced(x) || x === EMP_OTHER;
-/** An earner slot's industry before it has one. */
+/** An earner slot's industry before it has one. [M: a sentinel code — the largest Uint8.] */
 export const IND_NONE = 255;
 
 // ---------------------------------------------------------------- the facts
 /** The region's sample: about 2,000 households, each standing for its share of the rest. */
 export const REGION_N = 2000;
-/** Over this many agents in all, the island's renters are kept two to an agent. */
+/** Over this many agents in all, the island's renters are kept two to an agent. [K: judgement, no source found — a compute budget, not a fact about the world.] */
 export const MAX_AGENTS = 10_000;
 /** Share of owner households with a mortgage: 62% (ACS 2023, B25081). [S] */
 const MORTGAGED = 0.62;
@@ -687,8 +687,16 @@ const SPLIT_YR = [0.06, 0.04, 0.03, 0.02, 0.012, 0.005];
  * at each quintile's midpoint of the lognormal income spread. [S]
  */
 const TAX_RATES = [0.046, 0.109, 0.170, 0.214, 0.297];
-/** The state-and-local income and sales tax inside every TAX_RATES row (ITEP, above): the part the town's government collects. */
+/**
+ * The state-and-local income and sales tax inside every TAX_RATES row (ITEP, above): the part the town's government collects.
+ * [S≠: source disagrees — ITEP, Who Pays? 7th ed. (January 2024), U.S.
+ * average: state and local sales & excise plus income taxes are 6.8 / 7.1 /
+ * 7.2 / 7.0% of income for the four lower quintiles and 6.3 / 5.5 / 5.1% for
+ * the next 15% / next 4% / top 1% (property taxes, a further 1.9-4.4%,
+ * excluded) — about 7%, not 4%.]
+ */
 const STATE_LOCAL_TAX = 0.04;
+/** [M: standard normal quantiles at 10/30/50/70/90% — the midpoints of the income quintiles.] */
 const TAX_Z = [-1.2816, -0.5244, 0, 0.5244, 1.2816];
 /**
  * WHAT A HOUSEHOLD BUYS, BY ITS INCOME (households stage 5, 2026-10-29). Its
@@ -783,9 +791,9 @@ const FIELDS = {
   // whether the second adult is a partner (else every adult past the householder is an other adult), and the other adults' eldest's age
   kOld: Uint8Array, kYoung: Uint8Array, partner: Uint8Array, oAge: Uint8Array,
 } as const;
-/** A child's age the register has not drawn yet (a save from before stage 4). */
+/** A child's age the register has not drawn yet (a save from before stage 4). [M: a sentinel code — the largest Uint8.] */
 const KID_UNKNOWN = 255;
-/** Columns a save from before them does not carry, and what they hold then. */
+/** Columns a save from before them does not carry, and what they hold then. [M: the sentinel codes above, not quantities.] */
 const FIELD_DEFAULT: Partial<Record<keyof typeof FIELDS, number>> = { ind1: IND_NONE, ind2: IND_NONE, emp3: EMP_NONE, ind3: IND_NONE, taste: NaN, kOld: 255, kYoung: 255, partner: 255, oAge: 255 };
 type FieldName = keyof typeof FIELDS;
 export type HouseholdArrays = { [K in FieldName]: InstanceType<(typeof FIELDS)[K]> };

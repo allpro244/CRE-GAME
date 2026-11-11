@@ -1421,7 +1421,8 @@ export function jobDelivered(s: GameState, parcels: ParcelTable, bbl: string, fi
   // A ROUTINE OPENING IS NOT NEWS. "It is competing with you tomorrow" is only
   // true if it is anywhere near you — see stakeIn. The square feet reach the
   // market either way, through the delivery cohort.
-  if (rec && stakeIn(s, parcels, rec, firmId) && rng(s, "rivals") < 0.7) {
+  // (Printed on a 70% coin among those until 2026-11-10; the stake is the test.)
+  if (rec && stakeIn(s, parcels, rec, firmId)) {
     s.news.unshift({
       q: s.month, kind: "event",
       text: `${r.name} delivered ${rec.address}. Vacant; new competing supply.`,
@@ -2272,7 +2273,10 @@ export function tickRivalConversions(s: GameState, parcels: ParcelTable) {
  * Gates, all of them facts about the firm: twenty years old, a sheet that
  * holds (90+) at low capacity (35 or under), nothing bought in ten years,
  * no live job, no arrears, and cash enough to clear every dollar it owes.
- * Once a year, on a hashed one-in-seven.
+ * Once a year. It was a hashed one-in-seven on top of those (2026-11-10): a
+ * firm in that position has nothing left to do as a firm — no buying, no
+ * building, no debt it cannot clear — so it winds up the first year it is
+ * there, on its own books rather than a die.
  */
 export function tickRivalRetirements(s: GameState, _parcels: ParcelTable) {
   if (s.month % 12 !== 9) return;
@@ -2285,7 +2289,6 @@ export function tickRivalRetirements(s: GameState, _parcels: ParcelTable) {
     if ((s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned)) continue;
     if (r.debt > r.cash) continue;
     if (s.listings.some((l) => l.sellerId === r.id)) continue;
-    if (hash01(`${s.seed}:retire:${r.id}:${s.month}`) > 1 / 7) continue;
     const id = `x${r.id}`;
     const base = r.name.replace(/\s+(Co\.|Partners|Holdings|Capital|Group|Realty|Trust|Investments|Estate Co\.|Property Co\.|Development Co\.)$/i, "");
     const holder = {
@@ -3449,7 +3452,7 @@ export function gainsTax(r: Rival, price: number): number {
  * monuments to dead sponsors, and what makes the good ones worth moving on.
  * They pay for the site and the steel and inherit the bill for the rest.
  */
-function rescueOrphan(s: GameState, parcels: ParcelTable, ci: number) {
+function rescueOrphan(s: GameState, parcels: ParcelTable) {
   const stalled = (s.cityJobs ?? []).filter((j) => j.orphaned && j.listedM !== undefined && s.month - j.listedM >= 6);
   if (!stalled.length) return;
   const j = stalled[Math.floor(rng(s, "rivals") * stalled.length)];
@@ -3460,12 +3463,20 @@ function rescueOrphan(s: GameState, parcels: ParcelTable, ci: number) {
   const toFinish = Math.max(0, (j.cost ?? 0) - (j.spent ?? 0));
   const recJ = resolveRec(parcels, s, j.bbl);
   if (!recJ) return;
-  const taker = livingRivals(s).find((r) =>
-    paramsOf(r).build >= 0.3
-    && r.cash > price + toFinish * 0.4 + 2_000_000 * (s.econ.cpi ?? 1)
-    && rng(s, "rivals") < 0.10 * paramsOf(r).build * ci
-    // ...and only a builder whose own number for the frame covers the price
-    && frameBid(s, r, j, recJ) >= price);
+  // WHO TAKES IT IS WHO VALUES IT MOST (2026-11-10). This was the first
+  // builder down the roster to win a coin (10% x its build appetite x the
+  // credit index) among those whose number covered the price. The frame is
+  // listed at the room's second-best number (orphanToTape); it goes to the
+  // builder whose own number for it is highest — the finished building at its
+  // margin less the cost to finish (frameBid) — among those with the money to
+  // close and carry the restart. Credit reaches it through that margin and
+  // the cash test, not a dial.
+  let taker: Rival | undefined, top = price;
+  for (const r of livingRivals(s)) {
+    if (r.id === j.firmId || paramsOf(r).build < 0.3 || !(r.cash > price + toFinish * 0.4 + 2_000_000 * (s.econ.cpi ?? 1))) continue;
+    const bid = frameBid(s, r, j, recJ);
+    if (bid >= top) { taker = r; top = bid; }
+  }
   if (!taker) return;
   taker.cash -= price;
   taker.basis = Math.round((taker.basis ?? 0) + price);
@@ -4205,19 +4216,23 @@ function listUnderDuress(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
   // you own buildings here, or you have traded with it — it rings you before
   // the listing goes up, and you alone can take it for two months. How much it
   // gives away is how desperate it is: months in arrears and how far over its
-  // own covenant it is take the price from 95 cents of the deed to 75. A
-  // secretive firm (Secrecy) is likelier to keep it off the tape; a firm you
-  // insulted is not calling you at all.
+  // own covenant it is take the price from 95 cents of the deed to 75. A firm
+  // you insulted is not calling you at all.
+  // WHETHER IT RINGS IS ITS OWN SUM (2026-11-10): it was a coin, 25-70% by
+  // the firm's Secrecy. The firm's broker tells it what the room would pay
+  // on the tape today (propmarket.ts forcedSalePrice: the best named bid, or
+  // nothing); it rings you when what it would ask you privately is at least
+  // that — when the room would pay more, it lists.
   const t = s.street?.[r.id];
   const credible = Object.keys(s.holdings).length > 0 || !!t?.deals;
-  const secrecy = (r.sheet?.secrecy ?? 50) / 100;
+  const heard = forcedSalePrice(s, parcels, sell.rec, sell.bbl, v);
+  const lev = (r.aum ?? 0) > 0 ? r.debt / r.aum! : 1;
+  const desperate = Math.max(0, Math.min(1, (r.stressMs ?? 0) / 8 + Math.max(0, lev - paramsOf(r).maxLtv) * 2));
+  const quietAsk = Math.round(v * (0.95 - 0.20 * desperate) / 1000) * 1000;
   if (credible && !(t?.insults) && !r.rules?.includes("neverSellsToPlayer")
-    && rng(s, "rivals") < 0.25 + 0.45 * secrecy
-    // After the draw, so the phones being off moves no stream.
+    && quietAsk >= heard
     && !s.brokersOff) {
-    const lev = (r.aum ?? 0) > 0 ? r.debt / r.aum! : 1;
-    const desperate = Math.max(0, Math.min(1, (r.stressMs ?? 0) / 8 + Math.max(0, lev - paramsOf(r).maxLtv) * 2));
-    const ask = Math.round(v * (0.95 - 0.20 * desperate) / 1000) * 1000;
+    const ask = quietAsk;
     r.dumped = (r.dumped ?? 0) + 1;
     s.listings.push({
       bbl: sell.bbl, ask, listedM: s.month, expiresM: s.month + 8, distress: true, sellerId: r.id, ...disclosed,
@@ -4237,7 +4252,6 @@ function listUnderDuress(s: GameState, parcels: ParcelTable, r: Rival, bbl: stri
   // PRICED TO MOVE: at what its broker says the room would pay today (the
   // best named bid on a distress listing — propmarket.ts forcedSalePrice), or
   // at the deed's appraisal when nobody would bid; and it takes any bid.
-  const heard = forcedSalePrice(s, parcels, sell.rec, sell.bbl, v);
   const px = Math.round((heard > 0 ? heard : v) / 1000) * 1000;
   r.dumped = (r.dumped ?? 0) + 1;
   // The deed stays with them until somebody buys it — a firm selling under
@@ -4709,7 +4723,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
   // so schedule slips and orphans are visible to the space market. Cash draws
   // already landed; the solvency test below reads the same balances.
   orphanToTape(s, parcels);
-  rescueOrphan(s, parcels, ci);
+  rescueOrphan(s, parcels);
 
   for (const r of s.rivals) {
     // THE WORKOUT. A failed firm does not evaporate — a receiver holds the
@@ -5094,17 +5108,27 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
           n: { ask: terms.ask, heldM: s.month - (r.heldSince?.[forcedBbl] ?? r.bornM ?? 0) },
           t: `${r.name} must sell ${rec.address}: ${recycle ? "non-core, too small for its book" : r.style === "merchant" ? "a merchant builder's exit" : `fund life — held ${Math.round((s.month - (r.heldSince?.[forcedBbl] ?? r.bornM ?? 0)) / 12)} years`}`,
         });
-        if (quietStyle && rng(s, "rivals") < 0.40) {
-          // THE QUIET TREATY: one buyer, rung privately — the firm whose own
-          // number is highest — and the two split the difference between the
-          // seller's reservation and that number (a bargain struck by two
-          // sides who both know it is a deal).
+        // THE QUIET TREATY: one buyer, rung privately — the firm whose own
+        // number is highest — and the two split the difference between the
+        // seller's reservation and that number (a bargain struck by two
+        // sides who both know it is a deal). It was taken on a 40% coin by
+        // the quiet styles. The seller now prices the choice (2026-11-10): an
+        // open sale to the same room goes at about the second-best number
+        // (an English auction's price, never under its reserve), so it rings
+        // the top buyer when the split is worth at least that — the privacy
+        // costs it nothing — and lists when competition would pay more.
+        let quiet: { price: number; top: (ReturnType<typeof bidRound>)["bids"][number] } | null = null;
+        if (quietStyle) {
           const round = bidRound(s, parcels, rec, { bbl: forcedBbl, ask: Math.max(1, v) });
-          const top = [...round.bids].sort((a, b) => b.max - a.max)[0];
+          const [top, second] = [...round.bids].sort((a, b) => b.max - a.max);
           const price = top && top.max >= terms.reserve ? Math.round((terms.reserve + top.max) / 2 / 1000) * 1000 : 0;
-          const buyer = price > 0 ? rivalBuys(s, parcels, rec, price, top.r, undefined, true) : null;
+          if (price > 0 && price >= Math.max(terms.reserve, second?.max ?? 0)) quiet = { price, top };
+        }
+        if (quiet) {
+          const buyer = rivalBuys(s, parcels, rec, quiet.price, quiet.top.r, undefined, true);
           if (buyer) {
-            if (stakeIn(s, parcels, rec, r.id) && rng(s, "rivals") < 0.25) {
+            // A private sale near you is news whenever it happens (stakeIn); it was a 25% coin.
+            if (stakeIn(s, parcels, rec, r.id)) {
               s.news.unshift({
                 q: s.month, kind: "deal",
                 text: `${r.name} sold ${rec.address} quietly to ${buyer.name} — never listed.`,
@@ -5135,7 +5159,8 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
           // corner the player had never looked at. Same rule as the trades — see
           // stakeIn. The listing itself still appears on the tape, which is where
           // a buyer looks for buildings.
-          if (stakeIn(s, parcels, rec, r.id) && rng(s, "rivals") < 0.30) {
+          // (It was printed on a 30% coin among those; the stake is the test.)
+          if (stakeIn(s, parcels, rec, r.id)) {
             s.news.unshift({
               q: s.month, kind: "deal",
               text: `${r.name} has put ${rec.address} on the market. `

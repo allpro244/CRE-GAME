@@ -33,7 +33,7 @@ import { rng, rrange } from "./market";
 import { bidRound } from "./propmarket";
 import { openReoPortfolio } from "./portfoliosale";
 import { collateralAsIs, ownedHoldingValue, resolveRec } from "./value";
-import { lenderPressure, lenderByName, chargeLenderLoss } from "./lenders";
+import { lenderPressure, lenderByName, chargeLenderLoss, lenderConstitution } from "./lenders";
 import { markSponsor } from "./sponsor";
 import { recordComp } from "./comps";
 import { firmShort } from "./firm";
@@ -41,7 +41,7 @@ import { genRentRoll, depositsOn } from "./leasing";
 import { bumpLenderRel } from "./debt";
 import { saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { takeDeed, FILE_COST } from "./notes";
-import { clearRivalClaims, forgetDeed, noteLost } from "./rivals";
+import { clearRivalClaims, forgetDeed, noteLost, markAsset } from "./rivals";
 import { dropDeed, originateRow } from "./rivalDebt";
 import { reinstateFundedForeclosures } from "./workout";
 import { spendable, fundAndBook } from "./credit";
@@ -123,14 +123,6 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
   if (s.bankFcls.length >= 4) return;
   for (const l of s.lenders ?? []) {
     if (l.failedM !== undefined) continue;
-    // WHEN A DESK FILES: still a coin (9% a month, for a desk whose book is
-    // 3.5% delinquent). Filing on every loan three payments behind was tried
-    // (2026-11-10) and set off a fire-sale cascade — the player-bot in
-    // test/conserve went insolvent at months 38-106 against 290-401 — because
-    // real desks forbear on underwater paper ("extend and pretend", 2009-12)
-    // and nothing here models that choice yet. Kept until a desk weighs a
-    // foreclosure's recovery against forbearing.
-    if (l.delinquent < 0.035 || rng(s) > 0.09) continue;
     // A DESK FILES ON ITS OWN LOAN, AND ONLY ONE THAT IS NOT BEING PAID. The
     // pool used to be any firm four months into a squeeze, on any of its
     // buildings, for an owed figure drawn as 75-115% of the building's as-is
@@ -148,6 +140,34 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class === "land") return;
     if (row.balance < 600_000) return;
+    // FORECLOSE, MODIFY OR WAIT: THE DESK'S OWN SUMS (2026-11-11). This was a
+    // 9% coin for a desk 3.5% delinquent; filing on every 90-day default set
+    // off fire-sale cascades. A real desk works the loan out when that beats
+    // the courthouse (the 2009 interagency policy statement on prudent CRE
+    // loan workouts; "extend and pretend", 2009-12):
+    //   MODIFY when the building's own income still covers an interest-only
+    //   coupon — the arrears go on the balance, the term runs on a year, and a
+    //   paying loan is worth more than a forced sale. Once per two years.
+    //   WAIT when foreclosing would book a loss that takes the desk under its
+    //   own capital target: it carries the loan rather than recognise the hole.
+    //   FILE otherwise.
+    {
+      const noi = markAsset(s, r, rec).noi;
+      const ioCoupon = row.balance * (row.ratePct / 100);
+      const recovery = collateralAsIs(rec, s.econ, Math.max(0.15, Math.min(0.95, r.occ ?? 0.6))) * (1 - FILE_COST);
+      const loss = Math.max(0, row.balance - recovery);
+      const target = lenderConstitution(l).target;
+      const capAfter = l.book > 0 ? (l.capital - loss) / Math.max(1, l.book - row.balance) : 1;
+      const lastMod = (row as { modM?: number }).modM;
+      if (noi >= ioCoupon && (lastMod === undefined || s.month - lastMod >= 24)) {
+        row.balance = Math.round(row.balance + ioCoupon / 12 * (row.arrearsMs ?? 0));
+        row.arrearsMs = 0;
+        row.maturityM = Math.max(row.maturityM, s.month) + 12;
+        (row as { modM?: number }).modM = s.month;
+        continue;
+      }
+      if (loss > 0 && capAfter < target) continue;
+    }
     const debt = Math.round(row.balance);
     s.bankFcls.push({
       bbl, lender: l.name, firmId: r.id, firm: r.name, debt,

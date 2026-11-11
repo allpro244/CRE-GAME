@@ -673,6 +673,8 @@ export interface Option {
   dLink: number; dWork: number;
   /** the current building (a renewal) */
   stay?: boolean;
+  /** one of the player's buildings: the firm tours it and the player's desk decides (leasing.ts) */
+  player?: boolean;
 }
 
 /** A Gumbel draw (the logit taste). */

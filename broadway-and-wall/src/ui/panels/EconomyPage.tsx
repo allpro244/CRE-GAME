@@ -975,9 +975,8 @@ export function EconomyPage() {
           );
         })()}
         {/* THE DEMAND LEDGER. Letters still come from a finite looking book,
-            not from empty floors: the search pool (`e.pool`) and this month's
-            requirement (`marketRequirement`) are the same quantities
-            leasingOdds reads on the desk, and they still gate every LOI.
+            not from empty floors: a tour is a firm in the looking pool whose
+            broker put the building first (streetRolls.ts shop).
             They are no longer PRINTED here — two intermediate stocks the
             player cannot act on directly, on a page whose job is the tells
             they can. The tells they can act on stay: what is let, and whether

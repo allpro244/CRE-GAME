@@ -8,7 +8,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, AutoConcessions, AutoLeaseEntry, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, cloneState, CREDIT_LABEL } from "./types";
 import type { Econ, Tenant } from "./types";
-import { rng, rrange, recordDeal, openingVac, seekersPerVacantSf, CONC_DEPTH, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, RENT_BASE, turnoverYr } from "./market";
+import { rng, rrange, recordDeal, openingVac, CONC_DEPTH, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, RENT_BASE, turnoverYr } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 /** Bare clamp so tools/rails.mjs can see the block-premium guards. */
@@ -57,9 +57,9 @@ import { drawLeaseUpReserve, leaseUpRoom } from "./debt";
 import { fundReserve } from "./fund";
 import { partnerFunds } from "./jv";
 import { recordPropertyEvent, noteTenantMove } from "./history";
-import { pullSeeker, pullSeekerIn, releaseSeeker, seekerSigned, playerTenantLeft, offerForPlayer, stayOdds } from "./streetRolls";
+import { seekerFirm, releaseSeeker, seekerSigned, playerTenantLeft, offerForPlayer, stayOdds } from "./streetRolls";
 
-import { leasingOdds, supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
+import { supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
 import { assignTenantFloors, blocksOf, blockIdForSf, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
 import { money } from "./money";
 import { purseOf } from "./vehicles";
@@ -2161,40 +2161,25 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // door. A tower with one empty shop at grade and full floors above is
       // being toured by shopkeepers, not law firms — and the shop competes in
       // the retail market, on retail momentum, against retail supply.
-      const openLegs = leasableUses(rec)
-        .map((u) => ({ u, free: useVacantSf(rec, h, u, q) }))
-        .filter((x) => x.free > 400);
-      if (!openLegs.length) continue;
-      let pickWeight = rng(s, "leasing") * openLegs.reduce((a, x) => a + x.free, 0);
-      let leg = openLegs[0];
-      for (const x of openLegs) { pickWeight -= x.free; if (pickWeight <= 0) { leg = x; break; } }
-      const use = leg.u;
-      const legVac = leg.free;
-      // TURNKEY SPACE LEASES. A tenant who can move in next month does not
-      // tour the shell down the road, and the funnel widens for the use the
-      // suites were built in — and only that one.
-      const spec = h.specSuites;
-      const specLive = spec !== undefined && spec.use === use && s.month >= spec.readyM;
-      const odds = leasingOdds(s, parcels, rec, h, use);
-      if (!odds) continue;
-      const p = odds.loiOdds;
-      // TOURS COME AS INTEREST BUILDS, NOT ON A DIE (2026-11-11). loiOdds is
-      // the building's expected tours a month (its capture of the market's
-      // requirement over a deal's size); it accrues on the holding, and a
-      // party comes through each time a whole tour's worth has built up. The
-      // clock starts at a phase hashed off the parcel, so buildings do not
-      // all tour in the same month.
-      const accs = (h.tourAcc ??= {});
-      let acc = accs[use];
-      if (acc === undefined) {
-        let hb = 2166136261;
-        for (let i = 0; i < h.bbl.length; i++) { hb ^= h.bbl.charCodeAt(i); hb = Math.imul(hb, 16777619); }
-        acc = ((hb >>> 0) % 1000) / 1000;
-      }
-      acc += p;
-      const tours = acc >= 1;
-      accs[use] = tours ? acc - 1 : acc;
-      if (tours) {
+      // WHO TOURS IS WHO CHOSE IT (2026-11-11). The parties at the door are
+      // the firms whose broker's shortlist put this building first this month
+      // (streetRolls.ts shop: the player's space is on the same tour book as
+      // the street's, weighted by the same rule). It used to be a separate
+      // law — the building's capture of an aggregate requirement accruing on
+      // the holding (absorption.ts leasingOdds) — with a seeker pulled to
+      // fit. Nobody chose it, nobody tours.
+      const picks = (s.econ.playerTours ?? []).filter((x) => x.bbl === h.bbl);
+      if (picks.length) s.econ.playerTours = s.econ.playerTours!.filter((x) => x.bbl !== h.bbl);
+      for (const pk of picks) {
+        if (pk.done) continue;
+        pk.done = true;
+        const openNow = new Set(s.lois.filter((l) => l.bbl === h.bbl && l.kind === "new").map((l) => l.tourId ?? -l.id)).size;
+        if (openNow >= loiCap) { releaseSeeker(s, pk.fid); continue; }
+        const use = pk.use;
+        const legVac = useVacantSf(rec, h, use, q);
+        if (!(legVac > 400)) { releaseSeeker(s, pk.fid); continue; }
+        const spec = h.specSuites;
+        const specLive = spec !== undefined && spec.use === use && s.month >= spec.readyM;
         const [tiLo, tiHi] = tiBandPsfYr(s, rec, h, use);
         const shell = specLive ? 0 : shellShare(rec, h, use, q);
         const concession = concessionPressure(s.econ, use);
@@ -2211,36 +2196,14 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // whoever owns the floor. Office rarely draws a consolidator above
         // 120k (see OFFICE_WHALE_* in absorption.ts) — still capped here by
         // what this address has left to demise.
-        // ...capped by the pool this ADDRESS has left. Odds taper as a
-        // building nears what its corner supports, but odds cannot stop a
-        // deal already in flight: a letter sized against raw vacancy could
-        // jump a fringe building from 67% straight to 92% in one signing and
-        // the ceiling never got a vote. The requirement that actually tours
-        // here is at most what is left of the address's own tenant pool.
-        const legAll = useRentableSf(rec, use);
-        let poolSf = Math.max(0, legVac - (1 - supportableOcc(s.econ, rec, use)) * legAll);
-        // A starved pool must not round UP to a full market-norm bite — that
-        // is how the occupancy ceiling used to lose. But it must not always
-        // round DOWN either, and it did: when the pool is short of one whole
-        // suite, nobody toured. supportableOcc never exceeds 0.985, so a leg
-        // that IS one suite — the 855 sf shop under a three-flat walk-up — had
-        // a pool of 98.5% of a suite at the best corner in town, every month,
-        // for ever. Measured on a Great City developer run (seed 760449): a
-        // ground-floor shop sat dark for sixteen years at 80% monthly letter
-        // odds and 0.6% city retail vacancy, and the building read 66% let
-        // the whole time. The same floor stranded the last suite of any leg
-        // whose leftover pool was under one demise.
-        //
-        // A suite lets whole or not at all, so the honest rounding is in
-        // EXPECTATION: a pool covering 98.5% of the suite lets it on 98.5% of
-        // the tours that would otherwise have come. The address's ceiling
-        // still holds on average; an indivisible space is no longer below it
-        // by construction. The extra draw is taken only on this branch.
+        // NO ADDRESS CEILING (2026-11-11). The requirement that tours here is
+        // the firm's own need, up to what the leg has free: the firm chose
+        // this building over the street, which is the evidence that it has a
+        // tenant. The old cap — what was left of an address's "tenant pool"
+        // (absorption.ts supportableOcc), with a coin when the pool was short
+        // of one suite — was the aggregate law's, not a firm's.
+        const poolSf = legVac;
         const floorSf = minLettableSf(rec, use);
-        if (poolSf < floorSf) {
-          if (!(poolSf > 0) || rng(s, "leasing") >= poolSf / floorSf) continue;
-          poolSf = floorSf;
-        }
         // WHO TURNS UP IS A FIRM THAT IS LOOKING (FORMULA_LEDGER #20). The
         // party at the door is a firm from the town's looking pool — a new
         // firm, an arrival, a firm in town that has outgrown its floor or
@@ -2249,7 +2212,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // size drawn from the class's distribution, and when nobody in the
         // pool fitted, a firm made up on the spot. Nobody looking, nobody
         // tours.
-        const first = pullSeekerIn(s, use, floorSf * 0.5, Math.min(legVac, poolSf), overallScore(rec, s.econ, use, h.condIdx ?? initialCondIdx(rec, s.month)));
+        const first = seekerFirm(s, pk.fid, pk.want);
         if (!first) continue;
         const want = Math.min(legVac, poolSf, Math.max(floorSf, Math.round(first.want)));
         const fit = matchBlock(rec, h, use, want);
@@ -2290,23 +2253,21 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // 1 - e^-theta (1 + theta). It read a "natural" vacancy over actual
         // (`vacancyPull`, retired 2026-11-07: there is no vacancy norm).
         // Still two draws, so the leasing stream keeps its count.
-        const theta = seekersPerVacantSf(s.econ, use);
-        // The party is the first firm plus the expected others, theta of
-        // them rounded, at most two more (no dice, 2026-11-11) — and only as
-        // many as the pool actually holds (the loop below).
-        const nWant = 1 + Math.min(2, Math.round(theta));
+        // THE PARTY IS EVERY FIRM THAT CHOSE THIS SPACE THIS MONTH (2026-11-11):
+        // the other firms whose broker put this building first for the same
+        // use. In a squeeze several do and you get to pick; in a glut one
+        // does. It was the town's seekers per vacant foot (theta) turned into
+        // a party size — an aggregate standing in for the firms themselves.
         const bCond = h.condIdx ?? initialCondIdx(rec, s.month);
         const bScore = overallScore(rec, s.econ, use, bCond);
-        // The other parties on the tour are other firms from the pool whose
-        // need is near the same suite; when the pool has nobody else, the
-        // first party tours alone.
         const party: Tenant[] = [first.firm];
-        while (party.length < nWant) {
-          const more = pullSeeker(s, use, sf, bScore);
-          if (!more) break;
-          party.push(more);
+        for (const o of picks) {
+          if (party.length >= 3 || o === pk || o.use !== use || o.done) continue;
+          const more = seekerFirm(s, o.fid, o.want);
+          if (more) { party.push(more.firm); o.done = true; }
         }
         const nTour = party.length;
+        h.tourLog = [...(h.tourLog ?? []).filter((x) => x > s.month - 24), ...party.map(() => s.month)];
         const tourId = s.nextTourId ?? 1;
         s.nextTourId = tourId + 1;
         for (let k = 0; k < nTour; k++) {

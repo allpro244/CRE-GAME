@@ -208,6 +208,8 @@ export function SettingsPage() {
   const graphics = useStore((s) => s.graphics);
   const diorama = useStore((s) => s.diorama);
   const setDiorama = useStore((s) => s.setDiorama);
+  const cityRenderer = useStore((s) => s.cityRenderer);
+  const setCityRenderer = useStore((s) => s.setCityRenderer);
   const setGraphics = useStore((s) => s.setGraphics);
   const flip = (patch: Partial<GameState>) => {
     const st = useStore.getState();
@@ -324,6 +326,11 @@ export function SettingsPage() {
       <div className="btn-row">
         <button type="button" className={"btn" + (diorama ? " btn-on" : "")} title="A toy city: bright colours, soft blue shadows, a miniature blur." onClick={() => setDiorama(true)}>Diorama</button>
         <button type="button" className={"btn" + (!diorama ? " btn-on" : "")} title="The earlier, plainer grade." onClick={() => setDiorama(false)}>Classic</button>
+      </div>
+      <div className="page-section" style={{ marginTop: 10 }} title="Which engine draws the 3D city. Looks only: the city, its numbers and your save are the same either way. Switching rebuilds the map.">Renderer</div>
+      <div className="btn-row">
+        <button type="button" className={"btn" + (cityRenderer === "classic" ? " btn-on" : "")} title="The proven renderer (WebGL)." onClick={() => setCityRenderer("classic")}>Classic (WebGL)</button>
+        <button type="button" className={"btn" + (cityRenderer === "webgpu" ? " btn-on" : "")} title="Beta: the city on its own WebGPU renderer, with real post-processing (ambient occlusion, reflections, temporal anti-aliasing). Falls back to WebGL 2 where the browser has no WebGPU." onClick={() => setCityRenderer("webgpu")}>WebGPU (beta)</button>
       </div>
       </>)}
       {UNREAL_HOST ? <UnrealGraphics /> : (<>

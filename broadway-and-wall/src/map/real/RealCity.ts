@@ -23,6 +23,7 @@ import type { BuildingDesign } from "@/engine/types";
 import type { CityCtx, PlayerItem } from "./ctx";
 import { siteOutline, ringCentroid } from "./siteRing";
 import { PostFX } from "./post";
+import type { GpuBackend } from "./gpu/GpuCity";
 import { FlatBuf, GRASS_U, TURF_U, bloomTex, grassMaterial, inRing as inRingPk, longGrassTex, parkGeom, segDist, settsTex, turfMaterial, walkTex } from "./parks";
 import { Traffic, type Car, type Crosser, type NetRaw } from "./traffic";
 import { MORE_FORMS, SIGNATURE_FORMS, SIGNATURE_BY_KEY, SIGNATURE_MIN_H, formInEra, formFits, ellipse, rect, chamfered, star8, roundTri, yPlan, turn, type SignatureKey } from "./signature";
@@ -1636,6 +1637,14 @@ export class RealCityLayer {
 
   private map!: maplibregl.Map;
   private renderer!: THREE.WebGLRenderer;
+  /**
+   * THE WEBGPU BETA (WEBGPU_PLAN.md). Set before addLayer: the city is then
+   * drawn by its own renderer (three's WebGPURenderer, WebGL 2 where the
+   * browser has no WebGPU) on a canvas of its own over the map, with
+   * MapLibre's frame as the ground under it. Off, nothing below changes.
+   */
+  gpu = false;
+  private gpuB: GpuBackend | null = null;
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera();
   private origin = { x: 0, y: 0, z: 0, s: 1 };
@@ -1739,6 +1748,7 @@ export class RealCityLayer {
     this.map = map;
     const mc = maplibregl.MercatorCoordinate.fromLngLat({ lng: this.center[0], lat: this.center[1] }, 0);
     this.origin = { x: mc.x, y: mc.y, z: mc.z, s: mc.meterInMercatorCoordinateUnits() };
+    if (this.gpu) { this.onAddGpu(map); return; }
     this.renderer = new THREE.WebGLRenderer({ canvas: map.getCanvas(), context: gl, antialias: true });
     this.renderer.autoClear = false;
     this.post.repaint = () => this.map?.triggerRepaint();
@@ -1758,6 +1768,39 @@ export class RealCityLayer {
     this.skyEnv = pm.fromScene(skyEnvironment(), 0.02).texture;
     this.scene.environmentIntensity = 0.5;
     pm.dispose();
+    this.families = makeFamilies(this.seed || 1, (f) => { if (f.glass || f.key === "ribbon") f.mat.envMap = this.reflEnv ?? this.skyEnv; });
+    this.setupLights();
+    addSway(this.leafMat);
+    this.dyn.add(this.dynDone.group, this.dynSite.group);
+    this.scene.add(this.dyn);
+    const measure = () => { this.viewH = map.getContainer().clientHeight || 900; };
+    measure(); map.on("resize", measure);
+    map.on("moveend", () => { if (this.maxQ && this.live) this.probeFocusDue = true; this.map.triggerRepaint(); });
+    this.queue = new Map();
+    void this.buildAll();
+  }
+
+  /**
+   * The WebGPU beta's onAdd: the same scene, lights and build, on a renderer
+   * that has to start asynchronously (the build runs meanwhile; render waits).
+   */
+  private onAddGpu(map: maplibregl.Map) {
+    this.camera.matrixAutoUpdate = false;
+    this.scene.matrixWorldAutoUpdate = true;
+    this.post.repaint = () => this.map?.triggerRepaint();
+    void import("./gpu/GpuCity").then(async ({ GpuBackend }) => {
+      const b = await GpuBackend.create(map, this.scene, this.camera, this.sun);
+      if (this.gone) { b.dispose(); return; }
+      this.gpuB = b;
+      this.renderer = b.renderer as unknown as THREE.WebGLRenderer;
+      this.renderer.toneMappingExposure = this.toy ? 0.9 : 0.82;
+      this.scene.environment = b.roomEnvironment();
+      this.skyEnv = b.skyEnvironment();
+      this.scene.environmentIntensity = 0.5;
+      for (const f of Object.values(this.families)) if (f.glass || f.key === "ribbon") f.mat.envMap = this.reflEnv ?? this.skyEnv;
+      if (this.live) { b.shadowNeedsUpdate(); this.probeDue = true; }
+      this.map?.triggerRepaint();
+    }).catch((e) => { console.error("WebGPU renderer failed to start", e); });
     this.families = makeFamilies(this.seed || 1, (f) => { if (f.glass || f.key === "ribbon") f.mat.envMap = this.reflEnv ?? this.skyEnv; });
     this.setupLights();
     addSway(this.leafMat);
@@ -1835,7 +1878,7 @@ export class RealCityLayer {
     if (st.length) { requestAnimationFrame(() => this.map?.triggerRepaint()); return; }
     this.stage = null;
     this.live = true;
-    this.renderer.shadowMap.needsUpdate = true;
+    if (this.renderer) this.renderer.shadowMap.needsUpdate = true;
     this.probeDue = true;
     this.onReady?.();
   }
@@ -1876,10 +1919,12 @@ export class RealCityLayer {
       m.geometry?.dispose?.();
     });
     this.renderer?.dispose();
+    this.gpuB?.dispose();
   }
 
   render(_gl: WebGLRenderingContext | WebGL2RenderingContext, options: maplibregl.CustomRenderMethodInput) {
     if (!this.visibleOn || this.queue) return;
+    if (this.gpu && !this.gpuB) return;
     if (this.stage) this.stageSome();
     // where the eye is, in local metres (same derivation ThreeBuildings uses)
     const c = this.map.getCenter();
@@ -1927,7 +1972,7 @@ export class RealCityLayer {
     // the terraces go out from spring to autumn, and only when you are close
     const cafe = this.inst.get("cafe");
     if (cafe) cafe.visible = this.month >= 3 && this.month <= 9 && !far;
-    this.renderer.resetState();
+    if (!this.gpuB) this.renderer.resetState();
     if ((this.fleets.length || this.cranes) && !this.paused && !NO_TRAFFIC && typeof document !== "undefined" && !document.hidden) {
       const now = performance.now();
       this.stepTraffic(now / 1000);
@@ -1966,6 +2011,11 @@ export class RealCityLayer {
     // browser zoom, another screen) left the scene and the finishing pass
     // drawing into the old rectangle (owner, Oct 2026: "super bugged out").
     // The viewport follows the drawing buffer; the canvas is never resized here.
+    if (this.gpuB) {
+      // the WebGPU beta draws its own canvas, this frame, from the same camera
+      this.gpuB.render(this.post, pitch, distM, [this.hazeSheet, this.precip]);
+      return;
+    }
     {
       const gl = this.renderer.getContext(), pr = this.renderer.getPixelRatio();
       this.renderer.setViewport(0, 0, gl.drawingBufferWidth / pr, gl.drawingBufferHeight / pr);
@@ -2006,16 +2056,20 @@ export class RealCityLayer {
     if (at) { [px, py] = at; pz = 55; }
     this.probeAt = [px, py];
     // the painted sky round the probe, far enough out to sit behind the city
-    const sky = skyEnvironment();
+    const sky = this.gpuB ? this.gpuB.skyScene() : skyEnvironment();
     sky.children.forEach((o) => { o.scale.setScalar(55); o.position.add(new THREE.Vector3(px, py, pz)); });
     const kids = [...sky.children];
     for (const o of kids) this.scene.add(o);
-    const pm = new THREE.PMREMGenerator(this.renderer);
-    this.renderer.resetState();
-    const rt = pm.fromScene(this.scene, 0.015, 2, 7000, { size: this.maxQ ? 512 : 256, position: new THREE.Vector3(px, py, pz) });
-    pm.dispose();
+    let rt: { texture: THREE.Texture };
+    if (this.gpuB) rt = this.gpuB.probe(this.scene, this.maxQ ? 512 : 256, new THREE.Vector3(px, py, pz));
+    else {
+      const pm = new THREE.PMREMGenerator(this.renderer);
+      this.renderer.resetState();
+      rt = pm.fromScene(this.scene, 0.015, 2, 7000, { size: this.maxQ ? 512 : 256, position: new THREE.Vector3(px, py, pz) });
+      pm.dispose();
+    }
     for (const o of kids) this.scene.remove(o);
-    this.renderer.resetState();
+    if (!this.gpuB) this.renderer.resetState();
     const was = this.reflEnv;
     this.reflEnv = rt.texture;
     GLASS_U.gProbe.value = 1;
@@ -2056,7 +2110,7 @@ export class RealCityLayer {
       // lifted clear of the ground and drawn a little forward, like the
       // shadow catcher and for the same reason: a centimetre over the lot
       // grounds, it hazed them twice or once at random from far off
-      const mat = new THREE.ShaderMaterial({
+      const mat = this.gpuB ? this.gpuB.hazeSheetMaterial(HAZE) : new THREE.ShaderMaterial({
         uniforms: HAZE, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4,
         vertexShader: "varying vec3 vP; void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); vP = mv.xyz; gl_Position = projectionMatrix * mv; }",
         fragmentShader: "uniform vec3 hazeCol; uniform float hazeNear, hazeFar, hazeCap; varying vec3 vP; void main() { gl_FragColor = vec4(hazeCol, smoothstep(hazeNear, hazeFar, length(vP)) * hazeCap); }",
@@ -2066,6 +2120,7 @@ export class RealCityLayer {
       this.hazeSheet.position.z = 0.19; this.hazeSheet.renderOrder = -2; this.hazeSheet.frustumCulled = false;
       this.scene.add(this.hazeSheet);
     }
+    if (this.gpuB) { this.gpuB.dress(HAZE); return; }
     this.scene.traverse((o) => {
       const mm = (o as THREE.Mesh).material;
       if (!mm) return;

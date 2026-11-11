@@ -119,6 +119,12 @@ const ratioFor = (q: "low" | "medium" | "high" | "max", dpr: number) =>
 
 const CITY_CENTER: [number, number] = [-70.9, 41.1];
 
+/** The renderer the 3D city is drawn with: the setting, unless the address says otherwise (review shots). */
+const rendererChoice = (): "classic" | "webgpu" => {
+  const q = typeof location !== "undefined" ? new URLSearchParams(location.search).get("renderer") : null;
+  return q === "webgpu" || q === "classic" ? q : useStore.getState().cityRenderer;
+};
+
 // One colour per firm, in the order the street was founded, so a rival's book
 // reads as a shape on the map under the Owners lens. Muted on purpose — these
 // sit under the gold of your own holdings, which always wins.
@@ -345,6 +351,16 @@ export default function MapView() {
   // map is rebuilt instead — the path a new city takes — with the camera
   // kept where the player had it. `glReset` re-runs the map effect.
   const [glReset, setGlReset] = useState(0);
+  // switching the city's renderer rebuilds the map, as a lost context does
+  const cityRenderer = useStore((s) => s.cityRenderer);
+  const rendererSeen = useRef(cityRenderer);
+  useEffect(() => {
+    if (rendererSeen.current === cityRenderer) return;
+    rendererSeen.current = cityRenderer;
+    const map = mapRef.current;
+    if (map) { const c = map.getCenter(); resumeCamRef.current = { center: [c.lng, c.lat], zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() }; }
+    setGlReset((n) => n + 1);
+  }, [cityRenderer]);
   const resumeCamRef = useRef<{ center: maplibregl.LngLatLike; zoom: number; bearing: number; pitch: number } | null>(null);
   const hover = useStore((s) => s.hover);
   const setFps = useStore((s) => s.setFps);
@@ -585,6 +601,9 @@ export default function MapView() {
               }
             }
             layer.setQuality(useStore.getState().graphics);
+            // the WebGPU beta (Settings -> Display -> Renderer; ?renderer=webgpu|classic overrides): the
+            // same layer, drawn by its own renderer on a canvas over the map (real/gpu/GpuCity.ts)
+            layer.gpu = rendererChoice() === "webgpu";
             if (old) layer.id = `bw-three-buildings-${Date.now()}`;
             threeRef.current = layer;
             setLayerGen((n) => n + 1);

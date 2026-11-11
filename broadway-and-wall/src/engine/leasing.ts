@@ -2103,8 +2103,10 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         tiPsf: Math.round(rrange(s, tiBandPsfYr(s, rec, h, t.use ?? "office")[0], tiBandPsfYr(s, rec, h, t.use ?? "office")[1], "leasing") * (renewTermM / 12)
           * renewalRefreshShare((q - (t.fitM ?? t.startM)) / 12)
           * tiPressure(concessionPressure(s.econ, t.use ?? "office")) * tiCreditMult(t.credit)),
-        freeM: rng(s, "leasing") < 0.25 * concessionPressure(s.econ, t.use ?? "office")
-          ? Math.round(rrange(s, 1, 3, "leasing") * concessionPressure(s.econ, t.use ?? "office")) : 0,
+        // Free rent on a renewal is what the market's softness buys the
+        // incumbent — the expected value of the old one-in-four die times a
+        // 1-3 month draw, now asked for every time (2026-11-11).
+        freeM: Math.round(0.5 * concessionPressure(s.econ, t.use ?? "office") ** 2),
         // Renewals reopen the escalator a notch — incumbents usually ask to
         // flatten; a soft market helps them.
         bumpPct: Math.round(clampL(

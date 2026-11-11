@@ -61,13 +61,19 @@ function incomingDeposits(s: GameState, bbl: string): number {
 // and there is no entity-level layer to reorganise away. Same footing as the
 // blended operating rate in tax.ts — different rates because the code taxes
 // different things, not because a different taxpayer is writing the cheque.
+// [S] IRC §1(h)(1)(D): top long-term capital-gains rate 20% (in force since
+// the American Taxpayer Relief Act of 2012).
 export const CAP_GAINS_RATE = 0.2;    // long-term rate on true appreciation
+// [S] IRC §1(h)(1)(E): "unrecaptured section 1250 gain" taxed at up to 25%
+// (Taxpayer Relief Act of 1997).
 export const RECAPTURE_RATE = 0.25;   // §1250: depreciation comes back at 25%
 export const SALE_BROKERAGE = 0.015;  // the sell-side fee
 // deed stamps, paid at the closing table — the statutory rate; the council
 // sets the rate in force (citygov.ts transferTaxRate)
 export { TRANSFER_TAX } from "./citygov";
 import { transferTaxRate } from "./citygov";
+// [S~] IRC §1031(a)(3): replacement identified within 45 days and received
+// within 180 days of the sale — 180 days is 5.9 months, rounded to six.
 export const EXCHANGE_WINDOW_M = 6;  // 1031: redeploy within six months or the tax comes due
 
 export type BuyProduct = string;   // "cash", or any id from debt.PRODUCTS

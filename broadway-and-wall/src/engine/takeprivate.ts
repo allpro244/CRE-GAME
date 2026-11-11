@@ -84,6 +84,12 @@ function hash01(str: string): number {
  *    (see below). Its base is kept for the record; the healthy path never
  *    reaches it, because a healthy family is not for sale.
  *  - owner-user: a company's own premises, not a real estate firm at all.
+ *
+ * [S≠ Goodwin's REIT M&A reviews: public-target premiums averaged 16.4%
+ * (median 13.3%) over 2012-2017, ~27% over 2020-22 and ~35% over 2022-23;
+ * Nareit 2026: take-privates run 13+ points above public-public mergers. The
+ * core/REIT/family bases sit near the old median, the PE and merchant bases
+ * well under it; to reconcile.]
  */
 const BASE_PREMIUM: Record<RivalStyle, number | null> = {
   core: 1.12, reit: 1.12, foreign: 1.15, developer: 1.10,

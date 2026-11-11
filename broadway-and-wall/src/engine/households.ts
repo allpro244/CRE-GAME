@@ -689,13 +689,12 @@ const SPLIT_YR = [0.06, 0.04, 0.03, 0.02, 0.012, 0.005];
 const TAX_RATES = [0.046, 0.109, 0.170, 0.214, 0.297];
 /**
  * The state-and-local income and sales tax inside every TAX_RATES row (ITEP, above): the part the town's government collects.
- * [S≠: source disagrees — ITEP, Who Pays? 7th ed. (January 2024), U.S.
- * average: state and local sales & excise plus income taxes are 6.8 / 7.1 /
- * 7.2 / 7.0% of income for the four lower quintiles and 6.3 / 5.5 / 5.1% for
- * the next 15% / next 4% / top 1% (property taxes, a further 1.9-4.4%,
- * excluded) — about 7%, not 4%.]
+ * ITEP, Who Pays? 7th ed. (January 2024), U.S. average: state and local
+ * sales & excise plus income taxes are 6.8 / 7.1 / 7.2 / 7.0% of income for
+ * the four lower quintiles and 6.3 / 5.5 / 5.1% for the next 15% / next 4% /
+ * top 1% (property taxes excluded) — about 7% [S]. It read 4%.
  */
-const STATE_LOCAL_TAX = 0.04;
+const STATE_LOCAL_TAX = 0.07;
 /** [M: standard normal quantiles at 10/30/50/70/90% — the midpoints of the income quintiles.] */
 const TAX_Z = [-1.2816, -0.5244, 0, 0.5244, 1.2816];
 /**
@@ -3684,8 +3683,8 @@ export function householdMoney(s: GameState): {
     if (ten === TEN_RENT || ten === TEN_MAINLAND) rent += w * a.rent[i];
     else if (ten === TEN_OWN) { if (a.mort[i] > 0) mortgage += w * a.mortPmt[i]; ownerCost += w * (TAX_INS / 12) * a.hval[i]; ownerValue += w * a.hval[i]; }
   }
-  // TAX_INS is ~1.0 points of property tax and ~0.5 of insurance (homeprice.ts)
-  return { wages, pensions, ui, tax, taxLocal, rent, mortgage, propertyTax: ownerCost * (1 / 1.5), homeInsurance: ownerCost * (0.5 / 1.5), spend: r.flow.spend, households: hh, persons, ownerValue,
+  // TAX_INS is ~0.9 points of property tax and ~0.5 of insurance (homeprice.ts)
+  return { wages, pensions, ui, tax, taxLocal, rent, mortgage, propertyTax: ownerCost * (0.9 / 1.4), homeInsurance: ownerCost * (0.5 / 1.4), spend: r.flow.spend, households: hh, persons, ownerValue,
     spendCat: r.flow.spendCat ?? zeroCat(), transfers: r.flow.transfers ?? 0 };
 }
 

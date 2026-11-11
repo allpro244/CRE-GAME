@@ -94,7 +94,7 @@ export const REQ_SIZE: Record<string, [number, number, number]> = {
  */
 export const OFFICE_WHALE_P = 0.012;
 export const OFFICE_WHALE_SIZE: [number, number, number] = [120_000, 500_000, 1.6];
-/** The mean of the draw above, so an arrival rate can be backed out of a rate of capture. */
+/** The mean of the draw above, so an arrival rate can be backed out of a rate of capture. [D: arithmetic mean of REQ_SIZE with the office whale mixed in] */
 export const REQ_MEAN: Record<string, number> = { office: 19_450, retail: 7_740, industrial: 50_130 };
 
 /** One requirement, in square feet. */
@@ -247,11 +247,13 @@ export function localMarket(s: GameState, parcels: ParcelTable, rec: ParcelRecor
   const t = nbTable(s, parcels, use);
   const mean = t.get(CITY_KEY)!;
   const here = t.get(rec.block);
-  // useOccupancy moves every building by the same swing on the cycle, so the
-  // cycle can be added back without touching a single parcel again.
-  const swing = use === "multifamily" ? 0.04 : 0.09;
-  const meanNow = Math.max(0.02, mean.vac0 - swing * s.econ.cycleDev);
-  let vacNow = Math.max(0.01, (here?.vac0 ?? mean.vac0) - swing * s.econ.cycleDev);
+  // THE TOWN'S MEASURED AVAILABILITY, NOT A MOOD (2026-11-11, FORMULA_LEDGER
+  // #32). The table is struck mid-cycle; the town's availability today is
+  // read off the market (cityVac + sublet, above), and each neighbourhood
+  // keeps its own standing against the town's mean. It used to add back a
+  // fixed swing (9 points, 4 for flats) on the sentiment index cycleDev.
+  const meanNow = Math.max(0.01, cityVac);
+  let vacNow = Math.max(0.01, (here?.vac0 ?? mean.vac0) * cityVac / Math.max(0.01, mean.vac0));
   const nbSf = here?.sf ?? mean.sf;
   let nbVacantSf = nbSf * vacNow;
 

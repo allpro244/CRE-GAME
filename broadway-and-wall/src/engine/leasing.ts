@@ -217,7 +217,10 @@ export function pickName(s: GameState, sector: Sector): string {
  * register's first month, the street's own measured turnover.
  */
 const flatTurnover = (e: Econ) => e.eco?.flatMoveOut ?? turnoverYr(e, "multifamily");
-/** A fast real lease-up signs ~8% of a building's units a month (20-30 a month on a 300-unit block). */
+/** A fast real lease-up signs ~8% of a building's units a month (20-30 a month on a 300-unit block).
+ *  [S~] RealPage 2Q 2024: the average lease-up community signs ~10-11 leases a
+ *  month (~3.5% of a 300-unit block); this ceiling is a fast lease-up at about
+ *  twice the average. */
 const MF_LEASEUP_MAX = 0.08;
 
 export function isCommercial(rec: ParcelRecord): boolean {
@@ -1947,7 +1950,8 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       if (room < minLettableSf(rec, use)) continue;
       const wantSf = fitWantSf(rec, Math.min(free, room, need - t.sf), free, use);
       if (!wantSf || wantSf > room + typicalSuiteSf(rec, use) * 0.15) continue;
-      if (rng(s, "leasing") > 0.16) continue;                // they get round to it
+      // No die for "they get round to it" (2026-11-11): a firm that needs the
+      // feet and has them next door asks; askedM keeps it from asking twice.
       t.askedM = q;
       const market = managedRentPsfYr(rec, s.econ, h, use);
       s.lois.push({
@@ -2960,6 +2964,9 @@ export function loiNeedsPrincipal(s: GameState, l: LOI): boolean {
 // The leasing agent works the whole book for you: every LOI that clears a
 // sane rent bar gets signed, at a 6% commission instead of the 4%/2% you'd
 // pay negotiating it yourself. Lowballs still get passed on.
+// [S~] Leasing commissions run ~4-6% of aggregate base rent over the term
+// (A.CRE glossary "Leasing Commissions"; cove.is glossary, citing CBRE); an
+// exclusive agent at 6% is the top of that range.
 export const AGENT_FEE = 0.06;
 
 /**
@@ -3287,6 +3294,10 @@ export const TI_VALUE = 0.75;
  * silence. It stays the baseline so putting bumps on the letter does not
  * rewrite every mandate score overnight — only a bump ABOVE or BELOW 2.5%
  * moves net effective.
+ * [S~] Fixed bumps of 2-3% a year are the most common office/industrial
+ * escalation; Manhattan brokers quote ~3% typical (Metro Manhattan Office
+ * Space, "How New York City landlords calculate annual commercial rent
+ * increases"). 2.5% is mid-range.
  */
 export const DEFAULT_BUMP_PCT = 2.5;
 
@@ -4613,9 +4624,12 @@ export function workLeasingDesk(s: GameState, parcels: ParcelTable) {
  * Renewals they cover run through the posted plan (`planCoverOf`), not a
  * second engine. A letter off the sheet still comes back to the principal.
  */
-/** The manager's cut of a renewal they sign, on total lease value. */
+/** The manager's cut of a renewal they sign, on total lease value.
+ *  [S~] Renewal commissions are commonly half the new-lease rate (apers.app,
+ *  "Leasing commission structures"), i.e. ~2-3% on a 4-6% new-lease scale. */
 export const RENEWAL_MGMT_FEE = 0.02;
-/** What a renewal letter has always cost to sign — see leaseCosts. */
+/** What a renewal letter has always cost to sign — see leaseCosts.
+ *  [S~] half the new-lease commission, as RENEWAL_MGMT_FEE. */
 const RENEWAL_SELF_FEE = 0.02;
 function leaseCosts(loi: LOI, feeRate?: number): { ti: number; lc: number } {
   const ti = loi.tiPsf * loi.sf;

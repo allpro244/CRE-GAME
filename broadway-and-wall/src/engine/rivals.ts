@@ -641,6 +641,7 @@ export function minTicket(r: Rival): number {
 // delivery and sale. A merchant holds 18-42 months (MERCHANT_MIN_LEASE_M,
 // MERCHANT_MAX_HOLD_M), mostly in lease-up; the whole of that cash stays with
 // the sponsor, which overstates it by the investors' share of a thin number.
+/** [S~: an operating partner's share of JV equity is typically 5-10% (90/10 or 95/5 splits; JD Supra, "Real estate joint ventures: marriage of equity and expertise"; Lightstone, GP co-investment glossary).] */
 export const SPONSOR_COINVEST = 0.10;
 const SYNDICATES: Partial<Record<RivalStyle, boolean>> = { merchant: true, developer: true };
 /** The share of a job's equity cheque the firm writes itself (1 = all of it). */

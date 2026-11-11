@@ -67,7 +67,7 @@ function cureAllowsLoc(_cause: Workout["cause"]): boolean {
  * building" rather than one for you and an invented one for them.
  */
 export const NOTICE_M = 6;        // the cure period
-export const FORECLOSE_M = 8;     // once they have filed
+export const FORECLOSE_M = 8;     // once they have filed [S≠ Trepp: CMBS delinquency to REO averaged 19.5 months from 2010 on, against 6 + 8 = 14 here; judicial foreclosure alone 12-18+ months (Goulston & Storrs, Alston & Bird); to reconcile]
 
 /**
  * HOW MUCH TIME AN EXTENSION ACTUALLY BUYS, in months.

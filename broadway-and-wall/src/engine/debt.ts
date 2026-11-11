@@ -602,8 +602,10 @@ export const loanLender = (l: { holder?: string; product: string }): string => l
 /**
  * The cost of closing a refinancing, as a share of the balance, charged on
  * top of the desk's points.
- * [K: judgement, no source found — no survey of commercial refinancing
- * closing costs as a share of the loan was found.]
+ * [S~] All-in commercial closing costs run 2-6% of the loan (biz2credit,
+ * "Commercial refinance hidden costs"), of which origination is 0.25-5% and title
+ * about 0.5% (StackSource 2020, "Typical closing costs for a commercial
+ * mortgage"). Net of the points the desk already charges, about one point.
  */
 export const REFI_FEE = 0.01;
 
@@ -1155,14 +1157,12 @@ export function stabViewFor(
  * practice for a small sponsor; the cap grows as you do, which is the
  * mid-game the sponsor record never had a positive side to.
  *
- * [S≠: source disagrees — Freddie Mac Small Balance Loan term sheets
- * (program launched 2014, folded into Conventional Small in 2026): guarantor
- * net worth at least equal to the loan amount and liquidity of 9 months'
- * principal and interest, i.e. a multiple of 1.0, not 2.0. No published
- * figure found for community-bank practice at half the loan.]
+ * Freddie Mac Small Balance Loan term sheets: guarantor net worth at least
+ * equal to the loan amount, with liquidity of 9 months' principal and
+ * interest — a multiple of 1.0 [S]. It read 2.0, which no source gave.
  */
+const GUARANTOR_NW_MULT = 1.0;
 export interface Guarantor { nw: number }
-const GUARANTOR_NW_MULT = 2.0;
 export function guarantorCap(g: Guarantor | undefined, p: LoanProduct): number {
   if (!g || !p.recourse) return Infinity;
   return Math.max(0, Math.round(g.nw * GUARANTOR_NW_MULT));
@@ -1398,9 +1398,10 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
  * three years, interest-only, two points, and a balloon that lands whether or
  * not the building ever let.
  *
- * [K: judgement, no source found — no published average loan-to-stabilised-
- * value for bridge loans was found; the published lender surveys report
- * average LTV across all closings (about 62%), not bridge paper alone.]
+ * [S~] Lender guides cap CRE bridge loans at 70% of stabilised value (Private
+ * Lender Link, "Maximum LTV for CRE bridge loans", 2022; multifamily.loans),
+ * Arbor at 75%; 65-75% of as-is is the common quote (rets.ai, 2026). 0.65 is
+ * the conservative end of that range.
  */
 const STAB_LTV = 0.65;
 
@@ -1472,9 +1473,30 @@ export function dscr(rec: ParcelRecord, s: GameState, h: Holding): number | null
   return ownedHoldingNoiYrFromRec(s, rec, h) / ds;
 }
 
+/**
+ * WHAT THE LENDER THINKS THE BUILDING IS WORTH. A covenant is tested against
+ * an appraisal, and a lender orders one a year, not every month; an appraiser
+ * anchors on last year's figure and the comps behind it, so the appraisal
+ * trails the market. Geltner (1993, "Estimating Market Values from Appraised
+ * Values without Assuming an Efficient Market", JRER) puts the weight an
+ * annual appraisal gives the current year's market value at about 0.4 [S~].
+ * Below the market in a rise, above it in a fall: one bad quarter no longer
+ * trips every LTV covenant at once.
+ */
+const APPRAISAL_ALPHA = 0.4;   // [S~] Geltner 1993, annual appraisal smoothing parameter
+export function lenderValue(s: GameState, rec: ParcelRecord, h: Holding): number {
+  return h.apprV ?? ownedHoldingValueFromRec(s, rec, h);
+}
+function reappraise(s: GameState, rec: ParcelRecord, h: Holding): void {
+  if (h.apprM !== undefined && s.month - h.apprM < 12) return;
+  const mark = ownedHoldingValueFromRec(s, rec, h);
+  h.apprV = Math.round(h.apprV === undefined ? mark : APPRAISAL_ALPHA * mark + (1 - APPRAISAL_ALPHA) * h.apprV);
+  h.apprM = s.month;
+}
+
 export function ltv(rec: ParcelRecord, s: GameState, h: Holding): number | null {
   if (!h.loan) return null;
-  const v = ownedHoldingValueFromRec(s, rec, h);
+  const v = lenderValue(s, rec, h);
   return v > 0 ? h.loan.balance / v : null;
 }
 
@@ -1513,6 +1535,7 @@ export function tickLoan(
   const loan = h.loan;
   if (!loan || !rec) return 0;
   const q = s.month;
+  reappraise(s, rec, h);
 
   // AN ACCELERATED LOAN IS NOT SERVICED. Once the lender has filed, the whole
   // balance is due and nobody sends the monthly cheque any more — the meter
@@ -2046,9 +2069,9 @@ export function placeMezz(
 }
 /**
  * The term of the rate cap a floating borrower buys, months.
- * [K: judgement, no source found — practice notes say a cap is bought for the
- * loan's initial term, commonly two to three years, but no primary figure was
- * found.]
+ * [S~] Chatham Financial ("What is an interest rate cap"; "Springing interest
+ * rate cap requirements"): the cap is matched to the bridge loan's initial term,
+ * typically two or three years; 36 months is the three-year case.
  */
 export const CAP_TERM_M = 36;
 export function rateCapCost(loan: Loan): number {

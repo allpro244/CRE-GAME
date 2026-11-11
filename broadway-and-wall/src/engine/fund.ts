@@ -21,23 +21,30 @@ import { INVESTOR_TYPES, poolLeft, investorPool, commitLocal } from "./investors
 /**
  * THE MANAGEMENT FEE (CAPITAL_RAISING_PLAN.md §5.3): 1–1.5% a year of
  * commitments through the investment period, then of the capital still
- * invested. Industry convention; 1.25% here. It is how a fund sponsor
+ * invested. Industry convention; 1.25% here [S: Preqin, real estate funds'
+ * mean management fee 1.31% in 2024 (1.54% for 2022/23 vintages, 2023)].
+ * It is how a fund sponsor
  * survives the J-curve before the promote ever pays — GP income, taxed.
  */
 export const FUND_MGMT_FEE = 0.0125;
 /** The smallest fund the market will close: below it nobody pays for a blind pool's overhead. Today's dollars. */
 export const FUND_MIN_SIZE = 5_000_000;
 
-/** Preferred return — annual, accrued on contributed capital. Industry constant. */
+/**
+ * Preferred return — annual, accrued on contributed capital. [S~: 8% is the
+ * modal hurdle in closed-end private funds (Goodwin, fund-terms survey 2024:
+ * ~80% of PE funds at 8%, but only 29% of real estate funds); real estate
+ * strategies run ~6.5% (debt) to ~8.7% (opportunistic) (AFIRE 2026).]
+ */
 export const FUND_PREF = 0.08;
 
-/** Promote over pref — GP catch-up share of profits. Industry constant. */
+/** Promote over pref — GP catch-up share of profits. [S: 20% is the industry-standard carried interest (Preqin Private Capital Fund Terms Advisor 2017: 6% of funds above it, 12% below; Altus Group, real estate fund structures).] */
 export const FUND_PROMOTE = 0.20;
 
 /** Investment period (months). Shape: typical closed-end CRE. */
 export const FUND_INVEST_M = 60;
 
-/** Fund life (months). Shape: ten-year closed-end. */
+/** Fund life (months). [S~: closed-end real estate funds usually run about ten years (Altus Group, "How are real estate funds structured"); IREI sponsor report 2026 puts wind-down at 5-12 years.] */
 export const FUND_LIFE_M = 120;
 
 /** GP co-invest as share of commitments. Shape: 2–5% practice; mid. */

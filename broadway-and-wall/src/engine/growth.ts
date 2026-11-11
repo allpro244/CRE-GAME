@@ -136,6 +136,8 @@ export interface GrowthState {
   unpacked?: Record<number, number>;
   /** the town's occupied flats at the first count, sf (towngrowth.ts scales the opening's dwellings by it) */
   mf0?: number;
+  /** new land developers owed to the county's entry flow, in firms (pickDev) */
+  entryAcc?: number;
   /** the year's counters, reset at each annual record */
   yr: { bought: number; refused: number };
   hist: GrowthYear[];
@@ -320,13 +322,23 @@ function devName(s: GameState, g: GrowthState): string {
 }
 /**
  * Who buys: most fringe land in a county this size is taken down by a handful
- * of regional developers. An existing one takes the next deal unless a new
- * name enters, about one deal in three [K].
+ * of regional developers. New names enter at about one deal in three [K]: an
+ * arrival flow, accrued on the county's count (`entryAcc`) so a new firm comes
+ * in when a whole one is owed. Otherwise the deal goes to the existing
+ * developer with the most money free for it — the one that can sign soonest
+ * and carry it furthest (2026-11-11; it was a die for entry and a die for
+ * which firm).
  */
 function pickDev(s: GameState, g: GrowthState, ownNeed: number): string | null {
   // only a developer with the money for its share can sign
-  const names = Object.keys(g.devs).sort().filter((n) => devFunds(s, g.devs[n]) >= ownNeed);
-  if (names.length && rng(s, "growth") > 1 / 3) return names[Math.floor(rng(s, "growth") * names.length)];
+  const free = new Map(Object.keys(g.devs).map((n) => [n, devFunds(s, g.devs[n])] as const));
+  const names = [...free.keys()].filter((n) => free.get(n)! >= ownNeed)
+    .sort((a, b) => free.get(b)! - free.get(a)! || a.localeCompare(b));
+  if (names.length) {
+    g.entryAcc = (g.entryAcc ?? 0) + 1 / 3;
+    if (g.entryAcc < 1) return names[0];
+    g.entryAcc -= 1;
+  }
   const n = devName(s, g);
   const d = newDev(s, n);
   if (d.cash! < ownNeed) return names.length ? names[0] : null;

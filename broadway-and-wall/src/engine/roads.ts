@@ -134,15 +134,22 @@ const HWY_LEAD_M = 48;
 const HWY_KMH = 100;
 /**
  * WHETHER THE STATE FUNDS A SEGMENT ON TIME. State DOTs rank projects by
- * need, and need is traffic, and traffic is growth: a region adding households
- * at 1.5%/yr is near the top of the list, a flat one near the bottom. Odds
- * 0.45 flat + 0.35 per point of household growth, inside 0.25-0.85 [K, a
- * shape parameter: about half of programmed state highway projects let on
- * schedule (GAO-11-4, state TIP slippage studies)]. A segment that misses
- * slips two to six years; after its third miss it is dropped three times in
- * ten [K].
+ * need, and need is traffic: a freeway is let when the roads it relieves
+ * cannot carry the corridor's design-year load (the same warrant the county
+ * applies to its own widenings, below — today's count grown at the region's
+ * ten-year household rate to the opening plus the design life, against the
+ * piece's capacity). So the state reads the county's counts: where any county
+ * road into town would be over capacity by then, at the lanes it has or has
+ * programmed, the segment is funded on its date; where none would, it misses
+ * the programme and slips two to six years. After its third miss a segment is
+ * dropped if the region has stopped growing — the need is not coming. This was
+ * a die (0.45 + 35 x growth, inside 0.25-0.85; dropped three times in ten) [K
+ * replaced, 2026-11-11]; the three misses are still a judgement [K].
  */
-const fundOdds = (g10: number) => Math.max(0.25, Math.min(0.85, 0.45 + 35 * g10));
+function corridorWarranted(s: GameState, R: RoadsState): boolean {
+  const growTo = Math.pow(1 + Math.max(0, tenYearGrowth(s)), HWY_LEAD_M / 12 + DESIGN_YEARS);
+  return Object.values(R.art).some((a) => a.adt * growTo > CAPACITY[a.status ? 4 : a.lanes]);
+}
 /** A corridor: an arterial piece is on a trip's way into town if it lies within 600 m of the straight line in [K]. */
 const CORRIDOR_M = 600;
 
@@ -386,15 +393,19 @@ export function tickRoads(s: GameState, parcels: ParcelTable, bbls: string[]) {
       changed = true;
     }
   }
+  // the state reads the county's traffic counts; before the first count there is nothing to read
+  const arts = Object.values(R.art);
+  const counted = !arts.length || arts.some((a) => a.adt0 > 0);
+  const warranted = counted && corridorWarranted(s, R);
   for (const [id, h] of Object.entries(R.hwy).sort(([a], [b]) => a.localeCompare(b))) {
-    if (h.status === "planned" && s.month >= h.planM - HWY_LEAD_M) {
+    if (counted && h.status === "planned" && s.month >= h.planM - HWY_LEAD_M) {
       // THE FUNDING DECISION, four years out
-      if (rng(s, "growth") < fundOdds(tenYearGrowth(s))) {
+      if (warranted) {
         h.status = "funded"; h.openM = s.month + HWY_LEAD_M;
         s.news.unshift({ q: s.month, kind: "event", text: `The state funded the ${id.split(".")[0]} segment ${id}: it opens ${monthLabel(h.openM)}.` });
       } else {
         h.slips++;
-        if (h.slips >= 3 && rng(s, "growth") < 0.3) {
+        if (h.slips >= 3 && !(tenYearGrowth(s) > 0)) {
           h.status = "dropped";
           s.news.unshift({ q: s.month, kind: "warn", text: `The state dropped the ${id} highway segment from its programme.` });
         } else {

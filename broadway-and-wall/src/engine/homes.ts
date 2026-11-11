@@ -660,7 +660,12 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
     if (u.soldM === undefined || u.closedM !== undefined || s.month < u.doneM || u.spent < u.budget) continue;
     u.closedM = s.month;
     // who bought it, and the household it houses: one fewer renting a flat (market.ts)
-    u.tenure = rng(s, "homes") < sfrShare(START_YEAR + Math.floor(s.month / 12)) ? "sfr" : "owner";
+    // Investors take their share of the town's closings (sfrShare, sourced), accrued
+    // closing by closing: the house goes to a rental investor when a whole one is
+    // owed (2026-11-11; it was a die on the share for each house).
+    h.sfrAcc = (h.sfrAcc ?? 0) + sfrShare(START_YEAR + Math.floor(s.month / 12));
+    u.tenure = h.sfrAcc >= 1 ? "sfr" : "owner";
+    if (h.sfrAcc >= 1) h.sfrAcc -= 1;
     s.econ.newHomes = (s.econ.newHomes ?? 0) + 1;
     s.econ.newHomesRef ??= Math.max(1, s.econ.occupied?.multifamily ?? 1);
     const b = h.builders[u.by];

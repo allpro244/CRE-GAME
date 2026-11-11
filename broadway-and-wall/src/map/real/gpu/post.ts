@@ -78,6 +78,8 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
     col = T.convertToTexture(T.blendColor(col, ssrPass));
   }
   let aoTex: N = null;
+  const depthTex = scenePass.getTextureNode("depth");
+  const projInv = T.uniform((camera as THREE.PerspectiveCamera).projectionMatrixInverse);
   if (withAO) {
     const nTex = scenePass.getTextureNode("normal");
     const normal = T.sample((uv: N) => T.unpackRGBToNormal(nTex.sample(uv)));
@@ -98,13 +100,23 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
   const tap = (uv: N) => T.sRGBTransferOETF(col.sample(T.clamp(uv, u.texel, T.vec2(1).sub(u.texel))).rgb);
   const out = T.Fn(() => {
     const c = tap(uvN).toVar();
-    if (aoTex) c.mulAssign(T.mix(T.float(1), aoTex.sample(uvN).r, u.ao));
     // tilt-shift: blur grows smoothly past the band's edge
     const off = T.max(0.0, T.abs(T.float(1).sub(uvN.y).sub(u.focus)).sub(u.band));
     const r = u.tilt.mul(T.smoothstep(0.0, 0.42, off));
     let acc: N = c;
     for (const [x, y] of DISC) acc = acc.add(tap(uvN.add(T.vec2(x, y).mul(r).mul(u.texel))));
     c.assign(T.select(r.greaterThan(0.35), acc.div(13.0), c));
+    // after the blur, so a blurred band and a sharp one take the same shade
+    if (aoTex) {
+      // GTAO's horizon search finds false creases on flat ground at a grazing
+      // angle far off (the whole far ground greyed, with a hard edge where the
+      // depth ran out); the occlusion is a near-field cue anyway, as classic's
+      // was: full to ~1.2 km, gone by ~3 km
+      const vp = T.getViewPosition(uvN, depthTex.sample(uvN).r, projInv);
+      const fade = T.float(1).sub(T.smoothstep(1200.0, 3000.0, T.length(vp)));
+      c.mulAssign(T.mix(T.float(1), aoTex.sample(uvN).r, u.ao.mul(fade)));
+    }
+
     // bloom and clarity from a wider ring of the same taps
     let b: N = T.vec3(0), m: N = T.vec3(0);
     for (const [x, y] of DISC) {

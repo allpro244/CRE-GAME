@@ -1928,7 +1928,10 @@ function mainCard(r: HouseholdRegister, a: HouseholdArrays, i: number): void {
   if (!mk || !CTX || r.locMu === undefined) return;
   const alt = CTX.letAvg * Math.exp(-islandPull(r, a, i, CTX.e));
   if (!(alt > 0)) return;   // a household not yet drawn its taste for the island has no figure to write
-  const x = Math.log(alt / Math.max(1, r.mainRent));
+  // ...and no more than the landlord's income screen lets it sign for
+  const inc = verifiedPay(a, i);
+  if (!(inc > 0)) return;
+  const x = Math.log(Math.min(alt, (SCREEN * inc) / 12) / Math.max(1, r.mainRent));
   // a regional agent stands for its weight in households, each a card
   if (Number.isFinite(x)) for (let k = 0, w = Math.min(64, Math.max(1, Math.round(a.wt[i]))); k < w; k++) mk.cards.push(x);
 }
@@ -1978,8 +1981,23 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): number {
   }
   const mk = r.mk;
   while (mk.pipe.length && mk.pipe[0].m <= m) mk.homes += mk.pipe.shift()!.n;
+  // A FULL MAINLAND DOUBLES UP: renters the homes cannot hold move in with
+  // family or friends, the lowest-paid first — they are the ones the going
+  // rent outbids (doubled-up households take a flat again with work and a
+  // deposit, `tickMoney`)
+  // the flats this month's movers left (before any doubling up, which frees no flat)
   const out = Math.max(0, mk.occ + mk.signed - occ);
   const free = Math.max(0, mk.homes - occ) + out;
+  if (occ > mk.homes) {
+    const idx: number[] = [];
+    for (let i = 0; i < r.n; i++) if (a.ten[i] === TEN_MAINLAND) idx.push(i);
+    idx.sort((p, q) => payOf(a, p) - payOf(a, q));
+    for (const i of idx) {
+      if (occ <= mk.homes) break;
+      a.ten[i] = TEN_DOUBLED; a.rent[i] = 0; a.blk[i] = -1;
+      occ -= a.wt[i];
+    }
+  }
   const before = r.mainRent;
   priceFlats(mk.roll, mk.cards, free, undefined, before);
   // ...but never under what the flat costs to run: a landlord holds a flat
@@ -3025,7 +3043,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     } else if (ten === TEN_OWN && a.arrears[i] >= FORECLOSE_M && a.owed[i] >= FORECLOSE_OWED * Math.max(1, housing)) {
       r.flow.foreclosures += w;
       a.owed[i] = 0; a.arrears[i] = 0; a.ten[i] = TEN_DOUBLED; a.mort[i] = 0; a.mortPmt[i] = 0; a.hval[i] = 0;
-    } else if (ten === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) && a.sav[i] > 3 * r.mainRent) {
+    } else if (ten === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) && a.sav[i] > 3 * r.mainRent && (!r.mk || r.mk.occ + r.mk.signed + a.wt[i] <= r.mk.homes)) {
       // a doubled-up household with work and a deposit takes its own flat across the water
       a.ten[i] = TEN_MAINLAND; a.rent[i] = signMainland(r, a, i);
     }

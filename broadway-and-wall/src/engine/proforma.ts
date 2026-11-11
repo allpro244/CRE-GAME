@@ -698,7 +698,10 @@ export function marketConstructionQuote(econ: Econ, mix: UseMix, costTotal = 0):
 export function constructionRatePct(e: Pick<Econ, "indexRate"> & Partial<Pick<Econ, "deskPx">>, lender?: string, rel = 0, cls: "construction" | "land" = "construction"): number {
   const desks = constructionDesks();
   const d = desks.find((x) => x.name === lender) ?? desks.find((x) => x.name === CONSTRUCTION_LENDER) ?? desks[0];
-  return bankRatePct(e.indexRate ?? 5.4, liveSpread(e.deskPx?.[d.name], d.spread, cls), { rel });
+  // A desk that has published no price (an econ carried without the desks'
+  // prices) quotes its sheet: a guard for harness states, not an anchor.
+  const px = e.deskPx?.[d.name];
+  return bankRatePct(e.indexRate ?? 5.4, px ? liveSpread(px, cls) : d.spread, { rel });
 }
 
 export function deskQuote(

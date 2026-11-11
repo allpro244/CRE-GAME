@@ -268,8 +268,11 @@ const MOVE_OUT_M: Record<BuiltClass, number> = { office: 24, retail: 18, industr
 
 /** The typical lease term by class, months — eight years of office paper,
  *  seven of retail, six of industrial, one of housing.
- *  [K: the terms as the trade quotes them, no survey found; twelve months is the
- *  standard residential lease.] */
+ *  [S~] Office: Avison Young, US office leases 2023 averaged 74 months new /
+ *  60 renewal nationally; CompStak gateway-market renewals 94.1 months
+ *  (Q2 2024) — 96 sits at the gateway end, which is this city. Industrial:
+ *  CompStak, deals of 200k+ sf averaged 80.2 months (Q1 2026). Retail is
+ *  still a judgement; twelve months is the standard residential lease. */
 export const LEASE_TERM_M: Record<BuiltClass, number> = { office: 96, retail: 84, industrial: 72, multifamily: 12 };
 /** The share of a class's leases that roll in a month: what the in-place rent moves at. [D: 1 / LEASE_TERM_M] */
 const LEASE_ROLL: Record<BuiltClass, number> = {
@@ -1105,7 +1108,10 @@ export const BUILD_MONTHS = { office: [12, 30], retail: [18, 28], multifamily: [
 // measured fact about the business, in the same register as BUILD_MONTHS above
 // — not a shape parameter and not a tuning knob. It is not split by class
 // because the dominant term is the municipality, not the use.
-// [K: no source found for the range.]
+// [S≠ Oliner (Federal Reserve Board), as reported by Building Design +
+// Construction: ~17-month average planning time over 82,000 US projects;
+// Fairfax County VA commercial review 13-17 months (FY2017-18). The range's
+// mean (12) sits under that; to reconcile.]
 export const ENTITLE_MONTHS = [6, 18] as const;
 /** Loan documents, final permits and mobilization after approvals are in hand. */
 export const CONSTRUCTION_CLOSE_M = 2;
@@ -1119,7 +1125,10 @@ export const CONSTRUCTION_CLOSE_M = 2;
  * game has been bitten by it before. An office floor is 230 sf a head, a shed
  * is 550, a shop is 420. Flats employ nobody; they house people, and people
  * arrive here through the labour force rather than through the roof.
- * [K: no source found; demand.ts carries the same ratios unsourced.]
+ * [S≠ EIA CBECS 2012 Table B2: office buildings average 473 sf of floor
+ * per worker (median 600), mercantile 1,243 (median 1,200); CBECS 2018
+ * distribution centres 2,004. Those are gross building area per worker, the
+ * code's are tighter; to reconcile. demand.ts carries the same ratios.]
  */
 export const SF_PER_JOB: Record<BuiltClass, number> = { office: 230, industrial: 550, retail: 420, multifamily: 0 };
 /** Share of the population in the labour force. See the note at the unemployment term.

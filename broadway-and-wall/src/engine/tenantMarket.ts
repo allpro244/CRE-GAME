@@ -675,6 +675,8 @@ export interface Option {
   stay?: boolean;
   /** one of the player's buildings: the firm tours it and the player's desk decides (leasing.ts) */
   player?: boolean;
+  /** the firm's standard Gumbel taste for this option (TASTE scales it) */
+  u?: number;
 }
 
 /** A Gumbel draw (the logit taste). */

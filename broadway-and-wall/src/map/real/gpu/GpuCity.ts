@@ -152,6 +152,8 @@ export class GpuBackend {
     if (this.canvas.width === mc.width && this.canvas.height === mc.height && this.renderer.getPixelRatio() === pr) return false;
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(mc.width / pr, mc.height / pr, false);
+    // the map's frame changed size (a window resize, Max's 1.5x): the ground texture is reallocated
+    this.mapTex.dispose();
     return true;
   }
 
@@ -278,9 +280,10 @@ export class GpuBackend {
     if (this.fit()) this.pipeline = null;
     this.orientCamera();
     this.mapTex.needsUpdate = true;
-    if (this.pipeline && this.post && this.post.level !== postFx.level) { this.pipeline.dispose(); this.pipeline = null; }
+    const tier = postFx.level === "full" && postFx.liveAO ? "max" : postFx.level;
+    if (this.pipeline && this.post && this.post.level !== tier) { this.pipeline.dispose(); this.pipeline = null; }
     if (!this.pipeline) {
-      const built = buildPost(this.renderer, this.scene, this.camera, postFx.level);
+      const built = buildPost(this.renderer, this.scene, this.camera, tier);
       this.pipeline = built.pipeline;
       this.post = built.u;
     }

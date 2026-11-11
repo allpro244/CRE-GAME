@@ -15,6 +15,8 @@
 import * as THREE from "three/webgpu";
 import * as TSL from "three/tsl";
 import { ao } from "three/examples/jsm/tsl/display/GTAONode.js";
+import { ssr } from "three/examples/jsm/tsl/display/SSRNode.js";
+import { fxaa } from "three/examples/jsm/tsl/display/FXAANode.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any;
@@ -36,16 +38,45 @@ const DISC: [number, number][] = [
 
 const AO_OFF = typeof location !== "undefined" && new URLSearchParams(location.search).get("gtao") === "off";
 
+const Q = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams();
+const SSR_OFF = Q.get("ssr") === "off";
+
+/**
+ * The graph per tier (the level key is "off" | "grade" | "full" | "max"):
+ *  - Low / Medium: the scene with 4x MSAA, then the grade (Medium) or nothing.
+ *  - High: GTAO on the real depth and normals, FXAA in place of MSAA (MSAA
+ *    and the normal/depth read-back do not mix cheaply), the classic grade.
+ *  - Max: High plus SCREEN-SPACE REFLECTIONS — the glass, the harbour and the
+ *    wet streets mirror what is actually on screen around them (the probe
+ *    still gives them the sky and the far skyline).
+ */
 export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, level: string): { pipeline: THREE.RenderPipeline; u: PostUniforms } {
   const pipeline = new THREE.RenderPipeline(renderer);
   pipeline.outputColorTransform = false;
-  const withAO = level === "full" && !AO_OFF;
-  const scenePass = T.pass(scene, camera, { samples: withAO ? 0 : 4 });
-  if (withAO) scenePass.setMRT(T.mrt({ output: T.output, normal: T.packNormalToRGB(T.normalView) }));
+  const hi = level === "full" || level === "max";
+  const withAO = hi && !AO_OFF;
+  // SSR on WebGPU only: three r185's SSR shader does not compile for its WebGL 2 fallback
+  const withSSR = level === "max" && !SSR_OFF && (renderer.backend as N).isWebGPUBackend === true;
+  const scenePass = T.pass(scene, camera, { samples: hi ? 0 : 4 });
+  if (hi) scenePass.setMRT(T.mrt({ output: T.output, normal: T.packNormalToRGB(T.normalView), metalrough: T.vec2(T.metalness, T.roughness) }));
   // a float depth buffer: the map's perspective spans metres to kilometres, and
   // 24-bit depth bands flat roofs into stripes once GTAO reads it back
-  if (withAO) (scenePass as N).renderTarget.depthTexture.type = THREE.FloatType;
-  const col = scenePass.getTextureNode("output");
+  if (hi) (scenePass as N).renderTarget.depthTexture.type = THREE.FloatType;
+  let col = scenePass.getTextureNode("output");
+  if (withSSR) {
+    const nTex = scenePass.getTextureNode("normal");
+    const mr = scenePass.getTextureNode("metalrough");
+    const ssrPass = ssr(col, scenePass.getTextureNode("depth"), T.sample((uv: N) => T.unpackRGBToNormal(nTex.sample(uv))), {
+      metalnessNode: mr.r, roughnessNode: mr.g, camera, reflectNonMetals: true,
+    } as never) as N;
+    // metres: reflections reach a few blocks; a wall is a couple of metres thick
+    ssrPass.maxDistance.value = 600;
+    ssrPass.thickness.value = 3;
+    ssrPass.resolutionScale = 0.5;
+    // the frame here is display-referred (the materials tone-map themselves): no HDR to clamp
+    ssrPass.maxLuminance.value = 1.2;
+    col = T.convertToTexture(T.blendColor(col, ssrPass));
+  }
   let aoTex: N = null;
   if (withAO) {
     const nTex = scenePass.getTextureNode("normal");
@@ -101,7 +132,7 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
     c.mulAssign(T.float(1).sub(T.float(0.16).add(u.toy.mul(0.06)).mul(u.grade).mul(T.smoothstep(0.4, 1.0, T.dot(q, q).mul(2.2)))));
     return T.vec4(T.clamp(c, 0.0, 1.0), 1.0);
   });
-  pipeline.outputNode = out();
+  pipeline.outputNode = hi ? fxaa(out()) : out();
   const forcedOff = typeof location !== "undefined" && new URLSearchParams(location.search).get("post") === "off";
   return {
     pipeline,

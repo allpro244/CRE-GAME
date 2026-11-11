@@ -11,6 +11,7 @@
 import * as THREE from "three/webgpu";
 import * as TSL from "three/tsl";
 import type { Shared } from "./GpuCity";
+import { CLOUD, CLOUD_BASE } from "../clouds";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type N = any;
@@ -67,6 +68,12 @@ export function portMaterial(m: THREE.Material, s: Shared, renderer: N) {
     else if (F.includes("gGrassH")) { note("grass:unported(stock colour)"); }
     else if (V.includes("leafWind")) { note("sway:unported(still trees)"); }
     else note("unknown-patch");
+  }
+  // the clouds' shade on the sun's direct light, through the sun's shadow term
+  // (classic: the same field on reflectedLight.direct*, the catcher's mask)
+  if (!mm.isMeshBasicMaterial) {
+    const k = pr?.uniforms.seaShore ? 0.3 : 1.0;
+    mm.receivedShadowNode = T.Fn(([sh]: N[]) => sh.mul(cloudSunlight(s, k)));
   }
   // the tone curve and the aerial perspective, after everything else (classic: tonemapping, colorspace, then fog)
   if (mm.isShadowMaterial) {
@@ -254,4 +261,22 @@ function fbm(p0: N): N {
     a *= 0.5;
   }
   return sum;
+}
+
+/** clouds.ts cloudSunlight, the share of the sun a point gets past the cloud field. */
+const cloudUs = new WeakMap<Shared, { sun: N; eye: N; off: N; cover: N; k: N }>();
+function cloudSunlight(s: Shared, k: number): N {
+  let u = cloudUs.get(s);
+  if (!u) {
+    u = { sun: live(s, CLOUD.cloudSun), eye: live(s, CLOUD.cloudEye), off: live(s, CLOUD.cloudOff), cover: live(s, CLOUD.cloudCover), k: live(s, CLOUD.cloudK) };
+    cloudUs.set(s, u);
+  }
+  const wp = T.positionWorld;
+  const q = wp.xy.add(u.sun.xy.div(T.max(u.sun.z, 0.25)).mul(T.float(CLOUD_BASE).sub(wp.z)));
+  const p = q.div(420.0).add(u.off);
+  const field = sNoise(p).mul(0.5).add(sNoise(p.mul(2.07).add(T.vec2(5.2, 1.3))).mul(0.25))
+    .add(sNoise(p.mul(4.3).add(T.vec2(1.7, 9.2))).mul(0.15)).add(sNoise(p.mul(9.1).add(T.vec2(3.3, 7.7))).mul(0.1));
+  const e = T.float(0.5).add(T.float(0.5).sub(u.cover).mul(0.36));
+  const far = T.float(1).sub(T.smoothstep(2000.0, 7000.0, T.length(wp.sub(u.eye))));
+  return T.float(1).sub(u.k.mul(k).mul(far).mul(T.smoothstep(e.sub(0.045), e.add(0.06), field)));
 }

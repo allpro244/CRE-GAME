@@ -301,9 +301,20 @@ export function makeCity(cityId, seed, opts) {
   const sizeId = manhattan
     ? (opts?.size && EXTENTS[opts.size] ? opts.size : DEFAULT_EXTENT)
     : (opts?.size && SIZES[opts.size] ? opts.size : DEFAULT_SIZE);
-  const cfg = manhattan
+  const cfg0 = manhattan
     ? manhattanConfig(seed, { extent: sizeId, planV: opts?.planV ?? CITY_PLAN })
     : scaleCity(islandConfig(seed, { planV: opts?.planV ?? CITY_PLAN, parks: opts?.parks }), SIZES[sizeId].k);
+  // NATURAL STREETS (beta): the same island, coast, parks, boulevards and
+  // names, with one street network grown over it instead of a template per
+  // district (natural.mjs). The survey SEAMS go — they are the hard lines the
+  // natural network exists to remove; the boulevards stay.
+  const cfg = !manhattan && opts?.streets === "natural"
+    ? {
+      ...cfg0, streetPlan: "natural", diagonals: (cfg0.diagonals ?? []).slice(cfg0.plan?.seams ?? 0),
+      // the harbour head, at this size (scaleCity leaves `plan` unscaled)
+      harbourAt: cfg0.plan?.harbour ? cfg0.plan.harbour.map((v) => v * SIZES[sizeId].k) : null,
+    }
+    : cfg0;
   // The street plan: the current one unless a save asks for the plan its
   // town was cut with (see CITY_PLAN and GameState.cityPlan).
   const city = generateCity({ ...cfg, seed: seed >>> 0, density: opts?.density, planV: opts?.planV ?? CITY_PLAN });

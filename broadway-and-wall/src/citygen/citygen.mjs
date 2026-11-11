@@ -30,6 +30,7 @@ import {
   isConvex, cleanRing, splitConvex, convexHull, sharedBoundaryLength,
   longestEdgeAngle, extentAlong, pointAt,
 } from "./geom.mjs";
+import { buildField, traceStreets, polygonize, convexCells, simplify, natStream } from "./natural.mjs";
 
 // --- small helpers ----------------------------------------------------------
 
@@ -919,12 +920,15 @@ export function generateCity(cfg) {
    * estate paid a twenty-metre arterial on every internal line as well, which
    * took two-fifths of its ground and left it at a parcel and a half per block.
    */
-  function pushBlock(cell, district, full, streetW, aveW, extra, chamferAll = 0, ways = null) {
+  function pushBlock(cell, district, full, streetW, aveW, extra, chamferAll = 0, ways = null, halfOf = null) {
     // An edge on a diagonal's clearance line fronts that street already and
     // pays only the DIAG_CLEAR kerb — see THE DOUBLE CHARGE above.
     const diagE = diagEdgesOf(cell);
     const dEdge = (e, dflt) => (diagE && diagE[e] ? DIAG_CLEAR : dflt);
-    let inset = (ways
+    // natural streets (natural.mjs) know each edge's street: its half-width
+    let inset = (halfOf
+      ? erode(cell, (_a, e) => dEdge(e, halfOf(cell, e)))
+      : ways
       ? erode(cell, (_a, e) => dEdge(e, ways.onRim(e) ? streetW / 2 : ways.innerW / 2))
       : erode(cell, (_a, e) => dEdge(e, full && e % 2 === 1 ? aveW / 2 : streetW / 2)))
       ?? erode(cell, streetW / 2)
@@ -1338,6 +1342,160 @@ export function generateCity(cfg) {
     }
   }
 
+  // --- natural streets (natural.mjs, CITYGEN_NEXT_PLAN.md) -------------------
+  //
+  // One street network for the whole island, grown from the shore, the old
+  // centre and the surveys, instead of one template per district. The
+  // districts keep everything else they decide — flavour, lots, zoning, names —
+  // and lend the field their bearing and block pitch. Its own dice salts.
+  function naturalTown() {
+    const S = cfg.seed >>> 0;
+    const names = Object.keys(cfg.districts);
+    const leafOf = (p) => leaves.find((l) => l.hp.every(([nx, ny, d]) => nx * p[0] + ny * p[1] <= d + 1e-6));
+    const pitchOf = (d) => {
+      if (d.stPitch && d.avePitch) return [d.stPitch, d.avePitch];
+      if (d.ringPitch) return [d.ringPitch, d.ringPitch * 1.5];
+      // an organic district carries a block AREA band; a block of that area
+      // at the ordinary aspect of 1.6
+      const a = d.cell ? (d.cell[0] + d.cell[1]) / 2 : 9000;
+      const sh = Math.sqrt(a / 1.6) + (d.streetW ?? 14);
+      return [sh, sh * 1.6];
+    };
+    const districts = names.map((n) => {
+      const d = cfg.districts[n];
+      const [sp, lp] = pitchOf(d);
+      return {
+        name: n, bearingDeg: d.bearingDeg ?? 0, shortPitch: sp, longPitch: lp,
+        old: d.flavor === "old", regular: d.kind === "lattice" || d.kind === "chamfer" || d.kind === "superblock" || d.regular === true,
+      };
+    });
+    const idx = new Map(names.map((n, i) => [n, i]));
+    const pad = 200;
+    const bbox = [landBox[0] - pad, landBox[1] - pad, landBox[2] + pad, landBox[3] + pad];
+    // WHERE THE TOWN STARTED: at the landing — the harbour head, a little
+    // inland toward the core — not at the middle of today's downtown. Every
+    // harbour town in this generator is a port first (island.mjs).
+    const core0 = cfg.cores?.[0]?.xy ?? [0, 0];
+    const founding = (() => {
+      const h = cfg.harbourAt;
+      if (!h) return core0;
+      const dx = core0[0] - h[0], dy = core0[1] - h[1], L = Math.hypot(dx, dy) || 1;
+      for (let t = 120; t < L; t += 30) {
+        const p = [h[0] + (dx / L) * t, h[1] + (dy / L) * t];
+        if (inRing(p, innerRing) && distToRing(p, innerRing) > 90) return p;
+      }
+      return core0;
+    })();
+    const parkSpec = cfg.parks.map((p, i) => {
+      const ring = PARKS_M[i];
+      return {
+        c: centroid(ring), ang: ((p.deg ?? 0) * Math.PI) / 180,
+        round: !!p.ring && p.ring.length > 10,
+        dist: (q) => (inRing(q, ring) ? 0 : distToRing(q, ring)),
+      };
+    });
+    const creeks = (cfg.streams ?? []).filter((st) => st.kind !== "pond" && st.kind !== "slip" && !st.cut && st.ring?.length >= 3).map((st) => st.ring);
+    const field = buildField({
+      land: innerRing, bbox, districts,
+      labelAt: (p) => { const l = leafOf(p); return l ? idx.get(l.district) : -1; },
+      founding,
+      // THE OLD TOWN IS A WALKING TOWN: a radius of 250-420 m — fifteen
+      // minutes across on foot, the size of Boston's or New Amsterdam's first
+      // century — read off the core's own reach and held to that band.
+      oldR: Math.max(250, Math.min(420, 0.9 * (cfg.cores?.[0]?.r ?? 300))),
+      parks: parkSpec,
+      boulevards: cfg.diagonals ?? [],
+      creeks,
+      rand: natStream(S, 0x5a7e1d),
+    });
+    // a street stops at a square's frontage and at standing water
+    const PARK_RES = APRONS.slice(0, cfg.parks.length);
+    const STILL = (cfg.streams ?? []).filter((st) => (st.kind === "pond" || st.kind === "slip") && st.ring?.length >= 3).map((st) => st.ring);
+    const blocked = (p) => PARK_RES.some((r) => inRing(p, r)) || STILL.some((r) => inRing(p, r));
+    // fallback seeds over all the land, so no corner of it is left unreached
+    const fb = [];
+    for (let x = bbox[0]; x <= bbox[2]; x += 110) for (let y = bbox[1]; y <= bbox[3]; y += 110) {
+      const p = [x, y];
+      if (inRing(p, innerRing) && !blocked(p)) fb.push({ p });
+    }
+    field.fallback = fb;
+    const seeds = [founding, ...(cfg.cores ?? []).map((c) => c.xy)].filter((p) => inRing(p, innerRing) && !blocked(p));
+    const lines = traceStreets(field, { blocked, seeds, rand: natStream(S, 0x7ace5) });
+    // the graph: every street, the shore, and the frontage round each square
+    const graph = lines.map((l) => ({ pts: simplify(l.pts, 0.6), cls: l.major ? "arterial" : "street" }));
+    graph.push({ pts: [...innerRing, innerRing[0]], cls: "shore", closed: true });
+    for (const r of PARK_RES) graph.push({ pts: [...r, r[0]], cls: "park", closed: true });
+    for (const r of STILL) graph.push({ pts: [...r, r[0]], cls: "park", closed: true });
+    const { faces, segs } = polygonize(graph, { snap: 0.6, extend: (p) => 0.75 * field.sep(p, 1) });
+    // the street each block edge fronts, from the noded graph
+    const SG = 30, sgrid = new Map();
+    segs.forEach((sg, i) => {
+      for (let gx = Math.floor(Math.min(sg.a[0], sg.b[0]) / SG); gx <= Math.floor(Math.max(sg.a[0], sg.b[0]) / SG); gx++) {
+        for (let gy = Math.floor(Math.min(sg.a[1], sg.b[1]) / SG); gy <= Math.floor(Math.max(sg.a[1], sg.b[1]) / SG); gy++) {
+          const k = gx * 100003 + gy;
+          if (!sgrid.has(k)) sgrid.set(k, []);
+          sgrid.get(k).push(i);
+        }
+      }
+    });
+    const clsAt = (p) => {
+      const gx = Math.floor(p[0] / SG), gy = Math.floor(p[1] / SG);
+      let best = 1.6, c = "street";
+      for (let x = gx - 1; x <= gx + 1; x++) for (let y = gy - 1; y <= gy + 1; y++) {
+        for (const i of sgrid.get(x * 100003 + y) ?? []) {
+          const sg = segs[i];
+          const ex = sg.b[0] - sg.a[0], ey = sg.b[1] - sg.a[1], L2 = ex * ex + ey * ey || 1;
+          let t = ((p[0] - sg.a[0]) * ex + (p[1] - sg.a[1]) * ey) / L2;
+          t = t < 0 ? 0 : t > 1 ? 1 : t;
+          const dd = Math.hypot(p[0] - sg.a[0] - ex * t, p[1] - sg.a[1] - ey * t);
+          if (dd < best) { best = dd; c = sg.cls; }
+        }
+      }
+      return c;
+    };
+    const halfOf = (name) => {
+      const d = cfg.districts[name];
+      const sw = d.streetW ?? 15;
+      // AN ARTERIAL is the old road out of town, widened: a third again the
+      // district's street, 18-30 m between building lines — calibrated on
+      // the town's own avenue widths (island.mjs aveWOf, 14-34 m).
+      const aw = Math.max(18, Math.min(30, Math.max(sw, d.aveW ?? sw) * 1.35));
+      return (cell, e) => {
+        const a = cell[e], b = cell[(e + 1) % cell.length];
+        const c = clsAt([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
+        return c === "arterial" ? aw / 2 : sw / 2;
+      };
+    };
+    let nCells = 0;
+    for (const f of faces) {
+      // a face of the graph that is the sea or a square is not a block; asked
+      // of each convex piece, since a bent face's centroid can sit outside it
+      for (const cc of convexCells(f.ring, f.cls)) {
+        const ring = cleanRing(cc.ring);
+        if (!ring || !isConvex(ring)) continue;
+        const c0 = centroid(ring);
+        if (!inRing(c0, innerRing) || PARK_RES.some((r) => inRing(c0, r)) || STILL.some((r) => inRing(c0, r))) continue;
+        // a face the streets left too big is cut by streets of its own, at
+        // the block size of the ground it stands on
+        const mid = centroid(ring);
+        const tgt = field.sep(mid, 0) * field.sep(mid, 1);
+        const parts = [];
+        if (polygonArea([ring]) > 1.7 * tgt) splitCells(ring, () => tgt, 6, 1500, parts);
+        else parts.push(ring);
+        for (const part of parts) {
+          const leaf = leafOf(centroid(part));
+          const name = leaf?.district ?? names[0];
+          for (const cell of claimCell(part, [], KEEP)) {
+            pushBlock(cell, name, false, cfg.districts[name].streetW, cfg.districts[name].streetW, {}, 0, null, halfOf(name));
+            nCells++;
+          }
+        }
+      }
+    }
+    naturalStats = { lines: lines.length, arterials: lines.filter((l) => l.major).length, faces: faces.length, cells: nCells };
+  }
+  let naturalStats = null;
+
   // "chamfer" and "superblock" are the lattice with its own options set —
   // a regular grid with every corner cut, and a coarse grid whose cells are
   // split from the inside — so they fall through to the same builder. The
@@ -1362,6 +1520,7 @@ export function generateCity(cfg) {
     }
     for (const c of cfg.plat.parkCells ?? []) blocks.push({ ring: c, inset: null, district: Object.keys(cfg.districts)[0], u: 0 });
   }
+  else if (cfg.streetPlan === "natural") naturalTown();
   else for (const [name, d] of Object.entries(cfg.districts)) {
     if (d.kind === "organic") organicDistrict(name, d);
     else if (d.kind === "curvi") curviDistrict(name, d);

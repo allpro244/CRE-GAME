@@ -42,13 +42,16 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
   const withAO = level === "full" && !AO_OFF;
   const scenePass = T.pass(scene, camera, { samples: withAO ? 0 : 4 });
   if (withAO) scenePass.setMRT(T.mrt({ output: T.output, normal: T.packNormalToRGB(T.normalView) }));
+  // a float depth buffer: the map's perspective spans metres to kilometres, and
+  // 24-bit depth bands flat roofs into stripes once GTAO reads it back
+  if (withAO) (scenePass as N).renderTarget.depthTexture.type = THREE.FloatType;
   const col = scenePass.getTextureNode("output");
   let aoTex: N = null;
   if (withAO) {
     const nTex = scenePass.getTextureNode("normal");
     const normal = T.sample((uv: N) => T.unpackRGBToNormal(nTex.sample(uv)));
     const aoPass = ao(scenePass.getTextureNode("depth"), normal, camera);
-    (aoPass as N).resolutionScale = 0.5;
+    (aoPass as N).resolutionScale = 1;
     (aoPass as N).radius.value = 6;
     (aoPass as N).distanceExponent.value = 1.5;
     (aoPass as N).thickness.value = 2;

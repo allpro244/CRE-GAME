@@ -1,0 +1,47 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>env test 2</title><style>body{margin:0;background:#888}canvas{display:block}</style></head>
+<body>
+<script type="module">
+import * as THREE from "three/webgpu";
+import * as T from "three/tsl";
+import * as CL from "three";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
+const q = new URLSearchParams(location.search);
+const W = 600, H = 300;
+const canvas = document.createElement("canvas"); document.body.appendChild(canvas);
+const classic = q.has("cls");
+const renderer = classic ? new CL.WebGLRenderer({ canvas }) : new THREE.WebGPURenderer({ canvas, forceWebGL: q.get("gpu") === "webgl2" });
+if (!classic) await renderer.init();
+renderer.setSize(W, H, false);
+renderer.toneMapping = classic || !q.has("mine") ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
+renderer.toneMappingExposure = 0.9;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000000);
+const pm = classic ? new CL.PMREMGenerator(renderer) : new THREE.PMREMGenerator(renderer);
+scene.environment = pm.fromScene(new RoomEnvironment(), 0.03).texture;
+scene.environmentIntensity = 0.5;
+if (q.has("hemi")) { const h = new THREE.HemisphereLight(0xc6d8ee, 0x8a7d6a, 1.02); scene.add(h); }
+const mk = (opts, x, vc) => {
+  const g = new THREE.BoxGeometry(1.6, 1.6, 1.6);
+  if (vc) { const n = g.attributes.position.count; const c = new Float32Array(n * 3).fill(1); g.setAttribute("color", new THREE.Float32BufferAttribute(c, 3)); }
+  const m = new THREE.Mesh(g, new THREE.MeshStandardMaterial(opts)); m.position.set(x, 0, 0); m.rotation.set(0.5, 0.6, 0); scene.add(m); return m;
+};
+const roof = mk({ color: 0x6b6862, roughness: 0.95, vertexColors: true, envMapIntensity: 0.15 }, -2.4, true);
+roof.material.color.setRGB(0.21, 0.205, 0.2);
+mk({ color: 0xd8d0be, roughness: 0.75, vertexColors: true, envMapIntensity: 0.3 }, 0, true);
+mk({ color: 0xb08060, roughness: 1, metalness: 0 }, 2.4, false);
+if (q.has("mine")) scene.traverse((o) => { if (o.material) o.material.outputNode = T.vec4(T.acesFilmicToneMapping(T.output.rgb, T.float(0.9)), T.output.a); });
+const camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 100); camera.position.set(0, 0, 9);
+let draw = () => renderer.render(scene, camera);
+if (q.has("pipe")) {
+  const pl = new THREE.RenderPipeline(renderer); pl.outputColorTransform = false;
+  const sp = T.pass(scene, camera);
+  pl.outputNode = T.vec4(T.sRGBTransferOETF(sp.getTextureNode("output").rgb), 1);
+  draw = () => pl.render();
+}
+draw();
+await new Promise((r) => setTimeout(r, 300));
+draw();
+window.__done = true;
+</script>
+</body></html>

@@ -53,7 +53,8 @@ export function portMaterial(m: THREE.Material, s: Shared, renderer: N) {
   const pr = probeOf(m, renderer);
   if (pr) {
     const U = pr.uniforms, F = pr.fragmentShader, V = pr.vertexShader;
-    if (U.uWallLum) { facade(mm, s, U); note("facade:paint+foot+far+panes+reveal+rooms"); }
+    if (U.uWallLum && !(mm.map && mm.roughnessMap && mm.emissiveMap)) note("facade:no-maps(stock)");
+    else if (U.uWallLum) { facade(mm, s, U); note("facade:paint+foot+far+panes+reveal+rooms"); }
     else if (U.seaShore) { sea(mm, s, U); note("sea:bottom+shore"); }
     else if (F.includes("diffuseColor.a *= vColor.r")) {
       mm.vertexColors = false;
@@ -156,10 +157,11 @@ function facade(m: N, s: Shared, U: Record<string, { value: N }>) {
     paneCol.assign(T.mix(paneCol, curtCol.mul(0.4), curtK.mul(T.float(1).sub(blindK))));
     c.assign(T.mix(c, paneCol, winM.mul(T.float(1).sub(farK.mul(0.7)))));
     // REVEAL_FRAG: the jamb, sill and head inside the opening, then the room behind the pane
-    const rN = T.normalize(T.normalView);
-    const rUp = T.vec3(0, 0, 1);   // the view space is the world's, eye-centred and unrotated
+    // in the world's frame (up is +z); the backend's view space is a real camera's
+    const rN = T.normalize(T.normalWorldGeometry);
+    const rUp = T.vec3(0, 0, 1);
     const rT = T.normalize(T.cross(rUp, rN));
-    const rV = T.normalize(T.positionView.negate());
+    const rV = T.normalize(T.cameraPosition.sub(T.positionWorld));
     const rn = T.max(T.dot(rV, rN), 0.15);
     const vu = T.dot(rV, rT).div(rn), vv = T.dot(rV, rUp).div(rn);
     const ww = T.max(uWin.y.sub(uWin.x).mul(uBay.x), 0.3), wh = T.max(uWin.w.sub(uWin.z).mul(uBay.y), 0.3);

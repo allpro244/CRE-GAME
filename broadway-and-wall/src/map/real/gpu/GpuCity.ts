@@ -240,12 +240,7 @@ export class GpuBackend {
     void hide;
     const t0 = performance.now();
     if (this.fit()) this.pipeline = null;
-    // MapLibre's camera, in WebGPU's clip space (depth 0..1, not -1..1)
-    if (this.backendName === "webgpu") {
-      const p = this.camera.projectionMatrix;
-      p.premultiply(GL_TO_GPU);
-      this.camera.projectionMatrixInverse.copy(p).invert();
-    }
+    this.orientCamera();
     this.mapTex.needsUpdate = true;
     if (this.pipeline && this.post && this.post.level !== postFx.level) { this.pipeline.dispose(); this.pipeline = null; }
     if (!this.pipeline) {
@@ -256,10 +251,44 @@ export class GpuBackend {
     this.post!.update(postFx, pitch, distM, this.canvas.height);
     const info = this.renderer.info as N;
     this.pipeline.render();
+    // hand RealCity its camera back as it set it (its picking unprojects through it)
+    this.camera.projectionMatrix.copy(_c);
+    this.camera.projectionMatrixInverse.copy(_ci);
+    this.camera.matrix.makeTranslation(_eye.x, _eye.y, _eye.z);
+    this.camera.updateMatrixWorld(true);
     this.stats.frames++;
     this.stats.ms = performance.now() - t0;
     this.stats.calls = info.render?.drawCalls ?? info.render?.calls ?? 0;
     this.stats.triangles = info.render?.triangles ?? 0;
+  }
+
+  /**
+   * A REAL VIEW SPACE. RealCity's camera stands at the eye unrotated and lets
+   * MapLibre's matrix do all the turning, so its view space is the world's.
+   * Screen-space passes (GTAO, and SSR to come) assume a camera looking down
+   * its own -Z, so the same matrix is split here into a rotation (the camera's
+   * orientation, read off the matrix itself) and what is left of it as the
+   * projection: clip = C·T(-eye)·p = (C·R)·(Rᵀ·T(-eye))·p, exactly the same
+   * transform. Then WebGPU's clip depth (0..1, not -1..1).
+   */
+  private orientCamera() {
+    const cam = this.camera;
+    const C = _c.copy(cam.projectionMatrix);
+    const eye = _eye.setFromMatrixPosition(cam.matrix);
+    const inv = _ci.copy(C).invert();
+    const at = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z).applyMatrix4(inv);
+    const n0 = at(0, 0, -1), f0 = at(0, 0, 0.5), up = at(0, 0.5, 0.5);
+    const fwd = f0.clone().sub(n0).normalize();
+    const zAxis = fwd.clone().negate();
+    const yAxis = up.sub(f0).projectOnPlane(fwd).normalize();
+    const xAxis = new THREE.Vector3().crossVectors(yAxis, zAxis).normalize();
+    const R = _r.makeBasis(xAxis, yAxis, zAxis);
+    cam.matrix.copy(R).setPosition(eye);
+    cam.matrixWorldNeedsUpdate = true;
+    cam.updateMatrixWorld(true);
+    cam.projectionMatrix.copy(C).multiply(R);
+    if (this.backendName === "webgpu") cam.projectionMatrix.premultiply(GL_TO_GPU);
+    cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
   }
 
   dispose() {
@@ -271,6 +300,7 @@ export class GpuBackend {
   }
 }
 
+const _c = new THREE.Matrix4(), _ci = new THREE.Matrix4(), _r = new THREE.Matrix4(), _eye = new THREE.Vector3();
 /** WebGL's clip-space depth (-1..1) to WebGPU's (0..1). */
 const GL_TO_GPU = new THREE.Matrix4().set(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0.5, 0.5, 0, 0, 0, 1);
 

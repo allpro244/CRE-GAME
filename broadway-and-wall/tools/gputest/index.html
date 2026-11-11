@@ -1,0 +1,62 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>gpu test</title><style>body{margin:0;background:#888}canvas{display:block}</style></head>
+<body>
+<script type="module">
+import * as THREE from "three/webgpu";
+import * as T from "three/tsl";
+const q = new URLSearchParams(location.search);
+const W = 800, H = 500;
+const canvas = document.createElement("canvas"); document.body.appendChild(canvas);
+const renderer = new THREE.WebGPURenderer({ canvas, forceWebGL: q.get("gpu") === "webgl2" });
+await renderer.init();
+renderer.setSize(W, H, false);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFShadowMap;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x8899aa);
+const sun = new THREE.DirectionalLight(0xffffff, 3);
+sun.castShadow = true;
+sun.shadow.mapSize.set(Number(q.get("ms") ?? 4096), Number(q.get("ms") ?? 4096));
+const span = Number(q.get("span") ?? 1000);
+const cam = sun.shadow.camera; cam.left = -span; cam.right = span; cam.top = span; cam.bottom = -span; cam.near = 10; cam.far = 6000; cam.updateProjectionMatrix();
+sun.shadow.bias = Number(q.get("bias") ?? -0.0006);
+sun.shadow.normalBias = Number(q.get("nb") ?? 1.4);
+sun.shadow.radius = 3.6;
+const dir = new THREE.Vector3(0.45, -0.55, 0.7).normalize();
+sun.position.copy(dir).multiplyScalar(2500); sun.target.position.set(0, 0, 0);
+scene.add(sun, sun.target, new THREE.HemisphereLight(0xc6d8ee, 0x8a7d6a, 0.6));
+if (q.has("manual")) { sun.shadow.autoUpdate = false; sun.shadow.needsUpdate = true; }
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshStandardMaterial({ color: 0xcccccc }));
+ground.receiveShadow = true; scene.add(ground);
+for (let i = 0; i < 5; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(20, 20, 30 + i * 15), new THREE.MeshStandardMaterial({ color: 0xaa6644 })); b.position.set(-80 + i * 40, 0, (30 + i * 15) / 2); b.castShadow = b.receiveShadow = true; scene.add(b); }
+scene.add(new THREE.AxesHelper(1));
+const camera = new THREE.PerspectiveCamera(45, W / H, 1, 5000);
+camera.up.set(0, 0, 1);
+camera.position.set(0, -350, 260); camera.lookAt(0, 0, 0);
+if (q.has("custom")) {
+  // RealCity's camera: no rotation, projection carries the view
+  camera.updateMatrixWorld();
+  const eye = camera.position.clone();
+  const proj = camera.projectionMatrix.clone().multiply(camera.matrixWorldInverse).multiply(new THREE.Matrix4().makeTranslation(eye.x, eye.y, eye.z));
+  camera.matrixAutoUpdate = false;
+  camera.matrix.makeTranslation(eye.x, eye.y, eye.z);
+  camera.matrixWorldNeedsUpdate = true;
+  camera.coordinateSystem = renderer.coordinateSystem;
+  window.__apply = () => { camera.projectionMatrix.copy(proj); camera.projectionMatrixInverse.copy(proj).invert(); };
+} else window.__apply = () => {};
+if (q.has("out")) scene.traverse((o) => { if (o.material && o.material.isMeshStandardMaterial) o.material.outputNode = T.vec4(T.acesFilmicToneMapping(T.output.rgb, T.float(0.9)), T.output.a); });
+let draw = () => renderer.render(scene, camera);
+if (q.has("pipe")) {
+  const pl = new THREE.RenderPipeline(renderer); pl.outputColorTransform = false;
+  const sp = T.pass(scene, camera, { samples: q.has("ms4") ? 4 : 0 });
+  pl.outputNode = T.vec4(T.sRGBTransferOETF(sp.getTextureNode("output").rgb), 1);
+  draw = () => pl.render();
+}
+if (q.has("stage")) { const ms = []; scene.traverse((o) => { if (o.isMesh) { o.layers.set(31); ms.push(o); } }); window.__apply(); draw(); await new Promise((r) => setTimeout(r, 200)); for (const o of ms) o.layers.set(0); sun.shadow.needsUpdate = true; }
+if (q.has("late")) { sun.castShadow = false; window.__apply(); draw(); await new Promise((r) => setTimeout(r, 200)); sun.castShadow = true; sun.shadow.needsUpdate = true; }
+window.__apply(); draw();
+await new Promise((r) => setTimeout(r, 300));
+window.__apply(); draw();
+window.__done = true;
+</script>
+</body></html>

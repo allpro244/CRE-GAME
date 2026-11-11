@@ -5,30 +5,32 @@
 // at work, by the NAICS sector of the industry renting it: jobs per resident
 // (0.5 participation x 0.96 employed) x the industry's share of
 // US employment (CES 2023) x the share working on a commercial floor and not
-// from home x the feet a worker takes.
+// from home x the feet a worker takes; and those workers per resident (jobs).
 export const FLOOR_PER_RESIDENT = [
-  { cls: "industrial", sector: "3", sf: 34.182 },
-  { cls: "industrial", sector: "42", sf: 26.609 },
-  { cls: "industrial", sector: "48", sf: 16.200 },
-  { cls: "industrial", sector: "53", sf: 2.443 },
-  { cls: "industrial", sector: "56", sf: 2.340 },
-  { cls: "office", sector: "22", sf: 0.076 },
-  { cls: "office", sector: "48", sf: 0.033 },
-  { cls: "office", sector: "51", sf: 1.556 },
-  { cls: "office", sector: "52", sf: 3.578 },
-  { cls: "office", sector: "53", sf: 0.743 },
-  { cls: "office", sector: "54", sf: 5.929 },
-  { cls: "office", sector: "55", sf: 1.552 },
-  { cls: "office", sector: "56", sf: 5.180 },
-  { cls: "office", sector: "61", sf: 0.463 },
-  { cls: "office", sector: "62", sf: 5.537 },
-  { cls: "office", sector: "all", sf: 0.532 },
-  { cls: "retail", sector: "44", sf: 31.445 },
-  { cls: "retail", sector: "62", sf: 1.366 },
-  { cls: "retail", sector: "71", sf: 4.968 },
-  { cls: "retail", sector: "72", sf: 9.395 },
-  { cls: "retail", sector: "all", sf: 7.351 },
+  { cls: "industrial", sector: "3", sf: 34.182, jobs: 0.03683 },
+  { cls: "industrial", sector: "42", sf: 26.609, jobs: 0.01774 },
+  { cls: "industrial", sector: "48", sf: 16.200, jobs: 0.01582 },
+  { cls: "industrial", sector: "53", sf: 2.443, jobs: 0.00204 },
+  { cls: "industrial", sector: "56", sf: 2.340, jobs: 0.00156 },
+  { cls: "office", sector: "22", sf: 0.076, jobs: 0.00033 },
+  { cls: "office", sector: "48", sf: 0.033, jobs: 0.00014 },
+  { cls: "office", sector: "51", sf: 1.556, jobs: 0.00835 },
+  { cls: "office", sector: "52", sf: 3.578, jobs: 0.01830 },
+  { cls: "office", sector: "53", sf: 0.743, jobs: 0.00323 },
+  { cls: "office", sector: "54", sf: 5.929, jobs: 0.02873 },
+  { cls: "office", sector: "55", sf: 1.552, jobs: 0.00690 },
+  { cls: "office", sector: "56", sf: 5.180, jobs: 0.02590 },
+  { cls: "office", sector: "61", sf: 0.463, jobs: 0.00116 },
+  { cls: "office", sector: "62", sf: 5.537, jobs: 0.01846 },
+  { cls: "office", sector: "all", sf: 0.532, jobs: 0.00231 },
+  { cls: "retail", sector: "44", sf: 31.445, jobs: 0.04677 },
+  { cls: "retail", sector: "62", sf: 1.366, jobs: 0.00341 },
+  { cls: "retail", sector: "71", sf: 4.968, jobs: 0.00633 },
+  { cls: "retail", sector: "72", sf: 9.395, jobs: 0.03758 },
+  { cls: "retail", sector: "all", sf: 7.351, jobs: 0.01633 },
 ];
+/** Jobs per resident at the opening: participation x the employed share (market.ts citySize). */
+export const JOBS_PER_RESIDENT = 0.4800;
 /** Stock of flats per resident: the engine's feet a home over people a household. */
 export const HOME_SF_PER_RESIDENT = 358.566;
 /** The engine's opening vacancy by class: stock is what is occupied over (1 - this). */

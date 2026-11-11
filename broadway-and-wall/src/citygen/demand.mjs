@@ -55,7 +55,7 @@
 //
 // No random stream is read: the region radius is a hash of the seed, so
 // every earlier pass draws exactly what it drew under plan 17.
-import { FLOOR_PER_RESIDENT, HOME_SF_PER_RESIDENT, OPENING_VAC } from "./floorDemand.mjs";
+import { FLOOR_PER_RESIDENT, HOME_SF_PER_RESIDENT, JOBS_PER_RESIDENT, OPENING_VAC } from "./floorDemand.mjs";
 import { assetClass, resolveMix } from "./build.mjs";
 
 /** Kneebone 2009 Table 3: [share within 3 miles of the CBD, share beyond 10 miles], 98 metros, 2006 [S]. */
@@ -127,9 +127,25 @@ const seedHash = (str) => {
 };
 
 /**
- * The island in its region, and the stock of each class one island resident
- * brings with them: their own home, and their share of the region's
- * workplaces that sit on the island.
+ * WHO LIVES IN THE ISLAND'S FLATS. In the engine every home on the island is a
+ * rented flat; the region's owners own across the water (households.ts: the
+ * region's ownership is the nation's), and a household's commute is part of
+ * where it lives — an island job pays it to live on the island, a mainland
+ * job to stay off it (`commuteSaving`). So the island's flats are let to the
+ * households of the island's own work that rent: its workers' people at
+ * the region's jobs per resident, times the share of US households that rent
+ * — Census HVS 2023 annual homeownership 65.9% [S]. Sizing them for every
+ * resident of the island's ring built more flats than the whole region had
+ * renters (seed 22: 11,000 island tenants wanted from ~9,000 renters), and
+ * they could never let.
+ */
+const RENTER_SHARE = 1 - 0.659;
+
+/**
+ * The island in its region: per resident of the region, the floor of each
+ * class the island holds — its share of the region's workplaces, and flats
+ * for the households of that work who rent — and the island's flat dwellers
+ * per region resident (`flatShare`, what the engine opens the region at).
  */
 export function regionOf(seed, density) {
   const metro = METRO_OF[density] ?? METRO_OF.village;
@@ -137,13 +153,17 @@ export function regionOf(seed, density) {
   const share = resCurve(RES_RINGS[metro])(coreMi);
   // the same share of residents, in the metros the job gradients were measured in
   const r = invert(BIG_METROS, share);
-  const perRes = { office: 0, retail: 0, industrial: 0, multifamily: HOME_SF_PER_RESIDENT };
+  const perRes = { office: 0, retail: 0, industrial: 0, multifamily: 0 };
+  let jobs = 0;
   for (const row of FLOOR_PER_RESIDENT) {
     const capture = (JOB_CURVE[row.sector] ?? JOB_CURVE.all)(r);
-    perRes[row.cls] += row.sf * capture / share;
+    perRes[row.cls] += row.sf * capture;
+    jobs += row.jobs * capture;
   }
+  const flatShare = (jobs / JOBS_PER_RESIDENT) * RENTER_SHARE;
+  perRes.multifamily = flatShare * HOME_SF_PER_RESIDENT;
   for (const k of Object.keys(perRes)) perRes[k] /= 1 - OPENING_VAC[k];
-  return { metro, coreMi: +coreMi.toFixed(2), share: +share.toFixed(4), perRes };
+  return { metro, coreMi: +coreMi.toFixed(2), share: +share.toFixed(4), flatShare, perRes };
 }
 
 const CLASSES = ["office", "retail", "industrial", "multifamily"];
@@ -259,8 +279,10 @@ export function balanceUses(lots, { seed, density, districts }) {
   }
   const pct = (o) => Object.fromEntries(CLASSES.map((k) => [k, +(o[k] / F).toFixed(4)]));
   return {
-    metro: region.metro, coreMi: region.coreMi, residentShare: region.share,
-    residents: Math.round(stock.multifamily / region.perRes.multifamily), moved: moves,
+    metro: region.metro, coreMi: region.coreMi, ringShare: region.share,
+    // the island's flat dwellers over the region's people, as built
+    regionShare: +(region.flatShare * (stock.multifamily / target.multifamily)).toFixed(5),
+    regionPop: Math.round(F / perRes), moved: moves,
     mixBefore: pct(before), mixTarget: pct(target), mix: pct(stock),
   };
 }

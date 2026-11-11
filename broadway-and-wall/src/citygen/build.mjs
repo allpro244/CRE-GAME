@@ -561,7 +561,7 @@ export function buildCityData(src) {
       ...(mix && Object.keys(mix).length > 1 ? { mix } : {}),
       lotArea, bldgArea, floors, yearBuilt,
       unitsRes: num(p.unitsres) ?? 0,
-      ...(manifest?.region ? { regionShare: manifest.region.residentShare } : {}),
+      ...(manifest?.region ? { regionShare: manifest.region.regionShare } : {}),
       assessedLand: assessLand,
       assessedTotal: assessTot,
       demandScore,

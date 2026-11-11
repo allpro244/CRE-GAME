@@ -32,7 +32,7 @@ import { resolveRec } from "./value";
 import { GROCER_SALES } from "./grocerHook";
 import { farMaxFor } from "./proforma";
 import { FAR_CEIL } from "./zoning";
-import { boardCarries, entitleOdds, servedM } from "./landdev";
+import { rng } from "./market";
 import { ownerOf } from "./rivals";
 import { startTradeAreaBuilding, underwriteDevelopment } from "./dev";
 import { roadPlan, countyEntries, COUNTY_TO_TOWN } from "./roads";
@@ -63,14 +63,8 @@ const GROCER_FORMATS = [45_000, 30_000, 18_000];
 const STRIP = { hh: 1_500, radiusM: 1_600, sf: 20_000 };
 /** Suburban retail sites run FAR 0.2-0.3 with their car parks (commerce.mjs) [S]. */
 const RETAIL_FAR = 0.25;
-/**
- * A commercial rezoning and site plan approval at an arterial corner: about a
- * year [K]. Whether it is granted is the board's vote on the farm (landdev.ts
- * entitleOdds, boardCarries): the same question as a subdivision — will the
- * town run its mains out to it — read on the day the board sits. It was a
- * die at 0.8 (2026-11-11).
- */
-const C_ENTITLE_M = 12;
+/** A commercial rezoning and site plan approval at an arterial corner: about a year, and usually granted [K: 0.8]. */
+const C_ENTITLE_M = 12, C_ODDS = 0.8;
 /** How far from the frontage a centre's site may lie, m [K]. */
 const SITE_M = 700;
 /**
@@ -283,7 +277,7 @@ function tickCommerce(s: GameState, parcels: ParcelTable, bbls: string[], adjace
     if (s.month < p.decideM) continue;
     T.pending = (T.pending ?? []).filter((x) => x !== p);
     if (s.growth?.held[p.bbl]) delete s.growth.held[p.bbl];
-    if (p.rezone && !boardCarries(entitleOdds(servedM(s, parcels, p.bbl)))) {
+    if (p.rezone && !(rng(s, "growth") < C_ODDS)) {
       s.news.unshift({ q: s.month, kind: "info", bbl: p.bbl, text: `The board turned down a shopping centre at ${parcels[p.bbl]?.address ?? p.bbl}.` });
       (T.failedM ??= {})[p.bbl] = s.month;
       continue;

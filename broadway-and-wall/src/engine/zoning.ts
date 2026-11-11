@@ -26,7 +26,7 @@ import type { ParcelTable } from "@/data/types";
 import type { GameState, VarianceApplication } from "./types";
 import { monthLabel, cloneState} from "./types";
 import { hash01 } from "./competitorTraits";
-import { boardCarries } from "./landdev";
+import { rng } from "./market";
 import { resolveRec, landValue, demandLinear } from "./value";
 import { recordPropertyEvent } from "./history";
 import { spendable, fundAndBook } from "./credit";
@@ -196,13 +196,7 @@ function decideVariance(s: GameState, parcels: ParcelTable) {
     const rec = resolveRec(parcels, s, app.bbl);
     delete s.varianceApps[app.bbl];
     if (!s.holdings[app.bbl]) continue;      // sold it while they deliberated
-    // THE BOARD VOTES (landdev.ts boardCarries): granted when more than half
-    // of it backs the case as it stands on the day it sits — the street may
-    // have filled in round the site, or emptied, since the filing. It was a
-    // die thrown against the support quoted at filing (2026-11-11).
-    const rec0 = resolveRec(parcels, s, app.bbl);
-    const now = rec0 ? varianceQuote(s, parcels, app.bbl, Math.max(rec0.farMaxComm, rec0.farMaxRes, 2) + app.grant) : null;
-    const granted = boardCarries(now?.odds ?? app.odds);
+    const granted = rng(s) < app.odds;
   // THE DECISION IS A FACT ABOUT THE SITE. Recorded on the parcel, not just
   // announced once and scrolled away — a refusal sits over a property for
   // years and everybody in the neighbourhood knows about it.

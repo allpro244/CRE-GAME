@@ -39,11 +39,12 @@ import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { GameState } from "./types";
 import { monthLabel } from "./types";
 import { tractYield } from "./platdesign";
+import { rng } from "./market";
 import { ownerOf } from "./rivals";
 import { farmUsePsf } from "./value";
 import {
   ENTITLE_FIXED, ENTITLE_PER_LOT, ENTITLE_MONTHS, INFRA_MONTHS, INFRA_PER_FRONT_FT, IMPACT_FEE,
-  MAIN_PER_M, REZONE, PLAT_LOT_SIZES, entitleOdds, servedM, boardCarries,
+  MAIN_PER_M, REZONE, PLAT_LOT_SIZES, entitleOdds, servedM,
 } from "./landdev";
 import { platLocation, homeTargetPsf, platQuoteNow } from "./homes";
 import { pickConstructionDesk } from "./dev";
@@ -239,10 +240,8 @@ export type TractRead = {
  * sell-out at the pace one more community would sell at; less the
  * horizontal and the off-site mains (paid once the board says yes); less the
  * board's fees (paid now); all discounted at the land-development rate over
- * the months the board and the streets take — if the board would carry it
- * today (landdev.ts boardCarries: a majority of it behind a farm this far
- * from the mains); one that would refuse leaves the developer owning a farm,
- * and that is all the read is worth. The lot size is the
+ * the months the board and the streets take; times the odds the board agrees —
+ * and if it refuses, the developer still owns a farm. The lot size is the
  * developer's choice: whichever pays most.
  */
 export function readTract(s: GameState, parcels: ParcelTable, bbl: string, extraSellers = 0, lotsMult = 1, costMult = 1): TractRead | null {
@@ -254,7 +253,7 @@ export function readTract(s: GameState, parcels: ParcelTable, bbl: string, extra
   const served = servedM(s, parcels, bbl);
   // a farm the board has already zoned for houses (an approved developer's REO) needs no board: no fees, no wait, no odds
   const zoned = isZonedForHouses(s, bbl);
-  const odds = zoned || boardCarries(entitleOdds(served)) ? 1 : 0;
+  const odds = zoned ? 1 : entitleOdds(served);
   const farm = farmUsePsf(rec, e) * rec.lotArea;
   const r = LOT_SELLOUT_RATE;
   const sellers = activeCommunities(s) + extraSellers + 1;
@@ -565,8 +564,9 @@ function tickProjects(s: GameState, parcels: ParcelTable) {
     const rec = parcels[pr.bbl];
     if (!rec) { delete g.projects[pr.bbl]; delete g.held[pr.bbl]; continue; }
     if (pr.stage === "entitle" && s.month >= pr.decideM) {
-      // the board votes as it would on the player's application for the same farm today
-      if (boardCarries(entitleOdds(servedM(s, parcels, pr.bbl)))) {
+      // the board's odds are the ones it would give the player for the same farm today
+      const odds = entitleOdds(servedM(s, parcels, pr.bbl));
+      if (rng(s, "growth") < odds) {
         s.rezoned = { ...(s.rezoned ?? {}), [pr.bbl]: { zone: REZONE.zone, far: REZONE.far, lotSf: pr.lotSf, m: s.month } };
         pr.stage = "approved";
       } else {

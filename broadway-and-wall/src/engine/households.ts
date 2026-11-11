@@ -865,7 +865,7 @@ export interface HouseholdRegister {
    * (log of each looking household's budget over the going rent) and the
    * weight that signed. Absent until the first month a save runs it.
    */
-  mk?: { homes: number; homes0: number; ask0: number; cap0: number; cost0: number; occ: number; roll: FlatRoll; pipe: { m: number; n: number }[]; cards: number[]; signed: number };
+  mk?: { homes: number; homes0: number; ask0: number; cap0: number; cost0: number; occ: number; roll: FlatRoll; pipe: { m: number; n: number }[]; cards: number[]; signed: number; ask12?: number[] };
   /** Each island block of flats an agent can point at (bbl), append-only. */
   blocks: string[];
   /** Each street block's flat size: [sf, month read, month last seen] (see blockUnitSf). */
@@ -1787,6 +1787,7 @@ function letTo(R: Rand, r: HouseholdRegister, b: Block, e: Econ, m: number, want
     const c = want[Math.floor(R.u() * want.length)];
     if ((c < gone.length && gone[c]) || A.ten[c] !== TEN_MAINLAND || A.wt[c] < w) continue;
     if (!wantsIsland(r, A, c, e, b.let, -MOVE_LOG)) continue;
+    mainCard(r, A, c);
     const i = addAgent(r), a = r.a!;
     for (const f of FIELD_NAMES) (a[f] as Uint8Array)[i] = (a[f] as Uint8Array)[c];
     a.id[i] = r.nextId++;
@@ -1912,37 +1913,36 @@ function ownerLike(R: Rand, r: HouseholdRegister, i: number, gone: Uint8Array): 
 }
 
 /**
- * A HOUSEHOLD TAKES A MAINLAND FLAT (2a). It writes its guest card — the most
- * it would pay across the water: what the landlord's income screen lets it
- * sign for, and no more than an island flat at the going rent is worth to it
- * there (the island's rent less its pull, `islandPull`) — and signs at the
- * going rent, or, where its pay does not carry that, at a cheaper flat its
- * pay does (the older and smaller stock filters down to it). This was the
+ * A HOUSEHOLD LOOKING FOR A HOME WRITES THE MAINLAND'S GUEST CARD (2a): the
+ * most a flat across the water is worth to it against the island — an island
+ * flat at the going rent, less its pull to the island (`islandPull`: its
+ * taste, the island's appeal, its commute). Every household that weighs the
+ * two writes one, whichever it takes. A household that takes a mainland flat
+ * signs at the going rent, or, where its pay does not carry that, at a
+ * cheaper flat its pay does (the older and smaller stock filters down to it);
+ * its card prices the going flat, not the one it can afford. This was the
  * going rent times a lognormal draw.
  */
-function signMainland(r: HouseholdRegister, a: HouseholdArrays, i: number): number {
-  const pay = payOf(a, i);
+function mainCard(r: HouseholdRegister, a: HouseholdArrays, i: number): void {
   const mk = r.mk;
-  if (mk) {
-    const inc = verifiedPay(a, i);
-    if (inc > 0) {
-      let b = (SCREEN * inc) / 12;
-      // a household not yet drawn its taste for the island (a new one, this month) has no island figure yet
-      const alt = CTX && r.locMu !== undefined ? CTX.letAvg * Math.exp(-islandPull(r, a, i, CTX.e)) : NaN;
-      if (alt > 0) b = Math.min(b, alt);
-      const x = Math.log(Math.max(1, b) / Math.max(1, r.mainRent));
-      // a regional agent stands for its weight in households, each a card
-      if (Number.isFinite(x)) for (let k = 0, w = Math.min(64, Math.max(1, Math.round(a.wt[i]))); k < w; k++) mk.cards.push(x);
-    }
-    mk.signed += a.wt[i];
-  }
+  if (!mk || !CTX || r.locMu === undefined) return;
+  const alt = CTX.letAvg * Math.exp(-islandPull(r, a, i, CTX.e));
+  if (!(alt > 0)) return;   // a household not yet drawn its taste for the island has no figure to write
+  const x = Math.log(alt / Math.max(1, r.mainRent));
+  // a regional agent stands for its weight in households, each a card
+  if (Number.isFinite(x)) for (let k = 0, w = Math.min(64, Math.max(1, Math.round(a.wt[i]))); k < w; k++) mk.cards.push(x);
+}
+function signMainland(r: HouseholdRegister, a: HouseholdArrays, i: number): number {
+  mainCard(r, a, i);
+  if (r.mk) r.mk.signed += a.wt[i];
+  const pay = payOf(a, i);
   return pay > 0 ? Math.min(r.mainRent, (SCREEN * pay) / 12) : r.mainRent;
 }
 
 /** Census Survey of Construction 2023: months from start to completion, buildings of 5+ units, about 18 [S~]. */
 const MAIN_BUILD_M = 18;
-/** NAHB, "Cost of Constructing a Home" 2022: the finished lot is 18% of a new home's price; the rest is construction, financing, overhead and margin [S~]. */
-const LOT_SHARE = 0.18;
+/** An apartment's operating cost, taxes and insurance over its potential rent: NAA Survey of Operating Income & Expenses 2023, ~42% [S~]. */
+const MAIN_OPEX = 0.42;
 /**
  * THE MAINLAND'S LANDLORDS AND BUILDERS, a month (REAL_ECONOMY_PLAN 5c, 2a).
  *
@@ -1953,15 +1953,16 @@ const LOT_SHARE = 0.18;
  * notice). No index and no elasticity on the price: a short market is more
  * budgets over the ask than flats, a glut fewer.
  *
- * BUILDERS start homes while a new home is worth more than it costs. Worth:
- * the going rent at the flats' cap rate, against the opening's. Cost: the
- * build at the construction cost index, plus the lot — and a lot is dearer
- * the more homes the region already has, at Saiz's supply elasticity (2010,
- * QJE: ~1.75 for the average US metro) [S]: the elasticity is the land's,
- * an input on cost, and the region's measured supply response is an outcome.
- * At the opening a new home costs what it is worth (the market the town
- * opened in was built). They start what pencils, and it is let MAIN_BUILD_M
- * later.
+ * BUILDERS start the homes that pencil. A new home's worth is the going rent
+ * at the flats' cap rate; its cost the construction cost index; at the
+ * opening the two are equal (the region that stands was built). The region
+ * holds the homes whose price clears their cost on its supply curve — Saiz
+ * (2010, QJE): a metro's housing supply rises ~1.75% for each 1% its price
+ * rises over cost, for the population-weighted average US metro, the land and
+ * the rules that make the next home dearer to build [S] — and builders start
+ * the gap between that and what stands or is building; it is let
+ * MAIN_BUILD_M later. (2b replaces the elasticity with the land itself:
+ * distance from the crossing.)
  *
  * Returns the going rent's move this month; sitting rents renew with it.
  */
@@ -1981,19 +1982,26 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): number {
   const free = Math.max(0, mk.homes - occ) + out;
   const before = r.mainRent;
   priceFlats(mk.roll, mk.cards, free, undefined, before);
-  const g = Math.exp(mk.roll.px ?? 0);
+  // ...but never under what the flat costs to run: a landlord holds a flat
+  // empty rather than let it at a loss. Operating cost, taxes and insurance
+  // run ~42% of an apartment's potential rent (NAA Survey of Operating Income
+  // & Expenses 2023) [S~], here at the opening's rent moved by the cost index.
+  const floor = MAIN_OPEX * mk.ask0 * (cost / mk.cost0);
+  const g = Math.max(Math.exp(mk.roll.px ?? 0), floor / Math.max(1e-9, before));
   mk.roll.px = 0;
   r.mainRent = before * g;
+  (mk.ask12 ??= []).push(r.mainRent);
+  if (mk.ask12.length > 12) mk.ask12.shift();
   mk.cards = []; mk.signed = 0; mk.occ = occ;
-  const worth = (r.mainRent / mk.ask0) * (mk.cap0 / Math.max(1e-9, cap));
-  const lot = worth - (1 - LOT_SHARE) * (cost / mk.cost0);
-  if (lot > 0) {
-    let piped = 0;
-    for (const p of mk.pipe) piped += p.n;
-    const pencils = mk.homes0 * Math.pow(lot / LOT_SHARE, HOUSING_SUPPLY_ELAST);
-    const start = pencils - mk.homes - piped;
-    if (start > 0) mk.pipe.push({ m: m + MAIN_BUILD_M, n: start });
-  }
+  // a new home's worth over its cost, against the opening's: the going rent at the flats' cap rate, over the construction cost index
+  // underwritten on the year's lettings, not the month's ask (lenders size on trailing rents)
+  const ask = mk.ask12.reduce((x, y) => x + y, 0) / mk.ask12.length;
+  const pencil = ((ask / mk.ask0) * (mk.cap0 / Math.max(1e-9, cap))) / (cost / mk.cost0);
+  let piped = 0;
+  for (const p of mk.pipe) piped += p.n;
+  const start = mk.homes0 * Math.pow(pencil, HOUSING_SUPPLY_ELAST) - mk.homes - piped;
+  // the gap is started over a build's length, as crews free up, not in one month
+  if (start > 0) mk.pipe.push({ m: m + MAIN_BUILD_M, n: start / MAIN_BUILD_M });
   return g;
 }
 

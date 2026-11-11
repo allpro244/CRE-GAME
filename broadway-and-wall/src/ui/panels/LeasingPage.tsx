@@ -24,7 +24,7 @@ import { WhyButton } from "@/ui/WhyChain";
 import { whyGet } from "@/engine/why";
 import { OpsChoices } from "@/ui/panels/OpsChoices";
 import { BizLink } from "@/ui/BizSheet";
-import { DataTable, type Col } from "@/ui/next/DataTable";
+import { DataTable, rollTone, type Col } from "@/ui/next/DataTable";
 import { LeasingExpiring } from "@/ui/next/LeasingNext";
 import "@/ui/cleanup-leasing.css";
 
@@ -209,7 +209,7 @@ function RentRoll({ leases, game, q, go, counter, empty }: {
     { id: "credit", label: "Credit", get: (r) => r.t.credit, cell: (r) => CREDIT_LABEL[r.t.credit] ?? "—", tone: (r) => (r.t.credit === 0 ? "neg" : undefined) },
     { id: "sf", label: "sf", get: (r) => r.t.sf, fmt: "n" },
     { id: "rent", label: "$/sf", get: (r) => r.t.rentPsf, fmt: "psf" },
-    { id: "vs", label: "vs mkt", get: vs, fmt: "pct", tone: (r) => ((vs(r) ?? 0) < -0.12 ? "neg" : undefined) },
+    { id: "vs", label: "vs mkt", get: vs, fmt: "pct", tone: (r) => rollTone(vs(r)) },
     {
       id: "recov", label: "Terms", get: (r) => recoveryOf(r.t), hidden: true,
       cell: (r) => { const rv = recoveryOf(r.t); return rv === "nnn" ? "NNN" : rv === "base" ? `base yr · stop $${(r.t.baseStopPsf ?? 0).toFixed(2)}` : "gross"; },
@@ -291,7 +291,7 @@ function Buildings({ rows, go }: { rows: BookRow[]; go: (bbl: string) => void })
     { id: "vac", label: "Vacant sf", get: (r) => vacantSf(r.rec, r.h), fmt: "n" },
     { id: "avg", label: "In place", get: (r) => avg(r) || null, fmt: "psf" },
     { id: "mkt", label: "Market", get: (r) => r.mkt || null, fmt: "psf" },
-    { id: "gap", label: "vs mkt", get: gap, fmt: "pct", tone: (r) => ((gap(r) ?? 0) < -0.1 ? "neg" : undefined) },
+    { id: "gap", label: "vs mkt", get: gap, fmt: "pct", tone: (r) => rollTone(gap(r)) },
     { id: "roll", label: "Rent / yr", get: (r) => r.rentRoll, fmt: "usd" },
     { id: "walt", label: "WALT", get: (r) => (r.commercial ? walt(r.h, q) : null), num: true, cell: (r) => (r.commercial ? walt(r.h, q).toFixed(1) + "y" : "—") },
     { id: "rolling", label: "Rolling 12m", get: (r) => r.rolling || null, fmt: "n", hidden: true, tone: (r) => (r.rolling > r.leased * 0.3 ? "neg" : undefined) },

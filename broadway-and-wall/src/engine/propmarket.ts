@@ -44,7 +44,7 @@ import { underwrittenGrowthPct, dollarLevel, RENT_BASE, CAP_BASE } from "./marke
 import {
   assetValue, capRateFor, initialCondIdx, demandLinear, incomeValueAsIs, initialCondition, inPlace, landValue,
   marketAppraisal, noiYr, resolveRec, specWearMult, taxBorneShare, taxRate, interimUsePsfYr, useOccupancy, useRentableSf,
-  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, residualScheme, GAP_CLOSE_YR, gapDuration,
+  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, residualScheme, GAP_CLOSE_YR, gapDuration, COND_BANDS, condGrade, noiAfterTaxYr,
 } from "./value";
 import { uses } from "./mix";
 import { catchUpCapex } from "./dev";
@@ -174,10 +174,21 @@ export function dealView(
   const li = s.listings?.find((l) => l.bbl === bbl);
   const c = li?.cond ?? cond ?? initialCondition(rec);
   // the building as it stands — the same reading the appraiser takes (marketAppraisal)
-  const q = li?.condIdx ?? condIdx ?? s.holdings?.[bbl]?.condIdx ?? initialCondIdx(rec, s.month, c);
+  const qSeen = li?.condIdx ?? condIdx ?? s.holdings?.[bbl]?.condIdx ?? initialCondIdx(rec, s.month, c);
+  // ON THE COURTHOUSE STEPS THE BUYER SEES ONLY THE OUTSIDE (2026-11-11). A
+  // foreclosure sells as-is: no access to inspect, no estoppels, no rent roll,
+  // cash at the hammer. So a bidder there underwrites the worst the building
+  // could be and still look as it does from the street — the bottom of its
+  // grade band (COND_BANDS) — and the income a building of its class earns
+  // where it stands, not a roll it has not seen. That is where the foreclosure
+  // discount comes from (homes sell about 27% under market on the steps:
+  // Campbell, Giglio & Pathak 2011, AER): what the buyer cannot know, priced
+  // at its worst, not a haircut. It is why a loan worth more than its building
+  // is so rarely cleared by a stranger.
+  const q = steps ? Math.min(qSeen, COND_BANDS.find(([, lo]) => qSeen >= lo)?.[1] ?? qSeen) : qSeen;
   const k = rec.class as BuiltClass;
   const tau = taxRate(e) * taxBorneShare(rec);
-  const inP = inPlace(rec, s, bbl, pRef);
+  const inP = steps ? { noi: noiAfterTaxYr(rec, e, condGrade(q), pRef) } : inPlace(rec, s, bbl, pRef);
   const noiPre = inP.noi + tau * pRef;
   const stabPre = noiYr(rec, e, c, true, q);
   let leaseCap = 0;

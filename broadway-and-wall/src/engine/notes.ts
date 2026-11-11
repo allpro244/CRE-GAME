@@ -50,7 +50,7 @@ import { rng, rrange } from "./market";
 import { assetValue, collateralAsIs, holdingValue, ownedHoldingValue, resolveRec } from "./value";
 import { lenderByName, lenderPressure, chargeLenderLoss } from "./lenders";
 import { assetGrade, clearRivalClaims, fitOf, forgetDeed, noteLost, markAsset, lineRoom } from "./rivals";
-import { dealView, maxPrice, bidderOf, forcedSalePrice } from "./propmarket";
+import { dealView, maxPrice, bidderOf, forcedSalePrice, bidRound } from "./propmarket";
 import { beliefSignals } from "./beliefs";
 import { addToLine, dropDeed, syncDebt } from "./rivalDebt";
 import { hash01 } from "./competitorTraits";
@@ -610,6 +610,43 @@ function takeRivalNotes(s: GameState, parcels: ParcelTable) {
     if (!to || to.failedM !== undefined || !rec || s.holdings[rn.bbl]) continue;
     const from = s.rivals?.find((x) => x.bbls.includes(rn.bbl));
     if (!from || from.id === to.id) continue;
+    // A FORECLOSURE IS A PUBLIC SALE, WHOEVER BOUGHT THE PAPER (2026-11-11).
+    // The firm that bought the loan took the deed on a timer — "no auction or
+    // listing" — so buying a defaulted loan at the bank's price bought the
+    // building, however far the debt stood above what the building was worth
+    // to anyone else. In life the note buyer still forecloses on the steps:
+    // it credit-bids what it is owed, every firm that works distress bids its
+    // own number for the building as-is (propmarket bidRound, open outcry, as
+    // the July docket runs it — auction.ts), and a bid above the debt takes
+    // the deed, repays the note in full and hands the surplus to the old
+    // owner. Only when nobody pays the debt does the note buyer own it.
+    {
+      const round = bidRound(s, parcels, rec, { bbl: rn.bbl, ask: rn.face, distress: true, open: true });
+      const room = round.bids.filter((b) => b.r.id !== to.id && b.r.id !== from.id && b.r.failedM === undefined);
+      const top = room[0];
+      if (top && top.bid > rn.face) {
+        const price = Math.round(Math.min(top.bid, Math.max(rn.face + 1000, room[1]?.bid ?? 0)));
+        from.bbls = from.bbls.filter((b) => b !== rn.bbl);
+        noteLost(s, from, rn.bbl);
+        forgetDeed(from, rn.bbl);
+        dropDeed(s, from, rn.bbl);
+        top.r.cash -= price;
+        top.r.bbls.push(rn.bbl);
+        (top.r.heldSince ??= {})[rn.bbl] = s.month;
+        top.r.basis = Math.round((top.r.basis ?? 0) + price);
+        to.cash += rn.face;                                  // the note is repaid in full
+        from.cash += Math.max(0, price - rn.face);           // the surplus is the old owner's
+        s.lastTradeM = s.lastTradeM ?? {};
+        s.lastTradeM[rn.bbl] = s.month;
+        recordComp(s, rec, price, top.r.name, from.name, true, "worn");
+        s.news.unshift({
+          q: s.month, kind: "event",
+          text: `${top.r.name} took ${rec.address} on the steps at ${money(price)}, over the ${money(rn.face)} ${to.name} was owed `
+            + `on the loan it bought. ${to.name} is repaid; ${money(Math.max(0, price - rn.face))} goes to ${from.name}.`,
+        });
+        continue;
+      }
+    }
     from.bbls = from.bbls.filter((b) => b !== rn.bbl);
     noteLost(s, from, rn.bbl);
     forgetDeed(from, rn.bbl);
@@ -623,8 +660,8 @@ function takeRivalNotes(s: GameState, parcels: ParcelTable) {
     s.lastTradeM[rn.bbl] = s.month;
     s.news.unshift({
       q: s.month, kind: "event",
-      text: `${to.name} took ${rec.address} from ${from.name} by foreclosing on the loan it bought. `
-        + `No auction or listing.`,
+      text: `${to.name} took ${rec.address} from ${from.name} by foreclosing on the loan it bought: `
+        + `no bid on the steps came near the ${money(rn.face)} it was owed, so its credit bid took the deed.`,
     });
   }
 }

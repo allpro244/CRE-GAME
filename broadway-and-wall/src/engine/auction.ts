@@ -509,7 +509,12 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       }
       // Outbid: the firm in the room takes the deed onto its own book.
       const roomBuyer = toREO ? null : thirdPartyTakes(s, parcels, rec, gross, roomFirm!);
-      recordComp(s, rec, gross, toREO ? lot.holder : roomBuyer!, firmShort(s), true, h.condition);
+      // A CREDIT BID IS NOT A PRICE (2026-11-11). When nobody beats the lender,
+      // `gross` is what it was owed, not what anyone paid — recorded as a sale
+      // it put the loan on the comps sheet, above what the building was worth,
+      // for every appraisal and bid that reads the tape. The lender's resale
+      // is the trade the tape sees.
+      if (!toREO) recordComp(s, rec, gross, roomBuyer!, firmShort(s), true, h.condition);
       if (s.groundLeases?.[lot.bbl]) transferGroundLeaseOffBook(s, lot.bbl);
       moveDeposit(s, h, -depositsOn(h));
       s.lastTradeM = s.lastTradeM ?? {};

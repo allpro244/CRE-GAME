@@ -1,10 +1,11 @@
 // Player actions: buy listed or off-market (cash / fixed / floating IO),
 // approach owners with assemblage pressure, sell, renovate. Pure — each
 // returns a new state or an error string, never mutates the input.
-import { settleReoSale } from "./lenders";
+import { settleReoSale, chargeLenderLoss } from "./lenders";
+import { FILE_COST } from "./notes";
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import type { Bid, BuiltClass, Condition, DevUse, Econ, Exit, GameState, GroundLease, GroundReview, Holding, Rival, RivalStyle, SaleInstructions } from "./types";
-import { logBooks, moveDeposit, moveFundCash, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger, autoLeaseOnClose } from "./types";
+import { logBooks, moveDeposit, moveFundCash, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger, autoLeaseOnClose, nextJulyAfter } from "./types";
 import { recentLowballs, sellerOf, strikeDeal, insultShareOfAsk } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
@@ -18,7 +19,7 @@ import { PREMARKET_M, beliefSignals } from "./beliefs";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg, holderSheet } from "./owners";
-import { payOffDue, payOffLoan } from "./debt";
+import { payOffDue, payOffLoan, loanLender } from "./debt";
 import { originate, quote, productById, stabViewFor, recastPayment, capPremiumOn, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen, loanMin } from "./debt";
 import { takeoverDevelopment, takeoverEquityNeed, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
 import { demandNow, isCivicLand } from "./demand";
@@ -3086,6 +3087,32 @@ export function sponsorsSaleTax(s: GameState, h: Holding, price: number): number
  * then took those off at the table, so "Net to you" lied by up to the release
  * premium on a crossed deed.
  */
+/**
+ * A SHORT SALE: THE LENDER TAKES LESS THAN IT IS OWED, IF THAT BEATS FORECLOSING.
+ *
+ * A borrower in default still owns the building until the sale on the steps,
+ * and can sell it — and when the price will not clear the loan, the lender
+ * decides whether to release its lien for what the sale brings. It agrees when
+ * the sale nets it at least what foreclosing would: the as-is value an auction
+ * reads (the docket's own number, `ownedHoldingValue`), sold through the same
+ * costs, less the legal of filing (notes.ts FILE_COST) and the coupon it goes
+ * without until the July sale. On recourse paper it does not need to — it
+ * keeps its claim on the borrower for the rest — and a second lender (mezz)
+ * would have to agree too, which nothing here models, so both are excluded.
+ * Returns the principal the lender forgives (0 when it does not agree).
+ */
+export function shortSaleRelief(s: GameState, parcels: ParcelTable, h: Holding, shortBy: number): number {
+  if (!(shortBy > 0) || !h.loan || h.loan.recourse || (h.mezz?.balance ?? 0) > 0) return 0;
+  if (!s.workouts?.[h.bbl]) return 0;                       // only paper already in default
+  const bal = h.loan.balance;
+  const asIs = ownedHoldingValue(s, parcels, h);
+  const { net: auctionNet } = saleTaxQuote(h, asIs, s);
+  const monthsToSale = Math.max(1, nextJulyAfter(s.month, 1) - s.month);
+  const recovery = auctionNet - bal * FILE_COST - bal * (h.loan.ratePct / 100) * monthsToSale / 12;
+  const toLender = bal - shortBy;                            // what the sale pays it
+  return toLender >= recovery ? shortBy : 0;
+}
+
 export function saleProceedsToSeller(
   s: GameState, parcels: ParcelTable, h: Holding, price: number,
 ): {
@@ -3093,6 +3120,8 @@ export function saleProceedsToSeller(
   release: number; loanPayoff: number; toSeller: number; partner: number;
   /** A syndicate's investors' share of `toSeller`, paid from it at the month's settlement. */
   investors: number;
+  /** Principal the lender releases in a short sale (shortSaleRelief), 0 otherwise. */
+  forgiven: number;
 } {
   const { net } = saleTaxQuote(h, price, s);
   const { owner: gain, property: propGain } = saleGains(s, h, price);
@@ -3102,14 +3131,17 @@ export function saleProceedsToSeller(
   const stack = stackPayoff(h, s.month, s.econ);
   const breakFee = stack.penalty;
   const release = releaseCost(s, parcels, h.bbl);
-  const loanPayoff = stack.balance;
-  const toOwners = net - loanPayoff - kick - breakFee - release;
+  let loanPayoff = stack.balance;
+  let toOwners = net - loanPayoff - kick - breakFee - release;
+  // a short sale the lender agrees to: it takes what the sale nets, and the rest is released
+  const forgiven = toOwners < 0 ? shortSaleRelief(s, parcels, h, -toOwners) : 0;
+  if (forgiven > 0) { loanPayoff -= forgiven; toOwners = 0; }
   // What reaches the owners' side: the sponsor, or its vehicle (routed below).
   const rp = routeProceeds(s, h, toOwners);
   const toSeller = rp.toSponsor + rp.toVehicle;
   const deal = s.syndications?.[h.bbl];
   const investors = deal ? investorsTakeOfExit(deal, toOwners, s.month) : 0;
-  return { net, gain, tax, kick, breakFee, release, loanPayoff, toSeller, partner: toOwners - toSeller, investors };
+  return { net, gain, tax, kick, breakFee, release, loanPayoff, toSeller, partner: toOwners - toSeller, investors, forgiven };
 }
 
 /** Cash that lands in the sponsor's own account if `price` closes today —
@@ -3166,6 +3198,15 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   const breakFee = px.breakFee;
   const release = px.release;
   const toSeller = px.toSeller;
+  // A SHORT SALE: the lender released the rest of its loan (shortSaleRelief) and books the loss.
+  if (px.forgiven > 0 && h.loan) {
+    chargeLenderLoss(next, loanLender(h.loan), px.forgiven, { borrower: "You", id: "player", bbl, cls: "income", how: "short sale" });
+    next.news.unshift({
+      q: next.month, kind: "warn",
+      text: `Short sale · ${rec.address} · ${loanLender(h.loan)} took ${money(offer.price)} and released the remaining `
+        + `${money(px.forgiven)} of its loan rather than foreclose. Nothing to you; nothing owed.`,
+    });
+  }
   // Vehicle deed: the proceeds sit on fund.cash so the promote has a
   // counterparty. The vehicle pays no tax on them — the sponsor's share of
   // the gain is taxed on the sponsor, below.

@@ -1415,6 +1415,18 @@ export function generateCity(cfg) {
     for (const r of PARK_RES) graph.push({ pts: [...r, r[0]], cls: "park", closed: true });
     for (const r of STILL) graph.push({ pts: [...r, r[0]], cls: "park", closed: true });
     const { faces, segs } = polygonize(graph, { snap: 0.6, extend: (p) => 0.75 * field.sep(p, 1) });
+    // A PARTY LINE IS NOT A STREET. A face of the graph that is too concave to
+    // be one convex block is cut into convex pieces (natural.mjs convexCells)
+    // only because everything downstream cuts convex blocks; the cut is where
+    // two pieces of ONE block meet back to back, so it pays no street. Charged
+    // as a street it was a quarter of the town's roadway.
+    const cells = [];
+    for (const f of faces) {
+      for (const cc of convexCells(f.ring, f.cls)) {
+        cells.push(cc);
+        cc.cls.forEach((c, i) => { if (c === null) segs.push({ a: cc.ring[i], b: cc.ring[(i + 1) % cc.ring.length], cls: "party" }); });
+      }
+    }
     // the street each block edge fronts, from the noded graph
     const SG = 30, sgrid = new Map();
     segs.forEach((sg, i) => {
@@ -1456,14 +1468,14 @@ export function generateCity(cfg) {
       return (cell, e) => {
         const a = cell[e], b = cell[(e + 1) % cell.length];
         const c = clsAt([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
-        return c === "arterial" ? aw / 2 : sw / 2;
+        return c === "party" ? 0 : c === "arterial" ? aw / 2 : sw / 2;
       };
     };
     let nCells = 0;
-    for (const f of faces) {
-      // a face of the graph that is the sea or a square is not a block; asked
-      // of each convex piece, since a bent face's centroid can sit outside it
-      for (const cc of convexCells(f.ring, f.cls)) {
+    // a face of the graph that is the sea or a square is not a block; asked
+    // of each convex piece, since a bent face's centroid can sit outside it
+    {
+      for (const cc of cells) {
         const ring = cleanRing(cc.ring);
         if (!ring || !isConvex(ring)) continue;
         const c0 = centroid(ring);
@@ -1481,15 +1493,31 @@ export function generateCity(cfg) {
           const leaf = leafOf(centroid(part));
           const name = leaf?.district ?? names[0];
           for (const cell of claimCell(part, [], KEEP)) {
-            pushBlock(cell, name, false, cfg.districts[name].streetW, cfg.districts[name].streetW, {}, 0, null, halfOf(name));
+            const hOf = halfOf(name);
+            pushBlock(cell, name, false, cfg.districts[name].streetW, cfg.districts[name].streetW, {}, 0, null, hOf);
             nCells++;
+            // HALF A BLOCK HAS ONE ROW. A piece whose long side is a party line
+            // is the front half of a block whose back half is the next piece:
+            // its lots run the full depth from the street to that line, not
+            // two rows back to back (which halved every lot on it).
+            const b = blocks[blocks.length - 1];
+            const fr = b.inset && blockFrame(b.inset);
+            if (fr) {
+              for (let e = 0; e < cell.length; e++) {
+                if (hOf(cell, e) !== 0) continue;
+                const a = cell[e], q = cell[(e + 1) % cell.length];
+                const L = Math.hypot(q[0] - a[0], q[1] - a[1]);
+                const off = Math.abs(Math.sin(Math.atan2(q[1] - a[1], q[0] - a[0]) - fr.axis));
+                if (L > 0.4 * fr.L && off < 0.42) { b.oneRow = 1; break; }
+              }
+            }
           }
         }
       }
     }
     naturalStats = { lines: lines.length, arterials: lines.filter((l) => l.major).length, faces: faces.length, cells: nCells };
     // a debugging hook for tools that draw the raw network (no effect on the town)
-    if (globalThis.__natDebug) globalThis.__natDebug({ lines, founding, innerRing, parks: PARK_RES, field });
+    if (globalThis.__natDebug) globalThis.__natDebug({ lines, founding, innerRing, parks: PARK_RES, field, blocks });
   }
   let naturalStats = null;
 
@@ -1921,7 +1949,7 @@ export function generateCity(cfg) {
    * those keep the old splitter, which is the right tool for an irregular
    * piece of ground.
    */
-  function platBlock(ring, d, heat) {
+  function platBlock(ring, d, heat, oneRow = false) {
     const dist = cfg.districts[d] ?? {};
     if (dist.lotWay === "estate") return null;
     const fr = blockFrame(ring);
@@ -1946,7 +1974,7 @@ export function generateCity(cfg) {
     // way. 50 ft (15 m) is the shallowest lot a real plat sells; under that a
     // block is one row of through-lots, as a shallow block is in life.
     const rowD = (fr.D - alleyW) / 2;
-    const spine = fr.D / 2 >= 15;
+    const spine = fr.D / 2 >= 15 && !oneRow;
     const lotD = spine ? rowD : fr.D;
     // THE CONVENTION'S AREA STILL HOLDS. A frontage is drawn, but a lot is
     // sold by the square foot, and each convention's area band (FLAVOR.lot /
@@ -2563,7 +2591,7 @@ export function generateCity(cfg) {
     else if (block.flatiron) lots.push(street);
     else if (rand() < fullBlockP && !stripBlock && wholeOk) lots.push(ground);
     else {
-      const pl = FRONTAGE ? platBlock(ground, d, heat) : null;
+      const pl = FRONTAGE ? platBlock(ground, d, heat, block.oneRow) : null;
       if (pl) { lots.push(...pl.lots); ALLEYS_M.push(...pl.alleys); }
       else splitLots(ground, lotOptOf(d, heat, suburbMult(centroid(ground), cfg.districts[d] ?? {})), lots);
       absorbSlivers(lots);
@@ -3224,6 +3252,8 @@ export function generateCity(cfg) {
           w = half + dPark;
         }
       }
+      // a natural town's party lines (two pieces of one block) carry no street
+      if (cfg.streetPlan === "natural" && w < 2) continue;
       centerFeatures.push({
         type: "Feature",
         geometry: { type: "LineString", coordinates: [proj.toLL(A), proj.toLL(C)] },

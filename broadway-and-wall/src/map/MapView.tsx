@@ -605,6 +605,7 @@ export default function MapView() {
             // the WebGPU beta (Settings -> Display -> Renderer; ?renderer=webgpu|classic overrides): the
             // same layer, drawn by its own renderer on a canvas over the map (real/gpu/GpuCity.ts)
             layer.gpu = rendererChoice() === "webgpu";
+            layer.onGpuFail = () => useStore.getState().setCityRenderer("classic");
             if (old) layer.id = `bw-three-buildings-${Date.now()}`;
             threeRef.current = layer;
             setLayerGen((n) => n + 1);

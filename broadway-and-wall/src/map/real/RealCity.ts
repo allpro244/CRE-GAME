@@ -1802,7 +1802,7 @@ export class RealCityLayer {
       for (const f of Object.values(this.families)) if (f.glass || f.key === "ribbon") f.mat.envMap = this.reflEnv ?? this.skyEnv;
       if (this.live) { b.shadowNeedsUpdate(); this.probeDue = true; }
       this.map?.triggerRepaint();
-    }).catch((e) => { console.error("WebGPU renderer failed to start", e); });
+    }).catch((e) => { console.error("WebGPU renderer failed to start; back to Classic", e); if (!this.gone) this.onGpuFail?.(); });
     this.families = makeFamilies(this.seed || 1, (f) => { if (f.glass || f.key === "ribbon") f.mat.envMap = this.reflEnv ?? this.skyEnv; });
     this.setupLights();
     addSway(this.leafMat);
@@ -1893,6 +1893,8 @@ export class RealCityLayer {
   private queue: Map<string, () => void> | null = null;
   /** Called once, when the whole city is built and drawn. */
   onReady: (() => void) | null = null;
+  /** The WebGPU beta could not start: the map puts the city back on Classic rather than leave it blank. */
+  onGpuFail: (() => void) | null = null;
   /** Whether the city is built and all of it on screen (false before onAdd, while it builds, and while it is handed over). */
   get ready(): boolean { return this.live; }
 

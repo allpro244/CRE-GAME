@@ -60,6 +60,50 @@ function ringAreaSigned(r) {
   return a / 2;
 }
 
+/**
+ * WHERE THE TOWN STARTED: at the landing — the harbour head, a little inland
+ * toward the core — not in the middle of today's downtown. Every harbour town
+ * in this generator is a port first (island.mjs), and every old port town grew
+ * out from its landing: Boston from Dock Square, New Amsterdam from the fort
+ * and the Strand. `coast` is the island outline (metres), `harbour` the
+ * harbour head, `core` the downtown core. The first point on the line from the
+ * harbour toward the core that is `inland` metres inside the coast.
+ */
+export function landingPoint(coast, harbour, core, inland = 120) {
+  if (!harbour) return core;
+  const dx = core[0] - harbour[0], dy = core[1] - harbour[1], L = Math.hypot(dx, dy) || 1;
+  const segDist = (p) => {
+    let best = Infinity;
+    for (let i = 0; i < coast.length; i++) {
+      const a = coast[i], b = coast[(i + 1) % coast.length];
+      const ex = b[0] - a[0], ey = b[1] - a[1], L2 = ex * ex + ey * ey || 1;
+      let t = ((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / L2;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      best = Math.min(best, Math.hypot(p[0] - a[0] - ex * t, p[1] - a[1] - ey * t));
+    }
+    return best;
+  };
+  for (let t = 60; t < L; t += 20) {
+    const p = [harbour[0] + (dx / L) * t, harbour[1] + (dy / L) * t];
+    if (inRing(p, coast) && segDist(p) > inland) return p;
+  }
+  return core;
+}
+
+/** The bearing (degrees, map angle) of the coast nearest `p`. */
+export function coastBearingAt(coast, p) {
+  let best = Infinity, ang = 0;
+  for (let i = 0; i < coast.length; i++) {
+    const a = coast[i], b = coast[(i + 1) % coast.length];
+    const ex = b[0] - a[0], ey = b[1] - a[1], L2 = ex * ex + ey * ey || 1;
+    let t = ((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / L2;
+    t = t < 0 ? 0 : t > 1 ? 1 : t;
+    const d = Math.hypot(p[0] - a[0] - ex * t, p[1] - a[1] - ey * t);
+    if (d < best) { best = d; ang = Math.atan2(ey, ex); }
+  }
+  return (ang * 180) / Math.PI;
+}
+
 // ---------------------------------------------------------------- the field
 //
 // THE FIELD IS RASTERISED ON A 10 m GRID and read back bilinearly. A block is
@@ -67,6 +111,11 @@ function ringAreaSigned(r) {
 // field's own smoothness (its narrowest basis falls off over ~90 m).
 
 const CELL = 10;
+// Seeds closer than SEED_K spacings to a street of their family are not
+// started; a street stops at STOP_K spacings from one (Chen et al. use 0.5
+// for the stop; 0.6 for the seed fills the gaps a curving field opens between
+// diverging streets without crowding — set by eye on the six seeds).
+const SEED_K = 0.6, STOP_K = 0.5;
 
 
 /**
@@ -238,7 +287,7 @@ export function buildField(spec) {
   // at 90 — but it reads them as opposites and they cancel. So each district's
   // grid is entered at whichever of its two directions lies nearer the field
   // already there at its middle, and its two pitches swap with it.
-  const dAng = gridAng.slice(), dSA = spec.districts.map((d) => d.shortPitch), dSB = spec.districts.map((d) => d.longPitch);
+  const dAng = gridAng.slice();
   {
     const sum = Array.from({ length: nd }, () => [0, 0, 0, 0]);
     for (let k = 0; k < N; k++) { const l = label[k]; if (l >= 0) { sum[l][0] += X(k % W); sum[l][1] += Y(Math.floor(k / W)); sum[l][2]++; } }
@@ -252,7 +301,6 @@ export function buildField(spec) {
       if (diff > Math.PI / 2) diff -= Math.PI;
       if (Math.abs(diff) > Math.PI / 4) {
         dAng[l] += Math.PI / 2;
-        [dSA[l], dSB[l]] = [dSB[l], dSA[l]];
       }
     }
   }
@@ -272,7 +320,7 @@ export function buildField(spec) {
         const firm = spec.districts[l].old ? 0.45 : spec.districts[l].regular ? 1.25 : 0.9;
         const w = w0 * firm;
         cx += w * Math.cos(2 * dAng[l]); cy += w * Math.sin(2 * dAng[l]);
-        ws += w0; a += w0 * dSA[l]; b += w0 * dSB[l];
+        ws += w0;
       }
       // THE WANDER is largest in the old town: +-0.38 rad (22 deg) there and
       // +-0.07 (4 deg) in the surveyed ground, set by eye — Boston's North End
@@ -282,7 +330,25 @@ export function buildField(spec) {
       const mag = Math.hypot(cx, cy);
       tx[k] = Math.cos(2 * t) * mag; ty[k] = Math.sin(2 * t) * mag;
       oldness[k] = old;
-      if (ws > 1e-3) { sA[k] = a / ws; sB[k] = b / ws; sw[k] = ws; }
+      // THE SPACING FOLLOWS THE STREET, NOT THE FAMILY. Each survey says how
+      // far apart its streets run (the short pitch, block depth) and its
+      // avenues (the long pitch, block length). Here the field may run at any
+      // angle to that survey, so each family takes the short pitch as far as
+      // it runs along the survey's streets, the long as far as along its
+      // avenues — blended harmonically, so a family at 45 degrees to a 78 x
+      // 300 m survey is laid ~124 m apart, a squarish block, rather than at
+      // the arithmetic 190 m that left superblocks in every turn of the grid.
+      if (ws > 1e-3) {
+        for (let l = 0; l < nd; l++) {
+          const w0 = dW[l][k];
+          if (w0 < 1e-3) continue;
+          const c2 = Math.cos(t - gridAng[l]) ** 2;
+          const sh = spec.districts[l].shortPitch, lo = spec.districts[l].longPitch;
+          a += w0 / (c2 / sh + (1 - c2) / lo);
+          b += w0 / ((1 - c2) / sh + c2 / lo);
+        }
+        sA[k] = a / ws; sB[k] = b / ws; sw[k] = ws;
+      }
     }
   }
   // fill pitch where no district reached (open water round the island)
@@ -405,10 +471,7 @@ export function traceStreets(field, { blocked, seeds, rand, majorK = 4.2 }) {
       // a sharp turn in one step is a degenerate point, not a street
       if (v2[0] * prev[0] + v2[1] * prev[1] < 0.9) break;
       if (!field.land(q) || blocked(q)) { pts.push(q); break; }      // runs onto the shore or a square: ends there
-      // Chen et al. stop a line at half the separation; 0.62 keeps the
-      // converging ends from leaving blocks half the size of their neighbours
-      // (set by eye, six seeds).
-      const dtest = sepAt(q, fam, major) * 0.62;
+      const dtest = sepAt(q, fam, major) * STOP_K;
       if (near(fam, q, dtest, id, pts.length)) { pts.push(q); break; }
       // loops back on itself
       if (pts.length > 60 && pts.slice(0, -40).some((r) => Math.hypot(r[0] - q[0], r[1] - q[1]) < dtest)) break;
@@ -424,17 +487,21 @@ export function traceStreets(field, { blocked, seeds, rand, majorK = 4.2 }) {
   const pushSeed = (p, fam, major) => queue.push({ p, fam, major });
   for (const s of seeds) { pushSeed(s, 0, true); pushSeed(s, 1, true); }
 
+  // why seeds were refused, for tools/debugging (lines.why); no effect on the town
+  const why = { land: 0, near: 0, stub: 0, ok: 0 };
+  lines.why = why;
   function trace(seed, fam, major) {
-    if (!field.land(seed) || blocked(seed)) return null;
+    if (!field.land(seed) || blocked(seed)) { why.land++; return null; }
     const dsep = sepAt(seed, fam, major);
-    if (near(fam, seed, dsep * 0.92)) return null;
+    if (near(fam, seed, dsep * SEED_K)) { why.near++; return null; }
     const id = lines.length;
     const fwd = integrate(seed, fam, major, 1, id);
     const back = integrate(seed, fam, major, -1, id);
     const pts = [...back.reverse(), seed, ...fwd];
     let L = 0;
     for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
-    if (L < field.sep(seed, 1 - fam) * 0.55) return null;           // a stub shorter than a block is no street
+    if (L < field.sep(seed, 1 - fam) * 0.55) { why.stub++; return null; }           // a stub shorter than a block is no street
+    why.ok++;
     lines.push({ pts, fam, major });
     pts.forEach((p, i) => addPt(fam, p, id, i));
     // seeds: the same family a spacing either side; the other family along it

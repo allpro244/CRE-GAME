@@ -50,10 +50,13 @@ One street network for the whole island, grown from the land and from history.
 2. **Arterials first, then streets** (Chen et al. sec. 5): streamlines of the two families
    are traced by RK2 in 5 m steps from the landing and the cores, at four times the block
    pitch, then the ordinary streets at the block pitch the districts already draw (their
-   `stPitch`/`avePitch`, so block sizes stay the calibrated ones). A line stops at the shore,
-   at a square's frontage, at standing water, or when it comes within 0.62 of a spacing of
-   another line of its family; new seeds are dropped a spacing to each side and, for the
-   other family, along it.
+   `stPitch`/`avePitch`, so block sizes stay the calibrated ones). Each family takes the
+   survey's short pitch as far as it runs along the survey's streets and the long pitch as
+   far as along its avenues, blended harmonically (a family at 45 degrees to a 78 x 300 m
+   survey is laid ~124 m apart). A line stops at the shore, at a square's frontage, at
+   standing water, or within half a spacing of another line of its family (Chen et al.'s
+   own 0.5); new seeds are dropped a spacing to each side and, for the other family, along
+   it, and are not started within 0.6 of a spacing of a street.
 3. **Blocks from the street graph**: streets, the shore and every square's frontage road are
    noded into a planar graph; dangling ends reach forward up to 3/4 of a block to meet the
    next street, the rest are pruned; the faces are the blocks. A slightly bent face is
@@ -63,6 +66,15 @@ One street network for the whole island, grown from the land and from history.
    boulevards, ponds), `pushBlock` (now told each edge's street — arterials are 18-30 m
    between building lines, ordinary streets the district's own width), the wedge rule, the
    frontage plat, land use, settlement order, massing, the map layers, Unreal export.
+
+**The landing square.** Natural towns start at the landing (the harbour head, ~150 m
+inland toward the core) and get a 60 x 44 m market square there unless a programmed park
+already sits within 150 m: Dock Square's order of size, squared to the shore. It is where
+the old town's roads converge, and without it they knot into wedges.
+
+**Estates** (the superblock district) are cut to their own slab size, and their ordinary
+streets take the town's median street width — in classic only the estate's ring road is
+22-25 m wide.
 
 What is kept: the coast, the districts' roles and flavours, park and boulevard programmes,
 civic sites, streams, demand, every name. What is dropped in Natural mode: the survey seam
@@ -102,13 +114,13 @@ Measured on the prototype (City size; `tools/platlib.mjs`):
 
 | seed | lots classic | lots natural | change | sliver % (nat) | paved void % cls → nat |
 |---|---|---|---|---|---|
-| 2967923640 | 951 | 1020 | +7% | 0.0 | 3.1 → 1.9 |
-| 1 | 1453 | 1361 | -6% | 0.0 | 5.7 → 4.1 |
-| 20261 | 1384 | 1317 | -5% | 0.1 | 3.8 → 2.8 |
-| 555 | 1191 | 1071 | -10% | 0.0 | 5.2 → 3.6 |
-| 3252 | 1076 | 1129 | +5% | 0.0 | 4.0 → 3.0 |
-| 481923 | 999 | 1054 | +6% | 0.1 | 4.6 → 3.1 |
-| 2967923640 Great City | 3876 | 3966 | +2% | | |
+| 2967923640 | 951 | 970 | +2% | 0.0 | 3.1 → 2.1 |
+| 1 | 1453 | 1343 | -8% | 0.0 | 5.7 → 4.3 |
+| 20261 | 1384 | 1241 | -10% | 0.0 | 3.8 → 3.0 |
+| 555 | 1191 | 1198 | +1% | 0.0 | 5.2 → 3.8 |
+| 3252 | 1076 | 1106 | +3% | 0.0 | 4.0 → 3.2 |
+| 481923 | 999 | 1037 | +4% | 0.0 | 4.6 → 3.3 |
+| 2967923640 Great City | 3876 | 4145 | +7% | | |
 
 Lot counts stay inside the classic town-to-town spread (the economy's calibration reads lot
 count and area per size preset), and the natural network leaves less unprogrammed asphalt
@@ -116,7 +128,7 @@ at the shore than classic. Generation takes ~1.5x as long (0.8-1.6 s per City is
 
 ## 4. Phases
 
-1. **Prototype (this commit)**: the network, blocks and lots through the classic pipeline,
+1. **Prototype (done)**: the network, blocks and lots through the classic pipeline,
    `makeCity(..., { streets: "natural" })`; before/after images.
 2. **Build-out behind the option**: the setup choice; stored with the run (`GameSetup.streets`,
    `GameState.cityStreets`, passed to `makeCity` on every rebuild, like `cityParks`);
@@ -136,9 +148,13 @@ at the shore than classic. Generation takes ~1.5x as long (0.8-1.6 s per City is
 - **Saves**: a Natural town must rebuild as Natural. The choice is stored with the run and an
   absent field means Classic, so old saves rebuild exactly. No `SAVE_VERSION` bump is needed
   for an additive optional field (to be confirmed against the save loader in phase 2).
-- **Junction knots**: where several arterials converge (the landing on seed 20261) the
-  roads bunch into a heavy knot of wide streets; a market square at the landing should
-  absorb it (phase 2).
+- **Junction knots**: where several streets converge at acute angles a few small wedge
+  blocks remain (the wedge and gore rules handle them; sliver % is 0).
+- **Part of the network is cut, not traced**: where the field diverges, faces bigger than
+  1.7 blocks are cut by straight streets to the local block size (classic's own
+  `splitCells`). Visible as an occasional straight short street.
+- **No inland water to bridge**: since plan 12 a generated town has no creeks or canals
+  (owner's call), so "water crossings" is a no-op today; the field has a creek basis ready.
 - **Small/odd blocks** near converging streets and a wiggly shore; the wedge rule and the
   gore rule already take the worst, sliver % is 0-0.1.
 - **Address/street names** are still drawn per block, as for classic organic quarters, not

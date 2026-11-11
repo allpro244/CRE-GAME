@@ -1372,20 +1372,8 @@ export function generateCity(cfg) {
     const idx = new Map(names.map((n, i) => [n, i]));
     const pad = 200;
     const bbox = [landBox[0] - pad, landBox[1] - pad, landBox[2] + pad, landBox[3] + pad];
-    // WHERE THE TOWN STARTED: at the landing — the harbour head, a little
-    // inland toward the core — not at the middle of today's downtown. Every
-    // harbour town in this generator is a port first (island.mjs).
-    const core0 = cfg.cores?.[0]?.xy ?? [0, 0];
-    const founding = (() => {
-      const h = cfg.harbourAt;
-      if (!h) return core0;
-      const dx = core0[0] - h[0], dy = core0[1] - h[1], L = Math.hypot(dx, dy) || 1;
-      for (let t = 120; t < L; t += 30) {
-        const p = [h[0] + (dx / L) * t, h[1] + (dy / L) * t];
-        if (inRing(p, innerRing) && distToRing(p, innerRing) > 90) return p;
-      }
-      return core0;
-    })();
+    // WHERE THE TOWN STARTED: the landing (makeCity, natural.mjs landingPoint)
+    const founding = cfg.founding ?? cfg.cores?.[0]?.xy ?? [0, 0];
     const parkSpec = cfg.parks.map((p, i) => {
       const ring = PARKS_M[i];
       return {
@@ -1455,11 +1443,16 @@ export function generateCity(cfg) {
     };
     const halfOf = (name) => {
       const d = cfg.districts[name];
-      const sw = d.streetW ?? 15;
+      // An estate's streetW (22-25 m) is its RING road's: in classic only the
+      // superblock's rim pays it and the ways inside pay `wayW`. A natural
+      // network has no rim, so its ordinary streets there take the median
+      // street of the town's other districts.
+      const others = Object.values(cfg.districts).filter((x) => !x.superCell).map((x) => x.streetW ?? 15).sort((a, b) => a - b);
+      const sw = d.superCell && others.length ? others[Math.floor(others.length / 2)] : (d.streetW ?? 15);
       // AN ARTERIAL is the old road out of town, widened: a third again the
       // district's street, 18-30 m between building lines — calibrated on
       // the town's own avenue widths (island.mjs aveWOf, 14-34 m).
-      const aw = Math.max(18, Math.min(30, Math.max(sw, d.aveW ?? sw) * 1.35));
+      const aw = Math.max(18, Math.min(30, Math.max(sw, d.superCell ? sw : (d.aveW ?? sw)) * 1.35));
       return (cell, e) => {
         const a = cell[e], b = cell[(e + 1) % cell.length];
         const c = clsAt([(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]);
@@ -1478,7 +1471,9 @@ export function generateCity(cfg) {
         // a face the streets left too big is cut by streets of its own, at
         // the block size of the ground it stands on
         const mid = centroid(ring);
-        const tgt = field.sep(mid, 0) * field.sep(mid, 1);
+        // an estate district is cut to its own slab size (island.mjs superCell)
+        const sc = cfg.districts[leafOf(mid)?.district]?.superCell;
+        const tgt = sc ? (sc[0] + sc[1]) / 2 : field.sep(mid, 0) * field.sep(mid, 1);
         const parts = [];
         if (polygonArea([ring]) > 1.7 * tgt) splitCells(ring, () => tgt, 6, 1500, parts);
         else parts.push(ring);
@@ -1493,6 +1488,8 @@ export function generateCity(cfg) {
       }
     }
     naturalStats = { lines: lines.length, arterials: lines.filter((l) => l.major).length, faces: faces.length, cells: nCells };
+    // a debugging hook for tools that draw the raw network (no effect on the town)
+    if (globalThis.__natDebug) globalThis.__natDebug({ lines, founding, innerRing, parks: PARK_RES, field });
   }
   let naturalStats = null;
 

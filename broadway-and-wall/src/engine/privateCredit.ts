@@ -194,13 +194,8 @@ export function tickPrivateCredit(s: GameState, parcels: ParcelTable) {
     const a = s.privateAsks[i];
     if (s.month < a.expiresM) continue;
     s.privateAsks.splice(i, 1);
-    // The same year's quiet the borrow quotes keep (PRIVATE_QUOTE_COOL_M): a
-    // borrower the player passed on goes elsewhere rather than asking again.
-    (s.privateQuoteCool ??= {})[`firm:${a.rivalId}`] = s.month + PRIVATE_QUOTE_COOL_M;
-    // They went somewhere — Cordage, a sale, or they ate the balloon. Every
-    // lapse is reported (it was 40% of them, on a coin): a request the player
-    // let die is a fact about the player's own desk.
-    {
+    // They went somewhere — Cordage, a sale, or they ate the balloon.
+    if (rng(s) < 0.4) {
       s.news.unshift({
         q: s.month, kind: "rumor",
         text: `Loan request lapsed · ${a.rivalName} · ${a.address}.`,
@@ -212,18 +207,14 @@ export function tickPrivateCredit(s: GameState, parcels: ParcelTable) {
   const sleeve = privateSleeveCapacity(s, parcels);
   if (sleeve < 250_000) return;
 
-  // A BORROWER WHO NEEDS THE MONEY ASKS (2026-11-10). This was a 22% monthly
-  // coin in front of every ask. A firm calls the player's private desk when
-  // its own numbers say it needs a bridge (rivalNeedsPrivate: in the squeeze,
-  // dry, or a balloon inside six months) and the desk has the room; the
-  // shortlist (MAX_ASKS, two live at once, each two months) keeps it episodic.
+  // One attempt per month — episodic, not a feed.
+  if (rng(s) > 0.22) return;
 
   const candidates: { r: Rival; bbl: string; asIs: number; face: number; why: string }[] = [];
   for (const r of s.rivals ?? []) {
     if (r.failedM !== undefined) continue;
     for (const bbl of r.bbls) {
       if (deedAlreadyLiens(s, bbl)) continue;
-      if ((s.privateQuoteCool?.[`firm:${r.id}`] ?? -1) > s.month) continue;
       if (s.privateAsks.some((a) => a.bbl === bbl || a.rivalId === r.id)) continue;
       const rec = resolveRec(parcels, s, bbl);
       if (!rec || rec.class === "land" || !rec.bldgArea) continue;
@@ -465,9 +456,7 @@ function playerNeedsPrivateBorrow(
           : "Bank financing unavailable; bridge loan.";
   // Prefer not to spam when Cordage already fully covers — still allow if the
   // file is open (speed / certainty) or Cordage itself is short.
-  // (It used to quote anyway on a 35% coin.) A private lender has nothing to
-  // sell a borrower the debt fund already takes out at its cheaper rate.
-  if (!balloonFile && cordagePx >= payoff && payoff > 0) return null;
+  if (!balloonFile && cordagePx >= payoff && payoff > 0 && rng(s) > 0.35) return null;
   return { principal, asIs, why };
 }
 
@@ -487,8 +476,7 @@ export function tickPrivateBorrow(s: GameState, parcels: ParcelTable) {
     if (s.month < q.expiresM) continue;
     s.privateBorrowQuotes.splice(i, 1);
     (s.privateQuoteCool ??= {})[q.bbl] = s.month + PRIVATE_QUOTE_COOL_M;
-    // Every lapse is reported (it was 45%, on a coin).
-    {
+    if (rng(s) < 0.45) {
       s.news.unshift({
         q: s.month, kind: "rumor",
         text: `${q.lenderName}'s private quote on ${q.address} lapsed. `
@@ -498,10 +486,7 @@ export function tickPrivateBorrow(s: GameState, parcels: ParcelTable) {
   }
 
   if (s.privateBorrowQuotes.length >= MAX_BORROW_QUOTES) return;
-  // A lender quotes when the player's own position needs it
-  // (playerNeedsPrivateBorrow) and it can fund it — it was a 28% monthly coin.
-  // The shortlist and a year's cool-off per building after a quote lapses
-  // keep it from becoming a feed.
+  if (rng(s) > 0.28) return;
 
   const candidates: {
     bbl: string; principal: number; asIs: number; why: string; lender: Rival;

@@ -63,7 +63,7 @@ import { supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
 import { assignTenantFloors, blocksOf, blockIdForSf, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
 import { money } from "./money";
 import { purseOf } from "./vehicles";
-import { tenantFin, tickTenantFin, tenantFailOdds, tenantSqueeze, finGrade } from "./tenantBooks";
+import { tenantFin, tickTenantFin, tenantInsolvent, BACKGROUND_FAIL, tenantSqueeze, finGrade } from "./tenantBooks";
 
 /** 0..1, for the net-effective trade in the prospect draw. */
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
@@ -1664,8 +1664,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // letter still hurts — the rent it could not carry is still being
       // charged — but through the cash it drains, not a multiplier.
       const fin = tickTenantFin(s.econ, t, q < (t.freeUntilM ?? -1) ? 0 : t.rentPsf * t.sf, s.econ.creditIdx ?? 1);
-      const pFail = tenantFailOdds(fin, t.credit);
-      if (rng(s, "leasing") >= pFail) continue;
+      if (!tenantInsolvent(fin) && rng(s, "leasing") >= BACKGROUND_FAIL[t.credit]) continue;
       // FORFEITING A DEPOSIT IS NOT A CASH RECEIPT. It was collected at
       // signing and has been sitting in your account ever since as somebody
       // else's money; what changes on a default is that you stop owing it

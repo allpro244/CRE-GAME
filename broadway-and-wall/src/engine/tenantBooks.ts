@@ -325,30 +325,22 @@ export function tickTenantFin(e: Econ, t: Tenant, rentDueYr: number, creditOpen:
 }
 
 /**
- * Monthly odds this tenant stops paying and goes dark. A healthy business
- * carries a small background risk (fraud, a founder's death, a lost contract);
- * the rest is its books — interest cover under two, under a month of costs in
- * the bank, and a business already burning borrowed cash it cannot replace.
+ * A TENANT FAILS WHEN ITS BOOKS DO (2026-11-11): it is out of cash after
+ * drawing everything its lender will give it (tickTenantFin draws on the bank
+ * when cash runs short, up to what its earnings will carry and only while
+ * the credit window is open), so it cannot pay what falls due — cash-flow
+ * insolvency, the test for an involuntary bankruptcy petition (US Bankruptcy
+ * Code §303(h)(1): "generally not paying such debtor's debts as such debts
+ * become due") [S]. It was a hazard curve on interest cover and cash
+ * (FAIL_K × e^(1.1·cover stress + 2.2·cash stress)) fitted so the street
+ * produced the rated default rates; now the default rate is whatever the
+ * firms' own fortunes produce. What no set of accounts sees coming — fraud,
+ * a founder's death — stays a hazard (BACKGROUND_FAIL), being the outside
+ * world rather than a decision.
  */
-export function tenantFailOdds(f: TenantFin, credit: Credit): number {
-  // FAILURE IS THE BOOKS (2026-10-16). What is left of a background is what
-  // no set of accounts sees coming — fraud, a founder's death — at a few
-  // hundredths of a per cent a year. The rest is the firm's own position:
-  // odds climb from 2.5x interest cover down and from under a month of costs
-  // in the bank, and a firm whose cash has run out and whose bank will not
-  // lend it more goes within months. With each firm's own fortunes on top of
-  // its trade's (`Z_SIG`), that gives the observed rated-debt default rates —
-  // ~0.5% a year investment grade, ~1.5% mid-market, ~5% for small unrated
-  // firms (S&P long-run; SBA loan performance) — out of the accounts, and
-  // roughly doubles them in a recession (US business bankruptcies 2007-09).
-  const coverStress = Math.max(0, Math.min(4.5, 2.5 - f.cover));
-  const cashStress = Math.max(0, 1 - f.liqM);
-  const broke = f.cash < 0 ? Math.min(0.25, 0.04 * (1 - f.liqM)) : 0;
-  return Math.min(0.5, BACKGROUND_FAIL[credit] + FAIL_K * (Math.exp(1.1 * coverStress + 2.2 * cashStress) - 1) + broke);
+export function tenantInsolvent(f: TenantFin): boolean {
+  return f.cash < 0;
 }
-
-/** Odds per unit of book stress (see tenantFailOdds). */
-const FAIL_K = 0.00005;
 
 /**
  * THE GRADE ITS BOOKS EARN (2026-11-10), the financial half of a rating. S&P
@@ -386,7 +378,7 @@ export function tenantSqueeze(f: TenantFin): number {
 //
 // The street now carries representative tenants — one per trade and credit
 // grade in each commercial class — sized off the street's occupied space and
-// keeping exactly the books above (`tickTenantFin`, `tenantFailOdds`). A
+// keeping exactly the books above (`tickTenantFin`, `tenantInsolvent`). A
 // cohort's failures hand its space back; the failed share is replaced by new
 // tenants on fresh books as the market re-lets it, so a cohort is a mix of
 // survivors and entrants rather than one firm dying slowly.
@@ -444,9 +436,9 @@ export function tickStreetTenants(e: Econ, k: "office" | "retail" | "industrial"
     t.rentPsf += (marketRent - t.rentPsf) / 96;
     t.sf = 1000 * (t.staff ?? 1);
     const f = tickTenantFin(e, t, t.rentPsf * t.sf, e.creditIdx ?? 1);
-    const odds = tenantFailOdds(f, t.credit);
-    const excess = Math.max(0, odds - BACKGROUND_FAIL[t.credit]);
-    failed += c.w * excess;
+    // the cohort's insolvent share fails (tenantInsolvent); the background is the market's ordinary churn
+    const odds = tenantInsolvent(f) ? 1 : BACKGROUND_FAIL[t.credit];
+    failed += c.w * (tenantInsolvent(f) ? 1 : 0);
     // The failed share is re-let to newcomers on fresh books: blend toward a
     // healthy balance sheet at today's revenue, in proportion to the turnover
     // (failures plus ordinary roll, an eighth a year).

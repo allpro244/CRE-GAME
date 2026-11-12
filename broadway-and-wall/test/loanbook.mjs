@@ -64,16 +64,22 @@ for (const l of g.lenders) {
   const shut = clone(g); shut.econ.creditIdx = 0.6;
   const st = E.sponsorStanding(open);
   void st;
-  const senior = (s) => E.deskRatePct(s.econ.indexRate, E.productById("savings").spread, { ci: s.econ.creditIdx, app: 1 });
-  const mezz = (s) => E.deskRatePct(s.econ.indexRate, E.productById("mezz").spread, { ci: s.econ.creditIdx, app: 1 });
-  const dS = senior(shut) - senior(open), dM = mezz(shut) - mezz(open);
-  check(dM > dS && dS > 0, `a shut window widens the junior (+${dM.toFixed(2)}) more than the senior (+${dS.toFixed(2)})`);
+  // Each desk prices from its own books now (pricing.ts liveSpread: funding,
+  // the loan's own loss, running cost, capital, rationing, competition); the
+  // old window-scaled rate card (deskRatePct) is gone. The law that holds:
+  // on the same building, junior paper is priced wider than senior paper.
+  void shut;
+  const sp = (id) => E.productSpread(open, E.productById(id), { klass: "office" });
+  const sS = sp("savings"), sM = sp("mezz");
+  check(sM > sS && sS > 0, `junior paper is priced wider than senior on the same building (${sM.toFixed(2)} vs ${sS.toFixed(2)})`);
   // THE LINE PRICES OFF ITS OWN BANK (pricing.ts liveSpread): a bank that
-  // has been writing off its income-property book charges more for the line.
+  // has been writing off the kind of paper the line is — junior, recourse to
+  // the firm and secured by no building (credit.ts locRate) — charges more for it.
   const lr = (s) => E.locRate(s);
   const burnt = clone(g);
   const lb = burnt.lenders.find((l) => l.id === E.lineLender(burnt).id);
-  lb.lossEw = { ...(lb.lossEw ?? {}), income: (lb.balEw?.income ?? lb.book) * 0.03 };
+  lb.balEw = { ...(lb.balEw ?? {}), junior: Math.max(lb.balEw?.junior ?? 0, lb.book * 0.2) };
+  lb.lossEw = { ...(lb.lossEw ?? {}), junior: lb.balEw.junior * 0.06 };
   E.priceDesks(burnt);
   check(lr(burnt) > lr(open), `the line reprices with its bank's losses: ${lr(open).toFixed(2)}% → ${lr(burnt).toFixed(2)}%`);
   // The line needs a borrowing base (credit.ts locLimit: income after the

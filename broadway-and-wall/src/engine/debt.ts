@@ -1379,6 +1379,8 @@ export interface Quote {
   /** The three sizing legs, in dollars, before min(). Instrumentation — the panel and the harness read these. */
   byLtv?: number;
   byDscr?: number;
+  /** The coverage leg alone: income over the payment at the desk's required DSCR (requiredDscr), before the risk model's cap. */
+  byCover?: number;
   /** The coverage the loan closes at (sizeRest). */
   uwDscr?: number;
   byDebtYield?: number;
@@ -1650,7 +1652,8 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
   // write a loan that is in breach of the coverage test the day it closes. It
   // sized to 1.00x and tested the covenant only afterwards — hidden while the
   // advance was held low, exposed once desks lent to their ceilings.
-  const byDscr = product.bridge ? byModel : Math.min(byModel, Math.max(0, noiYr) / Math.max(1e-6, kUw * requiredDscr(s, product, condition)));
+  const byCover = Math.max(0, noiYr) / Math.max(1e-6, kUw * requiredDscr(s, product, condition));
+  const byDscr = product.bridge ? byModel : Math.min(byModel, byCover);
   // DEBT YIELD. Coverage flatters a loan when rates are low and cap rates are
   // lower — you can cover 1.25x on a building yielding four points, and the
   // lender still has no equity underneath them. Since 2009 the desk also
@@ -1684,6 +1687,7 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
     uwDscr: principal > 0 ? Math.max(0, noiYr) / (principal * kUw) : 0,
     byLtv: Math.round(byLtv),
     byDscr: Math.round(byDscr),
+    byCover: Math.round(byCover),
     byDebtYield: Math.round(byDebtYield),
   };
 }

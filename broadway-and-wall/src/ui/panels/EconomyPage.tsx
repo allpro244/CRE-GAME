@@ -306,7 +306,9 @@ function MainlandFigures() {
         <Row k="Occupied" v={`${n(m.occupied)} · ${pct(m.vacancy)} empty`} bad={m.vacancy < 0.03}
           title={`Includes ${n(m.idle)} turning over between tenants`} />
         <Row k="Going rent" v={`$${n(m.rent)}/mo`} strong
-          title={`Older homes $${n(m.rentOlder)}/mo · opening $${n(m.rentOpen)}/mo`} />
+          title={`Opening $${n(m.rentOpen)}/mo`} />
+        <Row k="Older homes' rent" v={m.rentTiers.map((x) => `$${n(x)}`).join(" · ")}
+          title={`Newest to oldest vintage: ${m.homesTiers.map((h) => n(h)).join(" · ")} homes`} />
         <Row k="Rent, 12 mo" v={pctSigned(rentYr, 1)} bad={rentYr > 0.06} />
         <Row k="Under construction" v={`${n(m.building)} homes · ${n(m.due12)} due within 12 mo`} />
         {m.pencil !== undefined && (
@@ -1094,6 +1096,15 @@ export function EconomyPage() {
           return `$${e.rentIdx[focus].toFixed(2)}/sf · ${d >= 0 ? "+" : "−"}${Math.abs(d).toFixed(0)}% vs long-run base`;
         })()} why={<WhyButton id={rentWhy(game, focus)} />} />
         <Row k="Cap rate" v={capReadLine(e, focus) ?? `${e.capRate[focus].toFixed(2)}%`} why={<WhyButton id={capWhy(game, focus)} />} />
+        {/* THE CAP AGAINST THE BASE RATE (owner, 2026-11-12: "people using the
+            10 year to price cap rates"): the spread buyers are getting over
+            the rate, and what their loans cost. The cap is still the market's
+            read; this only says it the way a buyer thinks it. */}
+        <Row k="Cap vs base rate" v={(() => {
+          const cap = e.capRate[focus], base = e.indexRate, debt = e.capRead?.[focus]?.debt;
+          return `${cap.toFixed(2)}% = base ${base.toFixed(2)}% + ${(cap - base).toFixed(2)} pts${debt !== undefined ? ` · buyers' loans ${debt.toFixed(1)}%` : ""}`;
+        })()}
+          title="The spread over the base rate is what buyers want for owning the building over lending at the rate: the return their own money asks, less the rent growth they expect, plus the building's running capital" />
         {(() => {
           const history = e.history ?? [];
           const yearAgo = history.length > 12 ? history[history.length - 13] : undefined;

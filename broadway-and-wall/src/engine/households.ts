@@ -870,7 +870,9 @@ export interface HouseholdRegister {
    * (log of each looking household's budget over the going rent) and the
    * weight that signed. Absent until the first month a save runs it.
    */
-  mk?: { homes: number; homes0: number; ask0: number; cap0: number; cost0: number; occ: number; roll: FlatRoll; pipe: { m: number; n: number }[]; cards: number[]; signed: number; ask12?: number[]; turn?: number[]; idle?: number; homesB?: number; askB?: number; askB0?: number; homeValue?: number; homeCost?: number; pencil?: number };
+  mk?: { homes: number; homes0: number; ask0: number; cap0: number; cost0: number; occ: number; roll: FlatRoll; pipe: { m: number; n: number }[]; cards: number[]; signed: number; ask12?: number[]; turn?: number[]; idle?: number; homesB?: number; askB?: number; askB0?: number; homeValue?: number; homeCost?: number; pencil?: number;
+    /** the older stock in vintage tiers, newest first (OLDER_TIERS): homes, going rent and opening rent of each */
+    hB?: number[]; aB?: number[]; aB0?: number[] };
   /** Each island block of flats an agent can point at (bbl), append-only. */
   blocks: string[];
   /** Each street block's flat size: [sf, month read, month last seen] (see blockUnitSf). */
@@ -1226,7 +1228,7 @@ function addAgent(r: HouseholdRegister): number {
  * families have both spouses in the labour force when the head is of working
  * age); past 65 the household draws a pension.
  */
-function fillPeople(R: Rand, a: HouseholdArrays, i: number, ageP: readonly number[], income: number, e: Econ, unemp: number) {
+function fillPeople(R: Rand, a: HouseholdArrays, i: number, ageP: readonly number[], income: number, e: Econ, unemp: number, pension = 1) {
   const band = pick(R, ageP);
   a.age[i] = AGE_LO[band] + Math.floor(R.u() * (AGE_HI[band] - AGE_LO[band] + 1));
   a.adults[i] = 1 + pick(R, ADULTS);
@@ -1241,7 +1243,7 @@ function fillPeople(R: Rand, a: HouseholdArrays, i: number, ageP: readonly numbe
   const works = R.u() < lfAge(a.age[i]);
   const other = othersOf(a, i) > 0 && R.u() < OTHER_LF;
   if (!works) {
-    a.emp1[i] = EMP_RETIRED; a.wage1[i] = income;
+    a.emp1[i] = EMP_RETIRED; a.wage1[i] = income * pension;
     if (other) { a.wage3[i] = income * 0.4; job(a.emp3, a.un3); }
     return;
   }
@@ -1384,7 +1386,10 @@ export function seedHouseholdRegister(s: GameState, parcels: ParcelTable): House
     const i = addAgent(r);
     const income = medianIncome(e) * Math.exp(INCOME_SIGMA * R.n());
     inc.push(income);
-    fillPeople(R, r.a!, i, AGE_ALL, income, e, u0);
+    // a head past working draws Social Security on the pay its draw stands for (SS_REPLACE), as every
+    // later retirement does (2026-11-12: it drew the whole draw, and the opening's retired households
+    // had a median income of $59,700 against $38,600 for one earner in work)
+    fillPeople(R, r.a!, i, AGE_ALL, income, e, u0, SS_REPLACE);
     sampleLf += lfOf(i);
     // within an age, ownership rises with income (Census HVS by income)
     score.push(Math.log(income / medianIncome(e)) + 0.8 * R.n());
@@ -1941,7 +1946,14 @@ function mainWill(r: HouseholdRegister, a: HouseholdArrays, i: number): number |
 function mainRentFor(r: HouseholdRegister, a: HouseholdArrays, i: number): number {
   const mk = r.mk, pay = payOf(a, i);
   const w = mainWill(r, a, i) ?? 0;
-  const going = !mk?.askB || w >= r.mainRent ? r.mainRent : mk.askB;
+  let going = r.mainRent;
+  if (mk && w < r.mainRent) {
+    // the best of the older tiers its budget reaches, else the cheapest
+    if (mk.aB?.length) {
+      going = mk.aB[mk.aB.length - 1];
+      for (const x of mk.aB) if (x <= w) { going = x; break; }
+    } else if (mk.askB) going = mk.askB;
+  }
   return pay > 0 ? Math.min(going, (SCREEN * pay) / 12) : going;
 }
 function signMainland(r: HouseholdRegister, a: HouseholdArrays, i: number): number {
@@ -1998,6 +2010,19 @@ const MAIN_OPEX = 0.42;
  * standard stock that joins the older each year.
  */
 const FILTER_YR = 0.019;
+/**
+ * THE OLDER STOCK IN VINTAGE TIERS (2026-11-12). One going rent for all the
+ * older homes was struck by the last household on the ladder, the poorest
+ * renter in the region, so ~7,500 older homes let at the running-cost floor
+ * while their median tenant would pay ~$1,000 (seed 31337). Older housing is
+ * a ladder of its own — a twenty-year-old building lets above a sixty-year-old
+ * one — so the older stock is held in vintage tiers, each filtering into the
+ * next at the same pace as standard homes filter into the first (FILTER_YR),
+ * each with its own going rent struck at its own marginal household. Only the
+ * oldest tier meets the poorest bidders. Three tiers: the resolution of a
+ * shape, not a fitted quantity [M].
+ */
+const OLDER_TIERS = 3;
 
 /**
  * THE MAINLAND'S HOUSING MARKET, a month (REAL_ECONOMY_PLAN 5c, 2a): a
@@ -2041,24 +2066,49 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
       if (a.ten[i] !== TEN_MAINLAND) continue;
       if (a.rent[i] < r.mainRent * 0.999) { occB += a.wt[i]; older.push({ rent: a.rent[i], w: a.wt[i] }); } else occA += a.wt[i];
     }
-    older.sort((p, q) => q.rent - p.rent);
-    let acc = 0, askB = r.mainRent;
-    for (const o of older) { acc += o.w; askB = o.rent; if (acc >= occB / 2) break; }
-    // ...and the older stock lets at that one going rent, as the ladder lets it
-    // every month after: a renter whose pay carries more pays it, not its own
-    // most (2026-11-12: the opening had each older-home renter at SCREEN, half
-    // its pay, so the mainland opened at a 43% median burden that the monthly
-    // ladder then took a year of renewals to unwind to ~25%)
-    for (let i = 0; i < r.n; i++) if (a.ten[i] === TEN_MAINLAND && a.rent[i] > askB && a.rent[i] < r.mainRent * 0.999) a.rent[i] = askB;
+    // the older renters by what they pay, in OLDER_TIERS equal shares: each
+    // tier's going rent is its middle renter's, and the tier lets at it, as the
+    // ladder lets it every month after — a renter whose pay carries more pays
+    // the going rent, not its own most (2026-11-12: the opening had each
+    // older-home renter at SCREEN, half its pay, and the mainland opened at a
+    // 43% median burden the ladder then took a year of renewals to unwind)
+    const byRent: { i: number; rent: number; w: number }[] = [];
+    for (let i = 0; i < r.n; i++) if (a.ten[i] === TEN_MAINLAND && a.rent[i] < r.mainRent * 0.999) byRent.push({ i, rent: a.rent[i], w: a.wt[i] });
+    byRent.sort((p, q) => q.rent - p.rent);
     const v = 1 - OPENING_VAC.multifamily;
-    r.mk = { homes: occA / v, homes0: occA / v, ask0: r.mainRent, cap0: cap, cost0: cost, occ, roll: { occ: 0 }, pipe: [], cards: [], signed: 0, homesB: occB / v, askB, askB0: askB };
+    const hB: number[] = [], aB: number[] = [];
+    let acc = 0, k = 0;
+    for (let tr = 0; tr < OLDER_TIERS; tr++) {
+      const lo = k, cut = occB * (tr + 1) / OLDER_TIERS;
+      let w = 0;
+      while (k < byRent.length && (acc < cut || tr === OLDER_TIERS - 1)) { acc += byRent[k].w; w += byRent[k].w; k++; }
+      let mid = lo, wm = 0;
+      while (mid < k - 1 && wm + byRent[mid].w < w / 2) { wm += byRent[mid].w; mid++; }
+      const ask = k > lo ? byRent[mid].rent : (aB[tr - 1] ?? r.mainRent);
+      for (let j = lo; j < k; j++) if (a.rent[byRent[j].i] > ask) a.rent[byRent[j].i] = ask;
+      hB.push(w / v); aB.push(ask);
+    }
+    r.mk = { homes: occA / v, homes0: occA / v, ask0: r.mainRent, cap0: cap, cost0: cost, occ, roll: { occ: 0 }, pipe: [], cards: [], signed: 0, homesB: occB / v, askB: aB[1] ?? aB[0], askB0: aB[1] ?? aB[0], hB, aB, aB0: [...aB] };
     return;
   }
   const mk = r.mk;
   mk.homesB ??= 0; mk.askB ??= r.mainRent * 0.6; mk.askB0 ??= mk.ask0 * 0.6;
+  // a save from before the tiers: its older stock in equal tiers at its one rent, which the ladder re-strikes this month
+  if (!mk.hB || mk.hB.length !== OLDER_TIERS) {
+    mk.hB = Array(OLDER_TIERS).fill(mk.homesB / OLDER_TIERS);
+    mk.aB = Array(OLDER_TIERS).fill(mk.askB);
+    mk.aB0 = Array(OLDER_TIERS).fill(mk.askB0);
+  }
+  const hB = mk.hB, aB = mk.aB!, aB0 = mk.aB0!;
   while (mk.pipe.length && mk.pipe[0].m <= m) mk.homes += mk.pipe.shift()!.n;
-  const filt = mk.homes * FILTER_YR / 12;
-  mk.homes -= filt; mk.homesB += filt;
+  // each stock filters into the next older one at the same pace (FILTER_YR)
+  for (let tr = OLDER_TIERS - 1; tr >= 0; tr--) {
+    const from = tr === 0 ? mk.homes : hB[tr - 1];
+    const f = from * FILTER_YR / 12;
+    if (tr === 0) mk.homes -= f; else hB[tr - 1] -= f;
+    hB[tr] += f;
+  }
+  mk.homesB = hB.reduce((x, y) => x + y, 0);
   // turnover: the flats standing empty their make-ready month
   const out = Math.max(0, mk.occ + mk.signed - occ);
   const turning = (mk.turn ??= []);
@@ -2082,7 +2132,7 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
   // on (seed 31337: $729 to $308, then the floor for decades, at 3% vacancy).
   // Who doubles up still reads the homes standing (roomA, roomB).
   const priceA = Math.max(0, mk.homes - onMarket * mk.homes / Math.max(1, all));
-  const priceB = Math.max(0, mk.homesB - onMarket * mk.homesB / Math.max(1, all));
+  const priceT = hB.map((h) => Math.max(0, h - onMarket * h / Math.max(1, all)));
   // the ladder: renters and looking households by what they would pay
   const bid: { i: number; w: number; wt: number; renter: boolean }[] = [];
   for (let i = 0; i < r.n; i++) {
@@ -2094,8 +2144,11 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
     bid.push({ i, w, wt: a.wt[i], renter });
   }
   bid.sort((p, q) => q.w - p.w);
-  let acc = 0, pA = -1, pB = -1;
-  const floorA = MAIN_OPEX * mk.ask0 * (cost / mk.cost0), floorB = MAIN_OPEX * mk.askB0 * (cost / mk.cost0);
+  let acc = 0, pA = -1;
+  const pT = Array(OLDER_TIERS).fill(-1) as number[];
+  const cumT: number[] = [];
+  { let c = priceA; for (const x of priceT) { c += x; cumT.push(c); } }
+  const floorA = MAIN_OPEX * mk.ask0 * (cost / mk.cost0);
   // A SITTING TENANT WITH NO PAY HOLDS ITS HOME BUT DOES NOT PRICE ONE
   // (2026-11-12): it is on the ladder at a bid of nothing so that it keeps its
   // place, and it sorts last — so once more than the homes on the market's
@@ -2108,14 +2161,19 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
     acc += b.wt;
     if (b.w > 0) lastPos = b.w;
     if (pA < 0 && acc >= priceA) pA = b.w > 0 ? b.w : lastPos;
-    if (pB < 0 && acc >= priceA + priceB) pB = b.w > 0 ? b.w : lastPos;
+    for (let tr = 0; tr < OLDER_TIERS; tr++) if (pT[tr] < 0 && acc >= cumT[tr]) pT[tr] = b.w > 0 ? b.w : lastPos;
     // past the ladder's last rung: a renter with no flat ready doubles up
     if (acc > roomA + roomB && b.renter) { a.ten[b.i] = TEN_DOUBLED; a.rent[b.i] = 0; a.blk[b.i] = -1; occ -= b.wt; }
   }
   // fewer bidders than homes: the last bid sets the rent, down to the running-cost floor
   const last = lastPos;
   r.mainRent = Math.max(floorA, pA >= 0 ? pA : last);
-  mk.askB = Math.min(r.mainRent, Math.max(floorB, pB >= 0 ? pB : last));
+  // each older tier at its own marginal household, never over the tier above it, never under its running cost
+  for (let tr = 0; tr < OLDER_TIERS; tr++) {
+    const floorT = MAIN_OPEX * aB0[tr] * (cost / mk.cost0);
+    aB[tr] = Math.min(tr === 0 ? r.mainRent : aB[tr - 1], Math.max(floorT, pT[tr] >= 0 ? pT[tr] : last));
+  }
+  mk.askB = aB[Math.floor(OLDER_TIERS / 2)];
   mk.occ = occ; mk.signed = 0; mk.cards = [];
   (mk.ask12 ??= []).push(r.mainRent);
   if (mk.ask12.length > 12) mk.ask12.shift();
@@ -3992,6 +4050,7 @@ export function mainlandStats(s: GameState) {
     occupied: mk.occ, idle: mk.idle ?? 0,
     vacancy: homes > 0 ? Math.max(0, 1 - mk.occ / homes) : 0,
     rent: r.mainRent, rentOlder: mk.askB ?? r.mainRent,
+    rentTiers: mk.aB ? [...mk.aB] : [mk.askB ?? r.mainRent], homesTiers: mk.hB ? [...mk.hB] : [mk.homesB ?? 0],
     rentYearAgo: mk.ask12?.length ? mk.ask12[0] : r.mainRent,
     rentOpen: mk.ask0,
     building, due12,

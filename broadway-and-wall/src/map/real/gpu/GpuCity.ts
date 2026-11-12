@@ -47,6 +47,8 @@ export interface Shared {
   uHazeCap: N;
   /** Classic uniforms the ports follow, copied over each frame. */
   sync: (() => void)[];
+  /** What the glass reflects (RealCity: the skyline probe once taken, else the painted sky). */
+  glassEnv: { value: THREE.Texture | null; probe: boolean };
 }
 
 export class GpuBackend {
@@ -91,6 +93,7 @@ export class GpuBackend {
       uHazeFar: T.uniform(4000),
       uHazeCap: T.uniform(0.5),
       sync: [],
+      glassEnv: { value: null, probe: false },
     };
     // MapLibre's frame, the ground under the city (see the header)
     this.mapTex = new THREE.CanvasTexture(map.getCanvas());
@@ -203,6 +206,8 @@ export class GpuBackend {
       cam._bwUnjittered = undefined;
     };
   }
+
+  setGlassEnv(t: THREE.Texture | null, probe: boolean) { this.shared.glassEnv.value = t; this.shared.glassEnv.probe = probe; }
 
   shadowNeedsUpdate() { this.sun.shadow.needsUpdate = true; }
 

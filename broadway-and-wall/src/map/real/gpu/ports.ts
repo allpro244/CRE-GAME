@@ -125,7 +125,6 @@ function facade(m: N, s: Shared, U: Record<string, { value: N }>) {
   // one node per texture (each texture() is a sampler, and a WebGL 2 device
   // guarantees 16); the stock emissive read goes too: it is always 0 here
   const mapT = tex("map"), mskT = tex("emissiveMap");
-  m.emissiveNode = T.vec3(0);
   // the vertex colour is applied here, in classic's order (before the panes' blinds and curtains)
   m.vertexColors = false;
   const farK = T.smoothstep(320.0, 1300.0, T.length(T.positionView));
@@ -142,7 +141,7 @@ function facade(m: N, s: Shared, U: Record<string, { value: N }>) {
   const blindK = T.step(wh1, 0.3).mul(T.step(T.float(1).sub(tW), wh2.mul(0.7).add(0.2))).mul(notGlassy);
   const curtK = T.step(0.3, wh1).mul(T.step(wh1, 0.46)).mul(T.step(xW, wh2.mul(0.12).add(0.24)).add(T.step(T.float(0.76).sub(wh2.mul(0.12)), xW))).mul(notGlassy);
   const winShade = T.clamp(blindK.add(curtK), 0.0, 1.0);
-  m.colorNode = T.Fn(() => {
+  const wallNode = T.Fn(() => {
     const base = T.vec4(mapT).toVar();
     base.rgb.mulAssign(uColor);
     const paneP = winM;
@@ -202,13 +201,53 @@ function facade(m: N, s: Shared, U: Record<string, { value: N }>) {
     const sky = winM.mul(hasRev).mul(T.float(1).sub(winShade)).mul(T.float(1).sub(jamb)).mul(T.float(0.16).add(T.clamp(vv, 0.0, 1.0).mul(0.12)));
     c.assign(T.mix(c, T.vec3(0.52, 0.62, 0.72), sky));
     return T.vec4(c, base.a);
-  })();
+  })().toVar("bwWall");
   // roughness: far calm, then the panes' own variety (classic roughnessmap_fragment + WINDOW_VARIATION)
-  m.roughnessNode = T.Fn(() => {
+  const roughN = T.Fn(() => {
     const r = orm.g.mul(T.materialRoughness).toVar();
     r.assign(T.mix(r, T.max(r, 0.5), farK));
     const varied = T.clamp(r.add(wh2.sub(0.5).mul(T.max(T.mix(0.14, 0.01, uGlassy), uGlassP.z.mul(2.0)))), 0.02, 1.0);
     return T.mix(r, T.mix(varied, 0.85, winShade), winM);
+  })().toVar("bwRough");
+  m.roughnessNode = roughN;
+  // GLASS_FRAG: a coated lite reflects its coat's share face-on and nearly all
+  // at a grazing angle (Fresnel), tinted by the coat; behind it, dark rooms or
+  // a spandrel's back-pan; the sun's diffuse mostly gone. Classic rewrote the
+  // light sums; here the stock reflection is switched off on the glass
+  // (metalness 0, albedo down to the 15% classic kept of the direct diffuse)
+  // and the coated reflection and the body are added as emission, which goes
+  // through the same tone curve.
+  const gK = T.select(uGlassP.x.greaterThan(0.0), T.smoothstep(0.3, 0.45, winM), T.float(0));
+  m.colorNode = T.vec4(T.mix(wallNode.rgb, wallNode.rgb.mul(0.15), gK), wallNode.a);
+  m.emissiveNode = T.Fn(() => {
+    const gN = T.normalize(T.normalWorld);
+    const gV = T.normalize(T.cameraPosition.sub(T.positionWorld));
+    const nv = T.clamp(T.dot(gN, gV), 0.0, 1.0);
+    const F = uGlassP.x.add(T.float(1).sub(uGlassP.x).mul(T.pow(T.float(1).sub(nv), 5.0)));
+    const gR = T.reflect(gV.negate(), gN).toVar();
+    const L = glassEnv(s).pmrem(gR, roughN).toVar();
+    // no probe yet (Medium, or before the first capture): a far skyline at the horizon
+    const az = T.atan(gR.y, gR.x);
+    const sk = T.float(0.03).add(T.pow(sNoise(T.vec2(az.mul(14.0), 3.7)), 2.0).mul(0.11)).add(T.step(0.82, sNoise(T.vec2(az.mul(41.0), 9.1))).mul(0.05));
+    const bld = T.smoothstep(sk.add(0.004), sk.sub(0.004), gR.z).mul(T.smoothstep(-0.25, -0.02, gR.z));
+    const bc = T.mix(T.vec3(0.62, 0.66, 0.72), T.vec3(0.78, 0.8, 0.82), sNoise(T.vec2(az.mul(60.0), 1.0)));
+    L.assign(T.mix(L, bc.mul(1.25), bld.mul(T.float(1).sub(glassEnv(s).probe))));
+    // the clouds, up the reflected ray at the cloud base
+    const cu = cloudUniforms(s);
+    const gP = T.positionWorld;
+    const tt = T.float(CLOUD_BASE).sub(gP.z).div(T.max(gR.z, 0.02));
+    const q = gP.xy.add(gR.xy.mul(tt));
+    const e = T.float(0.5).add(T.float(0.5).sub(cu.cover).mul(0.36));
+    const cl = T.smoothstep(e.sub(0.05), e.add(0.09), cloudField(q, cu.off)).mul(T.float(1).sub(T.smoothstep(5000.0, 16000.0, tt))).mul(T.smoothstep(0.02, 0.14, gR.z)).mul(T.step(0.0001, cu.k));
+    const lit = T.dot(T.normalize(gR.xy.add(1e-4)), T.normalize(cu.sun.xy.add(1e-4))).mul(0.5).add(0.5);
+    const cc = T.mix(T.vec3(1.25, 1.3, 1.38), T.vec3(2.0, 1.96, 1.88), lit);
+    L.assign(T.mix(L, cc, cl.mul(T.clamp(T.float(1).sub(roughN.mul(2.0)), 0.0, 1.0))));
+    const dc = wallNode.rgb;
+    const tn = dc.div(T.max(T.max(dc.r, T.max(dc.g, dc.b)), 0.02));
+    const coat = T.mix(T.vec3(1.0), tn, uGlassP.w);
+    const vis = T.smoothstep(0.6, 0.9, winM);
+    const body = T.mix(dc.mul(0.05), tn.mul(0.035), vis);
+    return L.mul(coat).mul(F).add(body.mul(T.float(1).sub(F))).mul(gK);
   })();
   // review switch: ?gpudbg=mask|paint|orm|map shows one input of the wall instead of the wall
   const dbg = typeof location !== "undefined" ? new URLSearchParams(location.search).get("gpudbg") : null;
@@ -216,7 +255,7 @@ function facade(m: N, s: Shared, U: Record<string, { value: N }>) {
   else if (dbg === "paint") m.colorNode = T.vec4(T.attribute("paint", "vec4").rgb.mul(T.attribute("paint", "vec4").a), 1);
   else if (dbg === "orm") m.colorNode = T.vec4(orm.rgb, 1);
   else if (dbg === "map") m.colorNode = T.vec4(mapT.rgb, 1);
-  m.metalnessNode = orm.b.mul(T.materialMetalness).mul(T.float(1).sub(farK.mul(0.6))).mul(T.float(1).sub(winShade.mul(winM)));
+  m.metalnessNode = orm.b.mul(T.materialMetalness).mul(T.float(1).sub(farK.mul(0.6))).mul(T.float(1).sub(winShade.mul(winM))).mul(T.float(1).sub(gK));
   void s;
 }
 
@@ -261,6 +300,40 @@ function fbm(p0: N): N {
     a *= 0.5;
   }
   return sum;
+}
+
+/** What the glass reflects: the probe of the skyline once one is taken (High+), else the painted sky. One node, shared by every facade program. */
+const glassEnvs = new WeakMap<Shared, { pmrem: (dir: N, rough: N) => N; probe: N }>();
+function glassEnv(s: Shared): { pmrem: (dir: N, rough: N) => N; probe: N } {
+  let g = glassEnvs.get(s);
+  if (!g) {
+    const probe = T.uniform(0);
+    s.sync.push(() => { probe.value = s.glassEnv.probe ? 1 : 0; });
+    g = {
+      probe,
+      // the node keeps its own texture: kept current by the sync (the probe replaces the painted sky)
+      pmrem: (dir: N, rough: N) => {
+        const n = T.pmremTexture(s.glassEnv.value, dir, rough);
+        s.sync.push(() => { if (s.glassEnv.value && n.value !== s.glassEnv.value) n.value = s.glassEnv.value; });
+        return n;
+      },
+    };
+    glassEnvs.set(s, g);
+  }
+  return g;
+}
+function cloudUniforms(s: Shared) {
+  let u = cloudUs.get(s);
+  if (!u) {
+    u = { sun: live(s, CLOUD.cloudSun), eye: live(s, CLOUD.cloudEye), off: live(s, CLOUD.cloudOff), cover: live(s, CLOUD.cloudCover), k: live(s, CLOUD.cloudK) };
+    cloudUs.set(s, u);
+  }
+  return u;
+}
+function cloudField(q: N, off: N): N {
+  const p = q.div(420.0).add(off);
+  return sNoise(p).mul(0.5).add(sNoise(p.mul(2.07).add(T.vec2(5.2, 1.3))).mul(0.25))
+    .add(sNoise(p.mul(4.3).add(T.vec2(1.7, 9.2))).mul(0.15)).add(sNoise(p.mul(9.1).add(T.vec2(3.3, 7.7))).mul(0.1));
 }
 
 /** clouds.ts cloudSunlight, the share of the sun a point gets past the cloud field. */

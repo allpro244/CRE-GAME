@@ -1798,6 +1798,7 @@ export class RealCityLayer {
       this.renderer.toneMappingExposure = this.toy ? 0.9 : 0.82;
       this.scene.environment = b.roomEnvironment();
       this.skyEnv = b.skyEnvironment();
+      b.setGlassEnv(this.reflEnv ?? this.skyEnv, !!this.reflEnv);
       this.scene.environmentIntensity = 0.5;
       for (const f of Object.values(this.families)) if (f.glass || f.key === "ribbon") f.mat.envMap = this.reflEnv ?? this.skyEnv;
       if (this.live) { b.shadowNeedsUpdate(); this.probeDue = true; }
@@ -2079,6 +2080,7 @@ export class RealCityLayer {
     if (!this.gpuB) this.renderer.resetState();
     const was = this.reflEnv;
     this.reflEnv = rt.texture;
+    this.gpuB?.setGlassEnv(this.reflEnv, true);
     GLASS_U.gProbe.value = 1;
     for (const f of Object.values(this.families)) if (f.glass || f.key === "ribbon") f.mat.envMap = this.reflEnv;
     // THE WATER SEES THE CITY TOO. The harbour, the canals, the ponds and the

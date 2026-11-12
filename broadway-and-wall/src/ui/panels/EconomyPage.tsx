@@ -281,7 +281,7 @@ function MainlandFigures() {
   const pct = (x: number, d = 1) => `${(x * 100).toFixed(d)}%`;
   const rentYr = m.rentYearAgo > 0 ? m.rent / m.rentYearAgo - 1 : 0;
   const share = (x: number) => (m.households > 0 ? ` (${pct(x / m.households, 0)})` : "");
-  const burdenLine = (avg: number, med: number, over: number) => Number.isFinite(avg) ? `${pct(avg, 0)} average · ${pct(med, 0)} median · ${pct(over, 0)} over 30%` : "—";
+  const burdenLine = (avg: number, med: number, over: number) => Number.isFinite(avg) ? `${pct(avg, 0)} avg · ${pct(med, 0)} median · ${pct(over, 0)} >30%` : "—";
   return (
     <>
       <div className="page-section" style={{ marginTop: 14 }}>The mainland</div>

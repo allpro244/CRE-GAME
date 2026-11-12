@@ -519,9 +519,23 @@
    sentence or a chart cell in it keeps its single column. */
 @media (min-width: 900px) {
   .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) {
-    grid-template-columns: repeat(auto-fill, minmax(140px, max-content) minmax(220px, 1fr));
-    column-gap: 24px;
+    /* each pair is bounded (at most ~550px), so a number sits a short
+       glance from its label rather than at the far edge of the page */
+    grid-template-columns: repeat(auto-fill, minmax(150px, 220px) minmax(150px, 330px));
+    justify-content: start;
+    gap: 0;
   }
+  /* ...and read like a ledger: a hairline under every row, the row under the
+     pointer shaded label and number together, a gutter between pairs */
+  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k,
+  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v {
+    padding: 6px 10px; border-bottom: 1px solid var(--border);
+  }
+  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v { margin-right: 28px; }
+  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:hover,
+  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:hover + .v,
+  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:has(+ .v:hover),
+  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v:hover { background: var(--paper-wash); }
 }
 /* "· Open →" on every row of a clickable table is nineteen copies of the same
    word. It shows on the row under the pointer or the keyboard. */

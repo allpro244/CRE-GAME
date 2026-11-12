@@ -25,7 +25,7 @@ import * as THREE from "three/webgpu";
 import * as TSL from "three/tsl";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type maplibregl from "maplibre-gl";
-import { buildPost, type PostUniforms } from "./post";
+import { buildPost, PROVEN_ON_WEBGPU, UNPROVEN_OK, type PostUniforms } from "./post";
 import { portMaterial } from "./ports";
 
 // TSL's typings fight every generic helper; the node graph is built loosely
@@ -47,6 +47,10 @@ export interface Shared {
   uHazeCap: N;
   /** Classic uniforms the ports follow, copied over each frame. */
   sync: (() => void)[];
+  /** 1 on Max/Extreme: the harbour mirrors the city in a planar reflection (ports.ts sea). */
+  uReflOn: N;
+  /** Objects a port needs in the scene (the reflector's plane). */
+  addToScene: (o: THREE.Object3D) => void;
   /** What the glass reflects (RealCity: the skyline probe once taken, else the painted sky). */
   glassEnv: { value: THREE.Texture | null; probe: boolean };
 }
@@ -93,6 +97,8 @@ export class GpuBackend {
       uHazeFar: T.uniform(4000),
       uHazeCap: T.uniform(0.5),
       sync: [],
+      uReflOn: T.uniform(0),
+      addToScene: (o: THREE.Object3D) => { scene.add(o); },
       glassEnv: { value: null, probe: false },
     };
     // MapLibre's frame, the ground under the city (see the header)
@@ -380,6 +386,8 @@ export class GpuBackend {
     }
     this.mapTex.needsUpdate = true;
     const tier = postFx.level === "full" && postFx.liveAO ? "max" : postFx.level;
+    // the planar reflection is unproven on real WebGPU (safety net, post.ts)
+    this.shared.uReflOn.value = tier === "max" && !NO_REFL && (this.backendName !== "webgpu" || UNPROVEN_OK || PROVEN_ON_WEBGPU.has("reflector")) ? 1 : 0;
     if (this.pipeline && this.post && this.post.level !== tier) { this.pipeline.dispose(); this.pipeline = null; }
     if (!this.pipeline) {
       const built = buildPost(this.renderer, this.scene, this.camera, tier);
@@ -447,6 +455,7 @@ export class GpuBackend {
   }
 }
 
+const NO_REFL = typeof location !== "undefined" && new URLSearchParams(location.search).get("refl") === "off";
 const _c = new THREE.Matrix4(), _ci = new THREE.Matrix4(), _r = new THREE.Matrix4(), _eye = new THREE.Vector3();
 /** WebGL's clip-space depth (-1..1) to WebGPU's (0..1). */
 const GL_TO_GPU = new THREE.Matrix4().set(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0.5, 0.5, 0, 0, 0, 1);

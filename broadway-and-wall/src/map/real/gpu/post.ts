@@ -42,6 +42,9 @@ const AO_OFF = typeof location !== "undefined" && new URLSearchParams(location.s
 const Q = typeof location !== "undefined" ? new URLSearchParams(location.search) : new URLSearchParams();
 const SSR_OFF = Q.get("ssr") === "off";
 const TRAA_OFF = Q.get("traa") === "off";
+/** Passes seen drawing correctly on a real WebGPU device (see WEBGPU_PLAN.md, Testing). */
+export const PROVEN_ON_WEBGPU = new Set<string>(["gtao"]);
+export const UNPROVEN_OK = Q.get("gpufx") === "all";
 
 /**
  * The graph per tier (the level key is "off" | "grade" | "full" | "max"):
@@ -56,11 +59,16 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
   const pipeline = new THREE.RenderPipeline(renderer);
   pipeline.outputColorTransform = false;
   const hi = level === "full" || level === "max";
-  const withAO = hi && !AO_OFF;
+  const withAO = hi && !AO_OFF && ((renderer.backend as N).isWebGPUBackend !== true || UNPROVEN_OK || PROVEN_ON_WEBGPU.has("gtao"));
   // SSR on WebGPU only: three r185's SSR shader does not compile for its WebGL 2 fallback
-  const withSSR = level === "max" && !SSR_OFF && (renderer.backend as N).isWebGPUBackend === true;
+  // SAFETY NET (owner's RTX 5070 Ti, Nov 2026: Max on real WebGPU drew a frame
+  // of black blotches). A pass runs on the WebGPU backend only once it has
+  // been seen working there; until then ?gpufx=all opts in, for testing.
+  const isGpu = (renderer.backend as N).isWebGPUBackend === true;
+  const proven = (fx: string) => !isGpu || UNPROVEN_OK || PROVEN_ON_WEBGPU.has(fx);
+  const withSSR = level === "max" && !SSR_OFF && isGpu && proven("ssr");
   // Max: temporal anti-aliasing (jittered camera, history reprojected by velocity) in place of FXAA
-  const withTRAA = level === "max" && !TRAA_OFF;
+  const withTRAA = level === "max" && !TRAA_OFF && proven("traa");
   const scenePass = T.pass(scene, camera, { samples: hi ? 0 : 4 });
   if (hi) scenePass.setMRT(T.mrt({ output: T.output, normal: T.packNormalToRGB(T.normalView), metalrough: T.vec2(T.metalness, T.roughness), ...(withTRAA ? { velocity: T.velocity } : {}) }));
   // a float depth buffer: the map's perspective spans metres to kilometres, and
@@ -90,9 +98,14 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
     const normal = T.sample((uv: N) => T.unpackRGBToNormal(nTex.sample(uv)));
     const aoPass = ao(scenePass.getTextureNode("depth"), normal, camera);
     (aoPass as N).resolutionScale = 1;
-    (aoPass as N).radius.value = 6;
-    (aoPass as N).distanceExponent.value = 1.5;
-    (aoPass as N).thickness.value = 2;
+    // CONTACT SHADE, tuned on street close-ups: a wider reach than a room-scale
+    // default (metres), so the foot of a wall, the underside of a cornice and
+    // the gap between two close buildings darken; thickness keeps a tower in
+    // front from shading the street behind it
+    (aoPass as N).radius.value = level === "max" ? 9 : 6;
+    (aoPass as N).distanceExponent.value = 1.6;
+    (aoPass as N).thickness.value = 3;
+    (aoPass as N).samples.value = level === "max" ? 24 : 16;
     aoTex = (aoPass as N).getTextureNode();
   }
   const u = {
@@ -151,6 +164,7 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
   });
   pipeline.outputNode = hi && !withTRAA ? fxaa(out()) : out();
   const forcedOff = typeof location !== "undefined" && new URLSearchParams(location.search).get("post") === "off";
+  const lvlMax = level === "max";
   return {
     pipeline,
     u: {
@@ -169,7 +183,7 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
         u.bloom.value = full ? 0.35 : 0;
         u.clarity.value = full ? 0.55 - 0.2 * toy : 0;
         u.grade.value = any ? 1 : 0;
-        u.ao.value = full ? 0.65 + 0.2 * toy : 0;
+        u.ao.value = full ? (lvlMax ? 1.0 : 0.65 + 0.2 * toy) : 0;
       },
     },
   };

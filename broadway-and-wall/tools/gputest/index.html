@@ -30,6 +30,16 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshS
 ground.receiveShadow = true; scene.add(ground);
 for (let i = 0; i < 5; i++) { const b = new THREE.Mesh(new THREE.BoxGeometry(20, 20, 30 + i * 15), new THREE.MeshStandardMaterial({ color: 0xaa6644 })); b.position.set(-80 + i * 40, 0, (30 + i * 15) / 2); b.castShadow = b.receiveShadow = true; scene.add(b); }
 scene.add(new THREE.AxesHelper(1));
+if (q.has("inst")) {
+  const im = new THREE.InstancedMesh(new THREE.SphereGeometry(10, 16, 12), new THREE.MeshStandardMaterial({ color: 0x55aa44 }), 6);
+  for (let i = 0; i < 6; i++) { const m = new THREE.Matrix4().makeTranslation(-100 + i * 40, -60, 25); im.setMatrixAt(i, m); }
+  im.castShadow = im.receiveShadow = true;
+  if (q.has("pnode")) im.material.positionNode = T.positionLocal.add(T.vec3(0, 0, 0));
+  if (q.has("mask")) ground.material.maskNode = T.float(1).greaterThan(0.5);
+  if (q.has("cnode")) ground.material.colorNode = T.vec4(0.3, 0.7, 0.3, 1);
+  if (q.has("rsn")) scene.traverse((o) => { if (o.material) o.material.receivedShadowNode = T.Fn(([sh]) => sh.mul(T.float(1.0))); });
+  scene.add(im);
+}
 const camera = new THREE.PerspectiveCamera(45, W / H, 1, 5000);
 camera.up.set(0, 0, 1);
 camera.position.set(0, -350, 260); camera.lookAt(0, 0, 0);

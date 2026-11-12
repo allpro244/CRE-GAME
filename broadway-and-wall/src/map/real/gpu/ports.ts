@@ -54,7 +54,16 @@ export function portMaterial(m: THREE.Material, s: Shared, renderer: N) {
   const pr = probeOf(m, renderer);
   if (pr) {
     const U = pr.uniforms, F = pr.fragmentShader, V = pr.vertexShader;
-    if (U.uWallLum && !(mm.map && mm.roughnessMap && mm.emissiveMap)) note("facade:no-maps(stock)");
+    const dbgAll = typeof location !== "undefined" ? new URLSearchParams(location.search).get("gpudbg") : null;
+    if (dbgAll === "seagrass" && (U.seaShore || F.includes("gGrassH"))) {
+      // review: the sea red-green by its shore field, the grass magenta, both opaque
+      if (U.seaShore) {
+        const box = U.seaBox.value as THREE.Vector4;
+        const sf = T.texture(U.seaShore.value, T.positionWorld.xy.sub(T.uniform(box).xy).mul(T.uniform(box).zw));
+        mm.colorNode = T.vec4(sf.r, sf.g, 0.2, 1); mm.opacityNode = T.float(1); mm.transparent = false;
+      } else mm.colorNode = F.includes("vStripe") ? T.vec4(1, 1, 0, 1) : F.includes("straw through the green") ? T.vec4(0, 1, 1, 1) : T.vec4(1, 0, 1, 1);
+      note("dbg:seagrass");
+    } else if (U.uWallLum && !(mm.map && mm.roughnessMap && mm.emissiveMap)) note("facade:no-maps(stock)");
     else if (U.uWallLum) { facade(mm, s, U); note("facade:paint+foot+far+panes+reveal+rooms"); }
     else if (U.seaShore) { sea(mm, s, U); note("sea:bottom+shore"); }
     else if (F.includes("diffuseColor.a *= vColor.r")) {
@@ -307,6 +316,31 @@ function sea(m: N, s: Shared, U: Record<string, { value: N }>) {
   const body = T.mix(0.72, 0.97, T.smoothstep(0.0, 30.0, seaD));
   m.opacityNode = wet.mul(T.max(body, foam.mul(0.95)));
   m.roughnessNode = T.mix(T.materialRoughness, 0.85, foam);
+  // A PLANAR REFLECTION (Max): the harbour mirrors the city, the towers and
+  // the sky above them, rippled by the same normal, through the Fresnel of
+  // water; the probe (one point's view) stays underneath for the far water.
+  // Rendered untoned like a probe, so the tone curve is applied once. Works on
+  // both backends (screen-space reflections do not compile on WebGL 2).
+  const refl = T.reflector({ resolutionScale: 0.5 });
+  refl.target.position.z = 0.02;
+  s.addToScene(refl.target);
+  const base = refl.reflector as N;
+  const ub = base.updateBefore.bind(base);
+  base.updateBefore = (f: N) => {
+    if (s.uReflOn.value < 0.5) return;
+    const was = s.uTone.value;
+    s.uTone.value = 0;
+    ub(f);
+    s.uTone.value = was;
+  };
+  m.emissiveNode = T.Fn(() => {
+    const nW = T.normalize(T.vec3(0, 0, 1));
+    const v = T.normalize(T.cameraPosition.sub(T.positionWorld));
+    const fr = T.float(0.02).add(T.pow(T.float(1).sub(T.clamp(T.dot(nW, v), 0, 1)), 5.0).mul(0.98));
+    // the ripples bend the mirror: offset the lookup by the normal's tilt, in screen space
+    const r = refl.sample(T.screenUV.add(T.normalView.xy.mul(0.025))).rgb;
+    return r.mul(fr).mul(T.float(1).sub(foam)).mul(s.uReflOn).mul(0.85);
+  })();
   // RIPPLES: three ripple scales crossing at different bearings and speeds,
   // gusts sliding downwind, calmer in the lee and smoothing out with distance
   m.normalNode = T.Fn(() => {

@@ -85,26 +85,22 @@ export function portMaterial(m: THREE.Material, s: Shared, renderer: N) {
     mm.receivedShadowNode = T.Fn(([sh]: N[]) => sh.mul(cloudSunlight(s, k)));
   }
   // the tone curve and the aerial perspective, after everything else (classic: tonemapping, colorspace, then fog)
+  // (the aerial perspective is applied once, to the whole frame, in post.ts)
   if (mm.isShadowMaterial) {
-    mm.outputNode = T.vec4(T.output.rgb, T.output.a.mul(T.float(1).sub(hazeK(s))));
+    // nothing: the catcher's shade is hazed with the ground it lies on
   } else if (m.toneMapped !== false) {
     mm.outputNode = toneHaze(s);
   }
   m.needsUpdate = true;
 }
 
-const hazeK = (s: Shared) => T.smoothstep(s.uHazeNear, s.uHazeFar, T.length(T.positionView)).mul(s.uHazeCap);
 
 function toneHaze(s: Shared): N {
   return T.Fn(() => {
     const c = T.output;
     const lin = c.rgb;
-    const toned = T.acesFilmicToneMapping(lin, s.uExposure);
-    const hz = hazeK(s);
-    // on the frame, classic mixed the haze in display space after the tone curve; in a probe, linear
-    const disp = T.sRGBTransferEOTF(T.mix(T.sRGBTransferOETF(toned), s.uHazeCol, hz));
-    const probe = T.mix(lin, s.uHazeCol, hz);
-    return T.vec4(T.mix(probe, disp, s.uTone), c.a);
+    // the tone curve on the frame; untoned in a probe (classic's render targets were not tone-mapped)
+    return T.vec4(T.mix(lin, T.acesFilmicToneMapping(lin, s.uExposure), s.uTone), c.a);
   })();
 }
 

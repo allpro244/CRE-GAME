@@ -183,8 +183,9 @@ export class GpuBackend {
       if (o.view.width !== w || o.view.height !== h) { o.view.width = w; o.view.height = h; }
       const g = o.view.getContext("2d")!;
       const img = g.createImageData(w, h);
-      // render targets read bottom-up on WebGL, top-down on WebGPU
-      img.data.set(px.subarray(0, w * h * 4));
+      // rows come padded to 256 bytes on WebGPU
+      const stride = Math.floor(px.length / h);
+      for (let y = 0; y < h; y++) img.data.set(px.subarray(y * stride, y * stride + w * 4), y * w * 4);
       g.putImageData(img, 0, 0);
       this.stats.offscreenFrames = (this.stats.offscreenFrames ?? 0) + 1;
       if (o.again) { o.again = false; this.map.triggerRepaint(); }
@@ -339,9 +340,15 @@ export class GpuBackend {
   hazeSheetMaterial(HAZE: HazeU): THREE.Material {
     void HAZE;
     const s = this.shared;
-    const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -4 });
-    m.colorNode = T.vec3(s.uHazeCol.x, s.uHazeCol.y, s.uHazeCol.z).pow(2.2);
-    m.opacityNode = T.smoothstep(s.uHazeNear, s.uHazeFar, T.length(T.positionView)).mul(s.uHazeCap);
+    // ONE HAZE, IN DISPLAY SPACE (owner's RTX 5070 Ti: the far city went milky).
+    // This sheet blended its haze in the linear frame, which lightens far more
+    // than classic's blend in display space, and the materials hazed again on
+    // top. The finishing pass now hazes the whole frame once, from depth, in
+    // display space, exactly as classic's materials and sheet did; the sheet
+    // stays in the scene (RealCity hides and shows it) but draws nothing.
+    void s;
+    const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, colorWrite: false });
+    m.visible = false;
     m.userData.gpuRaw = true;
     m.outputNode = T.output;
     this.dressed.add(m);
@@ -390,7 +397,7 @@ export class GpuBackend {
     this.shared.uReflOn.value = tier === "max" && !NO_REFL && (this.backendName !== "webgpu" || UNPROVEN_OK || PROVEN_ON_WEBGPU.has("reflector")) ? 1 : 0;
     if (this.pipeline && this.post && this.post.level !== tier) { this.pipeline.dispose(); this.pipeline = null; }
     if (!this.pipeline) {
-      const built = buildPost(this.renderer, this.scene, this.camera, tier);
+      const built = buildPost(this.renderer, this.scene, this.camera, tier, this.shared);
       this.pipeline = built.pipeline;
       this.post = built.u;
     }

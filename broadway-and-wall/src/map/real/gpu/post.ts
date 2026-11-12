@@ -48,14 +48,14 @@ export const UNPROVEN_OK = Q.get("gpufx") === "all";
 
 /**
  * The graph per tier (the level key is "off" | "grade" | "full" | "max"):
- *  - Low / Medium: the scene with 4x MSAA, then the grade (Medium) or nothing.
+ *  - Low / Medium: the scene with FXAA, then the grade (Medium) or nothing; the haze on every tier.
  *  - High: GTAO on the real depth and normals, FXAA in place of MSAA (MSAA
  *    and the normal/depth read-back do not mix cheaply), the classic grade.
  *  - Max: High plus SCREEN-SPACE REFLECTIONS — the glass, the harbour and the
  *    wet streets mirror what is actually on screen around them (the probe
  *    still gives them the sky and the far skyline).
  */
-export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, level: string): { pipeline: THREE.RenderPipeline; u: PostUniforms } {
+export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, level: string, shared: { uHazeCol: N; uHazeNear: N; uHazeFar: N; uHazeCap: N }): { pipeline: THREE.RenderPipeline; u: PostUniforms } {
   const pipeline = new THREE.RenderPipeline(renderer);
   pipeline.outputColorTransform = false;
   const hi = level === "full" || level === "max";
@@ -69,11 +69,13 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
   const withSSR = level === "max" && !SSR_OFF && isGpu && proven("ssr");
   // Max: temporal anti-aliasing (jittered camera, history reprojected by velocity) in place of FXAA
   const withTRAA = level === "max" && !TRAA_OFF && proven("traa");
-  const scenePass = T.pass(scene, camera, { samples: hi ? 0 : 4 });
+  // no MSAA on any tier: the haze below reads the depth on every tier, and a
+  // multisampled depth does not resolve on every backend; FXAA smooths instead
+  const scenePass = T.pass(scene, camera, { samples: 0 });
   if (hi) scenePass.setMRT(T.mrt({ output: T.output, normal: T.packNormalToRGB(T.normalView), metalrough: T.vec2(T.metalness, T.roughness), ...(withTRAA ? { velocity: T.velocity } : {}) }));
   // a float depth buffer: the map's perspective spans metres to kilometres, and
   // 24-bit depth bands flat roofs into stripes once GTAO reads it back
-  if (hi) (scenePass as N).renderTarget.depthTexture.type = THREE.FloatType;
+  (scenePass as N).renderTarget.depthTexture.type = THREE.FloatType;
   let col = scenePass.getTextureNode("output");
   if (withSSR) {
     const nTex = scenePass.getTextureNode("normal");
@@ -89,7 +91,17 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
     ssrPass.maxLuminance.value = 1.2;
     col = T.convertToTexture(T.blendColor(col, ssrPass));
   }
-  if (withTRAA) col = T.convertToTexture(traa(col, scenePass.getTextureNode("depth"), scenePass.getTextureNode("velocity"), camera));
+  if (withTRAA) {
+    const t = traa(col, scenePass.getTextureNode("depth"), scenePass.getTextureNode("velocity"), camera) as N;
+    // THE CAUSE OF THE BLACK FRAMES ON MAX (owner's RTX 5070 Ti): TRAA copies
+    // the frame's depth into its history each frame, and its history depth is
+    // 24-bit while this pass's is 32-bit float (for GTAO). A copy between
+    // depth formats is invalid in WebGPU, which voids the whole command
+    // buffer, so the history filled with garbage that TRAA then spread.
+    // (On WebGL 2 the same copy failed as a glBlitFramebuffer warning.)
+    t._historyRenderTarget.depthTexture.type = THREE.FloatType;
+    col = T.convertToTexture(t);
+  }
   let aoTex: N = null;
   const depthTex = scenePass.getTextureNode("depth");
   const projInv = T.uniform((camera as THREE.PerspectiveCamera).projectionMatrixInverse);
@@ -115,7 +127,17 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
     ao: T.uniform(0), on: T.uniform(1),
   };
   const uvN = T.screenUV;
-  const tap = (uv: N) => T.sRGBTransferOETF(col.sample(T.clamp(uv, u.texel, T.vec2(1).sub(u.texel))).rgb);
+  // AERIAL PERSPECTIVE, once, in display space: classic mixed the haze colour
+  // into each material after the tone curve and laid a sheet over MapLibre's
+  // ground blended in display space; both are this, read off the depth (the
+  // distance to the eye), with the sky left alone
+  const hazeAt = (uv: N, c: N) => {
+    const d = depthTex.sample(uv).r;
+    const dist = T.length(T.getViewPosition(uv, d, projInv));
+    const hz = T.smoothstep(shared.uHazeNear, shared.uHazeFar, dist).mul(shared.uHazeCap).mul(T.step(d, 0.99999));
+    return T.mix(c, shared.uHazeCol, hz);
+  };
+  const tap = (uv0: N) => { const uv = T.clamp(uv0, u.texel, T.vec2(1).sub(u.texel)); return hazeAt(uv, T.sRGBTransferOETF(col.sample(uv).rgb)); };
   const out = T.Fn(() => {
     const c = tap(uvN).toVar();
     // tilt-shift: blur grows smoothly past the band's edge
@@ -162,7 +184,7 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
     c.mulAssign(T.float(1).sub(T.float(0.16).add(u.toy.mul(0.06)).mul(u.grade).mul(T.smoothstep(0.4, 1.0, T.dot(q, q).mul(2.2)))));
     return T.vec4(T.clamp(c, 0.0, 1.0), 1.0);
   });
-  pipeline.outputNode = hi && !withTRAA ? fxaa(out()) : out();
+  pipeline.outputNode = withTRAA ? out() : fxaa(out());
   const forcedOff = typeof location !== "undefined" && new URLSearchParams(location.search).get("post") === "off";
   const lvlMax = level === "max";
   return {

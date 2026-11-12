@@ -22,10 +22,7 @@ import Slider from "@/ui/Slider";
 import SchemeViewer from "@/ui/panels/SchemeViewer";
 import { dominantOf } from "@/engine/proforma";
 import { planDevelopment, takeoutHedgeCost, takeoutHedgeRequired, takeoutRead, maxRetailShare, BTS_TERM_MIN_Y, BTS_TERM_MAX_Y, btsTermY, MIN_COVERAGE } from "@/engine/dev";
-import { maxOutside, syndicateBar } from "@/engine/syndicate";
-import { raisePreview, type RaiseJob } from "@/engine/raise";
-import { committedTotal, type PitchStyle } from "@/engine/investors";
-import { ownedHoldingValue } from "@/engine/value";
+import { committedTotal } from "@/engine/investors";
 import { BUILD_TIERS, buildTier } from "@/engine/value";
 import { START_YEAR, type DevDraft, type DevUse } from "@/engine/types";
 import { KITS, KIT_GROUPS } from "@/engine/renderView";
@@ -458,23 +455,11 @@ function Verdict({ d }: { d: DeskScheme }) {
  */
 function Partners({ d, bbl }: { d: DeskScheme; bbl: string }) {
   const game = useHeldGame(bbl);
-  const parcels = useStore((s) => s.parcels)!;
-  const [pitch, setPitch] = useState<PitchStyle>("base");
-  const [share, setShare] = useState(1);
-  const plan = d.plan;
   const held = game.holdings[bbl];
   const offer = held?.btsOffer;
   const [termY, setTermY] = useState(() => btsTermY(offer?.termY));
   const raise = game.raises?.[bbl];
-  const [use, floors, cov, contract, ltc, custom, lender, spec] = d.commitArgs;
-  const job: RaiseJob = { use, floors, coverage: cov, contract, ltc, custom, lender, spec, pitch };
-  // outside equity: the engine's own limits (syndicate.ts), the site counted at its equity
-  const synBar = !held ? "Buy the lot first." : d.purse.fund ? "A fund lot is built with the fund's money." : syndicateBar(game, bbl);
-  const landEquity = held ? Math.max(0, ownedHoldingValue(game, parcels, held) - d.siteDebt) : 0;
-  const outMax = plan && !synBar ? maxOutside(game, d.need.whole, landEquity) : 0;
-  const outside = Math.round(outMax * share / 10_000) * 10_000;
-  const pv = plan && outside > 0 ? raisePreview(game, plan, landEquity, d.need.whole, outside, pitch) : null;
-  const pct = (x: number) => `${Math.round(x * 100)}%`;
+  const [use, floors, cov] = d.commitArgs;
   return (
     <Step n={5} title="Pre-lease and partners" sum={d.prospect ? `Anchor: ${d.prospect.name}` : raise ? "Raising" : offer ? "Listed for a tenant" : "Optional"}>
         {use === "mixed" || d.product ? <Row k="Anchor"><span className="bd-terms bd-inline">Build-to-suit is for a single-use street building</span></Row> : <Row k="Anchor">
@@ -487,31 +472,20 @@ function Partners({ d, bbl }: { d: DeskScheme; bbl: string }) {
               {offer && <Chip on={false} onClick={() => useStore.getState().clearBts(bbl)}>Pull</Chip>}
             </>}
         </Row>}
-        <Row k="Investors">
+        <Row k="Paid by">
           {raise
             ? <>
               <span className="bd-terms mono" style={{ paddingLeft: 0 }}>Raising {usd(committedTotal(raise))} of {usd(raise.target)}</span>
               <Chip on={false} disabled={committedTotal(raise) < raise.target / 2} title="Needs half raised" onClick={() => useStore.getState().closeRaiseNow(bbl)}>Close now</Chip>
               <Chip on={false} onClick={() => useStore.getState().cancelRaise(bbl)}>Cancel</Chip>
             </>
-            : synBar || !plan || !(outMax > 0)
-              ? <span className="bd-terms" style={{ paddingLeft: 0 }}>{synBar ?? "No outside equity available"}</span>
-              : <>
-                <Slider label="Raise" value={share} min={0} max={1} step={0.1} onChange={setShare} format={() => `${usd(outside)} of ${usd(outMax)}`} />
-                {(["conservative", "base", "aggressive"] as const).map((k) => (
-                  <Chip key={k} on={pitch === k} title="Promised investor return" onClick={() => setPitch(k)}>{k === "conservative" ? "Low pitch" : k === "base" ? "Base" : "High pitch"}</Chip>))}
-              </>}
+            // The purse follows the deed: a site the fund bought is built with
+            // the fund's cash and commitments; your own site with your money.
+            : <span className="bd-terms" style={{ paddingLeft: 0 }}>{!held ? "Buy the lot first — with the fund (Pay with: Fund) to build with the fund's money."
+              : d.purse.fund ? `The fund — it owns this site (${usd(d.purse.total)} cash and commitments).`
+              : game.fund && !game.fund.settled ? "You — this site is yours. A site bought with the fund is built with the fund."
+              : "You. Raise a fund (Capital → Investors) to build with outside money."}</span>}
         </Row>
-        {!raise && pv && <div className="bd-terms mono">
-          {`Promise ${pct(pv.pitchIrr)} · fills ${pct(pv.odds.full)} · small ${pct(pv.odds.small)} · fails ${pct(pv.odds.fail)} · ~${Math.round(pv.odds.months)} mo`}
-        </div>}
-        {!raise && outside > 0 && (pv && pv.pitchIrr <= 0
-          // investors do not fund a projected loss (raise.ts raiseQuote): say so before the click
-          ? <div className="bd-warn">Loss {pct(pv.pitchIrr)}/yr · <b>unfundable</b></div>
-          : <div className="bd-v" style={{ paddingLeft: 60 }}>
-            <button type="button" className="btn" onClick={() => useStore.getState().launchRaise(bbl, job, outside)}>Open raise · {usd(outside)}</button>
-            <button type="button" className="btn btn-buy" onClick={() => useStore.getState().raiseAndBuild(bbl, job, outside)}>Raise and build</button>
-          </div>)}
     </Step>
   );
 }

@@ -306,6 +306,8 @@ const RAISE = process.env.RAISE === "1";
 const pendingRaise = {};
 const capLog = [];
 function raiseFor(h, rec, rows, f) {
+  // Deal-by-deal raising was removed (2026-11-12): RAISE=1 is a no-op on engines without it.
+  if (!E.launchRaise) return false;
   if (g.raises?.[h.bbl]) return true;
   const cap = E.outsideCapacity(g);
   if (!(cap > 0)) return false;

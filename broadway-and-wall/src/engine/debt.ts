@@ -978,9 +978,22 @@ export function productSpread(s: GameState, product: LoanProduct, opts: { ltv?: 
  * With no local tape the national record stands in (deskRiskView), so no
  * desk ever falls back on a rate card.
  */
+/**
+ * THE LOAN AT A DESK'S LIMIT IS NOT THE AVERAGE LOAN (2026-11-12). PRIOR_EL is
+ * the long-run loss rate of a whole book, and a book is a blend: most of it
+ * written well under the desk's limit, some at it. Capping every advance at
+ * the book's average loss made the average loan the most a desk would ever
+ * write — 55-68% everywhere, where desks today write 1.30x coverage at up to
+ * 70-75% (owner's market read, 2026-11-12) and price the extra loss in the
+ * spread (pricing.ts liveSpread already charges each loan its own loss). The
+ * limit is where the marginal loan loses twice the book's average [K: a
+ * judgement of the blend; measured, it puts the desks at 60-77% at full
+ * appetite and still lets a volatile or falling market pull every one in].
+ */
+const MARGINAL_EL_MULT = 2;
 export function deskAdvance(s: GameState, product: LoanProduct, klass?: string, attach = 0, at: LossAt = {}): number {
   const cls = lossClassOf(product);
-  const budget = (PRIOR_EL[cls] / 100) * Math.max(0.2, lenderAppetite(s, product.lender));
+  const budget = (PRIOR_EL[cls] / 100) * MARGINAL_EL_MULT * Math.max(0.2, lenderAppetite(s, product.lender));
   const el = (L: number) => trancheEl(s, product, L, klass, attach, at);
   let lo = Math.max(0.2, attach + 0.01), hi = 0.99;
   if (lo >= hi || el(lo) > budget) return lo;

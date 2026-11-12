@@ -2147,6 +2147,15 @@ function formFromChild(R: Rand, r: HouseholdRegister, i: number, e: Econ, pool: 
     } else k = findHomeMate(R, r, atHome, gone, i, w, age, cheap, pay);
   }
   if (j < 0 && k < 0 && !(cheap <= SCREEN * pay)) return false;
+  // A HOME TO GO TO (2026-11-12): a grown child who would need a place of its
+  // own leaves only when one is free; otherwise it stays at home and looks
+  // again. Young adults' household formation falls when housing is tight
+  // (Paciorek 2016, J. Urban Econ. 93: supply constraints lower headship of
+  // the young) [S~]. It left whatever the market held and was signed to a
+  // mainland flat that did not exist, then pushed to doubled up by the
+  // ladder: seed 31337, 3,300 doubled-up households from none in five years.
+  // Moving in with a partner who has a home needs no new one.
+  if (j < 0 && !mainHasRoom(r, a, i)) return false;
   // as many leave as the other agent stands for (all of this one, or part): the rest of this one stay at home as they were
   a = r.a!;
   const m = j >= 0 ? Math.min(w, a.wt[j]) : k >= 0 ? Math.min(w, a.wt[k]) : w;

@@ -3905,6 +3905,29 @@ export function householdStats(s: GameState) {
 }
 
 /**
+ * PAY IN DOLLARS (Markets page): the average salary of everyone in work, a
+ * year, and the median household's income (wages, pensions, unemployment
+ * pay), read off the register in today's dollars. Pure.
+ */
+export function payInDollars(s: GameState): { avgSalary: number; medianHhIncome: number; earners: number } | null {
+  const r = s.households;
+  if (!r) return null;
+  if (!r.a) unpackHouseholds(r);
+  const a = r.a!;
+  let pay = 0, n = 0;
+  const inc: number[] = [], ww: number[] = [];
+  for (let i = 0; i < r.n; i++) {
+    const w = a.wt[i];
+    if (isWorking(a.emp1[i])) { pay += w * a.wage1[i]; n += w; }
+    if (isWorking(a.emp2[i])) { pay += w * a.wage2[i]; n += w; }
+    if (isWorking(a.emp3[i])) { pay += w * a.wage3[i]; n += w; }
+    inc.push(incomeYear(a.emp1[i], a.wage1[i], a.un1[i]) + incomeYear(a.emp2[i], a.wage2[i], a.un2[i]) + incomeYear(a.emp3[i], a.wage3[i], a.un3[i]));
+    ww.push(w);
+  }
+  return { avgSalary: n > 0 ? pay / n : 0, medianHhIncome: inc.length ? wq(inc, ww, 0.5) : 0, earners: n };
+}
+
+/**
  * THE MAINLAND AT A GLANCE (Markets page): its homes and how full they are,
  * the going rent and what it was a year ago, what its builders have under way
  * and the sum they build on (`tickMainland` keeps it), and who lives where,

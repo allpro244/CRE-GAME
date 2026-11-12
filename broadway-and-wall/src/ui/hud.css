@@ -524,8 +524,9 @@
    variation like an excel sheet".) One pair a row below 1,000px: rows are
    children 2i-1, 2i, and every other row is 4n+3, 4n+4. */
 .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) { gap: 0; grid-template-columns: fit-content(48%) minmax(0, max-content); justify-content: start; }
-.app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) { border-top: 1px solid var(--border); border-left: 1px solid var(--border); width: max-content; max-width: 100%; }
-.app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k, .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v { padding: 5px 10px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
+.app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k, .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v { padding: 5px 10px; border-bottom: 1px solid var(--border); }
+/* the number starts where its label ends: no stretch of white between them (owner, 2026-11-12) */
+.app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v { text-align: left; padding-left: 4px; }
 .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(4n+3), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(4n+4) { background: color-mix(in srgb, var(--ink) 4%, transparent); }
 .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:hover, .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:hover + .v, .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:has(+ .v:hover), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v:hover { background: color-mix(in srgb, var(--accent, var(--ink)) 12%, transparent); }
 /* Two pairs a row from 1,000px, each bounded (at most ~550px) so a number sits
@@ -538,6 +539,7 @@
   }
   .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(4n+3), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(4n+4) { background: none; }
   .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(8n+5), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(8n+6), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(8n+7), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(8n+8) { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v:nth-child(4n+2) { margin-right: 32px; }
   .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:hover, .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:hover + .v, .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:has(+ .v:hover), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v:hover { background: color-mix(in srgb, var(--accent, var(--ink)) 12%, transparent); }
 }
 /* "· Open →" on every row of a clickable table is nineteen copies of the same

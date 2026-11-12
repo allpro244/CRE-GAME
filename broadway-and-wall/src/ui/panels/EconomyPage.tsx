@@ -19,7 +19,7 @@ import { LandValueChart } from "@/ui/panels/MarketPage";
 import { creditWord, real, workStage, Row, useDeskView, ViewSwitch } from "@/ui/panels/shared";
 import { Employers, Districts, boardClimate, pendingHearings } from "@/ui/panels/CityStances";
 import { Industries } from "@/ui/panels/IndustriesView";
-import { mainlandStats } from "@/engine/households";
+import { mainlandStats, payInDollars } from "@/engine/households";
 import { economyByIndustry } from "@/engine/economy";
 import { capReadLine } from "@/engine/propmarket";
 import { CityHallBox, CityHallRecord } from "@/ui/panels/CityHall";
@@ -214,6 +214,8 @@ export function CityFigures() {
   // and real pay against the nation = pay against the nation / that.
   const col = e.col0 !== undefined ? e.col0 * (e.cpi ?? 1) / Math.max(1e-6, e.natCpi ?? e.cpi ?? 1) : undefined;
   const realVsNation = col !== undefined ? ((1 + payVsNation / 100) / col - 1) * 100 : undefined;
+  // pay in dollars, off the register: once a month, not every render
+  const dollars = useMemo(() => payInDollars(game), [game.month, game.households]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
       <div className="page-section" style={{ marginTop: 14 }}>City today</div>
@@ -233,6 +235,12 @@ export function CityFigures() {
             missing, so eight and a half is about three points of slack above
             where this town sits when nothing is wrong. */}
         <Row k="Unemployment" v={`${((e.unemployment ?? 0) * 100).toFixed(1)}%`} bad={(e.unemployment ?? 0) > 0.085} />
+        {dollars && dollars.avgSalary > 0 && (<>
+          <Row k="Average salary" v={`$${Math.round(dollars.avgSalary).toLocaleString()}/yr`} strong
+            title={`Every worker in the region, in today's dollars · ${Math.round(dollars.earners).toLocaleString()} in work`} />
+          <Row k="Median household income" v={`$${Math.round(dollars.medianHhIncome).toLocaleString()}/yr`}
+            title="Wages, pensions and unemployment pay, the household in the middle, in today's dollars" />
+        </>)}
         <Row k="Real wage" v={`${((real((e.wageIdx ?? w0) / w0, e.cpi) - 1) * 100).toFixed(0)}% vs 2000`} />
         {/* THE ROW THE CHART ABOVE PROMISED. Its own note records why the line
             was dropped — nominal measured at 4.5x over a campaign against

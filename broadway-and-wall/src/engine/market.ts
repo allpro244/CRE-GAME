@@ -2365,7 +2365,7 @@ const CAPACITY_LINEAR = 0.03, CAPACITY_CEILING = 0.06;
 export function recordDeal(e: Econ, k: BuiltClass, m: number, rel: number, sf: number, renewal = false) {
   if (k !== "multifamily" || !(rel > 0) || !(sf > 0)) return;
   const list = ((e.deals ??= {})[k] ??= []);
-  list.push({ m, c: +Math.log(rel).toFixed(5), sf: Math.round(sf), ...(renewal ? { r: 1 } : {}) });
+  list.push({ m, c: +Math.log(rel).toFixed(5), sf: Math.round(sf), ...(renewal ? { r: 1 } : {}), ...(e.rentIdx?.multifamily > 0 ? { i: +e.rentIdx.multifamily.toFixed(4) } : {}) });
   while (list.length && list[0].m < m - 6) list.shift();
   // (shift, not splice: the same array, and V8 trims the front in place.)
   while (list.length > 400) list.shift();

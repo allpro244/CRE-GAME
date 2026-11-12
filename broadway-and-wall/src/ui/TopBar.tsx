@@ -652,8 +652,8 @@ export default function TopBar() {
             const debtBal = counts.debtBal ?? 0, debtWall = counts.debtWall ?? 0;
             const title = [
               `${d.label} (${d.key}) — ${visibleTabs(d, game, page).map((t) => t.label).join(" · ")}`,
-              d.id === "market" && (counts.market ?? 0) > 0 && counts.bcallSoon !== undefined
-                ? `${counts.market} pending · next off-market call lapses in ${counts.bcallSoon} mo.` : "",
+              d.id === "market" && (counts.brokers ?? 0) > 0 && counts.bcallSoon !== undefined
+                ? `${counts.brokers} off-market call${counts.brokers === 1 ? "" : "s"} · next off-market call lapses in ${counts.bcallSoon} mo.` : "",
               d.id === "capital" && debtBal > 0
                 ? `${(debtBal / 1e6).toFixed(1)}M outstanding${warn ? ` · ${((debtWall / debtBal) * 100).toFixed(0)}% matures within 3 yrs` : ""}.` : "",
             ].filter(Boolean).join(" ");

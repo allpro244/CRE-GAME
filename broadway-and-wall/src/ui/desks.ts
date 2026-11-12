@@ -53,7 +53,11 @@ export const DESKS: readonly Desk[] = [
     id: "market", label: "Market", icon: "◎", key: "4",
     note: "What is for sale — buildings, land and distressed paper",
     tabs: [
-      { page: "market", label: "For sale", note: "Listings, receiver books, auctions and off-market calls" },
+      { page: "market", label: "For sale", note: "Listings, receiver books and the foreclosure pipeline" },
+      // LAND AND BROKERS ARE THEIR OWN TABS (owner, Nov 2026: "instead of all
+      // the headers dragging you down the page"): For sale is the tape alone.
+      { page: "land", label: "Land", note: "The dirt that pencils, on and off the tape, and the land index" },
+      { page: "brokers", label: "Brokers", note: "Off-market calls, your buy box and your standing with each brokerage" },
       // Every standing building in town, sortable — the list you shop from
       // when nothing on the tape fits.
       { page: "buildings", label: "All buildings", note: "Every standing building — size, income, value and owner" },
@@ -163,7 +167,8 @@ export function tabCounts(g: GameState): TabCounts {
   const debtWarn = g.facility?.breachedSince ? "swept"
     : privateBorrowLive > 0 || (debtBal > 0 && debtWall / debtBal > 0.35) ? "wall" : null;
   return {
-    market: bcalls.length + booksLive,
+    market: booksLive,
+    brokers: bcalls.length,
     deals,
     notes,
     news,

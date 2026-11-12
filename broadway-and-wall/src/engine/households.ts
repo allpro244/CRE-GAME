@@ -1448,16 +1448,24 @@ export function seedHouseholdRegister(s: GameState, parcels: ParcelTable): House
 /**
  * THE LANDLORD'S SCREEN. A renter household applying for a flat whose rent
  * would take more than SCREEN of its income is turned away and the flat goes
- * to the next applicant; after SCREEN_TRIES applicants it goes to whoever is
- * there. Landlords' income tests run from 2.5 to 3 times the rent (33-40%);
+ * to the next applicant; after SCREEN_TRIES applicants with none passing, it
+ * goes to the strongest of them — a landlord picks its best applicant, not
+ * its last (2026-11-12: it was the last, and the opening let 15% of the
+ * island's flats to households paying over 70% of their income, who fell
+ * behind and were evicted in months 4-9: 40-66 evictions a month, the first
+ * year's 17% vacancy and halved rents on every seed). Landlords' income tests run from 2.5 to 3 times the rent (33-40%);
  * 50% allows for guarantors, vouchers and savings shown in lieu (NMHC/NAA
  * screening surveys) — a fact about the trade, not a fit. [S]
  */
 const SCREEN = 0.5, SCREEN_TRIES = 3;
 function screened(median: number, rentMo: number, z: (k: number) => number): number {
-  let income = 0;
-  for (let k = 0; k < SCREEN_TRIES; k++) { income = median * Math.exp(INCOME_SIGMA * z(k)); if ((12 * rentMo) / income <= SCREEN) break; }
-  return income;
+  let best = 0;
+  for (let k = 0; k < SCREEN_TRIES; k++) {
+    const income = median * Math.exp(INCOME_SIGMA * z(k));
+    if ((12 * rentMo) / income <= SCREEN) return income;
+    best = Math.max(best, income);
+  }
+  return best;
 }
 
 /** A household's pay a year: every slot's wage, pension or lost wage (what it spends from and expects to earn). */
@@ -1765,15 +1773,17 @@ function moveIn(R: Rand, r: HouseholdRegister, b: Block, e: Econ, m: number, poo
     if ((c < gone.length && gone[c]) || A.ten[c] !== TEN_MAINLAND || A.wt[c] < w) continue;
     if (wantsIsland(r, A, c, e, b.let, -MOVE_LOG)) { j = c; break; }
   }
-  // else the first of SCREEN_TRIES applicants from across the water who can carry it, else the last
+  // else the first of SCREEN_TRIES applicants from across the water who can carry it, else the strongest of them
+  let bestC = -1, bestInc = -1;
   for (let k = 0; j < 0 && k < SCREEN_TRIES && pool.length; k++) {
     const c = pool[Math.floor(R.u() * pool.length)];
     const A = r.a!;
     if ((c < gone.length && gone[c]) || A.ten[c] !== TEN_MAINLAND || A.wt[c] < w) continue;
     const inc = verifiedPay(A, c);
     if (inc > 0 && (12 * b.let) / inc <= SCREEN) j = c;
-    else if (k === SCREEN_TRIES - 1) j = c;
+    else if (inc > bestInc) { bestInc = inc; bestC = c; }
   }
+  if (j < 0) j = bestC;
   const i = addAgent(r), a = r.a!;
   if (j >= 0) {
     for (const k of FIELD_NAMES) (a[k] as Uint8Array)[i] = (a[k] as Uint8Array)[j];

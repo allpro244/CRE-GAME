@@ -878,7 +878,7 @@ export function EconomyPage() {
                 const ex = rows.reduce((a, r) => a + r.exports, 0);
                 const firms = rows.reduce((a, r) => a + r.firms, 0);
                 return (
-                  <button className={"mkt-card" + (sel === "industries" ? " mkt-card-on" : "")} onClick={() => setSel("industries")}>
+                  <button className={"mkt-card" + (sel === "industries" ? " mkt-card-on" : "")} onClick={() => useStore.getState().setPage("industries")}>
                     <div className="mkt-card-head">
                       <span className="mkt-card-name">Industries</span>
                       <span className="mono">{rows.length}</span>

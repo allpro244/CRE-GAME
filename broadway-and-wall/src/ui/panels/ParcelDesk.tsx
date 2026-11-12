@@ -1024,6 +1024,9 @@ function ParcelPanelInner({
                       like a windfall. */}
                   <span className="roll-meta mono">${useRentPsfYr(rec, game.econ, holding.condition, u, holding.condIdx).toFixed(0)}/sf market here</span>
                 </div>,
+                ...(inUse.length ? [<div key={`c-${u}`} className="roll-row roll-t roll-cols">
+                  <span>Tenant</span><span className="roll-c">Floors</span><span className="roll-c">Sq ft</span><span className="roll-c">Share</span><span className="roll-c">Rent</span><span className="roll-c">Expires</span>
+                </div>] : []),
                 ...inUse.map(({ t, i }) => {
                   const near = t.endM - game.month <= 24;
                   const ri = near ? renewalIntent(game, rec, holding, t, parcels) : null;
@@ -1047,22 +1050,32 @@ function ParcelPanelInner({
                   // is what turns a row into a relationship.
                   const yrsIn = Math.floor((game.month - t.startM) / 12);
                   const strained = t.strainedM !== undefined && game.month - t.strainedM < 24;
+                  // THE FEET IN THEIR OWN COLUMN (owner, Nov 2026: "it should show
+                  // how much sqft each tenant occupies"): floors, feet, share of
+                  // this use's rentable area, rent and expiry line up down the
+                  // roll; the notes go on a line under the tenant.
+                  const share = t.sf / Math.max(1, useRentableSf(rec, u));
+                  const notes = outgrown || shrinking || strained || !!ri;
                   return (
-                  <div key={i} className="roll-row">
+                  <div key={i} className="roll-row roll-t">
                     <span className="roll-name"><BizLink t={t} /> <span className="roll-credit mono">{CREDIT_LABEL[t.credit]}</span>
                       {yrsIn >= 5 && <span className="dim"> · since {START_YEAR + Math.floor(t.startM / 12)}</span>}
                     </span>
-                    <span className="roll-meta mono">
-                      {t.floorLo != null && t.floorHi != null && <>{t.floorLo === t.floorHi ? `Fl ${t.floorLo}` : `Fl ${t.floorLo}–${t.floorHi}`} · </>}
-                      {sf(t.sf)} · ${t.rentPsf.toFixed(0)} {recoveryOf(t) === "gross" ? "G" : recoveryOf(t).toUpperCase()} · exp {monthLabel(t.endM)}
-                      {" "}· {termLeft(t.endM, game.month)}
-                      {outgrown && (noRoom
-                        ? <> · <span className="warn">growing · needs {staff.toFixed(1)}× space · no room, likely to relocate</span></>
-                        : <> · growing · needs {staff.toFixed(1)}× space</>)}
-                      {shrinking && <> · shrinking · using {staff.toFixed(1)}× leased space</>}
-                      {strained && <> · <span className="warn">strained</span></>}
-                      {ri && <> · <span className={ri.p < 0.5 ? "warn" : ""}>{Math.round(ri.p * 100)}% renewal odds</span> · {ri.why[0]}</>}
-                    </span>
+                    <span className="roll-c mono">{t.floorLo != null && t.floorHi != null ? (t.floorLo === t.floorHi ? `Fl ${t.floorLo}` : `Fl ${t.floorLo}–${t.floorHi}`) : "—"}</span>
+                    <span className="roll-c roll-sf mono">{sf(t.sf)}</span>
+                    <span className="roll-c mono dim">{Math.round(share * 100)}%</span>
+                    <span className="roll-c mono">${t.rentPsf.toFixed(0)} {recoveryOf(t) === "gross" ? "G" : recoveryOf(t).toUpperCase()}</span>
+                    <span className="roll-c mono">{monthLabel(t.endM)}<span className="roll-left dim">{termLeft(t.endM, game.month)}</span></span>
+                    {notes && <span className="roll-notes mono">
+                      {[
+                        outgrown && (noRoom
+                          ? <span key="g" className="warn">growing · needs {staff.toFixed(1)}× space · no room, likely to relocate</span>
+                          : <span key="g">growing · needs {staff.toFixed(1)}× space</span>),
+                        shrinking && <span key="s">shrinking · using {staff.toFixed(1)}× leased space</span>,
+                        strained && <span key="t" className="warn">strained</span>,
+                        ri && <span key="r"><span className={ri.p < 0.5 ? "warn" : ""}>{Math.round(ri.p * 100)}% renewal odds</span> · {ri.why[0]}</span>,
+                      ].filter(Boolean).flatMap((n, k) => (k ? [" · ", n] : [n]))}
+                    </span>}
                   </div>
                   );
                 }),

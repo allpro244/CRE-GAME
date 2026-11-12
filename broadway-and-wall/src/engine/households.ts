@@ -1958,9 +1958,9 @@ function signMainland(r: HouseholdRegister, a: HouseholdArrays, i: number): numb
  * from below.
  */
 const MOVE_IN_SAVE = 4;
-/** A doubled-up household with work and a deposit (three months of the region's rent): ready for a place of its own. */
+/** A doubled-up household with work and a deposit — three months of the rent it would sign (mainRentFor), the older homes' going rent if that is the stock its budget reaches (2026-11-12: it was three months of the standard home's rent, ~$6,000 against $400 homes, so households who would fill the cheap stock never looked while it stood empty on its running-cost floor): ready for a place of its own. */
 function readyToRent(r: HouseholdRegister, a: HouseholdArrays, i: number): boolean {
-  return a.ten[i] === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) && a.sav[i] > 3 * r.mainRent;
+  return a.ten[i] === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) && a.sav[i] > 3 * mainRentFor(r, a, i);
 }
 function mainHasRoom(r: HouseholdRegister, a: HouseholdArrays, i: number): boolean {
   return mainRoomFor(r, a.wt[i]);
@@ -1981,6 +1981,13 @@ const MAIN_BUILD_M = 18;
 const MAX_STARTS_YR = 0.02;
 /** Renter households that move in a year: ~20% (Census CPS ASEC 2019-2022 one-year mover rate of renters) [S~]. */
 const RENTER_MOVE_YR = 0.20;
+/**
+ * A home made ready is then on the market about a month before the next
+ * household signs: apartment listings run ~30 days on market [S~: RentCafe /
+ * Zillow rental days-on-market, typically 25-40]. Homes in that month are
+ * between tenants, not a surplus: the landlords price with them in hand.
+ */
+const MARKET_M = 1;
 /** An apartment's operating cost, taxes and insurance over its potential rent: NAA Survey of Operating Income & Expenses 2023, ~42% [S~]. */
 const MAIN_OPEX = 0.42;
 /**
@@ -2056,19 +2063,32 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
   const out = Math.max(0, mk.occ + mk.signed - occ);
   const turning = (mk.turn ??= []);
   turning.push(out + occ * RENTER_MOVE_YR / 12);
-  while (turning.length > Math.ceil(MAKE_READY_M) + 1) turning.shift();
-  let idle = 0;
-  for (let k = 0; k < turning.length; k++) idle += turning[turning.length - 1 - k] * Math.max(0, Math.min(1, MAKE_READY_M - k));
+  while (turning.length > Math.ceil(MAKE_READY_M + MARKET_M) + 1) turning.shift();
+  let idle = 0, onMarket = 0;
+  for (let k = 0; k < turning.length; k++) {
+    const t = turning[turning.length - 1 - k];
+    idle += t * Math.max(0, Math.min(1, MAKE_READY_M - k));
+    onMarket += t * Math.max(0, Math.min(1, MAKE_READY_M + MARKET_M - k));
+  }
   mk.idle = idle;
   const all = mk.homes + mk.homesB;
   const roomA = Math.max(0, mk.homes - idle * mk.homes / Math.max(1, all));
   const roomB = Math.max(0, mk.homesB - idle * mk.homesB / Math.max(1, all));
+  // WHERE THE RENTS ARE STRUCK (2026-11-12): the homes let once the ones on
+  // the market (made ready, not yet signed: MARKET_M) are set aside. The
+  // ladder struck them at full occupancy, so the ordinary vacancy of homes
+  // between tenants read as a surplus, the last rung was the lowest bidder
+  // and the older homes sat on their running-cost floor from the third month
+  // on (seed 31337: $729 to $308, then the floor for decades, at 3% vacancy).
+  // Who doubles up still reads the homes standing (roomA, roomB).
+  const priceA = Math.max(0, mk.homes - onMarket * mk.homes / Math.max(1, all));
+  const priceB = Math.max(0, mk.homesB - onMarket * mk.homesB / Math.max(1, all));
   // the ladder: renters and looking households by what they would pay
   const bid: { i: number; w: number; wt: number; renter: boolean }[] = [];
   for (let i = 0; i < r.n; i++) {
     const t = a.ten[i];
     const renter = t === TEN_MAINLAND;
-    if (!renter && !(t === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) && a.sav[i] > 3 * r.mainRent)) continue;
+    if (!renter && !(t === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) && a.sav[i] > 3 * mainRentFor(r, a, i))) continue;
     const w = mainWill(r, a, i);
     if (w === undefined) { if (renter) bid.push({ i, w: 0, wt: a.wt[i], renter }); continue; }
     bid.push({ i, w, wt: a.wt[i], renter });
@@ -2076,15 +2096,24 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
   bid.sort((p, q) => q.w - p.w);
   let acc = 0, pA = -1, pB = -1;
   const floorA = MAIN_OPEX * mk.ask0 * (cost / mk.cost0), floorB = MAIN_OPEX * mk.askB0 * (cost / mk.cost0);
+  // A SITTING TENANT WITH NO PAY HOLDS ITS HOME BUT DOES NOT PRICE ONE
+  // (2026-11-12): it is on the ladder at a bid of nothing so that it keeps its
+  // place, and it sorts last — so once more than the homes on the market's
+  // share of renters had no verified pay, the rung that struck the older
+  // homes' rent was a household bidding $0 and the rent sat on the
+  // running-cost floor (seed 31337, every month from the third). The rent is
+  // the lowest bid of a household that is bidding.
+  let lastPos = 0;
   for (const b of bid) {
     acc += b.wt;
-    if (pA < 0 && acc >= roomA) pA = b.w;
-    if (pB < 0 && acc >= roomA + roomB) pB = b.w;
+    if (b.w > 0) lastPos = b.w;
+    if (pA < 0 && acc >= priceA) pA = b.w > 0 ? b.w : lastPos;
+    if (pB < 0 && acc >= priceA + priceB) pB = b.w > 0 ? b.w : lastPos;
     // past the ladder's last rung: a renter with no flat ready doubles up
     if (acc > roomA + roomB && b.renter) { a.ten[b.i] = TEN_DOUBLED; a.rent[b.i] = 0; a.blk[b.i] = -1; occ -= b.wt; }
   }
   // fewer bidders than homes: the last bid sets the rent, down to the running-cost floor
-  const last = bid.length ? bid[bid.length - 1].w : 0;
+  const last = lastPos;
   r.mainRent = Math.max(floorA, pA >= 0 ? pA : last);
   mk.askB = Math.min(r.mainRent, Math.max(floorB, pB >= 0 ? pB : last));
   mk.occ = occ; mk.signed = 0; mk.cards = [];
@@ -3096,7 +3125,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     // was not paying and almost never held the deposit it needs to leave —
     // measured, 66-124 of ~3,700 doubled-up households at year 5.
     const target = bufferMonths(a.age[i]) * a.yperm[i] + (plansToBuy(r, a, i, H) ? (DOWN_SAVE + CLOSING) * H.starter : 0)
-      + (a.ten[i] === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) ? MOVE_IN_SAVE * Math.max(1, r.mainRent) : 0);
+      + (a.ten[i] === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) ? MOVE_IN_SAVE * Math.max(1, mainRentFor(r, a, i)) : 0);
     // ...BUT THE RENT IS PAID FIRST (2026-10-28, step 2). A household short
     // of money cuts what it buys before it misses the rent or the mortgage —
     // down to the subsistence floor, drawing on its savings and its card —
@@ -3909,7 +3938,7 @@ export function householdStats(s: GameState) {
  * year, and the median household's income (wages, pensions, unemployment
  * pay), read off the register in today's dollars. Pure.
  */
-export function payInDollars(s: GameState): { avgSalary: number; medianHhIncome: number; earners: number } | null {
+export function payInDollars(s: GameState): { avgSalary: number; medianHhIncome: number; meanHhIncome: number; earners: number } | null {
   const r = s.households;
   if (!r) return null;
   if (!r.a) unpackHouseholds(r);
@@ -3924,7 +3953,9 @@ export function payInDollars(s: GameState): { avgSalary: number; medianHhIncome:
     inc.push(incomeYear(a.emp1[i], a.wage1[i], a.un1[i]) + incomeYear(a.emp2[i], a.wage2[i], a.un2[i]) + incomeYear(a.emp3[i], a.wage3[i], a.un3[i]));
     ww.push(w);
   }
-  return { avgSalary: n > 0 ? pay / n : 0, medianHhIncome: inc.length ? wq(inc, ww, 0.5) : 0, earners: n };
+  let hw = 0, hs = 0;
+  for (let j = 0; j < inc.length; j++) { hw += ww[j]; hs += ww[j] * inc[j]; }
+  return { avgSalary: n > 0 ? pay / n : 0, medianHhIncome: inc.length ? wq(inc, ww, 0.5) : 0, meanHhIncome: hw > 0 ? hs / hw : 0, earners: n };
 }
 
 /**

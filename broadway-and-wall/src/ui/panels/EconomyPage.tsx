@@ -238,10 +238,12 @@ export function CityFigures() {
             where this town sits when nothing is wrong. */}
         <Row k="Unemployment" v={`${((e.unemployment ?? 0) * 100).toFixed(1)}%`} bad={(e.unemployment ?? 0) > 0.085} />
         {dollars && dollars.avgSalary > 0 && (<>
-          <Row k="Average salary" v={`$${Math.round(dollars.avgSalary).toLocaleString()}/yr`} strong
-            title={`Every worker in the region, in today's dollars · ${Math.round(dollars.earners).toLocaleString()} in work`} />
+          <Row k="Average pay, full-time job" v={`$${Math.round(dollars.avgSalary).toLocaleString()}/yr`} strong
+            title={`Cash pay of every worker in the region, a full year's job, in today's dollars · ${Math.round(dollars.earners).toLocaleString()} in work · US 2000: about $45,000 for full-time, year-round workers`} />
           <Row k="Median household income" v={`$${Math.round(dollars.medianHhIncome).toLocaleString()}/yr`}
-            title="Wages, pensions and unemployment pay, the household in the middle, in today's dollars" />
+            title="Wages, pensions and unemployment pay, the household in the middle: one-earner, two-earner and retired households alike · US 2000: $42,148 (Census)" />
+          <Row k="Mean household income" v={`$${Math.round(dollars.meanHhIncome).toLocaleString()}/yr`}
+            title="All households' income over the number of households · US 2000: about $57,000 (Census), about 1.35x the median" />
         </>)}
         <Row k="Real wage" v={`${((real((e.wageIdx ?? w0) / w0, e.cpi) - 1) * 100).toFixed(0)}% vs 2000`} />
         {/* THE ROW THE CHART ABOVE PROMISED. Its own note records why the line

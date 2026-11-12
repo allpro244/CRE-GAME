@@ -1301,9 +1301,14 @@ function tickMonth(
     }
     if ((s.underwaterMs ?? 0) >= 24) {
       s.gameOver = {
-        cause: "Insolvency: two years with negative net worth and no recovery. Game over.",
+        // IT IS CASH, NOT NET WORTH (2026-11-12): the clock counts months the
+        // firm could not pay its bills. A firm can hold buildings marked well
+        // above their debt and still be here — illiquid, its seized buildings
+        // sold at distressed bids that barely clear their loans. The message
+        // said "negative net worth", and a playthrough ended with $3.6M of it.
+        cause: "Insolvency: two years unable to pay your bills (cash below zero) — creditors took over. Game over.",
       };
-      s.news.unshift({ q: s.month, kind: "warn", text: "Game over: creditors foreclosed after two years of insolvency." });
+      s.news.unshift({ q: s.month, kind: "warn", text: "Game over: two years with cash below zero — your creditors foreclosed, whatever the buildings are marked at." });
     } else if (s.insolventMs >= 6) {
       // Last draw before the bailiff — if the line still covers the hole,
       // there is nothing to seize.

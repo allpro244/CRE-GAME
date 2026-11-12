@@ -69,8 +69,9 @@
 // they are a shape parameter, stated as such (CLAUDE.md).
 import type { ParcelTable } from "@/data/types";
 import type { Econ, GameState } from "./types";
-import { HH_RENT_SHARE0, shortIndexOf, recordDeal, OPENING_VAC } from "./market";
-import { resolveRecBare, useRentableSf } from "./value";
+import { HH_RENT_SHARE0, shortIndexOf, recordDeal, OPENING_VAC, SF_PER_HOME } from "./market";
+import { resolveRecBare, useRentableSf, HARD_COST_PSF, constructionTypeMult, SOFT_COST, CONTINGENCY } from "./value";
+import { LAND_SHARE_TYPICAL } from "./tax";
 import { flatUnitSf, priceFlats, flatComps, type FlatRoll } from "./streetRolls";
 import { HH_SIZE, INCOME_SIGMA, TAX_INS, DTI, COMMUTE, REF_HOME, medianIncome, mortgageRate, fundamentalHomePsf } from "./homeprice";
 import { why, whyOnce, whyAt } from "./why";
@@ -869,7 +870,7 @@ export interface HouseholdRegister {
    * (log of each looking household's budget over the going rent) and the
    * weight that signed. Absent until the first month a save runs it.
    */
-  mk?: { homes: number; homes0: number; ask0: number; cap0: number; cost0: number; occ: number; roll: FlatRoll; pipe: { m: number; n: number }[]; cards: number[]; signed: number; ask12?: number[]; turn?: number[]; idle?: number; homesB?: number; askB?: number; askB0?: number };
+  mk?: { homes: number; homes0: number; ask0: number; cap0: number; cost0: number; occ: number; roll: FlatRoll; pipe: { m: number; n: number }[]; cards: number[]; signed: number; ask12?: number[]; turn?: number[]; idle?: number; homesB?: number; askB?: number; askB0?: number; homeValue?: number; homeCost?: number; pencil?: number };
   /** Each island block of flats an agent can point at (bbl), append-only. */
   blocks: string[];
   /** Each street block's flat size: [sf, month read, month last seen] (see blockUnitSf). */
@@ -914,6 +915,11 @@ export interface HouseholdRegister {
   shelterIdx?: number[]; mfRef?: number; mainRefS?: number;
   /** Movers from elsewhere this month still to place, short of a whole household of the region's weight (`matchJobs` step 4). */
   arriveAcc?: number;
+  /** The would-be buyers' share of movers turned away for want of a rental, carried (matchJobs). */
+  ownArr?: number;
+  /** How the movers let in as would-be buyers decided: tried and bought, decaying counts (matchJobs). */
+  ownTry?: number;
+  ownBuy?: number;
   /** This month's move-outs from the player's blocks: the cause-ledger event per block (bbl -> why id). */
   flatWhy?: Record<string, number>;
   /** THE HOUSEHOLDS' YEAR (stage 5), rolled for the cause ledger: spending by category, net income, layoffs, the jobless rate and the wage index; the month each category's fall was last written. */
@@ -1957,12 +1963,22 @@ function readyToRent(r: HouseholdRegister, a: HouseholdArrays, i: number): boole
   return a.ten[i] === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) && a.sav[i] > 3 * r.mainRent;
 }
 function mainHasRoom(r: HouseholdRegister, a: HouseholdArrays, i: number): boolean {
+  return mainRoomFor(r, a.wt[i]);
+}
+/** Is there a home free on the mainland for `w` households this month? */
+function mainRoomFor(r: HouseholdRegister, w: number): boolean {
   const mk = r.mk;
-  return !mk || mk.occ + mk.signed + a.wt[i] <= mk.homes + (mk.homesB ?? 0) - (mk.idle ?? 0);
+  return !mk || mk.occ + mk.signed + w <= mk.homes + (mk.homesB ?? 0) - (mk.idle ?? 0);
 }
 
 /** Census Survey of Construction 2023: months from start to completion, buildings of 5+ units, about 18 [S~]. */
 const MAIN_BUILD_M = 18;
+/**
+ * The most of the stock started in a year: US housing starts peaked near 1.7%
+ * of the housing stock (2.07M starts on ~124M units, 2005) and ran ~2.3% in the
+ * early 1970s (Census New Residential Construction; ACS / HVS stock) [S~].
+ */
+const MAX_STARTS_YR = 0.02;
 /** Renter households that move in a year: ~20% (Census CPS ASEC 2019-2022 one-year mover rate of renters) [S~]. */
 const RENTER_MOVE_YR = 0.20;
 /** An apartment's operating cost, taxes and insurance over its potential rent: NAA Survey of Operating Income & Expenses 2023, ~42% [S~]. */
@@ -2069,11 +2085,29 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
   (mk.ask12 ??= []).push(r.mainRent);
   if (mk.ask12.length > 12) mk.ask12.shift();
   const ask = mk.ask12.reduce((x, y) => x + y, 0) / mk.ask12.length;
-  const pencil = ((ask / mk.ask0) * (mk.cap0 / Math.max(1e-9, cap))) / (cost / mk.cost0);
+  // WHAT A NEW HOME IS WORTH AGAINST WHAT IT COSTS TO BUILD (2026-11-12),
+  // on today's numbers: its rent less its running costs (MAIN_OPEX) at the
+  // flats' cap rate, with land taking its typical share of value
+  // (tax.ts LAND_SHARE_TYPICAL), against the island builders' own cost of a
+  // flat (value.ts HARD_COST_PSF x the cost index, soft costs, contingency).
+  // The pencil was this ratio over the opening's, which assumed the opening
+  // was in equilibrium — but the flats' cap rate opened under its settled
+  // level (5.8% re-reading to ~8%), so the ratio sat at 0.76-0.95 for thirty
+  // years and almost nothing was built (seed 31337: homes +8% while renters
+  // and doubled-up households doubled). Saiz's long-run elasticity still
+  // shapes how far supply follows the margin (HOUSING_SUPPLY_ELAST).
+  const homeValue = (12 * ask * (1 - MAIN_OPEX)) / Math.max(0.01, cap / 100);
+  const homeCost = SF_PER_HOME * HARD_COST_PSF.multifamily * constructionTypeMult("multifamily", 3) * cost * (1 + SOFT_COST) * (1 + CONTINGENCY);
+  const pencil = (homeValue * (1 - LAND_SHARE_TYPICAL)) / Math.max(1, homeCost);
+  // kept for the Markets page, so it shows the builders' own sum
+  mk.homeValue = homeValue; mk.homeCost = homeCost; mk.pencil = pencil;
   let piped = 0;
   for (const p of mk.pipe) piped += p.n;
   const start = mk.homes0 * Math.pow(pencil, HOUSING_SUPPLY_ELAST) - mk.homes - piped;
-  if (start > 0) mk.pipe.push({ m: m + MAIN_BUILD_M, n: start / MAIN_BUILD_M });
+  // ...at the pace the trades can build: no more than MAX_STARTS_YR of the
+  // stock started in a year, however far the margin runs ahead.
+  const pace = (mk.homes + (mk.homesB ?? 0)) * MAX_STARTS_YR / 12;
+  if (start > 0) mk.pipe.push({ m: m + MAIN_BUILD_M, n: Math.min(start / MAIN_BUILD_M, pace) });
 }
 
 /**
@@ -2124,6 +2158,15 @@ function formFromChild(R: Rand, r: HouseholdRegister, i: number, e: Econ, pool: 
     } else k = findHomeMate(R, r, atHome, gone, i, w, age, cheap, pay);
   }
   if (j < 0 && k < 0 && !(cheap <= SCREEN * pay)) return false;
+  // A HOME TO GO TO (2026-11-12): a grown child who would need a place of its
+  // own leaves only when one is free; otherwise it stays at home and looks
+  // again. Young adults' household formation falls when housing is tight
+  // (Paciorek 2016, J. Urban Econ. 93: supply constraints lower headship of
+  // the young) [S~]. It left whatever the market held and was signed to a
+  // mainland flat that did not exist, then pushed to doubled up by the
+  // ladder: seed 31337, 3,300 doubled-up households from none in five years.
+  // Moving in with a partner who has a home needs no new one.
+  if (j < 0 && !mainHasRoom(r, a, i)) return false;
   // as many leave as the other agent stands for (all of this one, or part): the rest of this one stay at home as they were
   a = r.a!;
   const m = j >= 0 ? Math.min(w, a.wt[j]) : k >= 0 ? Math.min(w, a.wt[k]) : w;
@@ -2691,8 +2734,9 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // the firms bid pay up for it, and a town that pays more than its prices
   // draws more (`draw`, the job seekers, below). Movers this month who find
   // no opening go elsewhere (the carry is under one household).
-  let hhW = 0;
-  for (let i = 0; i < r.n; i++) hhW += r.a!.wt[i];
+  let hhW = 0, ownW = 0;
+  for (let i = 0; i < r.n; i++) { hhW += r.a!.wt[i]; if (r.a!.ten[i] === TEN_OWN) ownW += r.a!.wt[i]; }
+  const ownShare = hhW > 0 ? ownW / hhW : 0;
   r.arriveAcc = (r.arriveAcc ?? 0) + MOVE_M * Math.min(1, pull) * hhW;
   const slots: number[] = [];
   for (let ind = 0; ind < N_IND; ind++) for (let v = open[ind]; v >= wR / 2; v -= wR) slots.push(ind);
@@ -2709,6 +2753,26 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
           const job = bestJob(i, k, ind);
           if (job) { place(i, k, job); budget -= w; WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * R.n()); continue; }
         }
+      }
+      // ...AND A MOVER WITH NOWHERE TO LIVE GOES ELSEWHERE (2026-11-12): an
+      // outsider takes the opening only if a home is free for it. It came for
+      // the work whatever the region's housing held and was signed to a flat
+      // that did not exist, then pushed to doubled up — housing supply is what
+      // limits a metro's in-migration (Glaeser & Gyourko 2005, J. Pol. Econ.
+      // 113; Saiz 2010) [S~]. The opening stays open, the firms bid pay up for
+      // it, and the rents a full region charges are what builders build on.
+      // A mover who will buy needs no rental: the region's owners' share of the
+      // movers it turns away still come (a running tally, not a draw), and
+      // decide to buy or rent as any arrival does below.
+      // ...at the rate such movers have actually gone on to buy (ownTry/ownBuy,
+      // a running record), so the ones who would only have doubled up do not come.
+      let viaOwn = false;
+      if (!mainRoomFor(r, wR)) {
+        const buyRate = ((r.ownBuy ?? 0) + 1) / ((r.ownTry ?? 0) + 2);
+        r.ownArr = (r.ownArr ?? 0) + ownShare * buyRate;
+        if (r.ownArr < 1) continue;
+        r.ownArr -= 1;
+        viaOwn = true;
       }
       r.arriveAcc -= wR;
       const i = addAgent(r), b = r.a!;
@@ -2746,7 +2810,13 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       if (R.u() < OWN_BY_AGE[ageBand(b.age[i])]) b.sav[i] += EQUITY_PAY * (b.wage1[i] + b.wage2[i]);
       if (r.ownMu !== undefined) {
         const c = buyCheck(b, i, H, b.rent[i]);
-        if (c !== null && r.ownMu + OWN_SIGMA * R.n() >= c) { buyHome(r, b, i, H, s.month); r.flow.bought = (r.flow.bought ?? 0) + wR; }
+        const bought = c !== null && r.ownMu + OWN_SIGMA * R.n() >= c;
+        if (bought) { buyHome(r, b, i, H, s.month); r.flow.bought = (r.flow.bought ?? 0) + wR; }
+        if (viaOwn) {
+          // a long memory of how such movers decide (each record weighs ~1/100 of the last hundred)
+          r.ownTry = 0.99 * (r.ownTry ?? 0) + 1;
+          r.ownBuy = 0.99 * (r.ownBuy ?? 0) + (bought ? 1 : 0);
+        }
       }
     }
   }
@@ -3825,6 +3895,57 @@ export function householdStats(s: GameState) {
     /** the engine's burden: the opening's HH_RENT_SHARE0 moved by the flats' effective rent over the wage index since */
     engineBurden: HH_RENT_SHARE0 * ((e.effRentIdx?.multifamily ?? e.rentIdx?.multifamily ?? 1) / (r.rent0 || 1)) / ((e.wageIdx ?? 1) / (r.wage0 || 1)),
     flow: { ...r.flow },
+  };
+}
+
+/**
+ * THE MAINLAND AT A GLANCE (Markets page): its homes and how full they are,
+ * the going rent and what it was a year ago, what its builders have under way
+ * and the sum they build on (`tickMainland` keeps it), and who lives where,
+ * with the mainland renters' median rent burden. Pure, read off the register.
+ */
+export function mainlandStats(s: GameState) {
+  const r = s.households, mk = r?.mk;
+  if (!r || !mk) return null;
+  if (!r.a) unpackHouseholds(r);
+  const a = r.a!;
+  let islandR = 0, mainR = 0, own = 0, dbl = 0, ready = 0;
+  // rent over the year's income (wages, pensions, unemployment insurance), island and mainland renters
+  const burden: number[] = [], bw: number[] = [], bI: number[] = [], wI: number[] = [];
+  let over = 0, overI = 0, rentM = 0, incM = 0, rentI = 0, incI = 0;
+  for (let i = 0; i < r.n; i++) {
+    const w = a.wt[i], t = a.ten[i];
+    if (t === TEN_OWN) own += w;
+    else if (t === TEN_DOUBLED) { dbl += w; if (readyToRent(r, a, i)) ready += w; }
+    else if (t === TEN_MAINLAND || t === TEN_RENT) {
+      const inc = incomeYear(a.emp1[i], a.wage1[i], a.un1[i]) + incomeYear(a.emp2[i], a.wage2[i], a.un2[i]) + incomeYear(a.emp3[i], a.wage3[i], a.un3[i]);
+      const b = inc > 0 ? 12 * a.rent[i] / inc : 9.99;
+      if (t === TEN_MAINLAND) { mainR += w; burden.push(b); bw.push(w); if (b > 0.3) over += w; rentM += w * 12 * a.rent[i]; incM += w * inc; }
+      else { islandR += w; bI.push(b); wI.push(w); if (b > 0.3) overI += w; rentI += w * 12 * a.rent[i]; incI += w * inc; }
+    }
+  }
+  const homes = mk.homes + (mk.homesB ?? 0);
+  let building = 0, due12 = 0;
+  for (const p of mk.pipe) { building += p.n; if (p.m <= s.month + 12) due12 += p.n; }
+  return {
+    homes, homesStd: mk.homes, homesOlder: mk.homesB ?? 0,
+    occupied: mk.occ, idle: mk.idle ?? 0,
+    vacancy: homes > 0 ? Math.max(0, 1 - mk.occ / homes) : 0,
+    rent: r.mainRent, rentOlder: mk.askB ?? r.mainRent,
+    rentYearAgo: mk.ask12?.length ? mk.ask12[0] : r.mainRent,
+    rentOpen: mk.ask0,
+    building, due12,
+    homeValue: mk.homeValue, homeCost: mk.homeCost, pencil: mk.pencil,
+    households: islandR + mainR + own + dbl, islandRenters: islandR, mainlandRenters: mainR, owners: own, doubledUp: dbl, doubledReady: ready,
+    medianBurden: burden.length ? wq(burden, bw, 0.5) : NaN,
+    /** the share of mainland renters paying over 30% of income in rent (HUD's cost-burdened line) */
+    overBurden: mainR > 0 ? over / mainR : NaN,
+    islandBurden: bI.length ? wq(bI, wI, 0.5) : NaN,
+    islandOverBurden: islandR > 0 ? overI / islandR : NaN,
+    /** the average share: all renters' rent over all their income (the aggregate ratio, which a household with no income cannot run to infinity) */
+    avgBurden: incM > 0 ? rentM / incM : NaN,
+    islandAvgBurden: incI > 0 ? rentI / incI : NaN,
+    flow: { arrived: r.flow.arrived ?? 0, left: r.flow.left ?? 0, formed: r.flow.formed ?? 0, bought: r.flow.bought ?? 0, evictions: r.flow.evictions ?? 0, foreclosures: r.flow.foreclosures ?? 0 },
   };
 }
 

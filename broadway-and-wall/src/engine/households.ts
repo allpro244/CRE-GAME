@@ -870,7 +870,7 @@ export interface HouseholdRegister {
    * (log of each looking household's budget over the going rent) and the
    * weight that signed. Absent until the first month a save runs it.
    */
-  mk?: { homes: number; homes0: number; ask0: number; cap0: number; cost0: number; occ: number; roll: FlatRoll; pipe: { m: number; n: number }[]; cards: number[]; signed: number; ask12?: number[]; turn?: number[]; idle?: number; homesB?: number; askB?: number; askB0?: number };
+  mk?: { homes: number; homes0: number; ask0: number; cap0: number; cost0: number; occ: number; roll: FlatRoll; pipe: { m: number; n: number }[]; cards: number[]; signed: number; ask12?: number[]; turn?: number[]; idle?: number; homesB?: number; askB?: number; askB0?: number; homeValue?: number; homeCost?: number; pencil?: number };
   /** Each island block of flats an agent can point at (bbl), append-only. */
   blocks: string[];
   /** Each street block's flat size: [sf, month read, month last seen] (see blockUnitSf). */
@@ -2099,6 +2099,8 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
   const homeValue = (12 * ask * (1 - MAIN_OPEX)) / Math.max(0.01, cap / 100);
   const homeCost = SF_PER_HOME * HARD_COST_PSF.multifamily * constructionTypeMult("multifamily", 3) * cost * (1 + SOFT_COST) * (1 + CONTINGENCY);
   const pencil = (homeValue * (1 - LAND_SHARE_TYPICAL)) / Math.max(1, homeCost);
+  // kept for the Markets page, so it shows the builders' own sum
+  mk.homeValue = homeValue; mk.homeCost = homeCost; mk.pencil = pencil;
   let piped = 0;
   for (const p of mk.pipe) piped += p.n;
   const start = mk.homes0 * Math.pow(pencil, HOUSING_SUPPLY_ELAST) - mk.homes - piped;
@@ -3893,6 +3895,48 @@ export function householdStats(s: GameState) {
     /** the engine's burden: the opening's HH_RENT_SHARE0 moved by the flats' effective rent over the wage index since */
     engineBurden: HH_RENT_SHARE0 * ((e.effRentIdx?.multifamily ?? e.rentIdx?.multifamily ?? 1) / (r.rent0 || 1)) / ((e.wageIdx ?? 1) / (r.wage0 || 1)),
     flow: { ...r.flow },
+  };
+}
+
+/**
+ * THE MAINLAND AT A GLANCE (Markets page): its homes and how full they are,
+ * the going rent and what it was a year ago, what its builders have under way
+ * and the sum they build on (`tickMainland` keeps it), and who lives where,
+ * with the mainland renters' median rent burden. Pure, read off the register.
+ */
+export function mainlandStats(s: GameState) {
+  const r = s.households, mk = r?.mk;
+  if (!r || !mk) return null;
+  if (!r.a) unpackHouseholds(r);
+  const a = r.a!;
+  let islandR = 0, mainR = 0, own = 0, dbl = 0, ready = 0;
+  const burden: number[] = [], bw: number[] = [];
+  for (let i = 0; i < r.n; i++) {
+    const w = a.wt[i], t = a.ten[i];
+    if (t === TEN_RENT) islandR += w;
+    else if (t === TEN_OWN) own += w;
+    else if (t === TEN_DOUBLED) { dbl += w; if (readyToRent(r, a, i)) ready += w; }
+    else if (t === TEN_MAINLAND) {
+      mainR += w;
+      const inc = incomeYear(a.emp1[i], a.wage1[i], a.un1[i]) + incomeYear(a.emp2[i], a.wage2[i], a.un2[i]) + incomeYear(a.emp3[i], a.wage3[i], a.un3[i]);
+      burden.push(inc > 0 ? 12 * a.rent[i] / inc : 9.99); bw.push(w);
+    }
+  }
+  const homes = mk.homes + (mk.homesB ?? 0);
+  let building = 0, due12 = 0;
+  for (const p of mk.pipe) { building += p.n; if (p.m <= s.month + 12) due12 += p.n; }
+  return {
+    homes, homesStd: mk.homes, homesOlder: mk.homesB ?? 0,
+    occupied: mk.occ, idle: mk.idle ?? 0,
+    vacancy: homes > 0 ? Math.max(0, 1 - mk.occ / homes) : 0,
+    rent: r.mainRent, rentOlder: mk.askB ?? r.mainRent,
+    rentYearAgo: mk.ask12?.length ? mk.ask12[0] : r.mainRent,
+    rentOpen: mk.ask0,
+    building, due12,
+    homeValue: mk.homeValue, homeCost: mk.homeCost, pencil: mk.pencil,
+    households: islandR + mainR + own + dbl, islandRenters: islandR, mainlandRenters: mainR, owners: own, doubledUp: dbl, doubledReady: ready,
+    medianBurden: burden.length ? wq(burden, bw, 0.5) : NaN,
+    flow: { arrived: r.flow.arrived ?? 0, left: r.flow.left ?? 0, formed: r.flow.formed ?? 0, bought: r.flow.bought ?? 0, evictions: r.flow.evictions ?? 0, foreclosures: r.flow.foreclosures ?? 0 },
   };
 }
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Spark } from "@/ui/next/Figure";
 import "@/ui/cleanup-city.css";
 import { useMasonry } from "@/ui/useMasonry";
@@ -19,6 +19,7 @@ import { LandValueChart } from "@/ui/panels/MarketPage";
 import { creditWord, real, workStage, Row, useDeskView, ViewSwitch } from "@/ui/panels/shared";
 import { Employers, Districts, boardClimate, pendingHearings } from "@/ui/panels/CityStances";
 import { Industries } from "@/ui/panels/IndustriesView";
+import { mainlandStats } from "@/engine/households";
 import { economyByIndustry } from "@/engine/economy";
 import { capReadLine } from "@/engine/propmarket";
 import { CityHallBox, CityHallRecord } from "@/ui/panels/CityHall";
@@ -258,6 +259,56 @@ export function CityFigures() {
         )}
         <Row k="Real output" v={`${((real((e.outputIdx ?? w0) / w0, e.cpi) - 1) * 100).toFixed(0)}% vs 2000`} />
         <Row k="Price level" v={`+${(((e.cpi ?? 1) - 1) * 100).toFixed(0)}% since 2000`} />
+      </div>
+      <MainlandFigures />
+    </>
+  );
+}
+
+/**
+ * ACROSS THE WATER: the mainland's rental market, where most of the town's
+ * workers live (households.ts `tickMainland`). Its homes and how full they
+ * are, the going rent, what its builders have under way and the sum they
+ * build on, and who lives where. Everything is read off the register
+ * (`mainlandStats`), so the page shows the builders' own numbers.
+ */
+function MainlandFigures() {
+  const game = useStore((s) => s.game)!;
+  // a pass over the register: once a month, not every render
+  const m = useMemo(() => mainlandStats(game), [game.month, game.households]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!m) return null;
+  const n = (x: number) => Math.round(x).toLocaleString();
+  const pct = (x: number, d = 1) => `${(x * 100).toFixed(d)}%`;
+  const rentYr = m.rentYearAgo > 0 ? m.rent / m.rentYearAgo - 1 : 0;
+  const share = (x: number) => (m.households > 0 ? ` (${pct(x / m.households, 0)})` : "");
+  return (
+    <>
+      <div className="page-section" style={{ marginTop: 14 }}>The mainland</div>
+      <div className="grid">
+        <Row k="Rental homes" v={n(m.homes)} strong
+          title={`${n(m.homesStd)} standard · ${n(m.homesOlder)} older (filtered down) · households' worth`} />
+        <Row k="Occupied" v={`${n(m.occupied)} · ${pct(m.vacancy)} empty`} bad={m.vacancy < 0.03}
+          title={`Includes ${n(m.idle)} turning over between tenants`} />
+        <Row k="Going rent" v={`$${n(m.rent)}/mo`} strong
+          title={`Older homes $${n(m.rentOlder)}/mo · opening $${n(m.rentOpen)}/mo`} />
+        <Row k="Rent, 12 mo" v={pctSigned(rentYr, 1)} bad={rentYr > 0.06} />
+        <Row k="Renters' median burden" v={Number.isFinite(m.medianBurden) ? pct(m.medianBurden, 0) + " of pay" : "—"}
+          bad={m.medianBurden > 0.3} title="Rent over household income, mainland renters · 30% is the usual line" />
+        <Row k="Under construction" v={`${n(m.building)} homes · ${n(m.due12)} due within 12 mo`} />
+        {m.pencil !== undefined && (
+          <Row k="Builders' pencil" v={`${m.pencil.toFixed(2)}×${m.pencil < 1 ? " · not building" : ""}`} bad={m.pencil < 1}
+            title={`A new home is worth $${n(m.homeValue ?? 0)} (rent less running costs at the flats' cap rate), less land's share, against $${n(m.homeCost ?? 0)} to build · above 1× it pays to build`} />
+        )}
+      </div>
+      <div className="page-section" style={{ marginTop: 14 }}>Where the region's households live</div>
+      <div className="grid">
+        <Row k="Own their home" v={n(m.owners) + share(m.owners)} />
+        <Row k="Rent on the mainland" v={n(m.mainlandRenters) + share(m.mainlandRenters)} />
+        <Row k="Rent on the island" v={n(m.islandRenters) + share(m.islandRenters)} />
+        <Row k="Doubled up" v={n(m.doubledUp) + share(m.doubledUp)} bad={m.doubledUp / Math.max(1, m.households) > 0.08}
+          title={`Living with family or friends, no home of their own · ${n(m.doubledReady)} have work and a deposit and are looking`} />
+        <Row k="This month" v={`+${n(m.flow.arrived)} arrived · −${n(m.flow.left)} left · ${n(m.flow.formed)} formed · ${n(m.flow.bought)} bought`}
+          title={`Evictions ${n(m.flow.evictions)} · foreclosures ${n(m.flow.foreclosures)}`} />
       </div>
     </>
   );

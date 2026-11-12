@@ -213,6 +213,13 @@ export const TASTE: Record<Comm, number> = { office: 0.19, retail: 0.08, industr
  */
 const COMPS_M = 12;
 const PKG_MAX = 0.35;
+/**
+ * THE SHARE OF A LANDLORD'S CUT THAT LANDS ON THE ASKING RENT, the rest going
+ * to the package. In the 2008-10 downturn US office asking rents fell ~12%
+ * while effective rents fell ~25% (CBRE / CoStar), about half the move on the
+ * face; Manhattan's early-1990s bust took asking rents down 20-30% [S~].
+ */
+const FACE_SHARE = 0.5;
 const PKG_TAKE = 0.03;
 const RAISE = 0.06;
 const STRESS_MOVE = 1.5, STRESS_RES = 0.96;
@@ -403,9 +410,13 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
     // them with no evidence of its own ratchets the town toward its keenest
     // landlord (measured, office -30% at 6% vacancy).
     d += opts.darkM > opts.monthsToLet ? Math.min(0, toComps) : Math.max(0, toComps);
-    // The trade moves the package first; past the deepest package (or with
-    // none left to take back) the face.
-    const keep = (1 - L.c) * Math.exp(step);
+    // THE TRADE MOVES THE FACE AND THE PACKAGE TOGETHER (2026-11-12): a share
+    // of each step on the asking rent (FACE_SHARE), the rest on the package;
+    // past the deepest package (or with none left to take back) all of it on
+    // the face. It moved the package alone until the package hit its deepest,
+    // so asking rents held still through all but the worst gluts.
+    if (!opts.holdFace) d += FACE_SHARE * step;
+    const keep = (1 - L.c) * Math.exp((opts.holdFace ? 1 : 1 - FACE_SHARE) * step);
     let c = 1 - keep;
     if (c > PKG_MAX) { if (!opts.holdFace) d += Math.log(keep / (1 - PKG_MAX)); c = PKG_MAX; }
     else if (c < 0) { if (!opts.holdFace) d += Math.log(keep); c = 0; }
@@ -490,7 +501,12 @@ function reviewAskByPatience(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts
   } else if (opts.darkM !== undefined) {
     d += Math.min(0, toComps);
     const push = Math.min(3, (opts.darkM - L.t) / Math.max(1, L.t)) * (opts.stressed ? STRESS_MOVE : 1) * months;
-    if (L.c < PKG_MAX) L.c = Math.min(PKG_MAX, L.c + PKG_STEP * push);
+    // the face takes its share of the cut (FACE_SHARE), the package the rest
+    if (L.c < PKG_MAX) {
+      const cut = PKG_STEP * push;
+      L.c = Math.min(PKG_MAX, L.c + (opts.holdFace ? 1 : 1 - FACE_SHARE) * cut);
+      if (!opts.holdFace) d -= FACE_SHARE * cut;
+    }
     else if (!opts.holdFace) d -= CUT_DEEP * push / 3;
   } else {
     d += (opts.infl12 / 12) * months;

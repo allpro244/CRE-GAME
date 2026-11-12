@@ -287,9 +287,11 @@ export const DEFAULT_PARKS = "medium";
  */
 export const STREET_PLANS = [
   { id: "classic", name: "Classic", note: "Each district laid out on its own survey and template, meeting its neighbours at straight seams." },
-  { id: "natural", name: "Natural (beta)", note: "One street network grown from the shore and the old landing outward, the surveys bending into each other. Beta: a new generator still being tuned." },
+  { id: "natural", name: "Natural", note: "One street network grown from the shore and the old landing outward, the surveys bending into each other." },
 ];
-export const DEFAULT_STREETS = "classic";
+// Every new town is Natural (owner, 2026-11-12); Classic stays only so a save
+// cut on it rebuilds the same town (a save without `streets` is Classic).
+export const DEFAULT_STREETS = "natural";
 
 export const CITY_PLAN = 19;   // 19: each town's own mix of traded industries (specialty.mjs); 18: each building's use set by the region's demand (demand.mjs); 17: the region town tapers into its suburbs, no floodplain, small strips (region/*)
 

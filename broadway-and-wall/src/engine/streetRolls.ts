@@ -1857,13 +1857,7 @@ export function priceFlats(roll: FlatRoll, cards: number[] | undefined, free: nu
     let W = 0, best = -Infinity, bx = pts[pts.length - 1].x;
     for (const p of pts) {
       W += p.w;
-      // the AVERAGE free flat's wait: with k signers a month the i-th of `free`
-      // flats lets after i/k months, (free + 1) / 2k on average. It was free/k,
-      // the last flat's wait, which a block with many flats free read as a
-      // year at any ask and priced to its lowest card (2026-11-12: the big
-      // blocks' asks fell to a quarter of the market in the opening's first
-      // half-year and dragged the flats' index to half, on every seed).
-      const v = Math.exp(p.x) * (LEASE_M - (free + 1) / (2 * W / months));
+      const v = Math.exp(p.x) * (LEASE_M - free / (W / months));
       if (v > best) { best = v; bx = p.x; }
     }
     if (!(best > 0)) bx = pts[pts.length - 1].x;
@@ -1871,7 +1865,7 @@ export function priceFlats(roll: FlatRoll, cards: number[] | undefined, free: nu
     // its own read of how long a flat waits for a signer at that ask (renewals price against it, households.ts)
     let Wb = 0;
     for (const p of pts) { if (p.x < bx) break; Wb += p.w; }
-    roll.fm = +Math.min(LEASE_M, (free + 1) / (2 * Math.max(1e-9, Wb / months))).toFixed(2);
+    roll.fm = +Math.min(LEASE_M, free / Math.max(1e-9, Wb / months)).toFixed(2);
     roll.ld = now.length;
     return;
   }

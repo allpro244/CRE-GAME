@@ -7967,6 +7967,18 @@ export class RealCityLayer {
     this.repaint(touched);
     this.map?.triggerRepaint();
   }
+  /** The WebGPU beta's lot outline (GpuBackend.setOutlines): the selected site, its neighbours, the hovered lot. */
+  setOutlines(selected: string[], neighbours: string[], hover: string | null) {
+    if (this.defer("setOutlines", () => this.setOutlines(selected, neighbours, hover))) return;
+    if (!this.gpuB) return;
+    const spec: { ring: [number, number][]; kind: "sel" | "nbr" | "hov" }[] = [];
+    const add = (b: string, kind: "sel" | "nbr" | "hov") => { const r = this.lotRing(b); if (r) spec.push({ ring: r as [number, number][], kind }); };
+    for (const b of neighbours) add(b, "nbr");
+    if (hover) add(hover, "hov");
+    for (const b of selected) add(b, "sel");
+    this.gpuB.setOutlines(spec);
+    this.map?.triggerRepaint();
+  }
   setLens(values: Map<string, number> | null, ramp: string[] = []) {
     if (this.defer("setLens", () => this.setLens(values, ramp))) return;
     const had = this.lens;

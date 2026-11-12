@@ -1456,6 +1456,8 @@ export default function MapView() {
     const game = useStore.getState().game;
     const site = selectedBBL ? (game ? siteDeeds(game, selectedBBL) : [selectedBBL]) : [];
     layer.setHighlight(site, hoveredBBL && !site.includes(hoveredBBL) ? hoveredBBL : null);
+    // the WebGPU beta draws the lot outline itself, over the buildings as Classic shows it
+    if (layer.gpu) layer.setOutlines(site, neighborsRef.current, hoveredBBL && !site.includes(hoveredBBL) ? hoveredBBL : null);
   }, [selectedBBL, hoveredBBL, mapReady, mergedN, layerGen]);
 
   // mesh tints: teal neighbors, the owners lens, the market. Ownership is the

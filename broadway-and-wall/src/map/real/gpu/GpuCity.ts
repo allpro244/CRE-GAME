@@ -207,6 +207,68 @@ export class GpuBackend {
     };
   }
 
+  /**
+   * THE LOT OUTLINE OVER THE CITY. Classic lets MapLibre draw the selected
+   * deed (gold), its neighbours (teal) and the hovered lot (white) after the
+   * 3D layer, so the outline crosses in front of the buildings; on the beta
+   * that layer only reaches the ground copy, under them. So the same rings
+   * are drawn here, last and without a depth test, as ribbons a constant
+   * number of pixels wide (the widths and colours of MapView's bw-select-top).
+   */
+  private outline: THREE.Mesh | null = null;
+  private readonly uOutlinePx = T.uniform(1);
+  setOutlines(spec: { ring: [number, number][]; kind: "sel" | "nbr" | "hov" }[]) {
+    if (this.outline) { this.scene.remove(this.outline); this.outline.geometry.dispose(); this.outline = null; }
+    if (!spec.length) return;
+    const pos: number[] = [], off: number[] = [], col: number[] = [], wid: number[] = [], idx: number[] = [];
+    const COL = { sel: new THREE.Color("#f2c353"), nbr: new THREE.Color("#3fb3a8"), hov: new THREE.Color("#ffffff") };
+    const A = { sel: 1, nbr: 0.9, hov: 0.8 };
+    for (const { ring, kind } of spec) {
+      const n = ring.length;
+      if (n < 3) continue;
+      const base = pos.length / 3;
+      for (let i = 0; i < n; i++) {
+        const p = ring[i], a = ring[(i + n - 1) % n], b = ring[(i + 1) % n];
+        // the miter at this corner: the mean of the two edge normals, stretched to keep the width
+        const e1 = [p[0] - a[0], p[1] - a[1]], e2 = [b[0] - p[0], b[1] - p[1]];
+        const l1 = Math.hypot(e1[0], e1[1]) || 1, l2 = Math.hypot(e2[0], e2[1]) || 1;
+        const n1 = [-e1[1] / l1, e1[0] / l1], n2 = [-e2[1] / l2, e2[0] / l2];
+        let mx = n1[0] + n2[0], my = n1[1] + n2[1];
+        const ml = Math.hypot(mx, my) || 1; mx /= ml; my /= ml;
+        const k = Math.min(3, 1 / Math.max(0.2, mx * n2[0] + my * n2[1]));
+        for (const sgn of [1, -1]) {
+          pos.push(p[0], p[1], 0.4);
+          off.push(mx * k * sgn, my * k * sgn);
+          const c = COL[kind]; col.push(c.r, c.g, c.b, A[kind]);
+          wid.push(kind === "sel" ? 1 : 0.5);
+        }
+      }
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n, a0 = base + i * 2, a1 = a0 + 1, b0 = base + j * 2, b1 = b0 + 1;
+        idx.push(a0, b0, a1, a1, b0, b1);
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute("offset", new THREE.Float32BufferAttribute(off, 2));
+    g.setAttribute("color", new THREE.Float32BufferAttribute(col, 4));
+    g.setAttribute("wid", new THREE.Float32BufferAttribute(wid, 1));
+    g.setIndex(idx);
+    const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide });
+    // half the line's width in metres at this view: the selected deed's full width, its neighbours' half
+    m.positionNode = T.positionLocal.add(T.vec3(T.attribute("offset", "vec2").mul(T.attribute("wid", "float")).mul(this.uOutlinePx), 0));
+    m.colorNode = T.vertexColor().rgb;
+    m.opacityNode = T.attribute("color", "vec4").a;
+    m.userData.gpuRaw = true;
+    m.outputNode = T.output;
+    this.dressed.add(m);
+    this.outline = new THREE.Mesh(g, m);
+    this.outline.renderOrder = 1e6;
+    this.outline.frustumCulled = false;
+    this.outline.name = "gpu-lot-outline";
+    this.scene.add(this.outline);
+  }
+
   setGlassEnv(t: THREE.Texture | null, probe: boolean) { this.shared.glassEnv.value = t; this.shared.glassEnv.probe = probe; }
 
   shadowNeedsUpdate() { this.sun.shadow.needsUpdate = true; }
@@ -309,6 +371,13 @@ export class GpuBackend {
     const t0 = performance.now();
     if (this.fit()) this.pipeline = null;
     this.orientCamera();
+    if (this.outline) {
+      // bw-select-top's width: 2.4 px at zoom 13 to 4 px at 16.5 (the selected deed), in metres at the focus
+      const z = this.map.getZoom();
+      const px = 2.4 + 1.6 * Math.min(1, Math.max(0, (z - 13) / 3.5));
+      const mpp = (distM * Math.tan(0.32175)) / (0.5 * (this.canvas.clientHeight || 900));
+      this.uOutlinePx.value = 0.5 * px * mpp;
+    }
     this.mapTex.needsUpdate = true;
     const tier = postFx.level === "full" && postFx.liveAO ? "max" : postFx.level;
     if (this.pipeline && this.post && this.post.level !== tier) { this.pipeline.dispose(); this.pipeline = null; }

@@ -64,9 +64,9 @@ export function portMaterial(m: THREE.Material, s: Shared, renderer: N) {
     } else if (F.includes("vTail")) {
       mm.emissiveNode = T.attribute("lamp", "float").mul(T.attribute("aBrake", "float")).mul(T.vec3(0.9 * 1.3, 0.03 * 1.3, 0.02 * 1.3));
       note("vehicle:brakes");
-    } else if (U.uGait) { note("gait:unported(still walkers)"); }
-    else if (F.includes("gGrassH")) { note("grass:unported(stock colour)"); }
-    else if (V.includes("leafWind")) { note("sway:unported(still trees)"); }
+    } else if (U.uGait) { gait(mm, s, U); note("gait:legs+arms"); }
+    else if (F.includes("gGrassH")) { grass(mm, s, U, F); note("grass:sward+stripes+leaves"); }
+    else if (V.includes("leafWind")) { sway(mm, s, U); note("sway:crowns"); }
     else note("unknown-patch");
   }
   // the clouds' shade on the sun's direct light, through the sun's shadow term
@@ -261,25 +261,129 @@ function facade(m: N, s: Shared, U: Record<string, { value: N }>) {
 
 /** RealCity seaMaterial: the bottom seen through the water and the clear edge at the shore (surf and wind not yet). */
 function sea(m: N, s: Shared, U: Record<string, { value: N }>) {
-  const shore = U.seaShore.value as THREE.Texture, box = U.seaBox.value as THREE.Vector4;
-  const winter = live(s, U.seaWinter, 0);
+  const shore = U.seaShore.value as THREE.Texture, box = U.seaBox.value as THREE.Vector4, rip = U.seaRipple.value as THREE.Texture;
+  const winter = live(s, U.seaWinter, 0), t = live(s, U.seaTime, 0);
   const uBox = T.uniform(box);
   const w = T.positionWorld.xy;
   const sf = T.texture(shore, w.sub(uBox.xy).mul(uBox.zw));
   const seaDs = sf.r.mul(sf.r).mul(400.0).sub(6.0);
   const seaD = T.max(seaDs, 0.0);
+  const seaHard = sf.g;
+  const camD = T.length(T.positionView);
+  const near = T.float(1).sub(T.smoothstep(700.0, 2400.0, camD));
   const mott = fbm(w.mul(0.0045));
   const shelf = T.clamp(seaD.add(mott.sub(0.5).mul(120.0)).div(300.0), 0.0, 1.0);
   const cSand = T.mix(T.vec3(0.30, 0.56, 0.50), T.vec3(0.26, 0.36, 0.37), winter);
   const cShelf = T.mix(T.vec3(0.07, 0.33, 0.40), T.vec3(0.09, 0.22, 0.26), winter);
   const cDeep = T.mix(T.vec3(0.022, 0.12, 0.22), T.vec3(0.03, 0.085, 0.14), winter);
+  // SURF AND FOAM (classic seaMaterial): swell lines steepening and breaking
+  // in the surf zone, whitecaps in the gusts, the swash running up the beach,
+  // lace left behind, a churn on the hard edges
+  const soft = T.float(1).sub(seaHard);
+  const foam = T.Fn(() => {
+    const ph = seaD.mul(0.15).add(t.mul(0.85)).add(sNoise(w.mul(0.008)).mul(7.0));
+    const crest = T.pow(T.sin(ph).mul(0.5).add(0.5), 7.0);
+    const zone = T.float(1).sub(T.smoothstep(4.0, 46.0, seaD));
+    const breakup = fbm(w.mul(0.09).add(T.vec2(t.mul(0.04), t.mul(-0.03))));
+    const surf = crest.mul(zone).mul(T.smoothstep(0.3, 0.55, breakup.add(zone.mul(0.3)))).mul(soft);
+    const gustF = T.smoothstep(0.45, 0.8, fbm(w.mul(0.0055).add(T.vec2(t.mul(0.011), t.mul(0.004)))));
+    const caps = T.smoothstep(0.9, 0.98, sNoise(w.mul(T.vec2(0.42, 0.16)).add(T.vec2(t.mul(0.5), t.mul(0.05)))))
+      .mul(T.smoothstep(0.55, 0.8, sNoise(w.mul(0.05).sub(T.vec2(t.mul(0.2), 0.0))))).mul(gustF).mul(near).mul(T.smoothstep(60.0, 160.0, seaD));
+    const reach = T.float(2.2).add(T.sin(t.mul(0.85).add(sNoise(w.mul(0.015)).mul(6.28))).mul(0.5).add(0.5).mul(1.8));
+    const swash = T.float(1).sub(T.smoothstep(reach.mul(0.35), reach, seaD));
+    const lace = T.smoothstep(0.5, 0.72, fbm(w.mul(0.3).add(T.vec2(t.mul(0.11), t.mul(-0.08))))).mul(T.float(1).sub(T.smoothstep(2.0, 18.0, seaD))).mul(soft).mul(near);
+    const churn = seaHard.mul(T.float(1).sub(T.smoothstep(0.4, 2.2, seaD))).mul(T.smoothstep(0.35, 0.65, sNoise(w.mul(0.5).add(T.vec2(t.mul(0.4), t.mul(0.25))))));
+    const f = T.max(T.max(surf, swash.mul(T.mix(0.6, 1.0, soft))), T.max(T.max(lace.mul(0.75), churn), caps.mul(0.55))).toVar();
+    f.mulAssign(T.smoothstep(0.15, 0.55, fbm(w.mul(0.22).add(T.vec2(t.mul(0.12), 0.0))).add(f.mul(0.35))));
+    return T.clamp(f, 0.0, 1.0);
+  })().toVar("seaFoam");
   m.colorNode = T.Fn(() => {
     const wc = T.mix(cSand, cShelf, T.smoothstep(0.0, 0.16, shelf)).toVar();
     wc.assign(T.mix(wc, cDeep, T.smoothstep(0.1, 0.85, shelf)));
     wc.mulAssign(T.float(0.9).add(fbm(w.mul(0.02).add(3.0)).mul(0.2)));
-    return T.vec4(wc, 1.0);
+    return T.vec4(T.mix(wc, T.vec3(0.9, 0.93, 0.94), foam), 1.0);
   })();
-  m.opacityNode = T.smoothstep(0.0, 0.9, seaDs).mul(T.mix(0.72, 0.97, T.smoothstep(0.0, 30.0, seaD)));
+  const wet = T.smoothstep(0.0, 0.9, seaDs);
+  const body = T.mix(0.72, 0.97, T.smoothstep(0.0, 30.0, seaD));
+  m.opacityNode = wet.mul(T.max(body, foam.mul(0.95)));
+  m.roughnessNode = T.mix(T.materialRoughness, 0.85, foam);
+  // RIPPLES: three ripple scales crossing at different bearings and speeds,
+  // gusts sliding downwind, calmer in the lee and smoothing out with distance
+  m.normalNode = T.Fn(() => {
+    const detail = T.float(1).sub(T.smoothstep(500.0, 2600.0, camD));
+    const r = (uv: N) => T.texture(rip, uv).xy.mul(2.0).sub(1.0);
+    const n1 = r(w.div(29.0).add(T.vec2(t.mul(0.017), t.mul(0.004))));
+    const w2 = T.vec2(w.x.mul(0.8).add(w.y.mul(0.6)), w.x.mul(-0.6).add(w.y.mul(0.8)));
+    const n2 = r(w2.div(11.0).add(T.vec2(t.mul(-0.031), t.mul(0.038))));
+    const w3 = T.vec2(w.x.mul(0.28).add(w.y.mul(-0.96)), w.x.mul(0.96).add(w.y.mul(0.28)));
+    const n3 = r(w3.div(91.0).add(T.vec2(t.mul(0.005), t.mul(-0.003))));
+    const gust = T.smoothstep(0.32, 0.72, fbm(w.mul(0.0055).add(T.vec2(t.mul(0.011), t.mul(0.004)))));
+    const g = n3.mul(0.8).add(n1.mul(0.6).add(n2.mul(0.45).mul(detail)).mul(T.float(0.45).add(gust))).toVar();
+    g.mulAssign(T.mix(0.3, 1.0, T.smoothstep(0.0, 30.0, seaD)));
+    g.mulAssign(T.mix(0.4, 1.0, detail));
+    g.mulAssign(T.float(1).sub(foam.mul(0.8)));
+    // a world (z-up) normal, into the camera's view space
+    const nw = T.normalize(T.vec3(g.mul(0.5), 1.0));
+    return T.normalize(T.cameraViewMatrix.mul(T.vec4(nw, 0.0)).xyz);
+  })();
+}
+
+/** parks.ts grassMaterial: the sward's broad hue, soil and wear, clover, clumps and grain, straw, bare earth, mower's stripes, fallen leaves, snow. */
+function grass(m: N, s: Shared, U: Record<string, { value: N }>, F: string) {
+  const turf = F.includes("vStripe"), rough = F.includes("straw through the green");
+  const HUE = rough ? 1.2 : turf ? 0.75 : 1.0, CLUMP = rough ? 0.42 : turf ? 0.16 : 0.22, GRAIN = rough ? 0.34 : turf ? 0.2 : 0.26;
+  const BARE = rough ? 0.75 : turf ? 0.18 : 0.4, STRAW = rough ? 0.42 : 0.0;
+  const snow = live(s, U.uSnow, 0), leaves = live(s, U.uLeaves, 0);
+  const gH = T.Fn(([p]: N[]) => { const q = T.fract(T.vec3(p.x, p.y, p.x).mul(0.1031)).toVar(); q.addAssign(T.dot(q, q.yzx.add(33.33))); return T.fract(q.x.add(q.y).mul(q.z)); });
+  const gN = T.Fn(([p]: N[]) => { const i = T.floor(p), f0 = T.fract(p); const f = f0.mul(f0).mul(T.vec2(3.0).sub(f0.mul(2.0)));
+    return T.mix(T.mix(gH(i), gH(i.add(T.vec2(1, 0))), f.x), T.mix(gH(i.add(T.vec2(0, 1))), gH(i.add(T.vec2(1, 1))), f.x), f.y); });
+  const rot = (p: N) => T.vec2(p.x.mul(0.8).add(p.y.mul(0.6)), p.x.mul(-0.6).add(p.y.mul(0.8)));
+  const gF = (p0: N) => { let p = p0; let a = gN(p).mul(0.57); p = rot(p).mul(2.03).add(17.1); a = a.add(gN(p).mul(0.29));
+    p = rot(p).mul(2.01).add(5.3); return a.add(gN(p).mul(0.14)); };
+  if (turf && U.uWet) {
+    const wetT = U.uWet.value as THREE.Texture, wetBox = U.uWetBox.value as THREE.Vector4;
+    const ub = T.uniform(wetBox.clone());
+    s.sync.push(() => ub.value.copy(U.uWetBox.value));
+    // a creek through the park: the turf is cut away where the wet mask is white
+    m.maskNode = T.texture(wetT, T.positionWorld.xy.sub(ub.xy).div(ub.zw)).r.lessThanEqual(0.5);
+  }
+  m.colorNode = T.Fn(() => {
+    const p = T.positionWorld.xy;
+    const c = T.materialColor.rgb.toVar();
+    const live0 = T.float(1).sub(snow);
+    const px = T.max(T.length(T.fwidth(p)), 1e-4);
+    const fC = T.float(1).sub(T.smoothstep(0.35, 0.9, px.div(1.4)));
+    const fG = T.float(1).sub(T.smoothstep(0.35, 0.9, px.div(0.33)));
+    const broad = gF(p.div(36.0).add(3.7));
+    const dry = T.smoothstep(0.36, 0.78, broad);
+    c.mulAssign(T.mix(T.vec3(1.0), T.mix(T.vec3(0.82, 0.98, 1.0), T.vec3(1.13, 1.06, 0.8), dry), live0.mul(HUE)));
+    const mid = gF(p.div(6.5).add(11.3));
+    c.mulAssign(T.float(1).add(mid.sub(0.5).mul(0.36).mul(live0)));
+    const clov = T.smoothstep(0.58, 0.74, gN(p.div(2.4).add(41.0))).mul(fC);
+    c.mulAssign(T.mix(T.vec3(1.0), T.vec3(0.8, 0.9, 0.86), clov.mul(0.7).mul(live0)));
+    const cl = gN(p.div(1.4).add(7.0)), gr = gN(p.div(0.33)).mul(0.6).add(gN(p.div(0.17).add(3.0)).mul(0.4));
+    c.mulAssign(T.float(1).add(cl.sub(0.5).mul(CLUMP).mul(fC).add(gr.sub(0.5).mul(GRAIN * 2).mul(fG)).mul(live0)));
+    if (rough) {
+      const straw = T.smoothstep(0.4, 0.75, gF(p.div(3.1).add(23.0)).mul(0.7).add(gr.mul(0.3).mul(fG)));
+      c.assign(T.mix(c, T.vec3(0.42, 0.36, 0.2).mul(T.float(0.8).add(cl.mul(0.4))), straw.mul(STRAW).mul(live0)));
+      const seed = T.step(0.93, gH(T.floor(p.div(0.25)))).mul(fG);
+      c.assign(T.mix(c, T.vec3(0.6, 0.55, 0.38), seed.mul(0.5).mul(live0)));
+    }
+    const bare = T.smoothstep(0.66, 0.8, gF(p.div(4.2).add(57.0)).mul(0.75).add(mid.mul(0.25))).mul(BARE);
+    c.assign(T.mix(c, T.vec3(0.2, 0.15, 0.09).mul(T.float(0.85).add(gr.mul(0.3))), bare.mul(0.55).mul(live0)));
+    if (turf) {
+      const st = T.smoothstep(-0.25, 0.25, T.sin(T.attribute("stripe", "float").mul(3.14159265 / 4.0)));
+      c.mulAssign(T.mix(1.0, T.mix(0.92, 1.06, st), T.float(1).sub(bare).mul(live0)));
+    }
+    if (!rough) {
+      const lf = gH(T.floor(p.mul(5.0))), drift = gN(p.div(9.0));
+      const k = gH(T.floor(p.mul(5.0)).add(7.0));
+      const leafC = T.select(k.lessThan(0.4), T.vec3(0.62, 0.32, 0.1), T.select(k.lessThan(0.75), T.vec3(0.7, 0.5, 0.14), T.vec3(0.42, 0.22, 0.1)));
+      const on = leaves.greaterThan(0.0).and(lf.lessThan(leaves.mul(T.float(0.15).add(drift.mul(0.6))).mul(live0)));
+      c.assign(T.select(on, leafC, c));
+    }
+    return T.vec4(c, 1.0);
+  })();
 }
 
 // the classic sHash / sNoise / sFbm
@@ -352,4 +456,33 @@ function cloudSunlight(s: Shared, k: number): N {
   const e = T.float(0.5).add(T.float(0.5).sub(u.cover).mul(0.36));
   const far = T.float(1).sub(T.smoothstep(2000.0, 7000.0, T.length(wp.sub(u.eye))));
   return T.float(1).sub(u.k.mul(k).mul(far).mul(T.smoothstep(e.sub(0.045), e.add(0.06), field)));
+}
+
+/** RealCity addSway: a street tree's crown leans downwind with the square of its height above the fork, in two slow periods. */
+function sway(m: N, s: Shared, U: Record<string, { value: N }>) {
+  const lt = live(s, U.leafT, 0), lw = live(s, U.leafWind);
+  // classic phases each tree by where it stands; here by its instance (the instance matrix is not a node input)
+  const ph = T.fract(T.sin(T.float(T.instanceIndex).mul(12.9898)).mul(43758.5453)).mul(6.2832);
+  const hz = T.max(T.positionGeometry.z.sub(2.8), 0.0);
+  const k = T.float(0.55).add(T.sin(lt.mul(1.05).add(ph)).mul(0.35)).add(T.sin(lt.mul(3.1).add(ph.mul(1.7))).mul(0.2));
+  // after instancing positionLocal is the city's frame: a world push
+  m.positionNode = T.positionLocal.add(T.vec3(lw.mul(k.mul(hz).mul(hz).mul(0.0055)), 0.0));
+}
+
+/** RealCity's walking gait: legs swing from the hip and arms from the shoulder, opposite, two steps a second. */
+function gait(m: N, s: Shared, U: Record<string, { value: N }>) {
+  const g = live(s, U.uGait, 0);
+  const ph = g.mul(6.2).add(T.fract(T.sin(T.float(T.instanceIndex).mul(78.233)).mul(43758.5453)).mul(6.2832));
+  const p = T.positionGeometry;
+  const sw = T.sin(ph), side = T.sign(p.y);
+  const leg = T.abs(p.y).lessThan(0.2).and(p.z.lessThan(0.9));
+  const arm = T.abs(p.y).greaterThan(0.2).and(p.z.greaterThan(0.8)).and(p.z.lessThan(1.5));
+  const dx = T.select(leg, T.float(0.9).sub(p.z).mul(sw).mul(side).mul(0.42), T.select(arm, T.float(1.46).sub(p.z).mul(sw).mul(side).mul(-0.45), T.float(0)));
+  // in the figure's own frame, before the instance turns it to its heading:
+  // positionNode runs after instancing, so this hooks the position setup itself
+  // (the renderer copies own properties onto the node twin, this one included)
+  m.setupPosition = function (this: N, builder: N) {
+    T.positionLocal.assign(T.positionLocal.add(T.vec3(dx, 0, 0)));
+    return (THREE.NodeMaterial.prototype as N).setupPosition.call(this, builder);
+  };
 }

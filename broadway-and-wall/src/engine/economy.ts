@@ -468,15 +468,17 @@ function financing(ind: number) {
  * town's head offices are the goods trades' desks (TRADE_TO_INDUSTRY: a food
  * or apparel firm's office) and the off-map sample's.
  */
-function assign(R: Rand, sec: Sector, floor: Floor, intended?: number): number {
+function assign(R: Rand, sec: Sector, floor: Floor, intended?: number, lq?: number[]): number {
   R.u(); const b = R.u();   // always two draws: the stream's pace does not depend on the answer
   // a firm the street formed for an industry's work (streetRolls.ts) is in that industry
   if (intended !== undefined && intended >= 0 && intended < N_IND) return intended;
   const opts = TRADE_TO_INDUSTRY[floor][sec];
   if (!opts || !opts.length) return INDUSTRY_INDEX[FLOOR_DEFAULT[floor]];
-  const tot = opts.reduce((t, o) => t + o[1], 0);
+  // ...weighted by the town's own mix of traded industries (city plan 19, `econ.townLQ`)
+  const wOf = (k: IndustryId, w: number) => w * (lq?.[INDUSTRY_INDEX[k]] ?? 1);
+  const tot = opts.reduce((t, o) => t + wOf(o[0], o[1]), 0);
   let x = b * tot;
-  for (const [k, w] of opts) { x -= w; if (x < 0) return INDUSTRY_INDEX[k]; }
+  for (const [k, w] of opts) { x -= wOf(k, w); if (x < 0) return INDUSTRY_INDEX[k]; }
   return INDUSTRY_INDEX[opts[opts.length - 1][0]];
 }
 
@@ -563,7 +565,7 @@ function openingOffMap(s: GameState, named: Float64Array, conOpen: number): Floa
     if (i === IND_CON || OUTSIDE[i]) continue;
     const id = INDUSTRY_IDS[i];
     if (OFF_FLOOR[id] >= 1) continue;
-    d[i] = Math.max(0, NAT_EMP_SHARE[id] * (1 - OFF_FLOOR[id]) * jobs - named[i]);
+    d[i] = Math.max(0, NAT_EMP_SHARE[id] * (s.econ.townLQ?.[i] ?? 1) * (1 - OFF_FLOOR[id]) * jobs - named[i]);
     dt += d[i];
   }
   for (let i = 0; i < N_IND; i++) if (d[i] > 0) out[i] += O * d[i] / dt;
@@ -981,7 +983,7 @@ export function tickFirms(s: GameState): void {
     }
     for (const [fid, sn] of seen) {
       if (have.has(fid)) continue;
-      const ind = assign(R, sn.sec, sn.floor, sn.ind);
+      const ind = assign(R, sn.sec, sn.floor, sn.ind, s.econ.townLQ);
       const n = addFirm(E, fid, ind, SECTORS.indexOf(sn.sec), sn.hc, sn.z, s.month);
       E.f.rent[n] = sn.rentMo;
       openBooks(E, n, opw[ind], short, opening);

@@ -211,3 +211,10 @@ declare module "@/citygen/unrealExport.mjs" {
   export function toBwCity(city: GeneratedCity, opts?: { familyFor?: (cls: string, year: number, h: number, roll?: number, district?: number, nb?: number) => string; tints?: Record<string, number[][]> }): unknown;
   export const GROUND_LAYERS: string[];
 }
+
+declare module "@/citygen/specialty.mjs" {
+  /** The CBP spread of log location quotients for a region of `jobs` employment. */
+  export function specSpread(jobs: number): number;
+  /** The town's location quotient by industry id (traded industries only; others are 1). */
+  export function townLQ(seed: number, sd: number): Record<string, number>;
+}

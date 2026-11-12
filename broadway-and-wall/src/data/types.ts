@@ -52,6 +52,8 @@ export interface ParcelRecord {
    * it (market.ts `initEcon`).
    */
   regionShare?: number;
+  /** The town's traded-industry draw (city plan 19, citygen specialty.mjs): the city seed and the CBP spread for its region's size, the same on every lot. */
+  specSeed?: number; specSd?: number;
   assessedLand: number;
   assessedTotal: number;
   /**

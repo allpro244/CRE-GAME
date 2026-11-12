@@ -291,7 +291,7 @@ export const STREET_PLANS = [
 ];
 export const DEFAULT_STREETS = "classic";
 
-export const CITY_PLAN = 18;   // 18: each building's use set by the region's demand (demand.mjs); 17: the region town tapers into its suburbs, no floodplain, small strips (region/*)
+export const CITY_PLAN = 19;   // 19: each town's own mix of traded industries (specialty.mjs); 18: each building's use set by the region's demand (demand.mjs); 17: the region town tapers into its suburbs, no floodplain, small strips (region/*)
 
 /**
  * THE NATURAL TOWN'S CONFIG: the classic island minus its survey seams, plus

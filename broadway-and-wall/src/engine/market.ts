@@ -1,11 +1,12 @@
 // The market: mean-reverting rate walk, rate-linked cap rates, cyclical
 // rents, and a phase machine whose turns are rumored before they land.
 // Randomness creates situations, never verdicts.
+import { townLQ } from "@/citygen/specialty.mjs";
 import { leaseUpMonthsOf } from "./proforma";
 import { tickBands } from "./bands";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, EconHistoryPoint, FirmBook, GameState, MarketPhase, NewsItem, Sector } from "./types";
-import { OFF_FLOOR_SHARE_NAT } from "./industries";
+import { OFF_FLOOR_SHARE_NAT, INDUSTRY_IDS } from "./industries";
 import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert } from "./types";
 import { tickStreetTenants } from "./tenantBooks";
 import { SHED_MOVE } from "./streetRolls";
@@ -1495,6 +1496,12 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // a NaN in the year-zero column of the null-player table, and which anything
   // reading population before the first tick would have inherited.
   econ.jobs0 = SIZE.jobs0; econ.pop0 = SIZE.pop0;
+  // plan 19: what the town makes for the country (citygen specialty.mjs), from the city's own draw
+  if (parcels) {
+    let sp: { seed: number; sd: number } | null = null;
+    for (const bbl in parcels) { const p = parcels[bbl]; if (p?.specSd) sp = { seed: p.specSeed ?? 0, sd: p.specSd }; break; }
+    if (sp) { const lq = townLQ(sp.seed, sp.sd); econ.townLQ = INDUSTRY_IDS.map((id) => lq[id] ?? 1); }
+  }
   econ.population = SIZE.pop0; econ.jobs = SIZE.jobs0; econ.unemployment = OPEN.uStar;
   econ.openYear = OPEN.year; econ.uStar = OPEN.uStar;
   // Wage (and cost) open at the density premium; output follows jobs × wage.

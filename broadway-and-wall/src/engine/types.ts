@@ -2851,6 +2851,14 @@ export interface Econ {
   jobs0?: number;
   pop0?: number;
   /**
+   * THE TOWN'S MIX OF TRADED INDUSTRIES (city plan 19): each industry's
+   * location quotient against the nation, by INDUSTRY_IDS index (1 for the
+   * local-serving ones and for towns cut before plan 19). Firms' industries,
+   * new firms and the off-map sample are drawn on it (economy.ts `assign`,
+   * streetRolls.ts `indOfTrade`, `openingOffMap`).
+   */
+  townLQ?: number[];
+  /**
    * INDUSTRIAL SHARE OF EMPLOYMENT, indexed to 1.0 at game start.
    *
    * Shed demand used to track total `jobIdx`. That is the wrong wire: total

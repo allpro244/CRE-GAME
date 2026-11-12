@@ -57,6 +57,7 @@
 // every earlier pass draws exactly what it drew under plan 17.
 import { FLOOR_PER_RESIDENT, HOME_SF_PER_RESIDENT, JOBS_PER_RESIDENT, OPENING_VAC } from "./floorDemand.mjs";
 import { assetClass, resolveMix } from "./build.mjs";
+import { townLQ, specSpread } from "./specialty.mjs";
 
 /** Kneebone 2009 Table 3: [share within 3 miles of the CBD, share beyond 10 miles], 98 metros, 2006 [S]. */
 const JOB_RINGS = {
@@ -147,7 +148,7 @@ const RENTER_SHARE = 1 - 0.659;
  * for the households of that work who rent — and the island's flat dwellers
  * per region resident (`flatShare`, what the engine opens the region at).
  */
-export function regionOf(seed, density) {
+export function regionOf(seed, density, lq = null) {
   const metro = METRO_OF[density] ?? METRO_OF.village;
   const coreMi = CORE_MI[0] + (CORE_MI[1] - CORE_MI[0]) * seedHash(`region:${seed >>> 0}`);
   const share = resCurve(RES_RINGS[metro])(coreMi);
@@ -156,7 +157,8 @@ export function regionOf(seed, density) {
   const perRes = { office: 0, retail: 0, industrial: 0, multifamily: 0 };
   let jobs = 0;
   for (const row of FLOOR_PER_RESIDENT) {
-    const capture = (JOB_CURVE[row.sector] ?? JOB_CURVE.all)(r);
+    // plan 19: the town's own mix of traded industries (specialty.mjs)
+    const capture = (JOB_CURVE[row.sector] ?? JOB_CURVE.all)(r) * (lq?.[row.id] ?? 1);
     perRes[row.cls] += row.sf * capture;
     jobs += row.jobs * capture;
   }
@@ -214,8 +216,9 @@ function recordAs(pp, code) {
  * generator's built lots ({ h, pf, ... }); `districts` the config's. Returns
  * the region record and what moved, for the manifest.
  */
-export function balanceUses(lots, { seed, density, districts }) {
-  const region = regionOf(seed, density);
+export function balanceUses(lots, { seed, density, districts, planV = 18 }) {
+  let region = regionOf(seed, density);
+  let lq = null;
   const items = [];
   const stock = { office: 0, retail: 0, industrial: 0, multifamily: 0 };
   for (const b of lots) {
@@ -241,6 +244,14 @@ export function balanceUses(lots, { seed, density, districts }) {
     items.push(it);
   }
   const F = CLASSES.reduce((a, k) => a + stock[k], 0);
+  if (planV >= 19) {
+    // the region's size sets how specialised it is (the CBP spread); the mix then sets the floors
+    const pop0 = F / CLASSES.reduce((a, k) => a + region.perRes[k], 0);
+    const spread = specSpread(pop0 * JOBS_PER_RESIDENT);
+    lq = townLQ(seed, spread);
+    region = regionOf(seed, density, lq);
+    region.spread = +spread.toFixed(3);
+  }
   const perRes = CLASSES.reduce((a, k) => a + region.perRes[k], 0);
   const target = Object.fromEntries(CLASSES.map((k) => [k, (F / perRes) * region.perRes[k]]));
   const before = { ...stock };
@@ -294,6 +305,7 @@ export function balanceUses(lots, { seed, density, districts }) {
     // the island's flat dwellers over the region's people, as built
     regionShare: +(region.flatShare * (stock.multifamily / target.multifamily)).toFixed(5),
     regionPop: Math.round(F / perRes), moved: moves,
+    ...(lq ? { specSd: region.spread, specSeed: seed >>> 0 } : {}),
     mixBefore: pct(before), mixTarget: pct(target), mix: pct(stock),
   };
 }

@@ -2222,8 +2222,14 @@ function growOpeningStreet(s: GameState, parcels: ParcelTable) {
       const ro = readOut(e, k, m0 - 1);
       if (!ro || !e.effRentIdx || !e.concIdx) continue;
       e.rentIdx[k] = +ro.face.toFixed(4);
-      e.effRentIdx[k] = +ro.eff.toFixed(4);
-      e.concIdx[k] = +ro.conc.toFixed(4);
+      // ...the effective rent the way every month after reads it: the asking
+      // rent less the packages on offer (tenantMarket.ts filteredReadOut), so
+      // the first month does not restate it (seed 11 office opened at half
+      // its asking rent off the opening's comps, and jumped in month one).
+      const pk = e.postedPkg?.[k];
+      const eff = pk !== undefined && Number.isFinite(pk) ? ro.face * (1 - Math.max(0, Math.min(0.35, pk))) : ro.eff;
+      e.effRentIdx[k] = +eff.toFixed(4);
+      e.concIdx[k] = +Math.max(0, Math.min(1, (1 - eff / Math.max(1e-9, ro.face)) / CONC_DEPTH)).toFixed(4);
     }
     // ...and the market opens on what the firms hold, so its first month
     // does not restate the city's occupancy in one step.

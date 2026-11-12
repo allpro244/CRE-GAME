@@ -281,6 +281,7 @@ function MainlandFigures() {
   const pct = (x: number, d = 1) => `${(x * 100).toFixed(d)}%`;
   const rentYr = m.rentYearAgo > 0 ? m.rent / m.rentYearAgo - 1 : 0;
   const share = (x: number) => (m.households > 0 ? ` (${pct(x / m.households, 0)})` : "");
+  const burdenLine = (med: number, over: number) => Number.isFinite(med) ? `${pct(med, 0)} median · ${pct(over, 0)} pay over 30%` : "—";
   return (
     <>
       <div className="page-section" style={{ marginTop: 14 }}>The mainland</div>
@@ -292,8 +293,6 @@ function MainlandFigures() {
         <Row k="Going rent" v={`$${n(m.rent)}/mo`} strong
           title={`Older homes $${n(m.rentOlder)}/mo · opening $${n(m.rentOpen)}/mo`} />
         <Row k="Rent, 12 mo" v={pctSigned(rentYr, 1)} bad={rentYr > 0.06} />
-        <Row k="Renters' median burden" v={Number.isFinite(m.medianBurden) ? pct(m.medianBurden, 0) + " of pay" : "—"}
-          bad={m.medianBurden > 0.3} title="Rent over household income, mainland renters · 30% is the usual line" />
         <Row k="Under construction" v={`${n(m.building)} homes · ${n(m.due12)} due within 12 mo`} />
         {m.pencil !== undefined && (
           <Row k="Builders' pencil" v={`${m.pencil.toFixed(2)}×${m.pencil < 1 ? " · not building" : ""}`} bad={m.pencil < 1}
@@ -307,6 +306,10 @@ function MainlandFigures() {
         <Row k="Rent on the island" v={n(m.islandRenters) + share(m.islandRenters)} />
         <Row k="Doubled up" v={n(m.doubledUp) + share(m.doubledUp)} bad={m.doubledUp / Math.max(1, m.households) > 0.08}
           title={`Living with family or friends, no home of their own · ${n(m.doubledReady)} have work and a deposit and are looking`} />
+        <Row k="Rent, share of pay · mainland" v={burdenLine(m.medianBurden, m.overBurden)} bad={m.medianBurden > 0.3}
+          title="Median rent over household income (wages, pensions, unemployment pay), mainland renters · and the share paying over 30%, HUD's cost-burdened line" />
+        <Row k="Rent, share of pay · island" v={burdenLine(m.islandBurden, m.islandOverBurden)} bad={m.islandBurden > 0.3}
+          title="Median rent over household income, island renters · and the share paying over 30%" />
         <Row k="This month" v={`+${n(m.flow.arrived)} arrived · −${n(m.flow.left)} left · ${n(m.flow.formed)} formed · ${n(m.flow.bought)} bought`}
           title={`Evictions ${n(m.flow.evictions)} · foreclosures ${n(m.flow.foreclosures)}`} />
       </div>

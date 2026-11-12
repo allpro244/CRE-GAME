@@ -3910,16 +3910,18 @@ export function mainlandStats(s: GameState) {
   if (!r.a) unpackHouseholds(r);
   const a = r.a!;
   let islandR = 0, mainR = 0, own = 0, dbl = 0, ready = 0;
-  const burden: number[] = [], bw: number[] = [];
+  // rent over the year's income (wages, pensions, unemployment insurance), island and mainland renters
+  const burden: number[] = [], bw: number[] = [], bI: number[] = [], wI: number[] = [];
+  let over = 0, overI = 0;
   for (let i = 0; i < r.n; i++) {
     const w = a.wt[i], t = a.ten[i];
-    if (t === TEN_RENT) islandR += w;
-    else if (t === TEN_OWN) own += w;
+    if (t === TEN_OWN) own += w;
     else if (t === TEN_DOUBLED) { dbl += w; if (readyToRent(r, a, i)) ready += w; }
-    else if (t === TEN_MAINLAND) {
-      mainR += w;
+    else if (t === TEN_MAINLAND || t === TEN_RENT) {
       const inc = incomeYear(a.emp1[i], a.wage1[i], a.un1[i]) + incomeYear(a.emp2[i], a.wage2[i], a.un2[i]) + incomeYear(a.emp3[i], a.wage3[i], a.un3[i]);
-      burden.push(inc > 0 ? 12 * a.rent[i] / inc : 9.99); bw.push(w);
+      const b = inc > 0 ? 12 * a.rent[i] / inc : 9.99;
+      if (t === TEN_MAINLAND) { mainR += w; burden.push(b); bw.push(w); if (b > 0.3) over += w; }
+      else { islandR += w; bI.push(b); wI.push(w); if (b > 0.3) overI += w; }
     }
   }
   const homes = mk.homes + (mk.homesB ?? 0);
@@ -3936,6 +3938,10 @@ export function mainlandStats(s: GameState) {
     homeValue: mk.homeValue, homeCost: mk.homeCost, pencil: mk.pencil,
     households: islandR + mainR + own + dbl, islandRenters: islandR, mainlandRenters: mainR, owners: own, doubledUp: dbl, doubledReady: ready,
     medianBurden: burden.length ? wq(burden, bw, 0.5) : NaN,
+    /** the share of mainland renters paying over 30% of income in rent (HUD's cost-burdened line) */
+    overBurden: mainR > 0 ? over / mainR : NaN,
+    islandBurden: bI.length ? wq(bI, wI, 0.5) : NaN,
+    islandOverBurden: islandR > 0 ? overI / islandR : NaN,
     flow: { arrived: r.flow.arrived ?? 0, left: r.flow.left ?? 0, formed: r.flow.formed ?? 0, bought: r.flow.bought ?? 0, evictions: r.flow.evictions ?? 0, foreclosures: r.flow.foreclosures ?? 0 },
   };
 }

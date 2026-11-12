@@ -18,7 +18,7 @@
 // decision. One that arrives as a number going down is weather.
 import type { GameState } from "./types";
 import { logBooks, BUILT_CLASSES } from "./types";
-import { PRODUCTS, underwritingStandards, windowOpen } from "./debt";
+import { PRODUCTS, underwritingStandards, windowOpen, BANK_CRE_SHARE } from "./debt";
 import { rng, rrange, RENT_BASE, OPENING_VAC, CAP_BASE, shortIndexOf } from "./market";
 import type { DeskPx, LossClass } from "./pricing";
 import { why } from "./why";
@@ -1281,7 +1281,20 @@ export function tickLenders(s: GameState) {
     // month books a tax asset).
     const losses = Object.values(l.lossM ?? {}).reduce((a, v) => a + (v ?? 0), 0);
     trackLosses(l, named);
-    const opex = (l.book * (OPEX_PCT[l.kind] ?? 0)) / 100 / 12;
+    // THE RUNNING COST IS THE LENDING PLUS THE BRANCHES THAT GATHER ITS
+    // DEPOSITS (2026-11-12). OPEX_PCT is a community bank's whole net running
+    // cost, most of it the branch network that buys cheap deposits; the
+    // lending operation itself is LENDING_OPEX_PCT. A desk funded in the
+    // money markets has no branches to pay for: the money-centre bank, 80%
+    // wholesale, was charged the hometown bank's 2.0% on a $22M local book,
+    // bled every month and failed in its first recession. So the branch part
+    // scales with the share of the book its deposits fund.
+    const fundAll = fundable(l);
+    const coreSh = l.kind === "bank" && fundAll > 0 ? Math.max(0, Math.min(1, (fundAll - (l.dep?.wholesale ?? 0)) / fundAll)) : 1;
+    const opexPct = l.kind === "bank"
+      ? (LENDING_OPEX_PCT.bank ?? 0) + ((OPEX_PCT.bank ?? 0) - (LENDING_OPEX_PCT.bank ?? 0)) * coreSh
+      : (OPEX_PCT[l.kind] ?? 0);
+    const opex = (l.book * opexPct) / 100 / 12;
     const pre = interest - funding - losses - opex;
     const net = Math.round(pre * (1 - (TAX_RATE[l.kind] ?? 0)));
     {
@@ -1665,7 +1678,14 @@ export function chargeLenderLoss(
   const l = lenderByName(s, lender);
   if (!l || loss <= 0) return;
   const borne = borneLoss(l, loss);
-  l.capital = Math.round(l.capital - borne);
+  // A BANK EATS A LOSS WITH ALL ITS CAPITAL (2026-11-12). A bank's `capital`
+  // is the slice of its capital behind its CRE book here; a loan loss comes
+  // out of the whole bank's, of which that slice is BANK_CRE_SHARE (FDIC: CRE
+  // 27% of community banks' assets — the same whole bank the legal lending
+  // limit reads). Charged in full to the slice, one $3.3M default failed the
+  // money-centre bank's $2.5M local desk in its first recession. The loss
+  // still counts in full in the desk's experience (lossM, below).
+  l.capital = Math.round(l.capital - (l.kind === "bank" ? borne * BANK_CRE_SHARE : borne));
   l.chargeOffsYr += loss;
   l.chargeOffsTotal += loss;
   // THE PLAYER'S share of the book comes down only for a loss on the

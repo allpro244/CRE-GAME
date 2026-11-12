@@ -218,6 +218,8 @@ export function CityFigures() {
   const dollars = useMemo(() => payInDollars(game), [game.month, game.households]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <>
+      <div className="stat-cols">
+      <div className="stat-col">
       <div className="page-section" style={{ marginTop: 14 }}>City today</div>
       <div className="grid">
         <Row k="Region population" v={(e.population ?? 0).toLocaleString()} strong
@@ -268,7 +270,9 @@ export function CityFigures() {
         <Row k="Real output" v={`${((real((e.outputIdx ?? w0) / w0, e.cpi) - 1) * 100).toFixed(0)}% vs 2000`} />
         <Row k="Price level" v={`+${(((e.cpi ?? 1) - 1) * 100).toFixed(0)}% since 2000`} />
       </div>
+      </div>
       <MainlandFigures />
+      </div>
     </>
   );
 }
@@ -292,6 +296,7 @@ function MainlandFigures() {
   const burdenLine = (avg: number, med: number, over: number) => Number.isFinite(avg) ? `${pct(avg, 0)} avg · ${pct(med, 0)} median · ${pct(over, 0)} >30%` : "—";
   return (
     <>
+      <div className="stat-col">
       <div className="page-section" style={{ marginTop: 14 }}>The mainland</div>
       <div className="grid">
         <Row k="Rental homes" v={n(m.homes)} strong
@@ -307,6 +312,8 @@ function MainlandFigures() {
             title={`A new home is worth $${n(m.homeValue ?? 0)} (rent less running costs at the flats' cap rate), less land's share, against $${n(m.homeCost ?? 0)} to build · above 1× it pays to build`} />
         )}
       </div>
+      </div>
+      <div className="stat-col">
       <div className="page-section" style={{ marginTop: 14 }}>Where the region's households live</div>
       <div className="grid">
         <Row k="Own their home" v={n(m.owners) + share(m.owners)} />
@@ -320,6 +327,7 @@ function MainlandFigures() {
           title="Rent over household income, island renters: the average, the median household, and the share paying over 30% · US renters: median ~25% in 2000, ~31% today" />
         <Row k="This month" v={`+${n(m.flow.arrived)} arrived · −${n(m.flow.left)} left · ${n(m.flow.formed)} formed · ${n(m.flow.bought)} bought`}
           title={`Evictions ${n(m.flow.evictions)} · foreclosures ${n(m.flow.foreclosures)}`} />
+      </div>
       </div>
     </>
   );

@@ -517,25 +517,28 @@
    label and value cells — takes as many label/value pairs per row as fit:
    two across a page, one in a half-width card or a dock. A list with a
    sentence or a chart cell in it keeps its single column. */
-@media (min-width: 900px) {
+/* ...and every such list reads like a ledger, at any width: a hairline under
+   each row, every other row tinted, the row under the pointer shaded label and
+   number together — so the eye can follow a label across the white space to
+   its number. (Owner, 2026-11-12: "lines between each and slight color
+   variation like an excel sheet".) One pair a row below 1,000px: rows are
+   children 2i-1, 2i, and every other row is 4n+3, 4n+4. */
+.app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) { gap: 0; grid-template-columns: minmax(96px, 1fr) minmax(0, max-content); }
+.app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k, .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v { padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(4n+3), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(4n+4) { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:hover, .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:hover + .v, .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:has(+ .v:hover), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v:hover { background: color-mix(in srgb, var(--accent, var(--ink)) 12%, transparent); }
+/* Two pairs a row from 1,000px, each bounded (at most ~550px) so a number sits
+   a short glance from its label: a row is four children, and every other row
+   is 8n+5 .. 8n+8. */
+@media (min-width: 1000px) {
   .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) {
-    /* each pair is bounded (at most ~550px), so a number sits a short
-       glance from its label rather than at the far edge of the page */
-    grid-template-columns: repeat(auto-fill, minmax(150px, 220px) minmax(150px, 330px));
+    grid-template-columns: repeat(2, minmax(150px, 220px) minmax(150px, 330px));
     justify-content: start;
-    gap: 0;
   }
-  /* ...and read like a ledger: a hairline under every row, the row under the
-     pointer shaded label and number together, a gutter between pairs */
-  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k,
-  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v {
-    padding: 6px 10px; border-bottom: 1px solid var(--border);
-  }
-  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v { margin-right: 28px; }
-  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:hover,
-  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:hover + .v,
-  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:has(+ .v:hover),
-  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v:hover { background: var(--paper-wash); }
+  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(4n+3), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(4n+4) { background: none; }
+  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(8n+5), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(8n+6), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(8n+7), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(8n+8) { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v:nth-child(4n+2) { margin-right: 28px; }
+  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:hover, .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:hover + .v, .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:has(+ .v:hover), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v:hover { background: color-mix(in srgb, var(--accent, var(--ink)) 12%, transparent); }
 }
 /* "· Open →" on every row of a clickable table is nineteen copies of the same
    word. It shows on the row under the pointer or the keyboard. */

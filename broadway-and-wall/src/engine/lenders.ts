@@ -508,14 +508,18 @@ export function lenderByName(s: GameState, name: string): Lender | undefined {
 /**
  * WHAT A LENDER ASKS FOR A BUILDING IT DID NOT WANT.
  *
- * A flush desk markets at the mark; an impaired one puts the asset out at loan
- * basis — the carrying value that clears the charge-off. `lenderPressure`
- * interpolates between the two.
+ * It markets at the mark, and the room's bids find what a forced sale fetches
+ * (`bidRound`, a distress listing). It used to interpolate, by the desk's
+ * pressure, from the mark toward the LOAN BASIS — which only ever moved the
+ * ask when the loan was smaller than the building: an underwater loan's
+ * basis is above the mark, so it asked the mark anyway, while a desk owed
+ * $128K on an $8.5M block of flats listed it at $128K (measured: lender
+ * listings at caps of 39-483%, below the land under them). A lender is owed
+ * its debt, not a discount to it; what a building fetches is the buyers'
+ * call. (`basis` and `lender` are kept for the callers' loss accounting.)
  */
-export function reoAsk(s: GameState, mark: number, basis: number, lender: string): number {
-  const p = lenderPressure(lenderByName(s, lender));
-  const clears = Math.min(mark, Math.max(0, basis));
-  return Math.max(0, Math.round((mark * (1 - p) + clears * p) / 1000) * 1000);
+export function reoAsk(_s: GameState, mark: number, _basis: number, _lender: string): number {
+  return Math.max(0, Math.round(mark / 1000) * 1000);
 }
 
 /** Capital over book — the one number that decides whether a desk is open. */

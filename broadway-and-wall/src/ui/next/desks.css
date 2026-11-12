@@ -72,3 +72,12 @@
 .bd-steps .bd-terms, .bd-steps .bd-warn { padding-left: 78px; }
 .bd-steps .bd-terms.bd-inline { padding-left: 0; align-self: center; }
 .bd-chip:disabled { text-decoration: line-through; text-decoration-color: rgba(0, 0, 0, 0.25); }
+
+/* CLASS AND TYPE IN ONE PICKER: a card per building class, its types inside. */
+.bd-kinds { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
+.bd-kind { border: 1px solid var(--bd-line); border-radius: 6px; padding: 6px 7px 7px; background: var(--bd-chip, #fffdf7); }
+.bd-kind.on { border: 2px solid var(--bd-ink); padding: 5px 6px 6px; }
+.bd-kind.off { opacity: 0.55; }
+.bd-kind-name { font-weight: 700; font-size: 12.5px; margin-bottom: 5px; }
+.bd-kind-types { display: flex; flex-wrap: wrap; gap: 4px; }
+.bd-kind-types .bd-chip { height: 24px; padding: 0 8px; font-size: 12px; }

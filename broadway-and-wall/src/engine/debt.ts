@@ -1539,7 +1539,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
     // in", and that is the whole defect: a quote with no reason is a dead
     // button. `holdCapped` carries the fact up to the panel.
     const hq: Quote = {
-      ...sizeRest(s, product, Math.min(byLtv, holdMax), price, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass),
+      ...sizeRest(s, product, Math.min(byLtv, holdMax), price, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass, condition),
       concWhy: conc.why,
       holdCapped: true,
       advanceLtvToday,
@@ -1565,7 +1565,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   if (!onIncome(product)) {
     return withGuarantor({ principal: Math.max(0, Math.round(byLtv)), ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy });
   }
-  return withGuarantor({ ...sizeRest(s, product, byLtv, price, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass), concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy });
+  return withGuarantor({ ...sizeRest(s, product, byLtv, price, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass, condition), concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy });
 }
 
 /**
@@ -1593,7 +1593,23 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
  * The as-is advance still caps it. A lender lends against the lesser of cost and
  * appraisal whatever the plan says — you cannot borrow the upside twice.
  */
-function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: number, noiYr: number, ratePct: number, tight: number, stab?: StabView, klass?: string) {
+/**
+ * THE COVERAGE A DESK UNDERWRITES TO TODAY: its normal minimum (product.minDSCR)
+ * moved by the same underwriting standards that move its debt-yield floor —
+ * a quarter more when credit is shut, an eighth less when it is loose — and a
+ * tenth of a turn more on a worn or obsolete building, whose income a lender
+ * trusts less. Conduit underwriting ran ~1.2x in 2006-07 and ~1.4-1.5x in
+ * 2010-11 [S~: Trepp / Moody's CMBS underwritten-DSCR series]; Class B/C
+ * assets carry minimums ~0.05-0.15x above Class A on lender term sheets [S~].
+ */
+export function requiredDscr(s: GameState, product: LoanProduct, condition?: string): number {
+  const st = underwritingStandards(s);
+  const loose = Math.max(0, st), shut = Math.max(0, -st);
+  const worn = condition === "worn" || condition === "obsolete" ? 0.10 : 0;
+  return Math.max(1, product.minDSCR * (1 + 0.25 * shut - 0.12 * loose) + worn);
+}
+
+function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: number, noiYr: number, ratePct: number, tight: number, stab?: StabView, klass?: string, condition?: string) {
   void price; void tight;
   // The debt-yield floor still moves with standards (below).
   const st = underwritingStandards(s);
@@ -1634,7 +1650,7 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
   // write a loan that is in breach of the coverage test the day it closes. It
   // sized to 1.00x and tested the covenant only afterwards — hidden while the
   // advance was held low, exposed once desks lent to their ceilings.
-  const byDscr = product.bridge ? byModel : Math.min(byModel, Math.max(0, noiYr) / Math.max(1e-6, kUw * Math.max(1, product.minDSCR)));
+  const byDscr = product.bridge ? byModel : Math.min(byModel, Math.max(0, noiYr) / Math.max(1e-6, kUw * requiredDscr(s, product, condition)));
   // DEBT YIELD. Coverage flatters a loan when rates are low and cap rates are
   // lower — you can cover 1.25x on a building yielding four points, and the
   // lender still has no equity underneath them. Since 2009 the desk also
@@ -1744,7 +1760,10 @@ export function originate(
     amortYears: product.amortYears,
     maturityM: s.month + product.termM,
     monthlyPmt: pmt,
-    minDSCR: product.minDSCR,
+    // The covenant is what the loan was underwritten to, never tighter than
+    // the desk's normal: a loan signed in loose credit is not in breach the
+    // month after it closes.
+    minDSCR: +Math.min(product.minDSCR, requiredDscr(s, product, condition)).toFixed(2),
     maxLTV: product.maxLTV,
     sweep: false,
     cleanQs: 0,
@@ -2547,11 +2566,25 @@ export function collateralHaircut(h: Holding, month: number, econ?: Econ, rec?: 
  * improvements and income growth (Berkadia, Freddie Mac SBL case study).]
  */
 export const REFI_SEASON_M = 6;
+/**
+ * WHO WAITS FOR THE SEASONING. Banks, life companies and the agencies value an
+ * unseasoned refinance at what was paid; transitional and private paper (the
+ * debt fund's bridge, mezzanine, hard money) lends on the appraisal the next
+ * month — it underwrites the business plan, and charges for it in its own
+ * advance and coupon [S~: "no-seasoning" cash-out refinances are offered by
+ * private and DSCR lenders, typically at lower LTV and higher rates (lender
+ * guides, 2024-26)].
+ */
+export function collateralFor(p: LoanProduct, c: { value: number; costCap?: number }): number {
+  return c.costCap === undefined || lossClassOf(p) === "junior" ? c.value : Math.min(c.value, c.costCap);
+}
 export function debtCollateral(
   s: GameState, parcels: ParcelTable, h: Holding, rec: ParcelRecord,
 ): {
   value: number; noi: number; vacantDirt: boolean; quoteClass: string;
   hair: { mult: number; why?: string }; stab: StabView | undefined;
+  /** Inside REFI_SEASON_M of a purchase: what the owner paid, the most a seasoning desk will value it at (collateralFor). */
+  costCap?: number;
 } {
   const vacantDirt = isVacantLandLoanCollateral(s, h, rec);
   const appraised = ownedHoldingValue(s, parcels, h);
@@ -2564,8 +2597,8 @@ export function debtCollateral(
   // owner delivered is lent on as completed, the way a construction
   // take-out is.
   const fresh = h.deliveredM === undefined || h.deliveredM < (h.boughtM ?? 0);
-  const value = fresh && s.month - (h.boughtM ?? -Infinity) < REFI_SEASON_M && h.costBasis > 0
-    ? Math.min(appraised, h.costBasis) : appraised;
+  const costCap = fresh && s.month - (h.boughtM ?? -Infinity) < REFI_SEASON_M && h.costBasis > 0 ? h.costBasis : undefined;
+  const value = appraised;
   // Contract rent, abatements as a reserve — how a desk underwrites a roll.
   // The cash reading zeroed an anchor for its free months and the whole
   // sheet moved with it (see value.ts contractNoiYr).
@@ -2576,7 +2609,7 @@ export function debtCollateral(
     ? stabViewFor(rec, s.econ, h.condition, value, h.condIdx)
     : undefined;
   const stab = plan ? seasonPlan(plan, s.month - planStartM(h)) : undefined;
-  return { value, noi, vacantDirt, quoteClass, hair, stab };
+  return { value, noi, vacantDirt, quoteClass, hair, stab, costCap };
 }
 
 /**
@@ -2631,7 +2664,8 @@ export function seasonPlan(plan: StabView, ageM: number): StabView | undefined {
 export function balloonLadder(
   s: GameState, parcels: ParcelTable, h: Holding, rec: ParcelRecord, balance: number,
 ) {
-  const { value, noi, vacantDirt, quoteClass, hair, stab } = debtCollateral(s, parcels, h, rec);
+  const coll = debtCollateral(s, parcels, h, rec);
+  const { value, noi, vacantDirt, quoteClass, hair, stab } = coll;
     // The sponsor signs the renewal the way it signs a refinance: recourse
     // desks size against its balance sheet, so the ladder must quote that too.
     const guarantor: Guarantor = { nw: netWorth(s, parcels) };
@@ -2643,7 +2677,7 @@ export function balloonLadder(
         // `originate` refuses at the table after the ladder has already picked.
         && conditionOk(p, h.condition, rec.buildSpec));
     const sized = ladder.map((p) => {
-      const raw = quote(s, p, value, noi, quoteClass, false, stab, h.condition, guarantor);
+      const raw = quote(s, p, collateralFor(p, coll), noi, quoteClass, false, stab, h.condition, guarantor);
       return { p, qd: { ...raw, principal: Math.round(raw.principal * hair.mult) } };
     });
     // THE LENDER'S OWN UNDERWRITING DECIDES, NOT A PREFERENCE ORDER. A quote
@@ -2705,11 +2739,12 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
   const h = s.holdings[bbl];
   const rec = resolveRec(parcels, s, bbl);
   if (!h || !rec) return { quotes: [], value: 0, payoff: 0 };
-  const { value, noi, vacantDirt, quoteClass, hair, stab } = debtCollateral(s, parcels, h, rec);
+  const coll = debtCollateral(s, parcels, h, rec);
+  const { value, noi, vacantDirt, quoteClass, hair, stab } = coll;
   const release = refiFacilityRelease(s, parcels, bbl);
   const guarantor: Guarantor = { nw: netWorth(s, parcels) };
   const quotes = PRODUCTS.map((p) => {
-    const raw = quote(s, p, value, noi, quoteClass, false, stab, h.condition, guarantor);
+    const raw = quote(s, p, collateralFor(p, coll), noi, quoteClass, false, stab, h.condition, guarantor);
     const q = { ...raw, principal: Math.round(raw.principal * hair.mult) };
     // COVERAGE ON THE PAYMENT THE DESK SIZED TO. The card printed coverage on
     // the interest-only year's payment (1.71x) beside "binds coverage" from a
@@ -2837,7 +2872,9 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   if (!productOpen(next, product)) {
     return { s, err: `${product.label} declined: ${sponsorStanding(next).label}. Bridge lenders may still quote.` };
   }
-  const { value, noi, vacantDirt, quoteClass, hair, stab } = debtCollateral(next, parcels, h, rec);
+  const coll = debtCollateral(next, parcels, h, rec);
+  const { noi, vacantDirt, quoteClass, hair, stab } = coll;
+  const value = collateralFor(product, coll);
   if (!onIncome(product) && !vacantDirt) {
     return { s, err: h.groundLeased
       ? "Land loans are for vacant land. This site has ground rent; use an income lender."

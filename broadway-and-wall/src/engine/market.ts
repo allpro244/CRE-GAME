@@ -5329,16 +5329,34 @@ export function seekersPerVacantSf(e: Econ, use: BuiltClass): number {
  */
 const VOL_WINDOW_M = 120;   // [K: "trailing 10 years" — the window the brief names; a judgement of how long a market remembers]
 const VOL_MIN_M = 24;       // [K: twelve twelve-month changes is the least that reads as a spread]
+/**
+ * THE TOWN'S OPENING IS NOT MARKET HISTORY (2026-11-12). The game opens on
+ * initialised rents and caps, and the first two years are those settling
+ * onto what the agents will pay — flats' asking rents halved and recovered
+ * inside eighteen months on the standard city. Read as volatility, that put
+ * every apartment loan at the 20% floor: a desk believed a single building
+ * swings 50% a year. A lender's real record is decades long (the national
+ * prior stands in for it), so the tape is read from month 24 on [K: the
+ * settling time measured on seed 7919].
+ */
+const VOL_OPENING_M = 24;
 /** `mean`: the trailing mean of the same twelve-month log changes instead — the class's measured drift, what a lender extrapolates (debt.ts deskAdvance). */
 export function measurePropertyVol(e: Econ, mean = false): Record<BuiltClass, number> | undefined {
   const h = e.history ?? [];
   if (h.length < VOL_MIN_M + 1) return undefined;
-  const from = Math.max(0, h.length - VOL_WINDOW_M - 12);
+  const from = Math.max(VOL_OPENING_M, h.length - VOL_WINDOW_M - 12);
   const out = {} as Record<BuiltClass, number>;
   for (const c of ["office", "retail", "multifamily", "industrial"] as BuiltClass[]) {
     const v = (p: EconHistoryPoint): number => {
       const rent = p.effRent?.[c] ?? p.rent?.[c];
       const cap = p.cap?.[c];
+      // THE DRIFT A LENDER EXTRAPOLATES IS THE INCOME'S (2026-11-12). The
+      // loan is struck at today's cap rate, and cap rates revert over a cycle
+      // rather than trend, so carrying a cap-rate re-pricing forward as a
+      // value drift counts it twice — the town's opening re-pricing read as
+      // values falling 30-43% a year and put every desk on its floor. The
+      // volatility keeps the cap rate: that swing is the risk.
+      if (mean) return rent && rent > 0 ? rent : NaN;
       return rent && cap && rent > 0 && cap > 0 ? rent / cap : NaN;
     };
     const xs: number[] = [];

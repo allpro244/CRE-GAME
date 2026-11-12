@@ -252,6 +252,8 @@ export interface EconomyState {
   linkDz?: Record<string, number>;
   /** What the town's firms posted this month (`postPayAndPrices`), and the last 13 months of the town's posted pay. */
   posted?: Posted; wageHist?: number[];
+  /** Each industry's heads in town when its unit cost was first read: what agglomeration is measured against (`unitCoster`). */
+  aggH0?: number[];
 }
 
 function allocCols(cap: number): FirmColumns {
@@ -1868,14 +1870,28 @@ function tickQuality(E: EconomyState, isNew: Uint8Array): void {
  * rents would charge the same head, over output per head at the nation's pay;
  * its inputs, bought at national prices, the nation's.
  */
+/** Productivity's elasticity to own-industry employment in the town (localisation economies) [S~, see `unitCoster`]. */
+const AGGLOM_ELAST = 0.04;
 function unitCoster(s: GameState, E: EconomyState, natW: number): (n: number) => number {
   const F = E.f;
   const opwNat = perHead(natW).opw, opwHere = perHead(s.econ.wageIdx ?? 1).opw, rentNat = new Float64Array(N_IND), rentMkt = new Float64Array(N_IND);
   for (let i = 0; i < N_IND; i++) { rentNat[i] = natRentPerHead(s, i, opwNat); rentMkt[i] = rentPerHead(s, i, opwHere); }
+  // AGGLOMERATION (localisation economies): an industry's firms here are more
+  // productive the more of the industry the town holds — shared suppliers, a
+  // pool of skilled workers, ideas that travel between firms. Productivity
+  // rises with own-industry employment at an elasticity of ~0.04 (Rosenthal
+  // & Strange 2004, Handbook of Regional and Urban Economics vol. 4: estimates
+  // 0.02-0.08; Henderson 2003, JUE) [S~]; read against the industry's heads
+  // here at the opening, so a growing specialty grows cheaper to make here and
+  // a shrinking one dearer, and the town's share follows.
+  const H = new Float64Array(N_IND);
+  for (let n = 0; n < E.L.slot.n; n++) H[F.ind[n]] += F.hc[n];
+  const H0 = (E.aggH0 ??= Array.from(H));
+  const agg = Float64Array.from(H, (h, i) => (h > 0 && H0[i] > 0 ? Math.pow(h / H0[i], -AGGLOM_ELAST) : 1));
   return (n) => {
     const i = F.ind[n], I = INDUSTRIES[INDUSTRY_IDS[i]];
     const rentHead = F.id[n] >= 0 && F.hc[n] > 0 ? F.rent[n] / F.hc[n] : rentMkt[i];
-    return 1 + I.comp * (F.pay[n] / natW - 1) + (rentHead - rentNat[i]) / Math.max(1e-6, opwNat[i]);
+    return (1 + I.comp * (F.pay[n] / natW - 1) + (rentHead - rentNat[i]) / Math.max(1e-6, opwNat[i])) * agg[i];
   };
 }
 /** A uniform [0,1) from a firm and a month: whether it reprices, the same in every copy of the game. */

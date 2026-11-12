@@ -90,3 +90,14 @@
 }
 .exits-foot .mono { color: var(--ink); }
 .exit-pos { color: var(--success); }
+
+/* THE RENT ROLL IN COLUMNS (owner, Nov 2026: show each tenant's square feet):
+   tenant · floors · sq ft · share · rent · expiry, notes on a line below. */
+.roll .roll-row.roll-t { display: grid; grid-template-columns: minmax(110px, 1fr) 50px 70px 38px 62px 78px; gap: 2px 8px; align-items: baseline; }
+.roll .roll-t .roll-c { text-align: right; white-space: nowrap; font-size: 12px; }
+.roll .roll-t .roll-sf { font-weight: 700; }
+.roll .roll-t .roll-notes { grid-column: 1 / -1; font-size: 11px; color: var(--muted, #7a705e); }
+.roll .roll-cols { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted, #7a705e); border-bottom: 1px solid var(--border); }
+.roll .roll-cols .roll-c { font-size: 10px; }
+.roll .roll-t .roll-left { display: block; font-size: 10.5px; }
+.roll .roll-t .roll-name { min-width: 0; }

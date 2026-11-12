@@ -28,6 +28,7 @@ import { committedTotal, type PitchStyle } from "@/engine/investors";
 import { ownedHoldingValue } from "@/engine/value";
 import { BUILD_TIERS, buildTier } from "@/engine/value";
 import { START_YEAR, type DevDraft, type DevUse } from "@/engine/types";
+import { productsForUse, layoutProduct } from "@/engine/products";
 import { KITS, KIT_GROUPS } from "@/engine/renderView";
 import { FACADE_STYLES, FACADE_GROUPS, TRIM_PAINTS, ROOF_CHOICES, CROWN_CHOICES, CROWN_MIN_FLOORS, type FacadeGroup } from "@/map/real/RealCity";
 import { SIGNATURE_FORMS, SIGNATURE_MIN_FLOORS } from "@/map/real/signature";
@@ -85,6 +86,9 @@ function Row({ k, children }: { k: string; children: React.ReactNode }) {
   );
 }
 
+/** The building classes, in the order a developer thinks of them. */
+const KINDS: DevUse[] = ["office", "multifamily", "mixed", "retail", "industrial"];
+
 const pct2 = (x: number) => `${x.toFixed(2)}%`;
 const ratio = (x: number) => `${x.toFixed(2)}×`;
 
@@ -100,10 +104,10 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
     use, floors, cov: d.cov, spec: d.spec, ltcWant: d.ltcWant, design, product: d.product?.key, ...patch,
   });
   const setSize = (f: number) => set({ floors: f, cov: coverFor(rec, use, f) });
-  const setUse = (u: DevUse) => {
+  const setUse = (u: DevUse, product?: string) => {
     const fl = Math.max(1, floors);
     const { form: _f, formRetained: _r, formSkin: _s, ...look } = design;
-    set({ use: u, product: undefined, floors: fl, cov: coverFor(rec, u, fl), design: look });
+    set({ use: u, product, floors: fl, cov: coverFor(rec, u, fl), design: look });
   };
 
   // EACH LENDER'S MOST ON THIS JOB (owner, Oct 2026: "add a max LTV ... for each
@@ -194,7 +198,6 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
   const lookName = design.kit ? KITS.find((k) => k.key === design.kit)?.name : styleNow?.name;
   // the widest footprint that still carries these floors; narrower is a slimmer building
   const covMax = Math.max(MIN_COVERAGE, coverFor(rec, use, floors));
-  const legalNow = [...new Set([...d.legal, use])];
   const contract = d.commitArgs[3];
 
   return (
@@ -223,20 +226,38 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
           )}
 
           <Step n={1} title="What to build" sum={`${d.product ? d.product.short : devUseLabel(use)} · ${tier.label}`}>
-            <Row k="Use">
-              {legalNow.map((u) => (
-                <Chip key={u} on={u === use} onClick={() => setUse(u)} disabled={!d.legal.includes(u) && u !== use}>{devUseLabel(u)}</Chip>
-              ))}
-            </Row>
-            {d.bar && <div className="bd-warn">{d.bar}</div>}
-            {d.prods.length > 0 && (
-              <Row k="Type">
-                <Chip on={!d.product} onClick={() => set({ product: undefined })}>Street building</Chip>
-                {d.prods.map((p) => (
-                  <Chip key={p.key} on={d.product?.key === p.key} title={p.label} onClick={() => set({ product: p.key })}>{p.short}</Chip>
-                ))}
-              </Row>
+            {/* ONE PICKER FOR CLASS AND TYPE (owner, Nov 2026: "not very intuitive
+                to switch between the main classes ... to get to their sub
+                categories"): every class is a card with its own types inside, so
+                any type is one click from anywhere. A type the lot cannot lay out,
+                or a class zoning bars, is shown greyed with the reason. */}
+            <div className="bd-kinds">
+              {KINDS.map((u) => {
+                const legal = d.legal.includes(u);
+                const prods = productsForUse(u);
+                const here = u === use;
+                return (
+                  <div key={u} className={"bd-kind" + (here ? " on" : "") + (legal ? "" : " off")} title={legal ? undefined : "This lot's zoning does not allow it"}>
+                    <div className="bd-kind-name">{devUseLabel(u)}</div>
+                    <div className="bd-kind-types">
+                      <Chip on={here && !d.product} disabled={!legal} onClick={() => (here ? set({ product: undefined }) : setUse(u))}>Street building</Chip>
+                      {prods.map((p) => {
+                        const fits = !!layoutProduct(p, rec.lotArea);
+                        return (
+                          <Chip key={p.key} on={here && d.product?.key === p.key} disabled={!legal || !fits}
+                            title={!fits ? `${p.label} · this lot is the wrong size for it` : `${p.label} · ${p.blurb}`}
+                            onClick={() => (here ? set({ product: p.key }) : setUse(u, p.key))}>{p.short}</Chip>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {KINDS.some((u) => productsForUse(u).some((p) => !layoutProduct(p, rec.lotArea))) && (
+              <div className="bd-terms bd-inline">Greyed types need a different lot size ({sf(rec.lotArea)} here) · hover one for why</div>
             )}
+            {d.bar && <div className="bd-warn">{d.bar}</div>}
             <Programme d={d} set={set} />
             <Row k="Quality">
               {BUILD_TIERS.map((t) => (
@@ -441,6 +462,8 @@ function Verdict({ d }: { d: DeskScheme }) {
   return (
     <div className={"bd-verdict " + tone}>
       <div className="bd-cell"><div className="bd-lab">Profit</div><div className={"bd-big mono " + (d.profit < 0 ? "neg" : "pos")}>{d.profit < 0 ? "−" : ""}{usd(Math.abs(d.profit))}</div></div>
+      {/* THE BUILD COST BESIDE THE PROFIT (owner, Nov 2026): the construction cost and its $/sf, the same numbers as Numbers → Cost */}
+      <div className="bd-cell"><div className="bd-lab">Construction</div><div className="bd-mid mono">{usd(p.costTotal)} <span className="bd-sub">· ${Math.round(p.costTotal / Math.max(1, p.sf))}/sf</span></div></div>
       <div className="bd-cell"><div className="bd-lab">Yield · hurdle</div><div className="bd-mid mono">{pct2(p.yieldOnCost)} · {pct2(p.requiredYield)}</div></div>
       <div className="bd-cell"><div className="bd-lab">Equity</div><div className="bd-mid mono">{usd(all)}</div></div>
       <div className="bd-cell"><div className="bd-lab">Build</div><div className="bd-mid mono">{p.months} mo</div></div>

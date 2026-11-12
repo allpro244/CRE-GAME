@@ -2037,6 +2037,12 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
     older.sort((p, q) => q.rent - p.rent);
     let acc = 0, askB = r.mainRent;
     for (const o of older) { acc += o.w; askB = o.rent; if (acc >= occB / 2) break; }
+    // ...and the older stock lets at that one going rent, as the ladder lets it
+    // every month after: a renter whose pay carries more pays it, not its own
+    // most (2026-11-12: the opening had each older-home renter at SCREEN, half
+    // its pay, so the mainland opened at a 43% median burden that the monthly
+    // ladder then took a year of renewals to unwind to ~25%)
+    for (let i = 0; i < r.n; i++) if (a.ten[i] === TEN_MAINLAND && a.rent[i] > askB && a.rent[i] < r.mainRent * 0.999) a.rent[i] = askB;
     const v = 1 - OPENING_VAC.multifamily;
     r.mk = { homes: occA / v, homes0: occA / v, ask0: r.mainRent, cap0: cap, cost0: cost, occ, roll: { occ: 0 }, pipe: [], cards: [], signed: 0, homesB: occB / v, askB, askB0: askB };
     return;

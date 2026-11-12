@@ -1958,8 +1958,12 @@ function readyToRent(r: HouseholdRegister, a: HouseholdArrays, i: number): boole
   return a.ten[i] === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) && a.sav[i] > 3 * r.mainRent;
 }
 function mainHasRoom(r: HouseholdRegister, a: HouseholdArrays, i: number): boolean {
+  return mainRoomFor(r, a.wt[i]);
+}
+/** Is there a home free on the mainland for `w` households this month? */
+function mainRoomFor(r: HouseholdRegister, w: number): boolean {
   const mk = r.mk;
-  return !mk || mk.occ + mk.signed + a.wt[i] <= mk.homes + (mk.homesB ?? 0) - (mk.idle ?? 0);
+  return !mk || mk.occ + mk.signed + w <= mk.homes + (mk.homesB ?? 0) - (mk.idle ?? 0);
 }
 
 /** Census Survey of Construction 2023: months from start to completion, buildings of 5+ units, about 18 [S~]. */
@@ -2742,6 +2746,14 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
           if (job) { place(i, k, job); budget -= w; WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * R.n()); continue; }
         }
       }
+      // ...AND A MOVER WITH NOWHERE TO LIVE GOES ELSEWHERE (2026-11-12): an
+      // outsider takes the opening only if a home is free for it. It came for
+      // the work whatever the region's housing held and was signed to a flat
+      // that did not exist, then pushed to doubled up — housing supply is what
+      // limits a metro's in-migration (Glaeser & Gyourko 2005, J. Pol. Econ.
+      // 113; Saiz 2010) [S~]. The opening stays open, the firms bid pay up for
+      // it, and the rents a full region charges are what builders build on.
+      if (!mainRoomFor(r, wR)) break;
       r.arriveAcc -= wR;
       const i = addAgent(r), b = r.a!;
       b.wt[i] = wR;

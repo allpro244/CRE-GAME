@@ -95,11 +95,14 @@ const classCols: Col<ClassRow>[] = [
   { id: "direct", label: "Direct", get: (r) => r.direct, fmt: "pct", hidden: true },
   { id: "vacYr", label: "Δ 12m", get: (r) => r.vacYr, fmt: "bp", tone: (r) => ((r.vacYr ?? 0) >= 200 ? "neg" : undefined) },
   { id: "state", label: "Balance", get: (r) => r.state, tone: (r) => (r.soft ? "neg" : undefined) },
-  { id: "rent", label: "Rent", get: (r) => r.rent, fmt: "psf" },
+  // ASKING AND EFFECTIVE, SIDE BY SIDE (owner, office glut): the asking index
+  // is the face of signed leases and moves last — in a glut the concessions
+  // take the fall first, and effective is where it shows.
+  { id: "rent", label: "Asking", get: (r) => r.rent, fmt: "psf" },
   { id: "rentS", label: "Rent 20y", get: (r) => r.rent, num: false, cell: (r) => sparkCell(r.rentS) },
-  { id: "eff", label: "Effective", get: (r) => r.eff, fmt: "psf", hidden: true },
+  { id: "eff", label: "Effective", get: (r) => r.eff, fmt: "psf" },
   { id: "realYoy", label: "Real 12m", get: (r) => r.realYoy, fmt: "pct", tone: (r) => (r.realYoy < -0.025 ? "neg" : r.realYoy > 0.025 ? "pos" : undefined) },
-  { id: "conc", label: "Concession", get: (r) => r.conc, fmt: "pct", tone: (r) => (r.conc > 0.12 ? "neg" : undefined), hidden: true },
+  { id: "conc", label: "Concession", get: (r) => r.conc, fmt: "pct", tone: (r) => (r.conc > 0.12 ? "neg" : undefined) },
   { id: "cap", label: "Cap", get: (r) => r.cap, fmt: "pctv" },
   { id: "capS", label: "Cap 20y", get: (r) => r.cap, num: false, cell: (r) => sparkCell(r.capS) },
   { id: "stock", label: "Stock", get: (r) => r.stock, fmt: "sf", hidden: true },
@@ -365,7 +368,8 @@ export function MarketsOverview() {
               <div className="mk-card-head"><b>{r.label}</b><span className={`mk-state ${BAL_TONE[bal.state] ?? ""}`}>{bal.state}</span></div>
               <div className="mk-figs">
                 <div><small>Available</small><Figure value={r.avail} fmt="pct" /></div>
-                <div><small>Rent</small><Figure value={r.rent} fmt="psf" /></div>
+                <div><small>Asking</small><Figure value={r.rent} fmt="psf" /></div>
+                <div><small>Effective</small><Figure value={r.eff} fmt="psf" tone={r.eff < r.rent * 0.85 ? "neg" : undefined} /></div>
                 <div><small>Real 12m</small><Figure value={r.realYoy} fmt="pct" tone={r.realYoy < 0 ? "neg" : "pos"} /></div>
                 <div><small>Cap</small><Figure value={r.cap} fmt="pctv" /></div>
               </div>

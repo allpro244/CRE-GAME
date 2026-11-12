@@ -239,7 +239,8 @@ export function CapitalInvestors() {
           { id: "left", label: "Open to you", get: (r) => r.left, fmt: "usd" },
         ]} rows={types} rowKey={(r) => r.id} />
       </Box>
-      <Box head="Live deals">
+      {/* Deals syndicated one by one: only an older save still has any. */}
+      {live.length > 0 && <Box head="Live deals">
         <DataTable id="inv-live" cols={[
           { id: "addr", label: "Deal", get: (r) => r.addr, cell: (r) => strong(r.addr) },
           { id: "commit", label: "Committed", get: (r) => r.v!.lpCommit, fmt: "usd" },
@@ -248,8 +249,8 @@ export function CapitalInvestors() {
           { id: "yours", label: "Yours", get: (r) => r.v!.yours, fmt: "usd" },
           { id: "theirs", label: "Theirs", get: (r) => r.v!.theirs, fmt: "usd" },
         ]} rows={live} rowKey={(r) => r.b} empty="None" onRow={(r) => useStore.getState().select(r.b)} />
-      </Box>
-      <Box head="Wound up">
+      </Box>}
+      {closed.length > 0 && <Box head="Wound up">
         <DataTable id="inv-closed" cols={[
           { id: "addr", label: "Deal", get: (r) => r.address, cell: (r) => strong(r.address) },
           { id: "formed", label: "Formed", get: (r) => r.formedM, cell: (r) => mo(r.formedM) },
@@ -259,7 +260,7 @@ export function CapitalInvestors() {
           { id: "mult", label: "Multiple", get: (r) => (r.lpIn > 0 ? r.lpOut / r.lpIn : null), fmt: "x" },
           { id: "irr", label: "LP IRR", get: (r) => r.lpIrr, fmt: "pct" },
         ]} rows={closed} rowKey={(r) => `${r.bbl}-${r.closedM}`} initialSort={{ col: "closed", dir: -1 }} empty="None" />
-      </Box>
+      </Box>}
       <Box head="Record">
         <DataTable id="inv-record" cols={[
           { id: "label", label: "Deal", get: (r) => r.label },
@@ -291,8 +292,9 @@ function FundBox() {
   if (!f || f.settled) {
     return (
       <Box head="Fund">
+        <div className="nx-dim" style={{ padding: "4px 0" }}>{q.reason}</div>
         <div className="nx-box-foot">
-          <button type="button" className="nx-btn nx-sm nx-primary" disabled={!q.ok} title={q.ok ? undefined : "Record too short"} onClick={() => st.raiseFund()}>
+          <button type="button" className="nx-btn nx-sm nx-primary" disabled={!q.ok} onClick={() => st.raiseFund()}>
             {q.ok ? `Raise ${usd(q.size)}` : "Raise fund"}
           </button>
         </div>

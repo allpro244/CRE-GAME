@@ -75,6 +75,8 @@ export function ffAvailable(s: GameState): number {
     const ff = w.sources ? (w.sources.ff ?? 0) / Math.max(1, w.lpCommit) : 1;
     committed += ff * Math.max(0, w.lpCommit - w.lpDist);
   }
+  // A live fund's friends-and-family commitment is the network's money too.
+  if (s.fund && !s.fund.settled) committed += s.fund.ffCommit ?? 0;
   return Math.max(0, cap - committed);
 }
 

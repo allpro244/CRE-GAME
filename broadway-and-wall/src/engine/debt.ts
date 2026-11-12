@@ -840,8 +840,21 @@ const assetVol = (indexVol: number) => Math.sqrt(indexVol * indexVol + IDIO_VOL 
  * fell by half in 2007-10) [S~].
  */
 const NATIONAL_LAND_VOL = 0.20;
+// SPEED (2026-11-12): read ~32,000 times a month and it changes only when a
+// month is added to the record. Remembered for the last record it read: the
+// same array, the same length, the same latest entry and land index, the same
+// inflation give the same answer.
+let landRiskMemo: { h: unknown; n: number; last: unknown; idx: number | undefined; infl: number; out: { sigma: number; mu: number; local: boolean } } | null = null;
 function landRiskView(s: GameState, infl: number): { sigma: number; mu: number; local: boolean } {
   const h = s.econ.history ?? [];
+  const last = h[h.length - 1];
+  const M = landRiskMemo;
+  if (M && M.h === h && M.n === h.length && M.last === last && M.idx === last?.landIdx && M.infl === infl) return M.out;
+  const out = landRiskRead(h, infl);
+  landRiskMemo = { h, n: h.length, last, idx: last?.landIdx, infl, out };
+  return out;
+}
+function landRiskRead(h: NonNullable<GameState["econ"]["history"]>, infl: number): { sigma: number; mu: number; local: boolean } {
   const xs: number[] = [];
   for (let i = Math.max(12, h.length - 120); i < h.length; i++) {
     const a = h[i - 12]?.landIdx, b = h[i]?.landIdx;
@@ -994,12 +1007,29 @@ const MARGINAL_EL_MULT = 2;
 export function deskAdvance(s: GameState, product: LoanProduct, klass?: string, attach = 0, at: LossAt = {}): number {
   const cls = lossClassOf(product);
   const budget = (PRIOR_EL[cls] / 100) * MARGINAL_EL_MULT * Math.max(0.2, lenderAppetite(s, product.lender));
-  const el = (L: number) => trancheEl(s, product, L, klass, attach, at);
+  // SPEED (2026-11-12): the search below reads only these numbers, so its
+  // answer is remembered on exactly them. It ran ~28,000 times a month for
+  // ~1,200 distinct inputs — 38% of a late month — with the loss inputs
+  // (the desk's risk view, the balloon) recomputed at every one of its 40 steps.
+  const { v, left, kOverY } = lossInputs(s, product, klass, at);
+  const T = Math.max(1, product.termM / 12);
+  const key = `${product.termM}|${attach}|${budget}|${v.sigma}|${v.mu}|${kOverY}|${left}`;
+  const hit = deskAdvanceMemo.get(key);
+  if (hit !== undefined) return hit;
+  const lo0 = attach > 0 ? lossOver(attach, product, v, kOverY, left) : 0;
+  // trancheEl, with its inputs computed once
+  const el = (L: number) => attach > 0 && L > attach
+    ? (lossOver(L, product, v, kOverY, left) - lo0) / ((L - attach) * T)
+    : L > 0 ? lossOver(L, product, v, kOverY, left) / (L * T) : 0;
   let lo = Math.max(0.2, attach + 0.01), hi = 0.99;
-  if (lo >= hi || el(lo) > budget) return lo;
-  for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (el(m) < budget) lo = m; else hi = m; }
+  if (!(lo >= hi || el(lo) > budget)) {
+    for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (el(m) < budget) lo = m; else hi = m; }
+  }
+  if (deskAdvanceMemo.size > 20_000) deskAdvanceMemo.clear();
+  deskAdvanceMemo.set(key, lo);
   return lo;
 }
+const deskAdvanceMemo = new Map<string, number>();
 /** Abramowitz & Stegun 7.1.26 (max error 1.5e-7) [M]. */
 function erf(x: number): number {
   const t = 1 / (1 + 0.3275911 * Math.abs(x));

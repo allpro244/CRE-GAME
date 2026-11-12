@@ -2995,9 +2995,12 @@ export function managedRentPsfYr(rec: ParcelRecord, econ: Econ, h: Holding, use?
   // explicit lobby×1.04×facade×1.08 = 1.12×, both together 1.35× — the same
   // cheque twice. The condition channel stays; the arrival factor in
   // absorption.ts is velocity, not a third price. See QUALITY_BALANCE_PLAN.md §2.
-  m *= 1 + 0.08 * (h.stance ?? 0);
-  if (h.landmarked) m *= 1.07;
-  return m;
+  return m * askPremium(h);
+}
+
+/** The owner's asking posture and the landmark premium, on top of the market (managedRentPsfYr, absorption.ts currentAskPsfYr). */
+export function askPremium(h: Pick<Holding, "stance" | "landmarked">): number {
+  return (1 + 0.08 * (h.stance ?? 0)) * (h.landmarked ? 1.07 : 1);
 }
 
 /**

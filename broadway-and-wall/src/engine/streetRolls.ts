@@ -46,12 +46,12 @@ import { renewalAsk } from "./citygov";
 import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { BuiltClass, Condition, Credit, Econ, GameState, Tenant } from "./types";
 import { START_YEAR } from "./types";
-import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, useOccupancy, N_BANDS, scoreRentMult, locationRentMult, managedRentPsfYr } from "./value";
+import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, useOccupancy, N_BANDS, scoreRentMult, locationRentMult } from "./value";
 import { isCommercial, bumpOf, minLettableSf, streetLease, pickSector, pickName, termBandM, depositFor, chosenTermM, useVacantSf, vacantSf } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
 import { tickTenantFin, tenantInsolvent, BACKGROUND_FAIL, entrantMargin, rentCapacity, finGrade } from "./tenantBooks";
 import { rng, rrange, reletMonths, recordDeal, FIRM_PROFILE, turnoverYr, priceLevel12, CONC_DEPTH, SECTOR_LABEL, SF_PER_JOB } from "./market";
-import { staleDiscount } from "./absorption";
+import { staleDiscount, currentAskPsfYr, currentPackage } from "./absorption";
 import { leaseUpMonthsOf } from "./proforma";
 import { tenantQualityTerms } from "./bands";
 import { drawTenantSf, sizeScale } from "./plates";
@@ -621,8 +621,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
       if (avail < minLettableSf(rec, k)) continue;
       const condIdx = h.condIdx ?? initialCondIdx(rec, m);
       const mkt = useRentPsfYr(rec, e, h.condition, k, condIdx);
-      const postFace = managedRentPsfYr(rec, e, h, k) * staleDiscount(h.darkMs);
-      const post = postFace * (1 - compsPackage(e, k as "office"));
+      const post = currentAskPsfYr(rec, e, h, k) * (1 - currentPackage(e, h, k));
       if (!(mkt > 0) || !(post > 0)) continue;
       list.push({ bbl: h.bbl, rec, avail, sc: overallScore(rec, e, k, condIdx), mkt, post, letShare: 1 - avail / Math.max(1, useRentableSf(rec, k)), pos: posOf(rec) });
     }
@@ -1553,6 +1552,37 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
         if (!b.cap[k] || !(b.mkt[k]! > 0)) continue;
         const since = roll.vac?.[k];
         reviewAsk(bookOf(b, roll, k), e, k, b.mkt[k]!, { m, monthsToLet: V.monthsToLet(k), darkM: since === undefined ? undefined : m - since, stressed: b.stressed, infl12, holdFace: opening, going: V.going(k) });
+      }
+    }
+    // THE PLAYER IS A LANDLORD ON THE SAME BOOK (PARITY_PLAN.md). Its asking
+    // rent answered its own empty floors only through a stale-space markdown
+    // (absorption.ts staleDiscount: a year's wait, then at most a quarter off,
+    // unsourced) — measured in a glut of its own making, 85-100% vacant, its
+    // post held at 0.92-1.0x the market while street books cut 17% in two
+    // years and 45% in eight. Now each kind of space keeps the street's
+    // LandlordAsk, aged the street's way, priced by the same trade.
+    for (const h of Object.values(s.holdings ?? {})) {
+      const rec = resolveRec(parcels, s, h.bbl);
+      if (!rec) continue;
+      for (const k of COMM) {
+        if (!(useRentableSf(rec, k) > 0)) { if (h.ask?.[k]) delete h.ask[k]; continue; }
+        const mkt = useRentPsfYr(rec, e, h.condition, k, h.condIdx);
+        if (!(mkt > 0)) continue;
+        const L = askOf((h.ask ??= {}), k, e, mkt, 0, m);
+        const a = Math.max(0, Math.round(useVacantSf(rec, h, k, m)));
+        const vacNow = a >= minLettableSf(rec, k);
+        h.askVac ??= {}; h.askVsf ??= {};
+        if (vacNow && h.askVac[k] === undefined) { h.askVac[k] = m; h.askVsf[k] = a; }
+        else if (!vacNow) { delete h.askVac[k]; delete h.askVsf[k]; }
+        else {
+          const prev = h.askVsf[k] ?? a;
+          if (a > prev) h.askVac[k] = +(h.askVac[k]! + (m - h.askVac[k]!) * (a - prev) / a).toFixed(2);
+          h.askVsf[k] = a;
+        }
+        const since = h.askVac[k];
+        // under pressure: the firm is out of cash, or this building's loan is behind
+        const stressed = s.cash < 0 || (h.loan?.arrearsMs ?? 0) > 0;
+        reviewAsk(L, e, k, mkt, { m, monthsToLet: V.monthsToLet(k), darkM: since === undefined ? undefined : m - since, stressed, infl12, holdFace: opening, going: V.going(k) });
       }
     }
   }

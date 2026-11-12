@@ -65,10 +65,10 @@ function makeRunner(seed, useBot, parcels, bbls, adjacency, botState) {
   const r = { resurrected: 0, breaks: [], worst: 0, months: 0, tickMs: 0, botMs: 0 };
   let bot = null;
   r.attach = (g) => {
-    if (useBot) { bot = makeConserveBot(E, { seed, START: botState?.START ?? g.cash }); if (botState) Object.assign(bot, { built: botState.built, syndicated: botState.syndicated }); }
+    if (useBot) { bot = makeConserveBot(E, { seed, START: botState?.START ?? g.cash }); if (botState) Object.assign(bot, { built: botState.built, funded: botState.funded }); }
     r.prev = { cash: liquidity(g), books: bookSum(g), dep: deposits(g), loc: g.loc?.balance ?? 0 };
   };
-  r.botState = (g) => bot && { START: botState?.START ?? r.START, built: bot.built, syndicated: bot.syndicated };
+  r.botState = (g) => bot && { START: botState?.START ?? r.START, built: bot.built, funded: bot.funded };
   r.step = (g, m) => {
     const m0 = g.month;
     let t = performance.now();

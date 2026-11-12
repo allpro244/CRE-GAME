@@ -29,7 +29,7 @@
 // now claims jobs out of the city's own pipeline: buys the dirt, writes the
 // equity, carries the loan through the cycle, and either owns a building at
 // the end of it or hands a frame to a receiver.
-import { drawRivalRaise, poolLeft, investorPool, PITCH_MULT } from "./investors";
+import { drawRivalRaise, poolLeft, investorPool, PITCH_MULT, INVESTOR_TYPES } from "./investors";
 import { fieldRoster, rivalCapitalMult, type RivalCapital } from "./setup";
 import { transferTaxRate } from "./citygov";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
@@ -3014,6 +3014,62 @@ function streetQuartileEquity(s: GameState): number | undefined {
   return xs.length >= 4 ? xs[Math.floor(xs.length / 4)] : undefined;
 }
 
+/**
+ * A SUCCESSOR FUND. Firms raised once, at founding, and never again — so the
+ * year's investor money went mostly unused (~$40M of pool at month 0, ~$200M
+ * by month 48) while the street's buyers sat on almost no cash. A living
+ * sponsor raises its next fund once the current one is mostly invested: the
+ * standard LPA successor-fund clause bars a new fund until about 70-75% of
+ * commitments are invested or reserved [S: ILPA Principles 3.0 (2019),
+ * successor-fund restriction; Proskauer, "Successor Funds" (2021): 70-80%
+ * typical], so the trigger is dry powder (free cash plus uncalled) under a
+ * quarter of the capital in the firm.
+ *
+ * ONE RULEBOOK with the player's fund (fund.ts fundRaiseQuote): only while the
+ * street takes a raise (firmEntryPitch), only from the pools the firm's band
+ * opens, and sized by the last fund and the record since — how a dollar grew
+ * with the firm against the street over five years, the same term a spinout's
+ * first close carries — no larger than what the pools have left. A raise too
+ * small to be a fund is not a raise (the founders' quarter-of-a-close rule).
+ */
+function maybeSuccessorFunds(s: GameState) {
+  const { product, pitch } = firmEntryPitch(s);
+  if (!(product > 0 && pitch > 0)) return;
+  const street = streetFiveYearReturn(s);
+  for (const r of livingRivals(s)) {
+    if (r.builderProf || r.wave || r.stressMs || r.failedM !== undefined) continue;
+    const eq = eqOf(r);
+    if (!(eq > 0)) continue;
+    const dry = Math.max(0, freeCash(s, r)) + Math.max(0, r.uncalled ?? 0);
+    if (dry >= SUCCESSOR_DRY_SHARE * (eq + Math.max(0, r.uncalled ?? 0))) continue;
+    const band = rivalBand(s, r);
+    const ids = INVESTOR_TYPES.filter((t) => bandIdx(band) >= bandIdx(t.band)).map((t) => t.id);
+    if (!ids.length) continue;
+    const poolAvail = ids.reduce((a, id) => a + poolLeft(s, id), 0);
+    const prior = r.fundSize ?? eq;
+    const rec = fiveYearReturn(s, r);
+    const w = rec !== undefined && street !== undefined ? Math.pow((1 + rec) / (1 + street), 5) : 1;
+    const want = prior * w;
+    const equity = Math.round(Math.min(want, poolAvail));
+    if (!(equity > 0) || equity < 0.25 * prior) continue;
+    drawRivalRaise(s, equity, ids);
+    // Commitments, not cash: the reserve is held back for follow-ons, the
+    // middle of the 30-50% practice the founders' first close draws from.
+    const uncalled = Math.round(equity * SUCCESSOR_RESERVE);
+    r.cash += equity - uncalled;
+    r.uncalled = Math.max(0, r.uncalled ?? 0) + uncalled;
+    r.fundSize = equity;
+    r.fundM = s.month;
+    r.funds = (r.funds ?? 1) + 1;
+    milestone(s, r, `Closed Fund ${r.funds} at ${money(equity)}`);
+    s.news.unshift({ q: s.month, kind: "event", text: `${r.name} closed its Fund ${r.funds} at ${money(equity)}.` });
+  }
+}
+/** Dry powder under this share of the firm's capital opens a successor fund: the LPA successor-fund clause, 70-75% invested [S: ILPA Principles 3.0 (2019); see maybeSuccessorFunds]. */
+const SUCCESSOR_DRY_SHARE = 0.25;
+/** Share of a successor fund held back uncalled. [S: 30-50% reserve practice for closed-end vehicles, as at a first close; the midpoint.] */
+const SUCCESSOR_RESERVE = 0.40;
+
 /** The median loan-to-value the living firms of a style carry, if three or more of them hold buildings. */
 function peerLtv(s: GameState, style: RivalStyle): number | undefined {
   const xs = livingRivals(s).filter((r) => r.style === style && (r.aum ?? 0) > 0).map((r) => r.debt / (r.aum ?? 1)).sort((a, b) => a - b);
@@ -3196,7 +3252,7 @@ function maybeNewFirm(s: GameState) {
   s.rivals.push({
     id, name, style,
     cash: equity - uncalled, debt: 0, bbls: [], targetLtv: +ltv.toFixed(2), bornM: s.month,
-    uncalled,
+    uncalled, fundSize: equity,
     spawnedFrom,
   });
   {
@@ -4761,6 +4817,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   tickRivalSpinouts(s);
   maybeNewFirm(s);
+  maybeSuccessorFunds(s);
   maybeLandFund(s, parcels);
   tickForeignMoney(s);
   appraiseBooks(s, parcels);
@@ -5012,7 +5069,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // had never held a deed, and 105 of the 106 had "distributed". Only
     // vehicles raised on this street carry `uncalled`; the opening roster are
     // established operators whose current fund is already mid-life.
-    const investing = r.uncalled !== undefined && s.month - (r.bornM ?? 0) < FUND_INVEST_M;
+    const investing = r.uncalled !== undefined && s.month - (r.fundM ?? r.bornM ?? 0) < FUND_INVEST_M;
     if (r.distRecent) r.distRecent = Math.round(r.distRecent * Math.exp(-1 / 24));
     // A TENTH OF THE SURPLUS A MONTH, about 70% of it a year (2026-10-14).
     // This paid 35% a month — 99% of everything above the reserve inside a
@@ -5521,7 +5578,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       r.emptyMs = 0;
     } else if (r.failedM === undefined && r.bbls.length === 0 && (r.debt ?? 0) <= 0 && (r.cash ?? 0) >= 0 && !(r.stressMs)) {
       const everDeployed = (r.basis ?? 0) > 0 || (r.distributed ?? 0) > 0 || (r.aum ?? 0) > 0;
-      const dryPowderGone = (r.uncalled ?? 0) <= 0 && (s.month - (r.bornM ?? 0)) > 36;
+      const dryPowderGone = (r.uncalled ?? 0) <= 0 && (s.month - (r.fundM ?? r.bornM ?? 0)) > 36;
       if (everDeployed || dryPowderGone) {
         r.emptyMs = (r.emptyMs ?? 0) + 1;
         if (r.emptyMs > 24) {
@@ -5610,13 +5667,18 @@ function acquisitionLoan(s: GameState, rec: ParcelRecord, price: number): (r: Ri
   // for everyone but the player — see streetRefiProceeds. Grade is the
   // building's own condition (no firm owns it yet).
   const stab = stabViewFor(rec, s.econ, initialCondition(rec), price);
+  // SPEED (2026-11-12): the loan depends on the firm only through its cap, and
+  // the street's firms share a handful of caps; each is sized once.
+  const byCap = new Map<number, number>();
   return (r, ci) => {
     const st = paramsOf(r);
     // In a shut credit market the loan is smaller, so the cheque is bigger —
     // which is exactly why a downturn is when a disciplined buyer with cash
     // gets to name their price.
     const cap = Math.min(r.targetLtv, st.maxLtv) * (ci < 0.8 ? 0.82 : 1);
-    return Math.min(price, streetRefiProceeds(s, price, noi, cap, stab).principal);
+    let p = byCap.get(cap);
+    if (p === undefined) { p = streetRefiProceeds(s, price, noi, cap, stab).principal; byCap.set(cap, p); }
+    return Math.min(price, p);
   };
 }
 
@@ -5662,7 +5724,7 @@ export function firmMaxPrice(s: GameState, r: Rival, rec: ParcelRecord): number 
 export function deployRamp(s: GameState, r: Rival): number {
   if (r.bbls.length || r.uncalled === undefined) return 0;
   if ((s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned)) return 0;
-  const age = s.month - (r.bornM ?? 0);
+  const age = s.month - (r.fundM ?? r.bornM ?? 0);
   return age >= 0 && age < FUND_INVEST_M ? age / FUND_INVEST_M : 0;
 }
 /**

@@ -2090,6 +2090,10 @@ export function startDevelopment(
 ): { s: GameState; err?: string } {
   let outside = Math.max(0, Math.round(custom?.syndicate?.outside ?? 0));
   let synSources = custom?.syndicate?.sources;
+  // DEAL-BY-DEAL RAISING IS GONE (owner, 2026-11-12): outside money comes in
+  // through the fund (fund.ts), raised once and spent on whatever it buys or
+  // builds. Only a raise an older save already has open still closes here.
+  if (outside > 0 && !s.raises?.[bbl]) return { s, err: "Deals are no longer syndicated one by one. Raise a fund (Capital → Investors) and build on a site the fund owns." };
   if (outside > 0) { const bar = syndicateBar(s, bbl); if (bar) return { s, err: bar }; }
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };

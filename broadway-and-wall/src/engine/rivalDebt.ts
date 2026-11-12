@@ -162,6 +162,41 @@ export function syncDebt(s: GameState, r: Rival) {
  * the stated books the city opened with, so a desk's named street paper only
  * has to stay within three quarters of that book.
  */
+/**
+ * SPEED (2026-11-12): THE LOAN RECORD, SUMMED ONCE FOR A PASS THAT ONLY READS
+ * IT. A bid round asks every firm in the room how much room its desks have,
+ * and each ask walked every street loan in town (600+ by year 50) — 10% of a
+ * month. Inside `withLoanIndex` the walk is done once: each desk's book and
+ * each borrower's exposure, accumulated in the record's own order, so every
+ * sum is the one the walk would give, to the last bit. Only for passes that
+ * write no loan (propmarket.ts bidRound's bids).
+ */
+type LoanIdx = { L: unknown; desk: Map<string, { onDesk: number; byObl: Map<string, number> }> };
+let loanIdx: LoanIdx | null = null;
+export function withLoanIndex<T>(s: GameState, fn: () => T): T {
+  const prev = loanIdx;
+  const desk: LoanIdx["desk"] = new Map();
+  const L = s.cityLoans;
+  if (L) for (const k in L) {
+    const x = L[k];
+    if (x.heldBy) continue;
+    let d = desk.get(x.lender);
+    if (!d) { d = { onDesk: 0, byObl: new Map() }; desk.set(x.lender, d); }
+    const v = x.balance * (x.share ?? 1);
+    d.onDesk += v;
+    if (x.obligorId !== undefined) d.byObl.set(x.obligorId, (d.byObl.get(x.obligorId) ?? 0) + v);
+  }
+  loanIdx = { L, desk };
+  try { return fn(); } finally { loanIdx = prev; }
+}
+/** The street loans' part of a desk's book and of one borrower's exposure to it: from the pass's index when there is one. */
+function loansOn(s: GameState, lender: string, obligorId: string): { onDesk: number; exposure: number } | null {
+  const ix = loanIdx;
+  if (!ix || ix.L !== s.cityLoans) return null;
+  const d = ix.desk.get(lender);
+  return d ? { onDesk: d.onDesk, exposure: d.byObl.get(obligorId) ?? 0 } : { onDesk: 0, exposure: 0 };
+}
+
 /** Some live desk would take `amount` more against this name. */
 export function deskWithRoom(s: GameState, obligorId: string, amount: number): boolean {
   // `deskRoom` for every live desk off ONE pass over the record: each desk's
@@ -171,7 +206,9 @@ export function deskWithRoom(s: GameState, obligorId: string, amount: number): b
   for (const l of lenders) if (l.failedM === undefined && !acc.has(l.name)) acc.set(l.name, { onDesk: 0, exposure: 0 });
   if (!acc.size) return false;
   const L = s.cityLoans;
-  if (L) for (const k in L) {
+  if (loanIdx && loanIdx.L === L) {
+    for (const [name, a] of acc) { const x = loansOn(s, name, obligorId)!; a.onDesk = x.onDesk; a.exposure = x.exposure; }
+  } else if (L) for (const k in L) {
     const x = L[k];
     if (x.heldBy) continue;
     const a = acc.get(x.lender);
@@ -207,7 +244,9 @@ export function deskRoom(s: GameState, l: Lender, obligorId: string, opening = f
   if (l.failedM !== undefined) return 0;
   let exposure = 0, onDesk = 0;
   const L = s.cityLoans;
-  if (L) for (const k in L) {
+  const ix = loansOn(s, l.name, obligorId);
+  if (ix) { onDesk = ix.onDesk; exposure = ix.exposure; }
+  else if (L) for (const k in L) {
     const x = L[k];
     if (x.lender !== l.name || x.heldBy) continue;
     onDesk += x.balance * (x.share ?? 1);

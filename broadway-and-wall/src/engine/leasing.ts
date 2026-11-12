@@ -60,7 +60,7 @@ import { partnerFunds } from "./jv";
 import { recordPropertyEvent, noteTenantMove } from "./history";
 import { seekerFirm, releaseSeeker, seekerSigned, playerTenantLeft, offerForPlayer, stayOdds } from "./streetRolls";
 
-import { supportableOcc, staleDiscount, currentAskPsfYr } from "./absorption";
+import { supportableOcc, currentAskPsfYr, currentPackage } from "./absorption";
 import { assignTenantFloors, blocksOf, blockIdForSf, placeOnStack, matchBlock, typicalSuiteSf, stackForUse, remnantSf, DEMISE_PSF, BLOCK_PREM_GUARD, BLOCK_DISC_GUARD } from "./plates";
 import { money } from "./money";
 import { purseOf } from "./vehicles";
@@ -2194,9 +2194,6 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         const [tiLo, tiHi] = tiBandPsfYr(s, rec, h, use);
         const shell = specLive ? 0 : shellShare(rec, h, use, q);
         const concession = concessionPressure(s.econ, use);
-        // ...and at the rent THAT market pays, not a blend of markets the
-        // tenant is not in.
-        const market = managedRentPsfYr(rec, s.econ, h, use);
         // Warehouses lease whole: one operator takes the building, or most of
         // it. Offices and shops carve into suites.
         // Prospects ask for spaces, not square feet. Warehouses tend to want
@@ -2312,10 +2309,10 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // well off — your posted rent when yours is the better deal, less when
         // the street has better. This was a coin flip: three letters in ten at
         // 68-86% of the ask and the rest at 90-110%, whoever the tenant was.
-        const postFace = market * (specLive ? 1.05 : 1) * staleDiscount(h.darkMs);
+        const postFace = currentAskPsfYr(rec, s.econ, h, use) * (specLive ? 1.05 : 1);
         const firmNow: Tenant = seeker;
         const { bid } = offerForPlayer(s, parcels, firmNow, use, sf, rec, bScore,
-          useRentPsfYr(rec, s.econ, h.condition, use, h.condIdx), postFace * (1 - compsPackage(s.econ, use as "office")), termM);
+          useRentPsfYr(rec, s.econ, h.condition, use, h.condIdx), postFace * (1 - currentPackage(s.econ, h, use)), termM);
         s.lois.push({
           id: s.nextLoiId++,
           arrivedM: s.month,
@@ -2513,7 +2510,8 @@ function autoPolicy(s: GameState, h: Holding): AutoPolicy {
  */
 export function autoMarketRentPsf(s: GameState, rec: ParcelRecord, h: Holding, loi: LOI): number {
   const use = loi.use ?? leasableUses(rec)[0] ?? "office";
-  return managedRentPsfYr(rec, s.econ, { ...h, stance: 0 }, use);
+  // The building's book at a neutral posture: what the market lets this space for now.
+  return currentAskPsfYr(rec, s.econ, { ...h, stance: 0 }, use);
 }
 
 /** Switch the firm's market-rent floor for auto-lease; waiting letters are answered at once. */

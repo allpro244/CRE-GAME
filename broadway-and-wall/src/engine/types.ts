@@ -762,6 +762,17 @@ export interface Holding {
    */
   darkMs?: number;
   /**
+   * THE LANDLORD'S BOOK ON EACH KIND OF COMMERCIAL SPACE (tenantMarket.ts
+   * LandlordAsk) — the same book every street owner keeps, reviewed by the same
+   * month-dark trade (streetRolls.ts, the landlords' pass). The player's asking
+   * rent and package are read from it (absorption.ts currentAskPsfYr).
+   */
+  ask?: Partial<Record<"office" | "retail" | "industrial", { a: number; c: number; t: number; m: number }>>;
+  /** Month each kind of space went on the market (its average age, as street rolls keep it). */
+  askVac?: Partial<Record<"office" | "retail" | "industrial", number>>;
+  /** Feet of each kind on offer last month, for the age bookkeeping. */
+  askVsf?: Partial<Record<"office" | "retail" | "industrial", number>>;
+  /**
    * "I SIGN HERE." Letters on this building come to the principal whoever
    * holds the pen on the rest of the book — the trophy tower, the building
    * in lease-up. The firm-wide pen is all or nothing; this is how a
@@ -3364,6 +3375,12 @@ export interface Rival {
    * vehicle, which is what the old model assumed for everybody.
    */
   uncalled?: number;
+  /** Commitments of the firm's latest fund (its first close, or its last successor fund). */
+  fundSize?: number;
+  /** Month the latest successor fund closed; its investment period runs from here (else bornM). */
+  fundM?: number;
+  /** How many funds the firm has raised on this street (1 when unset). */
+  funds?: number;
   /** Raised abroad in a capital wave (blackswans.ts); `homeBy` is when its investors called it home and its book goes to the tape. */
   wave?: boolean;
   homeBy?: number;

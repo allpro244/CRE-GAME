@@ -183,9 +183,9 @@ export class GpuBackend {
       if (o.view.width !== w || o.view.height !== h) { o.view.width = w; o.view.height = h; }
       const g = o.view.getContext("2d")!;
       const img = g.createImageData(w, h);
-      // rows come padded to 256 bytes on WebGPU
-      const stride = Math.floor(px.length / h);
-      for (let y = 0; y < h; y++) img.data.set(px.subarray(y * stride, y * stride + w * 4), y * w * 4);
+      img.data.set(px.subarray(0, w * h * 4));
+      // opaque: the frame is, whatever the passes leave in alpha
+      for (let i = 3; i < img.data.length; i += 4) img.data[i] = 255;
       g.putImageData(img, 0, 0);
       this.stats.offscreenFrames = (this.stats.offscreenFrames ?? 0) + 1;
       if (o.again) { o.again = false; this.map.triggerRepaint(); }

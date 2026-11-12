@@ -206,3 +206,43 @@ offscreen rendering survives, presenting does not. So:
   building under the pointer.
 - Frame counter (Settings → Display) on High and Max, Classic vs WebGPU, same
   view.
+
+## Round 2 (2026-11-12): owner's real-GPU results and fixes
+
+The owner ran the beta on an RTX 5070 Ti (Chrome/Edge, real WebGPU): **High
+looks good** ("it does look better in general"); **Max drew a frame of black
+blotches**; and on High the **far city went milky**.
+
+- **Max's black frames: the cause.** TRAA copies the frame's depth into its
+  history every frame. The scene pass's depth is 32-bit float (for GTAO); TRAA's
+  history depth is 24-bit. A copy between depth formats is invalid in WebGPU and
+  voids the whole command buffer (on the WebGL 2 fallback the same copy was the
+  `glBlitFramebuffer` warning noted above). Fixed: the history depth is float.
+  Bisected offscreen on real WebGPU (SwiftShader): with TRAA on and SSR off the
+  frame is intact; **SSR on WebGPU blows the city out to white** — not fixed.
+- **Safety net.** On the WebGPU backend a pass runs only once it has been seen
+  working on a real device (`PROVEN_ON_WEBGPU` in `gpu/post.ts`; `?gpufx=all`
+  opts in for testing). Today only GTAO is proven, so on WebGPU **Max/Extreme =
+  High's chain** (GTAO + FXAA): SSR, TRAA and the harbour's planar reflection
+  are off there. On the WebGL 2 fallback Max keeps TRAA and the planar
+  reflection (SSR never compiled there).
+- **The milky far field: the cause.** The haze was applied twice and in the
+  wrong space: the haze sheet blended in the linear frame (much lighter than
+  classic's blend in display space) and every material hazed again on top.
+  Now the finishing pass hazes the whole frame once, from depth, in display
+  space — what classic's materials and sheet did. MSAA is gone from Low/Medium
+  (the haze reads depth on every tier); FXAA everywhere. Shot:
+  `docs/webgpu/far-field-haze-fix.jpg` (Classic / beta before / beta after,
+  WebGL 2 backend).
+- **Ported this round:** coated-glass reflection (Fresnel by coat, coat tint,
+  clouds and far skyline in the reflection), the selected lot's outline drawn
+  over the city (constant pixel width, gold/teal/white as `bw-select-top`), sea
+  surf/foam/swash/ripples, grass (sward, stripes, leaves, creek cut), tree sway
+  (phased per instance, not per position), walking gait. Close-ups at 2x on Max,
+  July, same cameras: `docs/webgpu/closeups/` (taken before the haze fix).
+- **Not done this round:** the beta's park and street lighting reads paler and
+  flatter than Classic up close (shade sides lighter, roofs whiter) — the
+  shadow term and ambient need matching; the planar harbour reflection was
+  not seen on screen at the waterfront close-up; the "visible improvements"
+  pass (stronger AO, cascaded shadows, bloom on glass) was not started; the
+  start-time probe (`tools/start-probe.mjs`) was not run.

@@ -40,3 +40,10 @@ Done 2026-11-11: letter cards' prose to hover; one rent-vs-market colour rule (a
 - Classic is the only interface; the Classic build desk spans the page
 - Design preview quality; build desk Form / Look / loan options
 - Packaging fix: rebuild `playable/` before every package, and PRs go to `--base main`
+
+## WebGPU beta (PR #737, WEBGPU_PLAN.md round 2)
+- [ ] SSR on real WebGPU blows the city out to white (offscreen bisect); off on WebGPU until fixed.
+- [ ] Prove TRAA (history depth now float) and the planar harbour reflection on a real GPU, then add them to PROVEN_ON_WEBGPU.
+- [ ] Beta reads paler/flatter than Classic up close (park, street): match shadow strength and ambient.
+- [ ] Run tools/start-probe.mjs: branch vs main playable, Classic selected (check the +0.7 MB onefile chunk), and the beta.
+- [ ] Owner's "visible improvements" list: AO contact shading, cascaded shadows near the camera, bloom on glass only, crisp edges at street zoom.

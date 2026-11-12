@@ -180,7 +180,11 @@ export function marketBalance(e: Econ, k: BuiltClass): { state: Balance; soft: b
   const state: Balance =
     pkg < 0.02 ? (availCh < 0 ? "acute shortage" : "landlord's market") :
     pkg < 0.06 ? (availCh < -0.01 ? "landlord's market" : availCh > 0.01 ? "tenant's market" : "balanced") :
-    pkg < 0.12 ? "tenant's market" : "glut";
+    // A GLUT IS EXCESS SPACE, not a big package alone (2026-11-12): office
+    // leases carry a fit-out allowance in a balanced market, and the opening's
+    // office read "glut" at 3.3% vacancy on its package. A glut needs the heavy
+    // package and space that is not getting scarcer over a year of record.
+    pkg < 0.12 || !((e.history?.length ?? 0) >= 13 && availCh >= 0) ? "tenant's market" : "glut";
   const note =
     state === "acute shortage" ? "Leases give almost nothing away and space keeps getting scarcer. Rents run and every site pencils — which is precisely when the next glut gets started."
     : state === "landlord's market" ? "Landlords are giving little away. You can push rents and hold back on concessions; a new building here has a market waiting for it."

@@ -74,10 +74,10 @@ const pc = (x) => `${(x * 100).toFixed(0)}%`;
   const qa = E.quote(a, sv, 10_000_000, 700_000, "office", false, undefined, "standard");
   const qb = E.quote(b, sv, 10_000_000, 700_000, "office", false, undefined, "standard");
   const sa = E.underwritingStandards(a), sb = E.underwritingStandards(b);
-  // the looser state underwrites to LESS coverage, so its leg is the larger one
-  const uw = (st) => 1.25 + 0.15 * Math.max(0, -st) - 0.07 * Math.max(0, st);
-  const expDscr = uw(sb) / uw(sa);
-  ok(near(qa.ratePct, qb.ratePct, 0.011) && near(qa.byDscr / qb.byDscr, expDscr, 0.004), `coverage moves on standards (${sb.toFixed(2)} → ${sa.toFixed(2)}): DSCR leg ${(qa.byDscr / qb.byDscr).toFixed(3)}x (expected ${expDscr.toFixed(3)}x), same coupon`);
+  // the looser state underwrites to LESS coverage (debt.ts requiredDscr), so
+  // its coverage leg is the larger one, by exactly the ratio of the two requirements
+  const expDscr = E.requiredDscr(b, sv, "standard") / E.requiredDscr(a, sv, "standard");
+  ok(near(qa.ratePct, qb.ratePct, 0.011) && near(qa.byCover / qb.byCover, expDscr, 0.004), `coverage moves on standards (${sb.toFixed(2)} → ${sa.toFixed(2)}): coverage leg ${(qa.byCover / qb.byCover).toFixed(3)}x (expected ${expDscr.toFixed(3)}x), same coupon`);
   void qm;
   // apartments: a lower debt-yield floor
   const qo = E.quote(mid, h, 4_000_000, 300_000, "office", false, undefined, "standard");

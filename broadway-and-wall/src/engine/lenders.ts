@@ -2003,8 +2003,23 @@ export function priceDesks(s: GameState) {
     const shortVol = Math.max(0, usual - share) * tot;
     const canFund = shortVol > 0 ? Math.min(1, headroom / shortVol) : 1;
     const filling = 1 - Math.min(1, headroom / Math.max(1, 0.1 * Math.max(l.book, 20_000_000 * (s.econ.priceLevel ?? 1))));
+    // A DESK WITH IDLE CAPITAL PITCHES FOR THE LOAN (2026-11-12). The hold
+    // branch let a desk at or over its usual share keep any margin forever,
+    // and the desks under it priced a quarter under the rivals' going price —
+    // relative, never anchored to cost — so the level was a fixed point at ANY
+    // height and drifted up: every desk's competitive charge went from 0 to
+    // 1.5-3 points over fifteen years (life companies and the agency arm, the
+    // cheapest money in town, at 2.8-3.0), loan coupons 9-10% against a 4%
+    // index and cap rates 9%+ (seed 31337). Capital earning nothing is what a
+    // lender competes to put out: a desk with headroom undercuts the rivals'
+    // price by the same quarter-point step, scaled by how idle its capital is
+    // (1 - filling), down to its own cost (below). Prices fall to the cost of
+    // the marginal desk that still has room — Bertrand with capacity — and
+    // stop where the cheap desks' capital fills.
+    const idle = 1 - filling;
     let want = behind < -0.15 ? rivals - own(l) - 0.25 * Math.min(1, -behind) * canFund
-      : behind > 0.25 ? rivals - own(l) + 0.25 * Math.min(1, behind - 0.25) * filling
+      : behind > 0.25 ? rivals - own(l) + 0.25 * Math.min(1, behind - 0.25) * filling - 0.25 * idle
+      : idle > 0 ? Math.min(chase, rivals - own(l) - 0.25 * idle)
       : chase;
     // ...and never under its own economic cost on its flagship paper: the
     // margin can go to zero, not below. A desk cutting its price stops

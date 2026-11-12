@@ -524,7 +524,9 @@
    variation like an excel sheet".) One pair a row below 1,000px: rows are
    children 2i-1, 2i, and every other row is 4n+3, 4n+4. */
 .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) { gap: 0; grid-template-columns: fit-content(48%) minmax(0, max-content); justify-content: start; }
-.app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k, .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v { padding: 6px 10px; border-bottom: 1px solid var(--border); }
+.app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k, .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v { padding: 5px 10px; border-bottom: 1px solid var(--border); }
+/* the number starts where its label ends: no stretch of white between them (owner, 2026-11-12) */
+.app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v { text-align: left; padding-left: 4px; }
 .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(4n+3), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(4n+4) { background: color-mix(in srgb, var(--ink) 4%, transparent); }
 .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:hover, .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:hover + .v, .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:has(+ .v:hover), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v:hover { background: color-mix(in srgb, var(--accent, var(--ink)) 12%, transparent); }
 /* Two pairs a row from 1,000px, each bounded (at most ~550px) so a number sits
@@ -537,7 +539,7 @@
   }
   .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(4n+3), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(4n+4) { background: none; }
   .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(8n+5), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(8n+6), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(8n+7), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > :nth-child(8n+8) { background: color-mix(in srgb, var(--ink) 4%, transparent); }
-  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v:nth-child(4n+2) { margin-right: 28px; }
+  .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v:nth-child(4n+2) { margin-right: 32px; }
   .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:hover, .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:hover + .v, .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .k:has(+ .v:hover), .app .page-backdrop .grid:not(:has(> :not(.k):not(.v))) > .v:hover { background: color-mix(in srgb, var(--accent, var(--ink)) 12%, transparent); }
 }
 /* "· Open →" on every row of a clickable table is nineteen copies of the same
@@ -625,3 +627,24 @@ html.host-unreal .app .page-backdrop > .page {
   animation: clock-fill 1s cubic-bezier(0.25, 0.6, 0.4, 1) forwards;
 }
 @keyframes clock-fill { from { transform: scaleX(0.04); } to { transform: scaleX(0.94); } }
+/* THE DETAIL PAGES READ A STEP LARGER (owner, 2026-11-12: "make the font
+   bigger for all in the detail page"): every size token one step up inside
+   a page, so its figures, labels and headings grow together and the map's
+   cards and the rail keep theirs. */
+.app .page-backdrop {
+  --fs-2xs: 12px; --fs-xs: 13px; --fs-sm: 14px; --fs-base: 15px;
+  --fs-md: 16.5px; --fs-lg: 20px; --fs-xl: 24px; --fs-2xl: 30px;
+}
+/* THE CITY'S FIGURES IN THREE COLUMNS (owner, 2026-11-12): City today, the
+   mainland and where the households live side by side, so the page's width
+   holds figures instead of white. Each column is a single list of label and
+   number, every other row tinted (rows are children 2i-1, 2i). Below 1,100px
+   they stack. */
+.app .page-backdrop .stat-cols { display: grid; grid-template-columns: 1fr; column-gap: 28px; align-items: start; }
+@media (min-width: 1100px) { .app .page-backdrop .stat-cols { grid-template-columns: repeat(3, minmax(0, max-content)); } }
+@media (min-width: 1000px) {
+  .app .page-backdrop .stat-col .grid:not(:has(> :not(.k):not(.v))) { grid-template-columns: fit-content(60%) minmax(0, max-content); }
+  .app .page-backdrop .stat-col .grid:not(:has(> :not(.k):not(.v))) > :nth-child(n) { background: none; margin-right: 0; }
+  .app .page-backdrop .stat-col .grid:not(:has(> :not(.k):not(.v))) > :nth-child(4n+3), .app .page-backdrop .stat-col .grid:not(:has(> :not(.k):not(.v))) > :nth-child(4n+4) { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+  .app .page-backdrop .stat-col .grid:not(:has(> :not(.k):not(.v))) > .k:hover, .app .page-backdrop .stat-col .grid:not(:has(> :not(.k):not(.v))) > .k:hover + .v, .app .page-backdrop .stat-col .grid:not(:has(> :not(.k):not(.v))) > .k:has(+ .v:hover), .app .page-backdrop .stat-col .grid:not(:has(> :not(.k):not(.v))) > .v:hover { background: color-mix(in srgb, var(--accent, var(--ink)) 12%, transparent); }
+}

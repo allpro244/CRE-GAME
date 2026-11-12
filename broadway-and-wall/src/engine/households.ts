@@ -2037,6 +2037,12 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
     older.sort((p, q) => q.rent - p.rent);
     let acc = 0, askB = r.mainRent;
     for (const o of older) { acc += o.w; askB = o.rent; if (acc >= occB / 2) break; }
+    // ...and the older stock lets at that one going rent, as the ladder lets it
+    // every month after: a renter whose pay carries more pays it, not its own
+    // most (2026-11-12: the opening had each older-home renter at SCREEN, half
+    // its pay, so the mainland opened at a 43% median burden that the monthly
+    // ladder then took a year of renewals to unwind to ~25%)
+    for (let i = 0; i < r.n; i++) if (a.ten[i] === TEN_MAINLAND && a.rent[i] > askB && a.rent[i] < r.mainRent * 0.999) a.rent[i] = askB;
     const v = 1 - OPENING_VAC.multifamily;
     r.mk = { homes: occA / v, homes0: occA / v, ask0: r.mainRent, cap0: cap, cost0: cost, occ, roll: { occ: 0 }, pipe: [], cards: [], signed: 0, homesB: occB / v, askB, askB0: askB };
     return;
@@ -3896,6 +3902,29 @@ export function householdStats(s: GameState) {
     engineBurden: HH_RENT_SHARE0 * ((e.effRentIdx?.multifamily ?? e.rentIdx?.multifamily ?? 1) / (r.rent0 || 1)) / ((e.wageIdx ?? 1) / (r.wage0 || 1)),
     flow: { ...r.flow },
   };
+}
+
+/**
+ * PAY IN DOLLARS (Markets page): the average salary of everyone in work, a
+ * year, and the median household's income (wages, pensions, unemployment
+ * pay), read off the register in today's dollars. Pure.
+ */
+export function payInDollars(s: GameState): { avgSalary: number; medianHhIncome: number; earners: number } | null {
+  const r = s.households;
+  if (!r) return null;
+  if (!r.a) unpackHouseholds(r);
+  const a = r.a!;
+  let pay = 0, n = 0;
+  const inc: number[] = [], ww: number[] = [];
+  for (let i = 0; i < r.n; i++) {
+    const w = a.wt[i];
+    if (isWorking(a.emp1[i])) { pay += w * a.wage1[i]; n += w; }
+    if (isWorking(a.emp2[i])) { pay += w * a.wage2[i]; n += w; }
+    if (isWorking(a.emp3[i])) { pay += w * a.wage3[i]; n += w; }
+    inc.push(incomeYear(a.emp1[i], a.wage1[i], a.un1[i]) + incomeYear(a.emp2[i], a.wage2[i], a.un2[i]) + incomeYear(a.emp3[i], a.wage3[i], a.un3[i]));
+    ww.push(w);
+  }
+  return { avgSalary: n > 0 ? pay / n : 0, medianHhIncome: inc.length ? wq(inc, ww, 0.5) : 0, earners: n };
 }
 
 /**

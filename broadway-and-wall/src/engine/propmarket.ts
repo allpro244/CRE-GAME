@@ -891,11 +891,31 @@ function apprSee(ix: ApprIndex, y: number, w: number, s2: number): void {
   ix.P *= 1 - g;
 }
 
-/** A cap print's columns: location, condition and spec against the reference building; and what kind of evidence it is. */
+/**
+ * A cap print's columns: location, condition and spec against the reference
+ * building; and what kind of evidence it is, against the BROKERS' SURVEY.
+ *
+ * THE READ IS THE SURVEY'S LEVEL (2026-11-12). The reference was a
+ * voluntary, marketed trade — and a town's apartments can go three years
+ * without one: seed 31337, years 7-10, 108 apartment prints, of which 3
+ * marketed trades, 16 forced or distress sales (median 9-12%) and 47 rounds
+ * the seller refused (median 14-17%), against 42 survey indications at a
+ * 6.95% median. With its reference cell empty the grid's intercept sat
+ * among the forced sales and refusals and printed 8.7%, which every
+ * appraisal, loan and bid then read. The cap rate the trade quotes is the
+ * survey's (CBRE's cap rate survey, PwC/RERC investor surveys [S]): what the
+ * bidders who can fund a stabilised building would pay for it — here the
+ * second-best fundable bid (surveyClass). Market value excludes the forced
+ * sale (USPAP's definition: no undue stimulus) and a refused bid only bounds
+ * it. So the survey is the reference and every other kind of print carries
+ * its own column: a marketed trade, a distressed or unexposed trade, a
+ * refused round, a seller under compulsion. Each still moves the read
+ * through the grid; none of them sets its level.
+ */
 function zCap(p: Pick<CapPrint, "x" | "kind" | "w" | "f">): number[] {
   return [
     p.x[0] - CAP_REF_X[0], p.x[1] - CAP_REF_X[1], p.x[2] - CAP_REF_X[2],
-    p.kind === "b" ? 1 : 0, p.kind === "s" ? 1 : 0, p.kind === "t" && p.w < 1 ? 1 : 0, p.f ? 1 : 0,
+    p.kind === "b" ? 1 : 0, p.kind === "t" && p.w >= 1 ? 1 : 0, p.kind === "t" && p.w < 1 ? 1 : 0, p.f ? 1 : 0,
   ];
 }
 const yrOf = (m: number) => Math.floor(m / 12);

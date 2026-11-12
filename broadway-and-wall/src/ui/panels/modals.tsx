@@ -508,6 +508,24 @@ function AlertBody() {
   const dismissAlert = useStore((s) => s.dismissAlert);
   const setPage = useStore((s) => s.setPage);
   const a = game.alerts?.[0];
+  // AN ALERT CAN ALWAYS BE ANSWERED (owner, 2026-11-12: a black swan landed
+  // as something else opened and its OK could not be clicked). Enter or
+  // Escape dismisses it from anywhere, ahead of every other key handler; a
+  // click on the backdrop does too; and the layer sits above everything.
+  const alertKey = a ? `${a.q}|${a.kind}|${a.title}` : "";
+  useEffect(() => {
+    if (!alertKey) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Enter" && e.key !== "Escape") return;
+      // only while it is the card on screen (the queue hides later cards)
+      const el = document.querySelector<HTMLElement>(".alert-back");
+      if (!el || getComputedStyle(el).display === "none") return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      dismissAlert();
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [alertKey, dismissAlert]);
   // A dead firm gets the game-over screen and nothing else on top of it.
   // ...and a player who has asked for total silence gets it. Every alert is
   // filed in the news feed by `raiseAlert` as it fires, so this drops the
@@ -554,7 +572,8 @@ function AlertBody() {
   const glYears = gl ? Math.round((gl.endM - gl.startM) / 12) : 0;
   const glReview = gl ? (gl.review === "cpi" ? "CPI each year, 2–4%" : gl.review === "fmv" ? "Market reset every 20 years, capped" : `+${gl.stepPct}% every ${Math.round(gl.stepEveryM / 12)} years`) : "";
   return (
-    <div className={"modal-backdrop alert-back" + (bad ? " alert-tint-bad" : "") + (ground ? " alert-tint-ground" : "")} data-queue={queued + 1}>
+    <div className={"modal-backdrop alert-back" + (bad ? " alert-tint-bad" : "") + (ground ? " alert-tint-ground" : "")} data-queue={queued + 1}
+      onClick={(e) => { if (e.target === e.currentTarget) dismissAlert(); }}>
       <div className={"modal alert-card " + (bad ? "alert-bad" : "alert-good") + (ground ? " alert-ground" : "")} role="dialog" aria-modal="true">
         {ground && (
           <div className="ground-banner" aria-hidden="true">

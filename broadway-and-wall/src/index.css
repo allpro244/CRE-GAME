@@ -905,7 +905,7 @@ body {
 .modal-layer-auction { z-index: 81; }
 .modal-layer-decision { z-index: 82; }
 .modal-layer-default { z-index: 83; }
-.alert-back { z-index: 84; }
+.alert-back { z-index: 1000; } /* above every page, card and overlay: an alert is always answerable */
 .modal {
   width: min(620px, 100%);
   background: var(--card);

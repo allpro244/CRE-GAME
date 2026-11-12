@@ -804,7 +804,18 @@ export function deskRiskView(s: GameState, klass?: string): { sigma: number; mu:
   if (!(sig !== undefined && sig > 0.005) || drift === undefined) return { sigma: assetVol(NATIONAL_PROPERTY_VOL), mu: infl, local: false };
   const yrs = Math.min(10, (s.econ.history?.length ?? 0) / 12);
   const w = yrs / (yrs + PRIOR_YEARS);
-  return { sigma: assetVol(Math.sqrt(w * sig * sig + (1 - w) * NATIONAL_PROPERTY_VOL * NATIONAL_PROPERTY_VOL)), mu: Math.min(drift, infl), local: true };
+  // THE DRIFT CARRIES THE SAME CREDIBILITY WEIGHT AS THE VOLATILITY
+  // (2026-11-12). It was the raw local mean: two years into a town whose
+  // opening caps re-priced from ~6% to ~9%, the tape read multifamily values
+  // falling 43% a year, every desk extrapolated that over the loan's whole
+  // term, and every income advance sat on the 20% floor (measured at month
+  // 24: all eleven income desks, both classes) — the owner's "5.14 DSCR at
+  // 34% LTV". Two years of one town is not a forecast; the national record
+  // (values keeping pace with inflation) is the prior, weighted exactly as
+  // the volatility's is. Still capped at inflation: an underwriter counts on
+  // no appreciation, but a long local fall does pull the drift down.
+  const muLocal = w * drift + (1 - w) * infl;
+  return { sigma: assetVol(Math.sqrt(w * sig * sig + (1 - w) * NATIONAL_PROPERTY_VOL * NATIONAL_PROPERTY_VOL)), mu: Math.min(muLocal, infl), local: true };
 }
 
 /**

@@ -893,8 +893,20 @@ export function filteredReadOut(e: Econ, k: Comm, m: number): { face: number; ef
   const yF = obs.reduce((a, c) => a + Math.log(c.f), 0) / n;
   const K = st.P / (st.P + Rv / n);
   st.P = (1 - K) * st.P;
-  const eff = Math.exp(Math.log(eff0) + K * (yE - Math.log(eff0)));
   const face = Math.exp(Math.log(face0) + K * (yF - Math.log(face0)));
+  // THE EFFECTIVE RENT IS THE ASKING RENT LESS THE PACKAGES ON OFFER
+  // (2026-11-12), the way a market report reads it: the concessions landlords
+  // are giving across all the space to let (e.postedPkg, ~100 office books),
+  // not the month's few signers'. Office asks scatter 3.6% across its leases
+  // and its packages 30% (a dark floor at the deepest package, a full one at
+  // none), so the effective read was a lottery on which landlords signed —
+  // 10% a year of office effective-rent noise against retail's 4%. The
+  // signed leases still set the face; with no space on offer anywhere (the
+  // package is moot) the signers' own effective stands.
+  const pk = e.postedPkg?.[k];
+  const eff = pk !== undefined && Number.isFinite(pk)
+    ? face * (1 - Math.max(0, Math.min(PKG_MAX, pk)))
+    : Math.exp(Math.log(eff0) + K * (yE - Math.log(eff0)));
   let sf = 0;
   for (const c of list) sf += c.sf;
   return { face, eff, conc: Math.max(0, Math.min(1, (1 - eff / Math.max(1e-9, face)) / CONC_DEPTH)), sf, n: list.length };

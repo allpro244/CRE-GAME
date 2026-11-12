@@ -2431,6 +2431,8 @@ export interface Econ {
    * indices are read off.
    */
   comps?: Partial<Record<BuiltClass, import("./tenantMarket").Comp[]>>;
+  /** The rent read's uncertainty (log variance) by class — tenantMarket.ts filteredReadOut. */
+  rentFilt?: Partial<Record<BuiltClass, { P: number }>>;
   /**
    * THE CAP-RATE READ-OUT (propmarket.ts tickCapRead) — what each class's
    * closed deals say, and how much evidence there is behind it.

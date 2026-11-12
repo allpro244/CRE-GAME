@@ -5754,6 +5754,20 @@ export function styleHunt(r: Rival): { appetite: number; procyclical: number; co
  * covers what the operating account cannot. One answer for every path that
  * asks whether a firm can close — `rivalBuys` and `rivalCanClose` both read it.
  */
+/**
+ * WHAT A FUND MAY CALL FOR A NEW DEAL: its uncalled commitments, while its
+ * investment period runs (FUND_INVEST_M from its latest fund). A closed-end
+ * fund calls capital to close each acquisition — that is what the commitments
+ * are for — and what is uncalled when the period closes is gone. It was never
+ * called for a purchase, only for a development's capital call or a rescue,
+ * so a fund that had just closed held its reserve idle: measured, the street
+ * carried $190M uncalled at year 10 against $250M of cash.
+ */
+export function dealCallable(s: GameState, r: Rival): number {
+  if (r.uncalled === undefined || !(r.uncalled > 0)) return 0;
+  return s.month - (r.fundM ?? r.bornM ?? 0) < FUND_INVEST_M ? r.uncalled : 0;
+}
+
 function closingFinance(s: GameState, parcels: ParcelTable, r: Rival, price: number, debt: number) {
   const closing = Math.round(price * BUY_CLOSING);
   const equity = price - debt;
@@ -5767,7 +5781,11 @@ function closingFinance(s: GameState, parcels: ParcelTable, r: Rival, price: num
   }
   const room = Math.max(0, lineRoom(s, r, aum, noiYr, landV));
   const need = equity + reserve + closing;
-  return { debt, equity, reserve, need, draw: Math.max(0, Math.min(room, need - r.cash)), aum };
+  // the LPs' money first (a capital call, at least a partnership's minimum), then the corporate line
+  const short = Math.max(0, need - r.cash);
+  const c0 = Math.min(dealCallable(s, r), short);
+  const call = c0 >= 100_000 ? c0 : 0;
+  return { debt, equity, reserve, need, call, draw: Math.max(0, Math.min(room, need - r.cash - call)), aum };
 }
 
 /**
@@ -5792,7 +5810,7 @@ export function rivalCanClose(
   if (r.sheet && fitOf(s, parcels, r, rec, distress) <= 0) return false;
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
   const fin = closingFinance(s, parcels, r, price, acquisitionLoan(s, rec, price)(r, ci));
-  return r.cash - contractedEquity(s, r, rec.bbl) + fin.draw >= fin.need;
+  return r.cash - contractedEquity(s, r, rec.bbl) + fin.call + fin.draw >= fin.need;
 }
 
 /**
@@ -5870,7 +5888,7 @@ export function rivalBuys(
     // shop does not close on a warehouse whoever rang it.
     if (prefer.sheet && fitOf(s, parcels, prefer, rec, !!s.listings.find((l) => l.bbl === rec.bbl)?.distress) <= 0) return null;
     const fin0 = drawFor(prefer);
-    if (prefer.cash + fin0.draw < fin0.need) return null;
+    if (prefer.cash + fin0.call + fin0.draw < fin0.need) return null;
   }
   const candidates = prefer ? [prefer] : livingRivals(s).filter((r) => {
     if (r === seller || r.homeBy !== undefined) return false;
@@ -5885,8 +5903,8 @@ export function rivalBuys(
     // A lot that grows a site the builder already holds is bought for the site.
     if ((rec.class === "land" ? price / LAND_SHARE_TYPICAL : price) < minTicket(r)
       && !(rec.class === "land" && paramsOf(r).build > 0 && adjoinsOwnDirt(s, parcels, r, rec.bbl))) return false;
-    const { debt, need, draw, aum } = drawFor(r);
-    if (r.cash - contractedEquity(s, r) + draw < need) return false;
+    const { debt, need, draw, call, aum } = drawFor(r);
+    if (r.cash - contractedEquity(s, r) + call + draw < need) return false;
     const aumAfter = aum + price;
     const debtAfter = r.debt + debt + draw;
     // A DISCIPLINED FIRM DOES NOT BUY TO ITS COVENANT: it keeps a cushion under
@@ -6064,6 +6082,7 @@ export function rivalBuys(
   // The corporate line funds any equity the operating account cannot cover —
   // same instrument they already draw at a balloon. Closing costs sit in
   // `closing` above.
+  if (fin.call > 0) callCapital(best, fin.call);
   if (fin.draw > 0) drawLine(s, best, fin.draw);
   best.cash -= fin.equity + closing;
   // THE ACQUISITION MORTGAGE, written by the desk that will take it

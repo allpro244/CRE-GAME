@@ -782,6 +782,14 @@ export function EconomyPage() {
                   <span className={"cl-fig-v mono" + (rentYoy < -0.025 ? " neg" : "")}>${e.rentIdx[k].toFixed(0)}</span>
                   <Spark pts={at((h) => h.rent?.[k])} w={56} h={14} />
                 </div>
+                {/* EFFECTIVE BESIDE ASKING (owner, office glut): the asking rent is
+                    the face of signed leases and moves last; in a glut the
+                    concessions take the fall first and effective shows it. */}
+                <div className="cl-fig">
+                  <span className="cl-fig-k">Effective</span>
+                  <span className={"cl-fig-v mono" + ((e.effRentIdx?.[k] ?? e.rentIdx[k]) < 0.85 * e.rentIdx[k] ? " neg" : "")}>${(e.effRentIdx?.[k] ?? e.rentIdx[k]).toFixed(0)}</span>
+                  <Spark pts={at((h) => h.effRent?.[k] ?? h.rent?.[k])} w={56} h={14} />
+                </div>
                 <div className="cl-fig">
                   <span className="cl-fig-k">Cap</span>
                   <span className="cl-fig-v mono">{e.capRate[k].toFixed(2)}%</span>

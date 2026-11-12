@@ -69,8 +69,9 @@
 // they are a shape parameter, stated as such (CLAUDE.md).
 import type { ParcelTable } from "@/data/types";
 import type { Econ, GameState } from "./types";
-import { HH_RENT_SHARE0, shortIndexOf, recordDeal, OPENING_VAC } from "./market";
-import { resolveRecBare, useRentableSf } from "./value";
+import { HH_RENT_SHARE0, shortIndexOf, recordDeal, OPENING_VAC, SF_PER_HOME } from "./market";
+import { resolveRecBare, useRentableSf, HARD_COST_PSF, constructionTypeMult, SOFT_COST, CONTINGENCY } from "./value";
+import { LAND_SHARE_TYPICAL } from "./tax";
 import { flatUnitSf, priceFlats, flatComps, type FlatRoll } from "./streetRolls";
 import { HH_SIZE, INCOME_SIGMA, TAX_INS, DTI, COMMUTE, REF_HOME, medianIncome, mortgageRate, fundamentalHomePsf } from "./homeprice";
 import { why, whyOnce, whyAt } from "./why";
@@ -1963,6 +1964,12 @@ function mainHasRoom(r: HouseholdRegister, a: HouseholdArrays, i: number): boole
 
 /** Census Survey of Construction 2023: months from start to completion, buildings of 5+ units, about 18 [S~]. */
 const MAIN_BUILD_M = 18;
+/**
+ * The most of the stock started in a year: US housing starts peaked near 1.7%
+ * of the housing stock (2.07M starts on ~124M units, 2005) and ran ~2.3% in the
+ * early 1970s (Census New Residential Construction; ACS / HVS stock) [S~].
+ */
+const MAX_STARTS_YR = 0.02;
 /** Renter households that move in a year: ~20% (Census CPS ASEC 2019-2022 one-year mover rate of renters) [S~]. */
 const RENTER_MOVE_YR = 0.20;
 /** An apartment's operating cost, taxes and insurance over its potential rent: NAA Survey of Operating Income & Expenses 2023, ~42% [S~]. */
@@ -2069,11 +2076,27 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
   (mk.ask12 ??= []).push(r.mainRent);
   if (mk.ask12.length > 12) mk.ask12.shift();
   const ask = mk.ask12.reduce((x, y) => x + y, 0) / mk.ask12.length;
-  const pencil = ((ask / mk.ask0) * (mk.cap0 / Math.max(1e-9, cap))) / (cost / mk.cost0);
+  // WHAT A NEW HOME IS WORTH AGAINST WHAT IT COSTS TO BUILD (2026-11-12),
+  // on today's numbers: its rent less its running costs (MAIN_OPEX) at the
+  // flats' cap rate, with land taking its typical share of value
+  // (tax.ts LAND_SHARE_TYPICAL), against the island builders' own cost of a
+  // flat (value.ts HARD_COST_PSF x the cost index, soft costs, contingency).
+  // The pencil was this ratio over the opening's, which assumed the opening
+  // was in equilibrium — but the flats' cap rate opened under its settled
+  // level (5.8% re-reading to ~8%), so the ratio sat at 0.76-0.95 for thirty
+  // years and almost nothing was built (seed 31337: homes +8% while renters
+  // and doubled-up households doubled). Saiz's long-run elasticity still
+  // shapes how far supply follows the margin (HOUSING_SUPPLY_ELAST).
+  const homeValue = (12 * ask * (1 - MAIN_OPEX)) / Math.max(0.01, cap / 100);
+  const homeCost = SF_PER_HOME * HARD_COST_PSF.multifamily * constructionTypeMult("multifamily", 3) * cost * (1 + SOFT_COST) * (1 + CONTINGENCY);
+  const pencil = (homeValue * (1 - LAND_SHARE_TYPICAL)) / Math.max(1, homeCost);
   let piped = 0;
   for (const p of mk.pipe) piped += p.n;
   const start = mk.homes0 * Math.pow(pencil, HOUSING_SUPPLY_ELAST) - mk.homes - piped;
-  if (start > 0) mk.pipe.push({ m: m + MAIN_BUILD_M, n: start / MAIN_BUILD_M });
+  // ...at the pace the trades can build: no more than MAX_STARTS_YR of the
+  // stock started in a year, however far the margin runs ahead.
+  const pace = (mk.homes + (mk.homesB ?? 0)) * MAX_STARTS_YR / 12;
+  if (start > 0) mk.pipe.push({ m: m + MAIN_BUILD_M, n: Math.min(start / MAIN_BUILD_M, pace) });
 }
 
 /**

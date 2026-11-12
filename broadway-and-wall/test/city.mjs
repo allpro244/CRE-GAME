@@ -35,7 +35,7 @@ export function loadCity(runIndex = 0, normalizeParcels) {
       size: process.env.BW_SIZE || undefined,
       density: process.env.BW_DENSITY || undefined,
       // BW_STREETS=natural runs a harness on the Natural street generator (natural.mjs)
-      streets: process.env.BW_STREETS || undefined,
+      streets: process.env.BW_STREETS || "natural",   // every new town is Natural; BW_STREETS=classic for an old save's town
     });
     if (normalizeParcels) normalizeParcels(built.parcels);
     cache.set(key, {

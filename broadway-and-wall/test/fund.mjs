@@ -101,9 +101,12 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   g.reputation = { band: "Institutional", score: 45, rank: 2, of: 30, m: 0 };
   g.sponsor = { events: [] };
   const open0 = ["local", "family", "endowment"].reduce((a, id) => a + E.poolLeft(g, id), 0);
+  // Friends and family, then every pool the band opens (openSources), with
+  // the sponsor's co-invest on top.
+  const offered = E.openSources(g, "Institutional", E.ffAvailable(g)).reduce((a, x) => a + x.left, 0);
   const q = E.fundRaiseQuote(g);
   ok("eligible to raise", q.ok, q.reason);
-  ok("sized by the open investor pools", Math.abs(q.size - open0) <= 100_000, `${q.size} vs ${open0}`);
+  ok("sized by the network and the open investor pools", Math.abs(q.size - offered / (1 - E.FUND_GP_COINVEST)) <= 100_000, `${q.size} vs ${offered}`);
   const cash0 = g.cash;
   const r = E.raiseFund(g);
   ok("raise closes", !r.err, r.err);
@@ -114,7 +117,9 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   ok("lpCalled on books", (g.books?.reduce((a, y) => a + (y.lpCalled ?? 0), 0) ?? 0) > 0);
   ok("fundPay default on after raise", g.fundPay === true);
   const open1 = ["local", "family", "endowment"].reduce((a, id) => a + E.poolLeft(g, id), 0);
-  ok("the raise drew the LPs' money out of the pool", open1 <= open0 - (g.fund.size - g.fund.gpCommit) + 1, `${open0} → ${open1}`);
+  ok("the raise drew the LPs' money out of the pool", open1 <= open0 - (g.fund.size - g.fund.gpCommit - (g.fund.ffCommit ?? 0)) + 100, `${open0} → ${open1}`);
+  ok("the friends-and-family commitment ties up the network", (g.fund.ffCommit ?? 0) > 0 && E.ffAvailable(g) < E.ffNetwork(g).cap, `ff ${g.fund.ffCommit}`);
+  ok("fund counsel booked as G&A", (g.books?.reduce((a, y) => a + (y.ga ?? 0), 0) ?? 0) >= E.raiseLegalCost(g, g.fund.size));
   // A month of the management fee: on commitments through the investment period.
   const c0 = g.cash, f0 = g.fund.cash;
   E.tickFund(g);
@@ -130,12 +135,17 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   ok("a returned fund is positive evidence, sized by its commitments", ev && ev.ev > 4 && ev.size > 1, ev ? `${ev.ev.toFixed(1)} at size ${ev.size.toFixed(2)}` : "none");
 }
 
-// An Unknown sponsor cannot raise a blind pool, however rich.
+// An Unknown sponsor raises only what its friends and family will put in:
+// the institutions are not in the room.
 {
   let g = E.firstListings(E.newGame(12007, parcels, 20_000_000), parcels, bbls);
-  g.econ.creditIdx = 1;
   const q = E.fundRaiseQuote(g);
-  ok("an Unknown sponsor is refused", !q.ok && /Institutional/.test(q.reason), q.reason);
+  const ff = E.ffAvailable(g);
+  ok("an Unknown sponsor's fund is its friends and family", Math.abs(q.size - ff / (1 - E.FUND_GP_COINVEST)) <= 100_000, `${q.size} vs network ${ff}: ${q.reason}`);
+  // A Toxic one raises nothing.
+  g.reputation = { band: "Toxic", score: -20, rank: 30, of: 30, m: 0 };
+  const t = E.fundRaiseQuote(g);
+  ok("a Toxic sponsor is refused", !t.ok && t.size === 0, t.reason);
 }
 
 // IT BITES — a fund that cannot return capital stamps the second death.
@@ -160,7 +170,8 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
 
 // Vehicle purchase tags the deed and leaves GP cash alone.
 {
-  let g = E.firstListings(E.newGame(77, parcels, 50_000_000), parcels, bbls);
+  // The tape lists from the first month (firstListings seeds an empty one).
+  let g = E.advanceQuarter(E.firstListings(E.newGame(77, parcels, 50_000_000), parcels, bbls), parcels, bbls);
   g.fund = {
     raisedM: 0, size: 20_000_000, uncalled: 0, cash: 20_000_000,
     called: 20_000_000, distributed: 0, promotePaid: 0, prefAccrued: 0,
@@ -188,7 +199,7 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
 // Capital is called as deals close: a vehicle holding less cash than a deal's
 // equity calls the rest from uncalled commitments, on the ledger as lpCalled.
 {
-  let g = E.firstListings(E.newGame(78, parcels, 50_000_000), parcels, bbls);
+  let g = E.advanceQuarter(E.firstListings(E.newGame(78, parcels, 50_000_000), parcels, bbls), parcels, bbls);
   g.fund = {
     raisedM: 0, size: 20_000_000, uncalled: 15_000_000, cash: 500_000,
     called: 5_000_000, distributed: 0, promotePaid: 0, prefAccrued: 0,

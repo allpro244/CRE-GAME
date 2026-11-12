@@ -29,8 +29,9 @@ export function FundDesk() {
         </div>
         <div className="grid">
           <div className="k">Status</div>
-          <div className="v" title={q.reason}>Not open</div>
+          <div className="v">Not open</div>
         </div>
+        <div className="hint">{q.reason}</div>
       </div>
     );
   }

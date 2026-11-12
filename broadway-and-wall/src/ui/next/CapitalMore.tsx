@@ -291,8 +291,9 @@ function FundBox() {
   if (!f || f.settled) {
     return (
       <Box head="Fund">
+        <div className="nx-dim" style={{ padding: "4px 0" }}>{q.reason}</div>
         <div className="nx-box-foot">
-          <button type="button" className="nx-btn nx-sm nx-primary" disabled={!q.ok} title={q.ok ? undefined : "Record too short"} onClick={() => st.raiseFund()}>
+          <button type="button" className="nx-btn nx-sm nx-primary" disabled={!q.ok} onClick={() => st.raiseFund()}>
             {q.ok ? `Raise ${usd(q.size)}` : "Raise fund"}
           </button>
         </div>

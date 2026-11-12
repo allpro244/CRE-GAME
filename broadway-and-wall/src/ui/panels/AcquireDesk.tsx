@@ -27,6 +27,7 @@ import { coldOnDeed, coldRefuseMsg } from "@/engine/owners";
 import { uses as usesOf, useSf } from "@/engine/mix";
 import { gradeOf } from "@/engine/rivals";
 import { spendable } from "@/engine/credit";
+import { fundCanBuy } from "@/engine/fund";
 import { Gloss } from "@/ui/Glossary";
 import { lookingFor } from "@/engine/streetRolls";
 import { useVacantSf } from "@/engine/leasing";
@@ -1369,6 +1370,17 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
             )}
             <Row k="Equity to close" v={postedDeposit > 0 ? `${usd(equity)} · ${usd(postedDeposit)} already posted` : usd(equity)} strong bad={equity > closePurse} />
           </div>
+          {(fundCanBuy(game) || game.fundPay) && (
+            <div className="btn-row">
+              <span className="hint" style={{ margin: 0 }}>Pay with</span>
+              <button type="button" className={"btn" + (fromFund ? " primary" : "")} disabled={!fundCanBuy(game)}
+                title={`The fund: ${usd(game.fund?.cash ?? 0)} in the vehicle, ${usd(game.fund?.uncalled ?? 0)} still to call. The deed is the LPs'.`}
+                onClick={() => useStore.getState().setFundPay(true)}>Fund</button>
+              <button type="button" className={"btn" + (!fromFund ? " primary" : "")}
+                title="Your own cash and line. The deed is yours alone."
+                onClick={() => useStore.getState().setFundPay(false)}>My money</button>
+            </div>
+          )}
           {!fromFund && <LocSplitHint need={equity} game={game} parcels={parcels} />}
           <div className="btn-row">
             <button type="button" className="btn" onClick={() => setStage("structure")}>◂ Structure</button>

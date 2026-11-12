@@ -14,3 +14,6 @@
 .mkt-toggle:hover, .mkt-toggle-on { color: var(--ink); }
 .mkt-toggle:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .mkt-line-tools { display: inline-flex; gap: 6px; margin-left: auto; }
+/* a live off-market call, pointing at the Brokers tab (the phone moved there, Nov 2026) */
+.mkt-callout { display: block; width: 100%; text-align: left; margin: 8px 0 4px; padding: 7px 10px; border: 1px solid var(--warn, #b7791f); border-radius: 6px; background: transparent; color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+.mkt-callout:hover { background: rgba(183, 121, 31, 0.08); }

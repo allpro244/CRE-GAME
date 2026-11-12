@@ -252,6 +252,8 @@ export interface EconomyState {
   linkDz?: Record<string, number>;
   /** What the town's firms posted this month (`postPayAndPrices`), and the last 13 months of the town's posted pay. */
   posted?: Posted; wageHist?: number[];
+  /** Each industry's heads in town when its unit cost was first read: what agglomeration is measured against (`unitCoster`). */
+  aggH0?: number[];
 }
 
 function allocCols(cap: number): FirmColumns {
@@ -468,15 +470,17 @@ function financing(ind: number) {
  * town's head offices are the goods trades' desks (TRADE_TO_INDUSTRY: a food
  * or apparel firm's office) and the off-map sample's.
  */
-function assign(R: Rand, sec: Sector, floor: Floor, intended?: number): number {
+function assign(R: Rand, sec: Sector, floor: Floor, intended?: number, lq?: number[]): number {
   R.u(); const b = R.u();   // always two draws: the stream's pace does not depend on the answer
   // a firm the street formed for an industry's work (streetRolls.ts) is in that industry
   if (intended !== undefined && intended >= 0 && intended < N_IND) return intended;
   const opts = TRADE_TO_INDUSTRY[floor][sec];
   if (!opts || !opts.length) return INDUSTRY_INDEX[FLOOR_DEFAULT[floor]];
-  const tot = opts.reduce((t, o) => t + o[1], 0);
+  // ...weighted by the town's own mix of traded industries (city plan 19, `econ.townLQ`)
+  const wOf = (k: IndustryId, w: number) => w * (lq?.[INDUSTRY_INDEX[k]] ?? 1);
+  const tot = opts.reduce((t, o) => t + wOf(o[0], o[1]), 0);
   let x = b * tot;
-  for (const [k, w] of opts) { x -= w; if (x < 0) return INDUSTRY_INDEX[k]; }
+  for (const [k, w] of opts) { x -= wOf(k, w); if (x < 0) return INDUSTRY_INDEX[k]; }
   return INDUSTRY_INDEX[opts[opts.length - 1][0]];
 }
 
@@ -563,7 +567,7 @@ function openingOffMap(s: GameState, named: Float64Array, conOpen: number): Floa
     if (i === IND_CON || OUTSIDE[i]) continue;
     const id = INDUSTRY_IDS[i];
     if (OFF_FLOOR[id] >= 1) continue;
-    d[i] = Math.max(0, NAT_EMP_SHARE[id] * (1 - OFF_FLOOR[id]) * jobs - named[i]);
+    d[i] = Math.max(0, NAT_EMP_SHARE[id] * (s.econ.townLQ?.[i] ?? 1) * (1 - OFF_FLOOR[id]) * jobs - named[i]);
     dt += d[i];
   }
   for (let i = 0; i < N_IND; i++) if (d[i] > 0) out[i] += O * d[i] / dt;
@@ -981,7 +985,7 @@ export function tickFirms(s: GameState): void {
     }
     for (const [fid, sn] of seen) {
       if (have.has(fid)) continue;
-      const ind = assign(R, sn.sec, sn.floor, sn.ind);
+      const ind = assign(R, sn.sec, sn.floor, sn.ind, s.econ.townLQ);
       const n = addFirm(E, fid, ind, SECTORS.indexOf(sn.sec), sn.hc, sn.z, s.month);
       E.f.rent[n] = sn.rentMo;
       openBooks(E, n, opw[ind], short, opening);
@@ -1866,14 +1870,28 @@ function tickQuality(E: EconomyState, isNew: Uint8Array): void {
  * rents would charge the same head, over output per head at the nation's pay;
  * its inputs, bought at national prices, the nation's.
  */
+/** Productivity's elasticity to own-industry employment in the town (localisation economies) [S~, see `unitCoster`]. */
+const AGGLOM_ELAST = 0.04;
 function unitCoster(s: GameState, E: EconomyState, natW: number): (n: number) => number {
   const F = E.f;
   const opwNat = perHead(natW).opw, opwHere = perHead(s.econ.wageIdx ?? 1).opw, rentNat = new Float64Array(N_IND), rentMkt = new Float64Array(N_IND);
   for (let i = 0; i < N_IND; i++) { rentNat[i] = natRentPerHead(s, i, opwNat); rentMkt[i] = rentPerHead(s, i, opwHere); }
+  // AGGLOMERATION (localisation economies): an industry's firms here are more
+  // productive the more of the industry the town holds — shared suppliers, a
+  // pool of skilled workers, ideas that travel between firms. Productivity
+  // rises with own-industry employment at an elasticity of ~0.04 (Rosenthal
+  // & Strange 2004, Handbook of Regional and Urban Economics vol. 4: estimates
+  // 0.02-0.08; Henderson 2003, JUE) [S~]; read against the industry's heads
+  // here at the opening, so a growing specialty grows cheaper to make here and
+  // a shrinking one dearer, and the town's share follows.
+  const H = new Float64Array(N_IND);
+  for (let n = 0; n < E.L.slot.n; n++) H[F.ind[n]] += F.hc[n];
+  const H0 = (E.aggH0 ??= Array.from(H));
+  const agg = Float64Array.from(H, (h, i) => (h > 0 && H0[i] > 0 ? Math.pow(h / H0[i], -AGGLOM_ELAST) : 1));
   return (n) => {
     const i = F.ind[n], I = INDUSTRIES[INDUSTRY_IDS[i]];
     const rentHead = F.id[n] >= 0 && F.hc[n] > 0 ? F.rent[n] / F.hc[n] : rentMkt[i];
-    return 1 + I.comp * (F.pay[n] / natW - 1) + (rentHead - rentNat[i]) / Math.max(1e-6, opwNat[i]);
+    return (1 + I.comp * (F.pay[n] / natW - 1) + (rentHead - rentNat[i]) / Math.max(1e-6, opwNat[i])) * agg[i];
   };
 }
 /** A uniform [0,1) from a firm and a month: whether it reprices, the same in every copy of the game. */

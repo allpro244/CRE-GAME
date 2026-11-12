@@ -21,7 +21,7 @@ import { useHeldGame } from "@/ui/heldGame";
 import Slider from "@/ui/Slider";
 import SchemeViewer from "@/ui/panels/SchemeViewer";
 import { dominantOf } from "@/engine/proforma";
-import { planDevelopment, takeoutHedgeCost, takeoutHedgeRequired, takeoutRead, maxRetailShare, BTS_TERM_MIN_Y, BTS_TERM_MAX_Y, btsTermY } from "@/engine/dev";
+import { planDevelopment, takeoutHedgeCost, takeoutHedgeRequired, takeoutRead, maxRetailShare, BTS_TERM_MIN_Y, BTS_TERM_MAX_Y, btsTermY, MIN_COVERAGE } from "@/engine/dev";
 import { maxOutside, syndicateBar } from "@/engine/syndicate";
 import { raisePreview, type RaiseJob } from "@/engine/raise";
 import { committedTotal, type PitchStyle } from "@/engine/investors";
@@ -178,15 +178,24 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
   };
   const styleNow = FACADE_STYLES.find((f) => f.key === design.facade?.split("#")[0]);
   const variantNow = +(design.facade?.split("#")[1] ?? 0);
-  const bases = BASES.filter((b) => floors >= b.minFloors && (!shops || b.shops));
+  // EVERY OPTION IS SHOWN (owner, Nov 2026: "make sure all available options
+  // are shown"): one the building cannot take at this height is greyed with the
+  // reason on hover, rather than vanishing as the floors slider moves.
+  const baseWhy = (b: (typeof BASES)[number]) => floors < b.minFloors ? `Needs ${b.minFloors}+ floors` : shops && !b.shops ? "Shops at grade keep their shopfronts: only the arcade goes over them" : undefined;
   const tops = [
-    ...ROOF_CHOICES.filter((r) => floors <= r.maxFloors && !(r.key === "flat" && floors >= CROWN_MIN_FLOORS))
-      .map((r) => ({ id: `roof:${r.key}`, name: r.name, patch: { roof: r.key, crown: undefined, signature: undefined } as Partial<BuildingDesign> })),
-    ...(floors >= CROWN_MIN_FLOORS ? CROWN_CHOICES : [])
-      .map((c) => ({ id: `crown:${c.key}`, name: c.name, patch: { crown: c.key, roof: undefined, signature: undefined } as Partial<BuildingDesign> })),
+    ...ROOF_CHOICES.map((r) => ({ id: `roof:${r.key}`, name: r.name, patch: { roof: r.key, crown: undefined, signature: undefined } as Partial<BuildingDesign>,
+      why: floors > r.maxFloors ? `Up to ${r.maxFloors} floors` : r.key === "flat" && floors >= CROWN_MIN_FLOORS ? "A tower's flat top is the crown “Flat top”" : undefined })),
+    ...CROWN_CHOICES.map((c) => ({ id: `crown:${c.key}`, name: c.name, patch: { crown: c.key, roof: undefined, signature: undefined } as Partial<BuildingDesign>,
+      why: floors < CROWN_MIN_FLOORS ? `Towers of ${CROWN_MIN_FLOORS}+ floors` : undefined })),
   ];
   const topNow = design.signature ? "signature" : design.crown ? `crown:${design.crown}` : design.roof ? `roof:${design.roof}` : "auto";
-  const landmarks = floors >= SIGNATURE_MIN_FLOORS ? SIGNATURE_FORMS.filter((f) => floors >= f.minFloors && year >= f.from) : [];
+  const landmarks = SIGNATURE_FORMS.filter((f) => year >= f.from);
+  const allStyles = FACADE_STYLES.filter((f) => f.group === groupNow);
+  const lookName = design.kit ? KITS.find((k) => k.key === design.kit)?.name : styleNow?.name;
+  // the widest footprint that still carries these floors; narrower is a slimmer building
+  const covMax = Math.max(MIN_COVERAGE, coverFor(rec, use, floors));
+  const legalNow = [...new Set([...d.legal, use])];
+  const contract = d.commitArgs[3];
 
   return (
     <div className="deal deal-wide build-desk">
@@ -195,152 +204,232 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
         <div className="bd-model">
           <SchemeViewer height={UNREAL_HOST ? 300 : 260} />
         </div>
-        <div className="bd-choices">
+        <div className="bd-steps">
           {starts.length > 0 && (
-            <Row k="Best">
-              {starts.map((s) => {
-                const on = s.use === use && (s.product ? s.product === d.product?.key : !d.product && s.floors === floors);
-                return (
-                  <Chip key={s.use + s.floors + (s.product ?? "")} on={on}
-                    onClick={() => set(s.product ? { use: s.use, product: s.product } : { use: s.use, product: undefined, floors: s.floors, cov: coverFor(rec, s.use, s.floors) })}>
-                    {s.product ? productName(s.product) : `${devUseLabel(s.use)} ${s.floors}`}<span className="bd-sub"> {ratio(s.hurdle)}</span>
+            <div className="bd-best">
+              <div className="bd-k">Start from the best schemes here</div>
+              <div className="bd-v">
+                {starts.map((s) => {
+                  const on = s.use === use && (s.product ? s.product === d.product?.key : !d.product && s.floors === floors);
+                  return (
+                    <Chip key={s.use + s.floors + (s.product ?? "")} on={on} title="Yield on cost over the hurdle: 1.00× just clears it"
+                      onClick={() => set(s.product ? { use: s.use, product: s.product } : { use: s.use, product: undefined, floors: s.floors, cov: coverFor(rec, s.use, s.floors) })}>
+                      {s.product ? productName(s.product) : `${devUseLabel(s.use)} · ${s.floors} fl`}<span className="bd-sub"> {ratio(s.hurdle)} hurdle</span>
+                    </Chip>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <Step n={1} title="What to build" sum={`${d.product ? d.product.short : devUseLabel(use)} · ${tier.label}`}>
+            <Row k="Use">
+              {legalNow.map((u) => (
+                <Chip key={u} on={u === use} onClick={() => setUse(u)} disabled={!d.legal.includes(u) && u !== use}>{devUseLabel(u)}</Chip>
+              ))}
+            </Row>
+            {d.bar && <div className="bd-warn">{d.bar}</div>}
+            {d.prods.length > 0 && (
+              <Row k="Type">
+                <Chip on={!d.product} onClick={() => set({ product: undefined })}>Street building</Chip>
+                {d.prods.map((p) => (
+                  <Chip key={p.key} on={d.product?.key === p.key} title={p.label} onClick={() => set({ product: p.key })}>{p.short}</Chip>
+                ))}
+              </Row>
+            )}
+            <Programme d={d} set={set} />
+            <Row k="Quality">
+              {BUILD_TIERS.map((t) => (
+                <Chip key={t.key} on={tier.key === t.key} title={t.blurb} onClick={() => set({ spec: t.spec })}>{t.label}</Chip>
+              ))}
+            </Row>
+            <div className="bd-terms">{tier.blurb}</div>
+          </Step>
+
+          {!d.product && (
+            <Step n={2} title="Size and shape" sum={plan ? `${floors} fl · ${sf(plan.sf)} · ${Math.round(cov * 100)}% of lot` : `${floors} fl`}>
+              <Row k="Floors">
+                <Slider label="Floors" value={floors} min={1} max={Math.max(1, d.top)} step={1} onChange={setSize}
+                  format={() => `${floors} of ${d.top} fl${plan ? ` · ${sf(plan.sf)}` : ""}`} />
+              </Row>
+              <Row k="Footprint">
+                <Slider label="Lot covered" value={Math.round(cov * 100)} min={Math.round(MIN_COVERAGE * 100)} max={Math.max(Math.round(MIN_COVERAGE * 100) + 1, Math.round(covMax * 100))} step={1}
+                  disabled={covMax <= MIN_COVERAGE + 0.005} onChange={(v) => set({ cov: Math.min(covMax, v / 100) })}
+                  format={(v) => `${v}% of lot${v >= Math.round(covMax * 100) ? " · widest at this height" : " · slimmer"}`} />
+              </Row>
+              {/* THE ENVELOPE IS FULL (owner: "the sqft stops growing"): past the
+                  district's FAR more floors only slim the floorplate; the way out is a FAR filing */}
+              {plan && plan.far >= plan.farMax - 0.05 && <div className="bd-terms">
+                At the FAR limit ({plan.farMax.toFixed(1)}): more floors only slim the plate ·{" "}
+                <button type="button" className="bd-link" onClick={() => {
+                  useStore.getState().openProperty(bbl, "summary");
+                  window.setTimeout(() => useStore.setState({ pageJump: "Zoning variance" }), 120);
+                }}>Seek more FAR</button>
+              </div>}
+              <Row k="Form">
+                <Chip on={!design.form} onClick={() => set({ design: { ...design, form: undefined, formRetained: undefined, formSkin: undefined } })}>Plain block</Chip>
+                {forms.map((f) => (
+                  <Chip key={f.key} on={design.form === f.key} title={f.blurb}
+                    onClick={() => set({ design: { ...design, form: f.key, formRetained: f.retained, formSkin: f.skin } })}>
+                    {f.name}<span className="bd-sub"> {Math.round((f.retained - 1) * 100)}% floor area</span>
                   </Chip>
-                );
+                ))}
+                {forms.length === 0 && <span className="bd-terms bd-inline">No other form fits this lot at {floors} floors</span>}
+              </Row>
+            </Step>
+          )}
+
+          <Step n={3} title="Look" sum={lookName ?? "Fits the street"}>
+            {UNREAL_HOST ? <>
+              <Row k="Style">
+                <Chip on={!design.kit && !design.facade} onClick={() => pickLook(LOOKS[0])}>Fits the street</Chip>
+                {KIT_GROUPS.map((g) => <Chip key={g.key} tab on={lookEra === g.key} onClick={() => setLookEra(g.key)}>{g.name}</Chip>)}
+              </Row>
+              <Row k="">
+                {KITS.filter((k) => k.group === lookEra).map((k) => (
+                  <Chip key={k.key} on={design.kit === k.key} title={k.era}
+                    onClick={() => { const { kit: _k, facade: _f, kitColour: _c, ground: _g, top: _t, bays: _b, ...rest } = design; set({ design: { ...rest, kit: k.key, facade: k.family } }); }}>{k.name}</Chip>))}
+              </Row>
+            </> : <>
+              <Row k="Style">
+                <Chip on={!design.kit && !design.facade} title="The period and the block choose, as for every other building in town" onClick={() => pickLook(LOOKS[0])}>Fits the street</Chip>
+              </Row>
+              <Row k="Family">
+                {FACADE_GROUPS.map((g) => {
+                  const ok = groups.some((x) => x.key === g.key);
+                  return <Chip key={g.key} tab on={groupNow === g.key} disabled={!ok} title={ok ? undefined : `None of these go to ${floors} floors`} onClick={() => setLookGroup(g.key)}>{g.name}</Chip>;
+                })}
+              </Row>
+              <Row k="Facade">
+                {allStyles.map((f) => (
+                  <Chip key={f.key} on={design.facade?.split("#")[0] === f.key} disabled={f.maxFloors < floors}
+                    title={f.maxFloors < floors ? `${f.era} · up to ${f.maxFloors} floors` : f.era}
+                    onClick={() => { const { kit: _k, facade: _f, kitColour: _c, ground: _g, top: _t, bays: _b, ...rest } = design; set({ design: { ...rest, facade: f.key } }); }}>{f.name}</Chip>))}
+              </Row>
+            </>}
+            {!UNREAL_HOST && !d.product && <>
+              <Row k="Colour">
+                {styleNow && styleNow.variants.length > 1
+                  ? styleNow.variants.map((v, i) => (
+                    <Chip key={v} on={variantNow === i} onClick={() => setDesign({ facade: i ? `${styleNow.key}#${i}` : styleNow.key })}>{v}</Chip>))
+                  : <span className="bd-terms bd-inline">{styleNow ? "One colourway" : "Pick a facade to choose its colourway"}</span>}
+              </Row>
+              <Row k="Ground">
+                <Chip on={!design.base} onClick={() => setDesign({ base: undefined })}>{shops ? "Shopfronts" : "Auto"}</Chip>
+                {BASES.map((b) => { const why = baseWhy(b); return <Chip key={b.key} on={design.base === b.key} disabled={!!why} title={why ? `${b.blurb} · ${why}` : b.blurb} onClick={() => setDesign({ base: b.key })}>{b.name}</Chip>; })}
+              </Row>
+              <Row k="Top">
+                <Chip on={topNow === "auto"} onClick={() => setDesign({ roof: undefined, crown: undefined, signature: undefined })}>Auto</Chip>
+                {tops.map((o) => <Chip key={o.id} on={topNow === o.id} disabled={!!o.why} title={o.why} onClick={() => setDesign(o.patch)}>{o.name}</Chip>)}
+              </Row>
+              <Row k="Landmark">
+                <Chip on={!design.signature} onClick={() => setDesign({ signature: undefined })}>None</Chip>
+                {floors >= SIGNATURE_MIN_FLOORS
+                  ? landmarks.map((f) => <Chip key={f.key} on={design.signature === f.key} disabled={floors < f.minFloors}
+                    title={floors < f.minFloors ? `${f.blurb} · needs ${f.minFloors}+ floors` : f.blurb}
+                    onClick={() => setDesign({ signature: f.key, crown: undefined, roof: undefined })}>{f.name}</Chip>)
+                  : <span className="bd-terms bd-inline">{landmarks.length} landmark towers from {SIGNATURE_MIN_FLOORS} floors</span>}
+              </Row>
+              <Row k="Trim">
+                <Chip on={design.trim === undefined} onClick={() => setDesign({ trim: undefined })}>Auto</Chip>
+                {TRIM_PAINTS.map((p, i) => <Chip key={p.name} on={design.trim === i} onClick={() => setDesign({ trim: i })}>{p.name}</Chip>)}
+              </Row>
+            </>}
+          </Step>
+
+          <Step n={4} title="Contract and loan" sum={plan ? (plan.commitment > 0 ? `${plan.lender} · ${Math.round(plan.ltc * 100)}% LTC` : "All equity") : "—"}>
+            <Row k="Contract">
+              <Chip on={contract === "gmp"} title="Guaranteed maximum price: the builder carries overruns" onClick={() => set({ contract: "gmp" })}>GMP</Chip>
+              <Chip on={contract === "costplus"} title="Cheaper, but overruns are yours" onClick={() => set({ contract: "costplus" })}>Cost-plus</Chip>
+              <span className="bd-terms bd-inline">{contract === "gmp" ? "Builder carries overruns" : "Cheaper · overruns are yours"}</span>
+            </Row>
+            {/* THE LENDER (owner, Oct 2026: "you can't choose your lender"): every
+                construction desk's terms on this job; one that will not write it says why */}
+            {d.quotes.length > 0 && <Row k="Lender">
+              {d.quotes.map((q) => (
+                <Chip key={q.lender} on={(plan?.lender ?? d.bank) === q.lender} disabled={!q.open || !(q.ltcMax > 0)}
+                  title={q.why ?? `${q.lender}: lends up to ${Math.round((lenderMax[q.lender] ?? 0) * 100)}% of this job's cost (loan-to-cost) at ${pct2(q.ratePct)}, ${(q.points * 100).toFixed(1)} pts`}
+                  onClick={() => set({ bank: q.lender })}>
+                  {q.lender} <span className="bd-sub">{q.open && q.ltcMax > 0 ? `${pct2(q.ratePct)} · ${Math.round((lenderMax[q.lender] ?? 0) * 100)}% max` : "closed"}</span>
+                </Chip>))}
+            </Row>}
+            {/* THE LOAN, ANY AMOUNT (owner): 0 to all the lender offers, in 5% steps of its maximum */}
+            <Row k="Loan">
+              <input type="range" min={0} max={1} step={0.05} value={d.ltcWant} disabled={!!plan && !(plan.ltcMax > 0)}
+                onChange={(e) => set({ ltcWant: +e.target.value })} style={{ flex: 1 }} aria-label="Loan amount" />
+              <span className="mono">{plan && plan.ltcMax > 0 ? `${Math.round(plan.ltcMax * d.ltcWant * 100)}% LTC` : "—"}</span>
+            </Row>
+            {plan && <div className="bd-terms mono">{plan.commitment > 0
+              ? `${plan.lender} · ${pct2(plan.ratePct)} · ${Math.round(plan.ltc * 100)}% LTC · ${usd(plan.commitment)} · ${(plan.points * 100).toFixed(1)} pts`
+              : plan.ltcMax > 0 ? `All equity · ${plan.lender} offers ${Math.round(plan.ltcMax * 100)}% at ${pct2(plan.ratePct)}` : (plan.lenderNote ?? "No lender quotes")}</div>}
+            {/* THE REST OF THE DEBT (owner, Oct 2026: "you should be able to add a rate cap"):
+                the takeout hedge, the fees and the loan the building inherits at delivery */}
+            <Row k="Rate">
+              {(["float", "cap", "fixed"] as const).map((k) => {
+                const noLoan = !plan || !(plan.commitment > 0);
+                return (
+                  <Chip key={k} on={d.takeout === k} disabled={noLoan || (k === "float" && takeoutHedgeRequired(plan))}
+                    title={noLoan ? "Take a construction loan to choose how it converts" : k === "float" ? (takeoutHedgeRequired(plan) ? "The lender requires a cap or a lock at this loan size" : "Float at index + spread")
+                      : k === "cap" ? "Rate cap: the index is capped 1.5 pts over today's until the mini-perm matures" : "Lock the takeout rate today"}
+                    onClick={() => set({ takeout: k })}>
+                    {k === "float" ? "Float" : k === "cap" ? "Rate cap" : "Fixed lock"}{!noLoan && <span className="bd-sub"> {k === "float" ? "$0" : usd(takeoutHedgeCost(plan, k))}</span>}
+                  </Chip>);
               })}
             </Row>
-          )}
-          <Row k="Use">
-            {[...new Set([...d.legal, use])].map((u) => (
-              <Chip key={u} on={u === use} onClick={() => setUse(u)} disabled={!d.legal.includes(u) && u !== use}>{devUseLabel(u)}</Chip>
-            ))}
-          </Row>
-          {d.bar && <div className="bd-warn">{d.bar}</div>}
-          {d.prods.length > 0 && (
-            <Row k="Type">
-              <Chip on={!d.product} onClick={() => set({ product: undefined })}>Street</Chip>
-              {d.prods.map((p) => (
-                <Chip key={p.key} on={d.product?.key === p.key} title={p.label} onClick={() => set({ product: p.key })}>{p.short}</Chip>
-              ))}
-            </Row>
-          )}
-          {!d.product && (
-            <Row k="Size">
-              <Slider label="Floors" value={floors} min={1} max={Math.max(1, d.top)} step={1} onChange={setSize}
-                format={() => `${floors} fl${plan ? ` · ${sf(plan.sf)} · ${Math.round(cov * 100)}% lot` : ""}`} />
-            </Row>
-          )}
-          {/* THE ENVELOPE IS FULL (owner: "the sqft stops growing"): past the
-              district's FAR more floors only slim the floorplate; the way out is a FAR filing */}
-          {!d.product && plan && plan.far >= plan.farMax - 0.05 && <div className="bd-terms">
-            FAR max {plan.farMax.toFixed(1)} · <span className="mono">plate shrinks</span> ·{" "}
-            <button type="button" className="bd-link" onClick={() => {
-              useStore.getState().openProperty(bbl, "summary");
-              window.setTimeout(() => useStore.setState({ pageJump: "Zoning variance" }), 120);
-            }}>Seek more FAR</button>
-          </div>}
-          <Row k="Tier">
-            {BUILD_TIERS.map((t) => (
-              <Chip key={t.key} on={tier.key === t.key} title={t.blurb} onClick={() => set({ spec: t.spec })}>{t.label}</Chip>
-            ))}
-          </Row>
-          {forms.length > 0 && (
-            <Row k="Form">
-              <Chip on={!design.form} onClick={() => set({ design: { ...design, form: undefined, formRetained: undefined, formSkin: undefined } })}>Block</Chip>
-              {forms.map((f) => (
-                <Chip key={f.key} on={design.form === f.key} title={f.blurb}
-                  onClick={() => set({ design: { ...design, form: f.key, formRetained: f.retained, formSkin: f.skin } })}>
-                  {f.name}<span className="bd-sub"> {Math.round((f.retained - 1) * 100)}%</span>
-                </Chip>
-              ))}
-            </Row>
-          )}
-          {/* THE FULL CATALOGUE (owner): every facade, one category at a time — "Street" lets the block choose */}
-          <Row k="Look">
-            <Chip on={!design.kit && !design.facade} onClick={() => pickLook(LOOKS[0])}>Street</Chip>
-            {UNREAL_HOST
-              ? KIT_GROUPS.map((g) => <Chip key={g.key} tab on={lookEra === g.key} onClick={() => setLookEra(g.key)}>{g.name}</Chip>)
-              : groups.map((g) => <Chip key={g.key} tab on={groupNow === g.key} onClick={() => setLookGroup(g.key)}>{g.name}</Chip>)}
-          </Row>
-          <Row k="">
-            {UNREAL_HOST
-              ? KITS.filter((k) => k.group === lookEra).map((k) => (
-                <Chip key={k.key} on={design.kit === k.key} title={k.era}
-                  onClick={() => { const { kit: _k, facade: _f, kitColour: _c, ground: _g, top: _t, bays: _b, ...rest } = design; set({ design: { ...rest, kit: k.key, facade: k.family } }); }}>{k.name}</Chip>))
-              : styles.filter((f) => f.group === groupNow).map((f) => (
-                <Chip key={f.key} on={design.facade?.split("#")[0] === f.key} title={f.era}
-                  onClick={() => { const { kit: _k, facade: _f, kitColour: _c, ground: _g, top: _t, bays: _b, ...rest } = design; set({ design: { ...rest, facade: f.key } }); }}>{f.name}</Chip>))}
-          </Row>
-          {!UNREAL_HOST && !d.product && <>
-            {styleNow && styleNow.variants.length > 1 && <Row k="Colour">
-              {styleNow.variants.map((v, i) => (
-                <Chip key={v} on={variantNow === i} onClick={() => setDesign({ facade: i ? `${styleNow.key}#${i}` : styleNow.key })}>{v}</Chip>
-              ))}
-            </Row>}
-            <Row k="Ground">
-              <Chip on={!design.base} onClick={() => setDesign({ base: undefined })}>{shops ? "Shopfronts" : "Auto"}</Chip>
-              {bases.map((b) => <Chip key={b.key} on={design.base === b.key} title={b.blurb} onClick={() => setDesign({ base: b.key })}>{b.name}</Chip>)}
-            </Row>
-            <Row k="Top">
-              <Chip on={topNow === "auto"} onClick={() => setDesign({ roof: undefined, crown: undefined, signature: undefined })}>Auto</Chip>
-              {tops.map((o) => <Chip key={o.id} on={topNow === o.id} onClick={() => setDesign(o.patch)}>{o.name}</Chip>)}
-            </Row>
-            {landmarks.length > 0 && <Row k="Landmark">
-              <Chip on={!design.signature} onClick={() => setDesign({ signature: undefined })}>None</Chip>
-              {landmarks.map((f) => <Chip key={f.key} on={design.signature === f.key} title={f.blurb}
-                onClick={() => setDesign({ signature: f.key, crown: undefined, roof: undefined })}>{f.name}</Chip>)}
-            </Row>}
-            <Row k="Trim">
-              <Chip on={design.trim === undefined} onClick={() => setDesign({ trim: undefined })}>Auto</Chip>
-              {TRIM_PAINTS.map((p, i) => <Chip key={p.name} on={design.trim === i} onClick={() => setDesign({ trim: i })}>{p.name}</Chip>)}
-            </Row>
-          </>}
-          {/* THE LENDER (owner, Oct 2026: "you can't choose your lender"): every
-              construction desk's terms on this job; one that will not write it says why */}
-          {d.quotes.length > 0 && <Row k="Lender">
-            {d.quotes.map((q) => (
-              <Chip key={q.lender} on={(plan?.lender ?? d.bank) === q.lender} disabled={!q.open || !(q.ltcMax > 0)}
-                title={q.why ?? `${q.lender}: lends up to ${Math.round((lenderMax[q.lender] ?? 0) * 100)}% of this job's cost (loan-to-cost) at ${pct2(q.ratePct)}, ${(q.points * 100).toFixed(1)} pts`}
-                onClick={() => set({ bank: q.lender })}>
-                {q.lender} <span className="bd-sub">{q.open && q.ltcMax > 0 ? `${pct2(q.ratePct)} · ${Math.round((lenderMax[q.lender] ?? 0) * 100)}% max` : "closed"}</span>
-              </Chip>))}
-          </Row>}
-          {/* THE LOAN, ANY AMOUNT (owner): 0 to all the lender offers, in 5% steps of its maximum */}
-          <Row k="Loan">
-            <input type="range" min={0} max={1} step={0.05} value={d.ltcWant} disabled={!!plan && !(plan.ltcMax > 0)}
-              onChange={(e) => set({ ltcWant: +e.target.value })} style={{ flex: 1 }} aria-label="Loan amount" />
-            <span className="mono">{plan && plan.ltcMax > 0 ? `${Math.round(plan.ltcMax * d.ltcWant * 100)}% LTC` : "—"}</span>
-          </Row>
-          {plan && <div className="bd-terms mono">{plan.commitment > 0
-            ? `${plan.lender} · ${pct2(plan.ratePct)} · ${Math.round(plan.ltc * 100)}% LTC · ${usd(plan.commitment)} · ${(plan.points * 100).toFixed(1)} pts`
-            : plan.ltcMax > 0 ? `All equity · ${plan.lender} offers ${Math.round(plan.ltcMax * 100)}% at ${pct2(plan.ratePct)}` : (plan.lenderNote ?? "No lender quotes")}</div>}
-          {/* THE REST OF THE DEBT (owner, Oct 2026: "you should be able to add a rate cap"):
-              the takeout hedge, the fees and the loan the building inherits at delivery */}
-          {plan && plan.commitment > 0 && <>
-            <Row k="Rate">
-              {(["float", "cap", "fixed"] as const).map((k) => (
-                <Chip key={k} on={d.takeout === k} disabled={k === "float" && takeoutHedgeRequired(plan)}
-                  title={k === "float" ? (takeoutHedgeRequired(plan) ? "The lender requires a cap or a lock at this loan size" : "Float at index + spread")
-                    : k === "cap" ? "Rate cap: the index is capped 1.5 pts over today's until the mini-perm matures" : "Lock the takeout rate today"}
-                  onClick={() => set({ takeout: k })}>
-                  {k === "float" ? "Float" : k === "cap" ? "Rate cap" : "Fixed lock"}<span className="bd-sub"> {k === "float" ? "$0" : usd(takeoutHedgeCost(plan, k))}</span>
-                </Chip>))}
-            </Row>
-            {(() => {
+            {plan && plan.commitment > 0 && (() => {
               const t = takeoutRead(game.econ, plan, d.takeout);
               const x = (v: number) => (Number.isFinite(v) ? `${v.toFixed(2)}×` : "—");
               return <div className="bd-terms mono">
                 {`Fee ${usd(plan.pointsCost)} · interest reserve ${usd(plan.interestReserve)} · at delivery ${pct2(t.ratePct)}, DSCR ${x(t.dscr)} (${x(t.dscrStress)} if rates +3)`}
               </div>;
             })()}
-          </>}
-          {d.prospect && <div className="bd-terms">Anchor: {d.prospect.name}</div>}
-          <More d={d} bbl={bbl} set={set} />
+          </Step>
+
+          <Partners d={d} bbl={bbl} />
           <Details d={d} />
           {commit && <CommitButton d={d} bbl={bbl} />}
         </div>
       </div>
     </div>
   );
+}
+
+/** One numbered step of the desk: a title, what is chosen, and its choices. Open by default. */
+function Step({ n, title, sum, children }: { n: number; title: string; sum: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <details className="bd-step" open>
+      <summary><span className="bd-n">{n}</span><span className="bd-t">{title}</span><span className="bd-s">{sum}</span></summary>
+      <div className="bd-choices">{children}</div>
+    </details>
+  );
+}
+
+/** Shops at grade, or the mixed-use stack: the programme inside the building. */
+function Programme({ d, set }: { d: DeskScheme; set: (p: Partial<DevDraft>) => void }) {
+  const { use, floors } = d;
+  if (d.product) return null;
+  if (use === "office" || use === "multifamily") {
+    return <Row k="Shops">
+      {(["auto", "on", "off"] as const).map((k) => (
+        <Chip key={k} on={d.groundRetail === k} title={k === "auto" ? "The street's footfall and the retail market decide" : k === "on" ? "Shops on the ground floor whatever the street says" : "A lobby and more floor for the main use"}
+          onClick={() => set({ groundRetail: k })}>{k === "auto" ? "Street decides" : k === "on" ? "Ground-floor shops" : "No shops"}</Chip>))}
+    </Row>;
+  }
+  if (use !== "mixed") return null;
+  const split = d.draft.split ?? { retail: 15, office: 45, multifamily: 40 };
+  const retailCap = Math.max(0, Math.floor(maxRetailShare(floors) * 100));
+  const nonRetail = Math.max(1, split.office + split.multifamily);
+  const officeShare = Math.round((split.office / nonRetail) * 100);
+  return <>
+    <Row k="Shops">
+      <Slider label="Retail" value={Math.min(split.retail, retailCap)} min={0} max={Math.max(1, retailCap)} step={1}
+        onChange={(v) => set({ split: { retail: v, office: split.office, multifamily: split.multifamily } })} format={(v) => `${v}% of floor area (most ${retailCap}%)`} />
+    </Row>
+    <Row k="Upper">
+      <Slider label="Office share" value={officeShare} min={0} max={100} step={5}
+        onChange={(v) => set({ split: { retail: split.retail, office: v, multifamily: 100 - v } })} format={(v) => `${v}% office · ${100 - v}% homes`} />
+    </Row>
+  </>;
 }
 
 /** THE ANSWER, ALWAYS IN VIEW: what it is worth over what it costs, and the cheque. */
@@ -361,12 +450,13 @@ function Verdict({ d }: { d: DeskScheme }) {
 }
 
 /**
- * MORE (owner, Oct 2026: "the build desk seems to be missing some options
- * hidden within the code"). What the engine takes and the simple desk had
- * dropped: the contract, the rate hedge, shops at grade, the mixed stack, a
- * build-to-suit listing and outside investors. Closed until opened.
+ * PRE-LEASE AND PARTNERS (owner, Oct 2026: "the build desk seems to be missing
+ * some options hidden within the code"): a build-to-suit listing and outside
+ * investors. The contract, shops and the mixed stack moved up to their steps;
+ * nothing here is folded away any more (owner, Nov 2026: "make sure all
+ * available options are shown").
  */
-function More({ d, bbl, set }: { d: DeskScheme; bbl: string; set: (p: Partial<DevDraft>) => void }) {
+function Partners({ d, bbl }: { d: DeskScheme; bbl: string }) {
   const game = useHeldGame(bbl);
   const parcels = useStore((s) => s.parcels)!;
   const [pitch, setPitch] = useState<PitchStyle>("base");
@@ -384,34 +474,10 @@ function More({ d, bbl, set }: { d: DeskScheme; bbl: string; set: (p: Partial<De
   const outMax = plan && !synBar ? maxOutside(game, d.need.whole, landEquity) : 0;
   const outside = Math.round(outMax * share / 10_000) * 10_000;
   const pv = plan && outside > 0 ? raisePreview(game, plan, landEquity, d.need.whole, outside, pitch) : null;
-  const split = d.draft.split ?? { retail: 15, office: 45, multifamily: 40 };
-  const retailCap = Math.max(0, Math.floor(maxRetailShare(floors) * 100));
-  const nonRetail = Math.max(1, split.office + split.multifamily);
-  const officeShare = Math.round((split.office / nonRetail) * 100);
   const pct = (x: number) => `${Math.round(x * 100)}%`;
   return (
-    <details className="bd-details">
-      <summary>More</summary>
-      <div className="bd-choices" style={{ marginTop: 6 }}>
-        <Row k="Contract">
-          <Chip on={contract === "gmp"} title="Builder carries overruns" onClick={() => set({ contract: "gmp" })}>GMP</Chip>
-          <Chip on={contract === "costplus"} title="Cheaper; overruns yours" onClick={() => set({ contract: "costplus" })}>Cost-plus</Chip>
-        </Row>
-        {(use === "office" || use === "multifamily") && !d.product && <Row k="Shops">
-          {(["auto", "on", "off"] as const).map((k) => (
-            <Chip key={k} on={d.groundRetail === k} onClick={() => set({ groundRetail: k })}>{k === "auto" ? "Auto" : k === "on" ? "Ground floor" : "None"}</Chip>))}
-        </Row>}
-        {use === "mixed" && <>
-          <Row k="Shops">
-            <Slider label="Retail" value={Math.min(split.retail, retailCap)} min={0} max={Math.max(1, retailCap)} step={1}
-              onChange={(v) => set({ split: { retail: v, office: split.office, multifamily: split.multifamily } })} format={(v) => `${v}%`} />
-          </Row>
-          <Row k="Upper">
-            <Slider label="Office share" value={officeShare} min={0} max={100} step={5}
-              onChange={(v) => set({ split: { retail: split.retail, office: v, multifamily: 100 - v } })} format={(v) => `${v}% office · ${100 - v}% homes`} />
-          </Row>
-        </>}
-        {use !== "mixed" && !d.product && <Row k="Anchor">
+    <Step n={5} title="Pre-lease and partners" sum={d.prospect ? `Anchor: ${d.prospect.name}` : raise ? "Raising" : offer ? "Listed for a tenant" : "Optional"}>
+        {use === "mixed" || d.product ? <Row k="Anchor"><span className="bd-terms bd-inline">Build-to-suit is for a single-use street building</span></Row> : <Row k="Anchor">
           {d.prospect
             ? <><span className="bd-terms" style={{ paddingLeft: 0 }}>{d.prospect.name}</span><Chip on={false} onClick={() => useStore.getState().clearBts(bbl)}>Back to spec</Chip></>
             : <>
@@ -446,8 +512,7 @@ function More({ d, bbl, set }: { d: DeskScheme; bbl: string; set: (p: Partial<De
             <button type="button" className="btn" onClick={() => useStore.getState().launchRaise(bbl, job, outside)}>Open raise · {usd(outside)}</button>
             <button type="button" className="btn btn-buy" onClick={() => useStore.getState().raiseAndBuild(bbl, job, outside)}>Raise and build</button>
           </div>)}
-      </div>
-    </details>
+    </Step>
   );
 }
 

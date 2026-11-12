@@ -9,7 +9,7 @@ import {
 } from "@/engine/setup";
 import { generateFirmName } from "@/engine/firm";
 import { setupCity, currentSize, currentDev, currentCash0, regionShown } from "@/state/city";
-import { cityList, cityName, sizeList, developmentList, extentList, randomSeed, PARK_AMOUNTS, STREET_PLANS, REGION } from "@/citygen/index.mjs";
+import { cityList, cityName, sizeList, developmentList, extentList, randomSeed, PARK_AMOUNTS, REGION } from "@/citygen/index.mjs";
 import { drawPlatOffThread } from "@/state/platClient";
 import { BUILD_STAMP } from "@/buildStamp";
 import { usd } from "./format";
@@ -79,7 +79,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
     const island = setupCity();
     return {
       island, size: currentSize(island), dev: currentDev(island), cash0: currentCash0(), goal: null,
-      field: DEFAULT_SETUP.field, inherit: 0, home: "any", rivalCapital: "medium", parks: "medium", streets: "classic",
+      field: DEFAULT_SETUP.field, inherit: 0, home: "any", rivalCapital: "medium", parks: "medium", streets: "natural",
       firmName: "", sandbox: false, clock: "decisions", brokerStops: true, seed: randomSeed(), poolEntry: true, rivalReputation: true, rivalDealTerms: true, builderFirms: true,
     };
   };
@@ -324,15 +324,6 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
                   <div>
                     {seg(PARK_AMOUNTS.map((x) => ({ id: x.id, label: x.name, note: x.note })), d.parks, (v) => up({ parks: v }), "How many parks")}
                     <div className="hs-note">{PARK_AMOUNTS.find((x) => x.id === d.parks)?.note}</div>
-                  </div>
-                </div>
-              )}
-              {!isWritten && !isFixed && (
-                <div className="hs-row">
-                  <div className="hs-label">Streets</div>
-                  <div>
-                    {seg(STREET_PLANS.map((x) => ({ id: x.id, label: x.name, note: x.note })), d.streets, (v) => up({ streets: v }), "Street generator")}
-                    <div className="hs-note">{STREET_PLANS.find((x) => x.id === d.streets)?.note}</div>
                   </div>
                 </div>
               )}

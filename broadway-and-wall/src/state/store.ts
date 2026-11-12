@@ -71,7 +71,7 @@ export interface DesignPreview {
 /** The desks on a property's full page. Mirrors ui/panels/shared PropTab. */
 export type PropertyTab = "summary" | "leasing" | "money" | "ops" | "deal" | "build" | "history";
 
-export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "investors" | "property" | "saves" | "notes" | "settings" | "primer" | "firm" | "rankings" | "banks";
+export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "investors" | "property" | "saves" | "notes" | "settings" | "primer" | "firm" | "rankings" | "banks" | "industries" | "land" | "brokers";
 
 /**
  * WHERE THE APP IS, and the reason this type exists at all.
@@ -1473,7 +1473,7 @@ export const useStore = create<AppState>(holdWhileTicking((set, get) => ({
   industryFocus: null,
   openIndustry: (id) => {
     set({ industryFocus: id, bizFocus: null });
-    if (id) { openViewOn("economy", "industries"); get().setPage("economy"); }
+    if (id) get().setPage("industries");
   },
 
   firmFocus: null,
@@ -2869,7 +2869,8 @@ export const useStore = create<AppState>(holdWhileTicking((set, get) => ({
       const runSeed = (crypto.getRandomValues(new Uint32Array(1))[0] || 1) >>> 0;
       // the town and its opening market, dealt together off the page's thread
       const parks = setupIn?.parks && setupIn.parks !== "medium" ? setupIn.parks : undefined;
-      const streets = setupIn?.streets === "natural" ? "natural" as const : undefined;
+      // every new town is Natural (owner, 2026-11-12); a written or fixed island ignores it
+      const streets = setupIn?.streets === "classic" ? undefined : "natural" as const;
       const { built, parcels, game: dealt } = await buildTown(island, seed, size, dev, undefined, { runSeed, money, setup }, parks, streets);
       get().setData({
         parcels,

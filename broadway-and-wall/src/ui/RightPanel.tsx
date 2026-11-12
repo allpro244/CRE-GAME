@@ -15,6 +15,8 @@ import { PlayersPage } from "@/ui/panels/PlayersPage";
 import { NotesPage } from "@/ui/panels/NotesPage";
 import { EconomyPage } from "@/ui/panels/EconomyPage";
 import { RankingsPage } from "@/ui/panels/RankingsPage";
+import { Industries } from "@/ui/panels/IndustriesView";
+import { LandPage, BrokersPage } from "@/ui/panels/MarketPage";
 import { BooksPage } from "@/ui/panels/BooksPage";
 import { NewsPage } from "@/ui/panels/NewsPage";
 import { SavesPage, SettingsPage, PrimerPage } from "@/ui/panels/MiscPages";
@@ -235,6 +237,9 @@ const PAGE_VIEW: Partial<Record<Page, ReactElement>> = {
   notes: <NotesPage />,
   economy: <EconomyPage />,
   rankings: <RankingsPage />,
+  land: <LandPage />,
+  brokers: <BrokersPage />,
+  industries: <Industries />,
   books: <BooksPage />,
   news: <NewsPage />,
   saves: <SavesPage />,

@@ -1228,7 +1228,7 @@ function addAgent(r: HouseholdRegister): number {
  * families have both spouses in the labour force when the head is of working
  * age); past 65 the household draws a pension.
  */
-function fillPeople(R: Rand, a: HouseholdArrays, i: number, ageP: readonly number[], income: number, e: Econ, unemp: number) {
+function fillPeople(R: Rand, a: HouseholdArrays, i: number, ageP: readonly number[], income: number, e: Econ, unemp: number, pension = 1) {
   const band = pick(R, ageP);
   a.age[i] = AGE_LO[band] + Math.floor(R.u() * (AGE_HI[band] - AGE_LO[band] + 1));
   a.adults[i] = 1 + pick(R, ADULTS);
@@ -1243,7 +1243,7 @@ function fillPeople(R: Rand, a: HouseholdArrays, i: number, ageP: readonly numbe
   const works = R.u() < lfAge(a.age[i]);
   const other = othersOf(a, i) > 0 && R.u() < OTHER_LF;
   if (!works) {
-    a.emp1[i] = EMP_RETIRED; a.wage1[i] = income;
+    a.emp1[i] = EMP_RETIRED; a.wage1[i] = income * pension;
     if (other) { a.wage3[i] = income * 0.4; job(a.emp3, a.un3); }
     return;
   }
@@ -1386,7 +1386,10 @@ export function seedHouseholdRegister(s: GameState, parcels: ParcelTable): House
     const i = addAgent(r);
     const income = medianIncome(e) * Math.exp(INCOME_SIGMA * R.n());
     inc.push(income);
-    fillPeople(R, r.a!, i, AGE_ALL, income, e, u0);
+    // a head past working draws Social Security on the pay its draw stands for (SS_REPLACE), as every
+    // later retirement does (2026-11-12: it drew the whole draw, and the opening's retired households
+    // had a median income of $59,700 against $38,600 for one earner in work)
+    fillPeople(R, r.a!, i, AGE_ALL, income, e, u0, SS_REPLACE);
     sampleLf += lfOf(i);
     // within an age, ownership rises with income (Census HVS by income)
     score.push(Math.log(income / medianIncome(e)) + 0.8 * R.n());

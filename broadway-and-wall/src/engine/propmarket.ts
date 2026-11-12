@@ -56,7 +56,7 @@ import {
   minTicket, boughtLastYear, gainsTax, streetSaleCost, spreadAdj, firmMaxPrice, firmMargin, capForSpread, landBanker,
 } from "./rivals";
 import { dealsPerYear, misreadPp } from "./competitorTraits";
-import { rowOn, deskWithRoom } from "./rivalDebt";
+import { rowOn, deskWithRoom, withLoanIndex } from "./rivalDebt";
 import { why, whyGet, whyNation } from "./why";
 import { beliefSignals, whyBelief, hearsOfListing } from "./beliefs";
 import { money } from "./money";
@@ -418,7 +418,8 @@ export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
   }
   const n = room.length;
   const bids: Bid[] = [];
-  for (const r of room) {
+  // The bids read the loan record and write none: one walk of it serves the room (rivalDebt.ts withLoanIndex).
+  withLoanIndex(s, () => { for (const r of room) {
     const b = bidderOf(s, r, rec);
     const { max, uw } = maxPrice(s.econ, view, b, beliefSignals(s, r));
     if (!(max > 0)) continue;
@@ -434,7 +435,7 @@ export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
     if (aumAfter > 0 && (r.debt + debt) / aumAfter > paramsOf(r).maxLtv - cushion) continue;
     if (debt > 0 && !deskWithRoom(s, r.id, debt)) continue;
     bids.push({ r, max, bid, uw, afford });
-  }
+  } });
   bids.sort((x, y) => y.bid - x.bid);
   return { bids, n, view };
 }

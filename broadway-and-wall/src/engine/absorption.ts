@@ -10,7 +10,7 @@
 
 import type { ParcelRecord } from "@/data/types";
 import type { BuiltClass, Econ, Holding } from "./types";
-import { demandIdx, managedRentPsfYr } from "./value";
+import { demandIdx, managedRentPsfYr, askPremium, faceGrossUp } from "./value";
 
 const clampA = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -71,5 +71,19 @@ export function staleDiscount(darkMs: number | undefined): number {
 export function currentAskPsfYr(
   rec: ParcelRecord, econ: Econ, h: Holding, use?: BuiltClass,
 ): number {
+  // ONE RULEBOOK (PARITY_PLAN.md): offices, shops and sheds ask what the
+  // building's landlord book says — the street owners' book, reviewed by the
+  // same month-dark trade against its own empty floors and the market's clock
+  // (streetRolls.ts). The flats, and a building whose book has not opened yet
+  // (its first month), keep the market rent with the stale-space markdown.
+  const L = use && use !== "multifamily" ? h.ask?.[use] : undefined;
+  if (L && L.a > 0) return L.a * askPremium(h);
   return managedRentPsfYr(rec, econ, h, use) * staleDiscount(h.darkMs);
+}
+
+/** The package (free rent and fit-out, as a share of face over the term) the building posts: its book's, else the town's comps. */
+export function currentPackage(econ: Econ, h: Holding, use: BuiltClass): number {
+  const L = use !== "multifamily" ? h.ask?.[use] : undefined;
+  if (L && Number.isFinite(L.c)) return L.c;
+  return Math.max(0, 1 - 1 / faceGrossUp(econ, use));
 }

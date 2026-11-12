@@ -3065,7 +3065,7 @@ function maybeSuccessorFunds(s: GameState) {
     s.news.unshift({ q: s.month, kind: "event", text: `${r.name} closed its Fund ${r.funds} at ${money(equity)}.` });
   }
 }
-/** Dry powder under this share of the firm's capital opens a successor fund. See maybeSuccessorFunds for the source. */
+/** Dry powder under this share of the firm's capital opens a successor fund: the LPA successor-fund clause, 70-75% invested [S: ILPA Principles 3.0 (2019); see maybeSuccessorFunds]. */
 const SUCCESSOR_DRY_SHARE = 0.25;
 /** Share of a successor fund held back uncalled. [S: 30-50% reserve practice for closed-end vehicles, as at a first close; the midpoint.] */
 const SUCCESSOR_RESERVE = 0.40;
@@ -5667,13 +5667,18 @@ function acquisitionLoan(s: GameState, rec: ParcelRecord, price: number): (r: Ri
   // for everyone but the player — see streetRefiProceeds. Grade is the
   // building's own condition (no firm owns it yet).
   const stab = stabViewFor(rec, s.econ, initialCondition(rec), price);
+  // SPEED (2026-11-12): the loan depends on the firm only through its cap, and
+  // the street's firms share a handful of caps; each is sized once.
+  const byCap = new Map<number, number>();
   return (r, ci) => {
     const st = paramsOf(r);
     // In a shut credit market the loan is smaller, so the cheque is bigger —
     // which is exactly why a downturn is when a disciplined buyer with cash
     // gets to name their price.
     const cap = Math.min(r.targetLtv, st.maxLtv) * (ci < 0.8 ? 0.82 : 1);
-    return Math.min(price, streetRefiProceeds(s, price, noi, cap, stab).principal);
+    let p = byCap.get(cap);
+    if (p === undefined) { p = streetRefiProceeds(s, price, noi, cap, stab).principal; byCap.set(cap, p); }
+    return Math.min(price, p);
   };
 }
 

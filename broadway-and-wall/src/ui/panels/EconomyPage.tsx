@@ -306,7 +306,9 @@ function MainlandFigures() {
         <Row k="Occupied" v={`${n(m.occupied)} · ${pct(m.vacancy)} empty`} bad={m.vacancy < 0.03}
           title={`Includes ${n(m.idle)} turning over between tenants`} />
         <Row k="Going rent" v={`$${n(m.rent)}/mo`} strong
-          title={`Older homes $${n(m.rentOlder)}/mo · opening $${n(m.rentOpen)}/mo`} />
+          title={`Opening $${n(m.rentOpen)}/mo`} />
+        <Row k="Older homes' rent" v={m.rentTiers.map((x) => `$${n(x)}`).join(" · ")}
+          title={`Newest to oldest vintage: ${m.homesTiers.map((h) => n(h)).join(" · ")} homes`} />
         <Row k="Rent, 12 mo" v={pctSigned(rentYr, 1)} bad={rentYr > 0.06} />
         <Row k="Under construction" v={`${n(m.building)} homes · ${n(m.due12)} due within 12 mo`} />
         {m.pencil !== undefined && (

@@ -992,21 +992,31 @@ export function productSpread(s: GameState, product: LoanProduct, opts: { ltv?: 
  * desk ever falls back on a rate card.
  */
 /**
- * THE LOAN AT A DESK'S LIMIT IS NOT THE AVERAGE LOAN (2026-11-12). PRIOR_EL is
- * the long-run loss rate of a whole book, and a book is a blend: most of it
- * written well under the desk's limit, some at it. Capping every advance at
- * the book's average loss made the average loan the most a desk would ever
- * write — 55-68% everywhere, where desks today write 1.30x coverage at up to
- * 70-75% (owner's market read, 2026-11-12) and price the extra loss in the
- * spread (pricing.ts liveSpread already charges each loan its own loss). The
- * limit is where the marginal loan loses twice the book's average [K: a
- * judgement of the blend; measured, it puts the desks at 60-77% at full
- * appetite and still lets a volatile or falling market pull every one in].
+ * A DESK LENDS AS FAR AS THE LOAN STILL EARNS ITS KEEP (2026-11-12). Pricing
+ * already charges each loan its own expected loss (pricing.ts liveSpread:
+ * funding + this loan's loss + running cost + capital + rationing + the
+ * competitive margin), so the limit is the marginal loan: the advance at
+ * which this loan's priced loss uses up all the room the desk's going price
+ * leaves over its full cost — its book's loss allowance plus its competitive
+ * margin (px.el + px.chase). Past it the desk would be lending below the
+ * return its own capital asks. Priced loss is the model's loss scaled by the
+ * desk's own experience against the industry's (exp, as loanEl prices it), so
+ * a desk that has just written off a year of loans believes the model less
+ * kindly and pulls in; a desk short of capital pulls in by its appetite.
+ *
+ * This replaced a budget of twice the industry's average loss (a [K]
+ * multiplier, MARGINAL_EL_MULT), which held every bank at 53-70% even on a
+ * building covering its debt 2.5 times — where desks write to their policy
+ * ceiling (75-80%) in good credit (owner's market read). Regulation and
+ * policy are the ceiling above it (product.maxLTV, statedLtv).
  */
-const MARGINAL_EL_MULT = 2;
 export function deskAdvance(s: GameState, product: LoanProduct, klass?: string, attach = 0, at: LossAt = {}): number {
   const cls = lossClassOf(product);
-  const budget = (PRIOR_EL[cls] / 100) * MARGINAL_EL_MULT * Math.max(0.2, lenderAppetite(s, product.lender));
+  const px = deskPxOf(s, product.lender);
+  const own = px.el[cls] ?? PRIOR_EL[cls];
+  const exp = Math.max(0.25, own / PRIOR_EL[cls]);
+  const room = Math.max(0, own + px.chase);
+  const budget = (room / exp / 100) * Math.max(0.2, lenderAppetite(s, product.lender));
   // SPEED (2026-11-12): the search below reads only these numbers, so its
   // answer is remembered on exactly them. It ran ~28,000 times a month for
   // ~1,200 distinct inputs — 38% of a late month — with the loss inputs
@@ -1038,10 +1048,11 @@ function erf(x: number): number {
 }
 
 export function statedLtv(
-  s: GameState, product: LoanProduct, klass?: string, condition?: string, street = false, attach = 0,
+  s: GameState, product: LoanProduct, klass?: string, condition?: string, street = false, attach = 0, at: LossAt = {},
 ): { ltv: number; why: string[]; solved?: boolean } {
-  // THE DESK'S OWN ADVANCE (deskAdvance), on every kind of paper.
-  const own = deskAdvance(s, product, klass, attach);
+  // THE DESK'S OWN ADVANCE (deskAdvance), on every kind of paper — on the
+  // building's own income yield when the quote has one (`at`).
+  const own = deskAdvance(s, product, klass, attach, at);
   const income = onIncome(product);
   const worn = income && (condition === "worn" || condition === "obsolete") ? -REPAIRS_HOLDBACK : 0;
   const rel = street ? 0 : relAdvance(s, product);
@@ -1460,7 +1471,15 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   void app;
   // THE SHEET TODAY, not the sheet on the brochure — see statedLtv. A desk
   // that solved its own advance has its appetite in it already (deskAdvance).
-  const sheet = statedLtv(s, product, klass, condition, street);
+  // THE ADVANCE IS SIZED ON THIS BUILDING, NOT THE CLASS (2026-11-12). The
+  // sheet read the class's average cap rate, so a building covering its debt
+  // 2.5 times got the same advance as an average one — 60% where a desk
+  // today writes to its policy ceiling (75-80%) once coverage is not the
+  // constraint (owner's market read). The loss model already takes the
+  // building's own yield (lossInputs `at`); coverage sizing used it, the
+  // advance did not.
+  const ownYield = onIncome(product) && price > 0 && noiYr > 0 ? { yieldPct: 100 * noiYr / price } : {};
+  const sheet = statedLtv(s, product, klass, condition, street, 0, ownYield);
   // Priced on the loss at the advance it writes (loanEl).
   const ratePct = bankRatePct(bench, productSpread(s, product, { ltv: sheet.ltv, klass, ease: crunchEase }), {
     standingAdd: st.spreadAdd, rel, dealAdd: qualityAdd - strongNameAt(sheet.ltv),
@@ -1611,7 +1630,11 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
   const yieldPct = price > 0 ? 100 * Math.max(0, noiYr) / price : 0;
   const kUw = product.termM <= product.ioM ? uwRate / 100 : 12 * monthlyPayment(1, uwRate, product.amortYears);
   const byModel = noiYr > 0 && price > 0 ? deskAdvance(s, product, klass, 0, { yieldPct, ratePct: uwRate }) * price : 0;
-  const byDscr = product.bridge ? byModel : Math.min(byModel, Math.max(0, noiYr) / Math.max(1e-6, kUw));
+  // Coverage is sized AT THE LOAN'S OWN COVENANT (minDSCR): a desk does not
+  // write a loan that is in breach of the coverage test the day it closes. It
+  // sized to 1.00x and tested the covenant only afterwards — hidden while the
+  // advance was held low, exposed once desks lent to their ceilings.
+  const byDscr = product.bridge ? byModel : Math.min(byModel, Math.max(0, noiYr) / Math.max(1e-6, kUw * Math.max(1, product.minDSCR)));
   // DEBT YIELD. Coverage flatters a loan when rates are low and cap rates are
   // lower — you can cover 1.25x on a building yielding four points, and the
   // lender still has no equity underneath them. Since 2009 the desk also
@@ -2516,6 +2539,14 @@ export function collateralHaircut(h: Holding, month: number, econ?: Econ, rec?: 
  * already has the real stabilised leg (`stabViewFor` → `sizeRest`); permanent
  * desks underwrite the roll you have. Both paths share this collateral view.
  */
+/**
+ * Months of ownership before a refinance is sized on the appraisal rather than
+ * on cost. [S~: six months is the common floor for investment-property
+ * cash-out refinances; banks range 6-24 months (lender guides and investor
+ * reports, 2024-26); short-hold value increases must be documented by
+ * improvements and income growth (Berkadia, Freddie Mac SBL case study).]
+ */
+export const REFI_SEASON_M = 6;
 export function debtCollateral(
   s: GameState, parcels: ParcelTable, h: Holding, rec: ParcelRecord,
 ): {
@@ -2523,7 +2554,18 @@ export function debtCollateral(
   hair: { mult: number; why?: string }; stab: StabView | undefined;
 } {
   const vacantDirt = isVacantLandLoanCollateral(s, h, rec);
-  const value = ownedHoldingValue(s, parcels, h);
+  const appraised = ownedHoldingValue(s, parcels, h);
+  // SEASONING. A desk asked to refinance a building bought months ago at well
+  // under its appraisal lends on what the borrower paid until the hold has
+  // seasoned: the value jump on a short hold has to be proved by income and
+  // improvements, not asserted by an appraiser. Inside REFI_SEASON_M the
+  // collateral is the lesser of cost (price, closing, improvements:
+  // costBasis) and the appraisal; after it, the appraisal. A building the
+  // owner delivered is lent on as completed, the way a construction
+  // take-out is.
+  const fresh = h.deliveredM === undefined || h.deliveredM < (h.boughtM ?? 0);
+  const value = fresh && s.month - (h.boughtM ?? -Infinity) < REFI_SEASON_M && h.costBasis > 0
+    ? Math.min(appraised, h.costBasis) : appraised;
   // Contract rent, abatements as a reserve — how a desk underwrites a roll.
   // The cash reading zeroed an anchor for its free months and the whole
   // sheet moved with it (see value.ts contractNoiYr).

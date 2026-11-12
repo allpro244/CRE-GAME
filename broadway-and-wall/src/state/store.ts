@@ -276,6 +276,9 @@ interface AppState {
   /** The city's look (Settings -> Display): a toy diorama or the classic grade. Looks only. */
   diorama: boolean;
   setDiorama: (v: boolean) => void;
+  /** Which renderer draws the 3D city (Settings -> Display): the classic WebGL layer, or the WebGPU beta (WEBGPU_PLAN.md). Looks only. */
+  cityRenderer: "classic" | "webgpu";
+  setCityRenderer: (v: "classic" | "webgpu") => void;
   /**
    * SILENCE EVERYTHING, INCLUDING THE FAILURES.
    *
@@ -1013,6 +1016,7 @@ export const useStore = create<AppState>(holdWhileTicking((set, get) => ({
   hoverCard: (() => { try { return localStorage.getItem("bw:hovercard") !== "off"; } catch { return true; } })(),
   regionCountry: (() => { try { return localStorage.getItem("bw:region-country") === "on"; } catch { return false; } })(),
   diorama: (() => { try { return localStorage.getItem("bw:look") !== "classic"; } catch { return true; } })(),
+  cityRenderer: (() => { try { return localStorage.getItem("bw:renderer") === "webgpu" ? "webgpu" : "classic"; } catch { return "classic"; } })() as "classic" | "webgpu",
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   mutedAlerts: (() => { try { const v = JSON.parse(localStorage.getItem("bw:alerts-muted") ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string" && x !== "swan" && x !== "fed") : []; } catch { return []; } })(),
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
@@ -1410,6 +1414,10 @@ export const useStore = create<AppState>(holdWhileTicking((set, get) => ({
   setDiorama: (v) => {
     try { localStorage.setItem("bw:look", v ? "diorama" : "classic"); } catch { /* private mode */ }
     set({ diorama: v });
+  },
+  setCityRenderer: (v) => {
+    try { localStorage.setItem("bw:renderer", v); } catch { /* private mode */ }
+    set({ cityRenderer: v });
   },
   setPopupsOff: (v) => {
     try { localStorage.setItem("bw:popups2", v ? "off" : "on"); } catch { /* private mode */ }

@@ -120,6 +120,12 @@ const ratioFor = (q: "low" | "medium" | "high" | "max" | "extreme", dpr: number)
 
 const CITY_CENTER: [number, number] = [-70.9, 41.1];
 
+/** The renderer the 3D city is drawn with: the setting, unless the address says otherwise (review shots). */
+const rendererChoice = (): "classic" | "webgpu" => {
+  const q = typeof location !== "undefined" ? new URLSearchParams(location.search).get("renderer") : null;
+  return q === "webgpu" || q === "classic" ? q : useStore.getState().cityRenderer;
+};
+
 // One colour per firm, in the order the street was founded, so a rival's book
 // reads as a shape on the map under the Owners lens. Muted on purpose — these
 // sit under the gold of your own holdings, which always wins.
@@ -346,6 +352,16 @@ export default function MapView() {
   // map is rebuilt instead — the path a new city takes — with the camera
   // kept where the player had it. `glReset` re-runs the map effect.
   const [glReset, setGlReset] = useState(0);
+  // switching the city's renderer rebuilds the map, as a lost context does
+  const cityRenderer = useStore((s) => s.cityRenderer);
+  const rendererSeen = useRef(cityRenderer);
+  useEffect(() => {
+    if (rendererSeen.current === cityRenderer) return;
+    rendererSeen.current = cityRenderer;
+    const map = mapRef.current;
+    if (map) { const c = map.getCenter(); resumeCamRef.current = { center: [c.lng, c.lat], zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() }; }
+    setGlReset((n) => n + 1);
+  }, [cityRenderer]);
   const resumeCamRef = useRef<{ center: maplibregl.LngLatLike; zoom: number; bearing: number; pitch: number } | null>(null);
   const hover = useStore((s) => s.hover);
   const setFps = useStore((s) => s.setFps);
@@ -586,6 +602,10 @@ export default function MapView() {
               }
             }
             layer.setQuality(useStore.getState().graphics);
+            // the WebGPU beta (Settings -> Display -> Renderer; ?renderer=webgpu|classic overrides): the
+            // same layer, drawn by its own renderer on a canvas over the map (real/gpu/GpuCity.ts)
+            layer.gpu = rendererChoice() === "webgpu";
+            layer.onGpuFail = () => useStore.getState().setCityRenderer("classic");
             if (old) layer.id = `bw-three-buildings-${Date.now()}`;
             threeRef.current = layer;
             setLayerGen((n) => n + 1);
@@ -631,6 +651,19 @@ export default function MapView() {
                   "line-opacity": ["case", sel, 1, nbr, 0.9, hov, 0.8, 0] as never,
                 },
               });
+            }
+            // THE WEBGPU BETA DRAWS OVER THE WHOLE MAP, with MapLibre's frame
+            // copied in as its ground at the moment the 3D layer is drawn, so
+            // anything MapLibre paints after that layer would never reach the
+            // screen. Keep the 3D layer last: the lot outline then lies on the
+            // ground under the buildings (the selected building glows anyway).
+            if (layer.gpu) {
+              const keepLast = () => {
+                const ids = map.getStyle()?.layers?.map((l) => l.id) ?? [];
+                if (map.getLayer(layer.id) && ids[ids.length - 1] !== layer.id) map.moveLayer(layer.id);
+              };
+              keepLast();
+              map.on("styledata", keepLast);
             }
         };
         plantRef.current = plant;
@@ -1423,6 +1456,8 @@ export default function MapView() {
     const game = useStore.getState().game;
     const site = selectedBBL ? (game ? siteDeeds(game, selectedBBL) : [selectedBBL]) : [];
     layer.setHighlight(site, hoveredBBL && !site.includes(hoveredBBL) ? hoveredBBL : null);
+    // the WebGPU beta draws the lot outline itself, over the buildings as Classic shows it
+    if (layer.gpu) layer.setOutlines(site, neighborsRef.current, hoveredBBL && !site.includes(hoveredBBL) ? hoveredBBL : null);
   }, [selectedBBL, hoveredBBL, mapReady, mergedN, layerGen]);
 
   // mesh tints: teal neighbors, the owners lens, the market. Ownership is the

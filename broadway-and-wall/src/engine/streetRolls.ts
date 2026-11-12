@@ -1857,7 +1857,13 @@ export function priceFlats(roll: FlatRoll, cards: number[] | undefined, free: nu
     let W = 0, best = -Infinity, bx = pts[pts.length - 1].x;
     for (const p of pts) {
       W += p.w;
-      const v = Math.exp(p.x) * (LEASE_M - free / (W / months));
+      // the AVERAGE free flat's wait: with k signers a month the i-th of `free`
+      // flats lets after i/k months, (free + 1) / 2k on average. It was free/k,
+      // the last flat's wait, which a block with many flats free read as a
+      // year at any ask and priced to its lowest card (2026-11-12: the big
+      // blocks' asks fell to a quarter of the market in the opening's first
+      // half-year and dragged the flats' index to half, on every seed).
+      const v = Math.exp(p.x) * (LEASE_M - (free + 1) / (2 * W / months));
       if (v > best) { best = v; bx = p.x; }
     }
     if (!(best > 0)) bx = pts[pts.length - 1].x;
@@ -1865,7 +1871,7 @@ export function priceFlats(roll: FlatRoll, cards: number[] | undefined, free: nu
     // its own read of how long a flat waits for a signer at that ask (renewals price against it, households.ts)
     let Wb = 0;
     for (const p of pts) { if (p.x < bx) break; Wb += p.w; }
-    roll.fm = +Math.min(LEASE_M, free / Math.max(1e-9, Wb / months)).toFixed(2);
+    roll.fm = +Math.min(LEASE_M, (free + 1) / (2 * Math.max(1e-9, Wb / months))).toFixed(2);
     roll.ld = now.length;
     return;
   }
@@ -1876,8 +1882,23 @@ export function priceFlats(roll: FlatRoll, cards: number[] | undefined, free: nu
 /** The street's comps for a flat: the log of what new lettings signed at over their blocks' market rents, over the last six months, by their feet (undefined when none let). */
 export function flatComps(e: Econ, m: number): number | undefined {
   let sf = 0, c = 0;
-  for (const d of e.deals?.multifamily ?? []) if (!d.r && d.m > m - 6) { sf += d.sf; c += d.c * d.sf; }
+  const now = e.rentIdx.multifamily;
+  for (const d of e.deals?.multifamily ?? []) if (!d.r && d.m > m - 6) { sf += d.sf; c += dealRelNow(d, now) * d.sf; }
   return sf > 0 ? c / sf : undefined;
+}
+/**
+ * A LETTING AGAINST TODAY'S MARKET, not the one it signed against
+ * (2026-11-12). Each deal is kept as its rent over its block's market rent
+ * at the time; read months later as if against today's, a letting 20% under
+ * a market that has since fallen 20% read as 20% under again, the blocks that
+ * mark to the comps cut again, the index fell again — compounding: the
+ * flats' asking index lost 10% a month in the opening's first half-year
+ * (seed 31337, months 4-9: new lettings 0.78-0.89 of market, re-read each
+ * month) while vacancy was still 4-9%. The same fault, in the office index,
+ * was fixed by reading what each lease signed for (tenantMarket.ts).
+ */
+function dealRelNow(d: { c: number; i?: number }, now: number): number {
+  return d.c + (d.i && now > 0 ? Math.log(d.i / now) : 0);
 }
 /**
  * THE FLATS' RENTS, READ OFF THE BLOCKS (FORMULA_LEDGER #4/#5). The asking
@@ -1902,8 +1923,9 @@ function readFlats(s: GameState, fs: { roll: FlatRoll; cap: number; mkt: number 
   let nNew = 0;
   for (const d of list) if (!d.r) nNew++;
   let sf = 0, c = 0;
-  for (const d of list) { if (nNew >= 3 && d.r) continue; sf += d.sf; c += d.c * d.sf; }
-  const face = e.rentIdx.multifamily, eff = sf > 0 ? face * Math.exp(c / sf) : face;
+  const face = e.rentIdx.multifamily;
+  for (const d of list) { if (nNew >= 3 && d.r) continue; sf += d.sf; c += dealRelNow(d, face) * d.sf; }
+  const eff = sf > 0 ? face * Math.exp(c / sf) : face;
   e.effRentIdx = { ...(e.effRentIdx ?? e.rentIdx), multifamily: +eff.toFixed(4) };
   (e.concIdx ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 }).multifamily = +Math.max(0, Math.min(1, (1 - eff / face) / CONC_DEPTH)).toFixed(4);
   const nomCh = face / before - 1;

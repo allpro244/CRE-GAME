@@ -1687,10 +1687,30 @@ function solveLocMu(r: HouseholdRegister, e: Econ, letOf: (i: number) => number)
     xs.push({ x: Math.log(rent / Math.max(1, r.mainRent)) - a.taste[i] - commuteSaving(a, i, e) / Math.max(1, r.mainRent), w: a.wt[i] });
   }
   xs.sort((p, q) => p.x - q.x);
+  // ...the island's renters and the households across the water waiting for
+  // a flat there (OPENING_WAITING): a market at rest has its next tenants
+  // already looking
+  const want = island * (1 + OPENING_WAITING);
   let acc = 0;
-  for (const { x, w } of xs) { acc += w; if (acc >= island) return x; }
+  for (const { x, w } of xs) { acc += w; if (acc >= want) return x; }
   return xs.length ? xs[xs.length - 1].x : 0;
 }
+/**
+ * THE OPENING'S WAITING LIST (2026-11-12). The opening solved the island's
+ * pull so that exactly its renters wanted it, then drew every renter across
+ * the water a taste that did not — so on the first day nobody was looking.
+ * The island's renters then moved on at their own pace (other reasons, a
+ * home bought, a job) and nobody came to replace them until rents had fallen
+ * far enough to tempt households that did not want the island: on every seed
+ * the flats went 16-17% empty in the first year at half the opening's
+ * effective rent, and took two years to come back to ~0.85-0.9 of it. A
+ * market at rest has as many households waiting for its flats as leave them
+ * in a year for reasons of their own: the residual move rate (RESID_MOVE),
+ * the register's own [D].
+ */
+const OPENING_WAITING = RESID_MOVE;
+/** Months between a household's life changes that re-draw its taste for the island: one a year at RESID_MOVE [D]. */
+const TASTE_RENEW_M = Math.round(12 / RESID_MOVE);
 
 /**
  * THE OPENING IS SORTED. The opening's island renters were placed one for one
@@ -1704,12 +1724,18 @@ function solveLocMu(r: HouseholdRegister, e: Econ, letOf: (i: number) => number)
  */
 function sortOpening(R: Rand, r: HouseholdRegister, e: Econ, letOf: (i: number) => number) {
   const a = r.a!;
+  let waiting = 0;
+  for (let i = 0; i < r.n; i++) if (a.ten[i] === TEN_RENT) waiting += a.wt[i];
+  waiting *= OPENING_WAITING;
   for (let i = 0; i < r.n; i++) {
     const t = a.ten[i];
     if (t !== TEN_RENT && t !== TEN_MAINLAND) continue;
     const cut = Math.log(letOf(i) / Math.max(1, r.mainRent)) - (r.locMu ?? 0) - commuteSaving(a, i, e) / Math.max(1, r.mainRent);
     const island = t === TEN_RENT;
     let x = a.taste[i];
+    // a renter across the water who wants the island at the opening's rent keeps
+    // its taste while the waiting list has room (OPENING_WAITING)
+    if (!island && x >= cut && waiting >= a.wt[i]) { waiting -= a.wt[i]; continue; }
     for (let k = 0; k < 64 && (island ? x < cut : x >= cut); k++) x = LOC_SIGMA * R.n();
     if (island ? x < cut : x >= cut) x = cut + (island ? 0.01 : -0.01);
     a.taste[i] = x;
@@ -1848,7 +1874,7 @@ function letTo(R: Rand, r: HouseholdRegister, b: Block, e: Econ, m: number, want
  */
 const alike = (a: HouseholdArrays, i: number, j: number) =>
   Math.abs(a.age[i] - a.age[j]) <= 5 && a.adults[i] === a.adults[j] && a.partner[i] === a.partner[j] && (a.kids[i] > 0) === (a.kids[j] > 0);
-function toMainland(R: Rand, r: HouseholdRegister, i: number, pool: number[], gone: Uint8Array, wants?: boolean) {
+function toMainland(R: Rand, r: HouseholdRegister, i: number, pool: number[], gone: Uint8Array, wants?: boolean): number {
   const a = r.a!;
   gone[i] = 1; r.flow.movedOut += a.wt[i];
   const kindOf = (x: number, ind: number) => x === EMP_RETIRED ? "r" : x === EMP_UNEMP ? "u" : x === EMP_NONE ? "n" : `w${ind}`;
@@ -1871,11 +1897,18 @@ function toMainland(R: Rand, r: HouseholdRegister, i: number, pool: number[], go
   }
   if (best >= 0) {
     a.wt[best] += a.wt[i];
-    return;
+    return best;
   }
   // nobody across the water to join: the household itself rents there
   gone[i] = 0; a.ten[i] = TEN_MAINLAND; a.blk[i] = -1; a.rent[i] = signMainland(r, a, i);
+  return i;
 }
+/**
+ * Households that moved out of an island flat this month for reasons of their
+ * own and still want the island, by the record they joined: they tour the
+ * island's listings this month, not on their record's anniversary (RESID_MOVE).
+ */
+let LOOK_NOW: Map<number, number> | null = null;
 
 /**
  * OWN OR RENT (households stage 2). Owners sell and rent again at SELL_SHARE of
@@ -3387,10 +3420,21 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   // ending in a decision, then each block to the flats its roll has let —
   // its movers in from across the water and out to it (`moveIn`, `toMainland`)
   if (D) tickTenure(R, r, e, gone, H, m);
+  LOOK_NOW = null;
   // the renters across the water who want an island flat at the going rent: who a flat let goes to first
   const want: number[] = [];
   for (const i of pool) {
     if (gone[i] || a.ten[i] !== TEN_MAINLAND) continue;
+    // LIFE CHANGES WHERE A HOUSEHOLD WANTS TO LIVE, BOTH WAYS (2026-11-12): an
+    // island renter moves out for family or other reasons at RESID_MOVE a
+    // year; a renter across the water has its own such changes at the same
+    // rate — a new job, a partner, a school — and its taste for the island is
+    // drawn afresh, on a schedule phased by its id (no coin). Without it the
+    // mainland's tastes were fixed for life: the opening's renters across the
+    // water were sorted not to want the island, the island's renters left at
+    // ~40% a year and only a rent cut could bring anyone in — the first year's
+    // flats went 16% empty at half the opening's rent on every seed.
+    if (r.locMu !== undefined && (m + a.id[i]) % TASTE_RENEW_M === 0) a.taste[i] = NaN;
     ensureTaste(R, a, i);
     if (r.locMu !== undefined && wantsIsland(r, a, i, e, letAvg, -MOVE_LOG)) want.push(i);
   }
@@ -3445,7 +3489,16 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       if (R.u() < RESID_MOVE) {
         noteOut(r, i, "other", () => ({ n: {}, t: "A household moved for family or other reasons" }));
         r.flow.leaseMoves! += w;
-        toMainland(R, r, i, pool, gone, true);
+        // ...and, still wanting the island, it looks for its next flat there
+        // now (2026-11-12): most of these moves are from one island flat to
+        // another (RESID_MOVE), but the mover joined a record across the water
+        // and toured only on that record's anniversary, half a year on
+        // average — an island household lost for six months on every such
+        // move, 23% of the island's renters a year, and the first year's flats
+        // went 16% empty at half the opening's rent on every seed
+        const j = toMainland(R, r, i, pool, gone, true);
+        const hh = Math.round(w / r.wIsland);
+        if (hh > 0) (LOOK_NOW ??= new Map()).set(j, (LOOK_NOW.get(j) ?? 0) + hh);
         continue;
       }
       a.rent[i] = renew;
@@ -3534,7 +3587,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       // and no island landlord ever saw that demand at its door.
       if (gone[c] || !(a.ten[c] === TEN_MAINLAND || readyToRent(r, a, c))) continue;
       const W = a.wt[c] / r.wIsland, ph = a.id[c] % 12;
-      const n = Math.floor(((m + ph + 1) * W) / 12) - Math.floor(((m + ph) * W) / 12);
+      const n = Math.floor(((m + ph + 1) * W) / 12) - Math.floor(((m + ph) * W) / 12) + (LOOK_NOW?.get(c) ?? 0);
       if (n > 0) seekers.push({ c, n });
     }
     for (let j = seekers.length - 1; j > 0; j--) { const q = Math.floor(R.u() * (j + 1)); const t = seekers[j]; seekers[j] = seekers[q]; seekers[q] = t; }

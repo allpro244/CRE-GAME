@@ -917,6 +917,9 @@ export interface HouseholdRegister {
   arriveAcc?: number;
   /** The would-be buyers' share of movers turned away for want of a rental, carried (matchJobs). */
   ownArr?: number;
+  /** How the movers let in as would-be buyers decided: tried and bought, decaying counts (matchJobs). */
+  ownTry?: number;
+  ownBuy?: number;
   /** This month's move-outs from the player's blocks: the cause-ledger event per block (bbl -> why id). */
   flatWhy?: Record<string, number>;
   /** THE HOUSEHOLDS' YEAR (stage 5), rolled for the cause ledger: spending by category, net income, layoffs, the jobless rate and the wage index; the month each category's fall was last written. */
@@ -2759,10 +2762,15 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       // A mover who will buy needs no rental: the region's owners' share of the
       // movers it turns away still come (a running tally, not a draw), and
       // decide to buy or rent as any arrival does below.
+      // ...at the rate such movers have actually gone on to buy (ownTry/ownBuy,
+      // a running record), so the ones who would only have doubled up do not come.
+      let viaOwn = false;
       if (!mainRoomFor(r, wR)) {
-        r.ownArr = (r.ownArr ?? 0) + ownShare;
+        const buyRate = ((r.ownBuy ?? 0) + 1) / ((r.ownTry ?? 0) + 2);
+        r.ownArr = (r.ownArr ?? 0) + ownShare * buyRate;
         if (r.ownArr < 1) continue;
         r.ownArr -= 1;
+        viaOwn = true;
       }
       r.arriveAcc -= wR;
       const i = addAgent(r), b = r.a!;
@@ -2800,7 +2808,13 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       if (R.u() < OWN_BY_AGE[ageBand(b.age[i])]) b.sav[i] += EQUITY_PAY * (b.wage1[i] + b.wage2[i]);
       if (r.ownMu !== undefined) {
         const c = buyCheck(b, i, H, b.rent[i]);
-        if (c !== null && r.ownMu + OWN_SIGMA * R.n() >= c) { buyHome(r, b, i, H, s.month); r.flow.bought = (r.flow.bought ?? 0) + wR; }
+        const bought = c !== null && r.ownMu + OWN_SIGMA * R.n() >= c;
+        if (bought) { buyHome(r, b, i, H, s.month); r.flow.bought = (r.flow.bought ?? 0) + wR; }
+        if (viaOwn) {
+          // a long memory of how such movers decide (each record weighs ~1/100 of the last hundred)
+          r.ownTry = 0.99 * (r.ownTry ?? 0) + 1;
+          r.ownBuy = 0.99 * (r.ownBuy ?? 0) + (bought ? 1 : 0);
+        }
       }
     }
   }

@@ -3444,6 +3444,11 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     const w = a.wt[i];
     const b = B.byIdx.get(a.blk[i]);
     if (!b) { noteOut(r, i, "other", () => ({ n: {}, t: "A household moved out of a block being emptied" })); toMainland(R, r, i, pool, gone); continue; }
+    // ...and an island renter's life changes too, on the same schedule: its
+    // taste drawn afresh, so some stop wanting the island and leave at their
+    // lease's end (TASTE_RENEW_M; only the mainland's changed, and the island's
+    // demand only ever grew: flats 17-20% empty at 1.8x the rent by year 50)
+    if (r.locMu !== undefined && (m + a.id[i]) % TASTE_RENEW_M === 0) a.taste[i] = NaN;
     ensureTaste(R, a, i);
     if (a.leaseEnd[i] <= m) {
       // RENEW OR MOVE (stage 2): buy, choose the mainland at the renewal rent, or move for another reason

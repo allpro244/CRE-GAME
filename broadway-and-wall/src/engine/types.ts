@@ -3364,6 +3364,12 @@ export interface Rival {
    * vehicle, which is what the old model assumed for everybody.
    */
   uncalled?: number;
+  /** Commitments of the firm's latest fund (its first close, or its last successor fund). */
+  fundSize?: number;
+  /** Month the latest successor fund closed; its investment period runs from here (else bornM). */
+  fundM?: number;
+  /** How many funds the firm has raised on this street (1 when unset). */
+  funds?: number;
   /** Raised abroad in a capital wave (blackswans.ts); `homeBy` is when its investors called it home and its book goes to the tape. */
   wave?: boolean;
   homeBy?: number;

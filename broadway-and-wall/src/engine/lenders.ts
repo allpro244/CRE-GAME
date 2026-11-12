@@ -304,6 +304,23 @@ const NORMAL_NIM: Record<LenderKind, number> = { bank: 4.1, life: 1.7, conduit: 
  * federal plus state, ~25%, on the taxable desks; a fund passes through.
  */
 const OPEX_PCT: Record<LenderKind, number> = { bank: 2.0, life: 0.15, conduit: 0.20, fund: 1.0 };
+/**
+ * WHAT IT COSTS TO MAKE AND KEEP A LOAN, % of the loan a year — the running
+ * cost a loan's PRICE carries (2026-11-12). A desk prices a new loan on what
+ * new money costs it at the margin (`deskPricing` fund: the deposit rate it
+ * posts, and wholesale), which is matched-maturity funds-transfer pricing; a
+ * bank's branch network is what buys its cheap deposits, and under transfer
+ * pricing that cost is the deposits', not the loan's. Loading the whole
+ * bank's net running cost (OPEX_PCT, 2.0%) onto a loan already charged
+ * market-rate money charged the branches twice: community bank CRE rates ran
+ * ~3.4 points over the ten-year (real: ~1.7-2.2). Commercial and other real
+ * estate loans carried total non-interest expense of 0.65% of balances at
+ * banks up to $200M and 0.46% above (Federal Reserve Functional Cost and
+ * Profit Analysis, 1998, national averages) [S]. The desk's income statement
+ * still carries its whole running cost against its actual funding (OPEX_PCT).
+ * Life, conduit and fund costs are already the lending operation's.
+ */
+const LENDING_OPEX_PCT: Record<LenderKind, number> = { bank: 0.65, life: 0.15, conduit: 0.20, fund: 1.0 };
 const TAX_RATE: Record<LenderKind, number> = { bank: 0.25, life: 0.25, conduit: 0.25, fund: 0 };
 /**
  * WHAT THE DESK'S EQUITY COSTS (2026-11-10): CAPM on the ten-year, with each
@@ -1837,7 +1854,7 @@ export function deskPricing(s: GameState, l: Lender): DeskPx {
   // liveSpread).
   return {
     fund: +fund.toFixed(3), dFund: +dFund.toFixed(3), el, dEl, cap,
-    opex: OPEX_PCT[l.kind] ?? 0, pull: +(0.8 * Math.max(0, 1 - app)).toFixed(3), chase: +(l.chase ?? 0).toFixed(3),
+    opex: LENDING_OPEX_PCT[l.kind] ?? 0, pull: +(0.8 * Math.max(0, 1 - app)).toFixed(3), chase: +(l.chase ?? 0).toFixed(3),
   };
 }
 

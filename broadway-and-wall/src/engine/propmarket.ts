@@ -1181,7 +1181,14 @@ function surveyClass(s: GameState, parcels: ParcelTable, k: BuiltClass, want: nu
     const mark = assetValue(rec, e, cond);
     const view = dealView(s, rec, rec.bbl, mark, cond);
     if (!view) continue;
-    const maxes = firms.map((r) => maxPrice(e, view, bidderOf(s, r, rec), beliefSignals(s, r)).max).filter((m) => m > 0).sort((a, b) => b - a);
+    // WHAT EACH FIRM COULD PAY, NOT ONLY WHAT IT WOULD (2026-11-12): the
+    // street's bids are its value capped at what it can fund (bidRound,
+    // `affordable`), so the survey asks the same question. Reading
+    // willingness alone opened every class's cap under the loan index
+    // (seed 7919: 4.8-5.2% against 5.5%) and the first real trades re-priced
+    // the town 300-450bp in three years.
+    const maxes = firms.map((r) => { const b = bidderOf(s, r, rec); return Math.min(maxPrice(e, view, b, beliefSignals(s, r)).max, affordable(s, r, view, b)); })
+      .filter((m) => m > 0).sort((a, b) => b - a);
     const px = maxes[1] ?? maxes[0];
     if (!px) continue;
     const c = impliedCap(s, rec, rec.bbl, px, cond, view.condIdx);

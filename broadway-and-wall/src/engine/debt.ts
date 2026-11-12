@@ -506,8 +506,22 @@ export function singleNameCap(kind: string | undefined): number {
  * collateral.]
  */
 export const LEGAL_LENDING_LIMIT = 0.15;
+/**
+ * A BANK IS MORE THAN ITS CRE BOOK (2026-11-12). A desk's `capital` here is
+ * what stands behind its commercial real estate loans in this town; the
+ * legal limit is on the WHOLE bank's capital, which also stands behind its
+ * home mortgages, business loans and securities. Community banks held
+ * nonfarm nonresidential ($571.4B) and construction ($156.2B) loans against
+ * $2,698.3B of total assets at the end of 2023 — 27% (FDIC Quarterly 2024
+ * vol. 18 no. 1, Table II-B) [S]. The whole bank's capital is the CRE desk's
+ * over that share. Read on its CRE capital the hometown bank's limit was
+ * ~$0.9M a borrower, and its CRE book 900% of its capital, three times the
+ * 300% at which the 2006 interagency guidance flags a concentration; read
+ * on the whole bank, ~245%. (Losses still fall on the CRE desk's capital.)
+ */
+export const BANK_CRE_SHARE = 0.27;
 export function nameLimit(l: { kind?: string; book: number; capital: number }, book = l.book): number {
-  if (l.kind === "bank") return LEGAL_LENDING_LIMIT * Math.max(0, l.capital);
+  if (l.kind === "bank") return LEGAL_LENDING_LIMIT * Math.max(0, l.capital) / BANK_CRE_SHARE;
   return Math.max(0, book) * singleNameCap(l.kind);
 }
 

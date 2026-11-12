@@ -147,9 +147,13 @@ export const RELEASE_PREMIUM = 1.15;
 /** How long a breach can run before the facility is accelerated. */
 export const FACILITY_CURE_M = 12;
 
-/** The smallest pool anybody will paper as a facility. */
+/**
+ * The smallest pool anybody will paper as a facility: two buildings. There
+ * is no dollar minimum (owner, 2026-11-12): it was a flat $5M for every desk,
+ * from no source, and shut every small sponsor out of pooling (ten
+ * buildings, a $2.9M base, no quote).
+ */
 export const FACILITY_MIN_ASSETS = 2;
-export const FACILITY_MIN_LOAN = 5_000_000;
 
 /**
  * HOW CONCENTRATED THE POOL IS, and therefore how much of the pooling benefit
@@ -343,7 +347,6 @@ export function facilityQuotes(s: GameState, parcels: ParcelTable, bbls: string[
       ? `${p.label} will not paper a pool of ${n}. Pledge at least ${FACILITY_MIN_ASSETS} buildings.`
       : offClass ? `${p.label.split(" · ")[0]} lends on ${p.classes!.join(", ")} only, and this pool is not all ${p.classes!.join(", ")}.`
       : !open ? `${p.label} has stopped writing new paper this cycle.`
-      : base < FACILITY_MIN_LOAN ? `The base comes to ${Math.round(base / 1e6)}M and nobody documents a facility under $5M.`
       : undefined;
     const atBase = facilityDrawTerms(base, ratePct, p.ioM, p.amortYears, q.noi, q.value);
     out.push({
@@ -386,7 +389,7 @@ export function openFacility(
   if (!qt) return { s, err: "That lender does not offer facilities." };
   if (!qt.available) return { s, err: qt.why ?? "That desk will not quote this pool." };
   const draw = Math.floor(qt.base * Math.max(0.1, Math.min(1, lev)));
-  if (draw < FACILITY_MIN_LOAN) return { s, err: "Minimum draw is $5M." };
+  if (!(draw > 0)) return { s, err: "The pool supports no draw." };
   const points = Math.round(draw * qt.points);
   const fees = Math.round(draw * 0.01) + points;
   const cost = qt.payoff + qt.penalties + fees;
@@ -623,7 +626,7 @@ export function refinanceFacility(
   if (!qt) return { s, err: "That lender does not offer facilities." };
   if (!qt.available) return { s, err: qt.why ?? "That desk will not quote this pool today." };
   const draw = Math.floor(qt.base * Math.max(0.1, Math.min(1, lev)));
-  if (draw < FACILITY_MIN_LOAN) return { s, err: "Minimum draw is $5M." };
+  if (!(draw > 0)) return { s, err: "The pool supports no draw." };
   const fees = facilityFees(draw, qt.points);
   const need = fees + Math.max(0, f.balance - draw);
   const room = spendable(s, parcels);

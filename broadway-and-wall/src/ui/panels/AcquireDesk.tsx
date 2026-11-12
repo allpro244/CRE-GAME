@@ -1269,7 +1269,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                     : `${p.blurb}\n${(p.maxLTV * 100).toFixed(0)}% max LTV · ${p.amortYears}-yr amort · ${Math.round(p.termM / 12)}-yr term${sp ? `\nStaying power: ${sp.word}. ${sp.why}` : ""}`}
                   onClick={() => setProduct(p.id)}
                 >
-                  {p.label}{pq.principal > 0 ? ` · ${pq.ratePct.toFixed(2)}% (${pq.allInPct.toFixed(2)}% all in) · ${(pq.ltvCap * 100).toFixed(0)}% sheet` : " · won't quote"}
+                  {p.label}{pq.principal > 0 ? ` · ${pq.ratePct.toFixed(2)}% (${pq.allInPct.toFixed(2)}% all in) · lends ${Math.round(100 * pq.principal / Math.max(1, offerPrice))}% LTV (max ${(pq.ltvCap * 100).toFixed(0)}%)` : " · won't quote"}
                   {sp && sp.word !== "solid" && pq.principal > 0 ? <span style={{ marginLeft: 6, color: sp.word === "at risk" ? "#c0563e" : "#b8962e" }}>· {sp.word}</span> : null}
                 </button>
               );

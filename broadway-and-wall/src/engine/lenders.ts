@@ -1392,8 +1392,12 @@ export function tickLenders(s: GameState) {
     // the money is flat or arriving.
     const flow = l.kind === "bank" ? (l.dep?.flowYr ?? 0) : 0;
     const liqFac = Math.max(0.5, Math.min(1, 1 + 2 * Math.min(0, flow + 0.05)));
+    // A desk AT its capital target lends at full appetite (1): the curve read
+    // 0.75 there, so a healthy desk underwrote to three quarters of the
+    // industry's loss rate and quoted 20-40% LTVs (2026-11-12). Still zero at
+    // 55% of target and capped at 1.15 [shape stated, not fitted].
     l.appetite = Math.max(0, Math.min(1.15,
-      (raw - 0.55) / 0.6 * nimFac * watchFac * liqFac * (l.kind === "conduit" ? Math.max(0.25, Math.min(1, natWin)) : 1)));
+      (raw - 0.55) / 0.45 * nimFac * watchFac * liqFac * (l.kind === "conduit" ? Math.max(0.25, Math.min(1, natWin)) : 1)));
 
     if (s.month % 12 === 0 && s.month > 0) {
       if (l.incYr) l.incPrevYr = { ...l.incYr, netIncome: l.netIncomeYr, dividends: l.divYr ?? 0, chargeOffs: l.chargeOffsYr };

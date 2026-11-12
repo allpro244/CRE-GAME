@@ -1943,6 +1943,15 @@ function signMainland(r: HouseholdRegister, a: HouseholdArrays, i: number): numb
   return mainRentFor(r, a, i);
 }
 /** Is there a flat ready to let on the mainland? */
+/**
+ * What a doubled-up household in work saves toward leaving, in months of the
+ * region's rent: first month's rent, a security deposit of one to two months
+ * and fees [S~: typical US move-in costs, first month + 1-2 months' deposit
+ * (state deposit caps commonly 1-2 months)] — a little over the three months
+ * a landlord's move-in takes (readyToRent), since savings approach a target
+ * from below.
+ */
+const MOVE_IN_SAVE = 4;
 /** A doubled-up household with work and a deposit (three months of the region's rent): ready for a place of its own. */
 function readyToRent(r: HouseholdRegister, a: HouseholdArrays, i: number): boolean {
   return a.ten[i] === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) && a.sav[i] > 3 * r.mainRent;
@@ -3006,7 +3015,12 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     const minPay = a.debt[i] > 25 ? a.debt[i] * (a.debtRate[i] / 12 + MIN_PRINCIPAL) : a.debt[i];
     // spending on the buffer-stock rule
     // ...and a renter that plans to buy saves for the down payment too (DOWN_SAVE)
-    const target = bufferMonths(a.age[i]) * a.yperm[i] + (plansToBuy(r, a, i, H) ? (DOWN_SAVE + CLOSING) * H.starter : 0);
+    // ...and a doubled-up household in work saves for a place of its own: the
+    // move-in costs (MOVE_IN_SAVE) on top of its buffer. It spent the rent it
+    // was not paying and almost never held the deposit it needs to leave —
+    // measured, 66-124 of ~3,700 doubled-up households at year 5.
+    const target = bufferMonths(a.age[i]) * a.yperm[i] + (plansToBuy(r, a, i, H) ? (DOWN_SAVE + CLOSING) * H.starter : 0)
+      + (a.ten[i] === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) ? MOVE_IN_SAVE * Math.max(1, r.mainRent) : 0);
     // ...BUT THE RENT IS PAID FIRST (2026-10-28, step 2). A household short
     // of money cuts what it buys before it misses the rent or the mortgage —
     // down to the subsistence floor, drawing on its savings and its card —

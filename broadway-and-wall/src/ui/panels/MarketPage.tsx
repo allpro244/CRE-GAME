@@ -652,7 +652,10 @@ export function MarketPage() {
           section reading "Brokers on the phone · 0", the buy-box form and the
           site list between the player and the listings they came for — the
           tape started a screen and a half down. */}
-      {phoneLive && <><BrokerCalls /><BuyBoxEditor /><SiteFinder /></>}
+      {/* THE PHONE IS ITS OWN TAB NOW (Brokers); a live call still says so here, since it lapses */}
+      {phoneLive && <button type="button" className="mkt-callout" onClick={() => useStore.getState().setPage("brokers")}>
+        {liveBrokerCalls(game).length} off-market call{liveBrokerCalls(game).length === 1 ? "" : "s"} on the phone · open Brokers →
+      </button>}
       <div className="deals-grid">
         <section style={{ gridColumn: "1 / -1" }}>
           <div className="page-section" style={{ marginTop: 14 }}>On the market · {live}{mine.length ? ` · ${mine.length} of them yours` : ""}</div>
@@ -882,16 +885,14 @@ export function MarketPage() {
           </table>
         </section>
       </div>
-      {!phoneLive && <><BrokerCalls /><BuyBoxEditor /><SiteFinder /></>}
-      {/* THE SHOPS. Three house brokerages carry every mandate in this town,
-          and each one keeps a ledger on you: fees earned, first looks you let
-          lapse, how long since your last closing. That ledger decides whose
-          phone rings before the tape — it was driving the FIRST LOOK chips
-          below and was itself visible nowhere, so the loop read as luck.
-          brokerScore is the engine's own gate (broker.ts), called pure in
-          render the way varianceQuote is on the property card — the number
-          here is the number the mandate desk reads. */}
-      {(() => {
+    </div>
+  );
+}
+
+/** The three house brokerages and their ledger on you (broker.ts brokerScore). */
+function BrokerShops() {
+  const game = useStore((s) => s.game)!;
+
         const shops = ["b0", "b1", "b2"].map((id, i) => {
           const rel = game.brokerRel?.[id];
           const score = brokerScore(game, id);
@@ -931,7 +932,26 @@ export function MarketPage() {
             </div>
           </div>
         );
-      })()}
+      }
+
+/**
+ * LAND (owner, Nov 2026: land "its own tab"). The site finder — vacant lots on
+ * the tape and the off-market dirt that pencils — over the land index.
+ */
+export function LandPage() {
+  return <div><SiteFinder /><div style={{ marginTop: 14 }}><LandValueChart /></div></div>;
+}
+
+/**
+ * BROKERS (owner, Nov 2026: brokers "its own tab"). The off-market calls that
+ * lapse, the buy box that steers them, and each brokerage's ledger on you.
+ */
+export function BrokersPage() {
+  return (
+    <div>
+      <BrokerCalls />
+      <BuyBoxEditor />
+      <BrokerShops />
     </div>
   );
 }

@@ -71,7 +71,7 @@ export interface DesignPreview {
 /** The desks on a property's full page. Mirrors ui/panels/shared PropTab. */
 export type PropertyTab = "summary" | "leasing" | "money" | "ops" | "deal" | "build" | "history";
 
-export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "investors" | "property" | "saves" | "notes" | "settings" | "primer" | "firm" | "rankings" | "banks";
+export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "investors" | "property" | "saves" | "notes" | "settings" | "primer" | "firm" | "rankings" | "banks" | "industries" | "land" | "brokers";
 
 /**
  * WHERE THE APP IS, and the reason this type exists at all.
@@ -1465,7 +1465,7 @@ export const useStore = create<AppState>(holdWhileTicking((set, get) => ({
   industryFocus: null,
   openIndustry: (id) => {
     set({ industryFocus: id, bizFocus: null });
-    if (id) { openViewOn("economy", "industries"); get().setPage("economy"); }
+    if (id) get().setPage("industries");
   },
 
   firmFocus: null,

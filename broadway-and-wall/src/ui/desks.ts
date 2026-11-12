@@ -84,6 +84,7 @@ export const DESKS: readonly Desk[] = [
     note: "The markets, the tape, the players and your record",
     tabs: [
       { page: "economy", label: "Markets", note: "Each space market, rates, the city's economy and its budget" },
+      { page: "industries", label: "Industries", note: "Every trade in town: jobs, sales, margins, its firms, your tenants and its supply chain" },
       { page: "news", label: "Tape", note: "Headlines and closed sales" },
       { page: "players", label: "Players", note: "Competitors and every owner in town" },
       { page: "rankings", label: "Rankings", note: "How this town ranks against real US cities" },

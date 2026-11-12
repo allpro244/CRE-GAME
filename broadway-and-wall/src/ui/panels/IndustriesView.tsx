@@ -55,13 +55,26 @@ export function Industries() {
             const tOut = mine.reduce((a, r) => a + r.output, 0), tEx = mine.reduce((a, r) => a + r.exports, 0);
             const tYours = mine.reduce((a, r) => { const y = yours.get(r.id); return y ? { firms: a.firms + y.firms, sf: a.sf + y.sf } : a; }, { firms: 0, sf: 0 });
             const isOpen = !!shown[g] || mine.some((r) => r.id === focus);
+            // the type's own margin (sales-weighted) and its sales over the year: every row reads in full
+            const okM = mine.filter((r) => Number.isFinite(r.margin));
+            const tOutM = okM.reduce((a, r) => a + r.output, 0);
+            const tMargin = tOutM > 0 ? okM.reduce((a, r) => a + r.margin * r.output, 0) / tOutM : NaN;
+            const trs = mine.map((r) => industryTrend(game, INDUSTRY_INDEX[r.id]).x);
+            const tX = (trs[0] ?? []).map((_, m) => trs.reduce((a, x) => a + (x[m] ?? 0), 0));
+            const tChg = tX.length >= 2 && tX[0] > 0 ? tX[tX.length - 1] / tX[0] - 1 : null;
             return [
             <tr key={`g-${g}`} className="ind-row" onClick={() => setShown({ ...shown, [g]: !isOpen })}>
               <td>{isOpen ? "▾" : "▸"} {g}{mine.length > 1 ? ` (${mine.length})` : ""}</td>
               <td className="num">{k(mine.reduce((a, r) => a + r.heads, 0))}</td>
               <td className="num">{usd(tOut * 12)}</td>
               <td className="num">{(tEx / (tOut || 1) * 100).toFixed(0)}%</td>
-              <td></td><td></td>
+              <td className={"num" + (tMargin < 0 ? " neg" : "")}>{Number.isFinite(tMargin) ? (tMargin * 100).toFixed(1) + "%" : "—"}</td>
+              <td>
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <Spark pts={tX} w={64} h={16} />
+                  <span className={"mono" + (tChg !== null && tChg < 0 ? " neg" : "")} style={{ fontSize: 11 }}>{tChg === null ? "" : pctSigned(tChg)}</span>
+                </span>
+              </td>
               <td className="num">{mine.reduce((a, r) => a + r.firms, 0)}</td>
               <td className="num">{tYours.firms ? <span className="ind-yours">{tYours.firms} · {k(tYours.sf)} sf</span> : "—"}</td>
             </tr>,

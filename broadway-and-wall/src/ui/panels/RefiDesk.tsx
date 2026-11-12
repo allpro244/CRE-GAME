@@ -323,8 +323,8 @@ export function RefiSection({ bbl }: { bbl: string }) {
           k="Structure"
           v={`${q.ioM ? `${Math.round(q.ioM / 12)}-yr IO, ` : ""}${q.amortYears}-yr amort, ${q.termM / 12}-yr term, `
             + (q.maxProceeds > 0 && Math.abs(q.advanceToday - q.advanceLtv) > 0.02
-              ? `sized at ${(q.advanceToday * 100).toFixed(0)}% (sheet ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}%${q.sheetWhy ? `: ${q.sheetWhy}` : ""})`
-              : `${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance${q.sheetWhy ? ` (${q.sheetWhy})` : ""}`)
+              ? `sized at ${(q.advanceToday * 100).toFixed(0)}% LTV (their max LTV today ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}%${q.sheetWhy ? `: ${q.sheetWhy}` : ""})`
+              : `${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% max LTV today${q.sheetWhy ? ` (${q.sheetWhy})` : ""}`)
             + ` / ${(q.maxLTV * 100).toFixed(0)}% covenant, ${q.floating ? "floating" : "fixed"}`}
         />
         <Row k="Origination" v={`${(q.points * 100).toFixed(1)} pts · ${usd(Math.round(proceeds * q.points))}`} />

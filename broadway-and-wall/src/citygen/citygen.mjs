@@ -4532,7 +4532,7 @@ export function generateCity(cfg) {
   // A surveyed plat keeps the uses its cadastre records.
   const __t0 = performance.now();
   const demandMix = PLAN_V >= 18 && !cfg.plat
-    ? balanceUses(builtLots, { seed: cfg.seed, density: cfg.density, districts: cfg.districts }) : null;
+    ? balanceUses(builtLots, { seed: cfg.seed, density: cfg.density, districts: cfg.districts, planV: PLAN_V }) : null;
 
   const jobsByBlock = new Map();
   for (const f of parcels.features) {

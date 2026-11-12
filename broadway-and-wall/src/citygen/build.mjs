@@ -562,6 +562,7 @@ export function buildCityData(src) {
       lotArea, bldgArea, floors, yearBuilt,
       unitsRes: num(p.unitsres) ?? 0,
       ...(manifest?.region ? { regionShare: manifest.region.regionShare } : {}),
+      ...(manifest?.region?.specSd ? { specSeed: manifest.region.specSeed, specSd: manifest.region.specSd } : {}),
       assessedLand: assessLand,
       assessedTotal: assessTot,
       demandScore,

@@ -2,6 +2,7 @@
 // counters, TI/LC signing costs, renewals where the incumbent weighs the
 // market against moving costs, and rollover risk that clusters.
 // Multifamily skips all of this and runs aggregate occupancy.
+import { TRADE_TO_INDUSTRY, INDUSTRY_INDEX, type Floor } from "./industries";
 import { flatRollStep } from "./citygov";
 import { why, whyTenantBooks } from "./why";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
@@ -191,7 +192,18 @@ function namesInUse(s: GameState): Set<string> {
 export function pickSector(s: GameState, cls: string): Sector {
   // One partition, shared with the swan side — see SECTOR_CLASSES in types.ts.
   const arr = SECTOR_CLASSES[cls as BuiltClass] ?? SECTOR_CLASSES.office!;
-  const w = arr.map((k) => industryPull(s.econ, k));
+  // ...and by the town's own mix of traded industries (city plan 19): a trade's
+  // pull times its industries' location quotients, at their US weights
+  const lq = s.econ.townLQ;
+  const lqOf = (k: Sector) => {
+    if (!lq) return 1;
+    const rows = TRADE_TO_INDUSTRY[cls as Floor]?.[k];
+    if (!rows?.length) return 1;
+    let w = 0, x = 0;
+    for (const [id, wt] of rows) { w += wt; x += wt * (lq[INDUSTRY_INDEX[id]] ?? 1); }
+    return w > 0 ? x / w : 1;
+  };
+  const w = arr.map((k) => industryPull(s.econ, k) * lqOf(k));
   let roll = rng(s, "leasing") * w.reduce((a, b) => a + b, 0);
   for (let i = 0; i < arr.length; i++) { roll -= w[i]; if (roll <= 0) return arr[i]; }
   return arr[arr.length - 1];

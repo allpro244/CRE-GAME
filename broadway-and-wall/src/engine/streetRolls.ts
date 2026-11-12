@@ -231,9 +231,12 @@ function indOfTrade(s: GameState, t: Tenant): number {
   const k = useOf(t);
   const opts = TRADE_TO_INDUSTRY[k]?.[t.sector];
   if (!opts || !opts.length) return INDUSTRY_INDEX[FLOOR_DEFAULT[k]];
-  const tot = opts.reduce((a, o) => a + o[1], 0);
+  // ...weighted by the town's own mix of traded industries (city plan 19, `econ.townLQ`)
+  const lq = s.econ.townLQ;
+  const wOf = (id: string, w: number) => w * (lq?.[INDUSTRY_INDEX[id as keyof typeof INDUSTRY_INDEX]] ?? 1);
+  const tot = opts.reduce((a, o) => a + wOf(o[0], o[1]), 0);
   let x = hashU(s.seed, `ind|${t.fid}`) * tot;
-  for (const [id, w] of opts) { x -= w; if (x < 0) return INDUSTRY_INDEX[id as keyof typeof INDUSTRY_INDEX]; }
+  for (const [id, w] of opts) { x -= wOf(id, w); if (x < 0) return INDUSTRY_INDEX[id as keyof typeof INDUSTRY_INDEX]; }
   return INDUSTRY_INDEX[opts[opts.length - 1][0] as keyof typeof INDUSTRY_INDEX];
 }
 

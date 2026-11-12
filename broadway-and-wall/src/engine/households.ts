@@ -915,6 +915,8 @@ export interface HouseholdRegister {
   shelterIdx?: number[]; mfRef?: number; mainRefS?: number;
   /** Movers from elsewhere this month still to place, short of a whole household of the region's weight (`matchJobs` step 4). */
   arriveAcc?: number;
+  /** The would-be buyers' share of movers turned away for want of a rental, carried (matchJobs). */
+  ownArr?: number;
   /** This month's move-outs from the player's blocks: the cause-ledger event per block (bbl -> why id). */
   flatWhy?: Record<string, number>;
   /** THE HOUSEHOLDS' YEAR (stage 5), rolled for the cause ledger: spending by category, net income, layoffs, the jobless rate and the wage index; the month each category's fall was last written. */
@@ -2727,8 +2729,9 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // the firms bid pay up for it, and a town that pays more than its prices
   // draws more (`draw`, the job seekers, below). Movers this month who find
   // no opening go elsewhere (the carry is under one household).
-  let hhW = 0;
-  for (let i = 0; i < r.n; i++) hhW += r.a!.wt[i];
+  let hhW = 0, ownW = 0;
+  for (let i = 0; i < r.n; i++) { hhW += r.a!.wt[i]; if (r.a!.ten[i] === TEN_OWN) ownW += r.a!.wt[i]; }
+  const ownShare = hhW > 0 ? ownW / hhW : 0;
   r.arriveAcc = (r.arriveAcc ?? 0) + MOVE_M * Math.min(1, pull) * hhW;
   const slots: number[] = [];
   for (let ind = 0; ind < N_IND; ind++) for (let v = open[ind]; v >= wR / 2; v -= wR) slots.push(ind);
@@ -2753,7 +2756,14 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       // limits a metro's in-migration (Glaeser & Gyourko 2005, J. Pol. Econ.
       // 113; Saiz 2010) [S~]. The opening stays open, the firms bid pay up for
       // it, and the rents a full region charges are what builders build on.
-      if (!mainRoomFor(r, wR)) break;
+      // A mover who will buy needs no rental: the region's owners' share of the
+      // movers it turns away still come (a running tally, not a draw), and
+      // decide to buy or rent as any arrival does below.
+      if (!mainRoomFor(r, wR)) {
+        r.ownArr = (r.ownArr ?? 0) + ownShare;
+        if (r.ownArr < 1) continue;
+        r.ownArr -= 1;
+      }
       r.arriveAcc -= wR;
       const i = addAgent(r), b = r.a!;
       b.wt[i] = wR;

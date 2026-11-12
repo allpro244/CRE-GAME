@@ -1287,15 +1287,6 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   if (preReserve > 0 && exitYieldPct > 0) {
     const ltvCap = 0.75 * (loanNoi / (exitYieldPct / 100)) / preReserve;
     ltcMax = Math.max(0, Math.min(ltcMax, ltvCap));
-    // ...AND THE TAKEOUT MUST CLEAR (2026-11-12). A construction loan is
-    // repaid by a permanent loan, so the desk sizes it no larger than the
-    // permanent market would refinance on the stabilised income: the
-    // loosest general permanent desk's debt-yield floor (the conduit's 8%,
-    // debt.ts PRODUCTS; flats 15% under it, as sizeRest). A scheme whose
-    // income will not carry its own construction loan — the owner's "projected
-    // to lose a lot and still 70% LTC" — borrows only what that income carries.
-    const dyTakeout = 0.08 * (mix.multifamily && mix.multifamily >= 0.5 ? 0.85 : 1);
-    ltcMax = Math.max(0, Math.min(ltcMax, (loanNoi / dyTakeout) / preReserve));
   }
   // A bankable lease turns speculative construction into contracted credit.
   // The boost is bounded by anchor share and covenant; it cannot exceed an

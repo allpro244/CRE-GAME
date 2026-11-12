@@ -1545,13 +1545,19 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   {
     const h12 = e.history?.length >= 12 ? e.history[e.history.length - 12] : undefined;
     const infl12 = h12?.cpiXS ? (e.cpiXS ?? 1) / h12.cpiXS - 1 : h12?.cpi ? (e.cpi ?? 1) / h12.cpi - 1 : (e.inflExp ?? 0.02);
+    // THE PACKAGES ON OFFER, over every landlord with space to let, by its
+    // available feet (market.ts reads the effective rent through it).
+    const pkgW: Record<Comm, number> = { office: 0, retail: 0, industrial: 0 }, pkgX: Record<Comm, number> = { office: 0, retail: 0, industrial: 0 };
     for (const [bbl, roll] of Object.entries(R)) {
       const b = blds.get(bbl);
       if (!b) continue;
       for (const k of COMM) {
         if (!b.cap[k] || !(b.mkt[k]! > 0)) continue;
         const since = roll.vac?.[k];
-        reviewAsk(bookOf(b, roll, k), e, k, b.mkt[k]!, { m, monthsToLet: V.monthsToLet(k), darkM: since === undefined ? undefined : m - since, stressed: b.stressed, infl12, holdFace: opening, going: V.going(k) });
+        const L = bookOf(b, roll, k);
+        reviewAsk(L, e, k, b.mkt[k]!, { m, monthsToLet: V.monthsToLet(k), darkM: since === undefined ? undefined : m - since, stressed: b.stressed, infl12, holdFace: opening, going: V.going(k) });
+        const av = availOf(b, roll, k);
+        if (av > 0 && Number.isFinite(L.c)) { pkgW[k] += av; pkgX[k] += av * L.c; }
       }
     }
     // THE PLAYER IS A LANDLORD ON THE SAME BOOK (PARITY_PLAN.md). Its asking
@@ -1583,8 +1589,12 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
         // under pressure: the firm is out of cash, or this building's loan is behind
         const stressed = s.cash < 0 || (h.loan?.arrearsMs ?? 0) > 0;
         reviewAsk(L, e, k, mkt, { m, monthsToLet: V.monthsToLet(k), darkM: since === undefined ? undefined : m - since, stressed, infl12, holdFace: opening, going: V.going(k) });
+        if (vacNow && Number.isFinite(L.c)) { pkgW[k] += a; pkgX[k] += a * L.c; }
       }
     }
+    const posted: Partial<Record<Comm, number>> = {};
+    for (const k of COMM) if (pkgW[k] > 0) posted[k] = +(pkgX[k] / pkgW[k]).toFixed(4);
+    e.postedPkg = posted;
   }
   // The month's totals, after the signings.
   for (const k of COMM) {
@@ -2212,8 +2222,14 @@ function growOpeningStreet(s: GameState, parcels: ParcelTable) {
       const ro = readOut(e, k, m0 - 1);
       if (!ro || !e.effRentIdx || !e.concIdx) continue;
       e.rentIdx[k] = +ro.face.toFixed(4);
-      e.effRentIdx[k] = +ro.eff.toFixed(4);
-      e.concIdx[k] = +ro.conc.toFixed(4);
+      // ...the effective rent the way every month after reads it: the asking
+      // rent less the packages on offer (tenantMarket.ts filteredReadOut), so
+      // the first month does not restate it (seed 11 office opened at half
+      // its asking rent off the opening's comps, and jumped in month one).
+      const pk = e.postedPkg?.[k];
+      const eff = pk !== undefined && Number.isFinite(pk) ? ro.face * (1 - Math.max(0, Math.min(0.35, pk))) : ro.eff;
+      e.effRentIdx[k] = +eff.toFixed(4);
+      e.concIdx[k] = +Math.max(0, Math.min(1, (1 - eff / Math.max(1e-9, ro.face)) / CONC_DEPTH)).toFixed(4);
     }
     // ...and the market opens on what the firms hold, so its first month
     // does not restate the city's occupancy in one step.

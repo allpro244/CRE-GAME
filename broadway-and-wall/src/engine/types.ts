@@ -2433,6 +2433,8 @@ export interface Econ {
   comps?: Partial<Record<BuiltClass, import("./tenantMarket").Comp[]>>;
   /** The rent read's uncertainty (log variance) by class — tenantMarket.ts filteredReadOut. */
   rentFilt?: Partial<Record<BuiltClass, { P: number }>>;
+  /** The concession package on offer, by class: every landlord's book (street and player) weighted by its feet to let (streetRolls.ts). */
+  postedPkg?: Partial<Record<BuiltClass, number>>;
   /**
    * THE CAP-RATE READ-OUT (propmarket.ts tickCapRead) — what each class's
    * closed deals say, and how much evidence there is behind it.

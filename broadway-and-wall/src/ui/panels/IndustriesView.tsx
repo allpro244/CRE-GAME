@@ -13,7 +13,7 @@ import { whyLatest } from "@/engine/why";
 import { useState } from "react";
 import { useStore } from "@/state/store";
 import { economyByIndustry } from "@/engine/economy";
-import { INDUSTRIES, INDUSTRY_IDS, INDUSTRY_INDEX, TENANT_TYPES, type IndustryId } from "@/engine/industries";
+import { INDUSTRIES, INDUSTRY_IDS, INDUSTRY_INDEX, TENANT_TYPES, NAT_TREND, type IndustryId } from "@/engine/industries";
 import type { Holding } from "@/engine/types";
 import { usd, sf, pctSigned } from "@/ui/format";
 import { BizLink, Spark, goIndustry } from "@/ui/BizSheet";
@@ -40,6 +40,7 @@ export function Industries() {
   const firms = rows.reduce((a, r) => a + r.firms, 0);
   return (
     <div>
+      <TownTrades rows={rows} />
       <div className="page-section" title="Click a type to see its industries, and an industry to see who it buys from and sells to. Sales are last month's at a yearly rate; margin is before interest.">Industries · {k(jobs)} jobs · {usd(out * 12)} sales a year · {(ex / (out || 1) * 100).toFixed(0)}% sold out of town · {firms.toLocaleString()} firms</div>
       <table className="tbl">
         <thead>
@@ -219,6 +220,60 @@ export function RentExposure({ holding }: { holding: Holding }) {
         ))}
         {ex.covered < ex.rentYr * 0.995 && <span className="dim"> · of the {((ex.covered / (ex.rentYr || 1)) * 100).toFixed(0)}% of rent with books</span>}
       </div>
+    </div>
+  );
+}
+
+/** Which buildings an industry's people work in. */
+const FILLS: Record<string, string> = {
+  office: "Offices", retail: "Shops", "industrial-mfg": "Factories", "industrial-warehouse": "Warehouses", special: "Its own sites",
+};
+
+/**
+ * WHAT THIS TOWN DOES (owner, 2026-11-12: "a page that explains the town's
+ * trades and industries"). The industries the town is known for — its share of
+ * each against the nation's (econ.townLQ, the location quotient the city was
+ * founded with) — what each employs here, the national trend it rides, and the
+ * buildings its people fill. That last column is the link to the rents: a town
+ * long on a shrinking industry is a town whose factories, offices or shops
+ * that industry fills will empty with it.
+ */
+function TownTrades({ rows }: { rows: NonNullable<ReturnType<typeof economyByIndustry>> }) {
+  const game = useStore((s) => s.game)!;
+  const lq = game.econ.townLQ;
+  if (!lq) return null;
+  const heads = new Map(rows.map((r) => [r.id, r.heads]));
+  const top = INDUSTRY_IDS.map((id, i) => ({ id, lq: lq[i] ?? 1, jobs: heads.get(id) ?? 0 }))
+    .filter((r) => r.lq >= 1.5 && r.jobs > 0)
+    .sort((a, b) => b.lq - a.lq)
+    .slice(0, 8);
+  if (!top.length) return null;
+  return (
+    <div className="page-section" style={{ marginBottom: 12 }}>
+      <div className="page-section-head">What this town does</div>
+      <div className="hint" style={{ marginBottom: 6 }}>
+        The industries this town holds more of than the nation does, and the buildings their people fill. A town long on a growing
+        industry fills its space; one long on a shrinking industry empties it.
+      </div>
+      <table className="tbl">
+        <thead>
+          <tr><th>Industry</th><th className="num">vs. nation</th><th className="num">Jobs here</th><th className="num">US jobs trend</th><th>Fills</th></tr>
+        </thead>
+        <tbody>
+          {top.map((r) => {
+            const tr = NAT_TREND[r.id] ?? 0;
+            return (
+              <tr key={r.id}>
+                <td>{INDUSTRIES[r.id].label}</td>
+                <td className="num mono">{r.lq.toFixed(1)}×</td>
+                <td className="num mono">{k(r.jobs)}</td>
+                <td className={"num mono" + (tr < 0 ? " neg" : "")} title="Its long-run national employment trend, 1990-2019; it fades toward the economy's average over the years">{pctSigned(tr, 1)}/yr</td>
+                <td>{FILLS[INDUSTRIES[r.id].space] ?? INDUSTRIES[r.id].space}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
     </div>
   );
 }

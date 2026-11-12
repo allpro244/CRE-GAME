@@ -196,11 +196,21 @@ export function pickSector(s: GameState, cls: string): Sector {
   // pull times its industries' location quotients, at their US weights
   const lq = s.econ.townLQ;
   const lqOf = (k: Sector) => {
-    if (!lq) return 1;
     const rows = TRADE_TO_INDUSTRY[cls as Floor]?.[k];
     if (!rows?.length) return 1;
+    if (!lq) return cls === "industrial" ? rows.reduce((a, r) => a + r[1], 0) : 1;
     let w = 0, x = 0;
     for (const [id, wt] of rows) { w += wt; x += wt * (lq[INDUSTRY_INDEX[id]] ?? 1); }
+    // ON INDUSTRIAL FLOORS, AT THE US WEIGHTS THEMSELVES (2026-11-12): the
+    // rows there are all US on-floor employment, so a trade weighs its
+    // industries' jobs times their location quotients — logistics' 11.4M
+    // against apparel's 0.47M. The average quotient alone gave the three
+    // trades near-equal shares whatever their size, and a town with textiles
+    // at 3.5x filled 80% of its industrial floors with mills (seed 11: 7,733
+    // of ~9,700 heads) whose national jobs fall 3.7% a year — industrial lost
+    // a fifth of its occupancy in three years on every seed. (Office and
+    // retail rows mix employment with unit weights, so they keep the average.)
+    if (cls === "industrial") return x;
     return w > 0 ? x / w : 1;
   };
   const w = arr.map((k) => industryPull(s.econ, k) * lqOf(k));

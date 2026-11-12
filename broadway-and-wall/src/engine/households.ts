@@ -3291,7 +3291,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   // it has stood empty, its owner's care: streetRolls) — and takes the first
   // it would pay for, up to each block's letting pace. A flat nobody chooses
   // stands empty, and its rent answers.
-  const rooms: { b: Block; room: number; free: number }[] = [];
+  const rooms: { b: Block; room: number; free: number; empty: number }[] = [];
   // the share of tenants at a lease end who leave: the notices a landlord expects (the street's own record)
   const leaving = Math.max(0, Math.min(1, r.leaseMoveRate ?? 0.5));
   for (const b of B.list) {
@@ -3319,7 +3319,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     let soon = 0;
     for (const i of l) if (a.leaseEnd[i] > m && a.leaseEnd[i] <= m + NOTICE_M) soon++;
     const free = Math.max(room, cap - l.length) + leaving * soon;
-    if (room > 0 || free > 0) rooms.push({ b, room, free });
+    if (room > 0 || free > 0) rooms.push({ b, room, free, empty: cap - l.length });
   }
   // WHO IS LOOKING THIS MONTH, AND WHAT EACH LANDLORD SEES AT ITS DOOR
   // (2026-10-30). This was every household across the water that wanted an
@@ -3385,7 +3385,20 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
         // each door's card: the most it would pay HERE, having seen the rest —
         // its budget, or this flat at the value of the best other flat on its
         // list it could have taken, whichever is less ("where else are you looking?")
+        // A CARD IS A LEAD THE LANDLORD COULD HAVE SIGNED (2026-11-12). A block
+        // with flats empty but none ready to show this month (a flat freed is
+        // made ready first: `room` 0) took the cards of households that could
+        // not sign there and signed elsewhere or went home — and priced its
+        // next month on them as if they had been its signers. Measured, seed
+        // 7919 years 1-6: 163-386 cards a month at or over the ask at such
+        // doors against 85-146 at doors with a flat to let (every one of which
+        // signed), so the landlords most likely to be empty read two to three
+        // times the demand they had and held asks at 1.2-1.7x the market while
+        // 85-90% of the households touring found nothing they could pay. A
+        // full block (no flat empty) still keeps its door: there the cards are
+        // the shortage it prices.
         if (budget !== undefined && budget > 0) for (const x of seen) {
+          if (x.room === 0 && x.empty > 0) continue;
           const mktUnit = x.b.let / (x.b.rel ?? 1);
           if (!(mktUnit > 0)) continue;
           let alt = budget;

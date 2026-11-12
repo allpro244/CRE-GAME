@@ -3912,7 +3912,7 @@ export function mainlandStats(s: GameState) {
   let islandR = 0, mainR = 0, own = 0, dbl = 0, ready = 0;
   // rent over the year's income (wages, pensions, unemployment insurance), island and mainland renters
   const burden: number[] = [], bw: number[] = [], bI: number[] = [], wI: number[] = [];
-  let over = 0, overI = 0;
+  let over = 0, overI = 0, rentM = 0, incM = 0, rentI = 0, incI = 0;
   for (let i = 0; i < r.n; i++) {
     const w = a.wt[i], t = a.ten[i];
     if (t === TEN_OWN) own += w;
@@ -3920,8 +3920,8 @@ export function mainlandStats(s: GameState) {
     else if (t === TEN_MAINLAND || t === TEN_RENT) {
       const inc = incomeYear(a.emp1[i], a.wage1[i], a.un1[i]) + incomeYear(a.emp2[i], a.wage2[i], a.un2[i]) + incomeYear(a.emp3[i], a.wage3[i], a.un3[i]);
       const b = inc > 0 ? 12 * a.rent[i] / inc : 9.99;
-      if (t === TEN_MAINLAND) { mainR += w; burden.push(b); bw.push(w); if (b > 0.3) over += w; }
-      else { islandR += w; bI.push(b); wI.push(w); if (b > 0.3) overI += w; }
+      if (t === TEN_MAINLAND) { mainR += w; burden.push(b); bw.push(w); if (b > 0.3) over += w; rentM += w * 12 * a.rent[i]; incM += w * inc; }
+      else { islandR += w; bI.push(b); wI.push(w); if (b > 0.3) overI += w; rentI += w * 12 * a.rent[i]; incI += w * inc; }
     }
   }
   const homes = mk.homes + (mk.homesB ?? 0);
@@ -3942,6 +3942,9 @@ export function mainlandStats(s: GameState) {
     overBurden: mainR > 0 ? over / mainR : NaN,
     islandBurden: bI.length ? wq(bI, wI, 0.5) : NaN,
     islandOverBurden: islandR > 0 ? overI / islandR : NaN,
+    /** the average share: all renters' rent over all their income (the aggregate ratio, which a household with no income cannot run to infinity) */
+    avgBurden: incM > 0 ? rentM / incM : NaN,
+    islandAvgBurden: incI > 0 ? rentI / incI : NaN,
     flow: { arrived: r.flow.arrived ?? 0, left: r.flow.left ?? 0, formed: r.flow.formed ?? 0, bought: r.flow.bought ?? 0, evictions: r.flow.evictions ?? 0, foreclosures: r.flow.foreclosures ?? 0 },
   };
 }

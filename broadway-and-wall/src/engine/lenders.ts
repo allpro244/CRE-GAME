@@ -206,6 +206,15 @@ export interface Lender {
  * it at three to five times capital. A typical bank carried 5-10% of its
  * book there; the 2008-10 failures carried 30-50%.
  */
+// LIFE AND AGENCY CAPITAL IS WHAT THEIR REGULATORS CHARGE A MORTGAGE
+// (2026-11-12). They carried 17-20% of the mortgage book (unsourced), so the
+// equity charge in their break-even margin was ~1.9 points against a normal
+// 1.7-point margin and they rationed in every month of every run (appetite
+// 0.08-0.28 measured). [S: NAIC life RBC charges commercial mortgages 0.90%
+// (CM1) to 1.75% (CM2) pre-tax; the industry holds ~400% of that (ACLI), so
+// ~4-7% of the loan — 0.07, the conservative end. The agency desk: FHFA's
+// Enterprise Regulatory Capital Framework (2020) risk-weights performing
+// multifamily near 4-6% of exposure — 0.05.]
 const KIND: Record<string, { kind: LenderKind; capitalRatio: number; brittle: number; wholesale: number; adc: number; uninsured?: number; blurb: string }> = {
   "First Harbor Bank": {
     kind: "bank", capitalRatio: 0.11, brittle: 0.5, wholesale: 0.2, adc: 0.08, uninsured: 0.30,
@@ -216,7 +225,7 @@ const KIND: Record<string, { kind: LenderKind; capitalRatio: number; brittle: nu
     blurb: "A regional with a regional's problem: big enough to have made every mistake in the cycle, small enough that three of them matter.",
   },
   "Pelican Life Insurance": {
-    kind: "life", capitalRatio: 0.18, brittle: 0.25, wholesale: 0.1, adc: 0,
+    kind: "life", capitalRatio: 0.07, brittle: 0.25, wholesale: 0.1, adc: 0,
     blurb: "Insurance float against long paper. The most patient money in the city and the most conservative — they are never the reason a crunch happens and never the ones who end it.",
   },
   "Meridian Street Capital": {
@@ -249,7 +258,7 @@ const KIND: Record<string, { kind: LenderKind; capitalRatio: number; brittle: nu
   },
   //   a second life company, so the insurers are a market and not a mood;
   "Ashford Life & Annuity": {
-    kind: "life", capitalRatio: 0.17, brittle: 0.3, wholesale: 0.1, adc: 0,
+    kind: "life", capitalRatio: 0.07, brittle: 0.3, wholesale: 0.1, adc: 0,
     blurb: "A second insurer's general account: long fixed money for well-kept buildings, a little more leverage than Pelican and a little less patience.",
   },
   //   and the agency desk — the government-sponsored apartment lender, which
@@ -257,7 +266,7 @@ const KIND: Record<string, { kind: LenderKind; capitalRatio: number; brittle: nu
   //   paper in 2009-10). It cannot fail in this game for the reason it did
   //   not in that one: the guarantee behind its bonds is the Treasury's.
   "Keystone Agency Finance": {
-    kind: "life", capitalRatio: 0.20, brittle: 0.05, wholesale: 0, adc: 0,
+    kind: "life", capitalRatio: 0.05, brittle: 0.05, wholesale: 0, adc: 0,
     blurb: "The agency apartment desk: fixed and floating money for flats only, non-recourse, and still writing in a crisis — that is what it is for.",
   },
   "Cordage Debt Partners": {

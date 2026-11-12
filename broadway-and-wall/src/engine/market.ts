@@ -5339,6 +5339,13 @@ export function measurePropertyVol(e: Econ, mean = false): Record<BuiltClass, nu
     const v = (p: EconHistoryPoint): number => {
       const rent = p.effRent?.[c] ?? p.rent?.[c];
       const cap = p.cap?.[c];
+      // THE DRIFT A LENDER EXTRAPOLATES IS THE INCOME'S (2026-11-12). The
+      // loan is struck at today's cap rate, and cap rates revert over a cycle
+      // rather than trend, so carrying a cap-rate re-pricing forward as a
+      // value drift counts it twice — the town's opening re-pricing read as
+      // values falling 30-43% a year and put every desk on its floor. The
+      // volatility keeps the cap rate: that swing is the risk.
+      if (mean) return rent && rent > 0 ? rent : NaN;
       return rent && cap && rent > 0 && cap > 0 ? rent / cap : NaN;
     };
     const xs: number[] = [];

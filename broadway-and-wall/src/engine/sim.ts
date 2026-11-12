@@ -42,7 +42,7 @@ import { tickDemand, isCivicLand } from "./demand";
 import { tickBeliefs } from "./beliefs";
 import { tickCorporate } from "./corporate";
 import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose, landFundBid, streetSaleCost } from "./rivals";
-import { openingCapSurvey, tickBrokerSurvey, tickLandSurvey, anchoredAsk, forcedSalePrice, foreclosureSale, BUY_CLOSING, bidRound, valueTo } from "./propmarket";
+import { openingCapSurvey, tickBrokerSurvey, tickLandSurvey, anchoredAsk, forcedSaleAsk, foreclosureSale, BUY_CLOSING, bidRound, valueTo } from "./propmarket";
 import { initLenders, publishOpeningPrices, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { tickStreetLoans, retireFoldedLoans } from "./streetLoans";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
@@ -321,7 +321,7 @@ function listHolderExit(s: GameState, parcels: ParcelTable) {
     // today); any other holder asks its anchor (propmarket.ts). The old bands'
     // draws are kept so the stream does not re-roll. FORMULA_LEDGER #23.
     void (distress ? rrange(s, 0.78, 0.93) : rrange(s, 0.96, 1.08));
-    const heard = distress ? forcedSalePrice(s, parcels, rec, bbl, value) : 0;
+    const heard = distress ? forcedSaleAsk(s, parcels, rec, bbl, value) : 0;
     const ask = Math.round((distress ? (heard > 0 ? heard : value) : anchoredAsk(s, rec, value)) / 1000) * 1000;
     // Only a holder whose register kind IS an estate may stamp reason:"estate".
     // Partnership/fund/developer exits used to wear that badge too —
@@ -478,9 +478,9 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
       reason = "receiver";
     } else {
       // AN OWNER WHO HAS RUN OUT OF ROAD prices to move: at what its broker
-      // hears the street would bid today (propmarket.ts forcedSalePrice), or
+      // hears the street values it at today (propmarket.ts forcedSaleAsk), or
       // the appraisal when nobody would.
-      const heard = forcedSalePrice(s, parcels, rec, bbl, value);
+      const heard = forcedSaleAsk(s, parcels, rec, bbl, value);
       ask = Math.round((heard > 0 ? heard : value) / 1000) * 1000;
     }
     const listing: Listing = {

@@ -460,6 +460,26 @@ export function forcedSalePrice(s: GameState, parcels: ParcelTable, rec: ParcelR
 }
 
 /**
+ * WHAT A DISTRESSED OWNER'S BROKER TELLS IT TO ASK: what the best buyer in the
+ * room thinks the building is worth (its `max`, shaded for the competition
+ * the way a sealed bid is), never above the mark. NOT what that buyer can
+ * pay today: a bid is the lesser of the two, and in a cash-poor street that
+ * made the ask what the richest firm had in the bank — three firms valuing a
+ * $3.4M block of flats at $2.6-3.6M bid $74K-194K, it listed at $194K, and the
+ * tape read caps of 100-1,000% (measured, seed 7919). Cash decides who can
+ * close (the listing still needs a bid at its reserve); it does not decide
+ * what the building is worth. Zero when nobody in town values it at all.
+ */
+export function forcedSaleAsk(s: GameState, parcels: ParcelTable, rec: ParcelRecord, bbl: string, mark: number): number {
+  if (!(mark > 0)) return 0;
+  if (rec.class === "land" || !(rec.bldgArea > 0)) return forcedSalePrice(s, parcels, rec, bbl, mark);
+  const round = bidRound(s, parcels, rec, { bbl, ask: mark, distress: true });
+  let best = 0;
+  for (const b of round.bids) best = Math.max(best, b.max * (1 - SHADE / Math.max(1, round.n)));
+  return Math.min(mark, best);
+}
+
+/**
  * A FORECLOSURE SALE: the receiver or the creditors put the deed to the room,
  * and it goes for the room's best bid (forcedSalePrice) — the named firms who
  * can close, against a seller who must sell today. This replaced a formula

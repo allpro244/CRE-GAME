@@ -52,7 +52,7 @@ import { productOf } from "./products";
 import { stabViewFor, streetRefiProceeds } from "./debt";
 import { TI_ASK, renewalRefreshShare } from "./leasing";
 import {
-  livingRivals, paramsOf, fitOf, ownerOf, firmOutlook, deployDiscountPp, contractedEquity, lineRoom,
+  livingRivals, paramsOf, fitOf, ownerOf, firmOutlook, deployDiscountPp, contractedEquity, lineRoom, dealCallable,
   minTicket, boughtLastYear, gainsTax, streetSaleCost, spreadAdj, firmMaxPrice, firmMargin, capForSpread, landBanker,
 } from "./rivals";
 import { dealsPerYear, misreadPp } from "./competitorTraits";
@@ -366,7 +366,8 @@ export function maxPrice(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<t
 export function affordable(s: GameState, r: Rival, v: DealView, b: Bidder): number {
   const reserve = Math.max(500_000 * dollarLevel(s.econ), Math.max(0, r.cash) * 0.05);
   const room = Math.max(0, lineRoom(s, r, r.aum ?? 0, r.markNoi ?? 0, r.markLand ?? 0));
-  const avail = r.cash - contractedEquity(s, r) + room - reserve;
+  // a fund in its investment period calls its commitments to close (rivals.ts dealCallable)
+  const avail = r.cash - contractedEquity(s, r) + dealCallable(s, r) + room - reserve;
   if (!(avail > 0)) return 0;
   const a = Math.min(v.debtA, b.ltvCap);
   const p1 = avail / Math.max(0.05, 1 + BUY_CLOSING - a);
@@ -1310,7 +1311,7 @@ export function packageBids(s: GameState, parcels: ParcelTable, bbls: string[], 
     const debt = bid * (debtShare / max);
     const reserve = Math.max(1_000_000 * dollarLevel(s.econ), Math.max(0, r.cash) * 0.05);
     const room = Math.max(0, lineRoom(s, r, r.aum ?? 0, r.markNoi ?? 0, r.markLand ?? 0));
-    if (bid * (1 + BUY_CLOSING) - debt > r.cash - contractedEquity(s, r) + room - reserve) continue;
+    if (bid * (1 + BUY_CLOSING) - debt > r.cash - contractedEquity(s, r) + dealCallable(s, r) + room - reserve) continue;
     out.push({ r, max, bid });
   }
   return out.sort((a, b) => b.bid - a.bid);

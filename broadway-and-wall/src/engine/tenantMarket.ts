@@ -858,6 +858,56 @@ export function readOut(e: Econ, k: Comm, m: number): { face: number; eff: numbe
 const MIN_NEW = 3;
 
 /**
+ * THE MONTH'S RENT, READ THE WAY AN APPRAISER READS A THIN MARKET (2026-11-12).
+ * `readOut` replaced the index with the six-month mean of the comps, each
+ * stated against the index the day it signed — so one window's error became
+ * the next window's yardstick and compounded like a random walk, and a market
+ * with few, large leases was the mean of a handful: office had 18 new leases
+ * in six months, the largest 23% of the feet and the top three 49%, their
+ * rents 28% apart, and its effective rent swung 19-25% a year over 50 years
+ * (retail, 57 leases, 3-6%). A filtered estimate instead (the cap read's own
+ * method, propmarket.ts capIndex): each month's signings move the index by
+ * how much evidence they are — the gain K = P / (P + R/n), with R the
+ * comps' own dispersion (measured, the window's log spread), n the month's
+ * leases, and P the index's uncertainty, which grows between deals by the
+ * rent's own month of variance. Few noisy deals move it a little; many
+ * consistent ones move it most of the way. Every lease counts once, as one
+ * deal. Returns null when nothing signed this month (the index stands).
+ */
+export function filteredReadOut(e: Econ, k: Comm, m: number): { face: number; eff: number; conc: number; sf: number; n: number } | null {
+  const list = e.comps?.[k];
+  const face0 = e.rentIdx?.[k] ?? 0, eff0 = e.effRentIdx?.[k] ?? 0;
+  if (!list || !(face0 > 0) || !(eff0 > 0)) return readOut(e, k, m);
+  while (list.length && list[0].m < m - COMP_WINDOW_M) list.shift();
+  const st = ((e.rentFilt ??= {})[k] ??= { P: RENT_Q });
+  st.P += RENT_Q;
+  let obs = list.filter((c) => c.m === m && !c.r);
+  if (!obs.length) obs = list.filter((c) => c.m === m);
+  if (!obs.length) return null;
+  // the comps' own dispersion, in logs, over the window
+  const ys = list.map((c) => Math.log(c.e));
+  const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+  const Rv = Math.max(1e-4, ys.reduce((a, b) => a + (b - my) * (b - my), 0) / Math.max(1, ys.length - 1));
+  const n = obs.length;
+  const yE = obs.reduce((a, c) => a + Math.log(c.e), 0) / n;
+  const yF = obs.reduce((a, c) => a + Math.log(c.f), 0) / n;
+  const K = st.P / (st.P + Rv / n);
+  st.P = (1 - K) * st.P;
+  const eff = Math.exp(Math.log(eff0) + K * (yE - Math.log(eff0)));
+  const face = Math.exp(Math.log(face0) + K * (yF - Math.log(face0)));
+  let sf = 0;
+  for (const c of list) sf += c.sf;
+  return { face, eff, conc: Math.max(0, Math.min(1, (1 - eff / Math.max(1e-9, face)) / CONC_DEPTH)), sf, n: list.length };
+}
+/**
+ * A month of the effective rent's own variance, in logs: annual effective-rent
+ * growth on US commercial space runs a standard deviation of ~6% a year
+ * [S~: CBRE / CoStar effective-rent series, 2000-2024; NCREIF NOI growth
+ * ~5-7%] — the prior on how far the market can move between deals.
+ */
+const RENT_Q = (0.06 * 0.06) / 12;
+
+/**
  * EACH QUALITY BAND'S RENT AGAINST THE CLASS, read off the same comps: a band
  * with deals reads what they signed at with the band's own swing taken back
  * out (`nb`), over the effective index. Bands without a deal in the window

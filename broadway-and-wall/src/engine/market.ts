@@ -17,7 +17,7 @@ import { whyVacancy, noteReads } from "./whyReads";
 import { whyTown } from "./economy";
 import { tickCapRead, tickLandRead } from "./propmarket";
 import { settleSupplyDeliveries, breakDueStarts } from "./supply";
-import { readOut } from "./tenantMarket";
+import { filteredReadOut } from "./tenantMarket";
 import { tickContractors } from "./contractors";
 import { openingLabour } from "./opening";
 
@@ -4863,7 +4863,7 @@ export function tickEcon(s: GameState) {
     if (k === "multifamily") continue;
     {
       const before = e.rentIdx[k];
-      const ro = readOut(e, k, s.month);
+      const ro = filteredReadOut(e, k, s.month);
       if (ro) {
         e.rentIdx[k] = +ro.face.toFixed(4);
         e.effRentIdx[k] = +ro.eff.toFixed(4);

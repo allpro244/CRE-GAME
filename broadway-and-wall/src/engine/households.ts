@@ -1789,7 +1789,7 @@ function letTo(R: Rand, r: HouseholdRegister, b: Block, e: Econ, m: number, want
   const w = r.wIsland, A = r.a!;
   for (let k = 0; k < 16 && want.length; k++) {
     const c = want[Math.floor(R.u() * want.length)];
-    if ((c < gone.length && gone[c]) || A.ten[c] !== TEN_MAINLAND || A.wt[c] < w) continue;
+    if ((c < gone.length && gone[c]) || !(A.ten[c] === TEN_MAINLAND || readyToRent(r, A, c)) || A.wt[c] < w) continue;
     if (!wantsIsland(r, A, c, e, b.let, -MOVE_LOG)) continue;
     const i = addAgent(r), a = r.a!;
     for (const f of FIELD_NAMES) (a[f] as Uint8Array)[i] = (a[f] as Uint8Array)[c];
@@ -1943,6 +1943,10 @@ function signMainland(r: HouseholdRegister, a: HouseholdArrays, i: number): numb
   return mainRentFor(r, a, i);
 }
 /** Is there a flat ready to let on the mainland? */
+/** A doubled-up household with work and a deposit (three months of the region's rent): ready for a place of its own. */
+function readyToRent(r: HouseholdRegister, a: HouseholdArrays, i: number): boolean {
+  return a.ten[i] === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) && a.sav[i] > 3 * r.mainRent;
+}
 function mainHasRoom(r: HouseholdRegister, a: HouseholdArrays, i: number): boolean {
   const mk = r.mk;
   return !mk || mk.occ + mk.signed + a.wt[i] <= mk.homes + (mk.homesB ?? 0) - (mk.idle ?? 0);
@@ -3084,7 +3088,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     } else if (ten === TEN_OWN && a.arrears[i] >= FORECLOSE_M && a.owed[i] >= FORECLOSE_OWED * Math.max(1, housing)) {
       r.flow.foreclosures += w;
       a.owed[i] = 0; a.arrears[i] = 0; a.ten[i] = TEN_DOUBLED; a.mort[i] = 0; a.mortPmt[i] = 0; a.hval[i] = 0;
-    } else if (ten === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) && a.sav[i] > 3 * r.mainRent) {
+    } else if (readyToRent(r, a, i)) {
       // a doubled-up household with work and a deposit takes its own flat
       // across the water — if one is free; if not it is still at the doors,
       // a guest card every month it looks (the demand a full market hides)
@@ -3331,8 +3335,17 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     const doors = (DOORS = new Map<number, { x: number[]; u: number }>());
     for (const x of rooms) doors.set(x.b.idx, { x: [], u: x.free });
     const seekers: { c: number; n: number }[] = [];
-    for (const c of pool) {
-      if (gone[c] || a.ten[c] !== TEN_MAINLAND) continue;
+    const ready: number[] = [];
+    for (let i = 0; i < r.n; i++) if (!(i < gone.length && gone[i]) && readyToRent(r, a, i)) ready.push(i);
+    for (const c of pool.concat(ready)) {
+      // A DOUBLED-UP HOUSEHOLD READY FOR ITS OWN PLACE LOOKS HERE TOO
+      // (2026-11-12): with work and a deposit it hunts the whole region, the
+      // island's flats as well as the mainland's (the exit at the year's end
+      // below). It could only take a mainland flat, and only when one was
+      // free: measured on seed 31337, doubled-up households rose 3,700 ->
+      // 9,500 over thirty years while the island's flats stood 10% empty,
+      // and no island landlord ever saw that demand at its door.
+      if (gone[c] || !(a.ten[c] === TEN_MAINLAND || readyToRent(r, a, c))) continue;
       const W = a.wt[c] / r.wIsland, ph = a.id[c] % 12;
       const n = Math.floor(((m + ph + 1) * W) / 12) - Math.floor(((m + ph) * W) / 12);
       if (n > 0) seekers.push({ c, n });

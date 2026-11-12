@@ -135,6 +135,12 @@ export interface FirmBook {
 }
 
 export interface Tenant {
+  /**
+   * Its taste for the suite it signed (a standard Gumbel draw, streetRolls.ts
+   * `value`), kept for the life of the match: what made it choose this
+   * suite over the others it was shown does not vanish at the renewal.
+   */
+  tasteU?: number;
   name: string;
   /**
    * THE FIRM BEHIND THE LEASE (streetRolls.ts). A firm keeps its id, name and
@@ -2387,7 +2393,7 @@ export interface Econ {
   /** Share of the street's let space whose tenants failed beyond the background this month, by class. */
   streetFailShare?: Record<string, number>;
   /** The street's recent move-outs, newest last, capped: tenants that went dark, and tenants that left at lease end. */
-  streetFailed?: { m: number; bbl: string; name: string; fid?: number; sf: number; use: BuiltClass; why?: "dark" | "left"; to?: string; credit?: Credit; /** its event in the cause ledger (why.ts) */ whyId?: number }[];
+  streetFailed?: { m: number; bbl: string; name: string; fid?: number; sf: number; use: BuiltClass; why?: "dark" | "left"; /** a shed tenant that relocated off the map into the region (streetRolls.ts) */ reloc?: boolean; to?: string; credit?: Credit; /** its event in the cause ledger (why.ts) */ whyId?: number }[];
   /** The player's rolls last month, so a building sold carries its tenants to the street. */
   heldTenants?: Record<string, Tenant[]>;
   /**
@@ -2398,6 +2404,8 @@ export interface Econ {
   seekers?: import("./streetRolls").Seeker[];
   /** Firms whose broker's best option this month is one of the player's buildings: the party the player's desk tours (streetRolls.ts shop → leasing.ts). */
   playerTours?: { fid: number; bbl: string; use: BuiltClass; want: number; m: number; done?: boolean }[];
+  /** The region's share of the relocating shed tenants, accrued: one leaves the map each time a whole one has built up (streetRolls.ts). */
+  shedOffAcc?: number;
   nextFid?: number;
   /**
    * THE FLATS' COMPS (market.ts recordDeal): every flat let or renewed in
@@ -3926,6 +3934,12 @@ export interface GameState {
    * which is every town cut before the option existed.
    */
   cityParks?: "low" | "medium" | "high";
+  /**
+   * Which street generator cut the town (citygen STREET_PLANS): absent is
+   * "classic", which is every town cut before the option existed, so an old
+   * save rebuilds the streets it was played on.
+   */
+  cityStreets?: "classic" | "natural";
   rng: number;
   /**
    * Named RNG streams so a change in how often leasing rolls the dice does not

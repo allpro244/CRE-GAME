@@ -111,10 +111,8 @@ const SEARCH_M: Record<Comm, number> = { office: 6, retail: 4, industrial: 3 };
 const PATIENCE_M: Record<Comm, number> = { office: 15, retail: 10, industrial: 9 };
 /** Holdover: how long a firm whose lease has ended stays while it looks. */
 const HOLDOVER_M = 6;
-/** Share of expiring firms that close or leave town in a town with exactly the firms its payrolls support. */
 /** Of the sheds' leases that end, the share whose tenants relocate within the region rather than renew. */
 export const SHED_MOVE = 0.3;
-const EXIT_BASE: Record<Comm, number> = { office: 0.05, retail: 0.07, industrial: SHED_MOVE };
 /** Months for the town's want of space to turn into firms looking for it (market.ts DEMAND_FORM_M). */
 const FORM_M: Record<Comm, number> = { office: 9, retail: 6, industrial: 6 };
 /**
@@ -546,11 +544,20 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
     const pc = placeCost(firm.fid !== undefined ? ctx.pts.get(firm.fid) : undefined, b.pos, hourCost(firm));
     const worth = worthOf(firm, k, mkt, b.sc[k] ?? 50, take, pc.cost, k === "retail" ? footRel(b.bbl) : undefined, rentCapacity(s.econ, firm, k));
     const move = !stay && moving ? moveCostPsfYr(e, k, termM, firm) : 0;
-    const joint = worth - post - move + TASTE[k] * goingRent(k, mkt, going(k)) * gumbel(rng(s, "leasing"));
+    // THE MATCH PERSISTS (2026-11-11). A sitting tenant weighs its own suite
+    // with the taste it signed on (Tenant.tasteU): whatever made it choose
+    // this suite over the others it was shown — its layout, its light, the
+    // walk from the station — is a fact of the match, not redrawn at the
+    // renewal (job-matching's persistent match quality, Jovanovic 1979). A
+    // fresh draw regressed every incumbent's liking to the mean, so firms
+    // "discovered" at the roll that their own floor was not worth keeping.
+    const u = stay && firm.tasteU !== undefined ? firm.tasteU : gumbel(rng(s, "leasing"));
+    if (stay && firm.tasteU === undefined) firm.tasteU = +u.toFixed(4);   // a tenant from before the match was kept: its first read is its taste from here
+    const joint = worth - post - move + TASTE[k] * goingRent(k, mkt, going(k)) * u;
     // a sitting tenant is offered its landlord's ask, like anyone (tenantMarket.ts postedEff)
     const ask = L.a;
     const ff = footFactor(k, k === "retail" ? footRel(b.bbl) : undefined);
-    return { bbl: b.bbl, take, mkt, ff, ask, post, res, worth, move, joint, dLink: pc.dLink, dWork: pc.dWork, ...(stay ? { stay: true } : {}) };
+    return { bbl: b.bbl, take, mkt, ff, ask, post, res, worth, move, joint, u, dLink: pc.dLink, dWork: pc.dWork, ...(stay ? { stay: true } : {}) };
   };
   // The street's buildings, listed once: the search lets space and moves
   // tenants inside rolls, and never adds, removes or replaces a roll.
@@ -816,7 +823,26 @@ export interface StayOdds { p: number; alt?: string; altAt?: string }
 let lastParcels: ParcelTable | null = null;
 
 function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
-  const e = s.econ;
+
+  // THE REGION'S EMPTY SHED FLOOR OFF THE MAP, as a share of all its empty
+  // shed floor: where a relocating shed tenant finds room (read once a month).
+  let shedOff: number | undefined;
+  const shedOffShare = (): number => {
+    if (shedOff !== undefined) return shedOff;
+    const e0 = s.econ, k0 = "industrial";
+    let mapCap = 0, letMap = 0;
+    for (const [bbl0, roll0] of Object.entries(e0.streetRolls ?? {})) {
+      const rec0 = resolveRec(parcels, s, bbl0);
+      if (rec0) mapCap += useRentableSf(rec0, k0);
+      for (const t0 of roll0.t) if (useOf(t0) === k0) letMap += t0.sf;
+    }
+    const pCap = e0.playerNow?.sf?.[k0] ?? 0, pLet = e0.playerNow?.occ?.[k0] ?? 0;
+    const offCap = Math.max(0, (e0.stock?.[k0] ?? 0) - mapCap - pCap);
+    const offOcc = Math.max(0, (e0.occupied?.[k0] ?? 0) - letMap - pLet);
+    const avMap = Math.max(0, mapCap + pCap - letMap - pLet), avOff = Math.max(0, offCap - offOcc);
+    shedOff = avMap + avOff > 0 ? avOff / (avMap + avOff) : 0;
+    return shedOff;
+  };  const e = s.econ;
   const R = e.streetRolls!;
   const m = s.month;
   e.seekers ??= [];
@@ -878,8 +904,9 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     };
     const lease = streetLease(s, b.rec, b.cond, b.condIdx, k, pick.take, { name: firm.name, sector: firm.sector, credit: firm.credit, ...carry },
       face / Math.max(0.01, pick.mkt), termM, freeM);
-    // Signed for the people it has now, at today's rent.
+    // Signed for the people it has now, at today's rent — and on the taste that chose this suite.
     lease.staffSign = firm.staff ?? 1;
+    if (pick.u !== undefined) lease.tasteU = +pick.u.toFixed(4);
     const spw = rentSpw(s, k);
     lease.hcRef = want / (lvlNow(s, k) * spw);
     if (spw !== 1) lease.spw = spw;
@@ -1016,9 +1043,48 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
         continue;
       }
       if (t.endM <= m) {
-        // Closes or leaves town — more of them when the town has more firms than its payrolls support.
-        const exitP = Math.min(0.5, EXIT_BASE[k] * Math.pow(Math.max(0.5, Math.min(2, ratio(k))), 4));
-        if (rng(s, "leasing") < exitP) {
+        // AN OFFICE OR A SHOP CLOSES OR LEAVES TOWN WHEN NOTHING HERE PAYS
+        // (2026-11-11): neither renewing its own suite (at the landlord's
+        // reservation, on the taste it signed on) nor any suite its broker can
+        // show it leaves it better off than signing nothing — the participation
+        // test every new lease on the street passes (`shop`). A firm whose trade
+        // has more firms than work loses staff and sales first (above), so it is
+        // that trade's firms that fail the test. It was a die on EXIT_BASE ×
+        // (firms per payroll)^4, and a firm that failed the test renewed anyway,
+        // at a loss. A firm that has OUTGROWN its suite is not choosing to
+        // close: it goes to market and holds over while it looks (below). Sheds
+        // keep their regional move (SHED_MOVE): the off-map region they
+        // relocate to is not modelled building by building.
+        //
+        // A SHED TENANT ON THE MOVE GOES WHERE THE EMPTY FLOOR IS (2026-11-11).
+        // Of the sheds' expiring leases, SHED_MOVE are tenants relocating within
+        // the region; each takes empty floor where the region has it — off the
+        // map in proportion to the region's empty floor off it, otherwise on the
+        // map, where it goes looking like any mover. It used to leave the map on
+        // a die whatever the region had (a town whose region was empty lost
+        // three in ten expiring sheds to nowhere), scaled by (firms per
+        // payroll)^4. A shed tenant that is not on the move decides as an
+        // office or a shop does: it leaves only when nothing pays.
+        const kx = k as Comm;
+        let leaves = false;
+        let mover = false;
+        if (kx === "industrial" && rng(s, "leasing") < SHED_MOVE) {
+          mover = true;
+          // where it goes, as a flow: the region's share of the movers builds
+          // up month to month, and a mover leaves the map each time a whole
+          // one has (no die on the destination)
+          e.shedOffAcc = (e.shedOffAcc ?? 0) + shedOffShare();
+          leaves = e.shedOffAcc >= 1;
+          if (leaves) e.shedOffAcc -= 1;
+        }
+        if (!mover) {
+          const room0 = availOf(b, roll, kx);
+          const outgrown0 = need > t.sf * 1.25 && room0 < need - t.sf;
+          const stay0 = outgrown0 ? null : value(t, kx, b, roll, renewTake(b, roll, t, need), termOf(t), true, true);
+          const pays = (o: Option) => o.joint + o.post - o.res >= 0;
+          leaves = !outgrown0 && !(stay0 && pays(stay0)) && !shop(t, kx, Math.round(need), bbl, null, true, true).length;
+        }
+        if (leaves) {
           lost[k] += firmHc(t);
           // WHY: a firm of size that left town writes its books as they stood
           const whyId = t.sf >= 5000 && !opening ? why(s, {
@@ -1026,7 +1092,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
             n: { sf: t.sf, rentYr: Math.round(t.rentPsf * t.sf), firmsPerWork: +ratio(k).toFixed(2) },
             t: `${t.name} left town at lease end · ${(t.sf / 1000).toFixed(1)}k sf${ratio(k) > 1.05 ? ` · its trade has ${Math.round((ratio(k) - 1) * 100)}% more firms here than work` : ""}`,
           }, [whyTenantBooks(s, t, f)]) : undefined;
-          (e.streetFailed ??= []).push({ m, bbl, name: t.name, fid: t.fid, sf: t.sf, use: k, why: "left", ...(whyId ? { whyId } : {}) });
+          (e.streetFailed ??= []).push({ m, bbl, name: t.name, fid: t.fid, sf: t.sf, use: k, why: "left", ...(mover ? { reloc: true } : {}), ...(whyId ? { whyId } : {}) });
           vacate(roll, t);
           continue;
         }
@@ -1041,7 +1107,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
         const stayOpt = outgrown ? null : value(t, kk, b, roll, renewTake(b, roll, t, need), termOf(t), true, true);
         const opts = shop(t, kk, Math.round(need), bbl, stayOpt, true);
         const best = opts[0];
-        if (outgrown || (best && !best.stay)) {
+        if (outgrown || mover || (best && !best.stay)) {
           const sk: Seeker = { fid: t.fid!, use: kk, want: Math.round(need), since: m, why: outgrown ? "grow" : "move", from: bbl,
             was: { rent: t.rentPsf } };
           e.seekers.push(sk);
@@ -1238,7 +1304,10 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       const avMap = Math.max(0, mapCap - letMap - pLet), avOff = Math.max(0, offCap - offOcc);
       const growth = Math.max(0, offWant - (e.shedRefPrev ?? offWant));
       e.shedRefPrev = offWant;
-      const pool = offOcc * SHED_MOVE / 60 + lost[k] * lvlNow(s, k) + growth;
+      // The region's movers: its own relocating tenants and its net new demand.
+      // The map's own closures are replaced by the town's trades (the gap,
+      // below), not by the region a second time.
+      const pool = offOcc * SHED_MOVE / 60 + growth;
       shedMovers = pool * avMap / Math.max(1, avMap + avOff) / lvlNow(s, k);
     }
     // NEW FIRMS REPLACE THE ONES THAT CLOSE — fewer of them while the trades
@@ -1259,21 +1328,29 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     // its cost). Without an entry decision, closures driven out by rent were
     // replaced one for one at the same rent, and shop rents tripled in real
     // terms over twenty-five years at 3-7% vacancy (measured).
+    // (Every class, sheds included, 2026-11-11: a town's own distributors and
+    // makers start where a start pays, as its offices and shops do. And no
+    // ceiling on it — where space is cheap against what is sold, more start.)
     let entry = 1;
-    if (k !== "industrial") {
+    {
       let mg = 0, mg0 = 0;
       for (const [sec, w] of Object.entries(secW[k] ?? {})) {
         mg += w! * entrantMargin(e, sec as Tenant["sector"], k, 1);
         mg0 += w! * FIRM_PROFILE[sec as Tenant["sector"]].margin;
       }
-      if (mg0 > 0) entry = Math.max(0, Math.min(1.6, mg / mg0));
+      if (mg0 > 0) entry = Math.max(0, mg / mg0);
     }
     // the gap in heads, at each industry's feet a worker
     let gapSf = 0;
     for (let i = 0; i < N_IND; i++) gapSf += gap[k][i] * sfHead(i, k);
-    let form = k === "industrial" && !opening ? shedMovers
-      : tgt ? gapSf / FORM_M[k] * entry + fill
-      : fill;
+    // SHEDS FORM FROM THE TOWN'S OWN TRADES TOO (2026-11-11): the gap in
+    // heads its industries want on shed floor, as for every other class, plus
+    // the region's movers. Sheds formed from the region alone, so a town whose
+    // region was empty never housed its own growth: industrial employment up
+    // 14-23% over fifty years while its shed firms fell by a third and shed
+    // vacancy reached 18-29% (Frontier towns, 2026-11-11).
+    let form = (k === "industrial" && !opening ? shedMovers : 0)
+      + (tgt ? gapSf / FORM_M[k] * entry + fill : fill);
     if (!(form > 0)) continue;
     // A shed firm moving onto the map from the region is one of the region's
     // shed firms: its industry is drawn by the heads each industry has on a

@@ -1166,11 +1166,11 @@ export const SF_PER_JOB: Record<BuiltClass, number> = { office: 230, industrial:
  *  in 2019; 50.5% in 2000 (FRED CLF16OV / POPTHM) [S]. It read 0.58, which no
  *  year of the record gives, so the opening town had a sixth fewer residents
  *  for its jobs than an American town does (2026-11-10). */
-const PARTICIPATION = 0.50;
+export const PARTICIPATION = 0.50;
 /** The opening rate for a save made before the town drew its opening year
  *  (opening.ts): 2000's, BLS UNRATE annual average 4.0% (FRED UNRATE) [S]. A
  *  new game opens on the year it draws. */
-const OPENING_UNEMP = 0.040;
+export const OPENING_UNEMP = 0.040;
 /** The nation's natural rate — the Phillips curve's u* in tickNation, and the pivot for national pay —
  *  for a save made before the opening year was drawn: 2000's, CBO's
  *  noncyclical rate 5.07-5.12% by quarter (FRED NROU) [S]. A new game reads
@@ -1267,6 +1267,29 @@ export function citySize(stock: Record<BuiltClass, number>, uOpen = OPENING_UNEM
 }
 
 /**
+ * THE REGION THE ISLAND SITS IN (city plan 18). A town generated from demand
+ * (citygen demand.mjs) carries the island's share of its region's residents;
+ * the region's people are then the island's opening residents — its occupied
+ * flats at SF_PER_HOME a home and PEOPLE_PER_HOME a household — over that
+ * share, and its jobs are what that many people hold at the opening's
+ * participation and unemployment. The island's named firms hold the jobs on
+ * its floors and the off-map sample the mainland's (economy.ts
+ * `openingOffMap`). A town without the record (plan 17 and before) is sized
+ * from its floors alone, as `citySize` always did; the island's own jobs are
+ * the floor under the region's either way — a region cannot employ fewer
+ * than work on the island.
+ */
+export function regionSize(stock: Record<BuiltClass, number>, parcels: ParcelTable | undefined, uOpen = OPENING_UNEMP): { jobs0: number; pop0: number } {
+  const own = citySize(stock, uOpen);
+  let share = 0;
+  if (parcels) for (const bbl in parcels) { share = parcels[bbl]?.regionShare ?? 0; break; }
+  if (!(share > 0)) return own;
+  const residents = (stock.multifamily ?? 0) * (1 - OPENING_VAC.multifamily) / SF_PER_HOME * PEOPLE_PER_HOME;
+  const pop0 = Math.max(own.pop0, Math.round(residents / share));
+  return { jobs0: Math.round(pop0 * PARTICIPATION * (1 - uOpen)), pop0 };
+}
+
+/**
  * HOW BUILT-UP THE MAP IS, as floor area over lot area.
  *
  * Vacant lots count in the denominator with zero building, so a Frontier town
@@ -1346,7 +1369,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // nation's history is then simulated around it (regime.ts simulateHistory),
   // so where unemployment stands on the opening day is the history's outcome.
   const OPEN = openingLabour(s.seed);
-  const SIZE = citySize(CITY, OPEN.uStar);
+  const SIZE = regionSize(CITY, parcels, OPEN.uStar);
   const dens = parcels ? densityPriceScales(cityFloorIntensity(parcels)) : densityPriceScales(REF_CITY_FAR);
   const econ: Econ = {
     indexRate: 5.4,
@@ -4458,8 +4481,8 @@ export function tickEcon(s: GameState) {
       const dNeed = om.need * (r - 1);
       // SHEDS ARE ONE REGIONAL MARKET (streetRolls.ts, `shedMovers`): each
       // month the region's relocating tenants (SHED_MOVE of each year's
-      // expiries, on five-year leases), the replacements for the map's sheds
-      // that closed or left, and the off-map firms' growth take the empty
+      // expiries, on five-year leases), the map's tenants that relocated into
+      // the region, and the off-map firms' growth take the empty
       // floor they find, the map's in proportion to its share of the region's
       // empty floor. The street forms the map's share as new firms looking
       // for a shed; the rest look off the map, and so does every one of the
@@ -4470,8 +4493,12 @@ export function tickEcon(s: GameState) {
         const avMap = Math.max(0, onMap - letMap), avOff = Math.max(0, offSf - om.occ);
         const toMap = avMap / Math.max(1, avMap + avOff);
         const reloc = om.occ * SHED_MOVE / 60;
+        // The map's tenants that RELOCATED into the region this month: they
+        // chose the region's empty floor (streetRolls.ts) and need it. A shed
+        // that closed or went dark is gone; the town's own trades re-form its
+        // work on the map (streetRolls.ts, the gap), not the region.
         let lost = 0;
-        for (const f of e.streetFailed ?? []) if (f.m === s.month && f.use === k) lost += f.sf;
+        for (const f of e.streetFailed ?? []) if (f.m === s.month && f.use === k && f.reloc) lost += f.sf;
         // the street's region movers still looking, housed, or gone back to the region
         const pend = (om.pend ??= {});
         let back = 0;
@@ -4492,7 +4519,7 @@ export function tickEcon(s: GameState) {
         // (formed this month: the opening's own start-ups are not the region's)
         for (const sk of e.seekers ?? []) if (looking.has(sk.fid) && (sk.since === s.month || pend[sk.fid] !== undefined)) pend[sk.fid] = sk.want;
         om.need = Math.max(0, om.need - (om.occ > 0 ? reloc * om.need / om.occ : 0) + Math.min(0, dNeed)
-          + (reloc + lost + Math.max(0, dNeed)) * (1 - toMap) + back);
+          + (reloc + Math.max(0, dNeed)) * (1 - toMap) + lost + back);
         om.occ -= reloc;
         // ...and the off-map firms' growth, as the street reads it (`offWant`)
         (e.offWant ??= {})[k] = (offWantPrev ?? om.need) + dNeed;

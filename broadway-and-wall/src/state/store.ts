@@ -813,8 +813,8 @@ function painted(): Promise<void> {
  * dealt there too when `deal` asks for it: on a big map the two together held
  * the page for tens of seconds.
  */
-async function buildTown(island: string, seed: number, size: string, dev: string, plan?: number, deal?: TownRequest["deal"], parks?: string) {
-  const { built, game } = await cutTownOffThread({ island, seed, size, dev, plan, deal, parks: parks === "medium" ? undefined : parks });
+async function buildTown(island: string, seed: number, size: string, dev: string, plan?: number, deal?: TownRequest["deal"], parks?: string, streets?: string) {
+  const { built, game } = await cutTownOffThread({ island, seed, size, dev, plan, deal, parks: parks === "medium" ? undefined : parks, streets: streets === "natural" ? streets : undefined });
   // normalised in the worker, in place: the table is built.parcels
   return { built, parcels: built.parcels as ParcelTable, game };
 }
@@ -2735,6 +2735,8 @@ export const useStore = create<AppState>(holdWhileTicking((set, get) => ({
       || (saved.cityPlan ?? 1) !== (get().game?.cityPlan ?? 1)
       // and so is the same seed with more or fewer parks
       || (saved.cityParks ?? "medium") !== (get().game?.cityParks ?? "medium")
+      // and the same seed under the other street generator
+      || (saved.cityStreets ?? "classic") !== (get().game?.cityStreets ?? "classic")
       // and the live table holds this game's cut lots (plats, splits, unpacked houses):
       // loaded over it, a save from earlier in the run would walk lots its plats have not
       // cut yet, and in another order. A rebuilt town has exactly the save's.
@@ -2867,7 +2869,8 @@ export const useStore = create<AppState>(holdWhileTicking((set, get) => ({
       const runSeed = (crypto.getRandomValues(new Uint32Array(1))[0] || 1) >>> 0;
       // the town and its opening market, dealt together off the page's thread
       const parks = setupIn?.parks && setupIn.parks !== "medium" ? setupIn.parks : undefined;
-      const { built, parcels, game: dealt } = await buildTown(island, seed, size, dev, undefined, { runSeed, money, setup }, parks);
+      const streets = setupIn?.streets === "natural" ? "natural" as const : undefined;
+      const { built, parcels, game: dealt } = await buildTown(island, seed, size, dev, undefined, { runSeed, money, setup }, parks, streets);
       get().setData({
         parcels,
         adjacency: built.adjacency as Adjacency,
@@ -2881,6 +2884,7 @@ export const useStore = create<AppState>(holdWhileTicking((set, get) => ({
       g.cityDev = dev;
       g.cityPlan = CITY_PLAN;
       if (parks) g.cityParks = parks;
+      if (streets) g.cityStreets = streets;
       // HOW BIG THIS MARKET IS, counted rather than declared. A generated island
       // announces its scale through the size preset it was cut at; a
       // written-down city has no preset to read, so the economy sizes rivals
@@ -2933,7 +2937,7 @@ export const useStore = create<AppState>(holdWhileTicking((set, get) => ({
       setSize(r.size, r.island);
       setDev(r.dev);
       // an old save is a plan-1 town: rebuild the streets it was played on
-      const { built, parcels } = await buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1, undefined, saved.cityParks);
+      const { built, parcels } = await buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1, undefined, saved.cityParks, saved.cityStreets);
       // THE CUT LOTS FIRST (engine/sim.ts restoreCuts): a region save holds plat lots, split
       // lots and unpacked houses that the generator does not cut, and its listings and deeds
       // name them. Asked before they were put back, the gate below refused every region

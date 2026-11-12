@@ -425,7 +425,7 @@ function pickBuilderFirm(s: GameState, looking = false): Rival | undefined {
   // the street saw only through its survivors' eyes: measured on seed 11,
   // the roster fell to two shops by year fifty and no opening was ever seen
   // again. Each outsider weighs as a shop with no book.
-  const outsiders = looking ? Math.max(0, builderTarget(developerLooksPerMonth(s.econ)) - live.length) : 0;
+  const outsiders = looking ? Math.max(0, builderTarget(openingTrade(s.econ)) - live.length) : 0;
   if (!live.length && !outsiders) return undefined;
   // THE TOWN'S WORK GOES ROUND. Every job the supply desk commissions went to
   // a living builder firm drawn uniformly — so a town with three builders
@@ -4227,9 +4227,9 @@ function tickTeardowns(s: GameState, parcels: ParcelTable, bbls: string[], adjac
   // the cost index (`heat`, market.ts), which the redevelopment test reads.
   // How MANY go in a month is the order book's, the same rule as new starts:
   // the floor ordered, in typical buildings, and at least one when called.
-  // As many as developers are looking — the same `developerLooksPerMonth`
+  // As many as developers are looking — one teardown look for each developer in town, as
   // the vacant-lot search reads; each still has to clear its own pro forma.
-  const crewRoom = Math.max(1, Math.round(developerLooksPerMonth(s.econ)));
+  const crewRoom = Math.max(1, s.builderFirms ? livingBuilderFirms(s).length : livingBuilders(s).length);
   // Score by DENSIFICATION SURPLUS, not land/building alone. A cash-flowing
   // worn walk-up on a FAR-rich corner is the real redevelopment candidate in
   // a shortage; the old land/built ratio only found husks, and century nulls
@@ -5041,12 +5041,29 @@ export function tickCityGrowth(
   // There is no order to fill: what gets started is whatever clears its own
   // pro forma at the owner's asking price for the dirt, with the pipeline and
   // the building itself in the vacancy it will lease into.
-  const looksF = developerLooksPerMonth(s.econ);
-  tickBuilders(s, looksF);
+  tickBuilders(s, openingTrade(s.econ));
   breakCommittedPlans(s, parcels, adjacency);
-  // The month's looks on a schedule at that rate (no dice for the fraction).
-  let looks = onSchedule(s, "dev-looks", looksF);
-  while (looks-- > 0) developerLook(s, parcels, bbls, adjacency);
+  // EVERY DEVELOPER IN TOWN LOOKS, EVERY MONTH (2026-11-11). Each firm works
+  // its broker's shortlist of sites (SITES_PER_LOOK) once a month and builds
+  // what pays on its own money and what a desk will lend; how much the town
+  // looks at is how many developers it has, and that is theirs — a new shop
+  // sets up for schemes that pay which the firms here cannot fund
+  // (`foundersFor`), and a shop whose looks stop finding work closes
+  // (`builderDone`). It was a quota: stock × 1.8%/yr ÷ a typical building ×
+  // 32 looks a month, unsourced, the same in a boom as in a bust — so office
+  // pencilling at 1.25-1.6× cost for twenty years drew no more looks, and
+  // rent did the rationing (Frontier towns, 2026-11-11). With nobody left in
+  // the trade, the region's developers still look once a month: an opening
+  // that pays is seen by someone.
+  if (s.builderFirms) {
+    const firms = livingBuilderFirms(s);
+    if (!firms.length) developerLook(s, parcels, bbls, adjacency, { firm: null });
+    // in turn, starting at a different firm each month (no draw on the order)
+    for (let i = 0; i < firms.length; i++) developerLook(s, parcels, bbls, adjacency, { firm: firms[(i + s.month) % firms.length] });
+  } else {
+    const n = Math.max(1, livingBuilders(s).length);
+    for (let i = 0; i < n; i++) developerLook(s, parcels, bbls, adjacency);
+  }
 }
 
 /**
@@ -5068,8 +5085,8 @@ export function tickCityGrowth(
  * and all three are real: each underwrites delivery vacancy including the
  * pipeline already started and their own building (`forwardVacancy`), so
  * every start makes the next one harder; each project has its own cost
- * (`projectCostMult`) and each lot its own land price; and only a few
- * developers are looking in any month (`developerLooksPerMonth`).
+ * (`projectCostMult`) and each lot its own land price; and each of the
+ * developers there are in town, each looking once a month.
  */
 /**
  * ASSEMBLE BEFORE YOU BUILD (owner, Oct 2026: "I definitely do want rivals to
@@ -5162,7 +5179,7 @@ const ASSEMBLY_PREMIUM = 0.2;
 
 function developerLook(
   s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Record<string, string[]> | null,
-  opts?: { backdate?: number; quiet?: boolean },
+  opts?: { backdate?: number; quiet?: boolean; firm?: Rival | null },
 ): boolean {
   if (!s.cityJobs) s.cityJobs = [];
   const ownMoney = streetHasOwnMoney(s);
@@ -5171,7 +5188,8 @@ function developerLook(
   // rent read moving a little from one look to the next.
   // The frames already standing when the game opens (a backdated look) are
   // history and stay the city's; every look after that is one of the firms.
-  const firm = s.builderFirms && opts?.backdate === undefined ? pickBuilderFirm(s, true) : undefined;
+  const firm = s.builderFirms && opts?.backdate === undefined
+    ? (opts && "firm" in opts ? opts.firm ?? undefined : pickBuilderFirm(s, true)) : undefined;
   // A LOOK BY SOMEBODY WITHOUT A SHOP (`pickBuilderFirm`): one of the trade
   // with no firm open — or nobody left at all — walks the sites; what pencils
   // for it is an opening a new shop sets up for (it has no shop yet, so no
@@ -5611,7 +5629,15 @@ function spreadFloor(dev: { floor?: number; ltc: number }): number {
 }
 /** Below this value/cost on the re-priced plan, a decided scheme is shelved rather than started. */
 const SHELVE_AT = 0.97;
-function developerLooksPerMonth(e: Econ): number {
+/**
+ * THE SIZE OF THE TOWN'S DEVELOPMENT TRADE ON THE DAY IT OPENS — an initial
+ * condition, read once for the opening roster (`builderTarget`) and for the
+ * "outsiders" a town with too few shops still has walking its sites
+ * (`pickBuilderFirm`). After the opening, how many developers there are is
+ * the firms' own entry and exit. [K: stock × 1.8%/yr ÷ a typical building ×
+ * 32, the old look rate, kept only as the opening's scale.]
+ */
+function openingTrade(e: Econ): number {
   let stock = 0;
   for (const k of BUILT_CLASSES) stock += e.stock?.[k] ?? 0;
   return Math.max(0.5, (stock * 0.018 / 12 / TYPICAL_SF) * 32);
@@ -5861,7 +5887,7 @@ export function seedOpeningPipeline(s: GameState, parcels: ParcelTable, bbls: st
   // THE TOWN'S BUILDERS ARE ON THE STREET FROM THE FIRST DAY. They were
   // founded on the first tick, so the opening Players list had no developers
   // on it and the frames already standing had nobody's name on them.
-  if (s.builderFirms) tickBuilderFirms(s, developerLooksPerMonth(e));
+  if (s.builderFirms) tickBuilderFirms(s, openingTrade(e));
   let started = 0;
   for (let i = 0; i < want * 4 && started < want; i++) {
     if (developerLook(s, parcels, bbls, null, { backdate: rng(s, "dev"), quiet: true })) started++;

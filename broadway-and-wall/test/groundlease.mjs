@@ -179,7 +179,11 @@ console.log("\nSHORT PAPER DOES NOT GIFT THE TOWER\n");
     "60-year paper is not free-reversion");
   gShort.month = 720;
   gShort.groundLeases[bbl].endM = 720;
-  gShort.cash = 0; // cannot fund buyout
+  gShort.cash = 0; // cannot fund buyout...
+  // ...from the line either: the buyout is funded from cash then the revolver
+  // (fundableNow), as every cheque is, so "unfunded" means both are spent. The
+  // test zeroed only the cash and the line paid, which kept the building.
+  gShort.loc = { ...(gShort.loc ?? {}), balance: E.locLimit(gShort, parcels) + (gShort.loc?.balance ?? 0) + 1e9 };
   E.tickGroundLeases(gShort, parcels);
   check(!gShort.groundLeases?.[bbl], "short term still clears the encumbrance");
   check(!gShort.built?.[bbl], "unfunded short reversion clears the improvement");

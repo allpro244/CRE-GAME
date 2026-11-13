@@ -3231,14 +3231,22 @@ export function blendExtendQuote(s: GameState, rec: ParcelRecord, h: Holding, id
   // What they will accept: a cut off today's rent, deeper the further over
   // market they are, and they want real term for it.
   const over = t.rentPsf / Math.max(1, market);
-  if (over < 0.92) return null;                // already a bargain — they will not reopen it
-  const newRent = +(Math.max(market * 0.94, t.rentPsf * (over > 1.15 ? 0.88 : over > 1.02 ? 0.94 : 0.975))).toFixed(2);
+  // A TENANT PAYING UNDER THE MARKET WILL STILL TAKE MORE TERM AT ITS OWN RENT
+  // (2026-11-13). It was refused outright ("already a bargain: they will not
+  // reopen it"), so the owner had nothing to offer the tenants it most wants
+  // to keep. Such a tenant has no reason to take a new rent and every reason
+  // to lock the one it has: the extension is at its current rent, and what
+  // the owner gives up is the mark to market it would have had at the expiry.
+  const bargain = over < 0.92;
+  const newRent = bargain ? t.rentPsf
+    : +(Math.max(market * 0.94, t.rentPsf * (over > 1.15 ? 0.88 : over > 1.02 ? 0.94 : 0.975))).toFixed(2);
   const addM = Math.round(clampN(36 + 48 * (over - 0.95), 24, 96));
   const annualGive = Math.round((t.rentPsf - newRent) * t.sf * left);
   return {
     idx, name: t.name, sf: t.sf, current: t.rentPsf, market, newRent,
     addM, newEndM: t.endM + addM,
-    giveUp: Math.max(0, annualGive),                       // rent forgone over the remaining term
+    // rent forgone: the cut over the remaining term; for a tenant kept at an under-market rent, the mark to market over the added one
+    giveUp: bargain ? Math.max(0, Math.round((market - t.rentPsf) * t.sf * addM / 12)) : Math.max(0, annualGive),
     // no fit-out on a renewal in place, but the broker still gets paid
     cost: Math.round(newRent * t.sf * ((left * 12 + addM) / 12) * 0.02),
   };

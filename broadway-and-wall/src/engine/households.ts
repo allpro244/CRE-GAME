@@ -3777,10 +3777,14 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     }
     let natRate = 0;
     for (let b = 0; b < AGE_ALL.length; b++) natRate += AGE_ALL[b] * MIG_RATE_BY_AGE[b];
-    // ...the arrivals the nation sends, as many as the region's homes take (mainRoomFor)
+    // ...and the arrivals the nation sends. Not held to a free rental (2026-11-13):
+    // the households leaving were owners as often as renters, so a gate on the
+    // mainland's empty rentals let in less than half of what went out and the
+    // town lost a quarter of its people in fifteen years (seed 31337); the
+    // newcomers take the homes the leavers left, and where none is let they
+    // double up and look, as every household does
     r.lifeArr = (r.lifeArr ?? 0) + (hh * natRate * LIFE_MOVE_SHARE) / 12 / Math.max(0.01, r.wRegion);
-    while (r.lifeArr >= 1 && mainRoomFor(r, r.wRegion)) { r.lifeArr -= 1; lifeIn++; }
-    if (r.lifeArr > 12) r.lifeArr = 12;
+    while (r.lifeArr >= 1) { r.lifeArr -= 1; lifeIn++; }
   }
   const draw = D ? MOVE_M * Math.max(0, Math.pow(Math.max(0.01, hereRel(e) * workOdds(e)), MOVE_ELAST) - 1) : 0;
   const wave = e.bsMigPull ?? 0;

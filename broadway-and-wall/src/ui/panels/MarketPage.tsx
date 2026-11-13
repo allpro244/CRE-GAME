@@ -1,6 +1,7 @@
 import { marketAppraisal } from "@/engine/value";
 import { useMemo, useState } from "react";
-import type { GameState } from "@/engine/types";
+import type { GameState, Holding } from "@/engine/types";
+import { walt } from "@/engine/leasing";
 import type { ParcelTable } from "@/data/types";
 import { derive, ownerName } from "@/ui/derive";
 import { useStore } from "@/state/store";
@@ -267,8 +268,19 @@ export const MARKET_COLS: { key: string; label: string; num?: boolean; desc?: bo
   { key: "noi", label: "NOI / yr", num: true, desc: true },
   { key: "cap", label: "Cap rate", num: true, desc: true },
   { key: "occ", label: "Occupancy", num: true, desc: true },
+  // What the tenants in place pay, and how long their leases have to run:
+  // the two lines of a rent roll a buyer reads first (owner, 2026-11-13).
+  { key: "rent", label: "Rent $/sf", num: true, desc: true },
+  { key: "walt", label: "WALT", num: true, desc: true },
   { key: "dmd", label: "Demand", num: true, desc: true },
 ];
+/** A listing's disclosed roll in two numbers: the average contract rent, $/sf a year by feet let, and the weighted average lease term left, years (leasing.ts `walt`). Null where there is no roll of named leases to read (dirt, flats, an undisclosed building). */
+function rollRead(ip: { h: Holding | null; disclosed: boolean } | null, month: number): { rent: number; walt: number } | null {
+  const t = ip?.disclosed ? ip.h?.tenants ?? [] : [];
+  const let_ = t.reduce((a, x) => a + x.sf, 0);
+  if (!ip?.h || !(let_ > 0)) return null;
+  return { rent: t.reduce((a, x) => a + x.rentPsf * x.sf, 0) / let_, walt: walt(ip.h, month) };
+}
 
 export function MarketPage() {
   const phoneLive = useStore((s) => (s.game ? liveBrokerCalls(s.game).length > 0 : false));
@@ -708,6 +720,8 @@ export function MarketPage() {
                   noi: built && rec ? inPlace(rec, game, li.bbl, li.ask).noi : -1,
                   cap: built ? cap * 100 : -1,
                   occ: built && rec ? (inPlace(rec, game, li.bbl, li.ask).occ ?? 0) : -1,
+                  rent: (built && rec ? rollRead(inPlace(rec, game, li.bbl, li.ask), game.month)?.rent : undefined) ?? -1,
+                  walt: (built && rec ? rollRead(inPlace(rec, game, li.bbl, li.ask), game.month)?.walt : undefined) ?? -1,
                   dmd: rec ? demandNow(game, rec) : -1,
                 };
                 return { li, built, cap, psf, v };
@@ -875,6 +889,13 @@ export function MarketPage() {
                         the neighbourhood is doing. `demandNow` is the engine's
                         own reader, the same one the parcel card and the
                         building database use, so the three cannot drift. */}
+                    {(() => {
+                      const rr = rollRead(ip, game.month);
+                      return (<>
+                        <td className="num" title={rr ? "Average contract rent of the leases in place, $/sf a year" : "No named leases on the roll"}>{rr ? "$" + rr.rent.toFixed(2) : "—"}</td>
+                        <td className="num" title={rr ? "Weighted average lease term remaining, years" : "No named leases on the roll"}>{rr ? rr.walt.toFixed(1) + " y" : "—"}</td>
+                      </>);
+                    })()}
                     <td className="num" title="Block demand score, 0-100">
                       {Math.round(demandNow(game, rec))}
                     </td>

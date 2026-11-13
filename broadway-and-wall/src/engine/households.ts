@@ -2914,8 +2914,52 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // 2. the earners who came with work
   const seekers: number[] = [];
   for (let i = 0; i < r.n; i++) for (let k = 0; k < 3; k++) if (EMP()[k][i] === EMP_OTHER) seekers.push(3 * i + k);
+  // AN EARNER WHO CAME WITH WORK IS IN THE INDUSTRY ITS PAY SAYS (2026-11-13).
+  // The register draws each earner's pay with its household (the incomes the
+  // rents and the homes are set against); the firms' books then gave it an
+  // industry by lot and paid it that industry's rate at its standing — so a
+  // $60,000 earner drawn into restaurants was a $23,000 one from the second
+  // month, on a lease signed against the first. Measured, seed 11: island
+  // households paying over 60% of net income in rent went 585 to 1,012 of
+  // 3,420 the month the earners were placed, 378 of them owing more rent than
+  // they earned; they ran through their savings and cards, and from the
+  // fourth month 20-40 working households a month were evicted (2-3 times the
+  // settled rate) — a third of the flats that emptied in the opening's first
+  // year. An earner's industry is drawn from those with room, at the odds
+  // that one of its workers earns what this one does: the industry's going
+  // rate, with the spread round it the register's own pay has left once the
+  // spread between the industries' rates is taken out [D: Var(ln pay) less
+  // the between-industry part; no constant]. It keeps the pay it came with
+  // (step 5 holds each industry's average at its going rate).
+  let s2w = 0;
+  if (seekers.length) {
+    let n = 0, m1 = 0, m2 = 0;
+    for (const sl of seekers) { const W = WAGE()[sl % 3][(sl / 3) | 0], w = r.a!.wt[(sl / 3) | 0]; if (W > 0) { const l = Math.log(W); n += w; m1 += w * l; m2 += w * l * l; } }
+    let h = 0, p1 = 0, p2 = 0;
+    for (let ind = 0; ind < N_IND; ind++) if (V[ind] > 0 && D.pay[ind] > 0) { const l = Math.log(D.pay[ind]); h += V[ind]; p1 += V[ind] * l; p2 += V[ind] * l * l; }
+    const varW = n > 0 ? m2 / n - (m1 / n) ** 2 : 0, varB = h > 0 ? p2 / h - (p1 / h) ** 2 : 0;
+    s2w = Math.max(1e-3, varW - varB);
+  }
+  const indFor = (w: number, W: number) => {
+    const wt = new Float64Array(N_IND);
+    let t = 0;
+    for (let ind = 0; ind < N_IND; ind++) {
+      if (!room(ind, w) || !(D.pay[ind] > 0)) continue;
+      const z = Math.log(W / D.pay[ind]) + s2w / 2;
+      wt[ind] = V[ind] * Math.exp(-0.5 * z * z / s2w); t += wt[ind];
+    }
+    if (!(t > 0)) return pickInd(w);
+    let x = R.u() * t;
+    for (let ind = 0; ind < N_IND; ind++) if (wt[ind] > 0) { x -= wt[ind]; if (x < 0) return ind; }
+    return pickInd(w);
+  };
   for (const sl of shuffle(seekers)) {
-    const i = (sl / 3) | 0, k = sl % 3, job = bestJob(i, k);
+    const i = (sl / 3) | 0, k = sl % 3, W = WAGE()[k][i];
+    if (W > 0 && IND()[k][i] === IND_NONE) {
+      const ind = indFor(r.a!.wt[i], W);
+      if (ind >= 0) { place(i, k, { ind, code: firmIn(ind), pay: W }); continue; }
+    }
+    const job = bestJob(i, k);
     if (job) place(i, k, job);
     else { EMP()[k][i] = EMP_UNEMP; UN()[k][i] = 1; }
   }

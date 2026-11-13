@@ -1837,7 +1837,7 @@ const LEASE_M = 12; // a flat's lease (households.ts: leaseEnd = month + 12) [S]
  */
 const FLAT_LOOKBACK_M = 3;
 const CARD_Q = 16;
-export function priceFlats(roll: FlatRoll, cards: number[] | undefined, free: number, comp: number | undefined, idxNow = 1, perCard = 1, tenureM = LEASE_M): void {
+export function priceFlats(roll: FlatRoll, cards: number[] | undefined, free: number, comp: number | undefined, idxNow = 1): void {
   const now = cards?.length ? cards.slice().sort((p, q) => q - p) : [];
   // this month's cards, compressed for the months after it
   const hist = (roll.cq ?? []).slice(-(FLAT_LOOKBACK_M - 1));
@@ -1853,21 +1853,11 @@ export function priceFlats(roll: FlatRoll, cards: number[] | undefined, free: nu
   if (pts.length && free > 0) {
     pts.sort((p, q) => q.x - p.x);
     // leads a month that would sign at each price: the pooled cards over the months they came from
-    // ...each card worth `perCard` of a signer: the month's lookers over its cards (households.ts PER_CARD)
-    const months = (1 + hist.length) / Math.max(1e-6, perCard);
+    const months = 1 + hist.length;
     let W = 0, best = -Infinity, bx = pts[pts.length - 1].x;
     for (const p of pts) {
       W += p.w;
-      // A SIGNED TENANT PAYS FOR AS LONG AS IT STAYS (2026-11-13): the landlord
-      // weighs a flat's empty months against the tenancy it wins (`tenureM`:
-      // twelve months over the island renters' measured move-out rate, about
-      // two years) — not one lease — and against the AVERAGE free flat's wait,
-      // (free + 1) / 2k, not the last one's; and each card is worth the share
-      // of a signer it is (`perCard`: a household tours its whole shortlist
-      // and signs once). Each alone moved the asks the wrong way: cards read
-      // whole held them too high (blocks 20%+ empty for decades), cards read
-      // honestly against a one-year horizon sent them to the lowest budget.
-      const v = Math.exp(p.x) * (Math.max(LEASE_M, Math.min(60, tenureM)) - (free + 1) / (2 * W / months));
+      const v = Math.exp(p.x) * (LEASE_M - free / (W / months));
       if (v > best) { best = v; bx = p.x; }
     }
     if (!(best > 0)) bx = pts[pts.length - 1].x;
@@ -1875,7 +1865,7 @@ export function priceFlats(roll: FlatRoll, cards: number[] | undefined, free: nu
     // its own read of how long a flat waits for a signer at that ask (renewals price against it, households.ts)
     let Wb = 0;
     for (const p of pts) { if (p.x < bx) break; Wb += p.w; }
-    roll.fm = +Math.min(LEASE_M, (free + 1) / (2 * Math.max(1e-9, Wb / months))).toFixed(2);
+    roll.fm = +Math.min(LEASE_M, free / Math.max(1e-9, Wb / months)).toFixed(2);
     roll.ld = now.length;
     return;
   }

@@ -175,7 +175,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // fund, and even there it only binds when the income in place cannot support
   // more, which is the definition of a lease-up. See sizeRest.
   const stab = stabViewFor(rec, s.econ, grade, uwBasis);
-  const q = quote(s, prod, uwBasis, inPlace(rec, s, bbl, uwBasis).noi, rec.class, false, stab, grade, { nw: netWorth(s, parcels) });
+  const q = quote(s, prod, uwBasis, inPlace(rec, s, bbl, uwBasis).noi, rec.class, false, stab, grade, { nw: netWorth(s, parcels) }, appraised);
   const levered = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
   // Under the minimum cheque the desk writes nothing — `originate` returns no
   // loan below it, so the quote must not promise one.
@@ -389,7 +389,7 @@ export function executePurchase(
     // quoted $100,570 and closed at $99,724).
     holding.loan = originate(
       next, prod, uwBasis, inPlace(rec, next, bbl, uwBasis).noi, lev,
-      grade, rec.class, stab, { nw: netWorth(s, parcels) }, rec.buildSpec,
+      grade, rec.class, stab, { nw: netWorth(s, parcels) }, rec.buildSpec, marketAppraisal(next, rec, bbl, grade),
     );
     // NO LOAN, NO CLOSING. The cheque above was the EQUITY on a quoted
     // principal; if the desk will not write that principal, closing anyway

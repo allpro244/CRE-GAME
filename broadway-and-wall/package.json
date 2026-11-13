@@ -139,6 +139,7 @@
     "refi-bind": "node test/refi-bind.mjs",
     "advance": "node test/advance.mjs",
     "refi-strong": "node test/refi-strong.mjs",
+    "cheap-buy-loan": "node test/cheap-buy-loan.mjs",
     "appraisal": "node test/appraisal.mjs",
     "glut": "node test/glut.mjs",
     "ground-retail": "node test/ground-retail.mjs",

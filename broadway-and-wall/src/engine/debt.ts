@@ -1048,18 +1048,23 @@ function erf(x: number): number {
 }
 
 export function statedLtv(
-  s: GameState, product: LoanProduct, klass?: string, condition?: string, street = false, attach = 0, at: LossAt = {},
+  s: GameState, product: LoanProduct, klass?: string, condition?: string, street = false, attach = 0, at: LossAt = {}, over = 1,
 ): { ltv: number; why: string[]; solved?: boolean } {
   // THE DESK'S OWN ADVANCE (deskAdvance), on every kind of paper — on the
-  // building's own income yield when the quote has one (`at`).
-  const own = deskAdvance(s, product, klass, attach, at);
+  // building's own income yield when the quote has one (`at`). `over` is the
+  // appraisal over the basis the advance is quoted on (quote): the model
+  // lends against the appraisal, so its advance on a basis under it is that
+  // much more of the basis, up to the desk's policy ceiling.
+  const model = deskAdvance(s, product, klass, attach, at);
+  const own = model * Math.max(1, over);
   const income = onIncome(product);
   const worn = income && (condition === "worn" || condition === "obsolete") ? -REPAIRS_HOLDBACK : 0;
   const rel = street ? 0 : relAdvance(s, product);
   const ltv = Math.max(0.20, Math.min(product.maxLTV - 0.03, own + worn + rel));
   const on = lossClassOf(product) === "land" ? "dirt" : klass ?? "property";
-  const why = [product.mezz ? `their own risk model: the stack to ${Math.round(own * 100)}% on ${on} here`
-    : `their own risk model: ${Math.round(own * 100)}% on ${on} here`];
+  const why = [product.mezz ? `their own risk model: the stack to ${Math.round(model * 100)}% on ${on} here`
+    : `their own risk model: ${Math.round(model * 100)}% on ${on} here`];
+  if (over > 1.005 && own + worn + rel > product.maxLTV - 0.03) why.push(`that is of the appraisal, ${Math.round((over - 1) * 100)}% over the basis they lend on, so their policy ceiling of ${Math.round((product.maxLTV - 0.03) * 100)}% of the basis is what binds`);
   if (worn) why.push(`−${Math.round(-worn * 100)} held back for the repairs on the engineer's report`);
   if (rel >= 0.005) why.push(`+${Math.round(rel * 100)} for your file with them`);
   return { ltv: +ltv.toFixed(4), why, solved: true };
@@ -1437,7 +1442,21 @@ export function guarantorCap(g: Guarantor | undefined, p: LoanProduct): number {
   return Math.max(0, Math.round(g.nw * GUARANTOR_NW_MULT));
 }
 
-export function quote(s: GameState, product: LoanProduct, price: number, noiYr: number, klass?: string, street = false, stab?: StabView, condition?: string, guarantor?: Guarantor): Quote {
+export function quote(s: GameState, product: LoanProduct, price: number, noiYr: number, klass?: string, street = false, stab?: StabView, condition?: string, guarantor?: Guarantor, appraisal?: number): Quote {
+  // WHAT THE DESK WOULD RECOVER ON IS THE BUILDING, NOT THE PRICE (2026-11-13).
+  // `price` is the basis its policy advance is struck on — the lesser of cost
+  // and appraisal on a purchase or an unseasoned refinance (the supervisory
+  // loan-to-value definition, 12 CFR 34 Subpart D App. A) [S]. `appraisal` is
+  // what its appraiser says the building is worth, and that is what its loss
+  // model lends against: a building bought at a third of its value is not a
+  // riskier loan at 79% of the price than one bought at par at 26%. The model
+  // read the price as the value, so a cheap purchase covering its debt 4.5
+  // times sized at 64% of cost at the hometown bank (seed 11, month 1; the
+  // owner's worked example: $1M paid, $216K of income, ~$3M of value). Now
+  // the model's advance is on the appraisal, the policy ceiling on the basis,
+  // and the loan is the lesser.
+  const worth = Math.max(price, appraisal ?? 0);
+  const over = price > 0 ? worth / price : 1;
   // Capital availability moves the terms, not just the index. When the credit
   // window closes, spreads widen, advance rates come down and the desk
   // underwrites to a fatter coverage — all at once, which is what makes a
@@ -1480,8 +1499,8 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   // constraint (owner's market read). The loss model already takes the
   // building's own yield (lossInputs `at`); coverage sizing used it, the
   // advance did not.
-  const ownYield = onIncome(product) && price > 0 && noiYr > 0 ? { yieldPct: 100 * noiYr / price } : {};
-  const sheet = statedLtv(s, product, klass, condition, street, 0, ownYield);
+  const ownYield = onIncome(product) && worth > 0 && noiYr > 0 ? { yieldPct: 100 * noiYr / worth } : {};
+  const sheet = statedLtv(s, product, klass, condition, street, 0, ownYield, over);
   // Priced on the loss at the advance it writes (loanEl).
   const ratePct = bankRatePct(bench, productSpread(s, product, { ltv: sheet.ltv, klass, ease: crunchEase }), {
     standingAdd: st.spreadAdd, rel, dealAdd: qualityAdd - strongNameAt(sheet.ltv),
@@ -1541,7 +1560,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
     // in", and that is the whole defect: a quote with no reason is a dead
     // button. `holdCapped` carries the fact up to the panel.
     const hq: Quote = {
-      ...sizeRest(s, product, Math.min(byLtv, holdMax), price, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass, condition),
+      ...sizeRest(s, product, Math.min(byLtv, holdMax), worth, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass, condition),
       concWhy: conc.why,
       holdCapped: true,
       advanceLtvToday,
@@ -1567,7 +1586,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   if (!onIncome(product)) {
     return withGuarantor({ principal: Math.max(0, Math.round(byLtv)), ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy });
   }
-  return withGuarantor({ ...sizeRest(s, product, byLtv, price, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass, condition), concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy });
+  return withGuarantor({ ...sizeRest(s, product, byLtv, worth, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass, condition), concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy });
 }
 
 /**
@@ -1723,12 +1742,12 @@ const STAB_LTV = 0.65;
 // sizes without it writes a different coupon and principal than it quoted.
 export function originate(
   s: GameState, product: LoanProduct, price: number, noiYr: number, lev = 1,
-  condition?: string, klass?: string, stab?: StabView, guarantor?: Guarantor, spec?: number,
+  condition?: string, klass?: string, stab?: StabView, guarantor?: Guarantor, spec?: number, appraisal?: number,
 ): Loan | null {
   if (!productOpen(s, product)) return null;
   if (!windowOpen(s, product)) return null;
   if (!conditionOk(product, condition, spec)) return null;
-  const full = quote(s, product, price, noiYr, klass, false, stab, condition, guarantor);
+  const full = quote(s, product, price, noiYr, klass, false, stab, condition, guarantor, appraisal);
   const qd = { ...full, principal: Math.round(full.principal * Math.max(0, Math.min(1, lev))) };
   if (qd.principal < 100_000) return null;
   const pmt = scheduledPayment(qd.principal, qd.ratePct, product.ioM > 0, product.amortYears);
@@ -2681,7 +2700,7 @@ export function balloonLadder(
         // `originate` refuses at the table after the ladder has already picked.
         && conditionOk(p, h.condition, rec.buildSpec));
     const sized = ladder.map((p) => {
-      const raw = quote(s, p, collateralFor(p, coll), noi, quoteClass, false, stab, h.condition, guarantor);
+      const raw = quote(s, p, collateralFor(p, coll), noi, quoteClass, false, stab, h.condition, guarantor, coll.value);
       return { p, qd: { ...raw, principal: Math.round(raw.principal * hair.mult) } };
     });
     // THE LENDER'S OWN UNDERWRITING DECIDES, NOT A PREFERENCE ORDER. A quote
@@ -2748,7 +2767,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
   const release = refiFacilityRelease(s, parcels, bbl);
   const guarantor: Guarantor = { nw: netWorth(s, parcels) };
   const quotes = PRODUCTS.map((p) => {
-    const raw = quote(s, p, collateralFor(p, coll), noi, quoteClass, false, stab, h.condition, guarantor);
+    const raw = quote(s, p, collateralFor(p, coll), noi, quoteClass, false, stab, h.condition, guarantor, coll.value);
     const q = { ...raw, principal: Math.round(raw.principal * hair.mult) };
     // COVERAGE ON THE PAYMENT THE DESK SIZED TO. The card printed coverage on
     // the interest-only year's payment (1.71x) beside "binds coverage" from a
@@ -2888,7 +2907,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
     return { s, err: "No income to underwrite. Vacant land qualifies only for a land loan." };
   }
   // Same quote the card showed — haircut, stabilised bridge leg, and all.
-  const full = quote(next, product, value, noi, quoteClass, false, stab, h.condition, { nw: netWorth(next, parcels) });
+  const full = quote(next, product, value, noi, quoteClass, false, stab, h.condition, { nw: netWorth(next, parcels) }, coll.value);
   const qd = { ...full, principal: Math.round(full.principal * hair.mult * Math.max(0, Math.min(1, lev))) };
   const seniorBal = h.loan?.balance ?? 0;
   const mezzBal = h.mezz?.balance ?? 0;
@@ -2915,7 +2934,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
             : "Proceeds don't cover the payoff — you're underwater on this refi.",
     };
   }
-  const newLoan = originate(next, product, value, noi, lev * hair.mult, h.condition, quoteClass, stab, { nw: netWorth(next, parcels) }, rec.buildSpec);
+  const newLoan = originate(next, product, value, noi, lev * hair.mult, h.condition, quoteClass, stab, { nw: netWorth(next, parcels) }, rec.buildSpec, coll.value);
   if (!newLoan) return { s, err: "No lender will size a loan against this income." };
   // PRINCIPAL INTO CASH IS A LEDGER EVENT. Fees stay in debtSvc; net new
   // principal that lands in the operating account is `borrowed` — the bucket

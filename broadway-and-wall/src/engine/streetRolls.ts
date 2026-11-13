@@ -49,7 +49,7 @@ import { START_YEAR } from "./types";
 import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, useOccupancy, N_BANDS, scoreRentMult, locationRentMult } from "./value";
 import { isCommercial, bumpOf, minLettableSf, streetLease, pickSector, pickName, termBandM, depositFor, chosenTermM, useVacantSf, vacantSf } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
-import { tickTenantFin, tenantInsolvent, BACKGROUND_FAIL, entrantMargin, rentCapacity, finGrade } from "./tenantBooks";
+import { tickTenantFin, tenantInsolvent, BACKGROUND_FAIL, entrantMargin, rentCapacity, finGrade, revAnchor } from "./tenantBooks";
 import { rng, rrange, reletMonths, recordDeal, FIRM_PROFILE, turnoverYr, priceLevel12, CONC_DEPTH, SECTOR_LABEL, SF_PER_JOB } from "./market";
 import { staleDiscount, currentAskPsfYr, currentPackage } from "./absorption";
 import { leaseUpMonthsOf } from "./proforma";
@@ -1005,7 +1005,17 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
       // The contractual bump on each anniversary.
       const age = m - t.startM;
       if (age > 0 && age % 12 === 0) t.rentPsf = +(t.rentPsf * (1 + bumpOf(t) / 100)).toFixed(2);
-      const f = tickTenantFin(e, t, m < (t.freeUntilM ?? -1) ? 0 : t.rentPsf * t.sf, e.creditIdx ?? 1);
+      // A LEASE WITH NO FREE MONTHS PAYS RENT IN EVERY MONTH, THE OPENING'S
+      // INCLUDED (2026-11-13). "No free rent" was read as free until month -1,
+      // and the opening's history runs on months below zero: through all of
+      // it every firm without a free-rent date paid no rent in its books.
+      // Measured, town 103 shops: 370 of 510 firms in a "free" month every
+      // month of the history, 7% losing money; the month before the game the
+      // rent arrived, 26% were losing money, and insolvencies ran four to
+      // five times the history's for the game's first year — the floors they
+      // left, the catch-up wave of new firms and the bidding for what was
+      // left are the first years' vacancy swing and rent run in every class.
+      const f = tickTenantFin(e, t, m < (t.freeUntilM ?? -Infinity) ? 0 : t.rentPsf * t.sf, e.creditIdx ?? 1);
       if (tenantInsolvent(f) || rng(s, "leasing") < BACKGROUND_FAIL[t.credit]) {
         if (k in lost) lost[k] += firmHc(t);
         // WHY (why.ts): a firm the size of an anchor (rivals.ts reads them) writes what failed it
@@ -1235,13 +1245,33 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   const want: Record<Comm, number> = { office: 0, retail: 0, industrial: 0 };
   const tgt = eco?.target;
   const fill: number[] = [];
+  // THE TARGET IN THE STREET'S OWN MEASURE (2026-11-13). The books' island
+  // share is every named firm's heads over its industry's (economy.ts
+  // `sigma`); the street counts a shop at the heads its floor holds (`held`,
+  // above). So the day the books opened, the shop industries' "island heads"
+  // were a quarter more than the street counted its shops as having —
+  // measured, town 103: the shops' heads need 2.15M ft at their industries'
+  // feet a worker, they hold 1.71M, and the whole class is 1.89M — and that
+  // quarter read as a gap new shops formed into from the third month: 36,
+  // 64, 90 firms looking, vacancy 11% to 3%, the rent index up a quarter in
+  // a year. The same quantity with two answers. What the island's floors
+  // held of the target the first month it is read is the opening's own
+  // condition (`islandHeld0`), and the gap is what opens after it.
+  if (tgt && !e.islandHeld0) {
+    e.islandHeld0 = Array.from(tgt, (v, i) => {
+      let tot = 0;
+      for (const k of COMM) tot += named[k][i];
+      return v > 0 && tot > 0 ? +Math.min(1, tot / v).toFixed(4) : 1;
+    });
+  }
   if (tgt) for (let i = 0; i < N_IND; i++) {
     let tot = 0;
     for (const k of COMM) tot += named[k][i];
-    fill.push(tgt[i] > 0 ? tot / tgt[i] : 1);
+    const want0 = tgt[i] * (e.islandHeld0?.[i] ?? 1);
+    fill.push(want0 > 0 ? tot / want0 : 1);
     for (const k of COMM) {
       const split = tot > 0 ? named[k][i] / tot : (floorOf(INDUSTRY_IDS[i]) === k ? 1 : 0);
-      const t = tgt[i] * split;
+      const t = want0 * split;
       want[k] += t;
       gap[k][i] = Math.max(0, t - named[k][i]);
     }
@@ -1369,7 +1399,9 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     const ex = (e.exitAvg ??= {});
     if (!opening) ex[k] = ex[k] === undefined ? lost[k] : ex[k]! + (lost[k] - ex[k]!) / 12;
     let form = (k === "industrial" && !opening ? shedMovers : 0)
-      + (tgt ? (gapSf / FORM_M[k] + (ex[k] ?? 0)) * entry + fill : fill);
+      // (before the books' first target is read — the game's first two
+      // months — the closures are still replaced)
+      + (tgt ? (gapSf / FORM_M[k] + (ex[k] ?? 0)) * entry + fill : fill + (opening ? 0 : (ex[k] ?? 0) * entry));
     if (!(form > 0)) continue;
     // A shed firm moving onto the map from the region is one of the region's
     // shed firms: its industry is drawn by the heads each industry has on a
@@ -2275,6 +2307,22 @@ function growOpeningStreet(s: GameState, parcels: ParcelTable) {
       const eff = pk !== undefined && Number.isFinite(pk) ? ro.face * (1 - Math.max(0, Math.min(0.35, pk))) : ro.eff;
       e.effRentIdx[k] = +eff.toFixed(4);
       e.concIdx[k] = +Math.max(0, Math.min(1, (1 - eff / Math.max(1e-9, ro.face)) / CONC_DEPTH)).toFixed(4);
+      // ...AND WHAT THE FIRMS SELL IS MEASURED FROM THE SAME RENTS (2026-11-13).
+      // A firm's sales per head are sized from the opening's rent (tenantBooks.ts
+      // `revAnchor`: its trade's rent share of them is that rent), and what it
+      // will pay for space is that capacity over today's index — "exactly 1 at
+      // the opening" (`rentCapacity`). But the anchor was taken at the seed
+      // index, before the opening's history signed a lease, and the index is
+      // restated here to what those leases signed at: measured over ten towns,
+      // the game opened with office rents 11-30% over the anchor, shops 18-23%,
+      // sheds 10-16%. So every firm formed or re-sized in the game sold that
+      // much less against its rent than the firms of the opening beside it,
+      // a start paid 14-25% less than its trade's margin (`entrantMargin`),
+      // and a quarter of the shops were losing money on the first day. The
+      // anchor is the opening's rents as its leases left them.
+      const A = revAnchor(e);
+      A.rent[k] = e.rentIdx[k];
+      (A.eff ??= {})[k] = e.effRentIdx[k];
     }
     // ...and the market opens on what the firms hold, so its first month
     // does not restate the city's occupancy in one step.

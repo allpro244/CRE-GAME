@@ -336,7 +336,7 @@ function readFirms(s: GameState): Map<number, Seen> {
     if (t.fid === undefined || out.has(t.fid)) return;
     const floor = (t.use ?? "office") as Floor;
     if (!FLOORS.includes(floor)) return;
-    const rentYr = housed && m >= (t.freeUntilM ?? -1) ? t.rentPsf * t.sf : 0;
+    const rentYr = housed && m >= (t.freeUntilM ?? -Infinity) ? t.rentPsf * t.sf : 0;
     out.set(t.fid, { sec: t.sector, floor, hc: headsOf(t, floor), rentMo: rentYr / 12, z: t.fin?.z ?? 0, ind: t.ind });
   };
   for (const roll of Object.values(s.econ.streetRolls ?? {})) for (const t of roll.t) add(t, true);

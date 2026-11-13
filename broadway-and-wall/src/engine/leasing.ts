@@ -1685,7 +1685,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // its interest cover collapses and its cash runs out. A refused relief
       // letter still hurts — the rent it could not carry is still being
       // charged — but through the cash it drains, not a multiplier.
-      const fin = tickTenantFin(s.econ, t, q < (t.freeUntilM ?? -1) ? 0 : t.rentPsf * t.sf, s.econ.creditIdx ?? 1);
+      const fin = tickTenantFin(s.econ, t, q < (t.freeUntilM ?? -Infinity) ? 0 : t.rentPsf * t.sf, s.econ.creditIdx ?? 1);
       if (!tenantInsolvent(fin) && rng(s, "leasing") >= BACKGROUND_FAIL[t.credit]) continue;
       // FORFEITING A DEPOSIT IS NOT A CASH RECEIPT. It was collected at
       // signing and has been sitting in your account ever since as somebody

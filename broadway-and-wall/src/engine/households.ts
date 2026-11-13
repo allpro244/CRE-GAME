@@ -450,6 +450,26 @@ const Q_FILL = 1.107;
  */
 const LEAVE_JOBLESS_M = 0.05 / 12;
 /**
+ * ORDINARY MIGRATION, BOTH WAYS (2026-11-13). The share of households that
+ * move to another county in a year, by the householder's age band (<25,
+ * 25-34, 35-44, 45-54, 55-64, 65+): Census CPS ASEC 2019, movers from a
+ * different county, state or abroad, by age [S~] — the young move several
+ * times as often as the old. Of those moves, LIFE_MOVE_SHARE are for family,
+ * housing, school, retirement and other non-job reasons (CPS ASEC 2019
+ * reasons for moving, long-distance movers: about two in five are for a job)
+ * [S~]; the job moves are the register's own (households arrive for unfilled
+ * work, leave out of it or for better pay). Each household leaves for such
+ * reasons at its age's rate, and the region receives the movers the nation
+ * sends at the same rates over its own age mix (AGE_ALL): a town as young as
+ * the nation trades like for like, an older one sends fewer than it receives
+ * and is renewed. Without it the region gained people only for unfilled jobs
+ * and lost them only out of work: it aged in place — householders 65 and
+ * over from 24% to 34% in fifty years, deaths from 7 to 13 a thousand a year,
+ * its labour force flat and its jobs with it (seed 31337).
+ */
+const MIG_RATE_BY_AGE = [0.085, 0.063, 0.038, 0.024, 0.019, 0.014];
+const LIFE_MOVE_SHARE = 0.6;
+/**
  * WORKERS CAN MOVE, SO REAL PAY IS WHAT A TOWN COMPETES ON (§6c-D). Pay here
  * is set by the town's firms (economy.ts `postPayAndPrices`), and nothing in
  * it reads the town's prices. What ties a metro's pay to its cost of living is
@@ -855,6 +875,8 @@ export interface HouseholdRegister {
   payRef?: number[];
   /** households a town that pays more than its prices has drawn, short of a whole one of the region's weight (MOVE_ELAST) */
   drawAcc?: number;
+  /** ordinary migrants the nation has sent, short of a whole agent (MIG_RATE_BY_AGE) */
+  lifeArr?: number;
   /** The island renters' median income over the town's median, fixed at the opening. */
   renterInc: number;
   /** The flats' effective rent index and the wage index at the opening: the engine's own burden is 30% moved by their ratio. */
@@ -3646,17 +3668,48 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   // Read on pay alone, the draw ignored the town's jobless rate: after an
   // arrivals wave left a quarter of its labour force out of work (shock test
   // demand-arrivals-30) it drew job seekers on its pay as before.
+  // ORDINARY MIGRATION (MIG_RATE_BY_AGE): who leaves for reasons of their own, a
+  // whole household of each agent's weight at its age's rate, on a schedule
+  // phased by its id (no coin) — and the movers the nation sends, below
+  let lifeIn = 0;
+  if (D) {
+    const A = r.a!;
+    let hh = 0;
+    for (let i = 0; i < r.n; i++) {
+      if (i < gone.length && gone[i]) continue;
+      const W = A.wt[i];
+      hh += W;
+      const p = MIG_RATE_BY_AGE[ageBand(A.age[i])] * LIFE_MOVE_SHARE;
+      const ph = A.id[i] % 120;
+      const nOut = Math.floor(((s.month + ph + 1) * W * p) / 12) - Math.floor(((s.month + ph) * W * p) / 12);
+      if (nOut <= 0) continue;
+      r.flow.left = (r.flow.left ?? 0) + Math.min(W, nOut);
+      if (nOut >= W - 1e-6) {
+        if (A.ten[i] === TEN_RENT) {
+          r.flow.movedOut += W;
+          noteOut(r, i, "other", () => ({ n: {}, t: "A household moved away for family or other reasons" }));
+        }
+        gone[i] = 1;
+      } else A.wt[i] = W - nOut;
+    }
+    let natRate = 0;
+    for (let b = 0; b < AGE_ALL.length; b++) natRate += AGE_ALL[b] * MIG_RATE_BY_AGE[b];
+    // ...the arrivals the nation sends, as many as the region's homes take (mainRoomFor)
+    r.lifeArr = (r.lifeArr ?? 0) + (hh * natRate * LIFE_MOVE_SHARE) / 12 / Math.max(0.01, r.wRegion);
+    while (r.lifeArr >= 1 && mainRoomFor(r, r.wRegion)) { r.lifeArr -= 1; lifeIn++; }
+    if (r.lifeArr > 12) r.lifeArr = 12;
+  }
   const draw = D ? MOVE_M * Math.max(0, Math.pow(Math.max(0.01, hereRel(e) * workOdds(e)), MOVE_ELAST) - 1) : 0;
   const wave = e.bsMigPull ?? 0;
   const bsIsland = wave > 0 && e.bsArrivals ? e.bsArrivals.island * Math.min(1, e.bsArrivals.monthly / wave) : 0;
-  if ((wave > 0 || draw > 0) && D) {
+  if ((wave > 0 || draw > 0 || lifeIn > 0) && D) {
     let ppl = 0;
     for (let i = 0; i < r.n; i++) ppl += r.a!.wt[i] * (r.a!.adults[i] + r.a!.kids[i]);
     r.drawAcc = (r.drawAcc ?? 0) + (ppl * draw) / HH_SIZE / Math.max(0.01, r.wRegion);
     const drawn = Math.floor(r.drawAcc);
     r.drawAcc -= drawn;
     if ((e.fiscalRel ?? 1) > 1) whyFiscal(s, e, drawn * r.wRegion, "came");
-    const agents = Math.round((ppl * wave) / HH_SIZE / Math.max(0.01, r.wRegion)) + drawn;
+    const agents = Math.round((ppl * wave) / HH_SIZE / Math.max(0.01, r.wRegion)) + drawn + lifeIn;
     for (let k = 0; k < agents; k++) {
       const i = addAgent(r), b = r.a!;
       const income = r.renterInc * medianIncome(e) * Math.exp(INCOME_SIGMA * R.n());

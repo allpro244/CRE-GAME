@@ -1927,11 +1927,36 @@ function letTo(R: Rand, r: HouseholdRegister, b: Block, e: Econ, m: number, want
   const w = r.wIsland, A = r.a!;
   for (let k = 0; k < 16 && want.length; k++) {
     const c = want[Math.floor(R.u() * want.length)];
-    if ((c < gone.length && gone[c]) || !(A.ten[c] === TEN_MAINLAND || readyToRent(r, A, c)) || A.wt[c] < w) continue;
+    if ((c < gone.length && gone[c]) || !(A.ten[c] === TEN_MAINLAND || readyToRent(r, A, c))) continue;
     if (!wantsIsland(r, A, c, e, b.let, -MOVE_LOG)) continue;
+    // A RECORD WORN DOWN TO A FRACTION OF A HOUSEHOLD STILL MOVES A WHOLE ONE
+    // (2026-11-13). A record across the water stands for many households and
+    // loses weight each time one of them moves, buys or leaves; one worn under
+    // a single island household's weight was refused here, though the touring
+    // loop had counted it due, shown it a flat it wanted and could pay for.
+    // Measured, seed 22: 1 household a month refused this way at year 5, 9 at
+    // year 20, 98 at year 40 (against 171 signing) — the island's flats going
+    // 5% to 15-29% empty over the late decades with thousands wanting one.
+    // The rest of the household comes from a record like it (`alike`), so the
+    // people moved are one household of the kind that looked. [M: a sampling
+    // artefact of the weighted register, not a fact about households.]
+    let donor = -1;
+    if (A.wt[c] < w) {
+      const short = w - A.wt[c], n = r.n, start = (A.id[c] * 7919) % Math.max(1, n);
+      let any = -1;
+      for (let q = 0; q < n; q++) {
+        const j = (start + q) % n;
+        if (j === c || (j < gone.length && gone[j]) || A.ten[j] !== TEN_MAINLAND || A.wt[j] < short + w) continue;
+        if (alike(A, c, j)) { donor = j; break; }
+        if (any < 0) any = j;
+      }
+      if (donor < 0) donor = any;
+      if (donor < 0) continue;
+    }
     const i = addAgent(r), a = r.a!;
     for (const f of FIELD_NAMES) (a[f] as Uint8Array)[i] = (a[f] as Uint8Array)[c];
     a.id[i] = r.nextId++;
+    if (donor >= 0) { a.wt[donor] -= w - a.wt[c]; a.wt[c] = w; }
     a.wt[c] -= w;
     if (a.wt[c] < 1e-6 && c < gone.length) gone[c] = 1;
     a.wt[i] = w; a.ten[i] = TEN_RENT; a.blk[i] = b.idx;

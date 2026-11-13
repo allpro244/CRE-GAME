@@ -1592,7 +1592,37 @@ function budgetOf(r: HouseholdRegister, a: HouseholdArrays, i: number, e: Econ):
   return Math.min(Math.max(1, r.mainRent) * Math.exp(islandPull(r, a, i, e) - MOVE_LOG), (SCREEN * inc) / 12);
 }
 /** This month's guest cards, by block index: each lead's budget over the block's market rent for a flat (log), and the flats it listed (writeRolls hands them to the rolls). Not saved: it lives one month. */
-let DOORS: Map<number, { x: number[]; u: number }> | null = null;
+let DOORS: Map<number, { x: number[]; u: number; h: number[]; a: number }> | null = null;
+/**
+ * WHAT A LANDLORD CAN LEARN AT ITS DOOR (2026-11-13). Every card carried the
+ * most its household would pay — its true limit — so a landlord knew each
+ * lead's reservation rent and priced an empty flat at the richest visitor of
+ * the quarter: measured, seed 22 month 3, a six-flat block with one flat
+ * empty and eleven cards (one at +33% over the market, the next at +1%)
+ * asked +33% and waited for the next such household. Each block held a flat
+ * or two for its best lead in every twenty, and the island stood 11-24% empty
+ * by year 50 at rents that kept rising. Nobody tells a landlord their limit.
+ * A lead with another flat on its list says what that one costs (the card as
+ * it was); one for whom the rent is too dear says so, and what it could pay;
+ * one that would take the flat at its rent, with nowhere else to go, says
+ * only yes — unless more of them say yes than there are flats, and then they
+ * bid against each other and the landlord learns what the best applicant it
+ * turns away would have paid (the runner-up's price of an auction; Vickrey
+ * 1961). `h` holds the limits of the leads that said yes, `a` the rent they
+ * said yes to (both log, over the block's market rent); `settleDoors` turns
+ * them into cards. [D: an information rule, no constant.]
+ */
+function settleDoors(): void {
+  if (!DOORS) return;
+  for (const d of DOORS.values()) {
+    if (!d.h.length) continue;
+    d.h.sort((p, q) => q - p);
+    const flats = Math.max(1, Math.ceil(d.u));
+    const top = d.h.length > flats ? Math.max(d.a, d.h[flats]) : d.a;
+    for (const b of d.h) d.x.push(+Math.min(b, top).toFixed(4));
+    d.h = [];
+  }
+}
 
 // ---------------------------------------------------------------- owning (stage 2)
 type HomeMkt = { std: number; starter: number; rate: number; amort: number; ucMo: number };
@@ -1753,10 +1783,53 @@ function sortOpening(R: Rand, r: HouseholdRegister, e: Econ, letOf: (i: number) 
     if (t !== TEN_RENT && t !== TEN_MAINLAND) continue;
     const cut = Math.log(letOf(i) / Math.max(1, r.mainRent)) - (r.locMu ?? 0) - commuteSaving(a, i, e) / Math.max(1, r.mainRent);
     const island = t === TEN_RENT;
+    // EACH SIDE OF ITS OWN THRESHOLD, WHICH IS NOT THE SAME LINE (2026-11-13).
+    // A household moves only when the other side beats its own by the cost of
+    // a move (MOVE_LOG, `wantsIsland`): an island renter stays down to
+    // cut - MOVE_LOG, a renter across the water comes only over cut +
+    // MOVE_LOG. Both sides were sorted at `cut`, so the opening had nobody in
+    // the band between: every renter across the water was at least a move's
+    // cost short of coming, and island rents had to fall an eighth before the
+    // first household answered (the flats went 4.8% empty to 15% in the
+    // opening's first eight months, seed 11). A settled city has households on
+    // both sides all through the band; each side is drawn up to its own line.
+    const line = cut + (island ? -MOVE_LOG : MOVE_LOG);
     let x = a.taste[i];
-    for (let k = 0; k < 64 && (island ? x < cut : x >= cut); k++) x = LOC_SIGMA * R.n();
-    if (island ? x < cut : x >= cut) x = cut + (island ? 0.01 : -0.01);
+    for (let k = 0; k < 64 && (island ? x < line : x >= line); k++) x = LOC_SIGMA * R.n();
+    if (island ? x < line : x >= line) x = line + (island ? 0.01 : -0.01);
     a.taste[i] = x;
+  }
+  // ...AND THE HOUSEHOLDS ALREADY ON THEIR WAY (2026-11-13). The sort above
+  // leaves nobody across the water who would take an island flat today, yet
+  // the island's renters leave it every month for reasons that have nothing
+  // to do with its rent (they buy, they are evicted, a household ends): in a
+  // settled city the households that replace them are already looking. Each
+  // looks once a year (the touring loop), so the pipeline standing at any
+  // time is a year of those replacements: the renters who move in a year
+  // (NMHC, 45%) less the ones who only change flats on the island
+  // (RESID_MOVE) [D, from the two sourced rates]. The renters across the
+  // water nearest to wanting the island, whose pay passes its landlords'
+  // screen, are that pipeline: their tastes are drawn over their line.
+  let islandW = 0;
+  for (let i = 0; i < r.n; i++) if (a.ten[i] === TEN_RENT) islandW += a.wt[i];
+  const need = (0.45 - RESID_MOVE) * islandW;
+  const cand: { i: number; gap: number }[] = [];
+  for (let i = 0; i < r.n; i++) {
+    if (a.ten[i] !== TEN_MAINLAND) continue;
+    const rent = letOf(i), inc = verifiedPay(a, i);
+    if (!(inc > 0) || (12 * rent) / inc > SCREEN) continue;
+    const line = Math.log(rent / Math.max(1, r.mainRent)) - (r.locMu ?? 0) - commuteSaving(a, i, e) / Math.max(1, r.mainRent) + MOVE_LOG;
+    cand.push({ i, gap: line - a.taste[i] });
+  }
+  cand.sort((p, q) => p.gap - q.gap);
+  let got = 0;
+  for (const c of cand) {
+    if (got >= need) break;
+    const line = a.taste[c.i] + c.gap;
+    let x = LOC_SIGMA * R.n();
+    for (let k = 0; k < 64 && x < line; k++) x = LOC_SIGMA * R.n();
+    a.taste[c.i] = x < line ? line + 0.01 : x;
+    got += a.wt[c.i];
   }
 }
 
@@ -1989,12 +2062,25 @@ function ownerLike(R: Rand, r: HouseholdRegister, i: number, gone: Uint8Array): 
 function mainWill(r: HouseholdRegister, a: HouseholdArrays, i: number): number | undefined {
   const inc = verifiedPay(a, i);
   if (!(inc > 0)) return undefined;
-  let w = (SCREEN * inc) / 12;
-  if (CTX && r.locMu !== undefined) {
-    const alt = CTX.letAvg * Math.exp(-islandPull(r, a, i, CTX.e));
-    if (alt > 0) w = Math.min(w, alt);
-  }
-  return w;
+  // WHAT IT WOULD PAY IS WHAT RENTERS SPEND ON RENT (2026-11-13). It bid the
+  // landlord's screen, half its pay (SCREEN), capped at what an island flat
+  // would cost it (the island's average rent less its pull to the island).
+  // Half its pay is no household's own limit, so the island cap was the bid
+  // that struck the rent — for every household at once, though the island
+  // never has more than a few hundred flats empty for the eleven thousand
+  // households across the water. And the island's budgets are the mainland's
+  // rent times a taste (`budgetOf`): each market priced off the other with
+  // nothing under either. Measured, seed 11: the island's asks slipped 16% in
+  // the opening's fourth month, the standard home followed from $962 to $570
+  // in six more, and the island's budgets with it — island rents at half
+  // their opening inside a year, on every seed. A household that takes an
+  // island flat leaves this ladder; the ones on it bid what renters spend,
+  // three tenths of income in every metro and every decade (Davis &
+  // Ortalo-Magné 2011, RED: a constant expenditure share; the ACS median the
+  // opening's incomes are solved to, HH_RENT_SHARE0) [S]. The screen stays
+  // the landlord's limit where a lease is signed.
+  void r;
+  return (HH_RENT_SHARE0 * inc) / 12;
 }
 /** The rent a household signs or renews a mainland flat at: the standard's going rent if it is among those the standard homes go to, else the older stock's, at what its pay carries. */
 function mainRentFor(r: HouseholdRegister, a: HouseholdArrays, i: number): number {
@@ -2109,6 +2195,7 @@ const OLDER_TIERS = 3;
  */
 function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
   const a = r.a!;
+  let opening = false;
   const cost = e.costIdx ?? 1, cap = e.capRate?.multifamily ?? 1;
   let occ = 0;
   for (let i = 0; i < r.n; i++) if (a.ten[i] === TEN_MAINLAND) occ += a.wt[i];
@@ -2143,7 +2230,16 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
       hB.push(w / v); aB.push(ask);
     }
     r.mk = { homes: occA / v, homes0: occA / v, ask0: r.mainRent, cap0: cap, cost0: cost, occ, roll: { occ: 0 }, pipe: [], cards: [], signed: 0, homesB: occB / v, askB: aB[1] ?? aB[0], askB0: aB[1] ?? aB[0], hB, aB, aB0: [...aB] };
-    return;
+    // THE OPENING'S RENTS ARE THE LADDER'S OWN (2026-11-13). The opening
+    // stopped here, on the rents the register was seeded with, and the ladder
+    // below struck its first rents a month later (the standard home $962 to
+    // $829, the older tiers by a quarter to a half, seed 11): the island's
+    // tastes had been solved against the seeded rent the month before
+    // (`solveLocMu`), and the households sorted to want an island flat no
+    // longer did. One quantity, one answer: the ladder strikes in the opening
+    // month too, before the island is sorted against it, and every sitting
+    // renter pays the going rent of the home its bid reaches.
+    opening = true;
   }
   const mk = r.mk;
   mk.homesB ??= 0; mk.askB ??= r.mainRent * 0.6; mk.askB0 ??= mk.ask0 * 0.6;
@@ -2228,6 +2324,7 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
     aB[tr] = Math.min(tr === 0 ? r.mainRent : aB[tr - 1], Math.max(floorT, pT[tr] >= 0 ? pT[tr] : last));
   }
   mk.askB = aB[Math.floor(OLDER_TIERS / 2)];
+  if (opening) for (let i = 0; i < r.n; i++) if (a.ten[i] === TEN_MAINLAND) a.rent[i] = mainRentFor(r, a, i);
   mk.occ = occ; mk.signed = 0; mk.cards = [];
   (mk.ask12 ??= []).push(r.mainRent);
   if (mk.ask12.length > 12) mk.ask12.shift();
@@ -2588,6 +2685,52 @@ function retire(emp: Int32Array, wg: Float32Array, i: number) {
  * half an agent's weight; an island household (weight 1) fills what a
  * regional one (weight wRegion) would overshoot.
  */
+/**
+ * THE OPENING'S LABOUR MARKET, SETTLED (2026-11-13). The register opened with
+ * every position filled: no opening posted anywhere, while about one worker
+ * in fifty leaves a job every month (SEP_RATE, the quits) and an opening takes
+ * a month or more to fill (Q_FILL). So the standing stock of openings every
+ * labour market carries had to be built out of the opening's payrolls:
+ * measured, seed 22, positions 39,412 flat while the openings went 0 to 1,100
+ * (2.7%) over five months, filled jobs fell 3.3% and unemployment went from
+ * 4.0% to 7.1% — in every town, the first-year "recession" the phase clock
+ * then dated, with the lettings, evictions and rents that follow a jobless
+ * rate up three points. The opening is now the market's own resting point:
+ * the month the earners are first placed, the separations, quits and
+ * matches are run with everything else held (nobody arrives or leaves town,
+ * no firm changes its positions) until the stock of openings stops rising —
+ * the months the market would have spent getting there. [D: the model's own
+ * flows; no constant.] `SETTLING` holds migration out of those months.
+ */
+let SETTLING = false;
+function settleLabour(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Econ): void {
+  const a = () => r.a!;
+  const openings = () => {
+    let emp = 0, pos = 0;
+    for (let i = 0; i < r.n; i++) for (const x of [a().emp1[i], a().emp2[i], a().emp3[i]]) if (isWorking(x)) emp += a().wt[i];
+    for (const h of D.heads) pos += h;
+    return pos - emp;
+  };
+  const keep = { ...r.flow, out: r.flow.out ? { ...r.flow.out } : undefined, spendCat: r.flow.spendCat ? { ...r.flow.spendCat } : undefined };
+  SETTLING = true;
+  let was = openings(), flat = 0;
+  // (a guard on the count: the stock rises for five or six months and levels)
+  for (let k = 0; k < 60; k++) {
+    const sep = r.theta !== undefined && r.thetaRef !== undefined && r.theta > 0 && r.thetaRef > 0 ? SEP_RATE * Math.pow(r.theta / r.thetaRef, -SEP_ETA) : SEP_RATE;
+    for (let i = 0; i < r.n; i++) for (const [emp, un] of [[a().emp1, a().un1], [a().emp2, a().un2], [a().emp3, a().un3]] as const) {
+      const x = emp[i];
+      if (x === EMP_NONE || x === EMP_RETIRED || x === EMP_UNEMP) continue;
+      if (R.u() < sep) { emp[i] = EMP_UNEMP; un[i] = 0; }
+    }
+    matchJobs(s, R, r, D, e, r.n);
+    const now = openings();
+    // level: two months in which the stock did not rise (one is a month's noise)
+    if (now <= was && ++flat >= 2) break;
+    was = Math.max(was, now);
+  }
+  SETTLING = false;
+  r.flow = keep as typeof r.flow;
+}
 function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Econ, n0: number): number[] {
   const a = r.a!;
   const N = new Float64Array(N_IND);
@@ -2602,7 +2745,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // to its heads, a regional household's weight short every time.
   const pull = Math.pow(Math.max(0.01, hereRel(e)), MOVE_ELAST);
   const leave: number[] = [];
-  if (pull < 1) {
+  if (pull < 1 && !SETTLING) {
     for (let i = 0; i < n0; i++) {
       if (!(isWorking(a.emp1[i]) || isWorking(a.emp2[i]) || isWorking(a.emp3[i]))) continue;
       if (!(R.u() < MOVE_M * (1 - pull))) continue;
@@ -2887,9 +3030,9 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   let hhW = 0, ownW = 0;
   for (let i = 0; i < r.n; i++) { hhW += r.a!.wt[i]; if (r.a!.ten[i] === TEN_OWN) ownW += r.a!.wt[i]; }
   const ownShare = hhW > 0 ? ownW / hhW : 0;
-  r.arriveAcc = (r.arriveAcc ?? 0) + MOVE_M * Math.min(1, pull) * hhW;
+  r.arriveAcc = (r.arriveAcc ?? 0) + (SETTLING ? 0 : MOVE_M * Math.min(1, pull) * hhW);
   const slots: number[] = [];
-  for (let ind = 0; ind < N_IND; ind++) for (let v = open[ind]; v >= wR / 2; v -= wR) slots.push(ind);
+  if (!SETTLING) for (let ind = 0; ind < N_IND; ind++) for (let v = open[ind]; v >= wR / 2; v -= wR) slots.push(ind);
   const V4 = V.slice();
   for (const ind of shuffle(slots)) {
     {
@@ -3066,6 +3209,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // 6. who leaves: nobody in work (LEAVE_JOBLESS_M) — an island renter too
   // (households stage 2: its flat empties and is let again from across the
   // water). A jobless other adult past six months out leaves on its own.
+  if (SETTLING) return leave;
   const c = r.a!;
   for (let i = 0; i < n0; i++) {
     if (leaving[i]) continue;
@@ -3145,6 +3289,20 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   const short = shortIndexOf(e) / 100;
   const n0 = r.n;
 
+  // THE EARNERS MEET THE FIRMS BEFORE THE OPENING'S FIRST MONTH IS LIVED
+  // (2026-11-13). The first month the books ran, the households spent on the
+  // pay they were drawn with and were placed with the firms, at the firms'
+  // pay, at the month's end: the firms' opening books were calibrated on a
+  // month's spending ($70.4M, seed 11) that the next month's pay ($66.4M) did
+  // not repeat. They are placed first, the labour market settled
+  // (`settleLabour`), and the month is lived on the pay they have.
+  if (D && r.firmHc === undefined) {
+    SETTLING = true;
+    matchJobs(s, R, r, D, e, r.n);
+    SETTLING = false;
+    settleLabour(s, R, r, D, e);
+    for (let i = 0; i < r.n; i++) openPermIncome(r.a!, i, e);
+  }
   // ---- jobs: indexation and separations
   let lf = 0, un = 0;
   {
@@ -3566,8 +3724,8 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     const nowRooms = rooms.filter((x) => x.room > 0);
     const wNow = nowRooms.reduce((t, x) => t + (x.b.w ?? 1), 0);
     const pickNow = () => { let u = R.u() * wNow; for (const x of nowRooms) { u -= x.b.w ?? 1; if (u <= 0) return x; } return nowRooms[nowRooms.length - 1]; };
-    const doors = (DOORS = new Map<number, { x: number[]; u: number }>());
-    for (const x of rooms) doors.set(x.b.idx, { x: [], u: x.free });
+    const doors = (DOORS = new Map<number, { x: number[]; u: number; h: number[]; a: number }>());
+    for (const x of rooms) doors.set(x.b.idx, { x: [], u: x.free, h: [], a: Math.log(Math.max(1e-6, x.b.rel ?? 1)) });
     const seekers: { c: number; n: number }[] = [];
     const ready: number[] = [];
     for (let i = 0; i < r.n; i++) if (!(i < gone.length && gone[i]) && readyToRent(r, a, i)) ready.push(i);
@@ -3623,7 +3781,10 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
           if (!(mktUnit > 0)) continue;
           let alt = budget;
           for (const y of seen) if (y !== x && y.room > 0 && y.b.let <= budget) alt = Math.min(alt, mktUnit * val(y));
-          doors.get(x.b.idx)!.x.push(+Math.log(alt / mktUnit).toFixed(4));
+          // with nowhere else to go and the rent within its means it says only yes (`settleDoors`)
+          const d = doors.get(x.b.idx)!;
+          if (alt >= budget && budget >= x.b.let) d.h.push(Math.log(budget / mktUnit));
+          else d.x.push(+Math.log(alt / mktUnit).toFixed(4));
         }
         // ...and it signs for the best value on the list it can pay for
         let pick: (typeof rooms)[number] | undefined;
@@ -3634,6 +3795,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       }
     }
   }
+  settleDoors();
   r.unmet = unmet;
   for (const b of B.list) {
     if (byHH && b.street) continue;
@@ -3674,7 +3836,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     // the month the register's earners are first placed with the firms, at the firms' pay (`openPermIncome`)
     const firstPlacing = r.firmHc === undefined;
     const leaving = matchJobs(s, R, r, D, e, nOld);
-    if (firstPlacing) for (let i = 0; i < nOld; i++) openPermIncome(r.a!, i, e);
+    void firstPlacing;
     for (let i = nOld; i < r.n; i++) firstMonth(r, i, e);
     const out = new Uint8Array(r.n);
     for (const i of leaving) out[i] = 1;

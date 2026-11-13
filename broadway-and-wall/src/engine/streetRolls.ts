@@ -1351,8 +1351,25 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
     // region was empty never housed its own growth: industrial employment up
     // 14-23% over fifty years while its shed firms fell by a third and shed
     // vacancy reached 18-29% (Frontier towns, 2026-11-11).
+    // NEW FIRMS REPLACE THE ONES THAT CLOSE, AS THEY CLOSE (2026-11-13). In the
+    // game a firm formed only into the gap between what the town's industries
+    // want of the island and what its firms hold — a gap that is nothing until
+    // a firm has closed, and then takes FORM_M to become a firm looking and
+    // SEARCH_M more to become a lease. So every closure left its floor empty
+    // for fifteen months (offices), and with a tenth of the tenants closing or
+    // leaving a year the street rested about a tenth emptier than it opened:
+    // measured, seed 22, twenty months, the town's jobs flat — offices 4.4% to
+    // 11.5% empty, sheds 7.8% to 13.2%, the firms formed a month a tenth of
+    // the feet lost. Firms are born at about the rate they die, year in and
+    // year out (Census Business Dynamics Statistics: establishment births
+    // 9.8% and deaths 8.9% of establishments a year, 2010-19) [S]: the year's
+    // closures (a twelve-month running mean of the feet lost, `exitAvg`) form
+    // again where a start pays (`entry`), and the gap term does what is left —
+    // the town growing into, or out of, what its firms hold.
+    const ex = (e.exitAvg ??= {});
+    if (!opening) ex[k] = ex[k] === undefined ? lost[k] : ex[k]! + (lost[k] - ex[k]!) / 12;
     let form = (k === "industrial" && !opening ? shedMovers : 0)
-      + (tgt ? gapSf / FORM_M[k] * entry + fill : fill);
+      + (tgt ? (gapSf / FORM_M[k] + (ex[k] ?? 0)) * entry + fill : fill);
     if (!(form > 0)) continue;
     // A shed firm moving onto the map from the region is one of the region's
     // shed firms: its industry is drawn by the heads each industry has on a

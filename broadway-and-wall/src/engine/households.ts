@@ -1812,7 +1812,17 @@ function sortOpening(R: Rand, r: HouseholdRegister, e: Econ, letOf: (i: number) 
   // screen, are that pipeline: their tastes are drawn over their line.
   let islandW = 0;
   for (let i = 0; i < r.n; i++) if (a.ten[i] === TEN_RENT) islandW += a.wt[i];
-  const need = (0.45 - RESID_MOVE) * islandW;
+  // ...THE WHOLE YEAR'S LETTINGS, THE MOVERS' INCLUDED (2026-11-13). This
+  // was the 45% less RESID_MOVE, on the reading that a household moving for
+  // family or other reasons only changes flats on the island. In this
+  // register it crosses the water first (`toMainland`, still wanting the
+  // island) and comes back through the same once-a-year touring loop as
+  // anyone else, so at rest about a year of those movers is standing across
+  // the water too, and the flats they left wait for a looker like any other.
+  // Without them the island let 75-90 flats a month against 100-150 emptied
+  // from the opening's fourth month (seed 11), and its rents fell by a third.
+  // [D: NMHC's 45% of renters moving a year, whole.]
+  const need = 0.45 * islandW;
   const cand: { i: number; gap: number }[] = [];
   for (let i = 0; i < r.n; i++) {
     if (a.ten[i] !== TEN_MAINLAND) continue;

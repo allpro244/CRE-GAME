@@ -2441,6 +2441,8 @@ export interface Econ {
    * closed deals say, and how much evidence there is behind it.
    */
   capRead?: Partial<Record<BuiltClass, CapRead>>;
+  /** the feet the street's firms lost to closures and departures a month, a twelve-month running mean, by floor: new firms form at that rate (streetRolls.ts) */
+  exitAvg?: Partial<Record<"office" | "retail" | "industrial", number>>;
   /** The land texture level's read-out (propmarket.ts tickLandRead): evidence, window (0 = stale), median age. */
   landReadOut?: { n: number; win: number; ageM: number; why?: number; raw?: number };
   /**

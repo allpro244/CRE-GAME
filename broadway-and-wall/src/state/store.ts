@@ -414,9 +414,9 @@ interface AppState {
   walkAway: (bbl: string) => void;
   raze: (bbl: string) => void;
   program: (bbl: string, id: string) => void;
-  stance: (bbl: string, v: -1 | 0 | 1) => void;
+  stance: (bbl: string, v: number) => void;
   ops: (bbl: string, v: { service?: -1 | 0 | 1; plan?: 0 | 1 | 2 }) => void;
-  opsPolicy: (v: { service: -1 | 0 | 1; plan: 0 | 1 | 2; stance?: -1 | 0 | 1 }) => void;
+  opsPolicy: (v: { service: -1 | 0 | 1; plan: 0 | 1 | 2; stance?: number }) => void;
   brokerAll: (on: boolean) => void;
   listSale: (bbl: string, ask: number, mode?: "quiet" | "marketed", instructions?: SaleInstructions) => void;
   /** Standing instructions to the listing broker; null withdraws them. */

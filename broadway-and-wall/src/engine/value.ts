@@ -3000,7 +3000,25 @@ export function managedRentPsfYr(rec: ParcelRecord, econ: Econ, h: Holding, use?
 
 /** The owner's asking posture and the landmark premium, on top of the market (managedRentPsfYr, absorption.ts currentAskPsfYr). */
 export function askPremium(h: Pick<Holding, "stance" | "landmarked">): number {
-  return (1 + 0.08 * (h.stance ?? 0)) * (h.landmarked ? 1.07 : 1);
+  return (1 + ASK_STEP * (h.stance ?? 0)) * (h.landmarked ? 1.07 : 1);
+}
+/**
+ * One unit of `Holding.stance` on the ask: 8%. The stance was Fill / Market /
+ * Push (−1 / 0 / +1) and is now any number — the owner's ask over or under
+ * the market, as far as they like — kept in the old unit so a save's Push is
+ * still +8%. [M: a unit, not a quantity.]
+ */
+export const ASK_STEP = 0.08;
+/** The lowest ask an owner can post, in points against the market: a tenth of it. [M: a guard — an ask is a positive rent; nothing rests on it.] */
+const ASK_MIN_PCT = -90;
+/** A stance as whole points of ask against the market (+3 = 3% over). */
+export function askPctOfStance(stance: number | undefined): number {
+  return Math.round((stance ?? 0) * ASK_STEP * 100);
+}
+/** Whole points of ask against the market, as a stance. */
+export function askStanceOfPct(pct: number): number {
+  const p = Number.isFinite(pct) ? Math.max(ASK_MIN_PCT, Math.round(pct)) : 0;
+  return p / (ASK_STEP * 100);
 }
 
 /**

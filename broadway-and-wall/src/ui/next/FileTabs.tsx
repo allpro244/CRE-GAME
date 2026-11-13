@@ -6,6 +6,7 @@
  * not carry (leasing policy, rate caps, mezz, stakes, ground leases) is one
  * click away under "Desk", the classic desk hosted unchanged.
  */
+import { AskNudge } from "@/ui/panels/AskNudge";
 import { useMemo, useState } from "react";
 import { useStore } from "@/state/store";
 import type { GameState, Holding, Tenant } from "@/engine/types";
@@ -139,11 +140,10 @@ export function LeasingPlan({ h, bbl }: { h: Holding; bbl: string }) {
   return (
     <div className="nx-box nx-lp">
       <div className="nx-box-head nx-sec">Leasing plan</div>
-      {seg("Asking", h.stance ?? 0, [
-        { v: 1 as const, label: "Push +8%", tip: "Higher asking rents, fewer letters, slower lease-up" },
-        { v: 0 as const, label: "Market", tip: "Ask the market rent" },
-        { v: -1 as const, label: "Fill −8%", tip: "Lower asking rents, faster lease-up" },
-      ], (v) => st.stance(bbl, v))}
+      <div className="nx-lp-row">
+        <span className="nx-lp-k">Asking</span>
+        <AskNudge label="Asking" stance={h.stance ?? 0} set={(v) => st.stance(bbl, v)} />
+      </div>
       {seg("Letters", h.autoLease ? "auto" : h.principalSigns ? "me" : "desk", [
         { v: "me", label: "I sign", tip: "Every letter of intent pops up for you to sign, counter or decline" },
         { v: "desk", label: "Leasing desk", tip: "Your leasing desk or agent answers what it covers; the rest come to you" },

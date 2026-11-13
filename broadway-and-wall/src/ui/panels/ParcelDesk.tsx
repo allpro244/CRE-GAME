@@ -3,6 +3,7 @@
 //   AcquireDesk   buy / sell / list / ground lease / disclosed roll / vacant possession
 //   RefiDesk      permanent debt on a deed
 //   DevelopDesk   ground-up + adaptive reuse (Programme · Design · Financing)
+import { AskNudge } from "./AskNudge";
 import { consentFor } from "@/engine/vehicles";
 import { marketAppraisal } from "@/engine/value";
 import { memo, useEffect, useRef, useState } from "react";
@@ -1536,19 +1537,7 @@ function ParcelPanelInner({
               plan was a guess. Now: a name, a segmented control, its read. */}
           <div className="ops-choice">
             <span className="ops-choice-k">Asking</span>
-            <span className="seg" role="group" aria-label="Asking rents">
-            {([-1, 0, 1] as const).map((v) => (
-              <button
-                key={v}
-                className={"btn" + ((holding.stance ?? 0) === v ? " btn-on" : "")}
-                aria-pressed={(holding.stance ?? 0) === v}
-                title={v === 1 ? "+8% asking rents, fewer LOIs" : v === -1 ? "−8% rents, faster lease-up" : "market rents"}
-                onClick={() => useStore.getState().stance(selectedBBL, v)}
-              >
-                {v === 1 ? "Push +8%" : v === -1 ? "Fill −8%" : "Market"}
-              </button>
-            ))}
-            </span>
+            <AskNudge label="Asking rents" stance={holding.stance ?? 0} set={(v) => useStore.getState().stance(selectedBBL, v)} />
             <button
               type="button"
               className={"btn" + (holding.autoLease ? " btn-on" : "")}

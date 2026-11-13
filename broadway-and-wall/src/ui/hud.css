@@ -648,3 +648,9 @@ html.host-unreal .app .page-backdrop > .page {
   .app .page-backdrop .stat-col .grid:not(:has(> :not(.k):not(.v))) > :nth-child(4n+3), .app .page-backdrop .stat-col .grid:not(:has(> :not(.k):not(.v))) > :nth-child(4n+4) { background: color-mix(in srgb, var(--ink) 4%, transparent); }
   .app .page-backdrop .stat-col .grid:not(:has(> :not(.k):not(.v))) > .k:hover, .app .page-backdrop .stat-col .grid:not(:has(> :not(.k):not(.v))) > .k:hover + .v, .app .page-backdrop .stat-col .grid:not(:has(> :not(.k):not(.v))) > .k:has(+ .v:hover), .app .page-backdrop .stat-col .grid:not(:has(> :not(.k):not(.v))) > .v:hover { background: color-mix(in srgb, var(--accent, var(--ink)) 12%, transparent); }
 }
+
+/* the ask against the market, beside its −5 / −1 / Market / +1 / +5 buttons (AskNudge) */
+.app .ask-nudge-v { min-width: 4.2em; font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.app .ask-nudge-v.pos { color: var(--good, #1f7a3d); }
+.app .ask-nudge-v.neg { color: var(--bad, #a33a2a); }
+.app .book-type { white-space: nowrap; color: var(--ink-2, #5b5346); }

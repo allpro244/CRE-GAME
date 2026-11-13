@@ -76,7 +76,7 @@ import { flatUnitSf, priceFlats, flatComps, type FlatRoll } from "./streetRolls"
 import { HH_SIZE, INCOME_SIGMA, TAX_INS, DTI, COMMUTE, REF_HOME, medianIncome, mortgageRate, fundamentalHomePsf } from "./homeprice";
 import { why, whyOnce, whyAt } from "./why";
 import { RE_ALLOC, SAVERS } from "./investors";
-import { whyIndustry, whyFirmLoss, firmNamesOf, whyTown } from "./economy";
+import { whyIndustry, whyFirmLoss, firmNamesOf, whyTown, NAT_OPEN_RATE } from "./economy";
 import { INDUSTRIES, INDUSTRY_IDS, N_IND, COMP_PER_WORKER_2023, PAY_SPLIT, type SpendCategory } from "./industries";
 
 // STAGE 1b (2026-10-28): THE REGISTER'S EARNERS ARE THE FIRMS' PAYROLL.
@@ -3077,7 +3077,17 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // if it is still open a month on. Filling every opening the month it opened
   // from outside made each quit a household arriving: measured, the region
   // grew 17% more people and 23% more jobs in 25 years with quits on than off.
-  const open = Float64Array.from(V, (v, i) => Math.min(v, r.vacLeft?.[i] ?? v));
+  // ...BEYOND THE OPENINGS EVERY TOWN HAS (2026-11-13). A labour market at
+  // rest carries openings — the nation's rate, 3.1% of positions (economy.ts
+  // NAT_OPEN_RATE) [S] — and so does the town a mover would leave: what
+  // draws a household across the country is the work here that is not there
+  // too. Offering the movers every month-old opening made the frictional
+  // stock itself a standing invitation, with nobody leaving a town at parity
+  // (step 0): measured with the opening's positions carrying that stock,
+  // town 101, 60-100 households a month arriving on flat jobs, the labour
+  // force +3.5% in three years and unemployment 3.9% to 8.5%. An industry's
+  // openings over the nation's rate of its positions are what the movers see.
+  const open = Float64Array.from(V, (v, i) => Math.max(0, Math.min(v, r.vacLeft?.[i] ?? v) - NAT_OPEN_RATE * D.heads[i]));
   // ...WHO GETS AN OPENING STILL OPEN A MONTH ON (2026-10-30): whoever
   // applies — the town's own jobless and the searchers elsewhere who would
   // move for it, each in proportion to their numbers, so the outsiders' share

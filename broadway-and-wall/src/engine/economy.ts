@@ -544,7 +544,19 @@ function closeBooks(L: Ledger, n: number) {
  * none.
  */
 function openingOffMap(s: GameState, named: Float64Array, conOpen: number): Float64Array {
-  const jobs = s.econ.jobs ?? 0;
+  // THE TOWN'S JOBS ARE ITS FILLED ONES; ITS FIRMS' POSITIONS CARRY THE
+  // OPENINGS ON TOP (2026-11-13). The opening sized the firms' positions at
+  // the town's jobs — the people the register seeds in work — so every
+  // position was filled and none was open. A labour market at rest carries a
+  // stock of openings (the nation's rate, NAT_OPEN_RATE [S]; the register's
+  // own flows settle at 2.7-3.3%, `settleLabour`), and the register found
+  // that stock by emptying filled jobs: unemployment opened at the nation's
+  // rate and stood three points over it by month five (seed 11: 5.9% to
+  // 9.2%), the evictions followed from month four, the island's vacancy went
+  // 5% to 11% and its landlords cut rents by a third. Positions are the
+  // filled jobs over one less the openings rate — the same reading the
+  // capacity of a short-staffed trade already takes (`cap`, below).
+  const jobs = (s.econ.jobs ?? 0) / (1 - NAT_OPEN_RATE);
   let namedTot = 0;
   for (let i = 0; i < N_IND; i++) namedTot += named[i];
   let O = Math.max(0, jobs - namedTot);

@@ -2769,19 +2769,6 @@ const DISTRESS_PITCH = 0.3;
 // and his investors work that out before the first one closes.
 const DEPLOY_YR = 2;
 /**
- * NEW FIRMS AT THE TRADE'S OWN BIRTH RATE (2026-11-13): establishments born a
- * year as a share of the trade's establishments, real estate (NAICS 53),
- * Census Business Dynamics Statistics 2010-2019, about 10% [S~]. The street's
- * entry was the year's deals over a fund's two a year less the firms already
- * standing (`slots`): once a few long-lived holders owned most of the town and
- * traded little, no first close ever cleared again — on seed 31337 no new firm
- * after year 35, the street down from 152 firms to 46 holding 1,300
- * buildings. A sponsor raises on the returns buildings offer over the money
- * (`leverage`) and the capital its investors have left (the pool); how often
- * sponsors try is the trade's birth rate on the firms there are.
- */
-const FIRM_BIRTH_YR = 0.10;
-/**
  * HOW LONG A FUND CAN PUT OFF A SALE AT THE END OF ITS HOLD: two one-year
  * extensions, the common term in a closed-end real estate fund's agreement
  * (ILPA; Preqin fund terms), each with the investors' consent.
@@ -2899,8 +2886,7 @@ export function firmEntryPitch(s: GameState): {
   const firms = livingRivals(s).filter((r) => !r.builderProf).length;
   const product = Math.min(1, traded / Math.max(1, firms) / DEPLOY_YR);
   const thin = Math.min(1.5, 1 / Math.max(0.2, marketAppetite(s)));
-  // capital and returns, not deal counts (FIRM_BIRTH_YR): `product` is kept for the screens
-  const pitch = Math.min(1, (distress ? DISTRESS_PITCH : leverage) * thin);
+  const pitch = Math.min(1, (distress ? DISTRESS_PITCH : leverage) * product * thin);
   // How many shops the tape carries that the town does not have: the year's
   // product at DEPLOY_YR a shop, less the shops standing.
   const slots = Math.max(0, traded / DEPLOY_YR - firms);
@@ -3094,9 +3080,8 @@ function maybeNewFirm(s: GameState) {
   const { leverage, product, pitch, slots, distress } = firmEntryPitch(s);
   // Open to levered funds — founders' spinouts and anonymous raises alike —
   // or, with the coupon over the return, to distress capital only.
-  void product;
-  const streetOpen = leverage > 0 && pitch > 0;
-  const distressOpen = distress && pitch > 0;
+  const streetOpen = leverage > 0 && product > 0 && pitch > 0;
+  const distressOpen = distress && product > 0 && pitch > 0;
 
   // Genealogy proposes first. A ready founder bid takes this month's raise
   // slot — anonymous capital only enters when nobody is waiting to spin out.
@@ -3151,10 +3136,7 @@ function maybeNewFirm(s: GameState) {
   // fourteen-month raise and what the pool has left — and a fund closes when
   // that progress reaches one. Same rate in expectation; decided by the
   // market's own numbers, not by dice.
-  // the sponsors pitching a month: the trade's birth rate on the firms standing (FIRM_BIRTH_YR), at the pitch and the pool's money
-  void slots; void RAISE_M;
-  const standing = livingRivals(s).filter((r) => !r.builderProf).length;
-  s.entryProgress = (s.entryProgress ?? 0) + Math.min(1, pitch * Math.max(1, standing) * FIRM_BIRTH_YR / 12) * poolFactor;
+  s.entryProgress = (s.entryProgress ?? 0) + Math.min(1, pitch * Math.max(1, slots) / RAISE_M) * poolFactor;
   if (s.entryProgress < 1) {
     // Not this month. Founders keep the slot and try again. Only the window
     // expiring sends them elsewhere.

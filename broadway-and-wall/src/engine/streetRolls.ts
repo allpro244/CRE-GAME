@@ -1854,6 +1854,18 @@ const LEASE_M = 12; // a flat's lease (households.ts: leaseEnd = month + 12) [S]
  */
 const FLAT_LOOKBACK_M = 3;
 const CARD_Q = 16;
+/**
+ * HOW LONG A FREE FLAT WAITS FOR ITS SIGNER, ON AVERAGE (2026-11-13). With k
+ * signers a month the first of `free` flats lets after 1/k months, the second
+ * after 2/k, the last after free/k: the mean is (free + 1) / 2k. The rule
+ * charged every flat the LAST one's wait (free/k), so a block with ten flats
+ * to let reckoned its vacancy at nearly twice what it would be and cut to the
+ * lowest budgets at its door: measured, seed 11 months 4-12, two blocks in
+ * three set their asks 5-13% over their market rent while the index (the asks
+ * by their feet) fell 4-6% a month — the big blocks, cutting by a quarter.
+ * [D: the arithmetic of the rule's own sequence of lettings; no constant.]
+ */
+const waitM = (free: number, k: number) => (free + 1) / (2 * k);
 export function priceFlats(roll: FlatRoll, cards: number[] | undefined, free: number, comp: number | undefined, idxNow = 1): void {
   const now = cards?.length ? cards.slice().sort((p, q) => q - p) : [];
   // this month's cards, compressed for the months after it
@@ -1874,7 +1886,7 @@ export function priceFlats(roll: FlatRoll, cards: number[] | undefined, free: nu
     let W = 0, best = -Infinity, bx = pts[pts.length - 1].x;
     for (const p of pts) {
       W += p.w;
-      const v = Math.exp(p.x) * (LEASE_M - free / (W / months));
+      const v = Math.exp(p.x) * (LEASE_M - waitM(free, W / months));
       if (v > best) { best = v; bx = p.x; }
     }
     if (!(best > 0)) bx = pts[pts.length - 1].x;
@@ -1882,7 +1894,7 @@ export function priceFlats(roll: FlatRoll, cards: number[] | undefined, free: nu
     // its own read of how long a flat waits for a signer at that ask (renewals price against it, households.ts)
     let Wb = 0;
     for (const p of pts) { if (p.x < bx) break; Wb += p.w; }
-    roll.fm = +Math.min(LEASE_M, free / Math.max(1e-9, Wb / months)).toFixed(2);
+    roll.fm = +Math.min(LEASE_M, waitM(free, Math.max(1e-9, Wb / months))).toFixed(2);
     roll.ld = now.length;
     return;
   }

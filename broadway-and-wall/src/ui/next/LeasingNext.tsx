@@ -14,7 +14,7 @@ import type { GameState, LOI } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import { initialCondition, marketRentPsfYr, resolveRec } from "@/engine/value";
-import { exclusiveFeeRate, loiSigningCash, occupancyRead, vacantSf } from "@/engine/leasing";
+import { blendExtendQuote, exclusiveFeeRate, loiSigningCash, occupancyRead, vacantSf } from "@/engine/leasing";
 import { LoiCounterDraft, loiMarketPsf } from "@/ui/panels/LoiNegotiate";
 import { usd } from "@/ui/format";
 import { DataTable, Stat, StatStrip, type Col, rollTone } from "./DataTable";
@@ -110,6 +110,7 @@ interface RollRow { key: string; bbl: string; addr: string; name: string; fid?: 
 export function LeasingExpiring() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
+  const ext = useMemo(() => new Map<string, ReturnType<typeof blendExtendQuote>>(), [game, parcels]);
   const rows = useMemo(() => {
     const out: RollRow[] = [];
     for (const h of Object.values(game.holdings)) {
@@ -118,11 +119,22 @@ export function LeasingExpiring() {
       const mkt = marketRentPsfYr(rec, game.econ, h.condition ?? initialCondition(rec));
       h.tenants.forEach((t, i) => {
         if (t.endM - game.month > 36) return;
-        out.push({ key: `${h.bbl}:${i}`, bbl: h.bbl, addr: rec.address || h.bbl, name: t.name, fid: t.fid, sf: t.sf, rent: t.rentPsf, mkt, endM: t.endM, idx: i });
+        // the market for THIS tenant's space (its own use in a mixed building), the one the extension is quoted against
+        const q = h.groundLeased ? null : blendExtendQuote(game, rec, h, i);
+        out.push({ key: `${h.bbl}:${i}`, bbl: h.bbl, addr: rec.address || h.bbl, name: t.name, fid: t.fid, sf: t.sf, rent: t.rentPsf, mkt: q?.market ?? mkt, endM: t.endM, idx: i });
+        ext.set(`${h.bbl}:${i}`, q);
       });
     }
     return out;
   }, [game, parcels]);
+  // WHAT GOING TO THE TENANT EARLY WOULD COST, ON THE ROW (owner, 2026-11-13:
+  // "when a tenant is 1.5 years out, reach out and ask if they want to
+  // extend"). The button was there with no terms beside it and answered an
+  // error for most tenants. Each row now carries the offer the tenant would
+  // sign today (its rent, the years it adds, the commission) or why there is none.
+  const noExt = (r: RollRow) => r.endM - game.month <= 9
+    ? "Inside nine months of the expiry: this is the renewal now, and the tenant answers at the lease end"
+    : "No early extension to offer on this lease";
   const cols: Col<RollRow>[] = [
     { id: "name", label: "Tenant", get: (r) => r.name, cell: (r) => <span className="nx-strong-cell"><BizLink t={r} /></span> },
     { id: "addr", label: "Building", get: (r) => r.addr },
@@ -131,6 +143,15 @@ export function LeasingExpiring() {
     { id: "vs", label: "vs mkt", get: (r) => (r.mkt > 0 ? r.rent / r.mkt - 1 : null), fmt: "pct", tone: (r) => rollTone(r.mkt > 0 ? r.rent / r.mkt - 1 : null) },
     { id: "end", label: "Ends", get: (r) => r.endM, cell: (r) => <span className="mono">{monthLabel(r.endM)}</span>, tone: (r) => (r.endM - game.month <= 12 ? "neg" : undefined) },
     { id: "left", label: "Months", get: (r) => r.endM - game.month, fmt: "n" },
+    { id: "ext", label: "Extend early", get: (r) => ext.get(r.key)?.addM ?? null,
+      cell: (r) => {
+        const q = ext.get(r.key);
+        return q
+          ? <span className="mono" title={`${r.name} would sign today: $${q.newRent.toFixed(2)}/sf (now $${q.current.toFixed(2)}, market $${q.market.toFixed(2)}), ${Math.round(q.addM / 12)} more years, to ${monthLabel(q.newEndM)}. Commission ${fmtFig(q.cost, "usd")} now; rent given up ${fmtFig(q.giveUp, "usd")}.`}>
+              ${q.newRent.toFixed(2)} · +{Math.round(q.addM / 12)}y · {fmtFig(q.cost, "usd")}
+            </span>
+          : <span className="nx-dim" title={noExt(r)}>—</span>;
+      } },
   ];
   const sf12 = rows.filter((r) => r.endM - game.month <= 12).reduce((a, r) => a + r.sf, 0);
   return (
@@ -141,7 +162,9 @@ export function LeasingExpiring() {
       </StatStrip>
       <DataTable id="leasing-roll" cols={cols} rows={rows} rowKey={(r) => r.key} initialSort={{ col: "end", dir: 1 }} empty="Nothing rolls in the next three years"
         onRow={(r) => sel(r.bbl)}
-        actions={(r) => <button type="button" className="btn" onClick={(e) => { e.stopPropagation(); useStore.getState().extendLease(r.bbl, r.idx); }}>Blend &amp; extend</button>} />
+        actions={(r) => <button type="button" className="btn" disabled={!ext.get(r.key)}
+          title={ext.get(r.key) ? `Offer ${r.name} the extension in the Extend early column; it signs today` : noExt(r)}
+          onClick={(e) => { e.stopPropagation(); useStore.getState().extendLease(r.bbl, r.idx); }}>Extend lease</button>} />
     </div>
   );
 }

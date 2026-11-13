@@ -5,6 +5,7 @@
 // max, pay hard+soft cost per sf, fund with a 60% interest-only construction
 // loan, wait 4-6 quarters while the building rises on the map, then lease up
 // from empty. A modest random cost/schedule overrun keeps it honest.
+import { askPctOfStance, askStanceOfPct } from "./value";
 import type { ParcelTable } from "@/data/types";
 import { rentMultOf } from "./regime";
 import type { BtsCommitment, Builder, BuildingDesign, BuiltClass, Contract, DevUse, Development, Econ, GameState, MerchantBook, Rival, RivalStyle, UseMix } from "./types";
@@ -3443,12 +3444,12 @@ export function tickPrograms(s: GameState, parcels: ParcelTable) {
   }
 }
 
-export function setStance(s: GameState, bbl: string, stance: -1 | 0 | 1): GameState {
+export function setStance(s: GameState, bbl: string, stance: number): GameState {
   const next = clone(s);
   const h = next.holdings[bbl];
   // Lessee sets the ask on their building — stamping yours on a leased fee is a no-op.
   if (!h || h.groundLeased) return next;
-  h.stance = stance;
+  h.stance = askStanceOfPct(askPctOfStance(stance));
   return next;
 }
 
@@ -3477,12 +3478,12 @@ export function setOps(
  * running its buildings properly does not do it one address at a time.
  */
 export function setOpsPolicy(
-  s: GameState, ops: { service: -1 | 0 | 1; plan: 0 | 1 | 2; stance?: -1 | 0 | 1 }, applyToBook = true,
+  s: GameState, ops: { service: -1 | 0 | 1; plan: 0 | 1 | 2; stance?: number }, applyToBook = true,
 ): GameState {
   const next = clone(s);
   next.opsPolicy = ops;
   if (applyToBook) {
-    const st = ops.stance ?? 0;
+    const st = askStanceOfPct(askPctOfStance(ops.stance));
     for (const h of Object.values(next.holdings)) {
       // Lessee runs the bricks — stamping your capital plan onto a leased fee
       // used to charge YOUR cash for THEIR building once resolveRec showed SF.

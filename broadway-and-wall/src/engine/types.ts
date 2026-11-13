@@ -720,7 +720,7 @@ export interface Holding {
   resRentPsf?: number;
   /** A tax abatement the building was delivered under (citygov.ts: 421-a / ICAP): the share forgiven, until when. */
   taxAbate?: { pct: number; untilM: number };
-  stance?: -1 | 0 | 1; // rent posture: push / market / fill
+  stance?: number; // the ask against the market, in units of 8% (value.ts ASK_STEP): +1 the old Push, −1 the old Fill, any number between or beyond
   /**
    * AUTO-LEASE: every letter at this building — new tenants, renewals,
    * expansions, and tenants' relief or give-back requests — is answered for
@@ -4156,7 +4156,7 @@ export interface GameState {
    * building in those saves is already doing. Widening it is free; defaulting
    * it to anything else would silently reprice somebody's whole book on load.
    */
-  opsPolicy?: { service: -1 | 0 | 1; plan: 0 | 1 | 2; stance?: -1 | 0 | 1 };
+  opsPolicy?: { service: -1 | 0 | 1; plan: 0 | 1 | 2; stance?: number };
   /**
    * The house minimum new lease, sf (leasing.ts setMinLeaseSfAll): written to
    * every deed when set, and the floor a building bought or delivered later

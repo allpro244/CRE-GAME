@@ -3,6 +3,7 @@ import { useStore } from "@/state/store";
 import { OPS_SERVICE, OPS_PLAN } from "@/engine/types";
 import { resolveRec } from "@/engine/value";
 import { isCommercial } from "@/engine/leasing";
+import { AskNudge } from "./AskNudge";
 
 /**
  * THE HOUSE POLICY, AS A BLOCK OF CONTROLS. Labels and choices only; what each
@@ -17,7 +18,7 @@ export function HousePolicy() {
   const cur = game.opsPolicy ?? { service: 0 as const, plan: 1 as const, stance: 0 as const };
   const [svc, setSvc] = useState<-1 | 0 | 1>(cur.service);
   const [pln, setPln] = useState<0 | 1 | 2>(cur.plan);
-  const [stn, setStn] = useState<-1 | 0 | 1>(cur.stance ?? 0);
+  const [stn, setStn] = useState<number>(cur.stance ?? 0);
   // resolveRec — delivered stock lives on game.built; parcels[].class stays
   // "land" for lots you developed, which made this card undercount the book
   // and disable whole-book exclusives on a developer portfolio.
@@ -55,13 +56,11 @@ export function HousePolicy() {
         title="Set it once. It applies to every deed you close from here on, and to the book you already own. A building that needs different treatment is still set on its own card, and that override stands.">
         House policy · {built.length} propert{built.length === 1 ? "y" : "ies"}
       </div>
-      <Seg label="Asking rents" value={stn} set={setStn}
-        opts={[
-          { k: -1 as const, label: "Fill space", title: "−8% asking rents, and the letters come faster" },
-          { k: 0 as const, label: "Market", title: "ask what the market is asking" },
-          { k: 1 as const, label: "Push rents", title: "+8% asking rents, and fewer letters arrive" },
-        ]}
-        hint="The ask on new leases. Eight per cent either way on the ask, and the traffic moves against you harder than the rent moves for you — that is the trade, and it is why pushing rents into a soft market empties a building." />
+      <div className="ops-choice">
+        <span className="ops-choice-k has-gloss"
+          title="The ask on new leases, against the market rent, as far over or under as you like. The traffic moves against you harder than the rent moves for you — that is the trade, and it is why pushing rents into a soft market empties a building.">Asking rents</span>
+        <AskNudge small label="Asking rents" stance={stn} set={setStn} />
+      </div>
       <Seg label="Service" value={svc} set={setSvc}
         opts={OPS_SERVICE.map((o) => ({ k: o.key, label: o.label, title: o.blurb }))}
         hint="Free to change and slow to matter: the saving lands next month and the tenants have not noticed for three years — which is exactly why cutting it is a trap rather than a lever." />

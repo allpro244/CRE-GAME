@@ -1,3 +1,5 @@
+import { AskNudge } from "./AskNudge";
+import { askPctOfStance } from "@/engine/value";
 import { useState } from "react";
 import { derive } from "@/ui/derive";
 import { useStore } from "@/state/store";
@@ -46,7 +48,7 @@ interface LeaseRow {
   key: string; bbl: string; addr: string; t: Tenant; idx: number; mkt: number; loi?: LOI;
 }
 
-const stanceWord = (v: number) => (v > 0 ? "Push" : v < 0 ? "Fill" : "Market");
+const stanceWord = (v: number) => { const p = askPctOfStance(v); return p > 0 ? `+${p}%` : p < 0 ? `−${-p}%` : "Market"; };
 
 export function LeasingPage() {
   const parcels = useStore((s) => s.parcels)!;
@@ -482,7 +484,7 @@ function Overrides({ rows, go }: { rows: BookRow[]; go: (bbl: string) => void })
   const rest = rows.filter((r) => !shown.includes(r));
   const reset = (r: BookRow) => {
     const st = useStore.getState();
-    st.stance(r.h.bbl, (house.stance ?? 0) as -1 | 0 | 1);
+    st.stance(r.h.bbl, house.stance ?? 0);
     st.ops(r.h.bbl, { service: house.service, plan: house.plan });
     if (r.h.principalSigns) st.setPrincipalSigns(r.h.bbl, false);
     if (r.commercial && !!r.h.autoLease !== newOn) st.autoLease(r.h.bbl, newOn);
@@ -521,14 +523,7 @@ function Overrides({ rows, go }: { rows: BookRow[]; go: (bbl: string) => void })
             </div>
             <div className="ops-choice">
               <span className="ops-choice-k">Asking</span>
-              <span className="seg" role="group" aria-label={`Asking rents at ${r.rec.address}`}>
-                {([-1, 0, 1] as const).map((v) => (
-                  <button key={v} type="button" className={"btn btn-sm" + ((r.h.stance ?? 0) === v ? " btn-on" : "")}
-                    title={v === 1 ? "+8% asking rents, fewer LOIs" : v === -1 ? "−8% rents, faster lease-up" : "Market rents"}
-                    aria-pressed={(r.h.stance ?? 0) === v}
-                    onClick={() => useStore.getState().stance(r.h.bbl, v)}>{v === 1 ? "Push" : v === -1 ? "Fill" : "Market"}</button>
-                ))}
-              </span>
+              <AskNudge small label={`Asking rents at ${r.rec.address}`} stance={r.h.stance ?? 0} set={(v) => useStore.getState().stance(r.h.bbl, v)} />
               <button type="button" className={"btn btn-sm" + (r.h.autoLease ? " btn-on" : "")} aria-pressed={!!r.h.autoLease}
                 title={r.h.autoLease ? `${autoLeaseRule(game, r.h)} Click to disable.` : "Auto-respond to LOIs at rent setting and concession limit."}
                 onClick={() => useStore.getState().autoLease(r.h.bbl, !r.h.autoLease)}>Auto</button>

@@ -184,7 +184,7 @@ export function PortfolioPage() {
   const totCF = portfolioPropertyMonthlyCF(game, parcels);
   const ranked = sort.key === "noi" && sort.dir === -1;
   // Property … menu. Extra lead cells when ranking or bundling.
-  const bookCols = 11 + (ranked ? 1 : 0) + (bundling ? 1 : 0);
+  const bookCols = 12 + (ranked ? 1 : 0) + (bundling ? 1 : 0);
   const schemes = holdings.filter((h) => h.devDraft && !game.developments[h.bbl]);
   const assessmentWatch = holdings.flatMap((h) => {
     const q = taxAppealQuote(game, parcels, h.bbl);
@@ -497,6 +497,7 @@ export function PortfolioPage() {
             {bundling && <th></th>}
             {ranked && <th className="num">#</th>}
             <H k="addr" label="Property" desc={false} />
+            <H k="cls" label="Type" desc={false} title="What the building is: office, retail, flats, industrial, land" />
             <H k="area" label="sf" num />
             <H k="occ" label="Occ" num />
             <H k="rentPsf" label="Rent" num title="Avg contract rent, $/sf/yr" />
@@ -522,6 +523,7 @@ export function PortfolioPage() {
                   title={`${lots.length} lots yours${v ? ` of ${v.lots} · ${v.lots - v.left} sold · ${v.pace.toFixed(1)}/mo` : ""}`}>
                   {name} <span className="dim">· {lots.length} lots</span>
                 </td>
+                <td className="book-type">Home lots</td>
                 <td className="num mono">{sf(sum((r) => r.rec?.lotArea ?? 0))}</td>
                 <td className="num mono">—</td>
                 <td className="num mono">—</td>
@@ -663,6 +665,7 @@ export function PortfolioPage() {
                 {rec?.address ?? h.bbl}
                 {bits.length > 0 && <span className={wk ? "neg" : "dim"}> · {bits.join(" · ")}</span>}
               </td>
+              <td className="book-type">{h.groundLeased ? "Leased fee" : rec ? useLabel(rec) : "—"}</td>
               <td className="num" title={h.groundLeased
                 ? "Lessee improvement · not your sf"
                 : rec && rec.bldgArea
@@ -1213,12 +1216,13 @@ function ReturnsToDate() {
       </div>
       <table className="tbl">
         <thead>
-          <tr><th>Building</th><th className="num">Held</th><th className="num">Equity in</th><th className="num">Cash back</th><th className="num">Equity at mark</th><th className="num">Multiple</th><th className="num">IRR</th></tr>
+          <tr><th>Building</th><th>Type</th><th className="num">Held</th><th className="num">Equity in</th><th className="num">Cash back</th><th className="num">Equity at mark</th><th className="num">Multiple</th><th className="num">IRR</th></tr>
         </thead>
         <tbody>
           {rows.map((r) => (
             <tr key={r.bbl} onClick={() => useStore.getState().openProperty(r.bbl, "summary")}>
               <td>{resolveRec(parcels, game, r.bbl)?.address ?? r.bbl}</td>
+              <td className="book-type">{(() => { const rec = resolveRec(parcels, game, r.bbl); return rec ? useLabel(rec) : "—"; })()}</td>
               <td className="num">{r.years < 1 ? `${Math.round(r.years * 12)} mo` : `${r.years.toFixed(1)} yr`}</td>
               <td className="num">{usd(r.equityIn)}</td>
               <td className="num">{usd(r.cashBack)}</td>

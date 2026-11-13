@@ -49,7 +49,7 @@ import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locO
   physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, registerRolloverReader, flatsMarkPsf, flatsRollPsf, faceGrossUp, abatedShare } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
-import { overallScore, scoreRentMult, N_BANDS } from "./value";
+import { overallScore, scoreRentMult, N_BANDS, askPctOfStance } from "./value";
 import { recordLease, compsPackage, creditOfSize } from "./tenantMarket";
 import type { Comm } from "./tenantMarket";
 import { tenantQualityTerms } from "./bands";
@@ -2506,7 +2506,12 @@ function autoPolicy(s: GameState, h: Holding): AutoPolicy {
   const st = h.stance ?? 0;
   // Fill's target is 0: it counters only to bring the package inside the
   // limit, and never asks for more rent while it does.
-  const base = st < 0 ? { floor: 0, target: 0 } : st > 0 ? { floor: 1, target: 1.05 } : { floor: 0.95, target: 1 };
+  // ANY ASK (2026-11-13): the stance is now any number, so the three rows
+  // above are points on a line. Over the market the floor and the counter
+  // rise with the ask at the slope Market-to-Push set (five points of a
+  // market deal per 8% of ask); under it the floor falls away to nothing at
+  // the old Fill and the team never counters for rent.
+  const base = st < 0 ? { floor: Math.max(0, 0.95 * (1 + st)), target: 0 } : { floor: 0.95 + 0.05 * st, target: 1 + 0.05 * st };
   const cap = h.autoTiCapPsfYr;
   const conc = autoConcessionsOf(s);
   return cap === undefined ? { ...base, conc } : { ...base, conc, tiCapPsfYr: cap * (s.econ.costIdx ?? 1) };
@@ -2845,8 +2850,11 @@ export function marketTiPsfYr(s: GameState, use: string, rec?: ParcelRecord, h?:
 /** The building's auto-lease policy in one line, for the panels. */
 export function autoLeaseRule(s: GameState, h: Holding): string {
   const st = h.stance ?? 0;
-  const rent = st < 0 ? "Fill: signs whatever rent comes"
-    : st > 0 ? "Push: signs at a market deal or better, counters to 5% over it"
+  const pc = (x: number) => `${Math.round(x * 100)}%`;
+  const ask = askPctOfStance(st);
+  const rent = st <= -1 ? `Asking ${-ask}% under market: signs whatever rent comes`
+    : st < 0 ? `Asking ${-ask}% under market: signs at ${pc(0.95 * (1 + st))} of a market deal or better, never counters for rent`
+    : st > 0 ? `Asking ${ask}% over market: signs at ${pc(0.95 + 0.05 * st)} of a market deal or better, counters to ${pc(1 + 0.05 * st)} of it`
     : "Market: signs at 95% of a market deal, counters to a market deal";
   const c = autoConcessionsOf(s);
   const conc = c === "lean" ? "typical fit-out and free rent or less"

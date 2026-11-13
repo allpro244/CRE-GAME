@@ -835,11 +835,13 @@ const FIELDS = {
   kOld: Uint8Array, kYoung: Uint8Array, partner: Uint8Array, oAge: Uint8Array,
   // the buffer it keeps, in months of its permanent income (NaN: the age rule, `bufferOf`)
   bufM: Float32Array,
+  // 1: it lost its home across the water for want of a home, not of money (the ladder's last rung), and takes the next one free (`readyToRent`)
+  disp: Uint8Array,
 } as const;
 /** A child's age the register has not drawn yet (a save from before stage 4). [M: a sentinel code — the largest Uint8.] */
 const KID_UNKNOWN = 255;
 /** Columns a save from before them does not carry, and what they hold then. [M: the sentinel codes above, not quantities.] */
-const FIELD_DEFAULT: Partial<Record<keyof typeof FIELDS, number>> = { ind1: IND_NONE, ind2: IND_NONE, emp3: EMP_NONE, ind3: IND_NONE, taste: NaN, kOld: 255, kYoung: 255, partner: 255, oAge: 255, bufM: NaN };
+const FIELD_DEFAULT: Partial<Record<keyof typeof FIELDS, number>> = { ind1: IND_NONE, ind2: IND_NONE, emp3: EMP_NONE, ind3: IND_NONE, taste: NaN, kOld: 255, kYoung: 255, partner: 255, oAge: 255, bufM: NaN, disp: 0 };
 type FieldName = keyof typeof FIELDS;
 export type HouseholdArrays = { [K in FieldName]: InstanceType<(typeof FIELDS)[K]> };
 const FIELD_NAMES = Object.keys(FIELDS) as FieldName[];
@@ -2146,8 +2148,26 @@ function signMainland(r: HouseholdRegister, a: HouseholdArrays, i: number): numb
  */
 const MOVE_IN_SAVE = 4;
 /** A doubled-up household with work and a deposit — three months of the rent it would sign (mainRentFor), the older homes' going rent if that is the stock its budget reaches (2026-11-12: it was three months of the standard home's rent, ~$6,000 against $400 homes, so households who would fill the cheap stock never looked while it stood empty on its running-cost floor): ready for a place of its own. */
+/**
+ * ...OR A PENSION (2026-11-13). Leaving a doubled-up home asked for someone in
+ * work, so a retired household with Social Security or a pension and the
+ * deposit saved could never take a flat again, and an evicted one with a
+ * pension doubled up at once: measured, seed 11 at year 5, 41% of the
+ * doubled-up households were 65 or over. A landlord verifies income that
+ * continues, as a lender does (Social Security and pensions: Fannie Mae
+ * Selling Guide B3-3.1-09, `lendPay`) [S].
+ */
 function readyToRent(r: HouseholdRegister, a: HouseholdArrays, i: number): boolean {
-  return a.ten[i] === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) && a.sav[i] > 3 * mainRentFor(r, a, i);
+  // ...AND A TENANT WHO LOST ITS HOME FOR WANT OF A HOME TAKES THE NEXT ONE
+  // (2026-11-13). In a month with more renters than homes across the water
+  // the ladder's lowest bidders double up — sitting tenants, paying their
+  // rent — and coming back asked what a first move-in asks, three months'
+  // rent in hand. The register never took a deposit from them, so they had
+  // none to get back: measured, town 104 at year 8, 5,400 mainland renters
+  // had been through doubling up, 61% of those in it earned under $6,000 a
+  // year and half held under $100, with 9% of the homes standing empty. A
+  // tenant put out with its rent paid is a tenant with its deposit.
+  return a.ten[i] === TEN_DOUBLED && lendPay(a, i) > 0 && (a.disp[i] === 1 || a.sav[i] > 3 * mainRentFor(r, a, i));
 }
 function mainHasRoom(r: HouseholdRegister, a: HouseholdArrays, i: number): boolean {
   return mainRoomFor(r, a.wt[i]);
@@ -2323,7 +2343,7 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
   for (let i = 0; i < r.n; i++) {
     const t = a.ten[i];
     const renter = t === TEN_MAINLAND;
-    if (!renter && !(t === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) && a.sav[i] > 3 * mainRentFor(r, a, i))) continue;
+    if (!renter && !readyToRent(r, a, i)) continue;
     const w = mainWill(r, a, i);
     if (w === undefined) { if (renter) bid.push({ i, w: 0, wt: a.wt[i], renter }); continue; }
     bid.push({ i, w, wt: a.wt[i], renter });
@@ -2348,7 +2368,7 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
     if (pA < 0 && acc >= priceA) pA = b.w > 0 ? b.w : lastPos;
     for (let tr = 0; tr < OLDER_TIERS; tr++) if (pT[tr] < 0 && acc >= cumT[tr]) pT[tr] = b.w > 0 ? b.w : lastPos;
     // past the ladder's last rung: a renter with no flat ready doubles up
-    if (acc > roomA + roomB && b.renter) { a.ten[b.i] = TEN_DOUBLED; a.rent[b.i] = 0; a.blk[b.i] = -1; occ -= b.wt; }
+    if (acc > roomA + roomB && b.renter) { a.ten[b.i] = TEN_DOUBLED; a.rent[b.i] = 0; a.blk[b.i] = -1; a.disp[b.i] = 1; occ -= b.wt; }
   }
   // fewer bidders than homes: the last bid sets the rent, down to the running-cost floor
   const last = lastPos;
@@ -3487,7 +3507,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     // was not paying and almost never held the deposit it needs to leave —
     // measured, 66-124 of ~3,700 doubled-up households at year 5.
     const target = bufferOf(a, i) * a.yperm[i] + (plansToBuy(r, a, i, H) ? (DOWN_SAVE + CLOSING) * H.starter : 0)
-      + (a.ten[i] === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) ? MOVE_IN_SAVE * Math.max(1, mainRentFor(r, a, i)) : 0);
+      + (a.ten[i] === TEN_DOUBLED && lendPay(a, i) > 0 ? MOVE_IN_SAVE * Math.max(1, mainRentFor(r, a, i)) : 0);
     // ...BUT THE RENT IS PAID FIRST (2026-10-28, step 2). A household short
     // of money cuts what it buys before it misses the rent or the mortgage —
     // down to the subsistence floor, drawing on its savings and its card —
@@ -3561,7 +3581,8 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       // do (Desmond 2016, Milwaukee Area Renters Study) — here, a flat across
       // the water at the rent its pay can carry at the median burden (30%,
       // HH_RENT_SHARE0).
-      const pay = payOf(a, i);
+      // (pay a landlord verifies: work or a pension — `readyToRent`)
+      const pay = lendPay(a, i);
       if (gross > 0 && pay > 0) {
         if (ten === TEN_RENT) { r.flow.movedOut -= w; toMainland(R, r, i, pool, gone, false); continue; }
         a.rent[i] = Math.min(a.rent[i], (HH_RENT_SHARE0 * pay) / 12);
@@ -3573,7 +3594,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       // a doubled-up household with work and a deposit takes its own flat
       // across the water — if one is free; if not it is still at the doors,
       // a guest card every month it looks (the demand a full market hides)
-      if (mainHasRoom(r, a, i)) { a.ten[i] = TEN_MAINLAND; a.rent[i] = signMainland(r, a, i); }
+      if (mainHasRoom(r, a, i)) { a.ten[i] = TEN_MAINLAND; a.rent[i] = signMainland(r, a, i); a.disp[i] = 0; }
     }
     // a year older on its month — and past fifty, at its age's rate, retired (LF_AGE)
     if ((m + a.id[i]) % 12 === 0 && a.age[i] < 110) {

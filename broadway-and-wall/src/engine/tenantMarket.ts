@@ -409,7 +409,19 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
     // the deals that signed, the cheap end of what was on offer, and chasing
     // them with no evidence of its own ratchets the town toward its keenest
     // landlord (measured, office -30% at 6% vacancy).
-    d += opts.darkM > opts.monthsToLet ? Math.min(0, toComps) : Math.max(0, toComps);
+    // NOT UP EITHER, WITHOUT EVIDENCE OF ITS OWN (2026-11-13). Space that had
+    // not yet sat past the market's months followed the comps up whenever
+    // they were over its ask and never down: an upward ratchet on the noise
+    // in the comps. Measured, seed 11, four years in which office vacancy
+    // went 9.6% to 18%: the landlords with space to let inside the market's
+    // months (36% of all reviews) raised their asks 2.7% a year — 1.7 of it
+    // inflation, the trade taking 0.8 off, the one-sided pull adding 1.8 —
+    // and a fixed set of 51 landlords with space to let asked 4% more after
+    // four years with their own vacancy up from 12% to 19%. Having not yet
+    // failed to let is no evidence the ask is low. Up is the trade's (months
+    // to let under the best) and, for shops and sheds, a letting made fast
+    // (`noteLetting`).
+    if (opts.darkM > opts.monthsToLet) d += Math.min(0, toComps);
     // THE TRADE MOVES THE FACE AND THE PACKAGE TOGETHER (2026-11-12): a share
     // of each step on the asking rent (FACE_SHARE), the rest on the package;
     // past the deepest package (or with none left to take back) all of it on
@@ -497,7 +509,8 @@ function reviewAskByPatience(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts
   const toComps = comps > 0 ? (Math.log(comps) - Math.log(L.a)) * pull : 0;
   let d = 0;
   if (opts.darkM !== undefined && opts.darkM <= L.t) {
-    d += (opts.infl12 / 12) * months + Math.max(0, toComps);
+    // (no pull up to the comps on space that has only not yet failed to let: see `reviewAsk`)
+    d += (opts.infl12 / 12) * months;
   } else if (opts.darkM !== undefined) {
     d += Math.min(0, toComps);
     const push = Math.min(3, (opts.darkM - L.t) / Math.max(1, L.t)) * (opts.stressed ? STRESS_MOVE : 1) * months;

@@ -2443,6 +2443,8 @@ export interface Econ {
   capRead?: Partial<Record<BuiltClass, CapRead>>;
   /** the feet the street's firms lost to closures and departures a month, a twelve-month running mean, by floor: new firms form at that rate (streetRolls.ts) */
   exitAvg?: Partial<Record<"office" | "retail" | "industrial", number>>;
+  /** The share of each industry's island target its firms' floors held the first month the target was read (streetRolls.ts): the opening's condition, which the gap new firms form into is measured from. */
+  islandHeld0?: number[];
   /** The land texture level's read-out (propmarket.ts tickLandRead): evidence, window (0 = stale), median age. */
   landReadOut?: { n: number; win: number; ageM: number; why?: number; raw?: number };
   /**

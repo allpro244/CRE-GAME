@@ -596,8 +596,47 @@ const CARD_LIMIT = [0.35, 0.25, 0.12, 0.03];
  */
 const KAPPA = 0.05;
 const bufferMonths = (age: number) => 2 + 4 * Math.max(0, Math.min(1, (age - 35) / 30));
+/**
+ * THE BUFFER THIS HOUSEHOLD KEEPS, months of its permanent income (2026-11-13).
+ * A household holds the savings it was drawn with (`fillMoney`: the SCF's
+ * liquid holdings, a lognormal round 1.5 months of income for renters and 3
+ * for owners, wide), and that is the buffer it keeps: what a household holds
+ * is its choice, so the SCF's spread is a spread of tastes for a buffer
+ * (Carroll, Slacalek, Tokuoka & White 2017: the wealth distribution needs
+ * households that differ in patience). Against one age rule for everybody
+ * ([K] above) half the town's savings were "excess" and spent at KAPPA a
+ * month: measured on seed 11 with permanent income already at the pay
+ * (`openPermIncome`), $370M over the rule of $632M held, $18M a month of
+ * spending — a fifth of it — that ran off over the first years. The age rule
+ * is kept only for a save from before the column.
+ */
+function bufferOf(a: HouseholdArrays, i: number): number {
+  const b = a.bufM[i];
+  return Number.isFinite(b) && b >= 0 ? b : bufferMonths(a.age[i]);
+}
 /** How fast permanent income learns from this month's: a two-year average. [K] */
 const PERM_ROLL = 1 / 24;
+/**
+ * PERMANENT INCOME OPENS AT WHAT THE HOUSEHOLD IS PAID (2026-11-13): its
+ * earners' pay and pensions in a normal month (one out of work at the pay it
+ * works for), after tax. The opening's was left at the income each household
+ * was drawn with (`fillMoney`) while its retired head was moved to Social
+ * Security on that pay and, a month on, every earner was placed with a firm
+ * at that firm's pay (`matchJobs`): measured on seed 11, the town's households
+ * opened believing in $115M a month of income on $94M received — the retired
+ * at 1.3-1.8 times their pensions — spent the difference out of savings ($735M
+ * to $445M in fifteen months), and the firms' opening books were calibrated
+ * on that spending (economy.ts, x = S). As it ran off, spending fell 19% in a
+ * year, the firms shed 9% of their heads and unemployment went from 6% to 14%.
+ * One quantity, two answers; this is the pay's.
+ */
+function openPermIncome(a: HouseholdArrays, i: number, e: Econ): void {
+  const pay = (x: number, wage: number) => x === EMP_NONE ? 0 : wage / 12;
+  const g = pay(a.emp1[i], a.wage1[i]) + pay(a.emp2[i], a.wage2[i]) + pay(a.emp3[i], a.wage3[i]);
+  a.yperm[i] = g * (1 - taxRate(g * 12, e));
+  // ...and the buffer it holds against that income is the buffer it keeps (`bufferOf`)
+  a.bufM[i] = a.yperm[i] > 0 ? a.sav[i] / a.yperm[i] : NaN;
+}
 /** The 2024 HHS poverty guideline, one person and each further one, in dollars of the reference table. [S] */
 const POVERTY_1 = 15_060, POVERTY_ADD = 5_380;
 /** The non-housing share of a poverty budget, about 65% (the Orshansky food-multiplier line less shelter, BLS CE). [S] */
@@ -794,11 +833,13 @@ const FIELDS = {
   // households stage 4: the children's ages — the oldest and the youngest, the rest spaced between (KID_UNKNOWN before they are drawn);
   // whether the second adult is a partner (else every adult past the householder is an other adult), and the other adults' eldest's age
   kOld: Uint8Array, kYoung: Uint8Array, partner: Uint8Array, oAge: Uint8Array,
+  // the buffer it keeps, in months of its permanent income (NaN: the age rule, `bufferOf`)
+  bufM: Float32Array,
 } as const;
 /** A child's age the register has not drawn yet (a save from before stage 4). [M: a sentinel code — the largest Uint8.] */
 const KID_UNKNOWN = 255;
 /** Columns a save from before them does not carry, and what they hold then. [M: the sentinel codes above, not quantities.] */
-const FIELD_DEFAULT: Partial<Record<keyof typeof FIELDS, number>> = { ind1: IND_NONE, ind2: IND_NONE, emp3: EMP_NONE, ind3: IND_NONE, taste: NaN, kOld: 255, kYoung: 255, partner: 255, oAge: 255 };
+const FIELD_DEFAULT: Partial<Record<keyof typeof FIELDS, number>> = { ind1: IND_NONE, ind2: IND_NONE, emp3: EMP_NONE, ind3: IND_NONE, taste: NaN, kOld: 255, kYoung: 255, partner: 255, oAge: 255, bufM: NaN };
 type FieldName = keyof typeof FIELDS;
 export type HouseholdArrays = { [K in FieldName]: InstanceType<(typeof FIELDS)[K]> };
 const FIELD_NAMES = Object.keys(FIELDS) as FieldName[];
@@ -1217,7 +1258,7 @@ function addAgent(r: HouseholdRegister): number {
   for (const k of FIELD_NAMES) (a[k] as Uint8Array)[i] = 0;
   a.id[i] = r.nextId++;
   a.blk[i] = -1; a.emp1[i] = EMP_NONE; a.emp2[i] = EMP_NONE; a.emp3[i] = EMP_NONE;
-  a.ind1[i] = IND_NONE; a.ind2[i] = IND_NONE; a.ind3[i] = IND_NONE; a.taste[i] = NaN;
+  a.ind1[i] = IND_NONE; a.ind2[i] = IND_NONE; a.ind3[i] = IND_NONE; a.taste[i] = NaN; a.bufM[i] = NaN;
   return i;
 }
 
@@ -1303,6 +1344,7 @@ function fillMoney(R: Rand, a: HouseholdArrays, i: number, income: number, owner
   a.debtRate[i] = shortIndexOf(e) / 100 + CARD_SPREAD[a.credit[i]];
   a.clean[i] = Math.floor(R.u() * 36);
   a.yperm[i] = mo * (1 - taxRate(income, e));
+  a.bufM[i] = a.yperm[i] > 0 ? a.sav[i] / a.yperm[i] : NaN;
 }
 
 // ---------------------------------------------------------------- seeding
@@ -1440,6 +1482,8 @@ export function seedHouseholdRegister(s: GameState, parcels: ParcelTable): House
       a.rent[i] = pay > 0 ? Math.min(rentMed, (SCREEN * pay) / 12) : rentMed;
     }
   }
+  // each household's permanent income, on the pay and pensions it opens with
+  for (let i = 0; i < r.n; i++) openPermIncome(r.a!, i, e);
   R.done();
   return r;
 }
@@ -2450,6 +2494,8 @@ function unite(R: Rand, r: HouseholdRegister, i: number, list: number[], cum: Fl
     // the money
     const d = a.debt[i] + a.debt[j];
     a.debtRate[i] = d > 0 ? (a.debt[i] * a.debtRate[i] + a.debt[j] * a.debtRate[j]) / d : a.debtRate[i];
+    // (the buffer the two keep together: each one's, by its income)
+    { const y = a.yperm[i] + a.yperm[j]; if (y > 0) a.bufM[i] = (bufferOf(a, i) * a.yperm[i] + bufferOf(a, j) * a.yperm[j]) / y; }
     a.debt[i] = d; a.sav[i] += a.sav[j]; a.owed[i] += a.owed[j]; a.yperm[i] += a.yperm[j];
     a.arrears[i] = Math.max(a.arrears[i], a.arrears[j]);
     a.credit[i] = Math.max(a.credit[i], a.credit[j]); a.clean[i] = Math.min(a.clean[i], a.clean[j]);
@@ -2498,6 +2544,7 @@ function part(R: Rand, r: HouseholdRegister, i: number, e: Econ, pool: number[],
   b.emp1[j] = emp; b.wage1[j] = wage; b.un1[j] = un; b.ind1[j] = ind;
   b.sav[j] = sav; b.debt[j] = debt; b.debtRate[j] = a.debtRate[i]; b.credit[j] = a.credit[i]; b.clean[j] = a.clean[i];
   b.yperm[j] = (wage / 12) * (1 - taxRate(wage, e));
+  b.bufM[j] = a.bufM[i];
   b.ten[j] = TEN_MAINLAND; b.rent[j] = signMainland(r, b, j);
 }
 
@@ -3192,7 +3239,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
     // move-in costs (MOVE_IN_SAVE) on top of its buffer. It spent the rent it
     // was not paying and almost never held the deposit it needs to leave —
     // measured, 66-124 of ~3,700 doubled-up households at year 5.
-    const target = bufferMonths(a.age[i]) * a.yperm[i] + (plansToBuy(r, a, i, H) ? (DOWN_SAVE + CLOSING) * H.starter : 0)
+    const target = bufferOf(a, i) * a.yperm[i] + (plansToBuy(r, a, i, H) ? (DOWN_SAVE + CLOSING) * H.starter : 0)
       + (a.ten[i] === TEN_DOUBLED && (isWorking(a.emp1[i]) || isWorking(a.emp2[i])) ? MOVE_IN_SAVE * Math.max(1, mainRentFor(r, a, i)) : 0);
     // ...BUT THE RENT IS PAID FIRST (2026-10-28, step 2). A household short
     // of money cuts what it buys before it misses the rent or the mortgage —
@@ -3624,7 +3671,10 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   // spends its first month's (firstMonth).
   if (D) {
     const nOld = r.n;
+    // the month the register's earners are first placed with the firms, at the firms' pay (`openPermIncome`)
+    const firstPlacing = r.firmHc === undefined;
     const leaving = matchJobs(s, R, r, D, e, nOld);
+    if (firstPlacing) for (let i = 0; i < nOld; i++) openPermIncome(r.a!, i, e);
     for (let i = nOld; i < r.n; i++) firstMonth(r, i, e);
     const out = new Uint8Array(r.n);
     for (const i of leaving) out[i] = 1;
@@ -3865,7 +3915,7 @@ function firstMonth(r: HouseholdRegister, i: number, e: Econ): void {
   const xfer = fedTransfers(a, i, e, gross, housing);
   const net = gross * (1 - taxRate(gross * 12, e)) + xfer;
   r.flow.transfers = (r.flow.transfers ?? 0) + w * xfer;
-  const target = bufferMonths(a.age[i]) * a.yperm[i];
+  const target = bufferOf(a, i) * a.yperm[i];
   const spend = Math.max(subsistence(e, a.adults[i] + a.kids[i]), a.yperm[i] - housing + KAPPA * (a.sav[i] - target));
   a.sav[i] = Math.max(0, a.sav[i] + net - spend - housing);
   r.flow.spend += w * spend; r.flow.income += w * net;
@@ -4150,7 +4200,7 @@ export function investableSurplus(s: GameState): { dollars: number; savers: numb
   return { dollars, savers };
 }
 function goalOf(r: HouseholdRegister, a: HouseholdArrays, i: number, H: HomeMkt): number {
-  return bufferMonths(a.age[i]) * Math.max(0, a.yperm[i]) + (plansToBuy(r, a, i, H) ? (DOWN_SAVE + CLOSING) * H.starter : 0);
+  return bufferOf(a, i) * Math.max(0, a.yperm[i]) + (plansToBuy(r, a, i, H) ? (DOWN_SAVE + CLOSING) * H.starter : 0);
 }
 
 /**

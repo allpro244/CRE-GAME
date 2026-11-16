@@ -1466,3 +1466,89 @@ a monthly budget, a bond book, a pension plan, policies and a mayor — held in
   populist, austerity); a logit vote on unemployment, the tax burden and rent
   burden against the opening, and the city's fiscal state, with incumbency, a
   retrospective jobs term, and a 2-point candidate draw on the "citygov" stream.
+
+---
+
+## 15. THE OPENING'S RESTING POINT (Nov 2026, PRs #774-#787)
+
+The owner's complaint was "rents over the first three years look broken and
+most firms are losing money". Almost every fault found was the same class:
+**the opening is not at the model's own resting point**, so the first years
+are a start-up transient (stocks seeded off their flows), not an economy.
+Re-measure before believing any number here.
+
+### How to test an early-years change (learned the hard way)
+- **12 towns x 3 years** (seeds 101-112, ~2 min a batch, 4 at a time) is the
+  instrument for opening effects. 4 towns is too noisy: each change reshuffles
+  the opening and a single town swings 5-10 points.
+- **4 towns x 50 years** (11 / 31337 / 22 / 7919, ~18 min) only for late harm.
+- Scratch tools that do this (not in the repo): a `long50.mjs` that snapshots
+  months 0-36 and every year after, and a paired comparison printing the mean
+  and "B lower in n/12 towns" per metric. Rebuild them; they are short.
+
+### What shipped (each with conserve + mechanism audit unchanged)
+- #779 opening labour settled; mainland rents struck in the opening month;
+  each side of the island/mainland line sorted to its own threshold.
+- #780 new firms replace closures as they close (12-month mean of feet lost).
+- #781 asking rents no longer ratchet up on comps noise.
+- #782 a mainland record worn below one island household can still let a flat
+  (`letTo` donor weight) - island vacancy no longer climbs late.
+- #783 a full year of island lookers at the opening (RESID_MOVE movers
+  included), and `priceFlats` charges each free flat the MEAN wait
+  (free+1)/2k, not the last flat's free/k. Year-1 island rent 0.63 -> 0.80.
+- #784 an opening earner is placed in the industry its drawn pay says, and
+  keeps that pay (it was re-dealt by lot after leases were signed against it).
+- #785 THREE firm faults: (1) `freeUntilM ?? -1` read "no free rent" as free
+  until month -1, and the opening history runs on negative months, so firms
+  paid no rent in their books before the game - TRAP: any sentinel compared
+  against `s.month` must survive negative months; use -Infinity. (2) the
+  firms' sales anchor (`revAnchor`) is reset to the index the opening's leases
+  signed at. (3) the island target is measured as the street measures shops
+  (`islandHeld0`). Shop rent year 1 +13% -> +1.5%.
+- #786 opening positions carry the nation's openings rate (NAT_OPEN_RATE), and
+  movers are drawn only by openings above that rate.
+- #787 a pension counts as verifiable income for leaving doubling-up, and a
+  tenant bumped off the mainland ladder (`disp` column) takes the next free home.
+
+### Open, ranked by what the player will notice
+1. **Island renters buy homes at 15-22% a year, every year** (national
+   first-time rate ~4.6% of renters, FIRST_BUY_YR). `solveOwnMu` targets 4.6%
+   of ALL renters, but mainland renters (realistically poor: incomes are in the
+   starting year's dollars, wageIdx ~0.35, mainland renters ~0.55 of the
+   regional median) almost never qualify, so the island carries all of it.
+   Buying is the largest single outflow from island flats (about 40% of
+   move-outs) and the main reason island rents still dip ~11-17% in year one.
+   Likely real fix: island homes for sale (co-ops/condos), so a buyer need not
+   leave the island; re-basing the target is a calibration change - argue it
+   from a source, do not tune it.
+2. **Doubled-up households climb to 10-19% over decades** while 6-15% of
+   mainland homes stand empty. #787 slows it (6.3% -> 5.5% at year 6, 8 towns).
+   Next look: the ladder in `tickMainland` doubles up the lowest bidders even
+   when homes are idle (`roomA + roomB` vs the homes on the market).
+3. **Opening job-matching re-pays ~3% of island renters out of their rent**
+   (burden over 0.8 goes 4.2% -> 6.2% in month two, settled 3.2%):
+   `settleLabour` rematches separated workers at bestJob pay and leaves some
+   unemployed against rents set on their drawn pay. Evictions run 2x the
+   settled rate in months 8-13.
+4. **Shop vacancy rests at 9-10%** since #785 (firms that could not pay rent
+   no longer survive the history for free); about one shop in six is losing
+   money at any time.
+5. Office overbuilding in some towns (one of four hit ~20% vacancy by year 5);
+   developers exit at capExp ~2 points under spot and `outlook` is optimistic.
+   Not systematic across towns; not touched.
+6. `test/tenantmarket.mjs` "rent indices are the comps read back" fails 7-8 of
+   360 class-months - pre-existing, untraced.
+
+### Checked and NOT faults
+- Unemployment rising ~1 point by year 3 follows the nation's own cycle (a
+  national downturn around years 2-3 in most seeds), not a local leak.
+- Age mix over 50 years (children 24% -> 18%, 65+ 15% -> 24%) is ordinary
+  ageing, close to US projections.
+
+### Tried and dropped (do not retry without a new reason)
+- Two-way migration at parity (base MOVE_M leaving): towns shrank, jobs -2.5%.
+- Island movers touring from their own flat: year-1 rents better, 15-18%
+  island vacancy by year 50.
+- Buy decision against the mainland rent instead of the island rent: no
+  measurable effect (the calibration re-centres on the same 4.6%).
+- Stock-and-flow landlord pricing for flats: island vacancy worse.

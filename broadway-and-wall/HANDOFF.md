@@ -1548,7 +1548,11 @@ Re-measure before believing any number here.
    would hire a worker with this pay record (within-industry spread from the
    register) - restaurants 25% -> 36% staffed at year 10 but shop vacancy and
    rents not better beyond noise over 20 years, year-1 island rents lower;
-   not shipped. Next idea: firms in a trade that cannot staff should close
+   not shipped. SHIPPED (#790): JOB_SHORTLIST 6 -> 2, the offers a worker
+   holds rather than the applications it sends (Faberman, Mueller, Sahin &
+   Topa 2022): restaurants 51% staffed at year 10, shop vacancy at year 10
+   5.0/12.2/11.5/19.0% -> 7.0/6.9/9.3/10.0% (4 towns); early years slightly
+   worse for island rents (-1-2 points). Still open: firms in a trade that cannot staff should close
    or shrink their posted positions (impliedHeads reads demand, not what
    they can serve), and/or occupational sorting stronger than a pay screen.
    Shop vacancy of 9-10% in the early years is within the real range

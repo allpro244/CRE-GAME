@@ -327,8 +327,19 @@ export function rivalEvidence(s: GameState, r: Rival): Evidence[] {
     // What it opened with: the first yearly point, or today's mark before one exists.
     const eqNow = Math.max(0, (r.aum ?? 0) - r.debt + r.cash);
     const firstEq = Math.max(0, r.eqHist?.length ? r.eqHist[0][1] : eqNow);
-    const implied = firstEq > REF_EQUITY ? Math.min(10, Math.floor(2 * Math.log2(firstEq / REF_EQUITY))) : 0;
-    const size = sizeWeight(0.15 * firstEq, 1);
+    // ...IN THE OPENING'S DOLLARS (2026-11-16). The reference deal is "carried
+    // at inflation" (REF_EQUITY), and every deal done in the game is weighed
+    // at the price level (`sizeWeight(d.eq, level)`, below), but the record a
+    // firm brought with it was weighed in today's: in a game that opens at
+    // 0.47 of today's prices, each opening firm's history counted at half its
+    // size. Measured, town 102: 55 of the 62 opening firms Unknown — the REITs,
+    // core and foreign funds among them — so none could raise a successor fund
+    // (Unknown opens no investor type: maybeSuccessorFunds), the
+    // endowments' and pensions' money (about half the year's pool) was never
+    // raised, the roster's cash fell 75-80% in two years with nothing to
+    // replace it, and every class's cap rose 1.2-2 points while the loan rate fell.
+    const implied = firstEq > REF_EQUITY * level ? Math.min(10, Math.floor(2 * Math.log2(firstEq / (REF_EQUITY * level)))) : 0;
+    const size = sizeWeight(0.15 * firstEq, level);
     for (let i = 1; i <= implied; i++) out.push({ m: -36 * i, ev: 4 * size, size, kind: "derived", label: "realised before the game (derived)" });
   }
   const rows = r.realised ?? [];

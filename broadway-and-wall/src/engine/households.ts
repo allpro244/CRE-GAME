@@ -2361,14 +2361,23 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
   // homes' rent was a household bidding $0 and the rent sat on the
   // running-cost floor (seed 31337, every month from the third). The rent is
   // the lowest bid of a household that is bidding.
-  let lastPos = 0;
+  let lastPos = 0, accR = 0;
   for (const b of bid) {
     acc += b.wt;
+    if (b.renter) accR += b.wt;
     if (b.w > 0) lastPos = b.w;
     if (pA < 0 && acc >= priceA) pA = b.w > 0 ? b.w : lastPos;
     for (let tr = 0; tr < OLDER_TIERS; tr++) if (pT[tr] < 0 && acc >= cumT[tr]) pT[tr] = b.w > 0 ? b.w : lastPos;
     // past the ladder's last rung: a renter with no flat ready doubles up
-    if (acc > roomA + roomB && b.renter) { a.ten[b.i] = TEN_DOUBLED; a.rent[b.i] = 0; a.blk[b.i] = -1; a.disp[b.i] = 1; occ -= b.wt; }
+    // ...COUNTING THE RENTERS WHO HOLD A HOME, NOT THE ONES STILL LOOKING
+    // (2026-11-16). A doubled-up household ready to rent bids on the ladder —
+    // it is demand, and the rents are struck on it — but it takes a home only
+    // where one is free (`mainHasRoom`, below). Counting it toward the homes
+    // put sitting tenants out for bidders who never moved in: with more
+    // households ready (pensions, the bumped: `readyToRent`), measured over
+    // four towns, 50 years, the mainland's homes went 6-10% empty to 15-31%
+    // while the doubled-up fell only 2-5 points.
+    if (accR > roomA + roomB && b.renter) { a.ten[b.i] = TEN_DOUBLED; a.rent[b.i] = 0; a.blk[b.i] = -1; a.disp[b.i] = 1; occ -= b.wt; }
   }
   // fewer bidders than homes: the last bid sets the rent, down to the running-cost floor
   const last = lastPos;

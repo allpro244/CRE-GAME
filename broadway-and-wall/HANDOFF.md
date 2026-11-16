@@ -1521,10 +1521,14 @@ Re-measure before believing any number here.
    Likely real fix: island homes for sale (co-ops/condos), so a buyer need not
    leave the island; re-basing the target is a calibration change - argue it
    from a source, do not tune it.
-2. **Doubled-up households climb to 10-19% over decades** while 6-15% of
-   mainland homes stand empty. #787 slows it (6.3% -> 5.5% at year 6, 8 towns).
-   Next look: the ladder in `tickMainland` doubles up the lowest bidders even
-   when homes are idle (`roomA + roomB` vs the homes on the market).
+2. **Doubled-up households climb over decades.** #787 slowed it but, measured
+   over 50 years, sent mainland vacancy to 15-31%: the ladder in
+   `tickMainland` counted ready doubled-up BIDDERS toward the homes and put
+   sitting renters out for them. Fixed by counting only renters (`accR`);
+   mainland vacancy back to 2-4% over 12 years, 4 towns. What remains
+   doubled-up is mostly very poor households that cannot save the three
+   months' rent `readyToRent` asks (the source says first month + 1-2 months'
+   deposit, so 2-3 months; 3 is the top of the range).
 3. **Opening job-matching re-pays ~3% of island renters out of their rent**
    (burden over 0.8 goes 4.2% -> 6.2% in month two, settled 3.2%):
    `settleLabour` rematches separated workers at bestJob pay and leaves some

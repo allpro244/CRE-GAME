@@ -1534,12 +1534,38 @@ Re-measure before believing any number here.
    `settleLabour` rematches separated workers at bestJob pay and leaves some
    unemployed against rents set on their drawn pay. Evictions run 2x the
    settled rate in months 8-13.
-4. **Shop vacancy rests at 9-10%** since #785 (firms that could not pay rent
-   no longer survive the history for free); about one shop in six is losing
-   money at any time.
-5. Office overbuilding in some towns (one of four hit ~20% vacancy by year 5);
-   developers exit at capExp ~2 points under spot and `outlook` is optimistic.
-   Not systematic across towns; not touched.
+4. **Shops empty out over decades in some towns (15-21% vacancy by years
+   30-50) because the low-paid trades cannot staff.** Town 7919: restaurants
+   74% staffed at year 2, 25% at year 10, 21% at year 25 (general merchandise
+   27%, grocers 47%) with unemployment 4-6%; a local trade serves only what
+   its staff can make (economy.ts `served`, 1.0 -> 0.5), so half the town's
+   shop spending leaves and occupied shop floor falls 20% while population
+   grows 36%. Cause: a worker takes the best-paying of JOB_SHORTLIST (6)
+   draws and every worker ranks industries alike (pay = going rate x own
+   standing), so the bottom rung drains upward faster than entrants and the
+   jobless refill it; the pay response to openings (V_SLOPE 0.5 [K]) is too
+   weak to compete. TRIED: weighting each draw by the odds the industry
+   would hire a worker with this pay record (within-industry spread from the
+   register) - restaurants 25% -> 36% staffed at year 10 but shop vacancy and
+   rents not better beyond noise over 20 years, year-1 island rents lower;
+   not shipped. Next idea: firms in a trade that cannot staff should close
+   or shrink their posted positions (impliedHeads reads demand, not what
+   they can serve), and/or occupational sorting stronger than a pay screen.
+   Shop vacancy of 9-10% in the early years is within the real range
+   (REIS neighbourhood/community centres ran 8-11%, 1980s-2019).
+5. **Values slide in the first three years in every town** (cap rates +1.2-2
+   points in every class while the loan rate falls). #789 removed about a
+   third of it (opening track records in the wrong dollars, so nobody could
+   raise successor funds). The rest: the roster's cash falls 75-80% in two
+   years as it buys from the street; banks tighten as the watch list rises
+   1.3% -> 12% of loans by year 3; the investor pool's allocation sits on its
+   2x rail (reAllocation) once spreads widen; the endowment/pension money is
+   reachable only by firms in the top two bands, which almost none reach.
+   TRIED: holding builders' construction reserve back from acquisitions -
+   office cap 9.4 -> 15.7% in year 1 (builders were the survey's
+   second-highest bidders); not shipped.
+   Office overbuilding (one of four towns at ~20% vacancy by year 5) follows
+   the same capital wave; not systematic across towns.
 6. `test/tenantmarket.mjs` "rent indices are the comps read back" fails 7-8 of
    360 class-months - pre-existing, untraced.
 

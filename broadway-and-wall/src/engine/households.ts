@@ -232,10 +232,21 @@ const MAKE_READY_M = 1;
  * household lives (homeprice.ts COMMUTE, CROSS_KM), less SWITCH_PAY for a
  * worker leaving the industry it knows (Neal 1995: displaced workers who
  * change industry lose about 5% more of their pay than those who stay) [S~].
- * Six a search is a shape parameter [K] (job seekers send one or two
- * applications a week, Faberman & Kudlyak 2019).
+ * ...THE OFFERS IN HAND, NOT THE APPLICATIONS SENT (2026-11-16). This was
+ * six, read off the applications job seekers send (one or two a week,
+ * Faberman & Kudlyak 2019); but a worker chooses among the offers it holds,
+ * and offers are a small fraction of applications: the unemployed receive
+ * well under one offer a month and rarely hold more than one at a time
+ * (Faberman, Mueller, Sahin & Topa 2022, Econometrica, "Job Search Behavior
+ * among the Employed and Non-Employed") [S~]. The month's finding rate
+ * (UE_RATE, MATCH_ETA) already says whether a search ends in a job. Choosing
+ * the best of six let every worker climb out of the lowest-paid trades at
+ * once: measured, town 7919, restaurants 74% staffed at year 2 and 21% at
+ * year 25 with unemployment 4-6%, so half the town's shop spending left town
+ * (economy.ts `served`) and its shops went 15-20% empty. Two: the offer it
+ * took, and sometimes a second.
  */
-const JOB_SHORTLIST = 6, SWITCH_PAY = 0.95;
+const JOB_SHORTLIST = 2, SWITCH_PAY = 0.95;
 /**
  * ON-THE-JOB SEARCH: an employed worker looks each month at OJS_M and moves
  * when an opening beats its job by QUIT_GAIN after the commute — a quit, and

@@ -10,7 +10,7 @@ import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, openingVac, CAP_BASE, developerOptimism, LEASE_TERM_M, forwardVacancy, RENT_BASE, underwrittenGrowthPct } from "./market";
 import { gpInterestInFund } from "./fund";
-import { developmentProForma, LAND_CARRY_RATE, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE, leaseUpMonthsOf, stabilisedVacancy } from "./proforma";
+import { developmentProForma, LAND_CARRY_RATE, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE, leaseUpMonthsOf, stabilisedVacancy, wreckCost } from "./proforma";
 import { productOf, PRODUCT_TYPES, PRODUCT_KEYS, layoutProduct, type ProductKey } from "./products";
 import { homeLotBidPsf } from "./homeprice";
 import { GROCER_SALES } from "./grocerHook";
@@ -1826,23 +1826,61 @@ export function landValue(rec: ParcelRecord, econ: Econ): number {
 }
 
 /**
- * WHAT A STANDING BUILDING CANNOT FALL BELOW.
+ * BUYING A BUILDING EMPTY.
  *
- * Vacant dirt is the residual. A completed building is at least that dirt —
- * nobody demolishes a new tower to sell a lot. The 0.92 haircut is a
- * demolition allowance for old empty fabric, and it was also how a
- * just-delivered office marked below the land it sat on and called the
- * revolver. Lease-up uses the full residual; older stock still pays the
- * demo haircut.
+ * There is no legal way to knock down an occupied building, and waiting out a
+ * rent roll takes a decade. So you buy the leases: every sitting tenant is
+ * offered the whole remaining value of their contract, plus a quarter again on
+ * top for the inconvenience of moving a business they did not want to move.
+ *
+ * The premium is what makes this a decision rather than a button. A building
+ * full of leases with eight years to run costs a fortune to empty, which is
+ * precisely why the site under a well-let building is worth less than the site
+ * under a half-empty one — and why the buildings that get redeveloped in real
+ * cities are the ones whose leases were about to roll anyway.
  */
-export function landAppraisalFloor(rec: ParcelRecord, econ: Econ, inLeaseUp: boolean | number): number {
+export const BUYOUT_PREMIUM = 1.25;
+
+/**
+ * WHAT IT COSTS TO HAND OVER A STANDING BUILDING AS A CLEAR SITE: the leases
+ * bought out (the remaining rent on each and the premium, leasing.ts
+ * buyOutTenants) and the flats emptied (a year of their rent at the same
+ * premium), at today's roll. The demolition is landAppraisalFloor's.
+ */
+export function vacantPossessionCost(rec: ParcelRecord, econ: Econ, h: Holding, month: number): number {
+  let c = 0;
+  for (const t of h.tenants ?? []) {
+    if (t.defaulted) continue;
+    c += (t.rentPsf * t.sf / 12) * Math.max(0, t.endM - month) * BUYOUT_PREMIUM;
+  }
+  const resSf = useRentableSf(rec, "multifamily") * (h.occ ?? 0);
+  if (resSf > 0) c += resSf * useRentPsfYr(rec, econ, h.condition, "multifamily", h.condIdx) * BUYOUT_PREMIUM;
+  return c;
+}
+
+/**
+ * WHAT A STANDING BUILDING CANNOT FALL BELOW: the site it stands on, as a
+ * buyer would get it — the land, less taking the building down (proforma.ts
+ * wreckCost, the cost the Build desk and the redevelopment test charge) and
+ * less clearing it (`clearing`, vacantPossessionCost: the leases bought out).
+ *
+ * This was the land x 0.92, a flat "demolition allowance": a different answer
+ * from the one development gives the same question (dev.ts demolitionCost,
+ * and the redevelopment test income < land - demolition), and it ignored the
+ * leases altogether, so a fully let building was floored at the price of the
+ * empty site under it.
+ *
+ * A building in its first lease-up is not a demolition candidate: nobody
+ * knocks down a tower that opened this month, so its floor is the whole site
+ * (the weight is leaseUpWeight: 1 through the market's lease-up span, fading
+ * to 0 at twice it, so the costs of clearing arrive as the fabric ages rather
+ * than as a step the day a window closes).
+ */
+export function landAppraisalFloor(rec: ParcelRecord, econ: Econ, inLeaseUp: boolean | number, clearing = 0): number {
   const land = landValue(rec, econ);
-  // A number is how new the fabric still is (leaseUpWeight: 1 through the
-  // market's lease-up span, fading to 0 at twice it), so the demolition
-  // allowance arrives as the building ages rather than as a one-month step
-  // the day a calendar window closes.
   const w = typeof inLeaseUp === "number" ? clamp(inLeaseUp, 0, 1) : inLeaseUp ? 1 : 0;
-  return land * (0.92 + 0.08 * w);
+  const toClear = rec.class !== "land" && rec.bldgArea > 0 ? wreckCost(rec.bldgArea, econ.costIdx) + clearing : 0;
+  return Math.max(0, land - (1 - w) * toClear);
 }
 
 /**
@@ -5085,14 +5123,13 @@ function holdingValueOn(rec: ParcelRecord, econ: Econ, h: Holding, month?: numbe
   // Until it stabilises the as-is-on-completion mark governs, and it retires
   // on its own as the space lets — see leaseUpMark. It never marks BELOW the
   // ordinary blend, so a job that fills fast keeps the upside the roll has
-  // earned it. And it never marks below the dirt: the 0.92 floor is a
-  // demolition allowance for old empty fabric, not a haircut on a tower that
-  // opened this month.
+  // earned it. And it never marks below the clear site: landAppraisalFloor.
   const asIs = month === undefined ? null : leaseUpMark(rec, econ, h, month, capNoRoll, cap, contractNoi, stabNoi);
   // The dirt floor follows the age of the fabric, not the roll: a new tower
   // that let fast is no more a demolition candidate than one still filling.
   const floor = landAppraisalFloor(rec, econ,
-    h.deliveredM !== undefined && month !== undefined ? leaseUpWeight(rec, month - h.deliveredM) : 0);
+    h.deliveredM !== undefined && month !== undefined ? leaseUpWeight(rec, month - h.deliveredM) : 0,
+    month === undefined ? 0 : vacantPossessionCost(rec, econ, h, month));
   // VACANCY IS A LEASE-UP TOO (2026-10-14). A stabilised office that lost one
   // of its three tenants marked down 41% the month the suite emptied and back
   // up 51% when it let again two months later — the in-place leg is the rent

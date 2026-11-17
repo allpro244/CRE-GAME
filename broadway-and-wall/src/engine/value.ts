@@ -1055,9 +1055,37 @@ export function queueFactor(econ: Econ, use: BuiltClass, psf: number): number {
 
 function queueFactorOf(q: NonNullable<Econ["landQueue"]>[BuiltClass] | undefined, psf: number): number {
   if (!q || !(psf > 0) || !q.psf.length) return 1;
-  let ahead = q.total;
-  for (let i = 0; i < q.psf.length; i++) {
-    if (psf >= q.psf[i]) { ahead = q.ahead[i]; break; }
+  // THE QUEUE IS A SAMPLE, READ AS A CURVE (2026-11-17). refreshLandQueue
+  // measures it on a sample of lots and each sampled site stands for `step`
+  // lots' floor area — in a City, eleven to thirteen office sites carrying up
+  // to 480k sf each, five years of the town's office take-up. Read as a
+  // staircase, a lot whose residual edged past one sampled site jumped five
+  // years up the queue, and its land price doubled in a month and fell back
+  // the next with rents, caps and costs unchanged (seed 20261, a 9,598 sf
+  // warehouse: land $199 -> $397 -> $269 /sf of lot in months 137-139, and the
+  // building's mark with it). A sampled site is evidence of floor area spread
+  // around its residual, not an atom at it, so the wait is read off the line
+  // between neighbouring samples (and, below the last, down to a residual of
+  // nothing behind the whole queue). Same samples, same total, same best and
+  // worst place in line; only the steps between them are gone.
+  const n = q.psf.length;
+  let ahead: number;
+  if (psf >= q.psf[0]) ahead = q.ahead[0];
+  else {
+    let i = 1;
+    while (i < n && psf < q.psf[i]) i++;
+    if (i < n) {
+      // between sample i (cheaper) and i-1 (dearer): ahead runs from ahead[i]
+      // at psf[i] to ahead[i-1] at psf[i-1]
+      const hi = q.psf[i - 1], lo = q.psf[i];
+      const t = hi > lo ? (hi - psf) / (hi - lo) : 1;
+      ahead = q.ahead[i - 1] + (q.ahead[i] - q.ahead[i - 1]) * t;
+    } else {
+      // under the cheapest sample: its floor area spread down to a residual of nothing
+      const last = q.psf[n - 1];
+      const t = last > 0 ? Math.min(1, (last - psf) / last) : 1;
+      ahead = q.ahead[n - 1] + (q.total - q.ahead[n - 1]) * t;
+    }
   }
   if (!(ahead > 0)) return 1;
   if (!(q.absYr > 0)) return 0;

@@ -1394,9 +1394,19 @@ function tickMonth(
         // pump a voluntary sale pays releaseCost to stop.
         const release = releaseCost(s, parcels, pick.bbl);
         // A JV partner takes its share of any surplus that reaches the owners.
-        const rpB = routeProceeds(s, pick, net - lien - breakFee - release);
-        const toBorrower = rpB.toSponsor + rpB.toVehicle;
         const shortfall = Math.max(0, lien + breakFee - net);
+        // THE MORTGAGE'S SHORTFALL IS SETTLED ONCE, BELOW, BY WHOEVER OWES IT
+        // (2026-11-17). The owners' share was net - lien - fee - release, which
+        // on an underwater building is the shortfall with a minus sign — and
+        // it was added to cash. A non-recourse borrower paid the whole hole
+        // while the lender charged the same dollars off, and a recourse
+        // borrower paid it twice (test/seizure-shortfall.mjs; a playtest's
+        // $646K non-recourse note took cash from -$29K to -$604K). The lien
+        // takes what the sale nets and no more; the rest is the recourse
+        // charge or the lender's loss.
+        const secured = !!(pick.loan || pick.mezz);
+        const rpB = routeProceeds(s, pick, net - lien - breakFee + (secured ? shortfall : 0) - release);
+        const toBorrower = rpB.toSponsor + rpB.toVehicle;
         // toBorrower can go negative when the release premium exceeds net —
         // same as acceptSaleOffer: the lien settles even if cash deepens.
         s.cash += toBorrower;

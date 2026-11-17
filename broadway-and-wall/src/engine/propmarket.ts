@@ -1201,13 +1201,21 @@ function surveyClass(s: GameState, parcels: ParcelTable, k: BuiltClass, want: nu
     const mark = assetValue(rec, e, cond);
     const view = dealView(s, rec, rec.bbl, mark, cond);
     if (!view) continue;
-    // WHAT EACH FIRM COULD PAY, NOT ONLY WHAT IT WOULD (2026-11-12): the
-    // street's bids are its value capped at what it can fund (bidRound,
-    // `affordable`), so the survey asks the same question. Reading
-    // willingness alone opened every class's cap under the loan index
-    // (seed 7919: 4.8-5.2% against 5.5%) and the first real trades re-priced
-    // the town 300-450bp in three years.
-    const maxes = firms.map((r) => { const b = bidderOf(s, r, rec); return Math.min(maxPrice(e, view, b, beliefSignals(s, r)).max, affordable(s, r, view, b)); })
+    // WHAT THE FIRMS WOULD PAY (2026-11-16). This was capped at what each
+    // could fund this month (`affordable`, the street's own bid limit),
+    // because reading willingness alone had opened every class's cap under
+    // the loan index (seed 7919, 2026-11-12). Since then the opening and its
+    // firms rest where they will (#776-#790), and re-measured on willingness
+    // alone no class in twelve towns opens under the loan index (office
+    // 0.6-2.2 points over, flats 0.0-1.8). Capped, the survey read the
+    // roster's bank balances: the opening's firms spent 75-80% of their cash
+    // in two years buying from the street, and every class's cap rose
+    // 1.2-2 points in three years while the loan rate fell, then fell back
+    // over the decade. An investor survey reports what buyers would pay for
+    // the class (PwC/RERC going-in rates), not whether this month's local
+    // buyers hold the cash; a deal that cannot be funded still fails at the
+    // table (bidRound keeps `affordable`).
+    const maxes = firms.map((r) => { const b = bidderOf(s, r, rec); return maxPrice(e, view, b, beliefSignals(s, r)).max; })
       .filter((m) => m > 0).sort((a, b) => b - a);
     const px = maxes[1] ?? maxes[0];
     if (!px) continue;

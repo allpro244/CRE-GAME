@@ -2447,6 +2447,8 @@ export interface Econ {
   islandHeld0?: number[];
   /** The land texture level's read-out (propmarket.ts tickLandRead): evidence, window (0 = stale), median age. */
   landReadOut?: { n: number; win: number; ageM: number; why?: number; raw?: number };
+  /** The land survey's last twelve months: [month, lots tried, lots that drew a bid] (propmarket.ts tickLandSurvey). */
+  landSurveyTally?: [number, number, number][];
   /**
    * THE APPRAISER'S ADJUSTMENT GRID, learned from the prints (propmarket.ts):
    * log-cap per unit of location (0-1), condition index (0-1) and build spec

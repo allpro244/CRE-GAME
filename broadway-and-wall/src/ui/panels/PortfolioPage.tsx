@@ -684,7 +684,10 @@ export function PortfolioPage() {
               >
                 {dv
                   ? ((dv.signed?.length ?? 0) ? `${((dv.signed!.reduce((a, x) => a + x.sf, 0) / Math.max(1, dv.sf)) * 100).toFixed(0)}% pre` : "—")
-                  : h.groundLeased || rec?.class === "land" || !or ? "—" : occLabel(or)}
+                  : h.groundLeased || rec?.class === "land" || !or ? "—"
+                    // a table cell, not a sentence: "fully let · 1,564 sf unlettable" ran
+                    // across the Rent and NOI columns. The remainder stays in the tooltip.
+                    : or.fullyLet ? "fully let" : occLabel(or)}
               </td>
               {/* WHAT THE ROLL ACTUALLY COLLECTS, per foot. The market
                   benchmark is weighted the way the roll is (each tenant's own

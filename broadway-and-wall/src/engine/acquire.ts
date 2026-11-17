@@ -587,7 +587,12 @@ export function negotiate(
   // Half a per cent is the threshold for "the same number": below that you have
   // moved by less than the rounding on the offer slider, which is not a
   // concession, it is a gesture.
-  const stalled = !!existing && Math.abs(px - existing.yourPrice) < Math.max(1, existing.yourPrice * 0.005);
+  // ...EXCEPT THE FULL ASKING PRICE. Standing on the seller's own published
+  // number is not stringing them along; no seller takes offence at being
+  // offered what they asked (owner, 2026-11-17: "if you offer full price that
+  // will never offend anyone"). Under their own ask they hold or counter; they
+  // do not sour on the buyer or end the talks for it.
+  const stalled = px < ask && !!existing && Math.abs(px - existing.yourPrice) < Math.max(1, existing.yourPrice * 0.005);
   const stalls = stalled ? (existing?.stalls ?? 0) + 1 : 0;
   if (stalls > 0) {
     // 18% on the first repeat against a median seller, rising with each one and

@@ -1976,7 +1976,7 @@ function readFlats(s: GameState, fs: { roll: FlatRoll; cap: number; mkt: number 
   const list = e.deals?.multifamily ?? [];
   while (list.length && list[0].m < s.month - 6) list.shift();
   let nNew = 0;
-  for (const d of list) if (!d.r) nNew++;
+  for (const d of list) if (!d.r) nNew += d.n ?? 1;
   let sf = 0, c = 0;
   const face = e.rentIdx.multifamily;
   for (const d of list) { if (nNew >= 3 && d.r) continue; sf += d.sf; c += dealRelNow(d, face) * d.sf; }

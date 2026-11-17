@@ -1860,8 +1860,9 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           q, kind: "warn",
           text: `${t.name}${yrsIn >= 8 ? `, your tenant of ${yrsIn} years at ${rec.address},` : ` at ${rec.address}`} `
             + `requests rent relief (${INDUSTRY_LABEL[t.sector].toLowerCase()} downturn). `
-            + `Paying $${t.rentPsf.toFixed(0)}/sf vs $${market.toFixed(0)} market. `
-            + `Offers $${askPsf.toFixed(0)}/sf for ${Math.round(addM / 12)} more years of term. `
+            // to the cent: a 10% cut on a $7 warehouse rent read "$7 vs $7 ... offers $7"
+            + `Paying $${t.rentPsf.toFixed(2)}/sf vs $${market.toFixed(2)} market. `
+            + `Offers $${askPsf.toFixed(2)}/sf for ${Math.round(addM / 12)} more years of term. `
             + `Respond by ${monthLabel(q + 3)}.`,
         });
         break;
@@ -3170,7 +3171,7 @@ export function answerAsk(
     t.strainedM = next.month;
     next.news.unshift({
       q: next.month, kind: "info",
-      text: `Relief declined · ${t.name} · ${rec.address}. Rent stays $${t.rentPsf.toFixed(0)}/sf `
+      text: `Relief declined · ${t.name} · ${rec.address}. Rent stays $${t.rentPsf.toFixed(2)}/sf `
         + `to ${monthLabel(t.endM)}; elevated default risk.`,
     });
     return { s: next, msg: "Declined. The rent stands." };
@@ -3190,7 +3191,7 @@ export function answerAsk(
   if (recoveryOf(t) === "base") t.baseStopPsf = +stopPsfNow(rec, next.econ, h, t.use).toFixed(2);
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Relief granted at ${rec.address}: ${t.name} goes to $${a.askPsf.toFixed(0)}/sf from $${oldRent.toFixed(0)} `
+    text: `Relief granted at ${rec.address}: ${t.name} goes to $${a.askPsf.toFixed(2)}/sf from $${oldRent.toFixed(2)} `
       + `and the lease runs to ${monthLabel(t.endM)}.`,
   });
   return { s: next, msg: "Relief granted." };

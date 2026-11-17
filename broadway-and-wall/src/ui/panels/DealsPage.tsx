@@ -560,7 +560,7 @@ export function DealsPage() {
                       </div>
                     ) : (
                       <div className="grid">
-                        <Row k="Request" v={`$${a.currentPsf.toFixed(0)} → $${a.askPsf.toFixed(0)}/sf · +${Math.round(a.addM / 12)} yrs term`} strong />
+                        <Row k="Request" v={`$${a.currentPsf.toFixed(2)} → $${a.askPsf.toFixed(2)}/sf · +${Math.round(a.addM / 12)} yrs term`} strong />
                         <Row k="Rent forgone" v={`~${usd(Math.round((a.currentPsf - a.askPsf) * a.sf))} / yr on ${sf(a.sf)}`} />
                         <Row k="If declined" v="lease stands · tenant default risk 3×" />
                         <Row k="Expires" v={`${monthsLeft} month${monthsLeft === 1 ? "" : "s"} · lapse = decline`} bad={monthsLeft <= 1} />

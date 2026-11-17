@@ -1255,8 +1255,7 @@ export function openingCapSurvey(s: GameState, parcels: ParcelTable): void {
     const ix = (idx[k] = newIndex(7, Math.log(e.capRate[k]), lv.v, lv.n, lv.n ? lv.v / (lv.n + 1) : CAP_Q0 * CAP_Q0));
     for (const p of pts) gridAdd(ix, yrOf(s.month), zCap({ x: p.x, kind: "s", w: 0.5 }), Math.log(p.c), 0.5);
   }
-  // (The opening land texture level stays the appraiser's provisional one:
-  // a survey of bids is not a sale — see tickLandRead.)
+  // (The opening land texture level: openingLandSurvey, run right after.)
   e.capExp = { ...e.capRate };
   const reads = (e.capRead ??= {});
   for (const k of K) reads[k] = { n: 0, win: 0, med: e.capRate[k], p25: e.capRate[k], p75: e.capRate[k], ageM: 0, noBid: 0, trades: 0 };
@@ -1854,14 +1853,58 @@ export function tickLandRead(s: GameState): void {
 const LAND_SURVEY_LOTS = 24;
 export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
   if (s.month % 12 !== 6) return;
+  const got = landSurveyPrints(s, parcels);
+  if (!got) return;
+  for (const p of got) pushLandPrint(s, { m: s.month, L: p.L, w: 0.5, kind: "s", x: p.x });
+}
+
+/**
+ * THE OPENING, BEFORE ANY DIRT HAS TRADED: the same survey, run at newGame
+ * once the street exists (sim.ts), as the cap rates already are
+ * (openingCapSurvey). The land level used to open at a formula — the opening
+ * office rent over the construction cost, to the 1.15 — and the first
+ * survey, six months in, then pulled it to what the street's builders and
+ * land funds would actually bid: the town's land fell by about half in two
+ * years in both towns measured (seed 99: $537M -> $254M; seed 20261: $453M ->
+ * $274M) with nothing about the dirt changed, and every building marked at
+ * its land fell with it. The survey's level is what every later read is
+ * referenced to (zLand); now the opening is too. Where fewer than half the
+ * sampled lots draw a bid the survey is not a level (as each year), and the
+ * provisional opening stands.
+ */
+export function openingLandSurvey(s: GameState, parcels: ParcelTable): void {
+  const e = s.econ;
+  const got = landSurveyPrints(s, parcels);
+  if (!got || !got.length) return;
+  const med = wMedian(got.map((p) => ({ v: p.L, w: 1 })));
+  if (!(med > 0) || !Number.isFinite(med)) return;
+  e.landIdx = med;
+  const lv = logVar(got.map((p) => p.L));
+  const ix = { ...newIndex(4, Math.log(med), lv.v, lv.n, lv.n ? lv.v / (lv.n + 1) : LAND_Q0 * LAND_Q0), ref: "s" as const };
+  e.landIx = ix;
+  // The indications are the grid's first rows and the tape's first prints, as
+  // the cap survey's are (openingCapSurvey) — not fed through the appraiser's
+  // update as well: the read already IS their median. (Each is a level in its
+  // own right: L does not depend on the level it was struck at —
+  // impliedLandLevel — so the provisional opening drops out.)
+  const t = (s.landTape ??= []);
+  for (const p of got) {
+    const print = { m: s.month, L: p.L, w: 0.5, kind: "s" as const, x: p.x };
+    t.push(print);
+    gridAdd(ix, yrOf(s.month), zLand(print), Math.log(p.L), 0.5);
+  }
+}
+
+/** The survey's indications (null: not a level this year — fewer than half the lots drew a bid). */
+function landSurveyPrints(s: GameState, parcels: ParcelTable): { L: number; x: ReturnType<typeof landX> }[] | null {
   const firms = livingRivals(s).filter((r) => !r.stressMs && r.failedM === undefined && (paramsOf(r).build > 0 || landBanker(r)));
-  if (!firms.length) return;
+  if (!firms.length) return null;
   const recs: ParcelRecord[] = [];
   for (const bbl of Object.keys(parcels)) {
     const rec = resolveRec(parcels, s, bbl);
     if (rec && (rec.class === "land" || !(rec.bldgArea > 0)) && rec.lotArea > 0 && !rec.ag && !rec.homeLot && !rec.tract) recs.push(rec);
   }
-  if (!recs.length) return;
+  if (!recs.length) return null;
   recs.sort((a, b) => a.demandScore - b.demandScore || (a.bbl < b.bbl ? -1 : 1));
   const want = LAND_SURVEY_LOTS;
   const step = Math.max(1, Math.floor(recs.length / want));
@@ -1897,8 +1940,8 @@ export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
     const L = mark > 0 ? s.econ.landIdx * px / mark : NaN;
     if (Number.isFinite(L) && L > 0) prints.push({ L, x: landX(rec) });
   }
-  if (2 * prints.length < tried) return;
-  for (const p of prints) pushLandPrint(s, { m: s.month, L: p.L, w: 0.5, kind: "s", x: p.x });
+  if (2 * prints.length < tried) return null;
+  return prints;
 }
 
 /** For the UI: the read's line, numbers first. */

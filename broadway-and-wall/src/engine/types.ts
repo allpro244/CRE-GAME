@@ -2424,7 +2424,7 @@ export interface Econ {
    * log), and whether it was a renewal (`r`).
    */
   /** each letting: month, log of signed rent over its block's market rent then, feet, renewal, and the asking index then (`i`, to restate it against today's) */
-  deals?: Partial<Record<BuiltClass, { m: number; c: number; sf: number; r?: number; i?: number }[]>>;
+  deals?: Partial<Record<BuiltClass, { m: number; c: number; sf: number; r?: number; i?: number; n?: number }[]>>;
   /**
    * THE COMMERCIAL COMPS (tenantMarket.ts recordLease, ONE ECONOMY step 4):
    * every office, shop and shed lease signed in the last six months — face

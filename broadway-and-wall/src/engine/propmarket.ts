@@ -1852,10 +1852,28 @@ export function tickLandRead(s: GameState): void {
  */
 const LAND_SURVEY_LOTS = 24;
 export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
-  if (s.month % 12 !== 6) return;
-  const got = landSurveyPrints(s, parcels);
+  // A PANEL READ ROUND THE YEAR, NOT IN ONE DAY (2026-11-17). The whole panel
+  // used to be surveyed in one month, and the appraisers took a year's
+  // evidence in one step: over fifty years in four towns the land level stood
+  // exactly still in 72-82% of months, and 25-37 of each town's 30-44 moves of
+  // more than 10% came in the month after the survey — every lot in town
+  // repriced at once, by as much as x0.46 or x2.17. The cap rates' brokers
+  // report round the year (tickBrokerSurvey, each class on its own month).
+  // Now the same 24-lot panel is read two lots a month, each at the same half
+  // weight: the same evidence a year, arriving as it would.
+  const slice = s.month % 12;
+  const got = landSurveyPrints(s, parcels, slice);
   if (!got) return;
-  for (const p of got) pushLandPrint(s, { m: s.month, L: p.L, w: 0.5, kind: "s", x: p.x });
+  // ...and the censoring rule over the panel's last twelve months, as it was
+  // over the one-day panel: unbid lots rank below every bid, so a stretch in
+  // which fewer than half the lots drew a bid prints nothing (Kaplan & Meier).
+  const e = s.econ;
+  const tally = (e.landSurveyTally ?? []).filter((t) => t[0] > s.month - 12);
+  tally.push([s.month, got.tried, got.prints.length]);
+  e.landSurveyTally = tally;
+  const tried = tally.reduce((a, t) => a + t[1], 0), drew = tally.reduce((a, t) => a + t[2], 0);
+  if (2 * drew < tried) return;
+  for (const p of got.prints) pushLandPrint(s, { m: s.month, L: p.L, w: 0.5, kind: "s", x: p.x });
 }
 
 /**
@@ -1874,8 +1892,9 @@ export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
  */
 export function openingLandSurvey(s: GameState, parcels: ParcelTable): void {
   const e = s.econ;
-  const got = landSurveyPrints(s, parcels);
-  if (!got || !got.length) return;
+  const panel = landSurveyPrints(s, parcels);
+  if (!panel || 2 * panel.prints.length < panel.tried || !panel.prints.length) return;
+  const got = panel.prints;
   const med = wMedian(got.map((p) => ({ v: p.L, w: 1 })));
   if (!(med > 0) || !Number.isFinite(med)) return;
   e.landIdx = med;
@@ -1895,8 +1914,8 @@ export function openingLandSurvey(s: GameState, parcels: ParcelTable): void {
   }
 }
 
-/** The survey's indications (null: not a level this year — fewer than half the lots drew a bid). */
-function landSurveyPrints(s: GameState, parcels: ParcelTable): { L: number; x: ReturnType<typeof landX> }[] | null {
+/** The survey's indications on the panel (or, with `slice`, the panel's lots for that month of the year), and how many lots were tried. */
+function landSurveyPrints(s: GameState, parcels: ParcelTable, slice?: number): { prints: { L: number; x: ReturnType<typeof landX> }[]; tried: number } | null {
   const firms = livingRivals(s).filter((r) => !r.stressMs && r.failedM === undefined && (paramsOf(r).build > 0 || landBanker(r)));
   if (!firms.length) return null;
   const recs: ParcelRecord[] = [];
@@ -1921,7 +1940,8 @@ function landSurveyPrints(s: GameState, parcels: ParcelTable): { L: number; x: R
   // nothing, and the land read goes stale as it does on a thin tape.
   const prints: { L: number; x: ReturnType<typeof landX> }[] = [];
   let tried = 0;
-  for (let i = Math.floor(step / 2); i < recs.length && tried < want; i += step) {
+  for (let i = Math.floor(step / 2), j = 0; i < recs.length && j < want; i += step, j++) {
+    if (slice !== undefined && j % 12 !== slice) continue;
     const rec = recs[i];
     tried++;
     const maxes = firms.map((r) => landMaxPrice(s, r, rec)).filter((m) => m > 0).sort((a, b) => b - a);
@@ -1940,8 +1960,7 @@ function landSurveyPrints(s: GameState, parcels: ParcelTable): { L: number; x: R
     const L = mark > 0 ? s.econ.landIdx * px / mark : NaN;
     if (Number.isFinite(L) && L > 0) prints.push({ L, x: landX(rec) });
   }
-  if (2 * prints.length < tried) return null;
-  return prints;
+  return { prints, tried };
 }
 
 /** For the UI: the read's line, numbers first. */

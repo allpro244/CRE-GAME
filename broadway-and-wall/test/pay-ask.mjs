@@ -45,6 +45,16 @@ for (const { li, floor } of over) {
   // over the ask and still short of the floor: the same answer
   const r2 = E.negotiate(g, parcels, li.bbl, Math.round(li.ask * 1.05));
   ok(`${at}: 5% over the ask is not a lowball either`, r2.s.approaches[li.bbl]?.insultedUntilM === undefined && r2.s.talks?.[li.bbl]?.theirPrice === Math.round(floor));
+  // standing on the full ask, round after round, never sours them or ends the talks
+  // (the talks can run out — their last round is a final, and declining a final
+  // ends that conversation — but nothing is held against you and you may open again)
+  let gs = r.s;
+  for (let i = 0; i < 4; i++) gs = E.negotiate(gs, parcels, li.bbl, li.ask).s;
+  ok(`${at}: the ask offered five times running: not soured, no shut door, no reputation hit, no draw`,
+    !(gs.approaches[li.bbl]?.soured > 0) && gs.approaches[li.bbl]?.insultedUntilM === undefined && !gs.approaches[li.bbl]?.refused
+    && (gs.lowballMs ?? []).length === (g.lowballMs ?? []).length && gs.rng === g.rng);
+  const again = E.negotiate(gs, parcels, li.bbl, li.ask);
+  ok(`${at}: and the seller takes the call again at once`, !again.err && !!again.s.talks?.[li.bbl] && again.s.talks[li.bbl].theirPrice === Math.round(floor));
   // a dollar under the ask is under the line as before
   const r3 = E.negotiate(g, parcels, li.bbl, li.ask - 1);
   ok(`${at}: under the ask the insult rule stands`, /too low/i.test(r3.msg ?? "") && r3.s.approaches[li.bbl]?.insultedUntilM !== undefined);

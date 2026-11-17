@@ -221,6 +221,10 @@
     left: calc(50% + var(--rail-w, 0px) / 2);
     max-width: min(720px, calc(100vw - var(--rail-w, 0px) - 32px));
   }
+  /* The banner sized itself to the window (100vw - 32px) inside a lane that
+     is the window less the rail: on a phone it ran 60px off the right edge
+     and over the desk cards. It takes the lane's width instead. */
+  .app .toast-stack .at-risk { width: min(640px, calc(100vw - var(--rail-w, 0px) - 32px)); }
 }
 
 /* ---------- segmented control ------------------------------------------

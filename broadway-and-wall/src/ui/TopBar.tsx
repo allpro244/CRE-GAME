@@ -395,7 +395,10 @@ export default function TopBar() {
               // Drawn, the line costs money every month: show what it charges.
               const rate = locRate(game);
               return (
-                <Stat label="Line left" value={usd(left)} n={left} bad={tight} w={72} keep
+                // drop 4, with Book: the last tile to go, and only where the bar cannot
+                // hold date, cash and net worth otherwise (a phone: at 390 px it pushed
+                // Net worth off the screen). The Capital desk has it a tap away.
+                <Stat label="Line left" value={usd(left)} n={left} bad={tight} w={72} keep drop={4}
                   delta={drawn > 0 ? <span className={"tstat-of" + (tight ? " neg" : "")}>{usd(drawn)} drawn · {rate.toFixed(2)}%</span> : null}
                   onClick={() => setPage("debt", "Line of credit")}
                   title={`Undrawn ${usd(left)} of ${usd(line)} revolver${drawn > 0 ? ` · ${usd(drawn)} drawn at ${rate.toFixed(2)}%` : ""}. Auto-draws on cash shortfall.`} />

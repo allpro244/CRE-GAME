@@ -2789,6 +2789,13 @@ export function autoLeaseDesk(s: GameState, parcels: ParcelTable) {
     const grant = floorOk && (st < 0 || (st === 0 && (a.kind === "giveback" || a.askPsf >= ask * 0.95)));
     const r = answerAsk(s, parcels, a.id, grant ? "grant" : "decline");
     if (r.err) continue;
+    // answerAsk DELETES `asks` when the last one is answered, and Object.assign
+    // copies keys, it does not remove them: the answered request stayed on the
+    // desk, was "declined" again every month (a news line each time), still
+    // offered Grant / Decline on the Deals page after the tenant had gone, and
+    // a request the desk GRANTED was then logged "lapsed unanswered" with the
+    // tenant marked strained. Same hand-over applyReliefRule uses.
+    for (const k of Object.keys(s) as (keyof GameState)[]) if (!(k in r.s)) delete (s as Partial<GameState>)[k];
     Object.assign(s, r.s);
   }
 }

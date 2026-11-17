@@ -42,7 +42,7 @@ import { tickDemand, isCivicLand } from "./demand";
 import { tickBeliefs } from "./beliefs";
 import { tickCorporate } from "./corporate";
 import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose, landFundBid, streetSaleCost } from "./rivals";
-import { openingCapSurvey, tickBrokerSurvey, tickLandSurvey, anchoredAsk, forcedSaleAsk, foreclosureSale, BUY_CLOSING, bidRound, valueTo } from "./propmarket";
+import { openingCapSurvey, openingLandSurvey, tickBrokerSurvey, tickLandSurvey, anchoredAsk, forcedSaleAsk, foreclosureSale, BUY_CLOSING, bidRound, valueTo } from "./propmarket";
 import { initLenders, publishOpeningPrices, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { tickStreetLoans, retireFoldedLoans } from "./streetLoans";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
@@ -231,6 +231,9 @@ export function newGame(
   if (parcels) s.rivals = initRivals(s, parcels, Object.keys(parcels));
   // Cap rates open where the street's own bidders say (propmarket.ts).
   if (parcels) openingCapSurvey(s, parcels);
+  // ...and so does the land level (the first survey used to arrive six
+  // months in and halve the town's dirt on the way to it).
+  if (parcels) openingLandSurvey(s, parcels);
   // Make the map agree with itself before anybody looks at it: what is BUILT
   // on a block is part of what makes that block valuable, and the generator's
   // gravity score did not know that. See reconcileDemand.

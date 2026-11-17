@@ -1041,15 +1041,10 @@ const PRODUCT_LOT_MIN_SF = 0.5 * 43_560 * 0.8;
  * back on its own.
  */
 export function queueFactor(econ: Econ, use: BuiltClass, psf: number): number {
-  // THE QUEUE IS MEASURED ONCE A YEAR AND READ EVERY MONTH, so the measurement
-  // glides in over the year instead of landing as a step (2026-10-14). A step
-  // moved every lot's price at once each January — measured on a Great City
-  // career, sites under construction marked -34%, +37%, -30% in successive
-  // re-measurements with nothing about the lots changed.
-  const w = econ.landQueueW ?? 1;
-  const now = queueFactorOf(econ.landQueue?.[use], psf);
-  if (w >= 1 || !econ.landQueuePrev?.[use]) return now;
-  return w * now + (1 - w) * queueFactorOf(econ.landQueuePrev[use], psf);
+  // The queue is re-measured every month (refreshLandQueue), so there is no
+  // older measurement to glide in from. A save from before that carries
+  // landQueuePrev / landQueueW; both are cleared at its next month.
+  return queueFactorOf(econ.landQueue?.[use], psf);
 }
 
 function queueFactorOf(q: NonNullable<Econ["landQueue"]>[BuiltClass] | undefined, psf: number): number {
@@ -1095,7 +1090,7 @@ function queueFactorOf(q: NonNullable<Econ["landQueue"]>[BuiltClass] | undefined
 const LAND_QUEUE_SAMPLE = 400;
 
 /**
- * MEASURE THE QUEUE, once a year. The residuals are struck WITHOUT the queue
+ * MEASURE THE QUEUE, every month. The residuals are struck WITHOUT the queue
  * (it is what the market would build if it could), on a deterministic sample
  * of lots scaled to the town. A standing building joins only where its dirt
  * beats the building on it — that is the stock the wrecking ball is pointed
@@ -1104,19 +1099,27 @@ const LAND_QUEUE_SAMPLE = 400;
 export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRecord>, bbls: string[]): void {
   const e = s.econ;
   // OWNERS LEARN THE LAND MARKET SLOWLY — see `ownerAskPsf`. Monthly, toward
-  // the level the yearly sample last measured.
+  // the level the panel last measured.
   if (e.landMkt !== undefined) {
     e.landBelief = (e.landBelief ?? e.landMkt) + BELIEF_MONTHLY * (e.landMkt - (e.landBelief ?? e.landMkt));
   }
   const h = e.history ?? [];
   const L = Math.min(60, h.length - 1);
   if (L < 12) return;
-  // THE TAKE-UP IS READ EVERY MONTH, THE RANKING ONCE A YEAR (2026-10-12).
-  // Absorption and the yield are off the tape, which is published monthly and
-  // costs nothing to read; only the site ranking needs the expensive survey.
-  // Read yearly, a bust's collapse in take-up reached every site's wait on one
-  // January morning: a prime lot's dirt fell 68% in a month (developer run,
-  // month 875) while the absorption behind it had been sliding all year.
+  // THE QUEUE IS MEASURED EVERY MONTH, RANKING AND ALL (2026-11-17). The
+  // take-up was read monthly but the ranking once a year, and a lot's place in
+  // line was found by setting ITS residual this month against the dollar
+  // residuals the panel's sites had LAST JANUARY. Residuals are a thin slice of
+  // a building's value (value / (1 + margin) - cost), so a 10% move in rents or
+  // cap rates moves every residual in town by half: between measurements every
+  // lot slid years up or down a queue that had not changed order, and slid back
+  // when January re-ranked it. Measured on seed 31337, years 15-35: builders'
+  // value/cost held at 1.34-1.67 while the median vacant lot's best builder bid
+  // per unit of its texture went 9.7, 1.6, 6.7, 7.2, 2.1, 8.3, 15.8 in
+  // successive Julys. A site's place in line is its rank among the others, and
+  // a market move that lifts them all together leaves it where it was; the
+  // panel is re-struck every month so the lot is always ranked against the
+  // same month's residuals (~0.2 s a month on a City's 400-lot panel).
   const absYrOf = (use: BuiltClass): number => {
     const now = h[h.length - 1], then = h[h.length - 1 - L];
     let netAbs = 0, comp = 0;
@@ -1125,31 +1128,8 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
     return (Math.max(0, netAbs) + Math.max(0, lost)) * 12 / L;
   };
   const rOf = (use: BuiltClass): number => (e.capExp?.[use] ?? e.capRate[use]) / 100;
-  if (e.landQueue && s.month % 12 !== 0) {
-    const q: NonNullable<Econ["landQueue"]> = {};
-    for (const use of BUILT_CLASSES) {
-      const old = e.landQueue[use];
-      if (old) q[use] = { ...old, absYr: Math.round(absYrOf(use)), r: rOf(use) };
-    }
-    e.landQueue = q;
-    // ...and the previous measurement keeps its own clock, so the blend in
-    // queueFactor compares like with like.
-    if (e.landQueuePrev) {
-      const p: NonNullable<Econ["landQueue"]> = {};
-      for (const use of BUILT_CLASSES) { const o = e.landQueuePrev[use]; if (o) p[use] = { ...o, absYr: Math.round(absYrOf(use)), r: rOf(use) }; }
-      e.landQueuePrev = p;
-    }
-    e.landQueueW = Math.min(1, (s.month % 12) / 12);
-    return;
-  }
-  if (e.landQueue) { e.landQueuePrev = e.landQueue; e.landQueueW = 0; }
-  // ...and without LAST year's queue either. queueFactor blends the new
-  // measurement in from the old one (landQueueW, just set to 0), so an econ
-  // with only `landQueue` cleared read every residual through last year's
-  // wait in full: the sites were ranked, and the thresholds stored, on
-  // queue-discounted residuals, while every lot is later looked up on its
-  // undiscounted one — so each lot found fewer sites ahead of it than there
-  // are, and the wait read short.
+  // the yearly measurement's glide (landQueuePrev / landQueueW) has nothing to glide between now
+  e.landQueuePrev = undefined; e.landQueueW = undefined;
   const bare = { ...e, landQueue: undefined, landQueuePrev: undefined } as Econ;
   const n = bbls.length;
   const take = Math.min(n, LAND_QUEUE_SAMPLE);

@@ -456,6 +456,11 @@ function ParcelPanelInner({
   const holding = game.holdings[selectedBBL];
   const listing = game.listings.find((l) => l.bbl === selectedBBL);
   const appr = game.approaches[selectedBBL];
+  // When a refused owner will take the call again: the door's own clock when
+  // the refusal recorded one (approachOwner reads the same two numbers). The
+  // panel printed "re-approach from" six months on for a door the news had
+  // just said was shut for 18+ months.
+  const reopenM = appr ? Math.max(appr.q + 6, appr.refused && appr.coldUntilM !== undefined ? appr.coldUntilM : 0) : 0;
   const cond = holding?.condition ?? initialCondition(rec);
   // ONE APPRAISAL — the one the header, the lender and the net worth read.
   // This card used to add a "hedonic location premium" on the land slice that
@@ -1423,16 +1428,16 @@ function ParcelPanelInner({
             <>
               <div className="hint">
                 Owner declined {monthLabel(appr.q)}.
-                {game.month < appr.q + 6
-                  ? ` Re-approach from ${monthLabel(appr.q + 6)}.`
+                {game.month < reopenM
+                  ? ` Re-approach from ${monthLabel(reopenM)}.`
                   : " Re-approach available."}
               </div>
               <div className="btn-row">
                 <button
                   className="btn"
-                  disabled={game.month < appr.q + 6}
-                  title={game.month < appr.q + 6
-                    ? `${appr.q + 6 - game.month} mo until re-approach`
+                  disabled={game.month < reopenM}
+                  title={game.month < reopenM
+                    ? `${reopenM - game.month} mo until re-approach`
                     : undefined}
                   onClick={() => approach(selectedBBL)}
                 >

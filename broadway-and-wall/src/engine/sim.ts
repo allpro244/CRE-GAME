@@ -13,7 +13,7 @@ import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, o
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLandDev, materializePlats, materializePlat } from "./landdev";
-import { tickSplits, tickRivalSplits, materializeSplits, materializeSplit } from "./lotsplit";
+import { tickSplits, materializeSplits, materializeSplit } from "./lotsplit";
 import { tickHomes } from "./homes";
 import { tickGrowth } from "./growth";
 import { tickHouseholdRegister } from "./households";
@@ -822,9 +822,8 @@ function tickMonth(
   tickFirmHeldLoans(s);
   tickPlanning(s, parcels, bbls);
   tickLandDev(s, parcels, bbls);
-  // lot splits: the staff sign-offs and the board (lotsplit.ts), and a firm cutting an oversized lot
+  // lot splits already filed in an older save finish here (lotsplit.ts); new ones are no longer filed
   tickSplits(s, parcels, bbls);
-  tickRivalSplits(s, parcels);
   // the plats' houses: draws, buyers, closings, the builders (homes.ts)
   tickHomes(s, parcels);
   // the region growing: land developers, the roads, the town (growth.ts; region only)

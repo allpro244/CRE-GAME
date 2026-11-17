@@ -1,6 +1,6 @@
 // THE LOT CODE: what a district demands of a lot — its minimum area, width and
 // yards, how much of it buildings may cover — read by a lot split (lotsplit.ts)
-// and by the appraisal of a built parcel's excess land (value.ts excessLand).
+// (and, in saves from before lot splitting was removed, the splits already filed).
 import type { ParcelRecord } from "@/data/types";
 import type { BuiltClass } from "./types";
 import { MAX_COVERAGE } from "./proforma";

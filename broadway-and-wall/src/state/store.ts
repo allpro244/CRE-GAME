@@ -50,8 +50,7 @@ import { designRecipe, designAt, tractYield, fileDesignedRezoning as fileDesigne
 import type { PlatDesign } from "@/engine/types";
 import { lotBbl, fileEntitlement, startPlat, isIndustrialLot } from "@/engine/landdev";
 import { roadFeatures } from "@/engine/roads";
-import { fileSplit, type SplitPlan } from "@/engine/lotsplit";
-import { siteGeometry, applySplitFeatures, type SiteGeo } from "@/engine/lotsplitGeom";
+import { siteGeometry, applySplitFeatures } from "@/engine/lotsplitGeom";
 import { acceptLotOffer, declineLotOffer, listLotsToBuilders, delistLots as delistPlatLots } from "@/engine/homes";
 import { cutTownOffThread } from "@/state/townClient";
 import type { TownRequest } from "@/state/townWorker";
@@ -429,8 +428,6 @@ interface AppState {
   fileRezoning: (bbl: string, lotSf: number) => void;
   /** Region map: build the streets on a rezoned tract and cut it into lots. */
   buildPlat: (bbl: string) => void;
-  /** Any deed you own: file a lot split cut by `plan` (engine/lotsplit.ts), measured on the city as drawn now. */
-  fileLotSplit: (bbl: string, plan: SplitPlan) => void;
   /** Region map, the design desk (engine/platdesign.ts): file the rezoning with a drawn plat; build its streets, with `lev` of the A&D loan the desk offers. */
   fileDesignedRezoning: (bbl: string, design: PlatDesign) => void;
   buildDesignedPlat: (bbl: string, design: PlatDesign, lev: number) => void;
@@ -2214,18 +2211,6 @@ export const useStore = create<AppState>(holdWhileTicking((set, get) => ({
     void persist(r.s);
   },
 
-  fileLotSplit: (bbl, plan) => {
-    const { game, parcels, city } = get();
-    if (!game || !parcels || !city) return;
-    const geo = splitSite(city, bbl);
-    if (!geo) { toast("This lot has no outline on the map to cut.", "err"); return; }
-    const r = fileSplit(game, parcels, bbl, geo, plan);
-    if (r.err) { toast(r.err, "err"); return; }
-    set({ game: r.s });
-    toast(r.msg ?? "Filed.");
-    void persist(r.s);
-  },
-
   fileDesignedRezoning: (bbl, design) => {
     const { game, parcels } = get();
     const rec = parcels?.[bbl];
@@ -3132,12 +3117,6 @@ useStore.subscribe((st) => {
     bbls: [...st.bbls],
   });
 });
-
-/** The site a lot split is measured on: the deed as the map draws it now (a lot cut before is cut from its own ring). */
-export function splitSite(city: GeneratedCity, bbl: string): SiteGeo | null {
-  type FC = Parameters<typeof siteGeometry>[0];
-  return siteGeometry(city.parcelFeatures as FC, city.buildingFeatures as FC, city.context as FC, bbl);
-}
 
 // LOTS SPLIT MID-GAME (engine/lotsplit.ts). A recorded split's lots go into the page's parcel table and
 // BBL list (the worker's own table did this at the top of the month), its rings replace the parent's

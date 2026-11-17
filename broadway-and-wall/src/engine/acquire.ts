@@ -519,7 +519,14 @@ export function negotiate(
   const lenderSale = !!li?.distress && (seller.kind === "lender" || li.reason === "receiver" || !!li.receiverFor || !!li.loanBasis);
   const insultAt = Math.max(ask * insultShareOfAsk(!!li?.distress, lenderSale),
     reservation * (lenderSale ? 0.82 : li?.distress ? 0.84 : 0.80));
-  if (px < insultAt) {
+  // AN OFFER AT THE ASK IS NEVER AN INSULT. The seller's floor can sit above
+  // its own ask (a firm on the street has bid over it: `reservationOf`), and
+  // then 80% of the floor is above the ask too, so paying the listed price in
+  // full was "refused as a lowball, 0% under ask" and shut the door for a
+  // year (seed 20261, month 0: six land listings of seven). The line is drawn
+  // on the number the player can see, so the ask itself is always inside it;
+  // the seller answers with where it is instead.
+  if (px < insultAt && px < ask) {
     delete next.talks[bbl];
     // The door shuts for a year or so, and their floor for YOU goes up for
     // good. A named firm remembers harder — you will be dealing with them
@@ -607,7 +614,9 @@ export function negotiate(
     }
   }
 
-  if (gap < 0.80 || round > maxRounds) {
+  // (At or over the ask there is no "they are at the ask": their floor is
+  // above it, and the counter below names it.)
+  if ((gap < 0.80 && px < ask) || round > maxRounds) {
     const theirs = Math.round(round > maxRounds ? reservation * 1.005 : ask * 0.985);
     next.talks[bbl] = {
       bbl, sellerKind: seller.kind, sellerName: seller.name,

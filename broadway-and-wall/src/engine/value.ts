@@ -3510,15 +3510,29 @@ export const LEASE_BASIS: Record<BuiltClass, { short: string; long: string }> = 
   industrial: { short: "NNN", long: "triple-net: the tenant pays its share of operating costs and tax on top of the rent" },
   multifamily: { short: "gross", long: "gross: the landlord pays operating costs and tax" },
 };
-export function netEquivalentRent(econ: Econ, k: BuiltClass, rent = econ.rentIdx?.[k] ?? 0): number {
-  if (!(rent > 0)) return 0;
+/**
+ * THE CLASS'S AVERAGE BILL, $/sf a year: the market operating bill for the
+ * class and the tax on an average building of it (its value read as the NOI
+ * at the class cap, tax left out of that NOI: a one-pass estimate) [D]. What
+ * a triple-net tenant pays on top of its rent, and what a full-service rent
+ * carries inside it.
+ */
+export function classExpensePsf(econ: Econ, k: BuiltClass, rent = econ.rentIdx?.[k] ?? 0): { opex: number; tax: number; total: number } {
   const opex = opexPsf(k, econ, false);
   const unrec = 1 - (RECOVERY_RATE[k] ?? 0);
   const occ = 1 - (econ.cityVac?.[k] ?? 0.08);
   const cap = Math.max(0.03, (econ.capRate?.[k] ?? 7) / 100);
-  const valuePsf = Math.max(0, (rent * occ - unrec * opex) / cap);
+  const valuePsf = Math.max(0, (Math.max(0, rent) * occ - unrec * opex) / cap);
   const tax = valuePsf * taxRate(econ);
-  return Math.max(0, rent - unrec * (opex + tax));
+  return { opex, tax, total: opex + tax };
+}
+export function netEquivalentRent(econ: Econ, k: BuiltClass, rent = econ.rentIdx?.[k] ?? 0): number {
+  if (!(rent > 0)) return 0;
+  return Math.max(0, rent - (1 - (RECOVERY_RATE[k] ?? 0)) * classExpensePsf(econ, k, rent).total);
+}
+/** What the market pays gross, $/sf a year: a triple-net rent plus the class's average bill; a full-service or gross rent is already gross. */
+export function grossRent(econ: Econ, k: BuiltClass, rent = econ.rentIdx?.[k] ?? 0): number {
+  return LEASE_BASIS[k].short === "NNN" ? rent + classExpensePsf(econ, k, rent).total : rent;
 }
 
 /** The share of the property-tax bill this building's owner actually eats. */

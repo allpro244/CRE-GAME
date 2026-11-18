@@ -5,6 +5,7 @@ import { useMasonry } from "@/ui/useMasonry";
 import type { Econ } from "@/engine/types";
 import { useStore } from "@/state/store";
 import { monthLabel, START_YEAR } from "@/engine/types";
+import { LEASE_BASIS, netEquivalentRent } from "@/engine/value";
 import type { BuiltClass, EconHistoryPoint } from "@/engine/types";
 import { capitalRatio, targetCapital } from "@/engine/lenders";
 import { openingVac, RENT_BASE, SECTOR_LABEL, CITY_STOCK, residenceVac, housableStock, islandResidents, PEOPLE_PER_HOME, chairStance } from "@/engine/market";
@@ -851,9 +852,9 @@ export function EconomyPage() {
                   <span className={"cl-fig-v mono" + (b.soft ? " neg" : "")}>{(v * 100).toFixed(1)}%</span>
                   <Spark pts={at((h) => h.avail?.[k] ?? h.vac?.[k])} w={56} h={14} />
                 </div>
-                <div className="cl-fig">
-                  <span className="cl-fig-k">Rent /sf</span>
-                  <span className={"cl-fig-v mono" + (rentYoy < -0.025 ? " neg" : "")}>${e.rentIdx[k].toFixed(0)}</span>
+                <div className="cl-fig" title={`Asking rent, $/sf a year: ${LEASE_BASIS[k].long}. On a net basis (what the landlord keeps after the costs it pays and does not recover) about $${netEquivalentRent(e, k).toFixed(0)}.`}>
+                  <span className="cl-fig-k">Rent /sf · {LEASE_BASIS[k].short}</span>
+                  <span className={"cl-fig-v mono" + (rentYoy < -0.025 ? " neg" : "")}>${e.rentIdx[k].toFixed(0)}<span className="dim" style={{ marginLeft: 4, fontSize: "0.85em" }}>≈${netEquivalentRent(e, k).toFixed(0)} net</span></span>
                   <Spark pts={at((h) => h.rent?.[k])} w={56} h={14} />
                 </div>
                 {/* EFFECTIVE BESIDE ASKING (owner, office glut): the asking rent is

@@ -3488,6 +3488,36 @@ export const RECOVERY_RATE: Record<BuiltClass, number> = {
   retail: 0.88, industrial: 0.92, office: 0.50, multifamily: 0,
 };
 
+/**
+ * WHAT A CLASS'S RENT IS QUOTED ON, and the same rent on a net basis (2026-11-18).
+ * The class rent indices are the face of the leases that signed, and a class's
+ * leases are signed on different bases: office mostly full-service with a
+ * base-year stop (the landlord pays the bills, the tenant only their growth),
+ * shops and sheds mostly triple-net, flats gross. So an office's $25 and a
+ * shop's $14 are not the same kind of number, and set side by side they read
+ * as office at nearly twice the shop. The net-equivalent takes out what the
+ * landlord pays and does not recover: the class's unrecovered share
+ * (1 - RECOVERY_RATE, the class's lease mix) of the market operating bill and
+ * of the tax on an average building of the class (its value read as the NOI
+ * at the class cap; tax left out of that NOI, a one-pass estimate) [D].
+ */
+export const LEASE_BASIS: Record<BuiltClass, { short: string; long: string }> = {
+  office: { short: "full-service", long: "mostly full-service with a base-year stop: the landlord pays operating costs and tax, the tenant their growth" },
+  retail: { short: "NNN", long: "mostly triple-net: the tenant pays its share of operating costs and tax" },
+  industrial: { short: "NNN", long: "mostly triple-net: the tenant pays its share of operating costs and tax" },
+  multifamily: { short: "gross", long: "gross: the landlord pays operating costs and tax" },
+};
+export function netEquivalentRent(econ: Econ, k: BuiltClass, rent = econ.rentIdx?.[k] ?? 0): number {
+  if (!(rent > 0)) return 0;
+  const opex = opexPsf(k, econ, false);
+  const unrec = 1 - (RECOVERY_RATE[k] ?? 0);
+  const occ = 1 - (econ.cityVac?.[k] ?? 0.08);
+  const cap = Math.max(0.03, (econ.capRate?.[k] ?? 7) / 100);
+  const valuePsf = Math.max(0, (rent * occ - unrec * opex) / cap);
+  const tax = valuePsf * taxRate(econ);
+  return Math.max(0, rent - unrec * (opex + tax));
+}
+
 /** The share of the property-tax bill this building's owner actually eats. */
 export function taxBorneShare(rec: ParcelRecord): number {
   if (rec.class === "land") return 1;

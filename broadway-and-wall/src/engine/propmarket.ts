@@ -1980,6 +1980,23 @@ function landSurveyPrints(s: GameState, parcels: ParcelTable, slice?: number): {
   for (let i = Math.floor(step / 2), j = 0; i < recs.length && j < want; i += step, j++) {
     if (slice !== undefined && j % 12 !== slice) continue;
     const rec = recs[i];
+    // A SITE RIPE FOR BUILDING IS NOT A COMPARABLE FOR LAND THAT WAITS
+    // (2026-11-18). The level prices dirt nobody would build on today; a lot
+    // whose best scheme has reached its trigger (building now beats waiting:
+    // LandOption.exercise, with a positive residual) is priced by the builder
+    // already (value.ts readLand), as a sale of one is not land evidence
+    // either (urbanLot). Surveyed, a late town's panel split in two — a few
+    // lots ripe for towers, indications 30-130x the level, and the rest — and
+    // the level flipped with which side the median fell on (seed 31337:
+    // 4.81 -> 0.95 in five years; a bigger panel only tracked the flips more
+    // faithfully). Ripeness is read off the residual and the option alone —
+    // rents, caps, costs, the queue — never off the level, so leaving ripe
+    // lots out cannot select on the level: the spiral a texture-priced-only
+    // panel ran (1.31 -> 0.06, seed 3: each lower level made more lots
+    // builder-priced) has nothing to feed on. A ripe lot is not counted as
+    // tried: it is outside what the survey prices, not a lot nobody bid on.
+    const lr = landRead(rec, s.econ);
+    if (lr.option?.exercise && lr.builder > 0) continue;
     tried++;
     const maxes = firms.map((r) => landMaxPrice(s, r, rec)).filter((m) => m > 0).sort((a, b) => b - a);
     if (!maxes.length) continue;
@@ -1993,7 +2010,7 @@ function landSurveyPrints(s: GameState, parcels: ParcelTable, slice?: number): {
     const px = maxes[1] ?? maxes[0];
     // per unit of the map's texture, whoever's number it is (a fixed sample,
     // not the lots the level itself makes texture-priced: see below)
-    const mark = landRead(rec, s.econ).texture * rec.lotArea;
+    const mark = lr.texture * rec.lotArea;
     const L = mark > 0 ? s.econ.landIdx * px / mark : NaN;
     if (Number.isFinite(L) && L > 0) prints.push({ L, x: landX(rec) });
   }

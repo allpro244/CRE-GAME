@@ -390,63 +390,17 @@ export function postedEff(L: LandlordAsk, _e: Econ, _k: Comm, _mkt: number, _sit
  * so the trade's ε are scaled by.
  */
 export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: { m: number; monthsToLet: number; darkM?: number; stressed: boolean; infl12: number; holdFace?: boolean; going?: number }): void {
-  if (k !== "office") return reviewAskByPatience(L, e, k, mkt, opts);
-  if (L.m >= opts.m) return;
-  const months = Math.max(1, Math.min(12, opts.m - L.m));
-  L.m = opts.m;
-  const comps = compsFace(e, mkt, k), pull = Math.min(1, months / COMPS_M);
-  if (!(L.a > 0) || !Number.isFinite(L.a)) L.a = comps > 0 ? comps : 1;
-  const toComps = comps > 0 ? (Math.log(comps) - Math.log(L.a)) * pull : 0;
-  let d = (opts.infl12 / 12) * months;
-  // THE MONTH-DARK TRADE: the share of the year's step a month's review makes.
-  let step = mkt > 0 ? darkCostStep(k, L.a * (1 - L.c), goingRent(k, mkt, opts.going), opts.monthsToLet) * pull * RENT_ADJ_YR : 0;
-  if (step < 0 && opts.stressed) step *= STRESS_MOVE;
-  if (opts.darkM !== undefined) {
-    // SPACE TO LET. Its own evidence: space that has sat longer than the
-    // market's months to let is dearer than the market at fair share, and
-    // follows the comps down; space letting as fast follows them up when they
-    // have passed it. It does not follow them down otherwise: the comps are
-    // the deals that signed, the cheap end of what was on offer, and chasing
-    // them with no evidence of its own ratchets the town toward its keenest
-    // landlord (measured, office -30% at 6% vacancy).
-    // NOT UP EITHER, WITHOUT EVIDENCE OF ITS OWN (2026-11-13). Space that had
-    // not yet sat past the market's months followed the comps up whenever
-    // they were over its ask and never down: an upward ratchet on the noise
-    // in the comps. Measured, seed 11, four years in which office vacancy
-    // went 9.6% to 18%: the landlords with space to let inside the market's
-    // months (36% of all reviews) raised their asks 2.7% a year — 1.7 of it
-    // inflation, the trade taking 0.8 off, the one-sided pull adding 1.8 —
-    // and a fixed set of 51 landlords with space to let asked 4% more after
-    // four years with their own vacancy up from 12% to 19%. Having not yet
-    // failed to let is no evidence the ask is low. Up is the trade's (months
-    // to let under the best) and, for shops and sheds, a letting made fast
-    // (`noteLetting`).
-    if (opts.darkM > opts.monthsToLet) d += Math.min(0, toComps);
-    // THE TRADE MOVES THE FACE AND THE PACKAGE TOGETHER (2026-11-12): a share
-    // of each step on the asking rent (FACE_SHARE), the rest on the package;
-    // past the deepest package (or with none left to take back) all of it on
-    // the face. It moved the package alone until the package hit its deepest,
-    // so asking rents held still through all but the worst gluts.
-    if (!opts.holdFace) d += FACE_SHARE * step;
-    const keep = (1 - L.c) * Math.exp((opts.holdFace ? 1 : 1 - FACE_SHARE) * step);
-    let c = 1 - keep;
-    if (c > PKG_MAX) { if (!opts.holdFace) d += Math.log(keep / (1 - PKG_MAX)); c = PKG_MAX; }
-    else if (c < 0) { if (!opts.holdFace) d += Math.log(keep); c = 0; }
-    L.c = c;
-  } else {
-    // NOTHING TO LET. The package — given to win a tenant for empty space —
-    // is not offered, and fades over the year a broker's opinion takes to
-    // refresh. The face is what its tenants will renew at, and the same trade
-    // prices it: a tenant that leaves leaves a suite to let on the market's
-    // clock. It does not chase the comps: they are the buildings that let,
-    // and a full building chasing them up ratchets every good corner's raise
-    // onto the whole town (measured: shop rents rising 3.5% a year over 18%
-    // vacancy).
-    L.c *= 1 - pull;
-    if (!opts.holdFace) d += step;
-  }
-  L.c = Math.max(0, Math.min(PKG_MAX, L.c));
-  L.a = +(L.a * Math.exp(Math.max(-0.2, Math.min(0.2, d)))).toFixed(2);
+  // EVERY LANDLORD PRICES ON ITS OWN EVIDENCE (2026-11-18). Office priced on
+  // the market's clock (space on offer over the town's lettings a month) and
+  // shops and sheds on their own — how long their own space has sat against
+  // the patience their own lettings taught them. The clock reads tenants'
+  // turnover as much as demand: office renewed ~85% of expiring space, so
+  // lettings were few and the clock read 22-45 months at 3-6% vacancy, every
+  // office landlord read a glut, and real office rent drifted down for fifty
+  // years in a tight market (median 0.76x at year 50 over six towns, the
+  // lowest 0.39x) while shops and sheds, on their own evidence, held theirs
+  // (1.11x, 0.96x). One rule for every landlord, the one that holds.
+  return reviewAskByPatience(L, e, k, mkt, opts);
 }
 
 /**
@@ -466,7 +420,7 @@ export function noteLetting(L: LandlordAsk, k: Comm, tom: number, share: number,
   // already reads every letting, through the clock it prices on, both ways.
   // Measured with the raise (seed 11, years 13-40): posts cut 3-7% a year by
   // the trade and real rent flat, the raise giving back what the trade took.
-  if (k === "office") return;
+  // (office learns its patience from its own lettings too: see reviewAsk)
   // shops and sheds: the yardstick is the longer of the landlord's patience
   // and its class's ordinary months on market, and the patience is learned
   const yard = Math.max(L.t, searchMonths(k));
@@ -487,7 +441,8 @@ export function noteLetting(L: LandlordAsk, k: Comm, tom: number, share: number,
  * again when it needs the cash.
  */
 export function reservation(L: LandlordAsk, k: Comm, post: number, termM: number, sitting: boolean, stressed: boolean, monthsToLet: number): number {
-  const wait = (k === "office" ? monthsToLet : L.t) + (sitting ? MAKE_READY_M[k] : 0);
+  void monthsToLet;
+  const wait = L.t + (sitting ? MAKE_READY_M[k] : 0);
   return post * Math.max(0.4, 1 - wait / Math.max(12, termM)) * (stressed ? STRESS_RES : 1);
 }
 

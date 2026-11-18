@@ -1731,6 +1731,12 @@ function landS2(s: GameState, ix: ApprIndex, beta: number[]): number {
   return Number.isFinite(s2) && s2 > 0 ? s2 : pooled;
 }
 
+/** The scatter the land index weighs a print by now (log variance per unit weight: landS2), for the UI and the tests. */
+export function landPrintScatter(s: GameState): number {
+  const ix = landIndex(s);
+  return landS2(s, ix, gridBeta(ix));
+}
+
 function pushLandPrint(s: GameState, p: { m: number; L: number; w: number; kind: "t" | "b" | "s"; x?: [number, number] }) {
   const t = (s.landTape ??= []);
   t.push(p);

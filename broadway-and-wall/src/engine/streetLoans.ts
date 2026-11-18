@@ -59,7 +59,7 @@ import { productById, nameLimit, productSpread } from "./debt";
 import { chargeLenderLoss, reoAsk, bookShareOf, targetCapital, deskPxOf } from "./lenders";
 import { cityLoanBook, deskTotals } from "./loanbook";
 import { NOTICE_M, FORECLOSE_M } from "./workout";
-import { forcedSalePrice } from "./propmarket";
+import { forcedSaleAsk } from "./propmarket";
 import { shortIndexOf } from "./market";
 import { money } from "./money";
 import { bankRatePct, liveSpread } from "./pricing";
@@ -458,7 +458,12 @@ function rollBalloon(s: GameState, x: StreetLoan, parcels: ParcelTable) {
     // booked as nobody's.
     const rec = resolveRec(parcels, s, x.bbl);
     if (rec && !s.holdings[x.bbl] && !s.listings.some((l) => l.bbl === x.bbl)) {
-      const heard = forcedSalePrice(s, parcels, rec, x.bbl, x.value);
+      // WHAT ITS BROKER TELLS IT TO ASK (propmarket.ts forcedSaleAsk): what
+      // the best buyer thinks the building is worth, not what the richest
+      // firm holds in cash this month. Listed on forcedSalePrice (the room's
+      // cash-limited bid), these asked 42-45% under the deed's own appraisal
+      // in a street that had spent its cash (invariants seed 4000, m6-m27).
+      const heard = forcedSaleAsk(s, parcels, rec, x.bbl, x.value);
       if (heard * 0.97 > x.balance) {
         s.listings.push({ bbl: x.bbl, ask: Math.round(heard / 1000) * 1000, listedM: s.month, expiresM: s.month + NOTICE_M + FORECLOSE_M, distress: true });
       }

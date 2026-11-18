@@ -418,7 +418,18 @@ export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
   const view = dealView(s, rec, li.bbl, li.ask, li.cond, li.condIdx, !!li.open);
   if (!view) return { bids: [], n: 0, view };
   const seller = ownerOf(s, rec.bbl);
-  const distress = !!li.distress;
+  // A MOTIVATED SELLER IS NOT A TROUBLED BUILDING (2026-11-18). `distress` on a
+  // listing is the seller's position — an estate, a split partnership, an
+  // owner whose balloon came due — and its broker markets the deed to the
+  // whole street; what keeps a firm with no taste for distress out of the
+  // room is a building that is itself in trouble: worn or obsolete plant, or
+  // income well under what it would earn let (a lease-up). Read off the
+  // seller, a good, 96%-let block of flats from an estate was offered only to
+  // the town's two to four distress funds, at their 8-10% yields against a
+  // 5.4% market, and listed 42-45% under its own appraisal (invariants,
+  // seed 4000). The courthouse keeps its own room below.
+  const troubled = !!li.distress && (view.cond === "worn" || view.cond === "obsolete" || view.noiPre < 0.9 * view.stabPre);
+  const distress = troubled;
   const room: Rival[] = [];
   for (const r of livingRivals(s)) {
     if (r === seller || r.stressMs || r.failedM !== undefined || r.homeBy !== undefined) continue;

@@ -27,7 +27,7 @@ import type { ParcelRecord, ParcelTable } from "../data/types";
 import { dollarLevel, rrange } from "./market";
 import { assetValue, capRateFor, collateralAsIs, inPlace, resolveRec } from "./value";
 import { livingRivals, gradeOf, ownerOf, paramsOf, receiverDeskFor, forgetDeed, fitOf, streetSaleCost } from "./rivals";
-import { packageBids, sellerTerms, forcedSalePrice, BUY_CLOSING } from "./propmarket";
+import { packageBids, sellerTerms, forcedSaleAsk, BUY_CLOSING } from "./propmarket";
 import { lenderByName, lenderPressure, raiseAlert } from "./lenders";
 import { streetRefiProceeds } from "./debt";
 import { financePackage, settleSale } from "./rivalDebt";
@@ -648,8 +648,10 @@ export function tickPortfolios(s: GameState, parcels: ParcelTable) {
             if (!rec || s.holdings[b] || s.listings.some((l) => l.bbl === b)) continue;
             const v = assetValue(rec, s.econ, gradeOf(s, rec));
             s.listings.push({
-              // priced to move: what the street would bid today (propmarket.ts)
-              bbl: b, ask: Math.round((forcedSalePrice(s, parcels, rec, b, v) || v) / 1000) * 1000,
+              // priced to move: what the best buyer on the street would pay
+              // for it (propmarket.ts forcedSaleAsk — its value, not this
+              // month's cash; a deal that cannot be funded still fails at the table)
+              bbl: b, ask: Math.round((forcedSaleAsk(s, parcels, rec, b, v) || v) / 1000) * 1000,
               listedM: s.month, expiresM: s.month + 12, distress: true,
             });
           }

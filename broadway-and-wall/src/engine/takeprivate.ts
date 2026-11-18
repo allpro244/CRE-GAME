@@ -33,6 +33,7 @@
 // and the unsolicited approach are both hashed off the seed, the firm and the
 // month, so a city in which the player never picks up the phone is the same
 // city whether this file exists or not.
+import { NEVER_INSULTING_SHARE } from "./acquire";
 import type { ParcelTable } from "../data/types";
 import type { GameState, Rival, RivalStyle, TakePrivateRecord } from "./types";
 import { cloneState, monthLabel } from "./types";
@@ -543,7 +544,8 @@ export function offerTakePrivate(
   if (struck < floor) {
     const next = cloneState(s);
     next.takePrivate ??= {};
-    const insult = struck < floor * 0.9;
+    // (never within ten per cent of the board's own ask: acquire.ts NEVER_INSULTING_SHARE)
+    const insult = struck < floor * 0.9 && struck < q.ask * NEVER_INSULTING_SHARE;
     (next.takePrivate.cool ??= {})[firmId] = next.month + (insult ? 24 : 12);
     if (insult) tie(next, firmId).insults++;
     if (next.takePrivate.offer?.firmId === firmId) delete next.takePrivate.offer;

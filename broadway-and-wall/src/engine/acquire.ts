@@ -378,6 +378,20 @@ export function repFloorMult(s: GameState): number {
  * this and a share of the hidden reservation, so it can bite higher). The
  * negotiation panel draws it; it never draws the reservation.
  */
+/**
+ * WITHIN TEN PER CENT OF THE ASK IS NEVER AN INSULT. [S: the owner, on how
+ * sellers take offers in practice — "you should never insult anyone by
+ * offering 10% or less off their asking price, I mean in real life that
+ * wouldn't be insulting" (2026-11-18).] Where offence starts below that
+ * depends on who is selling and how they stand — a proud owner, a distressed
+ * one, a lender, a firm whose floor a rival's bid has lifted over its own ask
+ * (`insultShareOfAsk`, the reservation) — but an offer at ninety per cent of
+ * the published number or better is a negotiation, whoever it is put to: the
+ * published ask is the seller's own opening, and an offer that close to it is
+ * an answer, not a slight.
+ */
+export const NEVER_INSULTING_SHARE = 0.90;
+
 export function insultShareOfAsk(distress: boolean, lenderSale: boolean): number {
   return lenderSale ? 0.58 : distress ? 0.62 : 0.68;
 }
@@ -517,8 +531,8 @@ export function negotiate(
   // makes it reachable, legible and graduated: a proud seller takes offence
   // sooner than a distressed one, because their number is nearer their floor.
   const lenderSale = !!li?.distress && (seller.kind === "lender" || li.reason === "receiver" || !!li.receiverFor || !!li.loanBasis);
-  const insultAt = Math.max(ask * insultShareOfAsk(!!li?.distress, lenderSale),
-    reservation * (lenderSale ? 0.82 : li?.distress ? 0.84 : 0.80));
+  const insultAt = Math.min(ask * NEVER_INSULTING_SHARE, Math.max(ask * insultShareOfAsk(!!li?.distress, lenderSale),
+    reservation * (lenderSale ? 0.82 : li?.distress ? 0.84 : 0.80)));
   // AN OFFER AT THE ASK IS NEVER AN INSULT. The seller's floor can sit above
   // its own ask (a firm on the street has bid over it: `reservationOf`), and
   // then 80% of the floor is above the ask too, so paying the listed price in

@@ -21,6 +21,7 @@
 // it cuts — every quarter, forever, until somebody does. That is the mechanism
 // by which bad debt eventually finds a clearing price instead of sitting on the
 // tape at a number nobody will pay.
+import { NEVER_INSULTING_SHARE } from "./acquire";
 import type { GameState, PortfolioListing, Rival } from "./types";
 import type { ParcelRecord, ParcelTable } from "../data/types";
 import { dollarLevel, rrange } from "./market";
@@ -373,7 +374,8 @@ export function offerStreetBook(
   if (p.talks?.final && px < p.talks.theirPrice) {
     return { s, err: `They said ${money(p.talks.theirPrice)} was final.` };
   }
-  const insult = Math.round(reservation * 0.82);
+  // (never within ten per cent of the ask: acquire.ts NEVER_INSULTING_SHARE)
+  const insult = Math.min(Math.round(reservation * 0.82), Math.round(ask * NEVER_INSULTING_SHARE));
   if (px < insult) {
     return { s, err: "Too far below their price. They will wait for the next quarterly cut." };
   }

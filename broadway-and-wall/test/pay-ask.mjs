@@ -2,7 +2,8 @@
 // ask (a firm on the street has bid over it), and the insult line took 80% of
 // that floor: the full listed price was "refused as a lowball, 0% under ask"
 // and the door shut for a year. At or over the ask the seller answers with
-// its number; under the ask the insult rule is unchanged.
+// its number. Within ten per cent under the ask it is never an insult either
+// (owner, 2026-11-18); past that the seller's standing decides.
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
@@ -55,8 +56,16 @@ for (const { li, floor } of over) {
     && (gs.lowballMs ?? []).length === (g.lowballMs ?? []).length && gs.rng === g.rng);
   const again = E.negotiate(gs, parcels, li.bbl, li.ask);
   ok(`${at}: and the seller takes the call again at once`, !again.err && !!again.s.talks?.[li.bbl] && again.s.talks[li.bbl].theirPrice === Math.round(floor));
-  // a dollar under the ask is under the line as before
-  const r3 = E.negotiate(g, parcels, li.bbl, li.ask - 1);
-  ok(`${at}: under the ask the insult rule stands`, /too low/i.test(r3.msg ?? "") && r3.s.approaches[li.bbl]?.insultedUntilM !== undefined);
+  // WITHIN TEN PER CENT OF THE ASK IS NEVER AN INSULT (owner, 2026-11-18),
+  // however high the seller's floor: a dollar under, and ten per cent under.
+  for (const k of [1, 0.90]) {
+    const px = k === 1 ? li.ask - 1 : Math.ceil(li.ask * k);
+    const rr = E.negotiate(g, parcels, li.bbl, px);
+    ok(`${at}: ${k === 1 ? "a dollar" : "ten per cent"} under the ask is not an insult`,
+      !/too low/i.test(rr.msg ?? "") && rr.s.approaches[li.bbl]?.insultedUntilM === undefined && (rr.s.lowballMs ?? []).length === (g.lowballMs ?? []).length);
+  }
+  // past that, a seller whose floor stands this far over its ask takes offence
+  const r3 = E.negotiate(g, parcels, li.bbl, Math.floor(li.ask * 0.89));
+  ok(`${at}: eleven per cent under, to a seller whose floor is over 1.25x the ask, is an insult`, /too low/i.test(r3.msg ?? "") && r3.s.approaches[li.bbl]?.insultedUntilM !== undefined);
 }
 console.log("pay-ask: ok");

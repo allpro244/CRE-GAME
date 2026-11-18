@@ -84,18 +84,49 @@ function hashChance(str: string): number {
 }
 
 /**
- * What a lease of this class looks like when it is signed. Office in this
- * market is mostly full-service with a base-year stop; retail and industrial
- * are triple-net; a minority of everything is flat gross.
+ * WHAT A LEASE OF THIS CLASS IS WRITTEN ON: one basis per class, the market's
+ * convention (owner, 2026-11-18): office full-service with a base-year stop
+ * (the landlord pays the operating bill and the tax, the tenant their growth
+ * over the year it signed), shops and sheds triple-net (the tenant pays its
+ * share of both), flats gross. It was a draw per lease — office 30% NNN, 58%
+ * base-year, 12% gross — and the rent did not depend on it, so an NNN tenant
+ * and a gross one signed the same face for the same suite and the gross
+ * landlord ate the bill for nothing.
  */
-function rollRecovery(s: GameState, cls: string): Recovery {
-  const r = rng(s, "leasing");
-  switch (cls) {
-    case "retail":     return r < 0.86 ? "nnn" : r < 0.95 ? "base" : "gross";
-    case "industrial": return r < 0.92 ? "nnn" : "base";
-    case "office":     return r < 0.30 ? "nnn" : r < 0.88 ? "base" : "gross";
-    default:           return r < 0.45 ? "nnn" : r < 0.86 ? "base" : "gross";
-  }
+export function leaseBasis(cls: string): Recovery {
+  return cls === "office" ? "base" : cls === "multifamily" ? "gross" : "nnn";
+}
+function rollRecovery(_s: GameState, cls: string): Recovery {
+  return leaseBasis(cls);
+}
+
+/**
+ * A BUILDING'S EXPENSE LOAD on one use, $/sf a year: the market operating bill
+ * for the use at its address, and the tax on the building's assessment, per
+ * rentable foot — what a triple-net tenant is billed, and what a full-service
+ * landlord pays out of the rent (the same reading as the base-year stop).
+ */
+export function expenseLoadPsf(rec: ParcelRecord, econ: GameState["econ"], cond: Condition, use: BuiltClass, assessed?: number): number {
+  const op = opexPsf(use, econ, false) * locOpexMult(rec, econ, use);
+  const tax = (assessed ?? assetValue(rec, econ, cond)) * taxRate(econ) / Math.max(1, rentableSf(rec));
+  return op + tax;
+}
+
+/**
+ * WHAT A TENANT PAYS TOWARD THE BUILDING'S BILLS on top of its rent, $/sf a
+ * year over the term it signs, by the lease's basis: on triple-net the load
+ * itself; on a base-year stop the growth over the stop, averaged over the
+ * term (the mean of (1+g)^t - 1 for t in [0, T], g the expected inflation);
+ * on gross nothing. A firm choosing a suite prices rent plus this — its
+ * occupancy cost — so a dear tax bill makes a triple-net shop dearer to its
+ * tenant, and a full-service office's rent carries the bill itself [D].
+ */
+export function tenantExpensePsfYr(basis: Recovery, loadPsf: number, termM: number, econ: GameState["econ"]): number {
+  if (!(loadPsf > 0) || basis === "gross") return 0;
+  if (basis === "nnn") return loadPsf;
+  const T = Math.max(1, termM / 12), g = Math.max(0, econ.inflExp ?? econ.nat?.inflExp ?? 0.02);
+  const growth = g > 1e-6 ? (Math.pow(1 + g, T) - 1) / (T * Math.log(1 + g)) - 1 : 0;
+  return loadPsf * growth;
 }
 
 /** The expense level frozen into a base-year lease on the day it is signed. */
@@ -885,12 +916,14 @@ export function streetLease(
   // clause first (value.ts recoveryOf) and reads `net` as "nnn" when there is
   // none, so the flag is now that clause, and the two cannot disagree.
   const recovery = rollRecovery(s, use);
+  const stop = stopPsfNow(rec, s.econ, vessel, use);
   return {
     ...rest,
     name, use, sector, credit, sf: Math.round(sf), rentPsf,
     net: recovery === "nnn",
     recovery,
-    baseStopPsf: +stopPsfNow(rec, s.econ, vessel, use).toFixed(2),
+    baseStopPsf: +stop.toFixed(2),
+    expPsf: +tenantExpensePsfYr(recovery, stop, termM, s.econ).toFixed(2),
     startM: s.month, endM: s.month + Math.max(12, Math.round(termM)),
     freeUntilM: freeM > 0 ? s.month + Math.round(freeM) : undefined,
     deposit: depositFor(s, rentPsf, sf, credit),
@@ -988,8 +1021,12 @@ export function genAnchorTenant(
     credit,
     sf: sfAnchor,
     rentPsf: +(market * rrange(s, 0.9, 0.97, "leasing")).toFixed(2),
-    net: true,
-    recovery: "nnn",
+    // on the class's basis, like every other lease (leaseBasis): this wrote
+    // triple-net for every use, office included
+    net: leaseBasis(use) === "nnn",
+    recovery: leaseBasis(use),
+    baseStopPsf: +stopPsfNow(rec, s.econ, h, use).toFixed(2),
+    expPsf: +tenantExpensePsfYr(leaseBasis(use), stopPsfNow(rec, s.econ, h, use), chosenTermM(s.econ, credit, sector), s.econ).toFixed(2),
     startM: s.month,
     // the term its covenant and its trade choose (chosenTermM, the street's
     // rule); this was a draw of ten to fifteen years whoever signed
@@ -4958,6 +4995,7 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
       sf, rentPsf: l.rentPsf, bumpPct: bumpOf(l), net: l.net,
       recovery: l.recovery ?? (l.net ? "nnn" : "gross"),
       baseStopPsf: +stopPsfNow(rec, s.econ, h, use).toFixed(2),
+      expPsf: +tenantExpensePsfYr(l.recovery ?? (l.net ? "nnn" : "gross"), stopPsfNow(rec, s.econ, h, use), l.termM, s.econ).toFixed(2),
       startM: s.month, endM: s.month + l.termM,
       freeUntilM: l.freeM ? s.month + l.freeM : undefined,
       deposit,

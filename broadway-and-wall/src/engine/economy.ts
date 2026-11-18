@@ -336,7 +336,10 @@ function readFirms(s: GameState): Map<number, Seen> {
     if (t.fid === undefined || out.has(t.fid)) return;
     const floor = (t.use ?? "office") as Floor;
     if (!FLOORS.includes(floor)) return;
-    const rentYr = housed && m >= (t.freeUntilM ?? -Infinity) ? t.rentPsf * t.sf : 0;
+    // ...rent plus what it pays toward the building's bills (Tenant.expPsf): a
+    // triple-net shop's tax is the shop's cost as surely as its rent is
+    // (2026-11-18). Free rent waives the rent, not the bills.
+    const rentYr = housed ? (m >= (t.freeUntilM ?? -Infinity) ? t.rentPsf * t.sf : 0) + (t.expPsf ?? 0) * t.sf : 0;
     out.set(t.fid, { sec: t.sector, floor, hc: headsOf(t, floor), rentMo: rentYr / 12, z: t.fin?.z ?? 0, ind: t.ind });
   };
   for (const roll of Object.values(s.econ.streetRolls ?? {})) for (const t of roll.t) add(t, true);

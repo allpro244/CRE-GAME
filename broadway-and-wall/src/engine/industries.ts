@@ -411,6 +411,39 @@ export const OFF_FLOOR_SHARE_NAT = (() => {
   return metro.filter((k) => k !== IND_ID_CON).reduce((a, k) => a + INDUSTRIES[k].empK * OFF_FLOOR[k], 0) / tot;
 })();
 
+/**
+ * WHAT A TOWN'S INDUSTRIES SPEND ON A FOOT OF EACH KIND OF FLOOR (2026-11-18):
+ * over the industries that work on that floor, their jobs here (national
+ * employment x the town's location quotient `lq`, in INDUSTRY_IDS order) times
+ * what a worker produces (BEA output per worker) times the share of output an
+ * industry spends on rent (BEA input-output, `rent`), over the feet those jobs
+ * take (CBRE / BOMA / EIA, `sfPerWorker`) — each industry's heads on its own
+ * floor (1 - offFloor). The level is the nation's dollars; what is read from
+ * it is this town against the nation (`lq` all 1), so a level error cancels
+ * and the mix does not [D: the industry table's own numbers, nothing fitted].
+ * A town of securities firms spends more on a foot of office than a town of
+ * call centres; a port town more on a foot of shed.
+ */
+export type FloorKind = "office" | "retail" | "industrial";
+export function floorRentBudget(lq?: readonly number[]): Record<FloorKind, number> {
+  const pay: Record<FloorKind, number> = { office: 0, retail: 0, industrial: 0 };
+  const feet: Record<FloorKind, number> = { office: 0, retail: 0, industrial: 0 };
+  INDUSTRY_IDS.forEach((id, i) => {
+    const I = INDUSTRIES[id];
+    if (I.where === "outside" || !(I.sfPerWorker > 0)) return;
+    const k: FloorKind | null = I.space === "office" ? "office" : I.space === "retail" ? "retail" : I.space.startsWith("industrial") ? "industrial" : null;
+    if (!k) return;
+    const heads = I.empK * (lq?.[i] ?? 1) * (1 - OFF_FLOOR[id]);
+    pay[k] += heads * I.outPerWorkerK * 1000 * I.rent;
+    feet[k] += heads * I.sfPerWorker;
+  });
+  return {
+    office: feet.office > 0 ? pay.office / feet.office : 0,
+    retail: feet.retail > 0 ? pay.retail / feet.retail : 0,
+    industrial: feet.industrial > 0 ? pay.industrial / feet.industrial : 0,
+  };
+}
+
 // ---------------------------------------------------------------- what the rest of the country buys (step 2)
 /**
  * THE NATION'S DEMAND FOR EACH INDUSTRY, as employment: the town is a small

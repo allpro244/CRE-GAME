@@ -6,7 +6,7 @@ import { leaseUpMonthsOf } from "./proforma";
 import { tickBands } from "./bands";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, EconHistoryPoint, FirmBook, GameState, MarketPhase, NewsItem, Sector } from "./types";
-import { OFF_FLOOR_SHARE_NAT, INDUSTRY_IDS } from "./industries";
+import { OFF_FLOOR_SHARE_NAT, INDUSTRY_IDS, floorRentBudget } from "./industries";
 import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert } from "./types";
 import { tickStreetTenants } from "./tenantBooks";
 import { SHED_MOVE } from "./streetRolls";
@@ -1560,15 +1560,22 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // city's supply sits at in the long run, with a seeded spread: one town
   // opens with an office glut, the next short of sheds. Only the rent LEVEL
   // moves; the history above still sets where in the cycle the town is.
-  // OPEN_Q_SIGMA is a shape parameter (the cross-town spread of the opening),
-  // stated as such, not a fit to any outcome.
+  // The spread between towns is no longer a draw: see below.
   {
-    const OPEN_Q_SIGMA = 0.15;
+    // THE TOWN'S OWN FIRMS SET WHERE ITS FLOORS OPEN (2026-11-18). The q each
+    // class opened at was a seeded draw, exp(0.15 z) — a town short of sheds
+    // or long of offices by the dice, whatever it made. It is now what this
+    // town's industries can spend on a foot of that floor against what the
+    // nation's do (industries.ts floorRentBudget: BEA output per worker x the
+    // industry's rent share over its feet a worker, weighted by the town's
+    // location quotients): a town of securities firms opens with dear office,
+    // a port town with dear sheds, a town of the nation's own mix at q = 1.
+    // Flats are housing, not firms' floor: they open at the national margin.
+    // [D: the industry table's numbers; no draw, nothing fitted.]
+    const nat = floorRentBudget(), town = floorRentBudget(econ.townLQ);
     for (const k of BUILT_CLASSES) {
-      const u1 = Math.max(1e-6, mulberry32Step(((s.seed ^ (0x51ed27 * (BUILT_CLASSES.indexOf(k) + 3))) >>> 0) || 7).value);
-      const u2 = mulberry32Step(((s.seed ^ (0x2545f491 + BUILT_CLASSES.indexOf(k) * 977)) >>> 0) || 11).value;
-      const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-      const target = Math.exp(OPEN_Q_SIGMA * z);
+      const fk = k === "multifamily" ? null : k;
+      const target = fk && nat[fk] > 0 && town[fk] > 0 ? town[fk] / nat[fk] : 1;
       // At no package: the opening's rents are face, and what the town
       // gives away is what its first leases sign at (tenantMarket.ts,
       // streetRolls.ts), not a dial set from its vacancy against a norm.

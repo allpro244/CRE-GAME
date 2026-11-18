@@ -533,8 +533,26 @@ export { devPencils };
 // basis points over the long-run average all-in loan, which is thin positive
 // leverage: enough that debt earns its risk in a normal market, not so much
 // that borrowing is free money.
-// [K: set against the loan index as above, not taken from a cap-rate series.]
-export const CAP_BASE = { office: 8.50, retail: 7.00, multifamily: 5.60, industrial: 7.00 } as const;
+// [K: the LEVEL — their mean, 7.03 — set against the loan index as above.]
+//
+// THE SPREADS BETWEEN THE CLASSES ARE A SERIES'S, NOT A YEAR'S (2026-11-18).
+// They were office 8.50 / retail 7.00 / multifamily 5.60 / industrial 7.00: a
+// 290bp office-over-apartments gap, which is 2023-24 — office repricing after
+// the pandemic, apartments bid as the safe class — written down as permanent
+// in a game that opens in 2000. It broke this file's own rule: apartments
+// yielded 90-160bp UNDER the all-in loan (negative leverage on every levered
+// block of flats, forever) and office 130-200bp over it. And because every
+// town opens each class at the rent that makes building pay (initEcon, the
+// Tobin's q solve), office opened at 1.8x its table rent and roughly twice
+// retail's and the flats', in every town of every seed.
+// [S: An & Deng 2009, "A Structural Model for Capitalization Rate", Real
+// Estate Research Institute WP 166, Table 3 — RERC surveyed cap rates
+// 1992Q3-2007Q4, means: apartment 8.1%, office CBD 8.6%, industrial
+// warehouse 8.6%, retail neighbourhood 8.8%.] The level is kept; each class
+// sits at the series's offset from the four-class mean (8.525%): apartments
+// -0.425, office and industrial +0.075, retail +0.275 — 50bp of office over
+// flats, not 290.
+export const CAP_BASE = { office: 7.10, retail: 7.30, multifamily: 6.60, industrial: 7.10 } as const;
 
 // Development underwriting lives in value.ts (`devPencils`) and dev.ts
 // (`planDevelopment` / `underwriteDevelopment`). There is intentionally no

@@ -1700,13 +1700,44 @@ function landIndex(s: GameState): ApprIndex {
   return e.landIx;
 }
 
+/**
+ * HOW FAR ONE LAND PRINT STRAYS, READ OFF TODAY'S EVIDENCE (2026-11-18). The
+ * grid's scatter (gridS2) is pooled over every year the index has kept — up
+ * to forty — and a town's dirt does not scatter the same way at forty as at
+ * four: on seed 31337 the survey's 24 indications sat within x1.5 of each
+ * other in the first decade (sd of log 0.25-0.5) and ranged x1,000 by year
+ * 25 (sd 1.2-2.2) as a few lots ripened for towers and most did not. Read
+ * through the early years' scatter, each of a late year's two-a-month
+ * indications was taken for a precise reading, the year-to-year noise in
+ * their means was taken for the market moving (gridQ), and the level chased
+ * them: 4.81 -> 2.94 -> 1.85 -> 0.95 in five years, a hundred months in fifty
+ * years moving it more than 10%. An appraiser judges a comp against the comps
+ * in front of it: the scatter is the tape's own — the window the read itself
+ * uses (TAPE_MONTHS), restated through the grid — as a robust scale (the
+ * median absolute deviation x 1.4826, the normal's consistency factor: a
+ * statistical constant), so the lots that ripened do not set it by
+ * themselves. Per unit of weight, as gridS2 states it. With less than an
+ * appraiser's worth of evidence on the tape (MIN_EVIDENCE) the grid's stands.
+ */
+function landS2(s: GameState, ix: ApprIndex, beta: number[]): number {
+  const pooled = gridS2(ix, beta);
+  const tape = (s.landTape ?? []).filter((p) => p.m > s.month - TAPE_MONTHS);
+  if (tape.reduce((a, p) => a + p.w, 0) < MIN_EVIDENCE) return pooled;
+  const r = tape.map((p) => ({ v: Math.log(p.L) - dot(beta, zLand(p)), w: p.w }));
+  const mid = wMedian(r);
+  const mad = wMedian(r.map((q) => ({ v: Math.abs(q.v - mid), w: q.w })));
+  const wTyp = wMedian(tape.map((p) => ({ v: p.w, w: 1 })));
+  const s2 = (1.4826 * mad) ** 2 * wTyp;
+  return Number.isFinite(s2) && s2 > 0 ? s2 : pooled;
+}
+
 function pushLandPrint(s: GameState, p: { m: number; L: number; w: number; kind: "t" | "b" | "s"; x?: [number, number] }) {
   const t = (s.landTape ??= []);
   t.push(p);
   const ix = landIndex(s);
   const z = zLand(p), y = Math.log(p.L);
   const beta = gridBeta(ix);
-  apprSee(ix, y - dot(beta, z), p.w, gridS2(ix, beta));
+  apprSee(ix, y - dot(beta, z), p.w, landS2(s, ix, beta));
   gridAdd(ix, yrOf(p.m), z, y, p.w);
   const cut = s.month - TAPE_MONTHS;
   let i = 0;
@@ -1790,7 +1821,7 @@ export function tickLandRead(s: GameState): void {
   // a month passes for the land index too (the appraisers' read: landIndex)
   const ix = landIndex(s);
   const beta = gridBeta(ix);
-  ix.P += gridQ(ix, beta, gridS2(ix, beta), LAND_Q0) / 12;
+  ix.P += gridQ(ix, beta, landS2(s, ix, beta), LAND_Q0) / 12;
   const prev = e.landReadOut;
   if (!win) {
     if (Number.isFinite(ix.x)) e.landIdx = Math.exp(ix.x);

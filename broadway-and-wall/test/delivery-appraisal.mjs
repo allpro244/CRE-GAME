@@ -42,7 +42,25 @@ const check = (ok, msg) => {
 
 const land = E.landValue(rec, g.econ);
 check(E.landAppraisalFloor(rec, g.econ, true) === land, "lease-up floor is the residual, not 92% of it");
-check(Math.abs(E.landAppraisalFloor(rec, g.econ, false) - land * 0.92) < 1, "old empty fabric still pays the demo haircut");
+// OLD FABRIC IS FLOORED AT THE CLEAR SITE: the land less taking the building
+// down (proforma wreckCost, what the Build desk charges), and less buying out
+// whoever is in it. It was land x 0.92 whatever the building or its leases.
+const wreck = E.wreckCost(rec.bldgArea, g.econ.costIdx);
+check(Math.abs(E.landAppraisalFloor(rec, g.econ, false) - Math.max(0, land - wreck)) < 1,
+  `old empty fabric is floored at the land less its demolition (${(land / 1e6).toFixed(2)}M - ${(wreck / 1e6).toFixed(2)}M)`);
+{
+  const m0 = g.month;
+  const hLet = { bbl: rec.bbl, tenants: [{ sf: 200_000, rentPsf: 40, endM: m0 + 96 }], occ: 0, condition: "good", condIdx: 0.92 };
+  const hEnd = { ...hLet, tenants: [{ sf: 200_000, rentPsf: 40, endM: m0 + 3 }] };
+  const cLet = E.vacantPossessionCost(rec, g.econ, hLet, m0), cEnd = E.vacantPossessionCost(rec, g.econ, hEnd, m0);
+  check(Math.abs(cLet - 200_000 * 40 / 12 * 96 * E.BUYOUT_PREMIUM) < 1, `eight years of lease left costs its remaining rent and the premium to buy out (${(cLet / 1e6).toFixed(1)}M)`);
+  check(cEnd < cLet / 20, `a lease three months from expiry costs little to clear (${(cEnd / 1e6).toFixed(2)}M)`);
+  // on a small building, where the dirt outweighs the wrecking: the leases come off the floor dollar for dollar
+  const small = { ...rec, bldgArea: 5_000, floors: 1 };
+  const f0 = E.landAppraisalFloor(small, g.econ, false, 0), f1 = E.landAppraisalFloor(small, g.econ, false, 100_000);
+  check(f0 > 100_000 && Math.abs(f0 - f1 - 100_000) < 1,
+    `the site under a let building is worth the clear site less buying out its leases (${(f0 / 1e3).toFixed(0)}K -> ${(f1 / 1e3).toFixed(0)}K)`);
+}
 
 const year = E.START_YEAR + Math.floor(g.month / 12);
 const newborn = { ...rec, yearBuilt: year };

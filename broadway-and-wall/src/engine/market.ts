@@ -2361,14 +2361,38 @@ const CAPACITY_LINEAR = 0.03, CAPACITY_CEILING = 0.06;
  * rent over the block's market rent the month it signed (`c`, log) — from
  * which the flats' effective rent is read (streetRolls.ts `tickStreetFlats`).
  * (Offices, shops and sheds are comps in tenantMarket.ts recordLease.)
+ *
+ * SIX MONTHS MEANS SIX MONTHS (2026-11-17). The list was also cut to its last
+ * 400 lettings, and a town lets about 400 flats a month: the "six months" was
+ * one month, and the effective index — the rent every builder underwrites a
+ * block of flats at — swung with whichever blocks let that month. One new
+ * block letting up at a deep concession moved it 15-20% and back (seed 31337,
+ * months 180-190: 31.8, 31.0, 29.5, 30.4, 24.1, 29.9, 26.0, 24.5, 32.0 with the
+ * asking index at 29.5-33.1), and the land option magnified that four- to
+ * fivefold into lots repricing 40% a month. The cap was a guard on memory;
+ * the letting-by-letting list is now kept as a month's sum per kind (new
+ * letting or renewal): the same feet-weighted reads, in fourteen rows, with
+ * the whole window in them. Each row carries `c` as the log of rent over the
+ * index level 1 (`i` = 1), so `dealRelNow` restates it against today's index
+ * exactly as it did each letting, and `n` the lettings it holds.
  */
 export function recordDeal(e: Econ, k: BuiltClass, m: number, rel: number, sf: number, renewal = false) {
   if (k !== "multifamily" || !(rel > 0) || !(sf > 0)) return;
   const list = ((e.deals ??= {})[k] ??= []);
-  list.push({ m, c: +Math.log(rel).toFixed(5), sf: Math.round(sf), ...(renewal ? { r: 1 } : {}), ...(e.rentIdx?.multifamily > 0 ? { i: +e.rentIdx.multifamily.toFixed(4) } : {}) });
+  const idx = e.rentIdx?.multifamily > 0 ? e.rentIdx.multifamily : 1;
+  const x = Math.log(rel) + Math.log(idx);
+  const r = renewal ? 1 : undefined;
+  let row = undefined as (typeof list)[number] | undefined;
+  for (let j = list.length - 1; j >= 0 && list[j].m === m; j--) if (list[j].r === r && list[j].i === 1) { row = list[j]; break; }
+  if (row) {
+    const sf1 = row.sf + sf;
+    row.c = +((row.c * row.sf + x * sf) / sf1).toFixed(6);
+    row.sf = sf1;
+    row.n = (row.n ?? 1) + 1;
+  } else {
+    list.push({ m, c: +x.toFixed(6), sf, n: 1, i: 1, ...(r ? { r } : {}) });
+  }
   while (list.length && list[0].m < m - 6) list.shift();
-  // (shift, not splice: the same array, and V8 trims the front in place.)
-  while (list.length > 400) list.shift();
 }
 
 /**

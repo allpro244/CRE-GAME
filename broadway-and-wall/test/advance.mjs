@@ -62,11 +62,15 @@ for (const id of ["harbor", "savings", "pelican", "conduit", "cordage", "mezz", 
   const office = E.statedLtv(mid, sv, "office", "standard", true).ltv;
   ok(near(E.statedLtv(mid, sv, "office", "worn", true).ltv, office - 0.03) && near(E.statedLtv(mid, sv, "office", "obsolete", true).ltv, office - 0.03),
     `a worn or obsolete building has three points held back for the repairs`);
-  const g = structuredClone(mid); g.lenderRel = { "First Harbor Bank": 100, "Cordage Debt Partners": 100, "Meridian Street Capital": 100 };
+  // (the file moves the desk's own advance; the policy ceiling is the ceiling,
+  // so it is read where the desk lends under it — a desk short of appetite)
+  const tight = withApp(mid, 0.6);
+  const g = structuredClone(tight); g.lenderRel = { "First Harbor Bank": 100, "Cordage Debt Partners": 100, "Meridian Street Capital": 100 };
   const h = E.productById("harbor");
-  ok(near(E.statedLtv(g, h).ltv, E.statedLtv(mid, h).ltv + 0.04), `a full file at the hometown bank is worth four points of advance`);
-  ok(near(E.statedLtv(g, E.productById("cordage")).ltv, E.statedLtv(mid, E.productById("cordage")).ltv)
-    && near(E.statedLtv(g, E.productById("conduit")).ltv, E.statedLtv(mid, E.productById("conduit")).ltv), `the debt fund and the conduit have no file to reward`);
+  ok(E.statedLtv(tight, h).ltv + 0.04 < h.maxLTV - 0.03, `the desk short of appetite lends under its ceiling (${pc(E.statedLtv(tight, h).ltv)} < ${pc(h.maxLTV - 0.03)})`);
+  ok(near(E.statedLtv(g, h).ltv, E.statedLtv(tight, h).ltv + 0.04), `a full file at the hometown bank is worth four points of advance`);
+  ok(near(E.statedLtv(g, E.productById("cordage")).ltv, E.statedLtv(tight, E.productById("cordage")).ltv)
+    && near(E.statedLtv(g, E.productById("conduit")).ltv, E.statedLtv(tight, E.productById("conduit")).ltv), `the debt fund and the conduit have no file to reward`);
   const why = E.statedLtv(g, h, "multifamily", "worn").why.join(", ");
   ok(/own risk model/.test(why) && /−3 held back/.test(why) && /\+4 for your file/.test(why), `the advance says how it was worked out: "${why}"`);
   const before = JSON.stringify(mid); E.statedLtv(mid, sv, "office", "worn"); E.underwritingStandards(mid);
@@ -192,7 +196,12 @@ for (const id of ["harbor", "savings", "pelican", "conduit", "cordage", "mezz", 
   // pickiest desk quotes a few per cent of a small town's tape, not none.
   ok(pn > 25 && pq / pn >= 0.04, `the life company quotes ${(pq / pn * 100).toFixed(1)}% of ${pn} listings at months 20 and 36, ten towns — standard buildings at a quarter point more (was 0%)`);
   const qGood = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "good"), qStd = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "standard"), qWorn = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "worn");
-  ok(near(qStd.ratePct - qGood.ratePct, 0.25, 0.011) && E.conditionOk(pl, "standard") && !E.conditionOk(pl, "worn"), `Pelican: standard +${(qStd.ratePct - qGood.ratePct).toFixed(2)}% over good; worn refused${qWorn.principal > 0 ? " (quote path still sizes; originate refuses)" : ""}`);
+  // ...a quarter point at the SAME advance (2026-11-18): each loan is priced on
+  // the advance it writes, and the dearer coupon lets coverage carry a little
+  // less, so the standard building's loan is smaller and its loss a little
+  // lower. The size difference is taken out before the quarter is read.
+  const sizeGap = E.productSpread(g, pl, { ltv: qStd.principal / 6_000_000, klass: "office" }) - E.productSpread(g, pl, { ltv: qGood.principal / 6_000_000, klass: "office" });
+  ok(near(qStd.ratePct - qGood.ratePct - sizeGap, 0.25, 0.016) && E.conditionOk(pl, "standard") && !E.conditionOk(pl, "worn"), `Pelican: standard +${(qStd.ratePct - qGood.ratePct).toFixed(2)}% over good; worn refused${qWorn.principal > 0 ? " (quote path still sizes; originate refuses)" : ""}`);
 }
 
 // --- 7. who is signing for this: the guarantor test, and the price of a strong name

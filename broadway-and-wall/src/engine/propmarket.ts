@@ -49,7 +49,7 @@ import {
 import { uses } from "./mix";
 import { catchUpCapex } from "./dev";
 import { productOf } from "./products";
-import { stabViewFor, streetRefiProceeds } from "./debt";
+import { productById, stabViewFor, streetRateAt, streetRefiProceeds } from "./debt";
 import { TI_ASK, renewalRefreshShare } from "./leasing";
 import {
   livingRivals, paramsOf, fitOf, ownerOf, firmOutlook, deployDiscountPp, contractedEquity, lineRoom, dealCallable,
@@ -153,6 +153,8 @@ export interface DealView {
   catchUp: number;
   /** the street's loan: min(a x price, cap); the desk's rate, % */
   debtA: number; debtCap: number; rd: number;
+  /** the desk's coupon at a share of the price, [ltv, rate %] rising to debtA — what a buyer borrowing less pays (streetRateAt) */
+  rdCurve?: [number, number][];
   /** a special product's thinner buyer pool, points (products.ts capSpread) */
   prod: number;
   /** the dirt, for a buyer who builds */
@@ -243,9 +245,19 @@ export function dealView(
     const q2 = streetLoan(s, rec, c, q, pRef * 1.5, inP.noi - tau * pRef * 0.5, desks);
     debtCap = q2.principal >= q1.principal * 1.45 ? Infinity : Math.max(q1.principal, q2.principal);
   }
+  // THE COUPON AT EACH SIZE (2026-11-18): a firm whose own covenant holds it
+  // to half the price borrows half, at the coupon for half, not at the one
+  // for the most the desk would write.
+  let rdCurve: [number, number][] | undefined;
+  const deskP = q1.product ? productById(q1.product) : undefined;
+  if (debtA > 0 && deskP) {
+    rdCurve = [];
+    for (const l of [0.2, 0.35, 0.5, 0.65]) if (l < debtA - 0.01) rdCurve.push([l, Math.min(q1.ratePct, streetRateAt(s, deskP, l))]);
+    rdCurve.push([debtA, q1.ratePct]);
+  }
   const prod = rec.product ? (productOf(rec.product)?.capSpread ?? 0) : 0;
   const loc = locBelief(e, rec, k, q);
-  return { rec, bbl, k, cond: c, condIdx: q, noiPre, stabPre, tau, leaseCap, cx, catchUp, debtA, debtCap, rd: q1.ratePct, prod, land: landValue(rec, e), locPrem: loc.prem, locG: loc.g };
+  return { rec, bbl, k, cond: c, condIdx: q, noiPre, stabPre, tau, leaseCap, cx, catchUp, debtA, debtCap, rd: q1.ratePct, rdCurve, prod, land: landValue(rec, e), locPrem: loc.prem, locG: loc.g };
 }
 
 /** One bidder's temperament, as the underwriting reads it. */
@@ -308,11 +320,22 @@ export interface Underwriting {
  * — and no more growth than the rent at which a rival would build next door
  * allows (siteHurdle; DiPasquale & Wheaton ch. 10).
  */
+/** The desk's coupon on a loan of `ltv` of the price, read off the deal's curve (linear between its points). */
+export function rdAt(v: Pick<DealView, "rd" | "rdCurve">, ltv: number): number {
+  const c = v.rdCurve;
+  if (!c?.length) return v.rd;
+  if (ltv <= c[0][0]) return c[0][1];
+  for (let i = 1; i < c.length; i++) {
+    if (ltv <= c[i][0]) { const [l0, r0] = c[i - 1], [l1, r1] = c[i]; return r0 + (r1 - r0) * (ltv - l0) / Math.max(1e-9, l1 - l0); }
+  }
+  return c[c.length - 1][1];
+}
+
 export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<typeof beliefSignals>): Underwriting {
   const i = e.indexRate ?? 5;
   const rE = (bentIndex(i) + b.eqPrem) / 100;
-  const rd = v.debtA > 0 ? (v.rd + b.fileSpread) / 100 : rE;
   const a = Math.min(v.debtA, b.ltvCap);
+  const rd = v.debtA > 0 ? (rdAt(v, a) + b.fileSpread) / 100 : rE;
   const gBase = underwrittenGrowthPct(e) / 100;
   // the class's record, and this submarket's own record against it (tickLocBeliefs)
   let belief = (e.growthExp?.[v.k] ?? 0) + v.locG;

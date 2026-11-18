@@ -89,7 +89,14 @@ for (const seed of (process.env.SEEDS ?? "4242,11").split(",").map(Number)) {
   check(shortfall > 0 && shortfall < lien * 1.1, `non-recourse: ${non.lender} charges off the shortfall (${K(shortfall)} of a ${K(lien)} lien)`);
   check(/non-recourse/.test(non.news), `the news says so (${non.news.slice(0, 140)})`);
   // What the seizure itself did to cash: against the same month without one.
-  const dNon = non.cash - ctl.cash, dRec = rec.cash - ctl.cash;
+  // A FORCED SALE IS STILL A SALE FOR TAX (2026-11-18): a seizure that sells
+  // above the owner's basis books the gain's tax in the same month, which is
+  // cash the owner owes whoever took the deed. The shortfall checks below are
+  // about the lender's loss and the guarantee, so the tax is netted out.
+  const taxOf = (r) => r.g.books[r.g.books.length - 1]?.taxes ?? 0;
+  const tNon = taxOf(non) - taxOf(ctl), tRec = taxOf(rec) - taxOf(ctl);
+  if (tNon || tRec) console.log(`  the sale's own tax: non-recourse ${K(tNon)}, recourse ${K(tRec)}`);
+  const dNon = non.cash - ctl.cash + tNon, dRec = rec.cash - ctl.cash + tRec;
   check(Math.abs(dNon + non.deposits) <= TOL,
     `non-recourse: the seizure costs the borrower no cash beyond the deposits that go with the deed (${K(dNon)}; deposits ${K(-non.deposits)})`);
   check(rec.chargedOff === 0, `recourse: the lender charges off nothing (${K(rec.chargedOff)})`);

@@ -32,7 +32,7 @@
 //
 // Nothing here draws on the RNG stream.
 import type { CityLoan, GameState, Rival } from "./types";
-import { productById, productSpread, quote, REFI_FEE, nameLimit, windowOpen, CAP_TERM_M, type StabView } from "./debt";
+import { productById, productSpread, quote, streetRateAt, REFI_FEE, nameLimit, windowOpen, CAP_TERM_M, type StabView } from "./debt";
 import { capPremiumOn } from "./amortize";
 import { chargeLenderLoss, targetCapital, deskPxOf } from "./lenders";
 import type { Lender } from "./lenders";
@@ -354,9 +354,15 @@ export function pickDesk(
   // time one is asked for: nothing below writes a loan, a line or a book.
   let rooms: Map<Lender, number> | null = null;
   const roomOf = (l: Lender) => (rooms ??= deskRooms(s, obligorId, o.opening ?? false)).get(l) ?? deskRoom(s, l, obligorId, o.opening);
+  // ...each at its coupon for THIS loan: a borrower taking less than a desk's
+  // most pays for the risk it takes (debt.ts streetRateAt, 2026-11-18).
   const cands: C[] = deskQuotes(s, value, noiYr, o).map((c) => {
     const l = (s.lenders ?? []).find((x) => x.name === c.lender)!;
-    return { ...c, room: roomOf(l) };
+    const take = Math.min(amount, c.principal);
+    const ratePct = value > 0 && take < c.principal * 0.995
+      ? Math.min(c.ratePct, streetRateAt(s, productById(c.product), take / value, o.klass))
+      : c.ratePct;
+    return { ...c, ratePct, room: roomOf(l) };
   });
   const funds = cands.filter((c) => c.principal >= amount * 0.98 && c.room >= amount)
     .sort((a, b) => a.ratePct - b.ratePct);

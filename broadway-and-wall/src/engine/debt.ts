@@ -1015,14 +1015,40 @@ export function deskAdvance(s: GameState, product: LoanProduct, klass?: string, 
   const px = deskPxOf(s, product.lender);
   const own = px.el[cls] ?? PRIOR_EL[cls];
   const exp = Math.max(0.25, own / PRIOR_EL[cls]);
-  const room = Math.max(0, own + px.chase);
-  const budget = (room / exp / 100) * Math.max(0.2, lenderAppetite(s, product.lender));
+  const appetite = Math.max(0.2, lenderAppetite(s, product.lender));
   // SPEED (2026-11-12): the search below reads only these numbers, so its
   // answer is remembered on exactly them. It ran ~28,000 times a month for
   // ~1,200 distinct inputs — 38% of a late month — with the loss inputs
   // (the desk's risk view, the balloon) recomputed at every one of its 40 steps.
   const { v, left, kOverY } = lossInputs(s, product, klass, at);
   const T = Math.max(1, product.termM / 12);
+  // THE LOSS A DESK PLANS FOR IS THE LOSS AT ITS OWN POLICY LIMIT
+  // (2026-11-18). The budget was the class's AVERAGE loss rate (own + chase),
+  // and the marginal loan was held to it — but each loan is already priced
+  // for its own expected loss at its own advance (productSpread → loanEl →
+  // liveSpread), so a loan past the average still pays for its risk; holding
+  // it to the average counted that risk twice. Every bank opened lending
+  // 49-72% on office whatever the income (Alden Savings: 45% of price on flats
+  // covering their debt 1.99x, bound by "credit"), where a bank in good
+  // credit writes to its policy ceiling and lets coverage, debt yield and
+  // value bind. The budget is now the model's loss on the reference loan —
+  // the class's own building at the sheet's policy ceiling (the class's cap,
+  // not this building's yield) — so in an ordinary market a desk with an
+  // ordinary record lends to policy; it lends less where the building is
+  // riskier than the class (thin coverage reads a higher loss at every
+  // advance), where its own losses run over the industry's (exp), and where
+  // it is short of capital, margin or deposits (appetite).
+  const policy = Math.min(0.99, Math.max(attach + 0.02, product.maxLTV - 0.03));
+  // ...in an ORDINARY market: the national record's volatility and drift
+  // (deskRiskView's prior), so a town that moves more than the nation reads a
+  // higher loss than the reference at every advance and is lent less, as
+  // desks do in a volatile market.
+  const ref = lossInputs(s, product, klass, {});
+  const refV = { sigma: assetVol(NATIONAL_PROPERTY_VOL), mu: Math.log(1 + (s.econ.nat?.inflExp ?? 0.02)), local: false };
+  const refEl = attach > 0 && policy > attach
+    ? (lossOver(policy, product, refV, ref.kOverY, ref.left) - lossOver(attach, product, refV, ref.kOverY, ref.left)) / ((policy - attach) * T)
+    : lossOver(policy, product, refV, ref.kOverY, ref.left) / (policy * T);
+  const budget = ((refEl + Math.max(0, px.chase) / 100) / exp) * appetite;
   const key = `${product.termM}|${attach}|${budget}|${v.sigma}|${v.mu}|${kOverY}|${left}`;
   const hit = deskAdvanceMemo.get(key);
   if (hit !== undefined) return hit;
@@ -1091,8 +1117,8 @@ export function statedLtv(
  */
 export function streetRefiProceeds(
   s: GameState, value: number, noiYr: number, maxLtv: number, stab?: StabView, only?: string[],
-): { principal: number; binding: string; lender: string; ratePct: number } {
-  let best = 0, binding = "advance rate", lender = "", ratePct = 0;
+): { principal: number; binding: string; lender: string; ratePct: number; product?: string } {
+  let best = 0, binding = "advance rate", lender = "", ratePct = 0, product: string | undefined;
   // WHICH DESKS EVEN LOOK AT IT. The three income desks — the regional, the
   // hometown bank, then hard money — walk any building. A SITE has no income,
   // so all three size it at zero on coverage, and the only money in this town
@@ -1116,9 +1142,21 @@ export function streetRefiProceeds(
         : q.dyConstrained ? "debt yield" : q.dscrConstrained ? "coverage" : "advance rate";
       lender = p.lender;
       ratePct = q.ratePct;
+      product = p.id;
     }
   }
-  return { principal: Math.round(Math.max(0, best)), binding, lender, ratePct };
+  return { principal: Math.round(Math.max(0, best)), binding, lender, ratePct, product };
+}
+
+/**
+ * WHAT A DESK CHARGES A BORROWER WHO IS NOT YOU FOR A LOAN OF THIS SIZE: its
+ * coupon at `ltv` of the basis (the loss at that advance, loanEl, through its
+ * live spread). A buyer who borrows half the price pays for half the price's
+ * risk, not for the most the desk would have written (2026-11-18).
+ */
+export function streetRateAt(s: GameState, product: LoanProduct, ltv: number, klass?: string): number {
+  const bench = product.floating ? shortIndexOf(s.econ) : s.econ.indexRate;
+  return bankRatePct(bench, productSpread(s, product, { ltv: Math.max(0.05, ltv), klass }));
 }
 
 /** Whether this desk will look at you at all today. */
@@ -1586,7 +1624,32 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   if (!onIncome(product)) {
     return withGuarantor({ principal: Math.max(0, Math.round(byLtv)), ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy });
   }
-  return withGuarantor({ ...sizeRest(s, product, byLtv, worth, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass, condition), concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy });
+  // PRICED ON THE LOAN IT WRITES (2026-11-18). The coupon was the loss at
+  // the sheet's advance whatever the loan came to, so a building that
+  // coverage held to 60% paid the coupon of a 76% loan — a desk charging for
+  // risk it was not taking. Each loan is priced on its own advance (the
+  // written principal over the basis): a lower coupon lets coverage carry a
+  // little more, which moves the advance, so the two are solved together
+  // (two passes settle it to a few basis points), and the final coupon is
+  // the one at the advance actually written.
+  let sized = sizeRest(s, product, byLtv, worth, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass, condition);
+  const priceAt = (ltv: number) => bankRatePct(bench, productSpread(s, product, { ltv, klass, ease: crunchEase }), {
+    standingAdd: st.spreadAdd, rel, dealAdd: qualityAdd - strongNameAt(ltv),
+  });
+  for (let pass = 0; pass < 2 && price > 0; pass++) {
+    const at = sized.principal / price;
+    if (!(at > 0) || at >= sheet.ltv - 0.005) break;
+    const r = priceAt(at);
+    if (Math.abs(r - sized.ratePct) < 0.005) break;
+    const next = sizeRest(s, product, byLtv, worth, noiYr, r, tight, product.bridge ? stab : undefined, klass, condition);
+    const atNext = next.principal / price;
+    // the coupon at the advance this pass writes, never under it
+    const rFinal = atNext > at + 0.0005 ? priceAt(Math.min(sheet.ltv, atNext)) : r;
+    sized = rFinal > r + 0.0005
+      ? sizeRest(s, product, Math.min(byLtv, next.principal), worth, noiYr, rFinal, tight, product.bridge ? stab : undefined, klass, condition)
+      : next;
+  }
+  return withGuarantor({ ...sized, concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy });
 }
 
 /**

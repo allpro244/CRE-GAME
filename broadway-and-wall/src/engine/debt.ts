@@ -1015,14 +1015,40 @@ export function deskAdvance(s: GameState, product: LoanProduct, klass?: string, 
   const px = deskPxOf(s, product.lender);
   const own = px.el[cls] ?? PRIOR_EL[cls];
   const exp = Math.max(0.25, own / PRIOR_EL[cls]);
-  const room = Math.max(0, own + px.chase);
-  const budget = (room / exp / 100) * Math.max(0.2, lenderAppetite(s, product.lender));
+  const appetite = Math.max(0.2, lenderAppetite(s, product.lender));
   // SPEED (2026-11-12): the search below reads only these numbers, so its
   // answer is remembered on exactly them. It ran ~28,000 times a month for
   // ~1,200 distinct inputs — 38% of a late month — with the loss inputs
   // (the desk's risk view, the balloon) recomputed at every one of its 40 steps.
   const { v, left, kOverY } = lossInputs(s, product, klass, at);
   const T = Math.max(1, product.termM / 12);
+  // THE LOSS A DESK PLANS FOR IS THE LOSS AT ITS OWN POLICY LIMIT
+  // (2026-11-18). The budget was the class's AVERAGE loss rate (own + chase),
+  // and the marginal loan was held to it — but each loan is already priced
+  // for its own expected loss at its own advance (productSpread → loanEl →
+  // liveSpread), so a loan past the average still pays for its risk; holding
+  // it to the average counted that risk twice. Every bank opened lending
+  // 49-72% on office whatever the income (Alden Savings: 45% of price on flats
+  // covering their debt 1.99x, bound by "credit"), where a bank in good
+  // credit writes to its policy ceiling and lets coverage, debt yield and
+  // value bind. The budget is now the model's loss on the reference loan —
+  // the class's own building at the sheet's policy ceiling (the class's cap,
+  // not this building's yield) — so in an ordinary market a desk with an
+  // ordinary record lends to policy; it lends less where the building is
+  // riskier than the class (thin coverage reads a higher loss at every
+  // advance), where its own losses run over the industry's (exp), and where
+  // it is short of capital, margin or deposits (appetite).
+  const policy = Math.min(0.99, Math.max(attach + 0.02, product.maxLTV - 0.03));
+  // ...in an ORDINARY market: the national record's volatility and drift
+  // (deskRiskView's prior), so a town that moves more than the nation reads a
+  // higher loss than the reference at every advance and is lent less, as
+  // desks do in a volatile market.
+  const ref = lossInputs(s, product, klass, {});
+  const refV = { sigma: assetVol(NATIONAL_PROPERTY_VOL), mu: Math.log(1 + (s.econ.nat?.inflExp ?? 0.02)), local: false };
+  const refEl = attach > 0 && policy > attach
+    ? (lossOver(policy, product, refV, ref.kOverY, ref.left) - lossOver(attach, product, refV, ref.kOverY, ref.left)) / ((policy - attach) * T)
+    : lossOver(policy, product, refV, ref.kOverY, ref.left) / (policy * T);
+  const budget = ((refEl + Math.max(0, px.chase) / 100) / exp) * appetite;
   const key = `${product.termM}|${attach}|${budget}|${v.sigma}|${v.mu}|${kOverY}|${left}`;
   const hit = deskAdvanceMemo.get(key);
   if (hit !== undefined) return hit;

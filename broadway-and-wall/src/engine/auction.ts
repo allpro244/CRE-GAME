@@ -42,7 +42,7 @@ import { bumpLenderRel } from "./debt";
 import { saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { takeDeed, FILE_COST } from "./notes";
 import { clearRivalClaims, forgetDeed, noteLost, markAsset } from "./rivals";
-import { dropDeed, originateRow } from "./rivalDebt";
+import { dropDeed, originateRow, syncDebt } from "./rivalDebt";
 import { reinstateFundedForeclosures } from "./workout";
 import { spendable, fundAndBook } from "./credit";
 import { money } from "./money";
@@ -170,6 +170,12 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
         row.arrearsMs = 0;
         row.maturityM = Math.max(row.maturityM, s.month) + 12;
         (row as { modM?: number }).modM = s.month;
+        // The arrears are owed on the note now, and the firm's debt says so
+        // (2026-11-18). Left unsynced, the ledger's backstop (ledger.ts
+        // tickLedger) read r.debt as short of its rows and PAID THE ROWS DOWN
+        // to match — the capitalised interest forgiven with no cash moving
+        // (rival-loans: gaps of $98K-$698K a month on four seeds).
+        syncDebt(s, r);
         continue;
       }
       if (loss > 0 && capAfter < target) continue;

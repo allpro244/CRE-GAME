@@ -58,13 +58,18 @@ const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.mi
   // building moves a third or more; the claim is about the stock, so it is
   // measured on the stock's median. Plan 11 read 1.44×, plan 12 1.36×.
   const spread = [];
-  for (const seed of [550991, 12007, 11, 7919]) {
+  for (const seed of [550991, 12007, 11, 7919, 73303, 4242, 91117, 20603]) {
     const g2 = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
     for (const l of g2.listings) {
       const rec = E.resolveRec(parcels, g2, l.bbl);
       if (!rec || !l.roll || !(rec.bldgArea > 0)) continue;
       const h2 = E.asIfOwned(g2, l.bbl, l.ask, E.disclosureFor(g2, l.bbl), rec);
       const v = (idx) => E.holdingValue(rec, g2.econ, { ...h2, condIdx: idx, condition: E.condGrade(idx) }, g2.month);
+      // A building priced as its dirt is a teardown at either grade: its
+      // condition cannot move the price, and that is right (seed 73303 opens
+      // with five shops and sheds whose lots are worth more than their rolls).
+      // The claim is about how condition prices a BUILDING.
+      if (v(0.865) <= E.landValue(rec, g2.econ) * 1.0001) continue;
       spread.push(v(0.865) / v(0.43));
     }
   }
@@ -85,7 +90,11 @@ const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.mi
   let n = 0, bad = 0; const gaps = [];
   // Four towns: three left the sample hanging on how many non-distressed built
   // listings each era happened to open with (2, 4 and 4 on one cut).
-  for (const seed of [550991, 12007, 11, 7919]) {
+  // EIGHT (2026-11-18): the opening tape now carries one month's listings and
+  // some towns open with no building on it at all (seed 550991: 33 listings,
+  // every one a lot), so four towns found 8 where the claim needs 12. Same
+  // claim, same bar, more towns.
+  for (const seed of [550991, 12007, 11, 7919, 73303, 4242, 91117, 20603]) {
     let g = E.firstListings(E.newGame(seed, parcels, 400_000_000), parcels, bbls);
     const picks = g.listings.map((li) => ({ li, rec: E.resolveRec(parcels, g, li.bbl) })).filter((x) => x.rec && x.rec.class !== "land" && x.rec.bldgArea > 0 && !x.li.halfBuilt && !x.li.distress && x.li.roll).slice(0, 6);
     for (const { li, rec } of picks) {
@@ -111,7 +120,7 @@ const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.mi
       g = r.s;
     }
   }
-  ok(n >= 12 && bad === 0, `${n} listings across four seeds: ask basis, market appraisal, lender's appraisal and the mark after closing agree (worst gap ${pc(Math.max(...gaps))}; ${bad} outside the tax reset)`);
+  ok(n >= 12 && bad === 0, `${n} listings across eight seeds: ask basis, market appraisal, lender's appraisal and the mark after closing agree (worst gap ${pc(Math.max(...gaps))}; ${bad} outside the tax reset)`);
 }
 
 // --- 3. the ask sits in a band around the appraisal, by phase ---------------

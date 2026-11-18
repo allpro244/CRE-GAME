@@ -1,17 +1,17 @@
 import { marketAppraisal } from "@/engine/value";
+import { demandNow } from "@/engine/demand";
 import { useMemo, useState } from "react";
 import type { GameState, Holding } from "@/engine/types";
 import { walt } from "@/engine/leasing";
-import type { ParcelTable } from "@/data/types";
+import type { ParcelRecord, ParcelTable } from "@/data/types";
 import { derive, ownerName } from "@/ui/derive";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { marketRentPsfYr, resolveRec, landPsfNow, inPlace, landRead } from "@/engine/value";
+import { marketRentPsfYr, resolveRec, landPsfNow, inPlace, landRead, scoreParts, type ScoreParts } from "@/engine/value";
 import { buyBoxSet, inBuyBox, landPencils, type BuyBox } from "@/engine/buybox";
 import { spendable } from "@/engine/credit";
 import { streetBookStats } from "@/engine/portfoliosale";
 import { ownerAt } from "@/engine/ownership";
-import { demandNow } from "@/engine/demand";
 import { LineChart } from "@/ui/Chart";
 import { marketAppetite, gradeOf } from "@/engine/rivals";
 import { houseBrokerName, brokerScore, EARLY_FEES, EARLY_WINDOW_M } from "@/engine/broker";
@@ -273,7 +273,23 @@ export const MARKET_COLS: { key: string; label: string; num?: boolean; desc?: bo
   { key: "rent", label: "Rent $/sf", num: true, desc: true },
   { key: "walt", label: "WALT", num: true, desc: true },
   { key: "dmd", label: "Demand", num: true, desc: true },
+  { key: "score", label: "Score", num: true, desc: true },
 ];
+/** The listing's one score and its parts, on the grade the deed conveys (the listing's stamped condition, or your own building's). */
+function listingScore(game: GameState, rec: ParcelRecord, li: { bbl: string; condIdx?: number }): ScoreParts {
+  const own = game.holdings[li.bbl];
+  return scoreParts(rec, game.econ, undefined, own?.condIdx ?? li.condIdx);
+}
+/** The hover: what the score is made of, in the order it is weighed. */
+function scoreTitle(sp: ScoreParts): string {
+  const b = sp.building;
+  if (!b) return `Score ${sp.score}/100 · location ${sp.location}/100`;
+  return `Score ${sp.score}/100 — what a tenant shops on\n`
+    + `Location ${sp.location}/100 (${Math.round(sp.locWeight * 100)}% of the score)\n`
+    + `Building ${b.score}/100, Class ${b.grade} (${Math.round((1 - sp.locWeight) * 100)}%):\n`
+    + `  build quality ${b.structure}/40 · condition ${b.condition}/35 · newness ${b.competitiveness}/25`;
+}
+
 /** A listing's disclosed roll in two numbers: the average contract rent, $/sf a year by feet let, and the weighted average lease term left, years (leasing.ts `walt`). Null where there is no roll of named leases to read (dirt, flats, an undisclosed building). */
 function rollRead(ip: { h: Holding | null; disclosed: boolean } | null, month: number): { rent: number; walt: number } | null {
   const t = ip?.disclosed ? ip.h?.tenants ?? [] : [];
@@ -723,6 +739,8 @@ export function MarketPage() {
                   rent: (built && rec ? rollRead(inPlace(rec, game, li.bbl, li.ask), game.month)?.rent : undefined) ?? -1,
                   walt: (built && rec ? rollRead(inPlace(rec, game, li.bbl, li.ask), game.month)?.walt : undefined) ?? -1,
                   dmd: rec ? demandNow(game, rec) : -1,
+                  // a lot has no building to blend in: no score, sorts last
+                  score: built && rec ? listingScore(game, rec, li).score : -1,
                 };
                 return { li, built, cap, psf, v };
               }).sort((a, b) => {
@@ -888,7 +906,9 @@ export function MarketPage() {
                         actually cannot get anywhere else on this row is what
                         the neighbourhood is doing. `demandNow` is the engine's
                         own reader, the same one the parcel card and the
-                        building database use, so the three cannot drift. */}
+                        building database use, so the three cannot drift.
+                        The SCORE follows it: the land's demand on its own is
+                        worth reading separately (owner, 2026-11-18). */}
                     {(() => {
                       const rr = rollRead(ip, game.month);
                       return (<>
@@ -899,6 +919,19 @@ export function MarketPage() {
                     <td className="num" title="Block demand score, 0-100">
                       {Math.round(demandNow(game, rec))}
                     </td>
+                    {(() => {
+                      // THE ONE NUMBER (owner, 2026-11-18): what a tenant
+                      // shops on — the address and the building blended
+                      // (value.ts overallScore) — with the building's letter
+                      // beside it and the parts on hover.
+                      if (!built) return <td className="num dim" title="A lot has no building to score · its location is the Demand column">—</td>;
+                      const sp = listingScore(game, rec, li);
+                      return (
+                        <td className="num" title={scoreTitle(sp)}>
+                          {sp.score}{sp.building && <span className="dim" style={{ marginLeft: 4 }}>{sp.building.grade}</span>}
+                        </td>
+                      );
+                    })()}
                   </tr>
                 );
               })}

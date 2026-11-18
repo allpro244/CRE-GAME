@@ -1839,8 +1839,6 @@ export function deskPricing(s: GameState, l: Lender): DeskPx {
   let fund: number, dFund: number;
   if (l.kind === "bank" && l.dep?.rate !== undefined && l.book > 0) {
     const d = l.dep;
-    const policy = e.nat?.policy ?? Math.max(0.05, short - 0.15);
-    const base = postedBase(policy);
     // THE MARGINAL DOLLAR, not the average one: a new loan is funded at the
     // rate this bank posts for deposits and, for the share it borrows, at
     // what borrowed money costs it today — at its usual mix, or at the mix it
@@ -1850,9 +1848,26 @@ export function deskPricing(s: GameState, l: Lender): DeskPx {
     const wsh = Math.max(k.wholesale, F > 0 ? Math.min(1, W / F) : k.wholesale);
     const ws = short + wholesaleSpread(e);
     const marg = (1 - wsh) * d.rate! + wsh * ws + panic;
-    const usual = (1 - k.wholesale) * base + k.wholesale * (short + WHOLESALE_SPREAD);
-    fund = marg - short;
-    dFund = marg - usual;
+    // THE LOAN IS CHARGED THE MARKET'S MONEY, NOT THE BRANCHES' (2026-11-18).
+    // Under funds-transfer pricing — the method this desk's own comments cite
+    // (LENDING_OPEX_PCT, pricing.ts) — a loan is charged what the money market
+    // would charge the bank for funds of its term: the benchmark plus the
+    // bank's own premium on borrowed money (FHLB advances, brokered CDs). The
+    // deposit franchise — deposits posted ~0.6 of the policy rate — is the
+    // deposit side's earnings, credited to the branches that gather them, not
+    // passed to borrowers (Drechsler, Savov & Schnabl 2017, "The Deposits
+    // Channel of Monetary Policy", QJE: banks earn the deposit spread and
+    // their loan rates track market rates) [S]. Charged the posted deposit
+    // rate, every bank priced loans at funding 2.2 points under the short
+    // index, and its CRE spread came to ~0 over the ten-year at 60% (real
+    // ~1.7-2.2, Fed FCA 1998 / community-bank term sheets, as cited at
+    // LENDING_OPEX_PCT). A bank paying ABOVE the market for deposits, or
+    // leaning on borrowed money in a panic, still prices that in: the charge
+    // is the dearer of the market's money and its own marginal mix.
+    const usual = short + WHOLESALE_SPREAD;
+    const ftp = Math.max(ws + panic, marg);
+    fund = ftp - short;
+    dFund = ftp - usual;
   } else {
     // THE MARGINAL DOLLAR again: an insurer credits new annuity money at
     // today's rates, a fund levers at today's repo and CLO spreads, a conduit
@@ -1862,7 +1877,8 @@ export function deskPricing(s: GameState, l: Lender): DeskPx {
     // its general account had not caught up (measured, seed 73303).
     const then = e.history[e.history.length - 13]?.indexRate ?? e.indexRate;
     const hot = Math.max(0, e.indexRate - then - 0.6) * k.wholesale;
-    const ref = l.kind === "life" ? -0.3 : l.kind === "fund" ? 1.1 : l.kind === "conduit" ? 0.3 : -2.2;
+    // (a bank with no deposit book yet is charged the market's money, as above: FHLB/brokered over the short)
+    const ref = l.kind === "life" ? -0.3 : l.kind === "fund" ? 1.1 : l.kind === "conduit" ? 0.3 : WHOLESALE_SPREAD;
     const shut = l.kind === "conduit" && (e.nat?.creditNat ?? e.creditIdx ?? 1) < 0.6;
     fund = ref + (l.kind === "conduit" && !shut ? 0 : hot) + panic;
     dFund = fund - ref;

@@ -379,15 +379,16 @@ export function repFloorMult(s: GameState): number {
  * negotiation panel draws it; it never draws the reservation.
  */
 /**
- * WITHIN TEN PER CENT OF THE ASK IS NEVER AN INSULT (owner, 2026-11-18: "you
- * should never insult anyone by offering 10% or less off their asking price,
- * I mean in real life that wouldn't be insulting"). Where offence starts below
- * that depends on who is selling and how they stand — a proud owner, a
- * distressed one, a lender, a firm whose floor a rival's bid has lifted over
- * its own ask (`insultShareOfAsk`, the reservation) — but an offer at ninety
- * per cent of the published number or better is a negotiation, whoever it is
- * put to. Brokers routinely advise opening 5-10% under ask on a listed
- * property; the published ask is the seller's own invitation to that range.
+ * WITHIN TEN PER CENT OF THE ASK IS NEVER AN INSULT. [S: the owner, on how
+ * sellers take offers in practice — "you should never insult anyone by
+ * offering 10% or less off their asking price, I mean in real life that
+ * wouldn't be insulting" (2026-11-18).] Where offence starts below that
+ * depends on who is selling and how they stand — a proud owner, a distressed
+ * one, a lender, a firm whose floor a rival's bid has lifted over its own ask
+ * (`insultShareOfAsk`, the reservation) — but an offer at ninety per cent of
+ * the published number or better is a negotiation, whoever it is put to: the
+ * published ask is the seller's own opening, and an offer that close to it is
+ * an answer, not a slight.
  */
 export const NEVER_INSULTING_SHARE = 0.90;
 

@@ -1596,7 +1596,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
     };
     const gcap = street ? Infinity : guarantorCap(guarantor, product);
     return hq.principal > gcap
-      ? { ...hq, principal: Math.round(gcap), guarantorConstrained: true, guarantorWhy: `${product.lender} wants a guarantor worth half the loan — your balance sheet carries ${usdM(guarantor!.nw)}, so they will sign ${usdM(gcap)}` }
+      ? { ...hq, principal: Math.round(gcap), guarantorConstrained: true, guarantorWhy: `${product.lender} wants a guarantor worth at least the loan — your balance sheet carries ${usdM(guarantor!.nw)}, so they will sign ${usdM(gcap)}` }
       : hq;
   }
   if (!street && product.minLoan && byLtv < loanMin(s, product)) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
@@ -1607,7 +1607,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
     const cap = street ? Infinity : guarantorCap(guarantor, product);
     if (!(q.principal > cap)) return q;
     return { ...q, principal: Math.round(cap), guarantorConstrained: true,
-      guarantorWhy: `${product.lender} wants a guarantor worth half the loan — your balance sheet carries ${usdM(guarantor!.nw)}, so they will sign ${usdM(cap)}` };
+      guarantorWhy: `${product.lender} wants a guarantor worth at least the loan — your balance sheet carries ${usdM(guarantor!.nw)}, so they will sign ${usdM(cap)}` };
   };
   if (!onIncome(product)) {
     return withGuarantor({ principal: Math.max(0, Math.round(byLtv)), ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy });

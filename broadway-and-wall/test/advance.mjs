@@ -207,7 +207,7 @@ for (const id of ["harbor", "savings", "pelican", "conduit", "cordage", "mezz", 
   const thin = { nw: 2_000_000 }, rich = { nw: 60_000_000 };
   const qThin = E.quote(mid, sv, 12_000_000, 900_000, "office", false, undefined, "standard", thin);
   const qRich = E.quote(mid, sv, 12_000_000, 900_000, "office", false, undefined, "standard", rich);
-  ok(qThin.guarantorConstrained === true && qThin.principal === 4_000_000 && /worth half the loan/.test(qThin.guarantorWhy ?? ""), `a $2M sponsor at the regional on a $12M building: capped at $${(qThin.principal / 1e6).toFixed(1)}M — "${qThin.guarantorWhy}"`);
+  ok(qThin.guarantorConstrained === true && qThin.principal === 2_000_000 && /worth at least the loan/.test(qThin.guarantorWhy ?? ""), `a $2M sponsor at the regional on a $12M building: capped at $${(qThin.principal / 1e6).toFixed(1)}M — "${qThin.guarantorWhy}"`);
   ok(!qRich.guarantorConstrained && qRich.principal > 6_000_000, `a $60M sponsor: not capped ($${(qRich.principal / 1e6).toFixed(1)}M)`);
   ok(near(qThin.ratePct - qRich.ratePct, 0.10, 0.011), `and the strong name is worth a tenth of a point on recourse paper (${qThin.ratePct}% vs ${qRich.ratePct}%)`);
   const nThin = E.quote(mid, cd, 12_000_000, 900_000, "office", false, undefined, "standard", thin), nRich = E.quote(mid, cd, 12_000_000, 900_000, "office", false, undefined, "standard", rich);

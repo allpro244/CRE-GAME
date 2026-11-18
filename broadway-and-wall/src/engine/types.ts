@@ -2449,6 +2449,8 @@ export interface Econ {
   landReadOut?: { n: number; win: number; ageM: number; why?: number; raw?: number };
   /** The land survey's last twelve months: [month, lots tried, lots that drew a bid] (propmarket.ts tickLandSurvey). */
   landSurveyTally?: [number, number, number][];
+  /** this year's land-survey panel size (propmarket.ts landSurveyPanel), set at the year's first slice */
+  landSurveyN?: number;
   /**
    * THE APPRAISER'S ADJUSTMENT GRID, learned from the prints (propmarket.ts):
    * log-cap per unit of location (0-1), condition index (0-1) and build spec

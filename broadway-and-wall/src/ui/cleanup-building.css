@@ -10,7 +10,12 @@
 .app .glance { margin: 4px 0 12px; }
 .app .glance-figs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
 .app .glance-k { font-size: 10.5px; letter-spacing: 0.8px; text-transform: uppercase; color: var(--text-3); }
-.app .glance-v { font-size: 18px; color: var(--text); margin-top: 1px; white-space: nowrap; }
+/* A figure wraps at its spaces rather than running under its neighbour: an
+   appraisal is a range ("$14.38M – $16.22M"), wider than half the card, and
+   with nowrap it overprinted the NOI beside it. Numbers carry no spaces, so a
+   figure only ever breaks between its two ends. */
+.app .glance-fig { min-width: 0; }
+.app .glance-v { font-size: 18px; color: var(--text); margin-top: 1px; white-space: normal; overflow-wrap: normal; }
 .app .glance-v.neg { color: var(--neg); }
 .app .glance-facts { margin-top: 10px; font-size: 12.5px; color: var(--text-2); }
 .app .glance-alert { display: block; width: 100%; text-align: left; margin-top: 10px; padding: 7px 10px; font: inherit; font-size: 12.5px;

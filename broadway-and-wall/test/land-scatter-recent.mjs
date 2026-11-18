@@ -41,9 +41,6 @@ if (typeof E.landPrintScatter === "function") {
   console.log(`     a print's scatter (log sd per unit weight): ${sd0.toFixed(2)} on the opening tape, ${sd1.toFixed(2)} after 200 sales at x30 and x1/30 (most of the tape) (log 30 = ${Math.log(30).toFixed(2)})`);
   ok(sd1 > 2 * sd0, "the scatter follows the evidence on the tape, not the opening years");
   ok(sd1 > 0.5 * Math.log(30), "a tape of sales straying x30 is read as straying about that far");
-  // and the broker reads more lots to hold the year's precision
-  const n0 = 24, n1 = E.landSurveyPanel(g);
-  ok(n1 > n0, `the survey panel grows with the scatter: ${n1} lots, from ${n0}`);
   const before = g.econ.landIdx;
   for (let i = 0; i < 6; i++) sell(lots[(i + 3) % lots.length], 30);
   E.tickLandRead(g);

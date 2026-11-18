@@ -1888,27 +1888,6 @@ export function tickLandRead(s: GameState): void {
  * placed on the measured scatter, not on any outcome.
  */
 const LAND_SURVEY_LOTS = 24;
-/**
- * ...AND THE PANEL GROWS WITH THE SCATTER IT MEASURES (2026-11-18). The 24
- * lots were sized on one lot straying 0.75 in log: the precision they buy, a
- * year read to 0.75 / sqrt(24) = 0.153, is the target (SURVEY_SE, derived from
- * the two numbers above, nothing new). Late in a town the indications stray
- * 1.2-2.2 (seed 31337, years 18-37: a few lots ripe for towers, most not), and
- * 24 lots then read the year to 0.25-0.45 — wider than land moves in a year,
- * so the level swung with which lots the panel drew. The broker samples as
- * many lots as the scatter takes to read the year to the same precision:
- * n = (sigma / SURVEY_SE)^2, sigma the scatter of one indication on today's
- * tape (landS2, at the survey's half weight), never fewer than the founding
- * 24, never more than the town has. [D]
- */
-const SURVEY_SE = 0.75 / Math.sqrt(LAND_SURVEY_LOTS);
-/** How many lots the land survey reads this year (see SURVEY_SE). */
-export function landSurveyPanel(s: GameState): number {
-  if (!s.econ.landIx) return LAND_SURVEY_LOTS;
-  const perPrint = landPrintScatter(s) / 0.5;
-  if (!(perPrint > 0) || !Number.isFinite(perPrint)) return LAND_SURVEY_LOTS;
-  return Math.max(LAND_SURVEY_LOTS, Math.ceil(perPrint / (SURVEY_SE * SURVEY_SE)));
-}
 export function tickLandSurvey(s: GameState, parcels: ParcelTable): void {
   // A PANEL READ ROUND THE YEAR, NOT IN ONE DAY (2026-11-17). The whole panel
   // used to be surveyed in one month, and the appraisers took a year's
@@ -1983,8 +1962,7 @@ function landSurveyPrints(s: GameState, parcels: ParcelTable, slice?: number): {
   }
   if (!recs.length) return null;
   recs.sort((a, b) => a.demandScore - b.demandScore || (a.bbl < b.bbl ? -1 : 1));
-  // the year's panel size, fixed at the year's first slice so each lot is read once a year
-  const want = Math.min(recs.length, slice === undefined ? LAND_SURVEY_LOTS : (s.econ.landSurveyN && slice !== 0 ? s.econ.landSurveyN : (s.econ.landSurveyN = landSurveyPanel(s))));
+  const want = LAND_SURVEY_LOTS;
   const step = Math.max(1, Math.floor(recs.length / want));
   // A LOT NOBODY BIDS ON IS A PRICE BELOW EVERY BID, NOT A LOT LEFT OUT
   // (2026-11-07). The survey skipped it, so when the street's land banker was

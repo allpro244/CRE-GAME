@@ -62,7 +62,7 @@ import { whyFirmDark, whyIndustry } from "./economy";
 import { why, whyTenantBooks } from "./why";
 import { tenantFin } from "./tenantBooks";
 import {
-  type LandlordAsk, type Option, SHORTLIST, TASTE, KEEN_POW, goingRent, askOf, postedEff, compsFace, compsPackage, reviewAsk, noteLetting, reservation, locCtx, posOf, hourCost,
+  type LandlordAsk, type Option, SHORTLIST, KEEN_POW, tasteScale, askOf, postedEff, compsFace, compsPackage, reviewAsk, noteLetting, reservation, locCtx, posOf, hourCost,
   placeCost, worthOf, footFactor, moveCostPsfYr, bargain, bidCeiling, contestPrice, noteContest, freeMonthsFor, gumbel, recordLease, movedLine, fmtPct, creditOfSize, readOut, tenantHeads,
 } from "./tenantMarket";
 
@@ -512,6 +512,24 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
   // addresses' market rents (the comps), feet-weighted in logs over the books
   // open this month. A firm's taste is scaled by the going post, not the comps
   // (tenantMarket.ts goingRent); shops and sheds keep the market rent.
+  // WHAT THE TOWN'S FIRMS COULD PAY FOR THE SPACE THEY HOLD, over what it
+  // rents for: the feet-weighted geometric mean of each sitting tenant's rent
+  // capacity (tenantBooks.ts rentCapacity — its trade's sales per foot over
+  // the market rent). The scale of a firm's reasons to move is what the space
+  // is worth to it (below), and a landlord reading how its tenants answer its
+  // post reads them on the same scale.
+  const capMemo: Partial<Record<Comm, number>> = {};
+  const capacity = (k: Comm): number => {
+    const hit = capMemo[k];
+    if (hit !== undefined) return hit;
+    let w = 0, v = 0;
+    for (const [, roll] of rollList) for (const t of roll.t) {
+      if (useOf(t) !== k || !(t.sf > 0)) continue;
+      const c = rentCapacity(e, t, k);
+      if (c > 0 && Number.isFinite(c)) { w += t.sf; v += t.sf * Math.log(c); }
+    }
+    return (capMemo[k] = w > 0 ? Math.exp(v / w) : 1);
+  };
   const goingMemo: Partial<Record<Comm, number>> = {};
   const going = (k: Comm): number => {
     const hit = goingMemo[k];
@@ -545,7 +563,8 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
     const post = postedEff(L, e, k, mkt, stay);
     const res = reservation(L, k, post, termM, stay, b.stressed, monthsToLet(k));
     const pc = placeCost(firm.fid !== undefined ? ctx.pts.get(firm.fid) : undefined, b.pos, hourCost(firm));
-    const worth = worthOf(firm, k, mkt, b.sc[k] ?? 50, take, pc.cost, k === "retail" ? footRel(b.bbl) : undefined, rentCapacity(s.econ, firm, k));
+    const cap = rentCapacity(s.econ, firm, k);
+    const worth = worthOf(firm, k, mkt, b.sc[k] ?? 50, take, pc.cost, k === "retail" ? footRel(b.bbl) : undefined, cap);
     const move = !stay && moving ? moveCostPsfYr(e, k, termM, firm) : 0;
     // THE MATCH PERSISTS (2026-11-11). A sitting tenant weighs its own suite
     // with the taste it signed on (Tenant.tasteU): whatever made it choose
@@ -556,7 +575,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
     // "discovered" at the roll that their own floor was not worth keeping.
     const u = stay && firm.tasteU !== undefined ? firm.tasteU : gumbel(rng(s, "leasing"));
     if (stay && firm.tasteU === undefined) firm.tasteU = +u.toFixed(4);   // a tenant from before the match was kept: its first read is its taste from here
-    const joint = worth - post - move + TASTE[k] * goingRent(k, mkt, going(k)) * u;
+    const joint = worth - post - move + tasteScale(k, mkt, going(k), cap) * u;
     // a sitting tenant is offered its landlord's ask, like anyone (tenantMarket.ts postedEff)
     const ask = L.a;
     const ff = footFactor(k, k === "retail" ? footRel(b.bbl) : undefined);
@@ -663,9 +682,10 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
         const p = c.p;
         const take = Math.min(want, p.avail);
         const pc = placeCost(firm.fid !== undefined ? ctx.pts.get(firm.fid) : undefined, p.pos, hourCost(firm));
-        const worth = worthOf(firm, k, p.mkt, p.sc, take, pc.cost, k === "retail" ? footRel(p.bbl) : undefined, rentCapacity(s.econ, firm, k));
+        const pcap = rentCapacity(s.econ, firm, k);
+        const worth = worthOf(firm, k, p.mkt, p.sc, take, pc.cost, k === "retail" ? footRel(p.bbl) : undefined, pcap);
         const move = moving ? moveCostPsfYr(e, k, termM, firm) : 0;
-        const joint = worth - p.post - move + TASTE[k] * goingRent(k, p.mkt, going(k)) * gumbel(rng(s, "leasing"));
+        const joint = worth - p.post - move + tasteScale(k, p.mkt, going(k), pcap) * gumbel(rng(s, "leasing"));
         if (joint < 0) continue;   // no lease at a loss, the same participation test (below)
         out.push({ bbl: p.bbl, take, mkt: p.mkt, ff: footFactor(k, k === "retail" ? footRel(p.bbl) : undefined), ask: p.post, post: p.post, res: p.post, worth, move, joint, dLink: pc.dLink, dWork: pc.dWork, player: true });
         continue;
@@ -700,7 +720,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
     out.sort((a, b) => b.joint - a.joint);
     return out;
   };
-  return { R, m, owners, blds, bld, letOf, notReady, availOf, catchOf, foot, ctx, recOf, footRel, vacShare, bookOf, monthsToLet, going, gTradeOf, termOf, value, shop, availIn, noteRoll, rollList };
+  return { R, m, owners, blds, bld, letOf, notReady, availOf, catchOf, foot, ctx, recOf, footRel, vacShare, bookOf, monthsToLet, going, capacity, gTradeOf, termOf, value, shop, availIn, noteRoll, rollList };
 }
 /** The street as the player's leasing desk's prospects see it this month (one view a month). */
 const DESK_VIEW = new WeakMap<GameState, { m: number; v: ReturnType<typeof marketView> }>();
@@ -737,8 +757,9 @@ export function offerForPlayer(s: GameState, parcels: ParcelTable, firm: Tenant,
   const c = opts[0];
   if (!c) return { bid: 1 };
   const pc = placeCost(firm.fid !== undefined ? V.ctx.pts.get(firm.fid) : undefined, posOf(rec), hourCost(firm));
-  const worth = worthOf(firm, k, mktHere, score, sf, pc.cost, k === "retail" ? V.footRel(rec.bbl) : undefined, rentCapacity(s.econ, firm, k));
-  const taste = TASTE[k] * goingRent(k, mktHere, V.going(k)) * gumbel(rng(s, "leasing"));
+  const cap = rentCapacity(s.econ, firm, k);
+  const worth = worthOf(firm, k, mktHere, score, sf, pc.cost, k === "retail" ? V.footRel(rec.bbl) : undefined, cap);
+  const taste = tasteScale(k, mktHere, V.going(k), cap) * gumbel(rng(s, "leasing"));
   // a sitting tenant renewing does not move; every street option costs it the move
   const rMax = worth - (sitting ? 0 : moveCostPsfYr(s.econ, k, termM, firm)) + taste - c.joint - (c.post - c.res);
   return { bid: Math.max(0.4, Math.min(1, rMax / postEff)), alt: c.bbl };
@@ -773,7 +794,7 @@ export function stayOdds(s: GameState, parcels: ParcelTable | null | undefined, 
   const was = hit.memo.get(key);
   if (was) return was;
   const V = hit.v, e = s.econ;
-  const sigma = TASTE[k] * goingRent(k, mktHere, V.going(k));
+  const sigma = tasteScale(k, mktHere, V.going(k), rentCapacity(e, firm, k));
   const pts = firm.fid !== undefined ? V.ctx.pts.get(firm.fid) : undefined;
   const hour = hourCost(firm);
   const here = placeCost(pts, posOf(rec), hour);
@@ -1604,7 +1625,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
         if (!b.cap[k] || !(b.mkt[k]! > 0)) continue;
         const since = roll.vac?.[k];
         const L = bookOf(b, roll, k);
-        reviewAsk(L, e, k, b.mkt[k]!, { m, monthsToLet: V.monthsToLet(k), darkM: since === undefined ? undefined : m - since, stressed: b.stressed, infl12, holdFace: opening, going: V.going(k) });
+        reviewAsk(L, e, k, b.mkt[k]!, { m, monthsToLet: V.monthsToLet(k), darkM: since === undefined ? undefined : m - since, stressed: b.stressed, infl12, holdFace: opening, going: V.going(k), capacity: V.capacity(k) });
         const av = availOf(b, roll, k);
         if (av > 0 && Number.isFinite(L.c)) { pkgW[k] += av; pkgX[k] += av * L.c; }
       }
@@ -1637,7 +1658,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
         const since = h.askVac[k];
         // under pressure: the firm is out of cash, or this building's loan is behind
         const stressed = s.cash < 0 || (h.loan?.arrearsMs ?? 0) > 0;
-        reviewAsk(L, e, k, mkt, { m, monthsToLet: V.monthsToLet(k), darkM: since === undefined ? undefined : m - since, stressed, infl12, holdFace: opening, going: V.going(k) });
+        reviewAsk(L, e, k, mkt, { m, monthsToLet: V.monthsToLet(k), darkM: since === undefined ? undefined : m - since, stressed, infl12, holdFace: opening, going: V.going(k), capacity: V.capacity(k) });
         if (vacNow && Number.isFinite(L.c)) { pkgW[k] += a; pkgX[k] += a * L.c; }
       }
     }

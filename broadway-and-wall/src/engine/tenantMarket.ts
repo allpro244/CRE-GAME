@@ -301,6 +301,24 @@ export function goingRent(k: Comm, mkt: number, going = 1): number {
   return k === "office" ? mkt * going : mkt;
 }
 /**
+ * THE SCALE OF A FIRM'S REASONS TO MOVE, $/sf/yr (2026-11-18): TASTE times
+ * the going rent times `cap`, what the space is worth to the firm over what it
+ * rents for (tenantBooks.ts rentCapacity). The reasons a firm moves that are
+ * not in its books — a merger, a partner's commute, a landlord it has fallen
+ * out with — are worth something to its business, and that is what the space
+ * is worth to it, not what the market happens to charge. Scaled by the rent
+ * alone, a town whose office rents fell below what its firms could pay made
+ * those reasons smaller against a move whose cost rides the construction
+ * index: office move-outs fell from 6-7% of occupied space a year to 2-3%
+ * (seed 11, years 0 to 25-40, the move cost doubling against the rent), the
+ * market's months to let stayed at 22-45 at 4-6% vacancy, every landlord read
+ * that as a glut, and real office rent fell 60% and never came back. At the
+ * opening `cap` is 1 and this is the calibrated scale it always was.
+ */
+export function tasteScale(k: Comm, mkt: number, going = 1, cap = 1): number {
+  return TASTE[k] * goingRent(k, mkt, going) * Math.max(0.25, Math.min(4, cap > 0 && Number.isFinite(cap) ? cap : 1));
+}
+/**
  * HOW FAST A LANDLORD MOVES TOWARD ITS BEST POST, the share of the gap
  * closed in a year. Rents on new office leases close 0.378 of the gap
  * between equilibrium and actual rent a year (Englund, Gunnelin, Hendershott
@@ -389,7 +407,7 @@ export function postedEff(L: LandlordAsk, _e: Econ, _k: Comm, _mkt: number, _sit
  * town's posts over market rents (`goingRent`), which the tenants' taste and
  * so the trade's ε are scaled by.
  */
-export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: { m: number; monthsToLet: number; darkM?: number; stressed: boolean; infl12: number; holdFace?: boolean; going?: number }): void {
+export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: { m: number; monthsToLet: number; darkM?: number; stressed: boolean; infl12: number; holdFace?: boolean; going?: number; capacity?: number }): void {
   if (k !== "office") return reviewAskByPatience(L, e, k, mkt, opts);
   if (L.m >= opts.m) return;
   const months = Math.max(1, Math.min(12, opts.m - L.m));
@@ -399,7 +417,10 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
   const toComps = comps > 0 ? (Math.log(comps) - Math.log(L.a)) * pull : 0;
   let d = (opts.infl12 / 12) * months;
   // THE MONTH-DARK TRADE: the share of the year's step a month's review makes.
-  let step = mkt > 0 ? darkCostStep(k, L.a * (1 - L.c), goingRent(k, mkt, opts.going), opts.monthsToLet) * pull * RENT_ADJ_YR : 0;
+  // ...its tenants read on the scale they shop on (`tasteScale`): the going
+  // rent times what the town's firms could pay for their space over it
+  const ref = tasteScale(k, mkt, opts.going, opts.capacity ?? 1) / TASTE[k];
+  let step = mkt > 0 ? darkCostStep(k, L.a * (1 - L.c), ref, opts.monthsToLet) * pull * RENT_ADJ_YR : 0;
   if (step < 0 && opts.stressed) step *= STRESS_MOVE;
   if (opts.darkM !== undefined) {
     // SPACE TO LET. Its own evidence: space that has sat longer than the

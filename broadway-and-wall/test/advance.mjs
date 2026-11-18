@@ -196,7 +196,12 @@ for (const id of ["harbor", "savings", "pelican", "conduit", "cordage", "mezz", 
   // pickiest desk quotes a few per cent of a small town's tape, not none.
   ok(pn > 25 && pq / pn >= 0.04, `the life company quotes ${(pq / pn * 100).toFixed(1)}% of ${pn} listings at months 20 and 36, ten towns — standard buildings at a quarter point more (was 0%)`);
   const qGood = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "good"), qStd = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "standard"), qWorn = E.quote(g, pl, 6_000_000, 450_000, "office", false, undefined, "worn");
-  ok(near(qStd.ratePct - qGood.ratePct, 0.25, 0.011) && E.conditionOk(pl, "standard") && !E.conditionOk(pl, "worn"), `Pelican: standard +${(qStd.ratePct - qGood.ratePct).toFixed(2)}% over good; worn refused${qWorn.principal > 0 ? " (quote path still sizes; originate refuses)" : ""}`);
+  // ...a quarter point at the SAME advance (2026-11-18): each loan is priced on
+  // the advance it writes, and the dearer coupon lets coverage carry a little
+  // less, so the standard building's loan is smaller and its loss a little
+  // lower. The size difference is taken out before the quarter is read.
+  const sizeGap = E.productSpread(g, pl, { ltv: qStd.principal / 6_000_000, klass: "office" }) - E.productSpread(g, pl, { ltv: qGood.principal / 6_000_000, klass: "office" });
+  ok(near(qStd.ratePct - qGood.ratePct - sizeGap, 0.25, 0.016) && E.conditionOk(pl, "standard") && !E.conditionOk(pl, "worn"), `Pelican: standard +${(qStd.ratePct - qGood.ratePct).toFixed(2)}% over good; worn refused${qWorn.principal > 0 ? " (quote path still sizes; originate refuses)" : ""}`);
 }
 
 // --- 7. who is signing for this: the guarantor test, and the price of a strong name

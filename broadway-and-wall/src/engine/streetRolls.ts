@@ -435,8 +435,6 @@ let openingRef: Partial<Record<Comm, number>> | undefined;
  * the player's leasing desk, where a firm touring the player's floors weighs
  * them against the same street.
  */
-/** The share of a sitting tenant's taste for its suite that survives to the roll (see `value`). [K: calibrated to the renewal studies, below] */
-const TASTE_KEEP = Number((typeof process !== "undefined" ? process.env?.BW_TASTE_KEEP : undefined) ?? 1);   // TEMPORARY calibration switch: replaced by the fitted constant before merge
 function marketView(s: GameState, parcels: ParcelTable, memo = true) {
   const e = s.econ;
   const R = e.streetRolls ?? {};
@@ -575,17 +573,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
     // renewal (job-matching's persistent match quality, Jovanovic 1979). A
     // fresh draw regressed every incumbent's liking to the mean, so firms
     // "discovered" at the roll that their own floor was not worth keeping.
-    // ...BUT IT FADES OVER A LEASE (2026-11-18). A firm that signed for a
-    // floor's layout, light and walk did so for the firm it was then; over a
-    // seven-to-ten-year term it grows or shrinks, merges, changes how it
-    // works, and the match is partly a new question at the roll. Kept whole,
-    // an incumbent weighed its suite at the best of its broker's shortlist
-    // drawn years ago against fresh draws for everything else, and office
-    // renewed 90% of expiring space (test/tenantmarket.mjs) against the
-    // lease-expiry studies' ~55-65% — which is what starved the market of
-    // lettings. The kept share is a shape parameter calibrated to that fact.
-    const fresh = stay && firm.tasteU !== undefined ? gumbel(rng(s, "leasing")) : 0;
-    const u = stay && firm.tasteU !== undefined ? TASTE_KEEP * firm.tasteU + (1 - TASTE_KEEP) * fresh : gumbel(rng(s, "leasing"));
+    const u = stay && firm.tasteU !== undefined ? firm.tasteU : gumbel(rng(s, "leasing"));
     if (stay && firm.tasteU === undefined) firm.tasteU = +u.toFixed(4);   // a tenant from before the match was kept: its first read is its taste from here
     const joint = worth - post - move + tasteScale(k, mkt, going(k), cap) * u;
     // a sitting tenant is offered its landlord's ask, like anyone (tenantMarket.ts postedEff)

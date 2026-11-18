@@ -96,10 +96,8 @@ function record(E, g, city, shocks, sample, capRead) {
     }
     // THE LAND UNDER A FIXED PANEL OF LOTS, read quarterly by the land read
     // itself (value.ts landValue). `land` (econ.landMkt) is the same read
-    // averaged over its own 400-lot panel but refreshed only each January
-    // (value.ts refreshLandQueue), so a shock in the snapshot's January shows
-    // nothing in `land` for eleven months, and a third of the impact window
-    // reads a stale index.
+    // averaged over its own 400-lot panel (value.ts refreshLandQueue; read
+    // each January until 2026-11-17, monthly since).
     if (capRead?.lots) {
       let v = 0;
       for (const b of capRead.lots) { const rec = E.resolveRec(city.parcels, g, b); if (rec && rec.lotArea > 0) v += E.landValue(rec, e) || 0; }

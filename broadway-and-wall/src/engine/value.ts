@@ -10,7 +10,7 @@ import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, openingVac, CAP_BASE, developerOptimism, LEASE_TERM_M, forwardVacancy, RENT_BASE, underwrittenGrowthPct } from "./market";
 import { gpInterestInFund } from "./fund";
-import { developmentProForma, LAND_CARRY_RATE, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE, leaseUpMonthsOf, stabilisedVacancy } from "./proforma";
+import { developmentProForma, LAND_CARRY_RATE, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE, leaseUpMonthsOf, stabilisedVacancy, wreckCost } from "./proforma";
 import { productOf, PRODUCT_TYPES, PRODUCT_KEYS, layoutProduct, type ProductKey } from "./products";
 import { homeLotBidPsf } from "./homeprice";
 import { GROCER_SALES } from "./grocerHook";
@@ -1041,15 +1041,10 @@ const PRODUCT_LOT_MIN_SF = 0.5 * 43_560 * 0.8;
  * back on its own.
  */
 export function queueFactor(econ: Econ, use: BuiltClass, psf: number): number {
-  // THE QUEUE IS MEASURED ONCE A YEAR AND READ EVERY MONTH, so the measurement
-  // glides in over the year instead of landing as a step (2026-10-14). A step
-  // moved every lot's price at once each January — measured on a Great City
-  // career, sites under construction marked -34%, +37%, -30% in successive
-  // re-measurements with nothing about the lots changed.
-  const w = econ.landQueueW ?? 1;
-  const now = queueFactorOf(econ.landQueue?.[use], psf);
-  if (w >= 1 || !econ.landQueuePrev?.[use]) return now;
-  return w * now + (1 - w) * queueFactorOf(econ.landQueuePrev[use], psf);
+  // The queue is re-measured every month (refreshLandQueue), so there is no
+  // older measurement to glide in from. A save from before that carries
+  // landQueuePrev / landQueueW; both are cleared at its next month.
+  return queueFactorOf(econ.landQueue?.[use], psf);
 }
 
 function queueFactorOf(q: NonNullable<Econ["landQueue"]>[BuiltClass] | undefined, psf: number): number {
@@ -1095,7 +1090,7 @@ function queueFactorOf(q: NonNullable<Econ["landQueue"]>[BuiltClass] | undefined
 const LAND_QUEUE_SAMPLE = 400;
 
 /**
- * MEASURE THE QUEUE, once a year. The residuals are struck WITHOUT the queue
+ * MEASURE THE QUEUE, every month. The residuals are struck WITHOUT the queue
  * (it is what the market would build if it could), on a deterministic sample
  * of lots scaled to the town. A standing building joins only where its dirt
  * beats the building on it — that is the stock the wrecking ball is pointed
@@ -1104,19 +1099,27 @@ const LAND_QUEUE_SAMPLE = 400;
 export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRecord>, bbls: string[]): void {
   const e = s.econ;
   // OWNERS LEARN THE LAND MARKET SLOWLY — see `ownerAskPsf`. Monthly, toward
-  // the level the yearly sample last measured.
+  // the level the panel last measured.
   if (e.landMkt !== undefined) {
     e.landBelief = (e.landBelief ?? e.landMkt) + BELIEF_MONTHLY * (e.landMkt - (e.landBelief ?? e.landMkt));
   }
   const h = e.history ?? [];
   const L = Math.min(60, h.length - 1);
   if (L < 12) return;
-  // THE TAKE-UP IS READ EVERY MONTH, THE RANKING ONCE A YEAR (2026-10-12).
-  // Absorption and the yield are off the tape, which is published monthly and
-  // costs nothing to read; only the site ranking needs the expensive survey.
-  // Read yearly, a bust's collapse in take-up reached every site's wait on one
-  // January morning: a prime lot's dirt fell 68% in a month (developer run,
-  // month 875) while the absorption behind it had been sliding all year.
+  // THE QUEUE IS MEASURED EVERY MONTH, RANKING AND ALL (2026-11-17). The
+  // take-up was read monthly but the ranking once a year, and a lot's place in
+  // line was found by setting ITS residual this month against the dollar
+  // residuals the panel's sites had LAST JANUARY. Residuals are a thin slice of
+  // a building's value (value / (1 + margin) - cost), so a 10% move in rents or
+  // cap rates moves every residual in town by half: between measurements every
+  // lot slid years up or down a queue that had not changed order, and slid back
+  // when January re-ranked it. Measured on seed 31337, years 15-35: builders'
+  // value/cost held at 1.34-1.67 while the median vacant lot's best builder bid
+  // per unit of its texture went 9.7, 1.6, 6.7, 7.2, 2.1, 8.3, 15.8 in
+  // successive Julys. A site's place in line is its rank among the others, and
+  // a market move that lifts them all together leaves it where it was; the
+  // panel is re-struck every month so the lot is always ranked against the
+  // same month's residuals (~0.2 s a month on a City's 400-lot panel).
   const absYrOf = (use: BuiltClass): number => {
     const now = h[h.length - 1], then = h[h.length - 1 - L];
     let netAbs = 0, comp = 0;
@@ -1125,31 +1128,8 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
     return (Math.max(0, netAbs) + Math.max(0, lost)) * 12 / L;
   };
   const rOf = (use: BuiltClass): number => (e.capExp?.[use] ?? e.capRate[use]) / 100;
-  if (e.landQueue && s.month % 12 !== 0) {
-    const q: NonNullable<Econ["landQueue"]> = {};
-    for (const use of BUILT_CLASSES) {
-      const old = e.landQueue[use];
-      if (old) q[use] = { ...old, absYr: Math.round(absYrOf(use)), r: rOf(use) };
-    }
-    e.landQueue = q;
-    // ...and the previous measurement keeps its own clock, so the blend in
-    // queueFactor compares like with like.
-    if (e.landQueuePrev) {
-      const p: NonNullable<Econ["landQueue"]> = {};
-      for (const use of BUILT_CLASSES) { const o = e.landQueuePrev[use]; if (o) p[use] = { ...o, absYr: Math.round(absYrOf(use)), r: rOf(use) }; }
-      e.landQueuePrev = p;
-    }
-    e.landQueueW = Math.min(1, (s.month % 12) / 12);
-    return;
-  }
-  if (e.landQueue) { e.landQueuePrev = e.landQueue; e.landQueueW = 0; }
-  // ...and without LAST year's queue either. queueFactor blends the new
-  // measurement in from the old one (landQueueW, just set to 0), so an econ
-  // with only `landQueue` cleared read every residual through last year's
-  // wait in full: the sites were ranked, and the thresholds stored, on
-  // queue-discounted residuals, while every lot is later looked up on its
-  // undiscounted one — so each lot found fewer sites ahead of it than there
-  // are, and the wait read short.
+  // the yearly measurement's glide (landQueuePrev / landQueueW) has nothing to glide between now
+  e.landQueuePrev = undefined; e.landQueueW = undefined;
   const bare = { ...e, landQueue: undefined, landQueuePrev: undefined } as Econ;
   const n = bbls.length;
   const take = Math.min(n, LAND_QUEUE_SAMPLE);
@@ -1846,23 +1826,61 @@ export function landValue(rec: ParcelRecord, econ: Econ): number {
 }
 
 /**
- * WHAT A STANDING BUILDING CANNOT FALL BELOW.
+ * BUYING A BUILDING EMPTY.
  *
- * Vacant dirt is the residual. A completed building is at least that dirt —
- * nobody demolishes a new tower to sell a lot. The 0.92 haircut is a
- * demolition allowance for old empty fabric, and it was also how a
- * just-delivered office marked below the land it sat on and called the
- * revolver. Lease-up uses the full residual; older stock still pays the
- * demo haircut.
+ * There is no legal way to knock down an occupied building, and waiting out a
+ * rent roll takes a decade. So you buy the leases: every sitting tenant is
+ * offered the whole remaining value of their contract, plus a quarter again on
+ * top for the inconvenience of moving a business they did not want to move.
+ *
+ * The premium is what makes this a decision rather than a button. A building
+ * full of leases with eight years to run costs a fortune to empty, which is
+ * precisely why the site under a well-let building is worth less than the site
+ * under a half-empty one — and why the buildings that get redeveloped in real
+ * cities are the ones whose leases were about to roll anyway.
  */
-export function landAppraisalFloor(rec: ParcelRecord, econ: Econ, inLeaseUp: boolean | number): number {
+export const BUYOUT_PREMIUM = 1.25;
+
+/**
+ * WHAT IT COSTS TO HAND OVER A STANDING BUILDING AS A CLEAR SITE: the leases
+ * bought out (the remaining rent on each and the premium, leasing.ts
+ * buyOutTenants) and the flats emptied (a year of their rent at the same
+ * premium), at today's roll. The demolition is landAppraisalFloor's.
+ */
+export function vacantPossessionCost(rec: ParcelRecord, econ: Econ, h: Holding, month: number): number {
+  let c = 0;
+  for (const t of h.tenants ?? []) {
+    if (t.defaulted) continue;
+    c += (t.rentPsf * t.sf / 12) * Math.max(0, t.endM - month) * BUYOUT_PREMIUM;
+  }
+  const resSf = useRentableSf(rec, "multifamily") * (h.occ ?? 0);
+  if (resSf > 0) c += resSf * useRentPsfYr(rec, econ, h.condition, "multifamily", h.condIdx) * BUYOUT_PREMIUM;
+  return c;
+}
+
+/**
+ * WHAT A STANDING BUILDING CANNOT FALL BELOW: the site it stands on, as a
+ * buyer would get it — the land, less taking the building down (proforma.ts
+ * wreckCost, the cost the Build desk and the redevelopment test charge) and
+ * less clearing it (`clearing`, vacantPossessionCost: the leases bought out).
+ *
+ * This was the land x 0.92, a flat "demolition allowance": a different answer
+ * from the one development gives the same question (dev.ts demolitionCost,
+ * and the redevelopment test income < land - demolition), and it ignored the
+ * leases altogether, so a fully let building was floored at the price of the
+ * empty site under it.
+ *
+ * A building in its first lease-up is not a demolition candidate: nobody
+ * knocks down a tower that opened this month, so its floor is the whole site
+ * (the weight is leaseUpWeight: 1 through the market's lease-up span, fading
+ * to 0 at twice it, so the costs of clearing arrive as the fabric ages rather
+ * than as a step the day a window closes).
+ */
+export function landAppraisalFloor(rec: ParcelRecord, econ: Econ, inLeaseUp: boolean | number, clearing = 0): number {
   const land = landValue(rec, econ);
-  // A number is how new the fabric still is (leaseUpWeight: 1 through the
-  // market's lease-up span, fading to 0 at twice it), so the demolition
-  // allowance arrives as the building ages rather than as a one-month step
-  // the day a calendar window closes.
   const w = typeof inLeaseUp === "number" ? clamp(inLeaseUp, 0, 1) : inLeaseUp ? 1 : 0;
-  return land * (0.92 + 0.08 * w);
+  const toClear = rec.class !== "land" && rec.bldgArea > 0 ? wreckCost(rec.bldgArea, econ.costIdx) + clearing : 0;
+  return Math.max(0, land - (1 - w) * toClear);
 }
 
 /**
@@ -5105,14 +5123,13 @@ function holdingValueOn(rec: ParcelRecord, econ: Econ, h: Holding, month?: numbe
   // Until it stabilises the as-is-on-completion mark governs, and it retires
   // on its own as the space lets — see leaseUpMark. It never marks BELOW the
   // ordinary blend, so a job that fills fast keeps the upside the roll has
-  // earned it. And it never marks below the dirt: the 0.92 floor is a
-  // demolition allowance for old empty fabric, not a haircut on a tower that
-  // opened this month.
+  // earned it. And it never marks below the clear site: landAppraisalFloor.
   const asIs = month === undefined ? null : leaseUpMark(rec, econ, h, month, capNoRoll, cap, contractNoi, stabNoi);
   // The dirt floor follows the age of the fabric, not the roll: a new tower
   // that let fast is no more a demolition candidate than one still filling.
   const floor = landAppraisalFloor(rec, econ,
-    h.deliveredM !== undefined && month !== undefined ? leaseUpWeight(rec, month - h.deliveredM) : 0);
+    h.deliveredM !== undefined && month !== undefined ? leaseUpWeight(rec, month - h.deliveredM) : 0,
+    month === undefined ? 0 : vacantPossessionCost(rec, econ, h, month));
   // VACANCY IS A LEASE-UP TOO (2026-10-14). A stabilised office that lost one
   // of its three tenants marked down 41% the month the suite emptied and back
   // up 51% when it let again two months later — the in-place leg is the rent

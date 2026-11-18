@@ -46,7 +46,7 @@ function vacancyTight(s: GameState, use?: BuiltClass): number {
 const TIGHT_AT_NO_PACKAGE = 0.35, TIGHT_AT_FULL_PACKAGE = -0.3;
 import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locOpexMult, taxRate, recoveryOf,
   condGrade, initialCondIdx, condCeiling, condWear, capPlanBillMo, CONDITION_RENT_MULT, ownedHoldingValue,
-  physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, registerRolloverReader, flatsMarkPsf, flatsRollPsf, faceGrossUp, abatedShare } from "./value";
+  physicalOcc, rentableSf, useRentableSf, holdingValue, isLeasedFee, assetValue, registerRolloverReader, flatsMarkPsf, flatsRollPsf, faceGrossUp, abatedShare, BUYOUT_PREMIUM } from "./value";
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
 import { overallScore, scoreRentMult, N_BANDS, askPctOfStance } from "./value";
@@ -5362,21 +5362,8 @@ export function respondLOI(
 }
 
 // --------------------------------------------------------------- vacant possession
-/**
- * BUYING A BUILDING EMPTY.
- *
- * There is no legal way to knock down an occupied building, and waiting out a
- * rent roll takes a decade. So you buy the leases: every sitting tenant is
- * offered the whole remaining value of their contract, plus a quarter again on
- * top for the inconvenience of moving a business they did not want to move.
- *
- * The premium is what makes this a decision rather than a button. A building
- * full of leases with eight years to run costs a fortune to empty, which is
- * precisely why the site under a well-let building is worth less than the site
- * under a half-empty one — and why the buildings that get redeveloped in real
- * cities are the ones whose leases were about to roll anyway.
- */
-export const BUYOUT_PREMIUM = 1.25;
+// BUYING A BUILDING EMPTY: the premium lives beside the appraisal that reads it (value.ts).
+export { BUYOUT_PREMIUM };
 
 export function buyoutQuote(s: GameState, bbl: string): {
   cost: number; tenants: number; sf: number; deposits: number;

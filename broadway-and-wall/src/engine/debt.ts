@@ -172,7 +172,14 @@ export const PRODUCTS: LoanProduct[] = [
     // WELL-KEPT, NOT NEW. Life-company money wants quality — a good building,
     // or a standard one kept up, at a quarter point more. "Good only" made
     // the desk furniture: 5% of a generated city's stock grades good.
-    minDSCR: 1.30, maxLTV: 0.80, minLoan: 4_000_000, minCondition: "standard",
+    // LOW LEVERAGE IS THE LIFE COMPANY'S WHOLE BOOK (2026-11-18). Its sheet
+    // read 0.80, so with desks lending to policy (#813) Pelican wrote 62-74%
+    // of value — a bank's leverage at an insurer's coupon. Life companies'
+    // new commercial mortgage commitments average ~55-62% loan-to-value
+    // (ACLI quarterly commercial mortgage commitment survey, 1990s-2020s
+    // range), with program maximums of 65-70% on the best paper [S~]. The
+    // ceiling the desk writes to is this less three points: 65%.
+    minDSCR: 1.30, maxLTV: 0.68, minLoan: 4_000_000, minCondition: "standard",
   },
   {
     id: "conduit", label: "Meridian Street conduit · 10 yr, 5 yr IO", lender: "Meridian Street Capital",
@@ -238,7 +245,9 @@ export const PRODUCTS: LoanProduct[] = [
     blurb: "A second life company's money: long, fixed and cheap, for buildings that are kept up. A shade more leverage than Pelican, ten years instead of fifteen.",
     floating: false, ioM: 24, amortYears: 30, termM: 120,
     debtYield: 0.09, points: 0.008, recourse: false, prepay: "yieldmaint", prepayM: 108,
-    minDSCR: 1.25, maxLTV: 0.80, minLoan: 3_000_000, minCondition: "standard",
+    // A shade more leverage than Pelican, still an insurer's: a 70% ceiling,
+    // the top of the life companies' program range (see Pelican) [S~].
+    minDSCR: 1.25, maxLTV: 0.73, minLoan: 3_000_000, minCondition: "standard",
   },
   {
     // The money-centre bank's balance-sheet loan: big tickets, non-recourse
@@ -1139,7 +1148,7 @@ export function streetRefiProceeds(
       best = pr;
       binding = pr < q.principal ? "their own covenant"
         : q.stabConstrained ? "stab"
-        : q.dyConstrained ? "debt yield" : q.dscrConstrained ? "coverage" : "advance rate";
+        : q.dyConstrained ? "debt yield" : q.modelConstrained ? "risk model" : q.dscrConstrained ? "coverage" : "advance rate";
       lender = p.lender;
       ratePct = q.ratePct;
       product = p.id;
@@ -1401,6 +1410,8 @@ export interface Quote {
   principal: number;
   ratePct: number;
   dscrConstrained: boolean;
+  /** Of a coverage-bound quote, whether the desk's own loss model (deskAdvance on this building's yield) set the size rather than the DSCR test itself. */
+  modelConstrained?: boolean;
   dyConstrained: boolean;
   debtYield: number;
   concWhy?: string;
@@ -1762,6 +1773,11 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
     // When the plan is what sized it, the in-place tests did not bind and
     // saying they did would send the borrower off to fix the wrong thing.
     dscrConstrained: !onPlan && byDscr < byLtv && byDscr <= byDebtYield,
+    // ...and which half of it: the desk's loss model on this building's own
+    // income, or the coverage test. A quote at 2.6x coverage labelled
+    // "coverage" (Pelican, seed 31337) sends a borrower to fix income that
+    // is not the problem (2026-11-18).
+    modelConstrained: !onPlan && byDscr < byLtv && byDscr <= byDebtYield && byModel < byCover,
     dyConstrained: !onPlan && byDebtYield < byLtv && byDebtYield < byDscr,
     stabConstrained: onPlan,
     debtYield: principal > 0 ? Math.max(0, noiYr) / principal : 0,
@@ -2876,12 +2892,16 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
         : q.holdCapped ? "their hold size"
         : q.stabConstrained ? "stabilised plan"
         : q.dyConstrained ? "debt yield"
+        : q.modelConstrained ? "their risk model"
         : q.dscrConstrained ? "coverage"
         : "advance rate",
       bindingWhy: (() => {
         const parts: string[] = [];
         const onAdvance = !q.holdCapped && !q.stabConstrained && !q.dyConstrained && !q.dscrConstrained && !q.guarantorConstrained;
         if (q.guarantorConstrained && q.guarantorWhy) parts.push(q.guarantorWhy);
+        if (q.modelConstrained && !q.guarantorConstrained && !q.holdCapped) {
+          parts.push(`${p.lender}'s own loss model on this building's income, in this town's market, lends ${Math.round((value > 0 ? q.principal / value : 0) * 100)}% — under its ${Math.round((p.maxLTV - 0.03) * 100)}% ceiling and its ${p.minDSCR.toFixed(2)}x coverage test`);
+        }
         if (onAdvance && q.advanceWhy) parts.push(q.advanceWhy);
         if (hair.mult < 0.995 && raw.principal > 0) {
           parts.push(`then the desk takes ${Math.round((1 - hair.mult) * 100)}% off for the roll`

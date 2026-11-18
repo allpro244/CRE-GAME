@@ -3301,7 +3301,8 @@ function deliver(s: GameState, parcels: ParcelTable, d: Development, rec: { addr
     if (built && leasableUses(built).length) h.autoLease = true;
   }
   delete s.developments[d.bbl];
-  bumpLand(s, d.bbl, 1.06);
+  // (no flat bump on the land: what a building does to its block's ground
+  // arrives through the block's demand — value.ts resolveBase, liveDemand)
 
   const over = d.costTotal - (d.hardCost + Math.round(d.hardCost * SOFT_COST));
   void over;
@@ -5017,8 +5018,12 @@ export function tickCityGrowth(
     // NOTE: no addStock here. The square feet went into the econ pipeline the
     // month the job STARTED and land in the citywide stock when its cohort
     // matures — counting them again on delivery would double the building.
-    bumpLand(s, j.bbl, 1.05);
-    for (const nb of adjacency?.[j.bbl] ?? []) bumpLand(s, nb, 1.03);
+    // NO FLAT BUMP ON THE GROUND (2026-11-17). A delivery multiplied its own
+    // lot's land by 1.05 (1.06 for yours) and every neighbour's by 1.03,
+    // compounding into the parcel's landAdj up to x4 — unsourced constants on
+    // top of the mechanism that already prices it: the block's live demand
+    // (value.ts resolveBase: the jobs, residents and shoppers a building
+    // brings reprice its block's dirt through the generator's own curve).
     // AND AN ORDINARY BUILDING OPENING IS NOT NEWS EITHER. Same reasoning as
     // the sale line in actions.ts: the city delivers 115-150 buildings in fifty
     // years and printing every one of them crowds out the paper. What stays is
@@ -5906,9 +5911,6 @@ export function seedOpeningPipeline(s: GameState, parcels: ParcelTable, bbls: st
   delete e.preVacMult;
 }
 
-export function bumpLand(s: GameState, bbl: string, mult: number) {
-  s.landAdj[bbl] = Math.min(4, (s.landAdj[bbl] ?? 1) * mult);
-}
 
 /**
  * HOW SMALL AND HOW LARGE A SPACE CAN BE.

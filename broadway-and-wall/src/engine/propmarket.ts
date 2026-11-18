@@ -1953,7 +1953,17 @@ export function openingLandSurvey(s: GameState, parcels: ParcelTable): void {
 
 /** The survey's indications on the panel (or, with `slice`, the panel's lots for that month of the year), and how many lots were tried. */
 function landSurveyPrints(s: GameState, parcels: ParcelTable, slice?: number): { prints: { L: number; x: ReturnType<typeof landX> }[]; tried: number } | null {
-  const firms = livingRivals(s).filter((r) => !r.stressMs && r.failedM === undefined && (paramsOf(r).build > 0 || landBanker(r)));
+  // A SURVEY ASKS WHAT DIRT IS WORTH, NOT WHO CAN BUY IT THIS MONTH
+  // (2026-11-18). A firm under stress was left out, and a town runs three to
+  // six land funds: when two were stressed at once the street's second-best
+  // number on most lots fell to a builder's residual — nothing, on dirt
+  // nobody builds on — and the panel's median moved -81% one year and +250%
+  // the next on the same lots (seed 31337, years 24-25), the land level with
+  // it. A broker's panel asks principals for an opinion of value; a fund that
+  // cannot close this quarter still knows what the lot is worth, and says so.
+  // Only a firm that has failed is off the panel. (Who can actually bid —
+  // the land round, landBidRound — still leaves the stressed firm out.)
+  const firms = livingRivals(s).filter((r) => r.failedM === undefined && (paramsOf(r).build > 0 || landBanker(r)));
   if (!firms.length) return null;
   const recs: ParcelRecord[] = [];
   for (const bbl of Object.keys(parcels)) {

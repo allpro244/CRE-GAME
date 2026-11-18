@@ -2039,6 +2039,33 @@ export function overallScore(rec: ParcelRecord, econ: Econ, use?: BuiltClass, co
   return Math.max(1, Math.min(100, w * Math.max(0, Math.min(100, dem ?? 50)) + (1 - w) * b));
 }
 /**
+ * THE ONE NUMBER, AND WHAT IT IS MADE OF (2026-11-18) — for the listing card.
+ * `score` is `overallScore` itself, the number tenants shop on; the parts are
+ * its own inputs, read the same way: the address (`location`, retail on its
+ * walk-in draw), the building (`buildingScore`: bones, condition, newness
+ * against the town's stock, and its letter) and the address's weight in the
+ * blend. Nothing here is a second opinion of the building; it is the first
+ * one, shown.
+ */
+export interface ScoreParts {
+  score: number; location: number; locWeight: number;
+  building: BuildingScore | null;
+}
+export function scoreParts(rec: ParcelRecord, econ: Econ, use?: BuiltClass, condIdx?: number): ScoreParts {
+  const cls = (use ?? rec.class) as BuiltClass;
+  const ctx = econ.tierCtx;
+  const dem = cls === "retail" ? retailDemandOf(rec) : rec.demandScore;
+  const building = ctx && rec.class !== "land" && rec.bldgArea
+    ? buildingScore(rec, condIdx !== undefined ? { condIdx } : null, { month: ctx.month, stockVintage: ctx.vintage })
+    : null;
+  return {
+    score: Math.round(overallScore(rec, econ, use, condIdx)),
+    location: Math.round(Math.max(0, Math.min(100, dem ?? 50))),
+    locWeight: SCORE_LOC_WEIGHT[cls] ?? 0.5,
+    building,
+  };
+}
+/**
  * `buildingScore(...).score` behind a one-entry memo on exactly what it reads
  * — the record's year, spec and class, the condition index, the clock and the
  * class's stock vintage. A pro forma scores the same paper building three

@@ -62,11 +62,15 @@ for (const id of ["harbor", "savings", "pelican", "conduit", "cordage", "mezz", 
   const office = E.statedLtv(mid, sv, "office", "standard", true).ltv;
   ok(near(E.statedLtv(mid, sv, "office", "worn", true).ltv, office - 0.03) && near(E.statedLtv(mid, sv, "office", "obsolete", true).ltv, office - 0.03),
     `a worn or obsolete building has three points held back for the repairs`);
-  const g = structuredClone(mid); g.lenderRel = { "First Harbor Bank": 100, "Cordage Debt Partners": 100, "Meridian Street Capital": 100 };
+  // (the file moves the desk's own advance; the policy ceiling is the ceiling,
+  // so it is read where the desk lends under it — a desk short of appetite)
+  const tight = withApp(mid, 0.6);
+  const g = structuredClone(tight); g.lenderRel = { "First Harbor Bank": 100, "Cordage Debt Partners": 100, "Meridian Street Capital": 100 };
   const h = E.productById("harbor");
-  ok(near(E.statedLtv(g, h).ltv, E.statedLtv(mid, h).ltv + 0.04), `a full file at the hometown bank is worth four points of advance`);
-  ok(near(E.statedLtv(g, E.productById("cordage")).ltv, E.statedLtv(mid, E.productById("cordage")).ltv)
-    && near(E.statedLtv(g, E.productById("conduit")).ltv, E.statedLtv(mid, E.productById("conduit")).ltv), `the debt fund and the conduit have no file to reward`);
+  ok(E.statedLtv(tight, h).ltv + 0.04 < h.maxLTV - 0.03, `the desk short of appetite lends under its ceiling (${pc(E.statedLtv(tight, h).ltv)} < ${pc(h.maxLTV - 0.03)})`);
+  ok(near(E.statedLtv(g, h).ltv, E.statedLtv(tight, h).ltv + 0.04), `a full file at the hometown bank is worth four points of advance`);
+  ok(near(E.statedLtv(g, E.productById("cordage")).ltv, E.statedLtv(tight, E.productById("cordage")).ltv)
+    && near(E.statedLtv(g, E.productById("conduit")).ltv, E.statedLtv(tight, E.productById("conduit")).ltv), `the debt fund and the conduit have no file to reward`);
   const why = E.statedLtv(g, h, "multifamily", "worn").why.join(", ");
   ok(/own risk model/.test(why) && /−3 held back/.test(why) && /\+4 for your file/.test(why), `the advance says how it was worked out: "${why}"`);
   const before = JSON.stringify(mid); E.statedLtv(mid, sv, "office", "worn"); E.underwritingStandards(mid);

@@ -1126,14 +1126,21 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
           seeking.set(t.fid!, sk);
           t.endM = m + HOLDOVER_M;
         } else {
-          renewInPlace(s, b, roll, t, need, stayOpt ? { face: stayOpt.ask, eff: bargain(stayOpt, opts.find((o) => !o.stay)), ff: stayOpt.ff } : undefined, bookOf(b, roll, kk));
+          const renewEff = stayOpt ? bargain(stayOpt, opts.find((o) => !o.stay)) : undefined;
+          renewInPlace(s, b, roll, t, need, stayOpt ? { face: stayOpt.ask, eff: renewEff!, ff: stayOpt.ff } : undefined, bookOf(b, roll, kk));
           noteRoll(roll);
-          // A SITTING TENANT WITH NOWHERE ELSE TO GO is the landlord's read of
-          // a tight market: its broker could show it nothing. The landlord
-          // learns what a letting at once teaches — the package back, then
-          // the face up (tenantMarket.ts noteLetting) — when it has nothing else
-          // of the kind to let.
-          if (!opts.some((o) => !o.stay) && availOf(b, roll, kk) < minSfOf(b, kk)) noteLetting(bookOf(b, roll, kk), kk, 0, 1, V.monthsToLet(kk), opening);
+          // A SITTING TENANT THAT RENEWS AT THE ASK is the landlord's read of
+          // a tight market: no building its broker could show it was close
+          // enough to bargain the rent down (bargain: the post stands unless
+          // the runner-up's landlord is hungrier). The landlord learns what a
+          // letting at once teaches — the package back, then the face up
+          // (tenantMarket.ts noteLetting) — when it has nothing else of the kind
+          // to let. It learned this only when the tenant had nowhere else at
+          // all (2026-11-18): in a town whose office tenants renew ~85% of the
+          // time and seldom move, the few vacancies that let fast were then the
+          // only way up, and office rent kept inflation at 2-3% vacancy and no
+          // more for decades. A renewal bargained down teaches nothing upward.
+          if (stayOpt && renewEff !== undefined && renewEff >= stayOpt.post * 0.995 && availOf(b, roll, kk) < minSfOf(b, kk)) noteLetting(bookOf(b, roll, kk), kk, 0, 1, V.monthsToLet(kk), opening);
         }
       } else if (need > t.sf * 1.5) {   // half again its feet: it acts (no monthly die, 2026-11-11) [K]
         // Outgrown mid-lease: next door if the building has it, else go looking.

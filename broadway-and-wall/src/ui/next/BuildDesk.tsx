@@ -515,6 +515,7 @@ function Details({ d }: { d: DeskScheme }) {
     ["Cost", `${usd(p.costTotal)} · $${Math.round(p.costTotal / Math.max(1, p.sf))}/sf`],
     ["Land", usd(p.landBasis)],
     ["All in", usd(p.basisTotal)],
+    ...((p.leaseUpForgone ?? 0) > 0 ? [["Rent lost letting", usd(p.leaseUpForgone ?? 0)] as [string, string]] : []),
     ["Worth", `${usd(d.worth)} · ${pct2(p.exitYield)} exit`],
     ["NOI", usd(p.stabNoi)],
     ["At close", usd(d.need.dayOne)],

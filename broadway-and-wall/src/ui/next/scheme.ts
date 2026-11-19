@@ -113,7 +113,8 @@ export function deskScheme(game: GameState, parcels: ParcelTable, bbl: string, o
   const have = purse.closed ? 0 : Math.max(0, purse.total - (purse.fund ? 0 : heldByRaises(game, bbl)));
   const short = Math.max(0, need.whole - have, need.dayOne - have);
   const worth = plan && plan.exitYield > 0 ? plan.stabNoi / (plan.exitYield / 100) : 0;
-  const profit = plan ? worth - plan.basisTotal : 0;
+  // less the income it does not earn while it lets (the yield's own denominator)
+  const profit = plan ? worth - plan.basisTotal - (plan.leaseUpForgone ?? 0) : 0;
   // every desk's terms on this job, for the lender choice
   const quotes = planMax ? constructionQuotes(game, planMax.mix, planMax.costTotal) : [];
   const quote = plan ? quotes.find((q) => q.lender === plan.lender) : undefined;

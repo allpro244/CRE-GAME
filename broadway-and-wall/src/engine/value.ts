@@ -954,8 +954,9 @@ function residualCore(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: Land
       });
       if (!pf || !(pf.exitYieldPct > 0)) continue;
       const value = pf.stabNoi / (pf.exitYieldPct / 100);
-      const nowTotal = (value / (1 + DEV_MARGIN) - pf.nonLandBasis) / (1 + pf.landCarryRate);
-      consider(use, value, pf.nonLandBasis, pf.landCarryRate, pf.exitYieldPct);
+      // (the income the lease-up gives up is a cost of the scheme the land is priced on: proforma.ts leaseUpForgone)
+      const nowTotal = (value / (1 + DEV_MARGIN) - pf.nonLandBasis - pf.leaseUpForgone) / (1 + pf.landCarryRate);
+      consider(use, value, pf.nonLandBasis + pf.leaseUpForgone, pf.landCarryRate, pf.exitYieldPct);
       // ...AND THE LOT WAITS ITS TURN. See `queueFactor`.
       const landTotal = nowTotal > 0 ? nowTotal * queueFactor(econ, use, nowTotal / rec.lotArea) : nowTotal;
       const psf = landTotal / rec.lotArea;
@@ -996,8 +997,8 @@ function residualCore(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: Land
       });
       if (!pf || !(pf.exitYieldPct > 0)) continue;
       const value = pf.stabNoi / (pf.exitYieldPct / 100);
-      const nowTotal = (value / (1 + DEV_MARGIN) - pf.nonLandBasis) / (1 + pf.landCarryRate);
-      consider(p.use, value, pf.nonLandBasis, pf.landCarryRate, pf.exitYieldPct);
+      const nowTotal = (value / (1 + DEV_MARGIN) - pf.nonLandBasis - pf.leaseUpForgone) / (1 + pf.landCarryRate);
+      consider(p.use, value, pf.nonLandBasis + pf.leaseUpForgone, pf.landCarryRate, pf.exitYieldPct);
       const landTotal = nowTotal > 0 ? nowTotal * queueFactor(econ, p.use, nowTotal / rec.lotArea) : nowTotal;
       const psf = landTotal / rec.lotArea;
       const row = all.find((x) => x.use === p.use);

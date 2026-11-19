@@ -547,7 +547,9 @@ export interface DevPlan {
   landBasis: number;    // what the site cost you — sunk, but in the yield
   /** Holding the dirt at the land rate while the building goes up — in the basis, not the budget. */
   landCarry: number;
-  basisTotal: number;   // construction plus land: the denominator of yield on cost
+  basisTotal: number;   // construction plus land: the money that goes in
+  /** Income not earned while it lets (proforma.ts leaseUpForgone): with `basisTotal`, the denominator of yield on cost. */
+  leaseUpForgone?: number;
   leaseUp: number;    // fit-out, commissions and carry until it is full
   costTotal: number;
   ltc: number;
@@ -995,8 +997,12 @@ export function planDevelopment(
   // the basis the yield is measured against
   const projectCost = costTotal + interestReserve;
   const basisTotal = pf.nonLandBasis + landBasis + landCarry;
-  const yieldOnCost = basisTotal > 0 ? (stabNoi / basisTotal) * 100 : 0;
-  const buildBasis = Math.max(0, pf.nonLandBasis);
+  // THE YIELD COUNTS THE WAIT (proforma.ts leaseUpForgone): the income the
+  // building does not earn while it lets is in the denominator, with the
+  // cash basis. `basisTotal` stays the money that goes in.
+  const leaseUpForgone = pf.leaseUpForgone;
+  const yieldOnCost = basisTotal > 0 ? (stabNoi / (basisTotal + leaseUpForgone)) * 100 : 0;
+  const buildBasis = Math.max(0, pf.nonLandBasis + leaseUpForgone);
   const yieldOnCostExLand = buildBasis > 0 ? (stabNoi / buildBasis) * 100 : 0;
   // Hurdle against the tax-loaded exit the mark will actually use — not a
   // bare cap that made every tower look like 1.78x on a job that marks at 1.03x.
@@ -1026,7 +1032,7 @@ export function planDevelopment(
   const plan: DevPlan = {
     use, mix, floors: pf.floors, coverage: pf.coverage, contract, sf: pf.gsf,
     far: +(pf.gsf / rec.lotArea).toFixed(1), farMax,
-    hardCost, softCost, contingency, demo, leaseUp, costTotal, landBasis, landCarry, basisTotal,
+    hardCost, softCost, contingency, demo, leaseUp, leaseUpForgone, costTotal, landBasis, landCarry, basisTotal,
     stabNoi, exitYield: exitYieldPct, taxYr1: pf.taxYr1, taxAbate: pf.abate,
     ltc, ltcMax, ltcSizedBy: pf.ltcSizedBy, commitment, interestReserve, ratePct,
     lender: pf.lender, points: pf.points, pointsCost,
@@ -1159,8 +1165,8 @@ export function planReuseAt(
   const landCarry = Math.round(opportunity * landCarryFactor(reuseMonths));
   const basisTotal = opportunity + landCarry + costTotal + interestReserve + pointsCost;
   const stabilizedNoi = base.stabNoi;
-  const yieldOnCost = stabilizedNoi / Math.max(1, basisTotal) * 100;
-  const reuseBuild = costTotal + interestReserve + pointsCost;
+  const yieldOnCost = stabilizedNoi / Math.max(1, basisTotal + (base.leaseUpForgone ?? 0)) * 100;
+  const reuseBuild = costTotal + interestReserve + pointsCost + (base.leaseUpForgone ?? 0);
   const yieldOnCostExLand = reuseBuild > 0 ? stabilizedNoi / reuseBuild * 100 : 0;
   // THE SAME EXIT THE GROUND-UP DESK AND THE MARK USE. This passed the bare
   // cap rate while planDevelopment passes the tax-loaded exit yield, so a

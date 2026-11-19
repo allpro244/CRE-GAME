@@ -936,10 +936,21 @@ function residualCore(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: Land
       //
       // which is the residual method with the margin taken on value and the
       // wait charged at the land rate for the scheme's own schedule.
+      // THE SITE'S OWN COST IS IN ITS PRICE (2026-11-19). The desk books a
+      // job at its site's cost (`siteCostMult`) and this priced the dirt at
+      // the town's median: a lot that is a quarter cheaper to build on sold
+      // for what an ordinary one does, and its buyer kept the difference.
+      // Measured, seed 12007: every one of the five vacant lots that cleared
+      // office at the opening drew a cost 12-25% under the median, the desk
+      // could pay $77-161/sf for the dirt where this bid $13-47, and the
+      // town's builders found those lots one after another — office starts
+      // ran on into 20-25% vacancy, a quarter more office in five years.
+      // A site's advantages are capitalised into what it sells for (Ricardo):
+      // the same cost on both sides of the trade.
       const pf = developmentProForma(rec, econ, {
         use, floors, coverage, contract: "gmp", spec: 0.5,
         envelopeFar: farUse, asIfVacant: true, rentMult, uw,
-        quote,
+        quote, custom: { costMult: recCostMult(rec, use) },
       });
       if (!pf || !(pf.exitYieldPct > 0)) continue;
       const value = pf.stabNoi / (pf.exitYieldPct / 100);
@@ -981,7 +992,7 @@ function residualCore(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: Land
       const pf = developmentProForma(rec, econ, {
         use: p.use, floors: 1, coverage: 1, contract: "gmp", spec: 0.5,
         envelopeFar: far, asIfVacant: true, rentMult, uw, quote,
-        custom: { product: { key, ...(draw !== undefined ? { draw } : {}) } },
+        custom: { product: { key, ...(draw !== undefined ? { draw } : {}) }, costMult: recCostMult(rec, p.use) },
       });
       if (!pf || !(pf.exitYieldPct > 0)) continue;
       const value = pf.stabNoi / (pf.exitYieldPct / 100);
@@ -1215,6 +1226,32 @@ const OWNER_ERR_SIGMA = 0.15;
 function ownerErr(bbl: string): number {
   return hashNormal(bbl);
 }
+/**
+ * WHAT IT COSTS TO BUILD ON THIS SITE, against the town's cost index
+ * (2026-11-19; moved from dev.ts `projectCostMult`, which now reads it).
+ * Comparable buildings of one type in one city spread about +/-15% around the
+ * median between the quartiles (RSMeans square-foot costs, 25th/75th
+ * percentile), a log spread near 0.2, some of it specification the engine
+ * models separately — so each site draws its own hard cost, lognormal with
+ * sigma 0.15 [S~: shape set from that spread]. It is a property of the site
+ * and of whoever controls it (ground conditions, assemblage, the builder's
+ * crews and subs), so it persists, and it turns over with control of the
+ * site about every five years, staggered by lot. The job is booked at it.
+ */
+export const SITE_COST_SIGMA = 0.15;
+const SITE_COST_TERM_M = 60;
+export function siteCostMult(bbl: string, use: string, month: number, seed: number): number {
+  let h = 2166136261;
+  for (let i = 0; i < bbl.length; i++) { h ^= bbl.charCodeAt(i); h = Math.imul(h, 16777619); }
+  const phase = (h >>> 0) % SITE_COST_TERM_M;
+  const epoch = Math.floor((month + phase) / SITE_COST_TERM_M);
+  return Math.exp(SITE_COST_SIGMA * hashNormal(`${bbl}|${use}|${epoch}|${seed}`));
+}
+/** The site's own cost on a resolved record (1 on one nobody resolved: the town's median). */
+function recCostMult(rec: ParcelRecord, use: string): number {
+  return rec.siteAt ? siteCostMult(rec.bbl, use, rec.siteAt.m, rec.siteAt.seed) : 1;
+}
+
 /** A standard normal hashed off a key: deterministic, persistent, never the RNG. */
 export function hashNormal(key: string): number {
   // Two independent uniform hashes off the key -> one standard normal
@@ -2656,7 +2693,9 @@ export function resolveRec(parcels: Record<string, ParcelRecord>, s: GameState, 
   // then prices the building the city would actually permit here.
   // ...AND FOR A LOT BIG ENOUGH TO CARRY A CENTRE, THE ADDRESS ITS ANCHOR
   // WOULD GIVE IT (tradeAreaDemand): the desk and the residual read one number.
-  return stampTradeDraw(s, parcels, { ...r, cornice: corniceDatum(s, parcels, r.block), maturity: townMaturity(s) });
+  // ...AND WHAT IT COSTS TO BUILD ON (`siteCostMult`): the month and seed its
+  // site's own cost is drawn at.
+  return stampTradeDraw(s, parcels, { ...r, cornice: corniceDatum(s, parcels, r.block), maturity: townMaturity(s), siteAt: { m: s.month, seed: s.seed } });
 }
 
 /**

@@ -19,7 +19,7 @@ import { rng, rrange, openingVac, forwardVacancy, CITY_STOCK, SECTOR_LABEL, addS
 import { firmShort } from "./firm";
 import { classValuePsf, resolveRec, marketRentPsfYr, landValue, landRead, assetValue, ownedHoldingValue, condGrade, condCeiling, openingCondIdx,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
-  mergedTouched, rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal, demandIdx, buildTier, tradeAreaDemand, HOMES_ONLY_ZONES } from "./value";
+  mergedTouched, rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, siteCostMult, demandIdx, buildTier, tradeAreaDemand, HOMES_ONLY_ZONES } from "./value";
 import { isHoaBbl } from "./landdev";
 import { productOf, ANCHOR_NAMES, type ProductKey, type ProductSite } from "./products";
 export { zoneUseBar };
@@ -1291,14 +1291,8 @@ export function startAdaptiveReuse(
  *
  * The player's desk is not drawn — the player gets the desk's real quotes.
  */
-const PROJECT_COST_SIGMA = 0.15;
-const PROJECT_TERM_M = 60;
 export function projectCostMult(s: GameState, bbl: string, use: DevUse): number {
-  let h = 2166136261;
-  for (let i = 0; i < bbl.length; i++) { h ^= bbl.charCodeAt(i); h = Math.imul(h, 16777619); }
-  const phase = (h >>> 0) % PROJECT_TERM_M;
-  const epoch = Math.floor((s.month + phase) / PROJECT_TERM_M);
-  return Math.exp(PROJECT_COST_SIGMA * hashNormal(`${bbl}|${use}|${epoch}|${s.seed}`));
+  return siteCostMult(bbl, use, s.month, s.seed);
 }
 
 export function underwriteDevelopment(
@@ -4034,10 +4028,27 @@ function jobLoad(s: GameState): number {
  * The redevelopment pays when the new building is worth more than the old
  * one plus the cost of clearing it, which is the teardown test in life.
  */
+//
+// ...BUT NO OWNER SELLS BELOW WHAT ITS DIRT IS WORTH CLEARED (2026-11-19).
+// Charging the building alone where a builder wins the land sold every old
+// building on dear dirt at its rent: the redeveloper bought the site for less
+// than any builder would pay for it empty, and kept the difference. Measured,
+// seed 12007, the town's first five years: 862k sf of the 1.08M sf of office
+// started was developers' teardowns, into 21% vacancy, a quarter more office
+// in five years. An owner of a two-storey building on a tower site knows what
+// a builder pays for the lot and sells at that less the cost of clearing it
+// (the teardown price: land value net of demolition) — so the site costs the
+// higher of the building as a building and the dirt net of the wreck. The
+// plan charges the wreck on top, so it is paid once, and on the margin a
+// replacement reads at its hurdle, as the marginal teardown does in life;
+// the land's own queue (value.ts queueFactor) is what leaves a lot further
+// down the town's take-up cheaper than its full residual.
 function redevelopmentBasis(rec: NonNullable<ReturnType<typeof resolveRec>>, e: Econ, grade: ReturnType<typeof gradeOf>): number {
   const asBuilding = incomeValueAsIs(rec, e, grade);
   const lr = landRead(rec, e);
-  return lr.winner === "builder" ? asBuilding : Math.max(asBuilding, lr.psf * rec.lotArea);
+  if (lr.winner !== "builder") return Math.max(asBuilding, lr.psf * rec.lotArea);
+  const cleared = lr.psf * rec.lotArea - (rec.class !== "land" && rec.bldgArea > 0 ? wreckCost(rec.bldgArea, e.costIdx) : 0);
+  return Math.max(asBuilding, cleared);
 }
 
 function classPinnedOwed(e: Econ, k: BuiltClass, slack = 0.02): boolean {
@@ -4125,6 +4136,17 @@ function replacementSearch(
       // A redeveloper that borrows needs its margin on the equity the desks
       // leave it (equityStretch), like a builder on vacant dirt.
       const m = DEV_MARGIN * (rdev.ltc > CASH_BUILDER_LTC ? equityStretch(s) : 1);
+      // THE SAME SPREAD ON TODAY'S RENT AS ON VACANT DIRT (2026-11-19). The
+      // shop's bar is a belief and has no floor (drawDeveloper); on vacant
+      // dirt the scheme must first clear the development spread its lender
+      // and investment committee underwrite on current rents (`spreadFloor`,
+      // developerLook), and here it did not. Measured, seed 12007, the first
+      // three years: office replacements went ahead at a yield on cost of
+      // 7.3-8.2% against a 9.2-9.4% exit cap — buildings worth less than they
+      // cost the day they were decided — by the shops whose bars drew 0.69-
+      // 0.77, and teardowns were 797k of the 1.08M sf of office the town
+      // started in five years, into 23% vacancy. One rulebook for both paths.
+      if (hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) < 1 + (spreadFloor(rdev) - 1) * equityStretch(s)) continue;
       const h = hurdleAt(u.plan, m) * rdev.outlook * momentumRead(s, k, rdev.momentum, who) * exitRead(s, who, k) / rdev.bar;
       maxH = Math.max(maxH, h);
       if (h < 1) continue;

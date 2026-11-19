@@ -64,7 +64,7 @@ import { openingVac, CITY_STOCK, BUILD_MONTHS, forwardVacancy, turnoverYr, relet
 import {
   HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
   rentableRatio, marketRentPsfYr, opexPsf, locOpexMult, RECOVERY_RATE, MGMT_FEE, noiYr, capRateFor,
-  taxRate, taxBorneShare, physicalMaxFloors,
+  taxRate, taxBorneShare, physicalMaxFloors, scoreVacOf, overallScore,
 } from "./value";
 
 const clampP = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -1146,7 +1146,30 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // 0.657 of stabilised, over the span that loses the same rent:
   // carry = clock x the unlet share / (1 - 0.657). (A product's anchors sign
   // before the slab: their share loses nothing.)
-  const fwdOf = (u: BuiltClass) => forwardVacancy(econ, u, rentable * (mix[u] ?? 0));
+  // THE MARKET IT OPENS INTO IS ITS OWN TIER (2026-11-19). The appraiser
+  // reads a building's occupancy off the vacancy of its own quality tier
+  // (value.ts useOccupancy, `scoreVacOf`: a Class C building reads the C
+  // market), and this read the whole class's. A new building lets against
+  // the new buildings: measured, seed 12007, the top two office tiers went
+  // 22% and 1% vacant to 32% and 29% in five years of starts while the class
+  // read 13-22%, and the developers kept underwriting the class's vacancy
+  // and building into their own glut — one quantity with two answers. So the
+  // scheme's study starts from its tier's vacancy today (at the score the
+  // finished building will carry) and moves it by what the class study says
+  // the pipeline and its own feet do between now and delivery.
+  const tierVacOf = (u: BuiltClass) => {
+    if (!econ.bands?.[u]) return undefined;
+    return scoreVacOf(econ, u, overallScore(asBuilt, econ, u));
+  };
+  const fwdMemo: Partial<Record<BuiltClass, number>> = {};
+  const fwdOf = (u: BuiltClass) => (fwdMemo[u] ??= fwdOfRaw(u));
+  const fwdOfRaw = (u: BuiltClass) => {
+    const fwd = forwardVacancy(econ, u, rentable * (mix[u] ?? 0));
+    const tier = tierVacOf(u);
+    if (tier === undefined) return fwd;
+    const now = econ.cityVac?.[u] ?? openingVac(u);
+    return Math.max(0, Math.min(1, 1 - (1 - tier) * (1 - fwd) / Math.max(1e-6, 1 - now)));
+  };
   const leaseUpClock = leaseUpMonths(econ, mix, rentable, preLet, fwdOf);
   const carryMonths = Math.max(1, Math.round(leaseUpClock * (1 - preLet) / (1 - CURVE_MEAN_OCC)));
   const opex0 = overMix(mix, (u) => opexPsf(u, econ, false) * locOpexMult(rec, econ, u));

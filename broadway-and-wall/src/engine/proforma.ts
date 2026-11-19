@@ -966,6 +966,8 @@ export interface ProForma {
   months: number;
   ltc: number;
   ltcMax: number;
+  /** Which of the desk's tests set `ltcMax` (see LtcSizedBy). */
+  ltcSizedBy: LtcSizedBy;
   ratePct: number;
   lender: string;
   points: number;
@@ -989,6 +991,19 @@ export interface ProForma {
   product?: { key: ProductKey; site: ProductSite; anchors: BtsCommitment[]; draw?: number };
 }
 
+/**
+ * WHICH TEST SET THE MOST A CONSTRUCTION DESK WILL ADVANCE: its loan-to-cost
+ * for the market and the borrower ("cost"), 75% of its appraisal of the
+ * finished building at today's rents ("value", with that appraisal), what the
+ * rent roll will cover when the loan has to be taken out ("takeout": the
+ * share it expects let `afterM` months after delivery on the market's
+ * lease-up clock `leaseUpM`, at `dscr`), or a signed lease it lends against
+ * ("lease"). Nothing is computed from it; it is what the desk tells you.
+ */
+export type LtcSizedBy =
+  | { test: "cost" } | { test: "lease" }
+  | { test: "value"; value: number }
+  | { test: "takeout"; letShare: number; leaseUpM: number; afterM: number; dscr: number };
 /** Months a new building has to let between delivery and the takeout's coverage test (construction loans of 24-36 months over an 18-24-month build) [S~]. */
 const TAKEOUT_LEASE_M = 12;
 /** The coverage a mini-perm converts on, on income in place (1.20-1.30x on construction and mini-perm term sheets) [S~]. */
@@ -1292,6 +1307,9 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
 
   const cq = o.quote(mix, preReserve);
   let ltcMax = cq.open ? cq.ltcMax : 0;
+  // WHICH TEST SIZED THE ADVANCE, said to the borrower (the build desk prints
+  // it): the desk's loan-to-cost, the appraisal, or the takeout.
+  let ltcSizedBy: LtcSizedBy = { test: "cost" };
   // THE BANK APPRAISES THE BUILDING, NOT THE DEVELOPER'S HOPES (2026-10-14).
   // The supervisory ceiling cited in constructionLtc is a loan-to-VALUE limit
   // on the as-completed appraisal (80% for commercial construction, Interagency
@@ -1324,6 +1342,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   const loanNoi = (stabNoi - marketStabNoi) + bankMarketNoi - (bankMarketNoi - bankSpecNoi) * (1 - contracted);
   if (preReserve > 0 && exitYieldPct > 0) {
     const ltvCap = 0.75 * (loanNoi / (exitYieldPct / 100)) / preReserve;
+    if (ltvCap < ltcMax) ltcSizedBy = { test: "value", value: loanNoi / (exitYieldPct / 100) };
     ltcMax = Math.max(0, Math.min(ltcMax, ltvCap));
   }
   // ...AND ON WHAT WILL PAY IT OFF (2026-11-18). A construction loan is repaid
@@ -1343,6 +1362,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   if (preReserve > 0 && cq.ratePct > 0) {
     const letAtTakeout = contracted + (1 - contracted) * (1 - Math.exp(-TAKEOUT_LEASE_M / Math.max(1, leaseUpClock)));
     const takeoutCap = (loanNoi * letAtTakeout) / (DSCR_TAKEOUT * cq.ratePct / 100) / preReserve;
+    if (takeoutCap < ltcMax) ltcSizedBy = { test: "takeout", letShare: letAtTakeout, leaseUpM: leaseUpClock, afterM: TAKEOUT_LEASE_M, dscr: DSCR_TAKEOUT };
     ltcMax = Math.max(0, Math.min(ltcMax, takeoutCap));
   }
   // A bankable lease turns speculative construction into contracted credit.
@@ -1355,6 +1375,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // less than the same building bare.
   if (bts && bts.credit >= 1) {
     const btsAdvance = (bts.credit === 2 ? 0.68 : 0.58) * btsShare + ltcMax * (1 - btsShare);
+    if (btsAdvance > ltcMax) ltcSizedBy = { test: "lease" };
     ltcMax = Math.max(ltcMax, btsAdvance);
   }
   // ...and so does a product's signed anchor paper, share by share.
@@ -1362,6 +1383,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   if (anchorSf > 0) {
     let adv = 0;
     for (const x of anchors) adv += (x.credit === 2 ? 0.68 : 0.58) * (x.sf / Math.max(1, rentable));
+    if (adv + ltcMax * (1 - anchorLet) > ltcMax) ltcSizedBy = { test: "lease" };
     ltcMax = Math.max(ltcMax, adv + ltcMax * (1 - anchorLet));
   }
   // Math.min(x, undefined) is NaN, and a NaN here does not throw — it becomes
@@ -1470,7 +1492,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   return {
     asBuilt, mix, floors: fl, coverage: cov, gsf, rentable,
     hardCost, softCost, demo, contingency, leaseUp, anchorCost, costTotal, months,
-    ltc, ltcMax, ratePct, lender: cq.lender, points: cq.points, commitment, interestReserve, pointsCost,
+    ltc, ltcMax, ltcSizedBy, ratePct, lender: cq.lender, points: cq.points, commitment, interestReserve, pointsCost,
     nonLandBasis: costTotal + interestReserve + pointsCost,
     stabNoi, exitCap, exitYieldPct, taxYr1, abate,
     landCarryRate: landCarryFactor(months),

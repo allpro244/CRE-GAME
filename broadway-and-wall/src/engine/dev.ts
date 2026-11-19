@@ -19,7 +19,7 @@ import { rng, rrange, openingVac, forwardVacancy, CITY_STOCK, SECTOR_LABEL, addS
 import { firmShort } from "./firm";
 import { classValuePsf, resolveRec, marketRentPsfYr, landValue, landRead, assetValue, ownedHoldingValue, condGrade, condCeiling, openingCondIdx,
   developmentHurdle, DEV_MARGIN, HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
-  mergedTouched, rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, hashNormal, demandIdx, buildTier, tradeAreaDemand, HOMES_ONLY_ZONES } from "./value";
+  mergedTouched, rentableSf, rentableFromSpec, useRentableSf, zonePermits, zoneUseBar, heightCapFloors, corniceDatum, townMaturity, schemeFloorLadder, incomeValueAsIs, ownerAskPsf, siteCostMult, demandIdx, buildTier, tradeAreaDemand, HOMES_ONLY_ZONES } from "./value";
 import { isHoaBbl } from "./landdev";
 import { productOf, ANCHOR_NAMES, type ProductKey, type ProductSite } from "./products";
 export { zoneUseBar };
@@ -1291,14 +1291,8 @@ export function startAdaptiveReuse(
  *
  * The player's desk is not drawn — the player gets the desk's real quotes.
  */
-const PROJECT_COST_SIGMA = 0.15;
-const PROJECT_TERM_M = 60;
 export function projectCostMult(s: GameState, bbl: string, use: DevUse): number {
-  let h = 2166136261;
-  for (let i = 0; i < bbl.length; i++) { h ^= bbl.charCodeAt(i); h = Math.imul(h, 16777619); }
-  const phase = (h >>> 0) % PROJECT_TERM_M;
-  const epoch = Math.floor((s.month + phase) / PROJECT_TERM_M);
-  return Math.exp(PROJECT_COST_SIGMA * hashNormal(`${bbl}|${use}|${epoch}|${s.seed}`));
+  return siteCostMult(bbl, use, s.month, s.seed);
 }
 
 export function underwriteDevelopment(

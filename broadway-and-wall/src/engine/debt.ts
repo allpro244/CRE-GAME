@@ -1926,11 +1926,17 @@ export function equityCureNeed(rec: ParcelRecord, s: GameState, h: Holding): num
   let target = loan.balance;
   if (d !== null && d < loan.minDSCR && d > 0) {
     target = Math.min(target, loan.balance * (d / loan.minDSCR));
-  } else if (d !== null && d <= 0) {
-    // No income against the test — cure is not a rounding error; demand a
-    // meaningful paydown so the desk has something to underwrite against.
-    target = Math.min(target, loan.balance * 0.88);
   }
+  // NO INCOME, NO COVERAGE CURE (2026-11-20). With nothing coming in there is
+  // no balance at which the rent roll covers the payment, so no paydown puts
+  // the coverage test back onside. This asked for 12% of the balance anyway
+  // ("a meaningful paydown"), and the monthly cure below took it again every
+  // month the building stayed empty: measured on a replay, a non-recourse
+  // loan paid from $1.74M to $0.81M in six months out of the firm's cash,
+  // with no choice offered, after its one tenant left. The coverage breach
+  // stands (the sweep, then the workout desk after two years); what the
+  // sponsor can be asked to cure with a cheque is the loan-to-value test
+  // below, which has an answer.
   if (l !== null && l > loan.maxLTV && value > 0) {
     target = Math.min(target, loan.maxLTV * value);
   }

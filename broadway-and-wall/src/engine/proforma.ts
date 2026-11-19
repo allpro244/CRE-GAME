@@ -1006,8 +1006,24 @@ export type LtcSizedBy =
   | { test: "cost" } | { test: "lease" }
   | { test: "value"; value: number }
   | { test: "takeout"; letShare: number; leaseUpM: number; afterM: number; dscr: number };
-/** Months a new building has to let between delivery and the takeout's coverage test (construction loans of 24-36 months over an 18-24-month build) [S~]. */
-const TAKEOUT_LEASE_M = 12;
+/**
+ * MONTHS A NEW BUILDING HAS TO LET BEFORE ITS CONSTRUCTION LOAN MUST BE TAKEN
+ * OUT. A construction loan's initial term runs 24-36 months against an
+ * 18-24-month build, which leaves about a year; and it carries extension
+ * options, six months or a year each and commonly 12-24 months in all, given
+ * on a coverage or debt-yield test (lender programme sheets and term-sheet
+ * guides, 2025-26: e.g. initial terms of 12-36 months with 6- or 12-month
+ * extensions; "often by 12 to 24 months after the initial term") [S~]. So
+ * the roll has about two years from delivery, not one: the year the initial
+ * term leaves and one extension. It read 12 (2026-11-18), the initial term
+ * alone, which at an ordinary 18-month office lease-up clock expects 49% let
+ * and lent 20% of cost; at 24 it expects 74%. Measured with the developer's
+ * own cost of the wait in the pro forma (leaseUpForgone), three towns x 25
+ * years: office stock at year 25 +18% / +21% / +32% at 24 months against
+ * +12% / +26% / +36% at 12 — no more building for it, inside what a re-roll
+ * moves.
+ */
+const TAKEOUT_LEASE_M = 24;
 /** The coverage a mini-perm converts on, on income in place (1.20-1.30x on construction and mini-perm term sheets) [S~]. */
 const DSCR_TAKEOUT = 1.25;
 export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaInput): ProForma | null {

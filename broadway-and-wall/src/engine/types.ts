@@ -185,6 +185,8 @@ export interface Tenant {
   net: boolean;        // legacy flag; `recovery` is the real answer
   recovery?: "nnn" | "base" | "gross";
   baseStopPsf?: number;   // base-year expense stop, $/sf — frozen at signing
+  /** What the tenant expects to pay toward the building's bills on top of its rent, $/sf a year over the term (leasing.ts tenantExpensePsfYr): its occupancy cost is rent plus this. */
+  expPsf?: number;
   startM: number;
   endM: number;        // lease expiration
   freeUntilM?: number; // free-rent concession

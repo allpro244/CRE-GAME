@@ -5,6 +5,7 @@ import { useMasonry } from "@/ui/useMasonry";
 import type { Econ } from "@/engine/types";
 import { useStore } from "@/state/store";
 import { monthLabel, START_YEAR } from "@/engine/types";
+import { LEASE_BASIS, netEquivalentRent, classExpensePsf, grossRent } from "@/engine/value";
 import type { BuiltClass, EconHistoryPoint } from "@/engine/types";
 import { capitalRatio, targetCapital } from "@/engine/lenders";
 import { openingVac, RENT_BASE, SECTOR_LABEL, CITY_STOCK, residenceVac, housableStock, islandResidents, PEOPLE_PER_HOME, chairStance } from "@/engine/market";
@@ -851,16 +852,33 @@ export function EconomyPage() {
                   <span className={"cl-fig-v mono" + (b.soft ? " neg" : "")}>{(v * 100).toFixed(1)}%</span>
                   <Spark pts={at((h) => h.avail?.[k] ?? h.vac?.[k])} w={56} h={14} />
                 </div>
-                <div className="cl-fig">
-                  <span className="cl-fig-k">Rent /sf</span>
-                  <span className={"cl-fig-v mono" + (rentYoy < -0.025 ? " neg" : "")}>${e.rentIdx[k].toFixed(0)}</span>
-                  <Spark pts={at((h) => h.rent?.[k])} w={56} h={14} />
-                </div>
+                {(() => {
+                  // WHAT THE MARKET PAYS, ON ITS BASIS AND GROSS (owner, 2026-11-18):
+                  // a triple-net rent shows the average bill on top and the gross
+                  // the tenant pays; a full-service or gross rent is the gross.
+                  const rent = e.rentIdx[k], nnn = LEASE_BASIS[k].short === "NNN";
+                  const bill = classExpensePsf(e, k, rent), gross = grossRent(e, k, rent);
+                  const tip = `Asking rent, $/sf/yr: ${LEASE_BASIS[k].long}.`
+                    + (nnn ? ` Average expenses $${bill.total.toFixed(2)}/sf/yr (operating $${bill.opex.toFixed(2)}, tax $${bill.tax.toFixed(2)}), so tenants pay about $${gross.toFixed(2)}/sf/yr gross.`
+                      : ` The rent is gross: it covers about $${bill.total.toFixed(2)}/sf/yr of operating cost and tax; net of what the landlord pays, about $${netEquivalentRent(e, k, rent).toFixed(2)}/sf/yr.`);
+                  return (
+                    <div className="cl-fig" title={tip}>
+                      <span className="cl-fig-k">Rent $/sf/yr · {LEASE_BASIS[k].short}</span>
+                      <span className={"cl-fig-v mono" + (rentYoy < -0.025 ? " neg" : "")}>
+                        ${rent.toFixed(0)}
+                        {nnn
+                          ? <span className="dim" style={{ display: "block", fontSize: "0.8em" }}>+${bill.total.toFixed(0)} exp = ${gross.toFixed(0)} gross</span>
+                          : <span className="dim" style={{ display: "block", fontSize: "0.8em" }}>gross · ≈${netEquivalentRent(e, k, rent).toFixed(0)} net</span>}
+                      </span>
+                      <Spark pts={at((h) => h.rent?.[k])} w={56} h={14} />
+                    </div>
+                  );
+                })()}
                 {/* EFFECTIVE BESIDE ASKING (owner, office glut): the asking rent is
                     the face of signed leases and moves last; in a glut the
                     concessions take the fall first and effective shows it. */}
                 <div className="cl-fig">
-                  <span className="cl-fig-k">Effective</span>
+                  <span className="cl-fig-k">Effective $/sf/yr</span>
                   <span className={"cl-fig-v mono" + ((e.effRentIdx?.[k] ?? e.rentIdx[k]) < 0.85 * e.rentIdx[k] ? " neg" : "")}>${(e.effRentIdx?.[k] ?? e.rentIdx[k]).toFixed(0)}</span>
                   <Spark pts={at((h) => h.effRent?.[k] ?? h.rent?.[k])} w={56} h={14} />
                 </div>

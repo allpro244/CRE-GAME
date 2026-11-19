@@ -47,7 +47,7 @@ import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { BuiltClass, Condition, Credit, Econ, GameState, Tenant } from "./types";
 import { START_YEAR } from "./types";
 import { resolveRec, useRentableSf, overallScore, initialCondIdx, useRentPsfYr, useOccupancy, N_BANDS, scoreRentMult, locationRentMult } from "./value";
-import { isCommercial, bumpOf, minLettableSf, streetLease, pickSector, pickName, termBandM, depositFor, chosenTermM, useVacantSf, vacantSf } from "./leasing";
+import { isCommercial, bumpOf, minLettableSf, streetLease, expenseLoadPsf, tenantExpensePsfYr, leaseBasis, pickSector, pickName, termBandM, depositFor, chosenTermM, useVacantSf, vacantSf } from "./leasing";
 import { gradeOf, paramsOf } from "./rivals";
 import { tickTenantFin, tenantInsolvent, BACKGROUND_FAIL, entrantMargin, rentCapacity, finGrade, revAnchor } from "./tenantBooks";
 import { rng, rrange, reletMonths, recordDeal, FIRM_PROFILE, turnoverYr, priceLevel12, CONC_DEPTH, SECTOR_LABEL, SF_PER_JOB } from "./market";
@@ -405,6 +405,8 @@ interface Bld {
   sc: Partial<Record<Comm, number>>; cap: Partial<Record<Comm, number>>;
   /** minLettableSf(rec, k), worked out once: the record is resolved once a month and never written. */
   min?: Partial<Record<Comm, number>>;
+  /** its expense load by use, $/sf a year (leasing.ts expenseLoadPsf), worked out once a month */
+  load?: Partial<Record<Comm, number>>;
 }
 function minSfOf(b: Bld, k: Comm): number {
   const m = (b.min ??= {});
@@ -512,6 +514,35 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
   // addresses' market rents (the comps), feet-weighted in logs over the books
   // open this month. A firm's taste is scaled by the going post, not the comps
   // (tenantMarket.ts goingRent); shops and sheds keep the market rent.
+  // THE BILLS A TENANT PAYS ON TOP OF ITS RENT (2026-11-18): a building's
+  // expense load on a use, what the lease's basis passes to the tenant over
+  // the term, and the town's typical load (the feet-weighted mean over the
+  // street's buildings with that use). A firm ranks a suite on rent plus its
+  // share of that building's bills, against what the space is worth to it
+  // plus the typical share — so a building whose bills run over the town's
+  // is that much dearer to its tenant, on any basis (leasing.ts
+  // tenantExpensePsfYr), and a full-service office and a triple-net one cost
+  // the firm the same when the rent differs by the bill.
+  const loadOf = (b: Bld, k: Comm): number => {
+    const m0 = (b.load ??= {});
+    let v = m0[k];
+    if (v === undefined) { v = expenseLoadPsf(b.rec, e, b.cond, k); m0[k] = v; }
+    return v;
+  };
+  const typMemo: Partial<Record<Comm, number>> = {};
+  const typLoad = (k: Comm): number => {
+    const hit = typMemo[k];
+    if (hit !== undefined) return hit;
+    let w = 0, v = 0;
+    for (const [bbl] of rollList) {
+      const b = blds.get(bbl) ?? bld(bbl);
+      const c = b?.cap[k] ?? 0;
+      if (!b || !(c > 0)) continue;
+      w += c; v += c * loadOf(b, k);
+    }
+    return (typMemo[k] = w > 0 ? v / w : 0);
+  };
+  const expOf = (k: Comm, load: number, termM: number) => tenantExpensePsfYr(leaseBasis(k), load, termM, e);
   const goingMemo: Partial<Record<Comm, number>> = {};
   const going = (k: Comm): number => {
     const hit = goingMemo[k];
@@ -556,7 +587,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
     // "discovered" at the roll that their own floor was not worth keeping.
     const u = stay && firm.tasteU !== undefined ? firm.tasteU : gumbel(rng(s, "leasing"));
     if (stay && firm.tasteU === undefined) firm.tasteU = +u.toFixed(4);   // a tenant from before the match was kept: its first read is its taste from here
-    const joint = worth - post - move + TASTE[k] * goingRent(k, mkt, going(k)) * u;
+    const joint = worth + expOf(k, typLoad(k), termM) - post - expOf(k, loadOf(b, k), termM) - move + TASTE[k] * goingRent(k, mkt, going(k)) * u;
     // a sitting tenant is offered its landlord's ask, like anyone (tenantMarket.ts postedEff)
     const ask = L.a;
     const ff = footFactor(k, k === "retail" ? footRel(b.bbl) : undefined);
@@ -607,7 +638,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
   // player's desk asks, effective. It used to be a separate law —
   // absorption.ts leasingOdds, the building's capture of an aggregate
   // requirement — run beside the street's search.
-  type PCand = { bbl: string; rec: ParcelRecord; avail: number; sc: number; mkt: number; post: number; letShare: number; pos: ReturnType<typeof posOf> };
+  type PCand = { bbl: string; rec: ParcelRecord; avail: number; sc: number; mkt: number; post: number; load: number; letShare: number; pos: ReturnType<typeof posOf> };
   const playerCands: Partial<Record<Comm, PCand[]>> = {};
   for (const k of COMM) {
     const list: PCand[] = [];
@@ -623,7 +654,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
       const mkt = useRentPsfYr(rec, e, h.condition, k, condIdx);
       const post = currentAskPsfYr(rec, e, h, k) * (1 - currentPackage(e, h, k));
       if (!(mkt > 0) || !(post > 0)) continue;
-      list.push({ bbl: h.bbl, rec, avail, sc: overallScore(rec, e, k, condIdx), mkt, post, letShare: 1 - avail / Math.max(1, useRentableSf(rec, k)), pos: posOf(rec) });
+      list.push({ bbl: h.bbl, rec, avail, sc: overallScore(rec, e, k, condIdx), mkt, post, load: expenseLoadPsf(rec, e, h.condition, k, h.assessed), letShare: 1 - avail / Math.max(1, useRentableSf(rec, k)), pos: posOf(rec) });
     }
     playerCands[k] = list;
   }
@@ -665,7 +696,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
         const pc = placeCost(firm.fid !== undefined ? ctx.pts.get(firm.fid) : undefined, p.pos, hourCost(firm));
         const worth = worthOf(firm, k, p.mkt, p.sc, take, pc.cost, k === "retail" ? footRel(p.bbl) : undefined, rentCapacity(s.econ, firm, k));
         const move = moving ? moveCostPsfYr(e, k, termM, firm) : 0;
-        const joint = worth - p.post - move + TASTE[k] * goingRent(k, p.mkt, going(k)) * gumbel(rng(s, "leasing"));
+        const joint = worth + expOf(k, typLoad(k), termM) - p.post - expOf(k, p.load, termM) - move + TASTE[k] * goingRent(k, p.mkt, going(k)) * gumbel(rng(s, "leasing"));
         if (joint < 0) continue;   // no lease at a loss, the same participation test (below)
         out.push({ bbl: p.bbl, take, mkt: p.mkt, ff: footFactor(k, k === "retail" ? footRel(p.bbl) : undefined), ask: p.post, post: p.post, res: p.post, worth, move, joint, dLink: pc.dLink, dWork: pc.dWork, player: true });
         continue;
@@ -700,7 +731,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
     out.sort((a, b) => b.joint - a.joint);
     return out;
   };
-  return { R, m, owners, blds, bld, letOf, notReady, availOf, catchOf, foot, ctx, recOf, footRel, vacShare, bookOf, monthsToLet, going, gTradeOf, termOf, value, shop, availIn, noteRoll, rollList };
+  return { R, m, owners, blds, bld, letOf, notReady, availOf, catchOf, foot, ctx, recOf, footRel, vacShare, bookOf, monthsToLet, going, loadOf, typLoad, expOf, gTradeOf, termOf, value, shop, availIn, noteRoll, rollList };
 }
 /** The street as the player's leasing desk's prospects see it this month (one view a month). */
 const DESK_VIEW = new WeakMap<GameState, { m: number; v: ReturnType<typeof marketView> }>();
@@ -740,7 +771,9 @@ export function offerForPlayer(s: GameState, parcels: ParcelTable, firm: Tenant,
   const worth = worthOf(firm, k, mktHere, score, sf, pc.cost, k === "retail" ? V.footRel(rec.bbl) : undefined, rentCapacity(s.econ, firm, k));
   const taste = TASTE[k] * goingRent(k, mktHere, V.going(k)) * gumbel(rng(s, "leasing"));
   // a sitting tenant renewing does not move; every street option costs it the move
-  const rMax = worth - (sitting ? 0 : moveCostPsfYr(s.econ, k, termM, firm)) + taste - c.joint - (c.post - c.res);
+  const hh = s.holdings[rec.bbl];
+  const loadHere = expenseLoadPsf(rec, s.econ, hh?.condition ?? "standard", k, hh?.assessed);
+  const rMax = worth + V.expOf(k, V.typLoad(k), termM) - V.expOf(k, loadHere, termM) - (sitting ? 0 : moveCostPsfYr(s.econ, k, termM, firm)) + taste - c.joint - (c.post - c.res);
   return { bid: Math.max(0.4, Math.min(1, rMax / postEff)), alt: c.bbl };
 }
 
@@ -777,7 +810,10 @@ export function stayOdds(s: GameState, parcels: ParcelTable | null | undefined, 
   const pts = firm.fid !== undefined ? V.ctx.pts.get(firm.fid) : undefined;
   const hour = hourCost(firm);
   const here = placeCost(pts, posOf(rec), hour);
-  const vStay = worthOf(firm, k, mktHere, score, sf, here.cost, k === "retail" ? V.footRel(rec.bbl) : undefined, rentCapacity(e, firm, k)) - postEff;
+  const hs = s.holdings[rec.bbl];
+  const typ = V.expOf(k, V.typLoad(k), termM);
+  const vStay = worthOf(firm, k, mktHere, score, sf, here.cost, k === "retail" ? V.footRel(rec.bbl) : undefined, rentCapacity(e, firm, k)) + typ
+    - postEff - V.expOf(k, expenseLoadPsf(rec, e, hs?.condition ?? "standard", k, hs?.assessed), termM);
   const q = firm.quality ?? score;
   const move = moveCostPsfYr(e, k, termM, firm);
   const cands: { w: number; v: number; bbl: string }[] = [];
@@ -803,7 +839,7 @@ export function stayOdds(s: GameState, parcels: ParcelTable | null | undefined, 
     if (take < floor) continue;
     const pc = placeCost(pts, b.pos, hour);
     const worth = worthOf(firm, k, mkt, b.sc[k] ?? 50, take, pc.cost, k === "retail" ? V.footRel(bbl) : undefined, rentCapacity(e, firm, k));
-    cands.push({ w, v: worth - post - move, bbl });
+    cands.push({ w, v: worth + typ - post - V.expOf(k, V.loadOf(b, k), termM) - move, bbl });
     tot += w;
   }
   let sum = 0, best: string | undefined, bestV = -Infinity;

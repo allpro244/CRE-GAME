@@ -4841,7 +4841,7 @@ function leaseUpMark(
  * holdingNOIYr runs the real roll through, on a lease of the class's typical
  * recovery. After tax, like holdingNOIYr, because it is added to it.
  */
-function leaseUpGapNoiYr(rec: ParcelRecord, econ: Econ, h: Holding, gapSf: number): number {
+export function leaseUpGapNoiYr(rec: ParcelRecord, econ: Econ, h: Holding, gapSf: number): number {
   if (!(gapSf > 0)) return 0;
   const cls = rec.class as BuiltClass;
   const rent = marketRentPsfYr(rec, econ, h.condition, h.condIdx);

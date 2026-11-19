@@ -45,7 +45,9 @@ import {
   assetValue, capRateFor, initialCondIdx, demandLinear, incomeValueAsIs, initialCondition, inPlace, landValue,
   marketAppraisal, noiYr, resolveRec, specWearMult, taxBorneShare, taxRate, interimUsePsfYr, useOccupancy, useRentableSf,
   useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, residualScheme, GAP_CLOSE_YR, gapDuration, COND_BANDS, condGrade, noiAfterTaxYr,
+  leaseUpGapNoiYr, stabilisedOccupancy, rentableSf, scoreVacOf,
 } from "./value";
+import { leaseUpMonthsOf } from "./proforma";
 import { uses } from "./mix";
 import { catchUpCapex } from "./dev";
 import { productOf } from "./products";
@@ -143,6 +145,10 @@ export interface DealView {
   noiPre: number;
   /** stabilised NOI before property tax, $/yr */
   stabPre: number;
+  /** of the shortfall to stabilised, the part that is space standing empty: what letting it adds, $/yr (value.ts leaseUpGapNoiYr) */
+  vacGap?: number;
+  /** the years this market takes to let space of the building's quality (proforma.ts leaseUpMonthsOf on its tier's vacancy) */
+  toLetY?: number;
   /** the owner-borne property tax, as a share of value a year */
   tau: number;
   /** re-letting capital, $/yr */
@@ -257,7 +263,16 @@ export function dealView(
   }
   const prod = rec.product ? (productOf(rec.product)?.capSpread ?? 0) : 0;
   const loc = locBelief(e, rec, k, q);
-  return { rec, bbl, k, cond: c, condIdx: q, noiPre, stabPre, tau, leaseCap, cx, catchUp, debtA, debtCap, rd: q1.ratePct, rdCurve, prod, land: landValue(rec, e), locPrem: loc.prem, locG: loc.g };
+  // THE EMPTY SPACE, AND HOW LONG THIS MARKET TAKES TO LET IT (see valueTo).
+  let vacGap: number | undefined, toLetY: number | undefined;
+  if (!steps && "h" in inP && inP.h && noiPre < stabPre) {
+    const gap = Math.max(0, stabilisedOccupancy(rec, e) - inP.occ);
+    if (gap > 0) {
+      vacGap = Math.min(stabPre - noiPre, leaseUpGapNoiYr(rec, e, inP.h, gap * rentableSf(rec)));
+      toLetY = leaseUpMonthsOf(e, k, 0, 0, scoreVacOf(e, k, overallScore(rec, e, k, q)), false) / 12;
+    }
+  }
+  return { rec, bbl, k, cond: c, condIdx: q, noiPre, stabPre, vacGap, toLetY, tau, leaseCap, cx, catchUp, debtA, debtCap, rd: q1.ratePct, rdCurve, prod, land: landValue(rec, e), locPrem: loc.prem, locG: loc.g };
 }
 
 /** One bidder's temperament, as the underwriting reads it. */
@@ -369,7 +384,20 @@ export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<ty
   // too); a lease-up buyer with harder leasing (CARE.lease) closes it faster,
   // which is the value-add trade
   const dur = gapDuration(r, GAP_CLOSE_YR * (v.noiPre < v.stabPre ? b.lease : 1));
-  V += (v.noiPre - v.stabPre) * dur;
+  // ...AND EMPTY SPACE IS A LEASE-UP, ON THE MARKET'S CLOCK (2026-11-20). The
+  // whole shortfall was held for `dur`, about 3.3 years, whatever it was made
+  // of and whatever the market: a lease under market does last until it
+  // rolls, but a dark floor is dark for as long as this market takes to let
+  // one. The appraiser charges exactly that for it (value.ts leaseUpMark:
+  // what letting the gap adds, for the months to let of the building's own
+  // tier), so the two disagreed on every empty building: measured on 32
+  // emptied buildings, month 300, the street bid 0.57-0.66 of an appraisal
+  // that had the sheds letting in 3.5 months and the shops in 14. The part
+  // of the shortfall that is empty space is held for the market's years to
+  // let (a harder-leasing buyer, CARE.lease, lets it that much sooner); the
+  // rest, the leases' distance from market, for `dur` as before.
+  const vac = v.vacGap !== undefined && v.toLetY !== undefined ? Math.min(v.vacGap, Math.max(0, v.stabPre - v.noiPre)) : 0;
+  V += (v.noiPre - v.stabPre + vac) * dur - vac * (v.toLetY ?? 0) / Math.max(0.25, b.lease);
   V -= v.catchUp;
   if (b.builds) V = Math.max(V, v.land);
   return { V: Math.max(0, V), r, rE, rd, w, g };

@@ -43,8 +43,10 @@ Done: #823 space given back at renewal counts in the office clock; #824 build de
 - [ ] **Forced equity cure on non-recourse debt** (`debt.ts tickLoan` / `equityCureNeed`): 12% of the balance a month taken from firm cash when a tenant leaves, with no choice. A non-recourse borrower can hand back the keys.
 - [x] (#828) **Listed lots with a crane on them** stay on the tape and negotiate to a price, then refuse at closing ("Crane on site"): 39 times in one run.
 - [ ] Identical bids to the $1K from four or more bidders in 15 of 61 campaigns; purchases mark up a median 7% the day they close; multifamily caps moved 5.55 -> 7.30 -> 8.81 -> 6.00 in consecutive years on a 3.2-4.9% index.
-- [ ] `test/free-listing.mjs` fails on main ("bought a building to sell": seed 4242's opening tape has nothing the fixture can buy for cash), and was failing before 2026-11-19.
+- [x] (fixed by the opening-tape change: the test passes) `test/free-listing.mjs` fails on main ("bought a building to sell": seed 4242's opening tape has nothing the fixture can buy for cash), and was failing before 2026-11-19.
 - [ ] `test/leaseup-mark.mjs` fails on main ("sampled 2 buildings": the opening tape has too few single-use office/flat listings), as does `refi-strong` (already listed above).
+
+- [ ] **The opening's firms all have unused buying capacity**: at the opening 18-22 firms bid on a building and the best bid is a median 1.02-1.05x its value; from month 2 it is about 10 firms and 0.9x. So 36-56 buildings list at the opening and ~22 the month after, against a steady 6-25. (Before 2026-11-20 the same burst landed in month 1 on an empty opening tape.)
 
 ## Next
 - [ ] Offer system revamp (waiting on owner OK): price plus terms (deposit, due diligence, financing, closing speed), a seller read, back-and-forth as a thread, live numbers.

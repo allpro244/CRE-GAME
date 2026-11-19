@@ -413,8 +413,10 @@ export interface Bid { r: Rival; max: number; bid: number; uw: Underwriting; aff
 /**
  * `cond` / `condIdx`: the building's grade when the seller is not on the tape
  * (the player's own deed — the holding's grade, which the tape cannot know).
+ * `opening`: the round is struck before the first month has run, so the
+ * desks' room is the opening's (rivalDebt.ts deskWithRoom).
  */
-export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress"> & { listedM?: number; open?: boolean; cond?: Condition; condIdx?: number }): { bids: Bid[]; n: number; view: DealView | null } {
+export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress"> & { listedM?: number; open?: boolean; cond?: Condition; condIdx?: number; opening?: boolean }): { bids: Bid[]; n: number; view: DealView | null } {
   const view = dealView(s, rec, li.bbl, li.ask, li.cond, li.condIdx, !!li.open);
   if (!view) return { bids: [], n: 0, view };
   const seller = ownerOf(s, rec.bbl);
@@ -468,7 +470,7 @@ export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
     const aumAfter = (r.aum ?? 0) + bid;
     const cushion = r.sheet ? 0.10 * r.sheet.discipline / 100 : 0;
     if (aumAfter > 0 && (r.debt + debt) / aumAfter > paramsOf(r).maxLtv - cushion) continue;
-    if (debt > 0 && !deskWithRoom(s, r.id, debt)) continue;
+    if (debt > 0 && !deskWithRoom(s, r.id, debt, !!li.opening)) continue;
     bids.push({ r, max, bid, uw, afford });
   } });
   bids.sort((x, y) => y.bid - x.bid);

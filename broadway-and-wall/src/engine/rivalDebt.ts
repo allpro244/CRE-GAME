@@ -198,7 +198,8 @@ function loansOn(s: GameState, lender: string, obligorId: string): { onDesk: num
 }
 
 /** Some live desk would take `amount` more against this name. */
-export function deskWithRoom(s: GameState, obligorId: string, amount: number): boolean {
+/** `opening`: the desks' room as the opening books it (`deskRoom` opening: three quarters of the book less what is on the record), for a deal struck before the first month has run. */
+export function deskWithRoom(s: GameState, obligorId: string, amount: number, opening = false): boolean {
   // `deskRoom` for every live desk off ONE pass over the record: each desk's
   // totals accumulate in the same order, so each is the number deskRoom gives.
   const lenders = s.lenders ?? [];
@@ -234,7 +235,7 @@ export function deskWithRoom(s: GameState, obligorId: string, amount: number): b
     if (l.failedM !== undefined) continue;
     const a = acc.get(l.name)!;
     const nameRoom = nameLimit(l) - a.exposure;
-    const room = l.capital / Math.max(0.01, targetCapital(l.name)) - l.book;
+    const room = opening ? l.book * 0.75 - a.onDesk : l.capital / Math.max(0.01, targetCapital(l.name)) - l.book;
     if (Math.min(nameRoom, room) >= amount) return true;
   }
   return false;

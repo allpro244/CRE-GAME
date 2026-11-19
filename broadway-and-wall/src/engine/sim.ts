@@ -41,7 +41,7 @@ import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDeprecia
 import { tickDemand, isCivicLand } from "./demand";
 import { tickBeliefs } from "./beliefs";
 import { tickCorporate } from "./corporate";
-import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose, landFundBid, streetSaleCost } from "./rivals";
+import { markRival, initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose, landFundBid, streetSaleCost } from "./rivals";
 import { openingCapSurvey, openingLandSurvey, tickBrokerSurvey, tickLandSurvey, anchoredAsk, forcedSaleAsk, foreclosureSale, BUY_CLOSING, bidRound, valueTo } from "./propmarket";
 import { initLenders, publishOpeningPrices, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { tickStreetLoans, retireFoldedLoans } from "./streetLoans";
@@ -576,7 +576,17 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     const value = conveyedValue(s, rec, bbl, false);
     if (value <= 0) continue;
     const ask = Math.round(anchoredAsk(s, rec, value) / 1000) * 1000;
-    const round = bidRound(s, parcels, rec, { bbl, ask, distress: false });
+    // AT THE OPENING THE BANKS HAVE THE OPENING'S ROOM (2026-11-20). A firm
+    // bids only with a desk that has room for its loan (bidRound), and a
+    // desk's room is its capital over its target less its book — which the
+    // opening sets exactly equal, so before the first month had run no desk
+    // in town could write one loan, no firm could bid, no owner's review
+    // found a buyer, and the tape opened with only the register's exits on
+    // it. Measured, six seeds: 0 to 16 buildings for sale at the opening
+    // (seed 4242: none, on a tape of 26 lots), 30-35 a month later. The
+    // opening's own rule for a desk's room (rivalDebt.ts deskRoom `opening`,
+    // the one the firms' opening leverage is settled on) is read here too.
+    const round = bidRound(s, parcels, rec, { bbl, ask, distress: false, opening });
     const best = round.bids[0]?.bid ?? 0;
     if (!(best > 0) || !round.view) continue;
     const keep = valueTo(s.econ, round.view, holderBidder(holder)).V;
@@ -2851,6 +2861,19 @@ export function firstListings(s: GameState, parcels: ParcelTable, bbls: string[]
   // written, so the tape discloses the tenants who are actually there.
   next.econ.playerNow ??= playerSpace(next, parcels);
   syncStreetRolls(next, parcels, bbls);
+  // THE FIRMS' BOOKS ARE MARKED BEFORE THE OPENING TAPE IS WRITTEN
+  // (2026-11-20). A firm bids only inside its own leverage limit, struck on
+  // the mark of its book (propmarket.ts bidRound: debt over `aum`), and its
+  // corporate line is sized on the same marks (rivals.ts lineRoom). They
+  // were first written by the first month's tick, so at the opening every
+  // firm with a mortgage read as over its limit on a book worth nothing and
+  // did not bid (see refreshListings, the annual review). The same mark the
+  // first tick writes, written first.
+  for (const r of next.rivals ?? []) {
+    if (r.failedM !== undefined || !r.bbls?.length) continue;
+    const mk = markRival(next, parcels, r);
+    r.aum = Math.round(mk.aum); r.markNoi = mk.noiYr; r.markLand = mk.landV;
+  }
   refreshListings(next, parcels, bbls, true);
   return next;
 }

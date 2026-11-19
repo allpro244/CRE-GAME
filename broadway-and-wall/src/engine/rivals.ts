@@ -1039,11 +1039,19 @@ export function claimJob(
       job.ratePct = bestLtc > 0 ? plan.ratePct : 0;
       job.lender = bestLtc > 0 ? plan.lender : undefined;
     } else {
-      job.equityLeft = 0;
-      // Facility covers the unpaid balance plus a thin interest reserve — without
-      // it, capitalised interest fills the commitment and the next month orphans
-      // a nearly finished frame.
-      job.commitment = Math.round(Math.max(0, projectCost - dayOneEquity) * 1.12);
+      // THE BANK LENDS ITS ADVANCE, NOT THE SPONSOR'S EQUITY (2026-11-18). The
+      // facility was the whole unpaid balance — everything past the first
+      // draw of equity (40% of it) — so the desk funded the other 60% of the
+      // sponsor's equity on top of its own advance: a scheme the desk would
+      // lend 13% of cost on was handed a commitment of ~73%, and developers
+      // built office into a 22%-vacant market on almost none of their own
+      // money (seed 12007: 70-85% of cost committed at 17-22% vacancy). The
+      // commitment is the desk's advance (ltc of the project) plus the thin
+      // interest reserve that keeps capitalised interest from orphaning a
+      // nearly finished frame; the sponsor pays the rest of its equity as the
+      // work goes in (fundJobs draws equityLeft before the loan).
+      job.equityLeft = Math.max(0, equityOf(best) - dayOneEquity);
+      job.commitment = Math.round(projectCost * ltc * 1.12);
       job.ratePct = plan.ratePct;
       job.lender = plan.lender;
     }
@@ -3837,8 +3845,10 @@ export function breakGround(
   s.cityJobs.push({
     bbl, use, sf, floors, startM: s.month, deliverM, mix: prog,
     firmId: r.id, cost, spent: dayOne,
-    equityLeft: 0, debt: 0,
-    commitment: Math.round(Math.max(0, cost - dayOne) * 1.12),
+    // the desk's advance plus its interest reserve; the rest of the equity is
+    // the firm's, drawn as the work goes in (see claimJob)
+    equityLeft: Math.max(0, Math.round(plan.equity) - dayOne), debt: 0,
+    commitment: Math.round(cost * Math.max(0, plan.ltc) * 1.12),
     ratePct: plan.ratePct,
     lender: plan.lender,
     ...(plan.product ? { product: plan.product.key, ...(plan.product.draw !== undefined ? { draw: plan.product.draw } : {}) } : {}),

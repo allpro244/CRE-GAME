@@ -1286,8 +1286,19 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // floor is taken out of the NOI the advance is sized on — never out of the
   // rent, the value, the land or the decision to build.
   const contracted = Math.max(btsShare > 0 && bts ? btsShare : 0, anchorSf / Math.max(1, rentable));
-  const loanSpecNoi = noiYr(asBuilt, uw, "good", true, undefined, (u) => u === "multifamily" ? Math.min(stabOccOf(u), 1 - LENDER_MIN_UW_VACANCY) : stabOccOf(u));
-  const loanNoi = stabNoi - (marketStabNoi - loanSpecNoi) * (1 - contracted);
+  // ...AT TODAY'S RENTS, NOT THE DEVELOPER'S FORECAST (2026-11-18). `uw` is the
+  // developer's read of the market at delivery — today's rents moved by the
+  // market's own adaptive expectation (underwritingEcon: up to 1.75x) — and
+  // the loan was sized on it, so in a run-up the bank lent on the boom the
+  // developers were extrapolating. An appraisal for a construction loan
+  // values the building at the market's rents as they are (the as-stabilised
+  // value on current market rent; a forecast is the sponsor's equity risk).
+  // A contracted lease (the build-to-suit overlay, stabNoi over the market's)
+  // is income the bank does lend on.
+  const lenderOcc = (u: BuiltClass) => u === "multifamily" ? Math.min(stabOccOf(u), 1 - LENDER_MIN_UW_VACANCY) : stabOccOf(u);
+  const bankMarketNoi = noiYr(asBuilt, econ, "good", true, undefined, stabOccOf);
+  const bankSpecNoi = noiYr(asBuilt, econ, "good", true, undefined, lenderOcc);
+  const loanNoi = (stabNoi - marketStabNoi) + bankMarketNoi - (bankMarketNoi - bankSpecNoi) * (1 - contracted);
   if (preReserve > 0 && exitYieldPct > 0) {
     const ltvCap = 0.75 * (loanNoi / (exitYieldPct / 100)) / preReserve;
     ltcMax = Math.max(0, Math.min(ltcMax, ltvCap));

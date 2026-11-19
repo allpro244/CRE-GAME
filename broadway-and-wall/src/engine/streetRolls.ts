@@ -890,11 +890,22 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
   for (const k of e.seekers) seeking.set(k.fid, k);
   const ratio = (k: Comm) => e.streetSpace?.[k] && (e.streetSpace[k] as { ratio?: number }).ratio || 1;
   const handed: Record<string, number> = { office: 0, retail: 0, industrial: 0 };
-  const vacate = (roll: StreetRoll, t: Tenant) => {
+  const vacate = (roll: StreetRoll, t: Tenant, sf = t.sf) => {
     const k = useOf(t);
-    handed[k] = (handed[k] ?? 0) + t.sf;
-    (roll.ready ??= []).push({ use: k, sf: t.sf, readyM: m + Math.max(1, Math.round(reletMonths(k) * 0.5)) });
+    handed[k] = (handed[k] ?? 0) + sf;
+    (roll.ready ??= []).push({ use: k, sf, readyM: m + Math.max(1, Math.round(reletMonths(k) * 0.5)) });
   };
+  // A FIRM THAT RENEWS FOR LESS FLOOR HANDS THE REST BACK (2026-11-19): feet
+  // its landlord has to make ready and let like any other, and lettings the
+  // market will have to make. They were dropped from the roll without being
+  // counted: the town's turnover (`turnMeas`, the gross lettings the months
+  // to let are read on, proforma.ts grossLettingsMo) left them out, and the
+  // feet were on offer the same month. Measured, seeds 31337 / 12007 / 550991
+  // over 50 years: 0.5-1.2% of let office space a year handed back this way,
+  // a fifth to a third of everything handed back in the tight years (2.2-3.6%
+  // a year by failures and moves), so the office clock read 22-23 months to
+  // let at 5% vacancy where the lettings actually made say about 15.
+  const renewed = (roll: StreetRoll, t: Tenant, gaveBack: number) => { if (gaveBack > 0 && !opening) vacate(roll, t, gaveBack); };
 
   // Headcount that closed or left town this month, by class — what new firms replace.
   const lost: Record<string, number> = { office: 0, retail: 0, industrial: 0 };
@@ -1084,7 +1095,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
             const lease = signAt(t, kk, best, opts[1], Math.round(need), bbl, undefined, mine.was, mine.whyId);
             if (lease) { vacate(roll, t); continue; }
           }
-          renewInPlace(s, b, roll, t, need, stayOpt ? { face: stayOpt.ask, eff: bargain(stayOpt, opts.find((o) => !o.stay)), ff: stayOpt.ff } : undefined, bookOf(b, roll, kk));
+          renewed(roll, t, renewInPlace(s, b, roll, t, need, stayOpt ? { face: stayOpt.ask, eff: bargain(stayOpt, opts.find((o) => !o.stay)), ff: stayOpt.ff } : undefined, bookOf(b, roll, kk)));
           noteRoll(roll);
         }
         keep.push(t);
@@ -1163,7 +1174,7 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
           t.endM = m + HOLDOVER_M;
         } else {
           const renewEff = stayOpt ? bargain(stayOpt, opts.find((o) => !o.stay)) : undefined;
-          renewInPlace(s, b, roll, t, need, stayOpt ? { face: stayOpt.ask, eff: renewEff!, ff: stayOpt.ff } : undefined, bookOf(b, roll, kk));
+          renewed(roll, t, renewInPlace(s, b, roll, t, need, stayOpt ? { face: stayOpt.ask, eff: renewEff!, ff: stayOpt.ff } : undefined, bookOf(b, roll, kk)));
           noteRoll(roll);
           // A SITTING TENANT THAT RENEWS AT THE ASK is the landlord's read of
           // a tight market: no building its broker could show it was close
@@ -1746,7 +1757,7 @@ function premises(b: Bld, roll: StreetRoll, t: Tenant, need: number): number {
  * the landlord's ask on the face and the difference as free months). With no
  * bargain to hand — the opening's years, an old save — it pays the ask.
  */
-function renewInPlace(s: GameState, b: Bld, roll: StreetRoll, t: Tenant, need: number, deal?: { face: number; eff: number; ff?: number }, L?: LandlordAsk) {
+function renewInPlace(s: GameState, b: Bld, roll: StreetRoll, t: Tenant, need: number, deal?: { face: number; eff: number; ff?: number }, L?: LandlordAsk): number {
   const k = useOf(t) as Comm;
   const m = s.month;
   const mkt = b.mkt[k] ?? useRentPsfYr(b.rec, s.econ, b.cond, k, b.condIdx);
@@ -1790,6 +1801,7 @@ function renewInPlace(s: GameState, b: Bld, roll: StreetRoll, t: Tenant, need: n
   const sc = b.sc[k] ?? 50;
   recordLease(s.econ, k, m, face, face * (1 - freeM / Math.max(1, termM)), mkt * (deal?.ff ?? 1), t.sf,
     Math.max(0, Math.min(N_BANDS - 1, Math.floor(sc / 10))), scoreRentMult(s.econ, k, sc), true);
+  return Math.max(0, was - t.sf);
 }
 
 // ------------------------------------------------------- the player's buildings

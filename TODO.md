@@ -50,6 +50,9 @@ Done: #823 space given back at renewal counts in the office clock; #824 build de
 
 - [ ] `test/covenant.mjs` ("4 towns x 35 years") ran 54 CPU-minutes on main without printing a result (HANDOFF says ~2 min): slow or stuck; not in the smoke test.
 
+- [ ] **The street's best bid is far under the appraisal in most years, and flats and offices often have one or two bidders** (seed 31337, every held-by-an-owner building asked at its appraisal, main after #831): best bid over appraisal, median, year 2 / 6 / 10: shops 0.68 / 0.87 / 0.71, sheds 0.71 / 0.89 / 0.77, flats 0.09 / 0.67 / 0.26, office 0.02 / 0.67 / 0.14. Flats and offices: 1-2 bidders in years 2 and 10, whose bid is what they can fund (2-26% of the price). The winner's own value is 0.68-0.95 of the appraisal: it needs 8-12% on a book 21-67% levered while the appraiser caps at 5.5-7.4%. Not bank room (every firm has a desk with room from month 1): the firms' own leverage limits, deals-a-year caps and class lists. So an appraisal is not what the building would fetch, net worth is overstated by 10-30%, and cap rates swing with who happens to be able to bid. Needs its own project: who buys flats and offices, and an appraisal read off what buyers pay.
+- [ ] The opening still books shed occupancy about 2% of stock over the street's own count (reported vacancy 4.7% -> 6.2% in month 1; it was 9.1% before the mid-lease fix).
+
 ## Next
 - [ ] Offer system revamp (waiting on owner OK): price plus terms (deposit, due diligence, financing, closing speed), a seller read, back-and-forth as a thread, live numbers.
 - [ ] Bring the new shell's features into Classic where they're worth it:

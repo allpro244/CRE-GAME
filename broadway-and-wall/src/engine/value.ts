@@ -4554,6 +4554,9 @@ export function industryConcentration(h: Holding, econ?: Econ): { share: number;
   return { share: topV / total, sector: top, stressed: stressed / total };
 }
 
+/** The trade of space assumed re-let (`rollQualitySpread` relet): its own, and not in trouble (no industry reads it). */
+const RELET_TRADE = "\u0000relet" as unknown as Sector;
+
 /** The largest tenant's share of the rent roll. */
 export function concentration(h: Holding): number {
   let top = 0, total = 0;
@@ -4578,7 +4581,26 @@ function residentialSpread(h: Holding): number {
   return clamp((0.94 - occ) * 2.2, -0.12, 0.85);
 }
 
-export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number, econ?: Econ): number {
+/**
+ * `relet`: grade the roll AS IF `relet.sf` more feet were let today on one
+ * fresh lease at `relet.rentPsf` — what an appraiser assumes of space still
+ * to let (`leaseUpMark`). The new lease is the class's ordinary term
+ * (market.ts LEASE_TERM_M), the street's average covenant (1.05 on the 0-2
+ * scale [D: tenantBooks.ts STREET_GRADE_SF, 0.30 x 2 + 0.45 x 1]), on the
+ * class's lease basis (shops and sheds net), and is a name and a trade of
+ * its own that is not in trouble: a one-tenant building re-let is still a
+ * one-tenant building.
+ */
+export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number, econ?: Econ, relet?: { sf: number; rentPsf: number }): number {
+  if (relet && relet.sf > 0 && rec.class !== "land" && rec.bldgArea) {
+    const cls = rec.class as BuiltClass;
+    const net = cls === "retail" || cls === "industrial";
+    const phantom = {
+      ...(h.tenants[0] ?? {}), name: "\u0000relet", fid: undefined, sf: relet.sf, rentPsf: relet.rentPsf, credit: 1.05,
+      startM: month, endM: month + LEASE_TERM_M[cls], recovery: net ? "nnn" : "gross", net, use: cls, sector: RELET_TRADE,
+    } as unknown as Tenant;
+    return rollQualitySpread(rec, { ...h, tenants: [...h.tenants, phantom] }, month, econ);
+  }
   if (rec.class === "land" || !rec.bldgArea) return 0.55;
   // The commercial part is what the tenants lease. Measuring a rent roll
   // against the WHOLE building marked a full block of flats with shops at
@@ -4773,12 +4795,43 @@ function leaseUpMark(
   // leaseUpMarkAt (its risk line is the "empty building is a project" spread
   // in dollars), so charging both would price the same vacancy twice. At a
   // full gap it is the plain cap, at no gap it is exactly the blend's cap.
-  const inPlaceShare = clamp(letShare / Math.max(0.01, stabOcc), 0, 1);
-  const capFilled = capNoRoll + (cap - capNoRoll) * inPlaceShare;
-  const filledNoi = contractNoi + leaseUpGapNoiYr(rec, econ, h, gap * rentableSf(rec));
+  //
+  // ...AND THE GAP, ONCE LET, IS A LEASE LIKE ANY OTHER (2026-11-19). The cap
+  // here shed the roll's whole spread in proportion to the gap, so a building
+  // that lost its only tenant was valued "filled" at the cap of a building
+  // with no roll to grade — tighter than the cap it carried the day before.
+  // Measured on 32 held buildings (seed 31337, month 300), each emptied on a
+  // clone: the one-tenant commercial rolls carried +1.4 to +2.1 points, the
+  // "filled" value came out 16-37% over the let building's own mark, and the
+  // deductions below (15-34% of stabilised) all but cancelled it — sheds
+  // marked 0.96 of let when empty, shops 0.87, while the street's bidders
+  // paid 0.57-0.66 of that. A one-tenant building re-let is a one-tenant
+  // building: the roll is graded with the gap let on a fresh market lease
+  // (`rollQualitySpread` relet). Flats have no roll to grade and are as they were.
+  const gapSf = gap * rentableSf(rec);
+  const flats = clamp(1 - commercialShare(rec), 0, 1) > 0.5;
+  const capFilled = flats
+    ? capNoRoll + (cap - capNoRoll) * clamp(letShare / Math.max(0.01, stabOcc), 0, 1)
+    : capNoRoll + rollQualitySpread(rec, h, month, econ, { sf: gapSf, rentPsf: marketRentPsfYr(rec, econ, h.condition, h.condIdx) }) / 100;
+  const gapNoi = leaseUpGapNoiYr(rec, econ, h, gapSf);
+  const filledNoi = contractNoi + gapNoi;
   const yFilled = capFilled + taxRate(econ) * taxBorneShare(rec);
   const filled = termAndReversion(econ, stabNoi / yFilled, filledNoi, capFilled, yFilled);
-  const mark = leaseUpMarkAt(rec, econ, h.condition, sinceM, letShare, capNoRoll, filled, h.condIdx);
+  // THE INCOME GIVEN UP IS WHAT THE GAP WOULD EARN, FOR AS LONG AS THIS MARKET
+  // TAKES TO LET IT (2026-11-19): the months to let of the building's own
+  // tier today (proforma.ts leaseUpMonthsOf on value.ts scoreVacOf — the clock
+  // a developer's lease-up, a construction lender's takeout and an office
+  // landlord's ask all read). It was half of what is left of a fixed 3.2-year
+  // span (1.6 for flats) whatever the market: at month 300 of the same run the
+  // market's clock read 32 months for office, 14 for shops, 3.5 for sheds and
+  // 1.8 for flats. Empty feet falling at the market's rate lose its time
+  // constant in months of their rent (the integral of the decay), and that
+  // rent is the whole of what letting them adds to the owner's statement —
+  // the costs the owner carries on dark space included.
+  const cls = rec.class as BuiltClass;
+  const toLetM = leaseUpMonthsOf(econ, cls, 0, 0, scoreVacOf(econ, cls, overallScore(rec, econ, cls, h.condIdx)), false);
+  const forgone = gapNoi * toLetM / 12;
+  const mark = leaseUpMarkAt(rec, econ, h.condition, sinceM, letShare, capNoRoll, filled, h.condIdx, forgone);
   return mark === null ? null : { mark, weight };
 }
 
@@ -4844,6 +4897,8 @@ export function leaseUpMarkAt(
   filled?: number,
   /** the exact condition, so a thousandth of it is a thousandth of value */
   condIdx?: number,
+  /** The income given up while it lets, when the caller has the owner's statement and the market's clock (`leaseUpMark`). */
+  forgoneIn?: number,
 ): number | null {
   if (!rec.bldgArea || sinceM < 0 || !(leaseUpWeight(rec, sinceM) > 0)) return null;
   const apt = (rec.class as BuiltClass) === "multifamily";
@@ -4899,7 +4954,7 @@ export function leaseUpMarkAt(
   // 2. The income it does not earn on the way there. Space lets in over the
   //    window rather than all at the end, so on average half of what is empty
   //    today is empty for the time that is left.
-  const forgone = stab * (capNoRoll + taxLoad) * gapFrac * left * 0.5;
+  const forgone = forgoneIn ?? stab * (capNoRoll + taxLoad) * gapFrac * left * 0.5;
   // 3. And the part nobody underwrites away: it may not let. A wholly empty
   //    building is a project, and it is priced like one.
   const risk = stab * 0.08 * gapFrac;

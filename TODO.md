@@ -41,7 +41,7 @@ Done: #823 space given back at renewal counts in the office clock; #824 build de
 - [ ] **Office renewals run 73-100% of expiring floor** (studies 40-79%). Moving costs 2-2.5 years' rent once rents halve; no unrealistic decision found. CompStak 2024 shows renewals getting concessions close to new leases, so "landlords squeeze sitting tenants" is not supported.
 - [ ] **Exploits a bot found**: withdraw and relist a sale until a bid at ~100% of the mark arrives (listing costs nothing; top bids reach 110-131%); equity for a job drawn on the credit line whose limit grows off the same marks; the portfolio facility advanced 81% on a pool with an empty building, under the bank's single-asset rate.
 - [ ] **Forced equity cure on non-recourse debt** (`debt.ts tickLoan` / `equityCureNeed`): 12% of the balance a month taken from firm cash when a tenant leaves, with no choice. A non-recourse borrower can hand back the keys.
-- [ ] **Listed lots with a crane on them** stay on the tape and negotiate to a price, then refuse at closing ("Crane on site"): 39 times in one run.
+- [x] (#828) **Listed lots with a crane on them** stay on the tape and negotiate to a price, then refuse at closing ("Crane on site"): 39 times in one run.
 - [ ] Identical bids to the $1K from four or more bidders in 15 of 61 campaigns; purchases mark up a median 7% the day they close; multifamily caps moved 5.55 -> 7.30 -> 8.81 -> 6.00 in consecutive years on a 3.2-4.9% index.
 - [ ] `test/leaseup-mark.mjs` fails on main ("sampled 2 buildings": the opening tape has too few single-use office/flat listings), as does `refi-strong` (already listed above).
 

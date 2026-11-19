@@ -4136,6 +4136,17 @@ function replacementSearch(
       // A redeveloper that borrows needs its margin on the equity the desks
       // leave it (equityStretch), like a builder on vacant dirt.
       const m = DEV_MARGIN * (rdev.ltc > CASH_BUILDER_LTC ? equityStretch(s) : 1);
+      // THE SAME SPREAD ON TODAY'S RENT AS ON VACANT DIRT (2026-11-19). The
+      // shop's bar is a belief and has no floor (drawDeveloper); on vacant
+      // dirt the scheme must first clear the development spread its lender
+      // and investment committee underwrite on current rents (`spreadFloor`,
+      // developerLook), and here it did not. Measured, seed 12007, the first
+      // three years: office replacements went ahead at a yield on cost of
+      // 7.3-8.2% against a 9.2-9.4% exit cap — buildings worth less than they
+      // cost the day they were decided — by the shops whose bars drew 0.69-
+      // 0.77, and teardowns were 797k of the 1.08M sf of office the town
+      // started in five years, into 23% vacancy. One rulebook for both paths.
+      if (hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) < 1 + (spreadFloor(rdev) - 1) * equityStretch(s)) continue;
       const h = hurdleAt(u.plan, m) * rdev.outlook * momentumRead(s, k, rdev.momentum, who) * exitRead(s, who, k) / rdev.bar;
       maxH = Math.max(maxH, h);
       if (h < 1) continue;

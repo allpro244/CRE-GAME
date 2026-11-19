@@ -1568,16 +1568,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
       const u1 = Math.max(1e-6, mulberry32Step(((s.seed ^ (0x51ed27 * (BUILT_CLASSES.indexOf(k) + 3))) >>> 0) || 7).value);
       const u2 = mulberry32Step(((s.seed ^ (0x2545f491 + BUILT_CLASSES.indexOf(k) * 977)) >>> 0) || 11).value;
       const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-      // ...AND DENSER TOWNS OPEN DEARER AGAINST WHAT THEY COST TO BUILD
-      // (2026-11-18). The table rent above carries the density premium
-      // (dens.rent, Ahlfeldt & Pietrostefani 2019: rents 0.15 per log-point
-      // of density) and the cost index the wage one (0.04), but the solve set
-      // every town's q around 1 whatever its density, so a sparse hamlet and a
-      // dense great city opened office within a few dollars of each other. The
-      // finished building's q is rent over replacement cost (land left out:
-      // the land is the residual this premium is), so it opens at the ratio of
-      // the two scales, intensity^(0.15 - 0.04) [S: the same elasticities].
-      const target = Math.exp(OPEN_Q_SIGMA * z) * (dens.rent / Math.max(1e-6, dens.cost));
+      const target = Math.exp(OPEN_Q_SIGMA * z);
       // At no package: the opening's rents are face, and what the town
       // gives away is what its first leases sign at (tenantMarket.ts,
       // streetRolls.ts), not a dial set from its vacancy against a norm.

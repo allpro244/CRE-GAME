@@ -974,6 +974,8 @@ export interface ProForma {
   commitment: number;
   interestReserve: number;
   pointsCost: number;
+  /** Income not earned while the building lets, beyond what `leaseUp` already carries: in the denominator of the yield and the land's residual, not in the budget. */
+  leaseUpForgone: number;
   /** Everything in the basis except the dirt: build, reserves, points. */
   nonLandBasis: number;
   stabNoi: number;
@@ -1428,6 +1430,40 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   }
   deficit = Math.round(deficit);
   const carry = Math.round(openSf * opex0 * (1 - fillOcc) * (carryMonths / 12));
+  // WHAT THE BUILDING DOES NOT EARN WHILE IT LETS (2026-11-20). The yield on
+  // cost divides the STABILISED income by the cost, as if the income began
+  // the day the building opened. The lease-up above charged the months to
+  // let only two ways: the running costs of the empty floors (`carry`) and
+  // the coupon the rent roll cannot yet pay (`deficit`) — on the loan taken.
+  // So money in an empty building cost something only if it was borrowed:
+  // an equity builder's five-year lease-up cost it nothing, and since a desk
+  // cuts its advance when space lets slowly (the takeout test below), the
+  // slower the market the SMALLER the charge. Measured, seed 4000, years 1-3
+  // (main after #828): twenty firms each started one ~24k sf office at
+  // 10-12% vacancy and falling rents, the pipeline at 15% of the stock, on
+  // pro formas whose lease-up line was 1.8 years of income against a clock
+  // reading 48-60 months; the town went to 25% vacant.
+  //
+  // What the wait costs is the income not earned over it, whoever's money is
+  // in the building: each month of the lease-up, the stabilised income less
+  // what the roll pays at that month's occupancy. Summed over the market's
+  // absorption curve that is the clock's months of full income (the integral
+  // of the building's empty feet, `leaseUpMonths`). It is the appraiser's
+  // deduction for a building in lease-up (value.ts leaseUpMark `forgone`),
+  // read by the developer before it builds instead of by the valuer after.
+  // It goes in the denominator the yield and the land are struck on, not in
+  // the budget: nobody writes a cheque for income they did not receive. The
+  // running costs and the unpaid coupon above are part of the same
+  // shortfall, so only what they do not already cover is added.
+  let forgoneNoi = 0;
+  {
+    const curve = absorptionCurve(carryMonths);
+    const stabM = (openSf * (rentPsf0 * stabOcc0 - opex0 * (1 - recovery0 * stabOcc0))) / 12;
+    for (let t = 0; t < carryMonths; t++) {
+      const occT = stabOcc0 * curve[t];
+      forgoneNoi += Math.max(0, stabM - (openSf * (rentPsf0 * occT - opex0 * (1 - recovery0 * occT))) / 12);
+    }
+  }
   // TI tracks construction cost. Lease commissions are already a fraction of
   // today's rent (months × rate) — multiplying them by costIdx double-counts
   // a century of rent inflation and made lease-up reserves larger than hard
@@ -1451,6 +1487,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
       ? Math.round(anchorFree + anchors.reduce((t, x) => t + x.sf * x.tiPsf * econ.costIdx + x.rentPsf * x.sf * anchorYears(x.termM) * 0.02, 0))
       : 0;
   const leaseUp = Math.round(specLeaseUp * (1 - btsShare));
+  const leaseUpForgone = Math.round(Math.max(0, forgoneNoi - carry - deficit) * (1 - btsShare));
   const costTotal = hardCost + softCost + demo + contingency + leaseUp + anchorCost;
 
   // Foundations, core, facade and fit-out: use the same class schedule the
@@ -1493,6 +1530,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
     asBuilt, mix, floors: fl, coverage: cov, gsf, rentable,
     hardCost, softCost, demo, contingency, leaseUp, anchorCost, costTotal, months,
     ltc, ltcMax, ltcSizedBy, ratePct, lender: cq.lender, points: cq.points, commitment, interestReserve, pointsCost,
+    leaseUpForgone,
     nonLandBasis: costTotal + interestReserve + pointsCost,
     stabNoi, exitCap, exitYieldPct, taxYr1, abate,
     landCarryRate: landCarryFactor(months),

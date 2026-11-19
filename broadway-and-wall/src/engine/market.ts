@@ -4493,6 +4493,8 @@ export function tickEcon(s: GameState) {
       // map's sheds ran 10-45% (REAL_ECONOMY_PLAN 9a take 4). Now it is a
       // book of tenants: what they occupy and what their heads need.
       const offSf = Math.max(0, e.stock[k] - onMap);
+      // the month the street's firms are first counted (the off-map book opens with it, below)
+      const firstCount = e.offMap?.[k] === undefined;
       const om: NonNullable<NonNullable<Econ["offMap"]>[BuiltClass]> = (e.offMap ??= {})[k] ??= (() => {
         // Opened at the class's occupancy as the books stood when the street
         // was first counted — at a new game, the opening's availability
@@ -4568,7 +4570,17 @@ export function tickEcon(s: GameState) {
       const unmet = om.need - om.occ - Math.max(0, offSf - betweenTenantsSf(om.occ, k, e) - om.occ);
       if (unmet > 0) om.need -= 0.25 * unmet;
       e.occupied[k] = Math.min(e.stock[k], letMap + om.occ);
-      absorb = e.occupied[k] - before;
+      // A CHANGE OF COUNT IS NOT A MONTH'S TAKE-UP (2026-11-19). The opening
+      // books a class's occupied floor as its stock at the opening's vacancy;
+      // from the first month it is the leases the street's firms actually
+      // hold. The difference between the two went into `absorb12` as if
+      // tenants had moved out in a month, and a year's lettings were read off
+      // it (proforma.ts grossLettingsMo): measured at month 1, sheds 4.7% ->
+      // 9.1% "vacant" and -4.4% of stock "absorbed" (seed 31337; 6.4% -> 8.1%
+      // and -1.7% on 550991), so the months to let read 51 to 240 and a
+      // construction desk's takeout test lent 12-13% of cost on a shed it
+      // valued at 1.4 times cost. Nobody moved: the first count books none.
+      absorb = firstCount ? 0 : e.occupied[k] - before;
       e.pool[k] = e.occupied[k] + firms!.seek + Math.max(0, om.need - om.occ);
       if (pNow !== undefined) (e.playerOcc ??= { office: 0, retail: 0, multifamily: 0, industrial: 0 })[k] = pNow;
     } else if (pNow !== undefined) {

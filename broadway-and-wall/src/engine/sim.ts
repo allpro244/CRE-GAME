@@ -388,6 +388,18 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   // disagreeing on NOI. Stamping here catches all of them the tick after they
   // appear, and costs nothing: the roll is deterministic per building and
   // drawn from a private stream. See stampListing.
+  // A LOT SOMEBODY HAS BROKEN GROUND ON COMES OFF THE TAPE (2026-11-19). No
+  // new listing is written on a lot with a live city job (`blocked`, below;
+  // `landSales`), but a lot listed BEFORE its job started stayed listed: it
+  // negotiated to an agreed price and then refused at the closing table
+  // ("Crane on site", actions.ts) — 39 times in one 25-year playthrough, one
+  // lot still on the tape with its building ten months from delivery. The
+  // builder bought the dirt; the listing is over. (A stalled job a receiver
+  // is selling half-built is `orphaned` and keeps its own listing.)
+  {
+    const live = new Set((s.cityJobs ?? []).filter((j) => !j.orphaned).map((j) => j.bbl));
+    if (live.size && s.listings.some((l) => live.has(l.bbl) && !l.halfBuilt)) s.listings = s.listings.filter((l) => !live.has(l.bbl) || l.halfBuilt);
+  }
   for (const li of s.listings) {
     // A DISCLOSED ROLL AGES WITH THE CALENDAR. It was stamped once and never
     // looked at again, so a lease that ended while the building sat on the

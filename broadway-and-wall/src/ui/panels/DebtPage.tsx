@@ -811,9 +811,13 @@ export function DebtPage() {
                 onChange={setLev}
                 format={() => `${usd(Math.floor(qt.base * lev))} · ${((qt.base * lev) / Math.max(1, qt.quality.value) * 100).toFixed(0)}% of the pool`}
                 marks={[{ at: 0.5, label: "half" }, { at: 1, label: "the base" }]}
-                hint={`Net ${usd(Math.floor(qt.base * lev) - qt.payoff - qt.penalties - Math.round(Math.floor(qt.base * lev) * (0.01 + qt.points)))} after payoffs and fees. `
-                  + drawHint(qt, Math.floor(qt.base * lev))}
+                hint={drawHint(qt, Math.floor(qt.base * lev))}
               />
+              {/* WHAT THE CLOSING PUTS IN YOUR ACCOUNT: the draw less the mortgages it repays, their prepayment and the fees. */}
+              <div style={{ fontSize: 17, fontWeight: 700, margin: "8px 0 2px" }}>
+                Net to you {usd(Math.floor(qt.base * lev) - qt.payoff - qt.penalties - Math.round(Math.floor(qt.base * lev) * (0.01 + qt.points)))}
+                <span className="dim" style={{ fontSize: 12, fontWeight: 400 }}> after payoffs and fees</span>
+              </div>
               <div className="btn-row">
                 <button className="btn btn-buy" disabled={!qt.available || pool.length < FACILITY_MIN_ASSETS}
                   onClick={() => { useStore.getState().openFacility(pool, qt.productId, lev); setBuilding(false); }}>

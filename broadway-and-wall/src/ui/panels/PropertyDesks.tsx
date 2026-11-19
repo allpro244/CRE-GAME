@@ -441,12 +441,13 @@ export function LeasingDesk({ bbl }: { bbl: string }) {
           <div className="page-section" style={{ marginTop: 10 }}>Early renewal</div>
           <table className="tbl">
             <thead>
-              <tr><th>Tenant</th><th className="num">Rent now</th><th className="num">Market</th><th className="num">They&apos;ll take</th><th className="num">Adds</th><th /></tr>
+              <tr><th>Tenant</th><th className="num">Leased</th><th className="num">Rent now</th><th className="num">Market</th><th className="num">They&apos;ll take</th><th className="num">Adds</th><th /></tr>
             </thead>
             <tbody>
               {extends_.slice(0, 5).map((e) => (
                 <tr key={e.idx}>
                   <td>{e.name}</td>
+                  <td className="num">{sf(h.tenants[e.idx]?.sf ?? 0)}</td>
                   <td className="num">${e.current.toFixed(0)}</td>
                   <td className="num">${e.market.toFixed(0)}</td>
                   <td className={"num" + (e.newRent < e.current ? " neg" : "")}>${e.newRent.toFixed(0)}</td>

@@ -3468,25 +3468,72 @@ export function locOpexMult(rec: ParcelRecord, econ: Econ | undefined, cls: Buil
 /**
  * What share of the expense stack a TYPICAL roll of each class bills back.
  *
- * These are not free parameters — they fall out of the lease structures
- * `rollRecovery` actually writes. Retail and industrial are overwhelmingly
- * triple-net, so the owner is close to flat on expenses. Office is mostly
- * base-year, which recovers only the growth above the stop and therefore
- * recovers about a third of the stack across a roll of mixed vintages.
- * Apartments recover nothing: a residential lease is gross, always.
+ * These are not free parameters — they fall out of the lease basis each class
+ * is written on (leasing.ts leaseBasis, one per class, owner 2026-11-18).
+ * Shops and sheds are triple-net: the tenants pay the whole bill on what they
+ * occupy. Office is full-service with a base-year stop, which recovers only the
+ * growth above each lease's stop: across a roll whose leases are spread over
+ * an 84-month term, at 2.5% a year, the recovered share of today's bill is the
+ * mean over lease ages a in [0, 7] of 1 - 1.025^-a, about 8%. Apartments
+ * recover nothing: a residential lease is gross, always.
  *
  * This exists so that the income quoted on the tape is the income the
  * building earns. Ignore recoveries and a triple-net retail building looks a
  * third poorer than it is; assume full recovery and a gross office building
  * looks richer. Either way the number on the screen is a lie, and the loan
  * sized against it is a lie too.
- * [D: leasing.ts rollRecovery's mix with base-year recovering about a third —
- * office 0.30 + 0.58/3 = 0.49, retail 0.86 + 0.09/3 = 0.89, industrial
- * 0.92 + 0.08/3 = 0.95.]
+ * [D: triple-net 1; base-year 1 - (1 - 1.025^-7)/(7 ln 1.025) = 0.08; gross 0.
+ * The mix it replaced — office 30% NNN, 58% base-year, 12% gross — read the
+ * base-year leases as recovering a third, which they do only after decades of
+ * inflation, and gave office 0.50.]
  */
 export const RECOVERY_RATE: Record<BuiltClass, number> = {
-  retail: 0.88, industrial: 0.92, office: 0.50, multifamily: 0,
+  retail: 1, industrial: 1, office: 0.08, multifamily: 0,
 };
+
+/**
+ * WHAT A CLASS'S RENT IS QUOTED ON, and the same rent on a net basis (2026-11-18).
+ * The class rent indices are the face of the leases that signed, and a class's
+ * leases are each written on one basis (leasing.ts leaseBasis): office full-service with a
+ * base-year stop (the landlord pays the bills, the tenant only their growth),
+ * shops and sheds triple-net, flats gross. So an office's $25 and a
+ * shop's $14 are not the same kind of number, and set side by side they read
+ * as office at nearly twice the shop. The net-equivalent takes out what the
+ * landlord pays and does not recover: the class's unrecovered share
+ * (1 - RECOVERY_RATE, the class's basis) of the market operating bill and
+ * of the tax on an average building of the class (its value read as the NOI
+ * at the class cap; tax left out of that NOI, a one-pass estimate) [D].
+ */
+export const LEASE_BASIS: Record<BuiltClass, { short: string; long: string }> = {
+  office: { short: "full-service", long: "full-service with a base-year stop: the rent covers operating costs and tax; the tenant pays only their growth over the year it signed" },
+  retail: { short: "NNN", long: "triple-net: the tenant pays its share of operating costs and tax on top of the rent" },
+  industrial: { short: "NNN", long: "triple-net: the tenant pays its share of operating costs and tax on top of the rent" },
+  multifamily: { short: "gross", long: "gross: the landlord pays operating costs and tax" },
+};
+/**
+ * THE CLASS'S AVERAGE BILL, $/sf a year: the market operating bill for the
+ * class and the tax on an average building of it (its value read as the NOI
+ * at the class cap, tax left out of that NOI: a one-pass estimate) [D]. What
+ * a triple-net tenant pays on top of its rent, and what a full-service rent
+ * carries inside it.
+ */
+export function classExpensePsf(econ: Econ, k: BuiltClass, rent = econ.rentIdx?.[k] ?? 0): { opex: number; tax: number; total: number } {
+  const opex = opexPsf(k, econ, false);
+  const unrec = 1 - (RECOVERY_RATE[k] ?? 0);
+  const occ = 1 - (econ.cityVac?.[k] ?? 0.08);
+  const cap = Math.max(0.03, (econ.capRate?.[k] ?? 7) / 100);
+  const valuePsf = Math.max(0, (Math.max(0, rent) * occ - unrec * opex) / cap);
+  const tax = valuePsf * taxRate(econ);
+  return { opex, tax, total: opex + tax };
+}
+export function netEquivalentRent(econ: Econ, k: BuiltClass, rent = econ.rentIdx?.[k] ?? 0): number {
+  if (!(rent > 0)) return 0;
+  return Math.max(0, rent - (1 - (RECOVERY_RATE[k] ?? 0)) * classExpensePsf(econ, k, rent).total);
+}
+/** What the market pays gross, $/sf a year: a triple-net rent plus the class's average bill; a full-service or gross rent is already gross. */
+export function grossRent(econ: Econ, k: BuiltClass, rent = econ.rentIdx?.[k] ?? 0): number {
+  return LEASE_BASIS[k].short === "NNN" ? rent + classExpensePsf(econ, k, rent).total : rent;
+}
 
 /** The share of the property-tax bill this building's owner actually eats. */
 export function taxBorneShare(rec: ParcelRecord): number {

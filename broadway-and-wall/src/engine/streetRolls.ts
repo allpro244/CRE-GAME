@@ -1193,7 +1193,23 @@ function tickFirms(s: GameState, parcels: ParcelTable, opening: boolean) {
         // Outgrown mid-lease: next door if the building has it, else go looking.
         const room = availOf(b, roll, k);
         if (room >= need - t.sf) { t.sf = premises(b, roll, t, need); noteRoll(roll); }
-        else {
+        // ...GO LOOKING ONLY IF IT HAS GROWN SINCE IT SIGNED (2026-11-19). A
+        // shop or a shed signs for as little as half the floor it wants
+        // (REQ_FIT 0.5; an office 0.8), so a firm that took a suite at half
+        // its want was "half again over its feet" the day it moved in and
+        // went straight back to market, mid-lease, every time. Measured, seed
+        // 31337, years 1-5: 22% of shops and 26% of sheds over the line at
+        // any month against 2% of offices; firms holding 34% of the let shop
+        // floor and 50% of the shed floor went looking mid-lease each year
+        // and 12% and 18% of it moved (office 2.4%), which is most of why
+        // shops and sheds handed back 17-25% of their floor a year against
+        // about 5% from the retention the studies report (market.ts
+        // TURNOVER_YR). A firm that took less than it wanted knew it when it
+        // signed, and has the lease to live with it: it takes more floor in
+        // its own building when there is some (above) and shops for its full
+        // need at the lease's end. What sends it to market mid-lease is the
+        // same half again, of its own staff since it signed.
+        else if ((t.staff ?? 1) > Math.max(0.2, t.staffSign ?? 1) * 1.5) {
           e.seekers.push({ fid: t.fid!, use: k, want: Math.round(need), since: m, why: "grow", from: bbl, midLease: true });
           seeking.set(t.fid!, e.seekers[e.seekers.length - 1]);
         }

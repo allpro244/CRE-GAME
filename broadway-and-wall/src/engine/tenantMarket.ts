@@ -301,19 +301,33 @@ export function goingRent(k: Comm, mkt: number, going = 1): number {
   return k === "office" ? mkt * going : mkt;
 }
 /**
- * HOW FAST A LANDLORD MOVES TOWARD ITS BEST POST, the share of the gap
- * closed in a year. Rents on new office leases close 0.378 of the gap
- * between equilibrium and actual rent a year (Englund, Gunnelin, Hendershott
- * & Söderberg 2005, NBER WP 11345, Table 5, basic model: ε(t-1) −0.3780,
- * t −3.62, annual, Stockholm 1977-2002, 2,500 leases; "rent ten percent above
- * equilibrium ... closing over a third of the gap", p. 17) [S]. The trade
- * moved the whole gap in a year, so a vacancy shock was priced away inside
- * the year and last year's vacancy explained almost nothing of this year's
- * rent: office Wheaton-Torto slope −0.15 to −0.5 on last year's vacancy
- * against −1.0 to −1.3 on the same year's (seed 11, 50 years, 2026-11-10);
- * the same table's coefficient on last year's vacancy is −1.97.
+ * THE TRADE'S STEP IS TAKEN WHOLE, OVER THE YEAR AN OPINION OF RENT TAKES TO
+ * REFRESH (COMPS_M) (2026-11-19). It was multiplied by 0.378, read as "rents
+ * close 0.378 of the gap to equilibrium a year" from Englund, Gunnelin,
+ * Hendershott & Söderberg 2005 (NBER WP 11345, Table 5, basic model). That
+ * table's rent equation (their 10') has two separate terms:
+ *     dlnR = ... − 1.9742·v(t−1) − 0.3780·ε(t−1) ...
+ * rent falls 1.97% a year for each point of last year's vacancy, AND closes
+ * 0.378 of ε, the gap between rent and its long-run equilibrium level (their
+ * equation 5, on employment and stock). The trade's step is the vacancy term
+ * — months to let are the vacancy over the lettings — not ε, so the 0.378
+ * damped the wrong quantity: the vacancy response came out a fifth of the
+ * table's own. Measured, seeds 31337 / 12007 / 4000, years 1-16, real
+ * effective office rent a year against last year's vacancy:
+ *     with 0.378   −0.43% a point; −5.8% a year at 22-35% vacancy
+ *     without      −1.08% a point; −13.1% a year at 22-40% vacancy
+ * against −1.97 (Englund), −2 to −3 (Wheaton & Torto 1988) and −18.6% a year
+ * in Houston 1983-87 (CUT_DEEP). With the damping a glut kept rents over
+ * what a new building needs for a decade, the developers kept building into
+ * it (seed 4000: 5% of the office stock committed a year at 19-23% vacancy,
+ * years 4-7) and vacancy stood over 20% for 12-15 years; without it the same
+ * towns are back to 11-12% in 8-10, inside the paper's "5-10 years for the
+ * market to adjust to a shock". The other way too: under 5% vacancy rents
+ * now rise 13% a year real where they rose 4%, and a town that opens tight
+ * builds a bigger first wave (seed 31337: stock +42% by year 12, was +33%).
+ * The 0.378 on ε has no counterpart here: no agent computes a long-run
+ * equilibrium rent.
  */
-export const RENT_ADJ_YR = 0.378;
 /** The months to let at which a cut gains in months dark what it gives up in rent: N / (ε - 1). */
 export function bestMonthsToLet(eps: number, termM = NEXT_TERM_M): number {
   return termM / Math.max(1e-6, eps - 1);
@@ -399,7 +413,7 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
   const toComps = comps > 0 ? (Math.log(comps) - Math.log(L.a)) * pull : 0;
   let d = (opts.infl12 / 12) * months;
   // THE MONTH-DARK TRADE: the share of the year's step a month's review makes.
-  let step = mkt > 0 ? darkCostStep(k, L.a * (1 - L.c), goingRent(k, mkt, opts.going), opts.monthsToLet) * pull * RENT_ADJ_YR : 0;
+  let step = mkt > 0 ? darkCostStep(k, L.a * (1 - L.c), goingRent(k, mkt, opts.going), opts.monthsToLet) * pull : 0;
   if (step < 0 && opts.stressed) step *= STRESS_MOVE;
   if (opts.darkM !== undefined) {
     // SPACE TO LET. Its own evidence: space that has sat longer than the

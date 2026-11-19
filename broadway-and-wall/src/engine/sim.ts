@@ -349,10 +349,25 @@ function listHolderExit(s: GameState, parcels: ParcelTable) {
   }
 }
 
-export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string[]) {
+export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string[], opening = false) {
   // The register's own life runs first, so a book that came to market this
   // month is on the tape the player reads this month.
   listHolderExit(s, parcels);
+  // AT THE OPENING THE TAPE HAS A PAST (2026-11-18). Holders leave the market
+  // at their own pace — estates, partnerships splitting, funds at the end of
+  // their life (tickHolders) — and what they list stays on the tape for a
+  // listing's life (LISTING_LIFE_M). A tape opened in its first month carried
+  // one month of those exits and nothing older, so some towns opened with not
+  // one building for sale (seed 550991: 33 listings, every one a lot) where a
+  // month or three on they carried 13-36. The opening runs the same register
+  // for the months a listing lives, each listing dated the month it came up.
+  if (opening) {
+    for (let age = 1; age < LISTING_LIFE_M[0]; age++) {
+      const before = new Set(s.listings.map((l) => l.bbl));
+      listHolderExit(s, parcels);
+      for (const l of s.listings) if (!before.has(l.bbl)) { l.listedM -= age; l.expiresM -= age; }
+    }
+  }
   // STALE LISTINGS REPRICE DOWN — TO A FLOOR, NOT TO ZERO.
   //
   // A monthly 1.5% cut compounded for the life of a listing, and the market
@@ -2824,7 +2839,7 @@ export function firstListings(s: GameState, parcels: ParcelTable, bbls: string[]
   // written, so the tape discloses the tenants who are actually there.
   next.econ.playerNow ??= playerSpace(next, parcels);
   syncStreetRolls(next, parcels, bbls);
-  refreshListings(next, parcels, bbls);
+  refreshListings(next, parcels, bbls, true);
   return next;
 }
 

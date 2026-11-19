@@ -4688,7 +4688,8 @@ export interface GameState {
    * the team signs carries a face rent under the space's market rent
    * (`autoMarketRentPsf`). Lowballs are countered up to it; a tenant who will
    * not pay it is passed. The owner's instruction, not a market rule — what it
-   * costs is the tenants who walk. Absent reads as off.
+   * costs is the tenants who walk. Absent reads as off; the app deals a new
+   * campaign with it on (state/townWorker.ts).
    */
   autoRentFloor?: boolean;
   /**

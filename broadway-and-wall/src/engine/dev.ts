@@ -100,7 +100,7 @@ import {
   withStreetRetail, capRetail, reserveFor,
   developmentProForma, landCarryFactor, MAX_COVERAGE, MIN_COVERAGE, maxCoverageFor, wreckCost, marketConstructionQuote,
 } from "./proforma";
-import type { ConstructionQuote } from "./proforma";
+import type { ConstructionQuote, LtcSizedBy } from "./proforma";
 import { money } from "./money";
 import { beliefOf, whyBelief } from "./beliefs";
 import { why } from "./why";
@@ -552,6 +552,8 @@ export interface DevPlan {
   costTotal: number;
   ltc: number;
   ltcMax: number;
+  /** Which of the desk's tests set `ltcMax` (proforma.ts LtcSizedBy) — what the build desk tells the borrower. */
+  ltcSizedBy?: LtcSizedBy;
   commitment: number;
   interestReserve: number;
   ratePct: number;
@@ -1026,7 +1028,7 @@ export function planDevelopment(
     far: +(pf.gsf / rec.lotArea).toFixed(1), farMax,
     hardCost, softCost, contingency, demo, leaseUp, costTotal, landBasis, landCarry, basisTotal,
     stabNoi, exitYield: exitYieldPct, taxYr1: pf.taxYr1, taxAbate: pf.abate,
-    ltc, ltcMax, commitment, interestReserve, ratePct,
+    ltc, ltcMax, ltcSizedBy: pf.ltcSizedBy, commitment, interestReserve, ratePct,
     lender: pf.lender, points: pf.points, pointsCost,
     equity: projectCost - commitment,
     // Equity funds FIRST. The bank does not release a dollar until yours are

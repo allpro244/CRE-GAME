@@ -43,6 +43,11 @@ export function cutTown(r: TownRequest): { built: GeneratedCity; game?: GameStat
     ? firstListings(newGame(r.deal.runSeed, parcels, r.deal.money, r.deal.setup,
         { citySize: r.size, cityLots: Object.keys(parcels).length }), parcels, Object.keys(parcels))
     : undefined;
+  // A NEW CAMPAIGN OPENS WITH THE MARKET-RENT FLOOR ON for auto-lease (the
+  // owner's standing instruction, 2026-11-19: it was switched on by hand at
+  // the start of every game). The Leasing page's "Rent floor" button still
+  // turns it off; a saved game keeps whatever it was saved with.
+  if (game) game.autoRentFloor = true;
   return { built, game };
 }
 

@@ -989,6 +989,10 @@ export interface ProForma {
   product?: { key: ProductKey; site: ProductSite; anchors: BtsCommitment[]; draw?: number };
 }
 
+/** Months a new building has to let between delivery and the takeout's coverage test (construction loans of 24-36 months over an 18-24-month build) [S~]. */
+const TAKEOUT_LEASE_M = 12;
+/** The coverage a mini-perm converts on, on income in place (1.20-1.30x on construction and mini-perm term sheets) [S~]. */
+const DSCR_TAKEOUT = 1.25;
 export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaInput): ProForma | null {
   if (!rec || !rec.lotArea) return null;
   const spec = o.spec ?? 0.5;
@@ -1282,11 +1286,41 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // floor is taken out of the NOI the advance is sized on — never out of the
   // rent, the value, the land or the decision to build.
   const contracted = Math.max(btsShare > 0 && bts ? btsShare : 0, anchorSf / Math.max(1, rentable));
-  const loanSpecNoi = noiYr(asBuilt, uw, "good", true, undefined, (u) => u === "multifamily" ? Math.min(stabOccOf(u), 1 - LENDER_MIN_UW_VACANCY) : stabOccOf(u));
-  const loanNoi = stabNoi - (marketStabNoi - loanSpecNoi) * (1 - contracted);
+  // ...AT TODAY'S RENTS, NOT THE DEVELOPER'S FORECAST (2026-11-18). `uw` is the
+  // developer's read of the market at delivery — today's rents moved by the
+  // market's own adaptive expectation (underwritingEcon: up to 1.75x) — and
+  // the loan was sized on it, so in a run-up the bank lent on the boom the
+  // developers were extrapolating. An appraisal for a construction loan
+  // values the building at the market's rents as they are (the as-stabilised
+  // value on current market rent; a forecast is the sponsor's equity risk).
+  // A contracted lease (the build-to-suit overlay, stabNoi over the market's)
+  // is income the bank does lend on.
+  const lenderOcc = (u: BuiltClass) => u === "multifamily" ? Math.min(stabOccOf(u), 1 - LENDER_MIN_UW_VACANCY) : stabOccOf(u);
+  const bankMarketNoi = noiYr(asBuilt, econ, "good", true, undefined, stabOccOf);
+  const bankSpecNoi = noiYr(asBuilt, econ, "good", true, undefined, lenderOcc);
+  const loanNoi = (stabNoi - marketStabNoi) + bankMarketNoi - (bankMarketNoi - bankSpecNoi) * (1 - contracted);
   if (preReserve > 0 && exitYieldPct > 0) {
     const ltvCap = 0.75 * (loanNoi / (exitYieldPct / 100)) / preReserve;
     ltcMax = Math.max(0, Math.min(ltcMax, ltvCap));
+  }
+  // ...AND ON WHAT WILL PAY IT OFF (2026-11-18). A construction loan is repaid
+  // by its takeout, and the takeout lends on income in place, not on the
+  // building as if full: a mini-perm converts on the coverage the rent roll
+  // actually throws off when the construction term runs out. Construction
+  // loans run 24-36 months against an 18-24-month build, so the building has
+  // about a year to let before it must carry its permanent debt
+  // (TAKEOUT_LEASE_M; DSCR_TAKEOUT, the common mini-perm conversion test) [S~:
+  // construction and mini-perm term sheets]. What it has let by then is the
+  // market's own lease-up clock (above: the time constant of its empty feet,
+  // its own floors and the pipeline in the space on offer), from the share
+  // contracted at the slab. Sized on the stabilised value alone, the desk lent
+  // into any glut — measured, the town's developers started 92-225k sf of
+  // office a year while its vacancy climbed 9% to 22%, and office lost 30-60%
+  // of its real rent in the decade that followed.
+  if (preReserve > 0 && cq.ratePct > 0) {
+    const letAtTakeout = contracted + (1 - contracted) * (1 - Math.exp(-TAKEOUT_LEASE_M / Math.max(1, leaseUpClock)));
+    const takeoutCap = (loanNoi * letAtTakeout) / (DSCR_TAKEOUT * cq.ratePct / 100) / preReserve;
+    ltcMax = Math.max(0, Math.min(ltcMax, takeoutCap));
   }
   // A bankable lease turns speculative construction into contracted credit.
   // The boost is bounded by anchor share and covenant; it cannot exceed an

@@ -613,16 +613,36 @@ export type LandOption = {
   /** V >= V*: the owner builds now; the dirt is worth what building pays. */
   exercise: boolean;
   use: BuiltClass;
+  /**
+   * What a dollar paid on the day the owner builds is worth today: (V/V*)^beta
+   * times the queue's wait (1 when it builds now, 0 when it never will). The
+   * interim income the lot earns until then is worth its perpetuity times
+   * (1 - reach) — see readLand.
+   */
+  reach: number;
 };
 
-/** The positive root beta of 1/2 sigma^2 beta(beta-1) + (r-delta) beta - r = 0 (Infinity: never worth waiting). */
-export function optionBeta(sigma: number, r: number, delta: number): number {
+/**
+ * The positive root beta of 1/2 sigma^2 beta(beta-1) + (r-delta) beta - (r+tau) = 0
+ * (Infinity: never worth waiting).
+ *
+ * `tau` IS WHAT THE WAIT COSTS (2026-11-20). An owner holding dirt for its
+ * building pays the property tax and the liability policy on the dirt every
+ * year it waits (`idleLandCarryRate`), a running cost proportional to the
+ * option's own value. In the option's equation that is a charge of tau F on
+ * top of the r F a holder forgoes, so the constant term is r + tau (a holding
+ * cost proportional to value: Dixit & Pindyck 1994, ch. 5-6). Without it the wait
+ * was free, the trigger sat too far out and every unripe lot read dearer than
+ * its holder could carry.
+ */
+export function optionBeta(sigma: number, r: number, delta: number, tau = 0): number {
   const a = 0.5 * sigma * sigma;
   const b = r - delta - a;
-  const d = Math.sqrt(b * b + 4 * a * r);
+  const c = r + Math.max(0, tau);
+  const d = Math.sqrt(b * b + 4 * a * c);
   // the stable form of (-b + sqrt D)/2a: it holds as sigma -> 0
   const den = b + d;
-  return den > 1e-12 ? (2 * r) / den : Infinity;
+  return den > 1e-12 ? (2 * c) / den : Infinity;
 }
 
 /** The development option: the price of dirt whose building is worth V and costs K. */
@@ -885,17 +905,20 @@ function residualCore(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: Land
   // Struck at a 12% hurdle the trigger sat at V ~ 2K and almost no lot was
   // ever ripe; at the long rate it lands near 1.3K, where Quigg (1993) found it.
   const r = Math.max(0.005, (econ.indexRate ?? LAND_CARRY_RATE * 100) / 100);
+  const tau = idleLandCarryRate(econ);
   const consider = (use: BuiltClass, value: number, nonLand: number, carry: number, exitYieldPct: number): void => {
     const v = value / (1 + DEV_MARGIN) / (1 + carry) / rec.lotArea;
     const k = nonLand / (1 + carry) / rec.lotArea;
     const sigma = econ.landSigma?.[use] ?? 0;
     const delta = exitYieldPct / 100;
-    const beta = optionBeta(sigma, r, delta);
+    const beta = optionBeta(sigma, r, delta, tau);
     const o = optionValue(v, k, beta);
     if (!(o.f > 0)) return;
-    const psf = o.f * queueFactor(econ, use, o.f);
+    const qf = queueFactor(econ, use, o.f);
+    const psf = o.f * qf;
     if (!opt || psf > opt.psf) {
-      opt = { psf, intrinsicPsf: v - k, v, k, vStar: o.vStar, beta, sigma, delta, exercise: o.exercise, use };
+      const reach = o.exercise ? qf : o.vStar > k ? (o.f / (o.vStar - k)) * qf : 0;
+      opt = { psf, intrinsicPsf: v - k, v, k, vStar: o.vStar, beta, sigma, delta, exercise: o.exercise, use, reach };
     }
   };
   const all: { use: BuiltClass; psf: number }[] = [];
@@ -1098,6 +1121,9 @@ function queueFactorOf(q: NonNullable<Econ["landQueue"]>[BuiltClass] | undefined
   return Math.pow(1 + Math.max(0.01, q.r), -ahead / q.absYr);
 }
 
+/** The economic life of a commercial building, years: 50-60 in US appraisal practice (BOMA; IRS depreciation is 39) [S~]. */
+const ECONOMIC_LIFE_YR = 55;
+
 /** Lots sampled per refresh — the queue is a distribution, and a Great City has ~6,000 lots. [K: a sample size for speed, not an economic quantity] */
 const LAND_QUEUE_SAMPLE = 400;
 
@@ -1137,7 +1163,20 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
     let netAbs = 0, comp = 0;
     for (let i = h.length - L; i < h.length; i++) { netAbs += h[i].abs?.[use] ?? 0; comp += h[i].comp?.[use] ?? 0; }
     const lost = comp - ((now.stock?.[use] ?? 0) - (then.stock?.[use] ?? 0));
-    return (Math.max(0, netAbs) + Math.max(0, lost)) * 12 / L;
+    // THE STOCK THAT MUST BE REPLACED IS AT LEAST THE STOCK WEARING OUT
+    // (2026-11-20). A town whose tape shows no net take-up and no demolitions
+    // read a take-up of zero, and `queueFactor` then priced every site behind
+    // the first at nothing — a young or stalled town's whole land market sat
+    // on the old stamped floor. But a town with flat demand still needs new
+    // floors: its buildings age out, and the tenants of the worn stock move to
+    // new space whether or not the wrecking ball has caught up with the old.
+    // That flow is the occupied stock over the economic life of a commercial
+    // building, 55 years (US practice runs 50-60: appraisers and BOMA; the
+    // same life dev.ts's teardown note uses) [S~]. It stands in for `lost`
+    // only where demolitions have run slower than wear; the larger is what
+    // the town replaces.
+    const wear = ((now.occupied?.[use] ?? e.occupied?.[use] ?? 0) / ECONOMIC_LIFE_YR) * L / 12;
+    return (Math.max(0, netAbs) + Math.max(0, lost, wear)) * 12 / L;
   };
   const rOf = (use: BuiltClass): number => (e.capExp?.[use] ?? e.capRate[use]) / 100;
   // the yearly measurement's glide (landQueuePrev / landQueueW) has nothing to glide between now
@@ -1300,12 +1339,20 @@ export function ownerAskPsf(rec: ParcelRecord, econ: Econ): number {
 export type LandRead = {
   /** The price, $/sf of land. Identical to `landPsfNow` by construction. */
   psf: number;
-  /** The three bids, each already carrying its own discount, $/sf of land. */
+  /** The income approach's bids, $/sf of land, and the opening seed (`texture`: also the land index's unit, propmarket.ts). */
   builder: number;
   holder: number;
   texture: number;
-  /** Which bid set the price, and the scheme behind the builder's. */
-  winner: "builder" | "holder" | "texture" | "farm" | "homes" | "subdivider";
+  /** The comparable sales' read for this lot (comps.ts landComps), $/sf of land, and the evidence behind it and behind the opening seed, in prints. */
+  sales?: number;
+  salesW?: number;
+  seedW?: number;
+  /**
+   * Which piece of evidence carried the most of the price ("texture": the
+   * opening seed, the generator's stamp read at the opening survey's level),
+   * and the scheme behind the builder's.
+   */
+  winner: "builder" | "holder" | "sales" | "texture" | "farm" | "homes" | "subdivider";
   scheme: ResidualScheme | null;
   /** The development option the price was struck on (see LandOption); null where nothing can be built. */
   option?: LandOption | null;
@@ -1507,7 +1554,7 @@ export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
  */
 type LandMemoEntry = {
   lotArea: number; farMaxComm: number; farMaxRes: number; zoneDist: unknown; demandScore: number;
-  landPsf: number; district: unknown; yearBuilt: number; heat: number | undefined;
+  landPsf: number; district: unknown; yearBuilt: number;
   cornice: number | undefined; maturity: number | undefined;
   psf?: number;
   read?: LandRead;
@@ -1536,19 +1583,18 @@ const LAND_MEMO = new Map<string, LandMemoEntry>();
 /** The entry for this lot under the current market, made fresh if its lot fields have moved. */
 function landMemoFor(rec: ParcelRecord, econ: Econ): LandMemoEntry {
   syncLandMemos(econ);
-  const heat = econ.districtHeat?.[rec.district ?? "—"];
   const hit = LAND_MEMO.get(rec.bbl);
-  if (hit && landLotMatches(hit, rec, heat)) return hit;
-  const m = lotKey(rec, heat);
+  if (hit && landLotMatches(hit, rec)) return hit;
+  const m = lotKey(rec);
   LAND_MEMO.set(rec.bbl, m);
   return m;
 }
 /** The lot fields a land read depends on — the key the memo is checked against. */
-function lotKey(rec: ParcelRecord, heat: number | undefined): LandMemoEntry {
+function lotKey(rec: ParcelRecord): LandMemoEntry {
   return {
     lotArea: rec.lotArea, farMaxComm: rec.farMaxComm, farMaxRes: rec.farMaxRes,
     zoneDist: rec.zoneDist, demandScore: rec.demandScore, landPsf: rec.landPsf,
-    district: rec.district, yearBuilt: rec.yearBuilt, heat,
+    district: rec.district, yearBuilt: rec.yearBuilt,
     cornice: rec.cornice, maturity: rec.maturity,
   };
 }
@@ -1571,6 +1617,9 @@ const LAND_DICTS = [
 ] as const;
 const LAND_SCALARS = [
   "locIdxMean", "landIdx", "cpi", "infillShare", "costIdx", "indexRate",
+  // the comparable sales and the opening seed's weight (comps.ts tickLandComps,
+  // a fresh object each quarter), and the car park's downtown pivot (interimUsePsfYr)
+  "landComps", "landSeedW", "locIdxDevP90",
   "creditIdx", "phase", "constructionAppetite", "vintageMean",
   // the homes market (homeprice.ts homeLotBidPsf) reads econ.homes, wageIdx and
   // population; homes.ts bumps `homesStamp` whenever econ.homes is rewritten
@@ -1642,12 +1691,11 @@ function ctxQuote(ctx: LandCtx, econ: Econ, mix: UseMix): ConstructionQuote {
   return q;
 }
 
-function landLotMatches(m: LandMemoEntry, rec: ParcelRecord, heat: number | undefined): boolean {
+function landLotMatches(m: LandMemoEntry, rec: ParcelRecord): boolean {
   return Object.is(m.lotArea, rec.lotArea) && Object.is(m.farMaxComm, rec.farMaxComm)
     && Object.is(m.farMaxRes, rec.farMaxRes) && Object.is(m.zoneDist, rec.zoneDist)
     && Object.is(m.demandScore, rec.demandScore) && Object.is(m.landPsf, rec.landPsf)
     && Object.is(m.district, rec.district) && Object.is(m.yearBuilt, rec.yearBuilt)
-    && Object.is(m.heat, heat)
     && Object.is(m.cornice, rec.cornice) && Object.is(m.maturity, rec.maturity);
 }
 
@@ -1665,6 +1713,17 @@ export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
   m.read = read;
   return read;
 }
+
+/**
+ * HOW MUCH EVIDENCE THE INCOME APPROACH IS WORTH, in land prints: three.
+ * An appraiser reconciling a residual against comparable sales gives the
+ * comps the governing weight once there is a market of them, and the
+ * residual the governing weight when there is not; three recent arm's-length
+ * prints in a district are where the two weigh the same. Three is the
+ * comps desk's own line between a market and an anecdote ("one sale is an
+ * anecdote, two is a coincidence", comps.ts) — a stated shape, not fitted.
+ */
+export const LAND_CREDIBILITY = 3;
 
 /**
  * `whole` false is for `landPsfNow`, which keeps only the price: the holder's
@@ -1701,127 +1760,78 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
   const option = core.opt;
   const builder = scheme?.psf ?? 0;
   const ripe = !!option?.exercise && builder > 0;
-  // `holder` is the option's price where the owner would rather wait
-  const holder = ripe ? 0 : option?.psf ?? 0;
+
+  // THE HOLDER: WHAT THE DIRT IS WORTH TO AN OWNER WHO WAITS (2026-11-20).
+  //
+  // Where the owner would rather wait, the dirt is worth the option to build
+  // later (above, struck net of the tax and insurance the wait costs) PLUS
+  // what the lot earns until then: a surface car park, the commonest interim
+  // use (`interimUsePsfYr`), collected until the day it is built. A perpetual
+  // flow c stopped at the exercise date is worth c/(r+tau) x (1 - E[e^-rT]),
+  // and E[e^-rT] is the option's own `reach` ((V/V*)^beta times the queue's
+  // wait): a lot that will never be built keeps its car park forever, a lot
+  // about to be built keeps almost none of it. Both halves move with the
+  // town: a slump lowers V and the office rent the car park is priced off,
+  // and the holder's number falls with them. Nothing here is a floor.
+  const r = Math.max(0.005, (econ.indexRate ?? LAND_CARRY_RATE * 100) / 100);
+  const tau = idleLandCarryRate(econ);
+  const interim = interimUsePsfYr(rec, econ);
+  const waitIncome = interim > 0 ? (interim / (r + tau)) * (1 - clamp(option?.reach ?? 0, 0, 1)) : 0;
+  const holder = ripe ? 0 : (option?.psf ?? 0) + waitIncome;
   void whole;
+  // what the income approach says the dirt is worth: the builder's residual
+  // where it would build now (the best option and the best residual can be
+  // different schemes; the higher is the price), the holder's number where not
+  const income = ripe ? Math.max(builder, option?.psf ?? 0) : holder;
+  const incomeWho: LandRead["winner"] = ripe ? "builder" : "holder";
 
-  // AND WHAT THE CITY GENERATOR THOUGHT, which is not nothing.
+  // THE COMPARABLE SALES: WHAT DIRT NEARBY HAS ACTUALLY FETCHED.
   //
-  // `rec.landPsf` is a static number stamped on the parcel at generation. It
-  // was the ENTIRE price before this change and that was the fault; it is not
-  // therefore worthless. It carries the map's own texture — the waterfront,
-  // the park frontage, the corner, everything about a location that no income
-  // model can see because it is not in the rent yet. It is a FLOOR under the
-  // auction, not a weight in it: a lot with no income case still does not
-  // trade at nothing. The comp wire (tickLandComps → s.landAdj) is what gets
-  // tested against sales and multiplies this texture downstream via resolveRec.
-  // ...IN TODAY'S DOLLARS. `landIdx` is deliberately homogeneous-of-degree-0
-  // (market.ts — a real ratio, rent against cost), and `rec.landPsf` is
-  // stamped in opening-year dollars, so this floor never carried the price
-  // level: after decades of ordinary CPI the floor under no-income dirt had
-  // quietly dissolved to nothing in real terms (measured: fringe lots pricing
-  // at year-0 nominal dollars against a 6-7x price level). Dirt with no
-  // income case still trades in the dollars of the day it trades.
-  // ...AND IN THIS TOWN'S DOLLARS. `rec.landPsf` is stamped against the
-  // reference table, like RENT_BASE and HARD_COST_PSF; rents, construction and
-  // pay all carry the seed's `priceLevel` (market.ts EVERY TOWN HAS ITS OWN
-  // DOLLARS) and the farm bid below does too, but this floor did not — and
-  // `landIdx`, a ratio of rent to cost, cancels the level out. So in a town
-  // whose dollars buy four times what the table's do, dirt priced at the
-  // table's money: measured on the region map (seeds 1-3) the inner ring's
-  // houses, valued at the land under them, came to 12-23x the town's median
-  // household income, against 3-6x in American towns (NAR / Census). The
-  // floor is a location texture, and a location premium is a share of the
-  // town's prices, not of somebody else's.
+  // A lot's price is discovered, not stamped: the residual (income approach)
+  // reconciled with what lots in the same district have recently sold for
+  // (sales comparison). The comps desk (comps.ts tickLandComps) reads every
+  // arm's-length land print in the district, per square foot of the envelope
+  // the zoning lets it carry — the unit urban land is compared in, so a
+  // 2-FAR lot is not priced off a 12-FAR one — weighted by how recent it is
+  // and restated to today's dollars. Here that is applied to this lot's own
+  // envelope. Its weight is how much evidence there is (`w`, recent prints
+  // counted at full weight and fading over a year's half-life); the income
+  // approach carries LAND_CREDIBILITY prints' worth (comps.ts). So a district
+  // that trades often prices off its trades, one nobody has bought in for
+  // years prices off what can be built and what waiting is worth, and land
+  // the buyers have walked away from loses its comps as they age — no floor
+  // holds it up. (Bühlmann credibility: w / (w + k).)
+  //
+  // THE MAP'S STAMP IS THE FIRST COMP AND ONLY THE FIRST. Before any dirt
+  // has traded, the town still has a land market: the opening broker survey
+  // (propmarket.ts openingLandSurvey) read at the generator's location
+  // texture (`texture`, stamp x landIdx x the level of the day). It stands as
+  // one district's worth of prints dated at the opening and ages like any
+  // print (`landSeedW`, comps.ts); it is never a floor under the price, and
+  // after a few years it is gone. It used to be a floor at 0.30 x itself,
+  // and it set the price of 59% of the vacant lots.
   const texture = rec.landPsf * econ.landIdx * level * envelopeRealisation(rec) * (econ.cpi ?? 1) * (econ.priceLevel ?? 1);
-
-  // HIGHEST AND BEST USE, NOT THE MAX OF THREE APPRAISALS.
-  //
-  // Two earlier forms priced dirt STRICTLY ABOVE the builder's residual on
-  // every lot that pencilled, by construction (a texture blend, then a cycle
-  // multiplier on a residual that already underwrites through-cycle). The
-  // auction `max(builder, holder, textureFloor)` fixed that arithmetic and
-  // then lost the same fight a different way: the holder bid is the residual
-  // at a *certain* 25% peak, discounted five years, and on a thin-margin site
-  // that number is two to three times today's builder residual. Measured at
-  // year thirty: builder won 1.3% of vacant lots, holder 39.6%, texture 59.1%;
-  // among lots with a positive residual the ask sat at 2.41× what the builder
-  // could pay. The desk and the land market were two worlds, and a $2.5M
-  // developer bought zero sites in three fifty-year runs.
-  //
-  // That holder formula is not an option value. An option to wait is the
-  // value of land that does NOT support a building today. If a builder can
-  // put a building on this dirt this year and earn the margin, that is the
-  // use, and that is the price. Speculators who want to sit on a working
-  // site until the next peak are not a second bidder who outranks the person
-  // who would actually break ground — they are the current owner choosing
-  // not to list. Unlisted land can sit at option value; transacted land that
-  // pencils trades at the residual. Holder and texture still set the price
-  // when today's residual is zero, which is most of the city, which is why
-  // most dirt is still dirt.
-  const floor = texture * 0.30;
-  const heat = econ.districtHeat?.[rec.district ?? "—"] ?? 1;
-  // THE APPRAISAL IS A RECONCILIATION, AND FOR LAND THE SALES COMPARISON
-  // GOVERNS. The residual above is the income approach: what the maths says a
-  // builder could pay. `districtHeat` is the sales-comparison evidence: what
-  // the district's own prints (and, since the no-bid decay, its silences)
-  // say buyers actually pay, relative to book. When the two diverge the
-  // appraiser does not average them — for land, USPAP practice and every
-  // review appraiser lean on the comparable sales and use the residual as
-  // support, because the residual is a model and the prints are the market.
-  //
-  // This was clamped at -6%, which read as reconciliation and was decoration:
-  // if the envelope doubles tomorrow and every residual doubles with it while
-  // the buyers stay where they were, six per cent does not reconcile anything
-  // — asks track the model into territory nobody bids, and the only honest
-  // corrections left are the slow no-bid decay and a workout. At 0.55 weight
-  // on the comp gap the builder bid concedes up to ~22% to a district whose
-  // prints run at the 0.6 heat floor — sales comparison governing, income
-  // approach supporting. No symmetric premium on hot districts: a district
-  // printing over book already reaches every parcel through `landAdj`, and a
-  // second helping here would count the same evidence twice.
-  const softDiscount = heat < 1 ? clamp((heat - 1) * 0.55, -0.25, 0) : 0;
-  // A TRUE max(builder, holder, floor) WAS TRIED HERE AND REVERTED — keep the
-  // measurement. The builder-sets-the-price branch below lets a residual that
-  // has thinned to $2/sf price the lot at $2/sf while the holder and the
-  // floor stand at $50 beside it, and that cliff is real: measured over 100
-  // years, mid-city lots lost 99-100% of real value inside 12 months as the
-  // residual thinned, then gained +5,900% to +18,700% off the near-zero base.
-  // Pricing the lot at the HIGHEST of the three bids fixed the cliff (worst
-  // 12-month falls -43/-75/-49%, spikes +41/+273/+63%) and then starved the
-  // city: `dev.affordableLotShare` fell 0.34 -> 0.016 (the pre-#47 disease,
-  // from the other side), the office vacancy rail re-welded to 40% of months,
-  // and stock/jobs growth halved — because this function serves TWO quantities
-  // with one number. An appraisal is a RESERVATION price, where the max is
-  // right; the city's start path and every ask price off it are TRANSACTION
-  // prices, where dirt clears at what the marginal actual buyer pays, and a
-  // holder who outbids the builder is not a buyer — they are the owner not
-  // selling. Splitting reservation from transaction, and letting the holder's
-  // reservation LEARN from silence (the no-bid decay reaches the texture but
-  // never the holder bid), is the real build; it is recorded as an open
-  // finding in REALISM_AUDIT_2026-08.md rather than half-shipped here.
-  let base: number;
-  let winner: LandRead["winner"];
-  if (ripe) {
-    // exercise: the option is worth what building pays (the best option and
-    // the best residual can be different schemes; the higher is the price)
-    base = Math.max(builder, option?.psf ?? 0);
-    winner = "builder";
-    if (softDiscount < 0) base = builder * (1 + softDiscount);
-    // ...BUT NEVER BELOW THE SALES-COMPARISON FLOOR. A residual that has
-    // thinned to $2/sf is a bid, not a price: the district's own comp-based
-    // texture floor is standing evidence of what dirt clears at, and no owner
-    // sells under it to the one bidder whose pro forma happens to be thin
-    // this month. This is the half of the reverted max() that cannot starve
-    // supply — a builder who cannot pay the comp floor SHOULD lose the site,
-    // and the greenfield score (builder − psf) prices exactly that refusal.
-    if (base < floor) { base = floor; winner = "texture"; }
-  } else if (holder >= floor) {
-    base = holder;
-    winner = "holder";
-  } else {
-    base = floor;
-    winner = "texture";
+  // (The 0.30 is the unit the land index is kept in — propmarket.ts reads
+  // every land print as a level per unit of exactly this number — so it
+  // cancels: the opening survey sets landIdx to what the street's builders
+  // and land funds bid per unit of it, and `seed` is that bid, spread across
+  // the map by the stamp. It only matters where the survey drew too few bids
+  // to read, and then only until the seed has aged out.)
+  const seed = texture * 0.30;
+  const wSeed = econ.landSeedW ?? LAND_CREDIBILITY;
+  const lc = econ.landComps?.[rec.district ?? "—"];
+  const buildFar = farMaxFor(rec) * envelopeRealisation(rec);
+  const sales = lc && buildFar > 0 && lc.ppb > 0 ? lc.ppb * ((econ.cpi ?? 1) / Math.max(1e-9, lc.cpi)) * buildFar : 0;
+  const wSales = sales > 0 ? lc!.w : 0;
+  const wS = seed > 0 ? wSeed : 0;
+  const wTot = wSales + wS + LAND_CREDIBILITY;
+  let base = (wSales * sales + wS * seed + LAND_CREDIBILITY * income) / wTot;
+  // which piece of evidence carried the most of the price
+  let winner: LandRead["winner"] = incomeWho;
+  {
+    const parts: [LandRead["winner"], number][] = [[incomeWho, LAND_CREDIBILITY * income], ["sales", wSales * sales], ["texture", wS * seed]];
+    let top = -Infinity;
+    for (const [k, v] of parts) if (v > top) { top = v; winner = k; }
   }
   // FARMLAND HAS AN INCOME OF ITS OWN (the region map). A tract zoned for
   // agriculture carries no building envelope, so every bid above is near zero;
@@ -1851,7 +1861,8 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
   if (homes > base) { base = homes; winner = "homes"; }
   return {
     psf: base,
-    builder, holder, texture: floor,
+    builder, holder, texture: seed,
+    sales, salesW: wSales, seedW: wS,
     winner,
     scheme,
     option,

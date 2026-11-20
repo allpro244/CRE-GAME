@@ -2134,12 +2134,19 @@ export interface Econ {
    * on a pinned vacancy rail. See market.ts rent formation / ECONOMY.md §F.
    */
   structTightPrev?: Record<BuiltClass, number>;
-  /**
-   * District land heat from comps (relative to town median). Written by
-   * tickLandComps; read by landRead so builder-clearing sites still discover
-   * street prints.
-   */
+  /** Saves from before 2026-11-20: district land heat relative to the town (no longer written or read). */
   districtHeat?: Record<string, number>;
+  /**
+   * THE COMPARABLE LAND SALES, by district (comps.ts tickLandComps, quarterly):
+   * the recency-weighted median price per square foot of zoned envelope of the
+   * district's arm's-length land prints, in dollars of the quarter it was read
+   * (`cpi` then), and the evidence behind it in prints (full weight fresh,
+   * halving a year). value.ts readLand reconciles it with the residual.
+   */
+  landComps?: Record<string, { ppb: number; w: number; n: number; cpi: number }>;
+  /** The opening seed's remaining weight, in prints (the stamp read at the opening survey's level, ageing like a print), and the month it was dated. */
+  landSeedW?: number;
+  landSeedM?: number;
   /** Opening REAL income per worker, frozen at newGame, so the income argument is 1.0 at t=0. */
   wage0?: number;
   /** Opening cost of living against the nation (1 = national), same weights as the local CPI. Display only. */

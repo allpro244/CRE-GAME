@@ -204,12 +204,12 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
         <div className="bd-steps">
           {starts.length > 0 && (
             <div className="bd-best">
-              <div className="bd-k">Start from the best schemes here</div>
+              <div className="bd-k">Best schemes here</div>
               <div className="bd-v">
                 {starts.map((s) => {
                   const on = s.use === use && (s.product ? s.product === d.product?.key : !d.product && s.floors === floors);
                   return (
-                    <Chip key={s.use + s.floors + (s.product ?? "")} on={on} title="Yield on cost over the hurdle: 1.00× just clears it"
+                    <Chip key={s.use + s.floors + (s.product ?? "")} on={on} title="Yield over hurdle"
                       onClick={() => set(s.product ? { use: s.use, product: s.product } : { use: s.use, product: undefined, floors: s.floors, cov: coverFor(rec, s.use, s.floors) })}>
                       {s.product ? productName(s.product) : `${devUseLabel(s.use)} · ${s.floors} fl`}<span className="bd-sub"> {ratio(s.hurdle)} hurdle</span>
                     </Chip>
@@ -257,7 +257,7 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
               {/* THE ENVELOPE IS FULL (owner: "the sqft stops growing"): past the
                   district's FAR more floors only slim the floorplate; the way out is a FAR filing */}
               {plan && plan.far >= plan.farMax - 0.05 && <div className="bd-terms">
-                At the FAR limit ({plan.farMax.toFixed(1)}): more floors only slim the plate ·{" "}
+                FAR limit ({plan.farMax.toFixed(1)}): slimmer plates only ·{" "}
                 <button type="button" className="bd-link" onClick={() => {
                   useStore.getState().openProperty(bbl, "summary");
                   window.setTimeout(() => useStore.setState({ pageJump: "Zoning variance" }), 120);
@@ -271,7 +271,7 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
                     {f.name}<span className="bd-sub"> {Math.round((f.retained - 1) * 100)}% floor area</span>
                   </Chip>
                 ))}
-                {forms.length === 0 && <span className="bd-terms bd-inline">No other form fits this lot at {floors} floors</span>}
+                {forms.length === 0 && <span className="bd-terms bd-inline">Only this form: {floors} floors</span>}
               </Row>
             </Step>
           )}
@@ -289,7 +289,7 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
               </Row>
             </> : <>
               <Row k="Style">
-                <Chip on={!design.kit && !design.facade} title="The period and the block choose, as for every other building in town" onClick={() => pickLook(LOOKS[0])}>Fits the street</Chip>
+                <Chip on={!design.kit && !design.facade} title="Period and block" onClick={() => pickLook(LOOKS[0])}>Fits the street</Chip>
               </Row>
               <Row k="Family">
                 {FACADE_GROUPS.map((g) => {
@@ -336,8 +336,8 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
 
           <Step n={4} title="Contract and loan" sum={plan ? (plan.commitment > 0 ? `${plan.lender} · ${Math.round(plan.ltc * 100)}% LTC` : "All equity") : "—"}>
             <Row k="Contract">
-              <Chip on={contract === "gmp"} title="Guaranteed maximum price: the builder carries overruns" onClick={() => set({ contract: "gmp" })}>GMP</Chip>
-              <Chip on={contract === "costplus"} title="Cheaper, but overruns are yours" onClick={() => set({ contract: "costplus" })}>Cost-plus</Chip>
+              <Chip on={contract === "gmp"} title="Builder carries overruns" onClick={() => set({ contract: "gmp" })}>GMP</Chip>
+              <Chip on={contract === "costplus"} title="Overruns are yours" onClick={() => set({ contract: "costplus" })}>Cost-plus</Chip>
               <span className="bd-terms bd-inline">{contract === "gmp" ? "Builder carries overruns" : "Cheaper · overruns are yours"}</span>
             </Row>
             {/* THE LENDER (owner, Oct 2026: "you can't choose your lender"): every
@@ -360,13 +360,14 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
               ? `${plan.lender} · ${pct2(plan.ratePct)} · ${Math.round(plan.ltc * 100)}% LTC · ${usd(plan.commitment)} · ${(plan.points * 100).toFixed(1)} pts`
               : plan.ltcMax > 0 ? `All equity · ${plan.lender} offers ${Math.round(plan.ltcMax * 100)}% at ${pct2(plan.ratePct)}` : (plan.lenderNote ?? "No lender quotes")}</div>}
             {/* WHY THE MOST IT WILL LEND IS WHAT IT IS (owner, Nov 2026: "why only 14% on a
-                very profitable project?"): the test that sized the advance, in the desk's terms */}
-            {plan && plan.ltcMax > 0 && plan.ltcSizedBy && plan.ltcSizedBy.test !== "cost" && <div className="hint">
-              {plan.ltcSizedBy.test === "takeout"
-                ? `The ${Math.round(plan.ltcMax * 100)}% is the takeout test, not your balance sheet: space in this market is letting on a ${Math.round(plan.ltcSizedBy.leaseUpM)}-month clock, so the bank expects about ${Math.round(plan.ltcSizedBy.letShare * 100)}% of the building let ${plan.ltcSizedBy.afterM} months after it opens, and lends what that rent covers ${plan.ltcSizedBy.dscr.toFixed(2)}×. A signed pre-lease raises it.`
+                very profitable project?"): the test that sized the advance, named; the desk's reasoning on hover */}
+            {plan && plan.ltcMax > 0 && plan.ltcSizedBy && plan.ltcSizedBy.test !== "cost" && <div className="hint"
+              title={plan.ltcSizedBy.test === "takeout"
+                ? `Not your balance sheet. Space in this market is letting on a ${Math.round(plan.ltcSizedBy.leaseUpM)}-month clock, so the bank expects about ${Math.round(plan.ltcSizedBy.letShare * 100)}% of the building let ${plan.ltcSizedBy.afterM} months after it opens, and lends what that rent covers ${plan.ltcSizedBy.dscr.toFixed(2)}×. A signed pre-lease raises it.`
                 : plan.ltcSizedBy.test === "value"
-                  ? `The ${Math.round(plan.ltcMax * 100)}% is 75% of the bank's appraisal of the finished building at today's rents (${usd(plan.ltcSizedBy.value)}), not your forecast.`
-                  : `The advance is lent against the signed lease.`}
+                  ? `75% of the bank's appraisal of the finished building at today's rents (${usd(plan.ltcSizedBy.value)}), not your forecast.`
+                  : "Lent against the signed lease."}>
+              {`${Math.round(plan.ltcMax * 100)}% max · ${plan.ltcSizedBy.test === "takeout" ? "takeout test" : plan.ltcSizedBy.test === "value" ? "bank appraisal" : "signed lease"}`}
             </div>}
             {/* THE REST OF THE DEBT (owner, Oct 2026: "you should be able to add a rate cap"):
                 the takeout hedge, the fees and the loan the building inherits at delivery */}
@@ -470,8 +471,8 @@ function Partners({ d, bbl }: { d: DeskScheme; bbl: string }) {
   const raise = game.raises?.[bbl];
   const [use, floors, cov] = d.commitArgs;
   return (
-    <Step n={5} title="Pre-lease and partners" sum={d.prospect ? `Anchor: ${d.prospect.name}` : raise ? "Raising" : offer ? "Listed for a tenant" : "Optional"}>
-        {use === "mixed" || d.product ? <Row k="Anchor"><span className="bd-terms bd-inline">Build-to-suit is for a single-use street building</span></Row> : <Row k="Anchor">
+    <Step n={5} title="Tenants and partners" sum={d.prospect ? `Anchor: ${d.prospect.name}` : raise ? "Raising" : offer ? "Listed for a tenant" : "Optional"}>
+        {use === "mixed" || d.product ? <Row k="Anchor"><span className="bd-terms bd-inline">Street buildings only</span></Row> : <Row k="Anchor">
           {d.prospect
             ? <><span className="bd-terms" style={{ paddingLeft: 0 }}>{d.prospect.name}</span><Chip on={false} onClick={() => useStore.getState().clearBts(bbl)}>Back to spec</Chip></>
             : <>

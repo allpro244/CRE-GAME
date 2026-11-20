@@ -4702,6 +4702,15 @@ export interface GameState {
   /** NO UNSOLICITED OFFERS: rivals do not ring to buy your buildings (Deals page). */
   noUnsolicited?: boolean;
   /**
+   * NO AUTOMATIC EQUITY CURE: when a loan's covenant breaks, the firm does not
+   * write the cure cheque by itself (debt.ts tickLoan). The breach stands, the
+   * lender traps the building's cash flow, and after two years the file goes
+   * to the workout desk; the owner can pay the loan down by hand at any time
+   * (paydownLoan). A cure is the sponsor's right, not its obligation. Absent
+   * reads as off: the firm cures out of cash, as it always has.
+   */
+  noAutoCure?: boolean;
+  /**
    * WHAT AUTO-LEASE DID, last twelve months — the team's scorecard on the
    * Leasing page. One row per letter it settled; trimmed as it is written.
    */

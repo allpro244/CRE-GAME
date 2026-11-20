@@ -94,7 +94,7 @@ import {
 //
 // The cap stays at ten million. Nobody starts meaningfully bigger than you —
 // what the big ones end up owning, they earn inside the sim.
-const FIRMS: { name: string; style: RivalStyle; equity: number; ltv: number }[] = [
+const FIRMS: { name: string; style: RivalStyle; equity: number; ltv: number; profile?: ProfileId }[] = [
   // --- the establishment: patient money, low leverage, never a forced seller
   { name: "Calloway & Reed", style: "family", equity: 7_000_000, ltv: 0.32 },
   { name: "Harbor Point Partners", style: "core", equity: 9_000_000, ltv: 0.52 },
@@ -133,6 +133,37 @@ const FIRMS: { name: string; style: RivalStyle; equity: number; ltv: number }[] 
   { name: "Chandler & Roe", style: "opportunistic", equity: 3_500_000, ltv: 0.81 },
   { name: "Marlowe Kimball", style: "foreign", equity: 5_000_000, ltv: 0.47 },
   { name: "Sixpenny Holdings", style: "family", equity: 2_500_000, ltv: 0.20 },
+  // --- THE BUYERS OF FLATS AND OFFICES (owner, 2026-11-20: "add firms that
+  // buy flats and offices"). Apartments and offices are the two largest
+  // shares of investment sales — about 32% and 24% of US deal volume in 2019
+  // (MSCI Real Capital Analytics, year-end 2019) [S~] — and the roster above
+  // could seat a specialist in either only through its three REIT chairs and
+  // one family chair. Measured before these ten (three towns, every flats and
+  // office building asked at its appraisal, years 2 / 6 / 10): nine to twelve
+  // bidders in most years, two or three in the thin ones, and a best bid of
+  // 0.07-0.41 of the appraisal on offices in two of nine town-years.
+  //
+  // Each names its profile, so the seat is what the name says. Their equity
+  // is the same stated calibration as the rest of the field [K]: inside the
+  // 2.5-10M band, institutions near the top of it and operators near the
+  // bottom. Their leverage is what such houses carry: listed REITs about half
+  // their book and a third of their market value in debt (Nareit T-Tracker),
+  // insurers' and pension core funds a quarter to two fifths (NCREIF ODCE
+  // leverage 22-27%), local apartment operators higher [S~] — each under its
+  // style's ceiling below.
+  //
+  // They sit at the END of the list so the thirty-five above take the draws
+  // they always took; ten more firms still deal a different town.
+  { name: "Lanternhouse Residential Trust", style: "reit", equity: 7_000_000, ltv: 0.48, profile: "residentialReit" },
+  { name: "Exchange Place Properties", style: "reit", equity: 8_000_000, ltv: 0.45, profile: "officeReit" },
+  { name: "Garrison Mutual Life", style: "core", equity: 9_000_000, ltv: 0.35, profile: "core" },
+  { name: "Harbour Employees' Pension Fund", style: "core", equity: 7_500_000, ltv: 0.27, profile: "core" },
+  { name: "Beacon Net Lease", style: "core", equity: 5_600_000, ltv: 0.50, profile: "netLease" },
+  { name: "Counting House Trust", style: "reit", equity: 4_800_000, ltv: 0.50, profile: "officeReit" },
+  { name: "Quayside Apartment Co.", style: "reit", equity: 4_600_000, ltv: 0.52, profile: "residentialReit" },
+  { name: "Hartwell Assurance Co.", style: "owneruser", equity: 3_800_000, ltv: 0.30, profile: "ownerUser" },
+  { name: "Mulberry Street Associates", style: "family", equity: 3_000_000, ltv: 0.45, profile: "neighbourhood" },
+  { name: "Dovecote Homes", style: "family", equity: 2_700_000, ltv: 0.40, profile: "neighbourhood" },
 ];
 
 // What each kind of firm is FOR. These are the only behavioural differences,
@@ -2388,13 +2419,15 @@ export function seatProfile(s: GameState, r: Rival, profile: Profile, parent?: S
  * banker for the market to clear. That is about the city's mix, not about
  * rigging any one firm.
  */
-function castRoster(s: GameState, roster: { name: string; style: RivalStyle }[]): Profile[] {
+function castRoster(s: GameState, roster: { name: string; style: RivalStyle; profile?: ProfileId }[]): Profile[] {
   // THE FIELD THE SETUP CHOSE IS RESPECTED: a town "before the opportunity
   // funds" has no PE, opportunistic or vulture money at the start, so the
   // city check may only add profiles whose style the field still allows.
   const allowed = new Set(fieldRoster(s.setup?.field, FIRMS).map((f) => f.style));
   const used = new Map<ProfileId, number>();
   const pick = roster.map((f, i) => {
+    // a house that names its profile is that profile (FIRMS, the last ten)
+    if (f.profile) { used.set(f.profile, (used.get(f.profile) ?? 0) + 1); return PROFILE_OF[f.profile]; }
     const pool = profilesForStyle(f.style);
     // least-used first, then by hash, so most profiles appear once
     const ranked = pool
@@ -2420,7 +2453,7 @@ function castRoster(s: GameState, roster: { name: string; style: RivalStyle }[])
       for (const p of pick) counts.set(p.id, (counts.get(p.id) ?? 0) + 1);
       let at = -1, worst = 0;
       pick.forEach((p, i) => {
-        if (need.some((r2) => r2.test(p))) return;
+        if (need.some((r2) => r2.test(p)) || roster[i].profile) return;
         const c = counts.get(p.id) ?? 0;
         if (c > worst) { worst = c; at = i; }
       });

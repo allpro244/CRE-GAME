@@ -42,6 +42,7 @@ import { tickDemand, isCivicLand } from "./demand";
 import { tickBeliefs } from "./beliefs";
 import { tickCorporate } from "./corporate";
 import { markRival, initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose, landFundBid, streetSaleCost } from "./rivals";
+import { loanBookTouched, syncDebt } from "./rivalDebt";
 import { openingCapSurvey, openingLandSurvey, tickBrokerSurvey, tickLandSurvey, noteListed, anchoredAsk, forcedSaleAsk, foreclosureSale, BUY_CLOSING, bidRound, valueTo } from "./propmarket";
 import { initLenders, publishOpeningPrices, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { tickStreetLoans, retireFoldedLoans } from "./streetLoans";
@@ -2881,6 +2882,27 @@ export function firstListings(s: GameState, parcels: ParcelTable, bbls: string[]
     if (r.failedM !== undefined || !r.bbls?.length) continue;
     const mk = markRival(next, parcels, r);
     r.aum = Math.round(mk.aum); r.markNoi = mk.noiYr; r.markLand = mk.landV;
+    // ...AND ITS OPENING PAPER IS PAPER ON THE BUILDING AS IT STANDS. The
+    // opening mortgage was sized on the building's value before the street's
+    // tenants were grown (rivals.ts initRivals: the house's own loan-to-value
+    // of `v`); the mark above reads the tenants who are actually there. One
+    // building, two values: a house handed an office building the rolls left
+    // empty opened owing several times its mark (seed 12007: a firm at 3.9
+    // times its book on day one, another at 1.14) — a book fabricated
+    // insolvent, which initRivals says an opening book must not be. The
+    // house's loan-to-value, on the mark: what it owes over that, it never
+    // borrowed.
+    let trimmed = false;
+    for (const bbl of r.bbls) {
+      const row = next.cityLoans?.[bbl];
+      const v = mk.byBbl[bbl]?.v;
+      if (!row || row.obligorId !== r.id || v === undefined) continue;
+      const cap = Math.max(0, Math.round(v * r.targetLtv));
+      if (row.balance <= cap) continue;
+      if (cap > 0) { row.balance = cap; row.origValue = Math.round(v); } else delete next.cityLoans![bbl];
+      trimmed = true;
+    }
+    if (trimmed) { loanBookTouched(); syncDebt(next, r); }
   }
   refreshListings(next, parcels, bbls, true);
   return next;

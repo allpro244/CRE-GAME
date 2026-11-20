@@ -582,7 +582,20 @@ export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
     const debt = Math.min(view.debtA, b.ltvCap) * bid;
     const aumAfter = (r.aum ?? 0) + bid;
     const cushion = r.sheet ? 0.10 * r.sheet.discipline / 100 : 0;
-    if (aumAfter > 0 && (r.debt + debt) / aumAfter > paramsOf(r).maxLtv - cushion) continue;
+    // WHAT IT DRAWS ON ITS LINE TO CLOSE IS DEBT TOO (2026-11-20). The equity
+    // the account and a capital call do not cover comes off the corporate line
+    // (`affordable`), and the closing counts that draw against the firm's own
+    // limit (rivals.ts rivalBuys: debtAfter = debt + loan + draw). This test
+    // counted the loan alone, so a firm bid on a deal that took it past the
+    // cushion its Discipline keeps. Measured on main (seed 12007): family
+    // houses with a 20-27% target ended their first year at 55-65% on line
+    // draws, and by month 24 nineteen of forty firms had shelved their plans
+    // to pay debt down — selling, not buying.
+    const reserve = Math.max(500_000 * dollarLevel(s.econ), Math.max(0, r.cash) * 0.05);
+    const short = Math.max(0, bid * (1 + BUY_CLOSING) - debt + reserve - (r.cash - contractedEquity(s, r)));
+    const called = Math.min(dealCallable(s, r), short);
+    const draw = short - (called >= 100_000 ? called : 0);
+    if (aumAfter > 0 && (r.debt + debt + draw) / aumAfter > paramsOf(r).maxLtv - cushion) continue;
     if (debt > 0 && !deskWithRoom(s, r.id, debt, !!li.opening)) continue;
     bids.push({ r, max, bid, uw, afford });
   } });

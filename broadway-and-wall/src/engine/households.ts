@@ -925,6 +925,8 @@ export interface HouseholdRegister {
    * weight that signed. Absent until the first month a save runs it.
    */
   mk?: { homes: number; homes0: number; ask0: number; cap0: number; cost0: number; occ: number; roll: FlatRoll; pipe: { m: number; n: number }[]; cards: number[]; signed: number; ask12?: number[]; turn?: number[]; idle?: number; homesB?: number; askB?: number; askB0?: number; homeValue?: number; homeCost?: number; pencil?: number;
+    /** the builders' pencil the month the mainland opened: the point its supply curve passes through (`tickMainland`) */
+    pencil0?: number;
     /** the older stock in vintage tiers, newest first (OLDER_TIERS): homes, going rent and opening rent of each */
     hB?: number[]; aB?: number[]; aB0?: number[] };
   /** Each island block of flats an agent can point at (bbl), append-only. */
@@ -2409,20 +2411,39 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
   // flats' cap rate, with land taking its typical share of value
   // (tax.ts LAND_SHARE_TYPICAL), against the island builders' own cost of a
   // flat (value.ts HARD_COST_PSF x the cost index, soft costs, contingency).
-  // The pencil was this ratio over the opening's, which assumed the opening
-  // was in equilibrium — but the flats' cap rate opened under its settled
-  // level (5.8% re-reading to ~8%), so the ratio sat at 0.76-0.95 for thirty
-  // years and almost nothing was built (seed 31337: homes +8% while renters
-  // and doubled-up households doubled). Saiz's long-run elasticity still
-  // shapes how far supply follows the margin (HOUSING_SUPPLY_ELAST).
+  // Saiz's long-run elasticity shapes how far supply follows the margin
+  // (HOUSING_SUPPLY_ELAST).
   const homeValue = (12 * ask * (1 - MAIN_OPEX)) / Math.max(0.01, cap / 100);
   const homeCost = SF_PER_HOME * HARD_COST_PSF.multifamily * constructionTypeMult("multifamily", 3) * cost * (1 + SOFT_COST) * (1 + CONTINGENCY);
   const pencil = (homeValue * (1 - LAND_SHARE_TYPICAL)) / Math.max(1, homeCost);
   // kept for the Markets page, so it shows the builders' own sum
   mk.homeValue = homeValue; mk.homeCost = homeCost; mk.pencil = pencil;
+  // THE SUPPLY CURVE PASSES THROUGH THE REGION AS IT STANDS (2026-11-20).
+  // Saiz (2010) is an elasticity: how far the stock moves when the price of
+  // a home moves, d ln Q = 1.75 d ln P [S]. It says nothing about the stock
+  // at a pencil of 1. The rule read `homes0 x pencil^1.75`, which asserted
+  // that the opening's standard homes are exactly what the region holds when
+  // a new home is worth its cost; the pencil opens at 0.28-0.32 (seed 12007:
+  // the flats' 7.3-7.8% opening cap against a 2024 cost table, a standard
+  // rent struck at the 30% budget of its marginal household), so the curve
+  // asked for about a tenth of the homes that stand and no builder started a
+  // home. Measured on main, seed 12007, years 1-4: no start, the standard
+  // homes filtering away at 1.9% a year, doubled-up households 113 -> 783,
+  // the standard rent +18% real; island apartment asks then roughly doubled
+  // real in fifty years on three seeds at 3-11% vacancy
+  // (PLAYTHROUGH_FRONTIER_2026-11-20.md). The opening is the one point on
+  // the region's supply curve that is observed — the homes standing at the
+  // price they stand at — so the curve goes through it: builders add homes
+  // as the pencil rises over the opening's, and fewer as it falls under.
+  // The pencil's level stays on the Markets page; that it disagrees with the
+  // island's two other reads of the same question (the opening's q solve,
+  // `devPencils` at CAP_BASE with no property tax; the site pro forma at the
+  // town's cap, tax-loaded, with land at its ask) is open in
+  // REAL_ECONOMY_PLAN ("three pencils").
+  mk.pencil0 ??= pencil;
   let piped = 0;
   for (const p of mk.pipe) piped += p.n;
-  const start = mk.homes0 * Math.pow(pencil, HOUSING_SUPPLY_ELAST) - mk.homes - piped;
+  const start = mk.homes0 * Math.pow(pencil / Math.max(1e-6, mk.pencil0), HOUSING_SUPPLY_ELAST) - mk.homes - piped;
   // ...at the pace the trades can build: no more than MAX_STARTS_YR of the
   // stock started in a year, however far the margin runs ahead.
   const pace = (mk.homes + (mk.homesB ?? 0)) * MAX_STARTS_YR / 12;
@@ -4406,7 +4427,7 @@ export function mainlandStats(s: GameState) {
     rentYearAgo: mk.ask12?.length ? mk.ask12[0] : r.mainRent,
     rentOpen: mk.ask0,
     building, due12,
-    homeValue: mk.homeValue, homeCost: mk.homeCost, pencil: mk.pencil,
+    homeValue: mk.homeValue, homeCost: mk.homeCost, pencil: mk.pencil, pencil0: mk.pencil0,
     households: islandR + mainR + own + dbl, islandRenters: islandR, mainlandRenters: mainR, owners: own, doubledUp: dbl, doubledReady: ready,
     medianBurden: burden.length ? wq(burden, bw, 0.5) : NaN,
     /** the share of mainland renters paying over 30% of income in rent (HUD's cost-burdened line) */

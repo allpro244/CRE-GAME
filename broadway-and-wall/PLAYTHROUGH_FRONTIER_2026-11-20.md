@@ -26,10 +26,10 @@ What changed against the month-old engine:
   `RANDOMNESS_AUDIT.md` item 2: one cash pot per firm, and failure seizes
   every building, including loans that were current.
 - **Apartment rents roughly double in real terms in every seed,** while
-  apartment vacancy stays at 3–11%. Supply is not catching up. That fits the
-  flats-occupancy rail, which binds in about 26% of months on the reference
-  town (audit item 8: the looking-pool cap deletes excess demand instead of
-  letting it bid).
+  apartment vacancy stays at 3–11%. Supply is not catching up. On the
+  month-old engine the flats-occupancy rail was the suspect, but on main that
+  rail never binds, so the cause is open. The looking-pool cap (audit item 8)
+  is the next suspect.
 - **Office is the weak class:** real rent −9% to −22%, and vacancy up to
   22–23%.
 - **Ground-up development happens,** but unevenly: 0, 2 and 14 of the bot's

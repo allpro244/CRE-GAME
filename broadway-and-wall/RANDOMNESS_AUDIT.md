@@ -99,8 +99,8 @@ a control on main, and say in the commit why the standing numbers moved.
 7. **The credit index's 0.4 floor plus a ±1.2-point monthly die**
    (`market.ts` ~1790).
 8. **The looking-pool cap with a 25% bleed deletes excess demand**
-   (`market.ts` ~4479). Also behind the flats-occupancy rail, which binds in
-   ~26% of months on the reference town.
+   (`market.ts` ~4479). It is the first suspect for apartment rents doubling
+   in real terms in every playthrough seed.
 9. **Town-centre drift and noise picked for when the centre shows**
    (`demand.ts` ~163–261); the ±16 cap binds in long games.
 10. **Households and firm-credit fakes** (`propmarket-economy.md`):

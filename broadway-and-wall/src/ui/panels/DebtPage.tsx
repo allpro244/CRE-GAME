@@ -444,6 +444,15 @@ export function DebtPage() {
         <Row k="Annual debt service" v={usd(Math.round(agg.ds))} />
         <Row k="NOI" v={`${usd(Math.round(agg.noi))} · ${usd(Math.round(agg.noi - agg.ds))} after debt service`} bad={agg.noi - agg.ds < 0} />
       </div>
+      {/* THE CURE IS YOURS TO CHOOSE (owner playthrough, Nov 2026: cash was taken with no choice) */}
+      {agg.bal > 0 && <div className="hint">
+        Covenant cures{" "}
+        <button type="button" className={"btn btn-mini" + (!game.noAutoCure ? " btn-on" : "")} aria-pressed={!game.noAutoCure}
+          title={!game.noAutoCure
+            ? "When a loan's covenant breaks, the firm pays the loan down out of cash by itself. Click to decide each one yourself."
+            : "A broken covenant stays broken until you pay the loan down. The lender traps that building's cash flow; after two years the file goes to the workout desk. Click to let the firm cure by itself."}
+          onClick={() => useStore.getState().setAutoCure(!!game.noAutoCure)}>{!game.noAutoCure ? "Automatic" : "I decide"}</button>
+      </div>}
 
       {/* THE REVOLVER BELONGS WITH THE REST OF THE DEBT, not under the ledger.
           Books still shows the drawn balance as a liability; draw and repay live

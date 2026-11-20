@@ -360,13 +360,14 @@ export function BuildDesk({ bbl, commit = false }: { bbl: string; commit?: boole
               ? `${plan.lender} · ${pct2(plan.ratePct)} · ${Math.round(plan.ltc * 100)}% LTC · ${usd(plan.commitment)} · ${(plan.points * 100).toFixed(1)} pts`
               : plan.ltcMax > 0 ? `All equity · ${plan.lender} offers ${Math.round(plan.ltcMax * 100)}% at ${pct2(plan.ratePct)}` : (plan.lenderNote ?? "No lender quotes")}</div>}
             {/* WHY THE MOST IT WILL LEND IS WHAT IT IS (owner, Nov 2026: "why only 14% on a
-                very profitable project?"): the test that sized the advance, in the desk's terms */}
-            {plan && plan.ltcMax > 0 && plan.ltcSizedBy && plan.ltcSizedBy.test !== "cost" && <div className="hint">
-              {plan.ltcSizedBy.test === "takeout"
-                ? `The ${Math.round(plan.ltcMax * 100)}% is the takeout test, not your balance sheet: space in this market is letting on a ${Math.round(plan.ltcSizedBy.leaseUpM)}-month clock, so the bank expects about ${Math.round(plan.ltcSizedBy.letShare * 100)}% of the building let ${plan.ltcSizedBy.afterM} months after it opens, and lends what that rent covers ${plan.ltcSizedBy.dscr.toFixed(2)}×. A signed pre-lease raises it.`
+                very profitable project?"): the test that sized the advance, named; the desk's reasoning on hover */}
+            {plan && plan.ltcMax > 0 && plan.ltcSizedBy && plan.ltcSizedBy.test !== "cost" && <div className="hint"
+              title={plan.ltcSizedBy.test === "takeout"
+                ? `Not your balance sheet. Space in this market is letting on a ${Math.round(plan.ltcSizedBy.leaseUpM)}-month clock, so the bank expects about ${Math.round(plan.ltcSizedBy.letShare * 100)}% of the building let ${plan.ltcSizedBy.afterM} months after it opens, and lends what that rent covers ${plan.ltcSizedBy.dscr.toFixed(2)}×. A signed pre-lease raises it.`
                 : plan.ltcSizedBy.test === "value"
-                  ? `The ${Math.round(plan.ltcMax * 100)}% is 75% of the bank's appraisal of the finished building at today's rents (${usd(plan.ltcSizedBy.value)}), not your forecast.`
-                  : `The advance is lent against the signed lease.`}
+                  ? `75% of the bank's appraisal of the finished building at today's rents (${usd(plan.ltcSizedBy.value)}), not your forecast.`
+                  : "Lent against the signed lease."}>
+              {`${Math.round(plan.ltcMax * 100)}% max · ${plan.ltcSizedBy.test === "takeout" ? "takeout test" : plan.ltcSizedBy.test === "value" ? "bank appraisal" : "signed lease"}`}
             </div>}
             {/* THE REST OF THE DEBT (owner, Oct 2026: "you should be able to add a rate cap"):
                 the takeout hedge, the fees and the loan the building inherits at delivery */}

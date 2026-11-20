@@ -479,6 +479,8 @@ interface AppState {
   /** Buildings you buy from here close on auto-lease (on) or off it. */
   autoLeaseNew: (on: boolean) => void;
   setNoUnsolicited: (on: boolean) => void;
+  /** Covenant cures: true = the firm pays a broken covenant down out of cash by itself (the default); false = it asks nothing and pays nothing, you decide. */
+  setAutoCure: (on: boolean) => void;
   /** The smallest new tenancy you will sign at this deed; 0 clears it. */
   minLease: (bbl: string, sf: number) => void;
   /** The same minimum new lease on every building, and the house default for new ones. */
@@ -2121,6 +2123,17 @@ export const useStore = create<AppState>(holdWhileTicking((set, get) => ({
     if (!game || !!game.noUnsolicited === on) return;
     const next: GameState = { ...game, noUnsolicited: on };
     set({ game: next });
+    void persist(next);
+  },
+
+  setAutoCure: (on) => {
+    const { game } = get();
+    if (!game || !game.noAutoCure === on) return;
+    const next: GameState = { ...game, noAutoCure: !on };
+    set({ game: next });
+    toast(on
+      ? "Covenant cures on: when a loan's covenant breaks, the firm pays it down out of cash by itself."
+      : "Covenant cures off: a broken covenant stays broken until you pay the loan down. The lender traps that building's cash flow; after two years the file goes to the workout desk.");
     void persist(next);
   },
 

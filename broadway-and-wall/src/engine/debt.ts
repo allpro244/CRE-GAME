@@ -2048,7 +2048,11 @@ export function tickLoan(
    * by the same factor and lands DSCR on its minimum; the LTV leg is
    * `maxLTV x value` by definition. Whichever binds, binds.
    */
-  if (breached && fundableNow(s, parcels, { allowLoc: false }) > 0) {
+  // ...AND IT IS A RIGHT, NOT AN OBLIGATION (2026-11-20): an owner who has
+  // told the firm not to cure by itself (`noAutoCure`, the Debt page) keeps
+  // the cash; the breach stands, the sweep and the two-year clock run, and
+  // the cheque is the owner's to write by hand (paydownLoan) or not at all.
+  if (breached && !s.noAutoCure && fundableNow(s, parcels, { allowLoc: false }) > 0) {
     const need = equityCureNeed(rec, s, h);
     // Cash only — sponsor cheque, not a line draw. Taken immediately so two
     // breached buildings in the same month cannot both spend the same dollar.

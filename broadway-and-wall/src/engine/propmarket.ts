@@ -55,7 +55,7 @@ import { productById, stabViewFor, streetRateAt, streetRefiProceeds } from "./de
 import { TI_ASK, renewalRefreshShare } from "./leasing";
 import {
   livingRivals, paramsOf, fitOf, ownerOf, firmOutlook, deployDiscountPp, contractedEquity, lineRoom, dealCallable,
-  minTicket, boughtLastYear, gainsTax, streetSaleCost, spreadAdj, firmMaxPrice, firmMargin, capForSpread, landBanker,
+  minTicket, boughtLastYear, gainsTaxOn, streetSaleCost, spreadAdj, firmMaxPrice, firmMargin, capForSpread, landBanker,
 } from "./rivals";
 import { dealsPerYear, misreadPp } from "./competitorTraits";
 import { rowOn, deskWithRoom, withLoanIndex } from "./rivalDebt";
@@ -690,7 +690,14 @@ export function sellerTerms(
   const round = (x: number) => Math.round(Math.max(0, x) / 1000) * 1000;
   if (why === "duress") return { reserve: 0, ask: round(Math.max(mark, clear)), inUse };
   if (why === "forced") return { reserve: round(clear), ask: round(Math.max(clear, mark)), inUse };
-  const reserve = round(Math.max(clear, inUse + gainsTax(r, inUse) + streetSaleCost(inUse, s)));
+  // WHAT THE REVENUE WOULD TAKE, WITHOUT TAKING IT (rivals.ts gainsTaxOn).
+  // This called `gainsTax`, the half that settles: every quote of a
+  // voluntary seller's terms took one building's share off the firm's basis
+  // and added the tax to its lifetime tally, with no sale. The next real sale
+  // was then taxed on a basis that had been quoted away. Measured, seed
+  // 31337: two apartment owners earning $0.6M and $1.7M a year showed $17M
+  // and $33M of tax paid by year nine.
+  const reserve = round(Math.max(clear, inUse + gainsTaxOn(r, inUse) + streetSaleCost(inUse, s)));
   return { reserve, ask: round(reserve * Math.max(1, paramsOf(r).patience)), inUse };
 }
 

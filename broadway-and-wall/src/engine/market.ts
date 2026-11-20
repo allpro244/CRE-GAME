@@ -1364,6 +1364,62 @@ export function cityClassFactor(intensity: number): number {
   return clamp(0.30 + 0.70 * clamp((intensity - 0.35) / 2.4, 0, 1), 0.30, 1);
 }
 
+/**
+ * HOW DEAR A TOWN OPENS: ITS LAND SCARCITY (2026-11-20).
+ *
+ * Tobin's q of new building at the opening, from the share of the town's lot
+ * area that is still vacant. Where buildable land is plentiful, supply is
+ * elastic and prices sit at construction cost (q ≈ 1); where the town is
+ * built out, new space is scarce and prices rise above cost. Glaeser, Gyourko
+ * & Saks, "Why Is Manhattan So Expensive?" (2005): price/cost near 1 in
+ * elastic US markets, about 2 in Manhattan; Saiz (2010, QJE): supply
+ * elasticity falls as developable land runs out.
+ *
+ *   ln q = Q_ELAST · ln(Q_V0 / vacantShare)
+ *
+ * Both are SHAPE PARAMETERS, calibrated to those two anchors, not tuned to any
+ * outcome in this game: Q_V0 = 0.45 is the vacant share at which supply is
+ * taken as unconstrained (the Frontier preset, "over half the lots empty"),
+ * and Q_ELAST = 0.42 puts a Metropolis-level build-out (11% vacant) at q ≈ 1.8.
+ * No parcels (a bare test state) opens at q = 1.
+ *
+ * The q is struck at the long-run cap rates (CAP_BASE). The opening's actual
+ * cap rates come from the national history (regime.ts) and move VALUES, not
+ * rents: a town that opens with the policy rate at 10% has the same rents as
+ * one at 5%, and nothing pencils in it — 1981, not a dial. Measured on the
+ * standard island at CAP_BASE: Landing 0.88, Frontier 0.98, Young town 1.13,
+ * Provincial 1.28, Capital 1.69, Metropolis 1.82, every class.
+ */
+export const Q_V0 = 0.45;
+export const Q_ELAST = 0.42;
+export function vacantLandShare(parcels: ParcelTable): number {
+  let lot = 0, vac = 0;
+  for (const bbl in parcels) {
+    const r = parcels[bbl];
+    if (!r) continue;
+    lot += r.lotArea || 0;
+    if (r.class === "land") vac += r.lotArea || 0;
+  }
+  return lot > 0 ? vac / lot : Q_V0;
+}
+export function openingTobinQ(parcels?: ParcelTable): number {
+  if (!parcels) return 1;
+  const v = Math.max(0.01, vacantLandShare(parcels)); // guard: a fully built map, not a rail
+  return Math.exp(Q_ELAST * Math.log(Q_V0 / v));
+}
+
+/**
+ * What a dollar buys in this town: the units its money is counted in. Median
+ * 0.45 of the reference table; sigma 0.35 is a shape parameter for the
+ * cross-town spread (owner, 2026-10-12). Rents, construction, operating cost
+ * and pay all scale by it.
+ */
+export function openingPriceLevel(seed: number): number {
+  const u1 = Math.max(1e-6, mulberry32Step(((seed ^ 0x6a09e667) >>> 0) || 13).value);
+  const u2 = mulberry32Step(((seed ^ (0x6a09e667 * 7 + 0x9e37)) >>> 0) || 17).value;
+  return 0.45 * Math.exp(0.35 * Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2));
+}
+
 export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   const CITY = parcels ? stockFromParcels(parcels) : { ...CITY_STOCK };
   // THE YEAR IT OPENS IN (opening.ts): its natural rate of unemployment. The
@@ -1542,39 +1598,47 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
       ? Math.max(3, 12 - (n.recM ?? 0))
       : Math.max(3, Math.round(u * (lo + (hi - lo) * 0.5)));
   }
-  // EVERY TOWN OPENS ON ITS OWN SUPPLY PRICE (2026-10-12).
+  // THE TOWN'S DOLLARS COME FIRST (2026-11-20). The price level is put into
+  // the tables before the q solve, so q is solved in the town's own money
+  // (it used to be applied after, along with a dearness draw on top).
+  const P = openingPriceLevel(s.seed);
+  for (const k of BUILT_CLASSES) econ.rentIdx[k] = econ.rentIdx[k] * P;
+  econ.costIdx = econ.costIdx * P;
+  econ.wageIdx = (econ.wageIdx ?? 1) * P;
+  econ.outputIdx = (econ.outputIdx ?? 1) * P;
+  econ.wage0 = (econ.wage0 ?? 1) * P;
+  // EVERY TOWN OPENS ON ITS OWN SUPPLY PRICE (2026-10-12; derived 2026-11-20).
   //
   // The rent table is 2024 secondary-market money and the cost table is 2024
   // RSMeans money, so every town in every seed opened with office at roughly
   // half the rent it takes to build (a 2024 post-pandemic overhang) — in a
   // game that opens in 2000, when construction cost was about 2.4x lower
-  // against office rents that rose roughly with prices (ENR BCI 3,539 in 2000
-  // against ~8,500 in 2024). The consequence was the same in every town: no
-  // office for decades while rent climbed to the supply price, then a boom
-  // that overshot. No year's prices need to be the model's (owner,
-  // 2026-10-12: "each city and seed can have its unique system"). What a
-  // town needs is an opening that is SOMEWHERE in the range real cities
-  // occupy. So each class opens at its own Tobin's q — what a new building
-  // is worth against what it costs at the sites developers actually pursue
-  // (`devPencils`, the P90 location) — centred on 1, the margin a growing
-  // city's supply sits at in the long run, with a seeded spread: one town
-  // opens with an office glut, the next short of sheds. Only the rent LEVEL
-  // moves; the history above still sets where in the cycle the town is.
-  // OPEN_Q_SIGMA is a shape parameter (the cross-town spread of the opening),
-  // stated as such, not a fit to any outcome.
+  // against office rents that rose roughly with prices. So each class opens
+  // at a Tobin's q — what a new building is worth against what it costs at
+  // the sites developers actually pursue (`devPencils`, the P90 location).
+  //
+  // That q is the TOWN'S, not a roll (owner, 2026-11-20: "derive dearness
+  // from the town, not a roll"). It used to be exp(0.15·z) per class plus a
+  // seeded "dearness" multiplier on top — two dice deciding whether building
+  // pays. Now it is `openingTobinQ`: how scarce buildable land is. Where land
+  // is plentiful, supply is elastic and price sits at construction cost;
+  // where the town is built out, price rises above it.
   {
-    const OPEN_Q_SIGMA = 0.15;
+    const qTown = openingTobinQ(parcels);
     for (const k of BUILT_CLASSES) {
-      const u1 = Math.max(1e-6, mulberry32Step(((s.seed ^ (0x51ed27 * (BUILT_CLASSES.indexOf(k) + 3))) >>> 0) || 7).value);
-      const u2 = mulberry32Step(((s.seed ^ (0x2545f491 + BUILT_CLASSES.indexOf(k) * 977)) >>> 0) || 11).value;
-      const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-      const target = Math.exp(OPEN_Q_SIGMA * z);
+      const target = qTown;
       // At no package: the opening's rents are face, and what the town
       // gives away is what its first leases sign at (tenantMarket.ts,
       // streetRolls.ts), not a dial set from its vacancy against a norm.
       const qAt = (): number => {
         econ.effRentIdx = econ.effRentIdx ?? { ...econ.rentIdx };
         econ.effRentIdx[k] = econ.rentIdx[k];
+        // The town opens with expectations at today's rent (rentExp is reset
+        // to rentIdx below). Solving against a stale rentExp read the solver's
+        // own rent moves as momentum — developer optimism — and the town
+        // opened off the q it was solved to (2026-11-20).
+        econ.rentExp = econ.rentExp ?? { ...econ.rentIdx };
+        econ.rentExp[k] = econ.rentIdx[k];
         const a = devPencils(econ, k, false);
         return a > 0 ? Math.pow(a, 1 / 1.2) : 0;
       };
@@ -1594,43 +1658,22 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
       }
     }
   }
-  // EVERY TOWN HAS ITS OWN DOLLARS, AND ITS OWN DEARNESS (2026-10-12).
+  // EVERY TOWN HAS ITS OWN DOLLARS (2026-10-12).
   //
   // Owner: "you should be able to get a game where office rents are at $10
-  // one time and $35 another time ... based on the seed, how built up the
-  // city is maybe, and unique to the seed." Two draws, per seed:
+  // one time and $35 another time ... unique to the seed." The PRICE LEVEL
+  // (`openingPriceLevel`, applied above) is what a dollar buys in this town —
+  // rents, construction, operating cost and pay all move together, so a $12
+  // office town and a $35 one run the same economics in different money. It
+  // is a choice of units, with one exception worth knowing: the opening
+  // cheque is fixed in dollars, so it buys more of a cheap-dollar town.
   //
-  //   PRICE LEVEL  what a dollar buys in this town — rents, construction,
-  //                operating cost and pay all move together, so a $12 office
-  //                town and a $35 one can run the same economics in different
-  //                money (as two eras would). Median 0.45 of the reference
-  //                table, which puts a typical town's office in the low $20s.
-  //   DEARNESS     how expensive space is against what it costs to build and
-  //                what people earn. Rents take all of it, pay about half and
-  //                construction about four tenths: construction cost varies
-  //                across US metros far less than rent does (RSMeans city
-  //                index ~0.8-1.3 against several-fold office rent spreads).
-  //                A dear town opens with building that pays; a cheap one
-  //                opens where nothing new pencils for years.
-  //
-  // How built up the city is already moves the level (`densityPriceScales`).
-  // Both sigmas are shape parameters for the cross-town spread, stated as
-  // such: 0.35 on the price level, 0.20 on dearness.
+  // DEARNESS — how expensive space is against cost and pay — was a second
+  // seeded draw here (sigma 0.20). It is gone: it is the town's land scarcity
+  // now, set above through the opening q (`openingTobinQ`).
   {
-    const nrm = (salt: number): number => {
-      const u1 = Math.max(1e-6, mulberry32Step(((s.seed ^ salt) >>> 0) || 13).value);
-      const u2 = mulberry32Step(((s.seed ^ (salt * 7 + 0x9e37)) >>> 0) || 17).value;
-      return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
-    };
-    const P = 0.45 * Math.exp(0.35 * nrm(0x6a09e667));
-    const R = Math.exp(0.20 * nrm(0x3c6ef372 ^ 0x5be0cd19));
     econ.priceLevel = P;
-    for (const k of BUILT_CLASSES) econ.rentIdx[k] = +(econ.rentIdx[k] * P * R).toFixed(4);
-    econ.costIdx = econ.costIdx * P * Math.pow(R, 0.4);
-    const w = P * Math.pow(R, 0.5);
-    econ.wageIdx = (econ.wageIdx ?? 1) * w;
-    econ.outputIdx = (econ.outputIdx ?? 1) * w;
-    econ.wage0 = (econ.wage0 ?? 1) * w;
+    for (const k of BUILT_CLASSES) econ.rentIdx[k] = +econ.rentIdx[k].toFixed(4);
     // THE OPENING COST OF LIVING AGAINST THE NATION (2026-10-13), struck with
     // the same weights the local CPI moves by (SHELTER_W 0.33 on housing,
     // SERVICES_W 0.25 on local pay, the rest national goods): this town's

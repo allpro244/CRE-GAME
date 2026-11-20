@@ -76,6 +76,35 @@ codebase is measured against, and it outranks any individual balance target.
    variable rests against its rail in normal play, the rail is holding up the
    model.
 
+6. **A dice roll where a mechanism belongs.** The owner's standing rule
+   (2026-11-20): *"no artificial numbers, no dice rolls, no caps, no rails…
+   it needs to be a perfectly real simulation."* A random draw that decides
+   something the model can compute — a vacancy level times `d(0.88, 1.12)`,
+   whether a tenant signs at fixed odds, a starting wage multiplied by a seeded
+   factor — is a fake, however well it is calibrated.
+
+## Randomness: only at the boundary of the model
+
+Not every draw is a fake. A city cannot derive the national rate, a boom in
+one industry, a hurricane, or which particular firm walks in the door this
+month; in life those arrive from outside, and a world with every roll removed
+would be fully predictable, which is less real, not more. So:
+
+- **EXOGENOUS draws are allowed** — shocks that genuinely come from outside
+  the city. Each must be sized from real-world data (a distribution, a
+  frequency, a source in the comment) and say so.
+- **Draws INSIDE the model are not.** If the engine has the inputs to compute
+  an outcome — a rent, a vacancy, an acceptance, a failure, a price — it
+  computes it. Randomness may choose *who* (which tenant, which firm), never
+  *how much* or *whether* when the model can answer.
+- **Physical bounds are definitions, not rails.** Vacancy in [0, 1], leased
+  feet ≤ the building, price ≥ 0. A bound that binds in normal play is a
+  rail and is a bug (fake five above); count it, then replace it with the
+  mechanism it was standing in for.
+
+The audit of every draw and bound in the engine, sorted into these buckets,
+is `RANDOMNESS_AUDIT.md`.
+
 ## What is NOT a fake number
 
 Calibrated industry constants are the opposite of fakes — they are the

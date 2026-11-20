@@ -429,6 +429,85 @@ export function affordable(s: GameState, r: Rival, v: DealView, b: Bidder): numb
 export interface Bid { r: Rival; max: number; bid: number; uw: Underwriting; afford?: number }
 
 /**
+ * WHAT A FIRM IS CHASING THIS MONTH (2026-11-20). A firm closes so many deals
+ * a year (competitorTraits.ts dealsPerYear) and the rounds held it to that
+ * only AFTER it had bought: until then it bid on every listing on the tape at
+ * once, as if it could close them all. Measured at the opening of seed 31337:
+ * six firms that can each close 2-7 deals a year bid over the ask on 30 or 31
+ * of the 31 lots for sale, the best bid a median 1.9 times the ask (4242:
+ * 1.6), and a buyer offering twice the ask was refused on every lot; six
+ * months on, with their years spent, the same lots drew half the ask.
+ *
+ * A firm with room for k more deals this year works its k best: the listings
+ * on the tape where its own number most exceeds the ask (the money it would
+ * make on the day), buildings and lots together. It bids on those and on no
+ * others that month; next month it looks again. A deed that is not on the
+ * tape — an owner asking what the street would pay before listing, a sale of
+ * the player's own — gets a firm's bid only if it would go on that firm's
+ * list: it has a place free, or the deed beats the worst it is chasing. Firms
+ * the rounds hold to no count (no sheet) are not in the map and bid as
+ * before; the courthouse steps keep their own room.
+ */
+interface Chase { k: number; list: { bbl: string; gain: number }[] }
+const PURSUIT = new WeakMap<GameState, { m: number; by: Map<string, Chase> }>();
+const chaseOrder = (x: { bbl: string; gain: number }, y: { bbl: string; gain: number }) => y.gain - x.gain || (x.bbl < y.bbl ? -1 : 1);
+function pursuits(s: GameState, parcels: ParcelTable, opening = false): Map<string, Chase> {
+  const hit = PURSUIT.get(s);
+  if (hit && hit.m === s.month) return hit.by;
+  const by = new Map<string, Chase>();
+  // set first: the rounds below ask for it again
+  PURSUIT.set(s, { m: s.month, by });
+  const firms = livingRivals(s).filter((r) => r.sheet && !r.stressMs && r.failedM === undefined && r.homeBy === undefined);
+  for (const r of firms) by.set(r.id, { k: Math.max(0, dealsPerYear(r.sheet!) - boughtLastYear(r, s.month)), list: [] });
+  for (const li of s.listings ?? []) {
+    if (li.halfBuilt || s.holdings?.[li.bbl]) continue;
+    const rec = resolveRec(parcels, s, li.bbl);
+    if (!rec) continue;
+    const building = rec.class !== "land" && rec.bldgArea > 0;
+    for (const { r, max } of building ? buildingRoom(s, parcels, rec, li, opening) : landRoom(s, parcels, rec, li)) {
+      const c = by.get(r.id);
+      if (c && c.k > 0 && max > 0) c.list.push({ bbl: li.bbl, gain: max - li.ask });
+    }
+  }
+  for (const c of by.values()) { c.list.sort(chaseOrder); c.list.length = Math.min(c.list.length, c.k); }
+  return by;
+}
+/** Would this deed go on the firm's list at this gain: a place free, or better than the worst it is chasing. */
+function wouldChase(c: Chase | undefined, gain: number): boolean {
+  if (!c) return true;
+  if (c.k <= 0) return false;
+  return c.list.length < c.k || gain > c.list[c.list.length - 1].gain;
+}
+/**
+ * A listing written after the month's lists were drawn (an owner's review
+ * listing its building): each firm that would chase it takes it onto its
+ * list, in place of the worst it was chasing.
+ */
+export function noteListed(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Listing, opening = false): void {
+  const hit = PURSUIT.get(s);
+  if (!hit || hit.m !== s.month) return;
+  const building = rec.class !== "land" && rec.bldgArea > 0;
+  for (const { r, max } of building ? buildingRoom(s, parcels, rec, li, opening) : landRoom(s, parcels, rec, li)) {
+    const c = hit.by.get(r.id);
+    if (!c || !(max > 0) || c.list.some((x) => x.bbl === li.bbl) || !wouldChase(c, max - li.ask)) continue;
+    c.list.push({ bbl: li.bbl, gain: max - li.ask });
+    c.list.sort(chaseOrder);
+    c.list.length = Math.min(c.list.length, c.k);
+  }
+}
+/** Every firm that would bid on a listing with nothing else to chase, and its own number: what the pursuit lists are ranked on. */
+function buildingRoom(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Listing, opening = false): { r: Rival; max: number }[] {
+  return bidRound(s, parcels, rec, { ...li, raw: true, opening }).bids.map((b) => ({ r: b.r, max: b.max }));
+}
+function landRoom(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Listing): { r: Rival; max: number }[] {
+  return landBidRound(s, parcels, rec, li, true).bids.map((b) => ({ r: b.r, max: b.max }));
+}
+/** True when `li` is a listing on this month's tape (the deeds a firm's pursuit list is drawn from). */
+function onTape(s: GameState, bbl: string): boolean {
+  return !!s.listings?.some((l) => l.bbl === bbl);
+}
+
+/**
  * A BID ROUND: every firm on the street that would and could buy this,
  * underwriting it on its own books. Sorted best first. `n` is how many were
  * in the room — the broker's read the bidders shade against.
@@ -444,7 +523,7 @@ export interface Bid { r: Rival; max: number; bid: number; uw: Underwriting; aff
  * `opening`: the round is struck before the first month has run, so the
  * desks' room is the opening's (rivalDebt.ts deskWithRoom).
  */
-export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress"> & { listedM?: number; open?: boolean; cond?: Condition; condIdx?: number; opening?: boolean }): { bids: Bid[]; n: number; view: DealView | null } {
+export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress"> & { listedM?: number; open?: boolean; cond?: Condition; condIdx?: number; opening?: boolean; raw?: boolean }): { bids: Bid[]; n: number; view: DealView | null } {
   const view = dealView(s, rec, li.bbl, li.ask, li.cond, li.condIdx, !!li.open);
   if (!view) return { bids: [], n: 0, view };
   const seller = ownerOf(s, rec.bbl);
@@ -461,8 +540,12 @@ export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
   const troubled = !!li.distress && (view.cond === "worn" || view.cond === "obsolete" || view.noiPre < 0.9 * view.stabPre);
   const distress = troubled;
   const room: Rival[] = [];
+  // each firm with a count to keep bids on what it is chasing this month (`pursuits`)
+  const chase = !li.raw && !li.open ? pursuits(s, parcels, !!li.opening) : null;
+  const listed = !!chase && onTape(s, li.bbl);
   for (const r of livingRivals(s)) {
     if (r === seller || r.stressMs || r.failedM !== undefined || r.homeBy !== undefined) continue;
+    if (listed && r.sheet && !chase!.get(r.id)?.list.some((x) => x.bbl === li.bbl)) continue;
     // THE LISTING BROKER CALLS ITS OWN BUYERS FIRST (beliefs.ts hearsOfListing).
     if (!hearsOfListing(s, r, li)) continue;
     const st = paramsOf(r);
@@ -488,6 +571,8 @@ export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
     const b = bidderOf(s, r, rec);
     const { max, uw } = maxPrice(s.econ, view, b, beliefSignals(s, r));
     if (!(max > 0)) continue;
+    // a deed not on the tape: only if it would go on this firm's list (`pursuits`)
+    if (chase && !listed && r.sheet && !wouldChase(chase.get(r.id), max - li.ask)) continue;
     const afford = affordable(s, r, view, b);
     let bid = Math.min(li.open ? max : max * (1 - SHADE / Math.max(1, n)), afford);
     bid = Math.round(bid / 1000) * 1000;
@@ -1650,11 +1735,14 @@ export function holdValueFor(s: GameState, bv: BankerView, rec: ParcelRecord, wa
 }
 
 /** A land bid round: builders and land bankers, each on its own number, shaded by the room and capped by its cash. */
-export function landBidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress">): { bids: Bid[]; n: number } {
+export function landBidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress">, raw = false): { bids: Bid[]; n: number } {
   const seller = ownerOf(s, rec.bbl);
   const room: Rival[] = [];
+  const chase = !raw ? pursuits(s, parcels) : null;
+  const listed = !!chase && onTape(s, li.bbl);
   for (const r of livingRivals(s)) {
     if (r === seller || r.stressMs || r.failedM !== undefined || r.homeBy !== undefined) continue;
+    if (listed && r.sheet && !chase!.get(r.id)?.list.some((x) => x.bbl === li.bbl)) continue;
     const p = paramsOf(r);
     if (!(p.build > 0) && !landBanker(r)) continue;
     if (p.classes && !p.classes.includes("land") && !(p.build > 0)) continue;
@@ -1670,6 +1758,7 @@ export function landBidRound(s: GameState, parcels: ParcelTable, rec: ParcelReco
   for (const r of room) {
     const max = landMaxPrice(s, r, rec);
     if (!(max > 0)) continue;
+    if (chase && !listed && r.sheet && !wouldChase(chase.get(r.id), max - li.ask)) continue;
     const reserve = Math.max(500_000 * dollarLevel(s.econ), Math.max(0, r.cash) * 0.05);
     const room$ = Math.max(0, lineRoom(s, r, r.aum ?? 0, r.markNoi ?? 0, r.markLand ?? 0));
     const avail = r.cash - contractedEquity(s, r) + room$ - reserve;

@@ -42,7 +42,7 @@ import { tickDemand, isCivicLand } from "./demand";
 import { tickBeliefs } from "./beliefs";
 import { tickCorporate } from "./corporate";
 import { markRival, initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose, landFundBid, streetSaleCost } from "./rivals";
-import { openingCapSurvey, openingLandSurvey, tickBrokerSurvey, tickLandSurvey, anchoredAsk, forcedSaleAsk, foreclosureSale, BUY_CLOSING, bidRound, valueTo } from "./propmarket";
+import { openingCapSurvey, openingLandSurvey, tickBrokerSurvey, tickLandSurvey, noteListed, anchoredAsk, forcedSaleAsk, foreclosureSale, BUY_CLOSING, bidRound, valueTo } from "./propmarket";
 import { initLenders, publishOpeningPrices, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { tickStreetLoans, retireFoldedLoans } from "./streetLoans";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
@@ -604,6 +604,8 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     stampListing(s, rec, listing);
     s.listings.push(listing);
     listed.add(bbl);
+    // the firms that would chase it take it onto their lists for the month (propmarket.ts pursuits)
+    noteListed(s, parcels, rec, listing, opening);
     // A shop that knows you rings before the tape prints. Seed-hashed, no draw.
     maybeEarlyLook(s, listing, rec.address);
   }

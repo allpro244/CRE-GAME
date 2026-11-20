@@ -42,7 +42,7 @@ import { tickDemand, isCivicLand } from "./demand";
 import { tickBeliefs } from "./beliefs";
 import { tickCorporate } from "./corporate";
 import { markRival, initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose, landFundBid, streetSaleCost } from "./rivals";
-import { openingCapSurvey, openingLandSurvey, tickBrokerSurvey, tickLandSurvey, anchoredAsk, forcedSaleAsk, foreclosureSale, BUY_CLOSING, bidRound, valueTo } from "./propmarket";
+import { openingCapSurvey, openingLandSurvey, tickBrokerSurvey, tickLandSurvey, noteListed, anchoredAsk, forcedSaleAsk, foreclosureSale, BUY_CLOSING, bidRound, valueTo } from "./propmarket";
 import { initLenders, publishOpeningPrices, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
 import { tickStreetLoans, retireFoldedLoans } from "./streetLoans";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
@@ -604,6 +604,8 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
     stampListing(s, rec, listing);
     s.listings.push(listing);
     listed.add(bbl);
+    // the firms that would chase it take it onto their lists for the month (propmarket.ts pursuits)
+    noteListed(s, parcels, rec, listing, opening);
     // A shop that knows you rings before the tape prints. Seed-hashed, no draw.
     maybeEarlyLook(s, listing, rec.address);
   }
@@ -678,7 +680,13 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
     const belief = ownerAskPsf(rec, s.econ) * rec.lotArea;
     const value = Math.max(landValue(rec, s.econ), belief);
     if (!(value > 0)) return;
-    const ask = Math.round(value * (distress ? rrange(s, 0.72, 0.90, "land") : rrange(s, 0.97, 1.08, "land")) / 1000) * 1000;
+    const struck = Math.round(value * (distress ? rrange(s, 0.72, 0.90, "land") : rrange(s, 0.97, 1.08, "land")) / 1000) * 1000;
+    // NO OWNER LISTS UNDER ITS OWN RESERVATION (2026-11-20). The broker's
+    // number runs 0.97-1.08 of the value, so about a quarter of the lots were
+    // listed 1-3% under the reservation stamped below, and a buyer offering
+    // the full ask in the listing month was refused; the next month's refresh
+    // lifted the ask to the reservation (refreshListings). Listed there at once.
+    const ask = distress ? struck : Math.max(struck, Math.round(belief / 1000) * 1000);
     s.listings.push({
       bbl, ask, listedM: s.month,
       expiresM: s.month + Math.round(rrange(s, LISTING_LIFE_M[0], LISTING_LIFE_M[1], "land")),

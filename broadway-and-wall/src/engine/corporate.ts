@@ -58,11 +58,11 @@ function overlap(a: Rival, b: Rival): number {
   return 1 - d / (ks.length * 100);
 }
 
-/** Equity multiple over the last ten year-ends on the race chart; -Infinity when there is no decade to read. */
-function decadeGrowth(r: Rival): number {
+/** Equity multiple over the last `yrs` year-ends on the race chart; -Infinity when the chart is shorter. */
+function growthOver(r: Rival, yrs: number): number {
   const h = r.eqHist ?? [];
-  if (h.length < 11) return -Infinity;
-  const e0 = h[h.length - 11][1], e1 = h[h.length - 1][1];
+  if (yrs < 1 || h.length < yrs + 1) return -Infinity;
+  const e0 = h[h.length - 1 - yrs][1], e1 = h[h.length - 1][1];
   return e0 > 0 ? e1 / e0 : -Infinity;
 }
 
@@ -83,10 +83,15 @@ function mergers(s: GameState, parcels: ParcelTable) {
   const [into, from] = (best.a.aum ?? 0) >= (best.b.aum ?? 0) ? [best.a, best.b] : [best.b, best.a];
   // THE SMALLER FIRM HAS TO WANT IT. No die: its partners fold their book
   // into the larger one's only when their own equity has grown more slowly
-  // over the decade on the race chart (eqHist) — a firm out-compounding its
-  // would-be partner keeps its name. A firm with under a decade of history
-  // has no record to argue from and takes the larger firm's case.
-  if (decadeGrowth(from) > decadeGrowth(into)) return;
+  // on the race chart (eqHist) — a firm out-compounding its would-be partner
+  // keeps its name. The record is the last ten year-ends, or as many as both
+  // firms have (rivals.ts fiveYearReturn reads a short chart the same way).
+  // It was ten or nothing, so through a town's first decade no firm had a
+  // record and the smaller always agreed: measured over ten years on seeds
+  // 12007 / 31337 / 550991, 15 / 9 / 16 firms were merged away against 2 / 4
+  // / 3 that failed. A firm with no year-end yet still has no case to make.
+  const yrs = Math.min(10, (from.eqHist?.length ?? 0) - 1, (into.eqHist?.length ?? 0) - 1);
+  if (yrs >= 1 && growthOver(from, yrs) > growthOver(into, yrs)) return;
   // The combined book has to sit inside the survivor's own covenant.
   const aum = (into.aum ?? 0) + (from.aum ?? 0);
   if (aum <= 0 || (into.debt + from.debt) / aum > paramsOf(into).maxLtv) return;

@@ -3591,7 +3591,7 @@ function basisShare(r: Rival): number {
  * high, and 224 of the 843 sales that "covered the hole" settled short of it.
  * That is one quantity with two answers, and this is the one answer.
  */
-function gainsTaxOn(r: Rival, price: number): number {
+export function gainsTaxOn(r: Rival, price: number): number {
   return Math.round(Math.max(0, price - basisShare(r)) * 0.25);
 }
 
@@ -6163,7 +6163,16 @@ export function rivalBuys(
     // ...and pays for it at the table, as the player does (points, a cap).
     if (row) best.cash -= streetLoanCost(row, fin.debt);
   }
-  best.basis = Math.round((best.basis ?? 0) + fin.equity + closing);
+  // ITS BASIS IN THE BUILDING IS WHAT IT PAID FOR IT, borrowed money and
+  // all (cost basis, IRC s.1012; a mortgage is part of cost — Crane v.
+  // Commissioner, 331 U.S. 1). This added the equity alone, while the opening
+  // book, a delivered job and a bought frame each add the whole cost — so a
+  // firm selling a building it had bought at the same price was taxed a
+  // quarter of the mortgage as a gain (`gainsTaxOn`). Measured: the street's
+  // basis fell from $184M to $97M over three years while its deeds went from
+  // 203 to 363 (seed 12007); two apartment owners with $0.6M and $1.7M a year
+  // of income had paid $17M and $33M of tax by year nine and failed (31337).
+  best.basis = Math.round((best.basis ?? 0) + price + closing);
   best.aum = Math.round((best.aum ?? 0) + price);
   transferDeed(s, rec.bbl, best, 0);   // the seller was already paid above
   const wasDistress = !!s.listings.find((l) => l.bbl === rec.bbl)?.distress;

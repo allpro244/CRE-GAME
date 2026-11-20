@@ -11,16 +11,21 @@ import { generateFirmName } from "@/engine/firm";
 import { setupCity, currentSize, currentDev, currentCash0, regionShown } from "@/state/city";
 import { cityList, cityName, sizeList, developmentList, extentList, randomSeed, PARK_AMOUNTS, REGION } from "@/citygen/index.mjs";
 import { drawPlatOffThread } from "@/state/platClient";
+import type { PlatReply } from "@/state/platWorker";
 import { BUILD_STAMP } from "@/buildStamp";
 import { usd } from "./format";
 
 /**
  * THE GAME SETUP PAGE — which world you play in (revamped 2026-10-22).
  *
- * One dense screen: the map first (the region leads, one line on each), then
- * the firm, the competition, the goal, the clock and the seed, each a row of
- * choices with the chosen one's note under it; the rest (build-out, parks,
- * the market's rules, interruptions, the firm's name) folds under Advanced.
+ * One dense screen: the map first (the region leads, one line on each), its
+ * size and build-out, then the firm, the competition, the goal, the clock and
+ * the seed, each a row of choices with the chosen one's note under it; the
+ * rest (parks, the market's rules, interruptions, the firm's name) folds under
+ * Advanced. The build-out sits in the main form because it changes the game
+ * more than almost anything else here (playtest, 2026-11-20). The capital
+ * note reads the cheque in this town's money: its opening office rent and
+ * typical building, from the engine's own opening on the previewed town.
  * The town this seed deals is drawn beside it. Break ground is always in the
  * footer.
  *
@@ -99,14 +104,15 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
   // THE SEED'S MAP. Drawn off the page's thread whenever anything that shapes
   // the town changes, after a short pause. Same makeCity call Break ground
   // makes, so this is the town you will get.
-  const [plat, setPlat] = useState<{ key: string; svg?: string; lots?: number; err?: string } | null>(null);
+  const [plat, setPlat] = useState<{ key: string; svg?: string; lots?: number; err?: string; prices?: PlatReply["prices"] } | null>(null);
   const platKey = `${d.island}|${d.size}|${d.dev}|${d.parks}|${d.streets}|${d.seed}`;
   useEffect(() => {
     if (isWritten) return;
     let gone = false;
     const t = setTimeout(() => {
-      void drawPlatOffThread({ island: d.island, seed: d.seed, size: isFixed ? d.island : d.size, dev: d.dev, parks: d.parks === "medium" ? undefined : d.parks, streets: d.streets === "natural" && !isFixed ? d.streets : undefined })
-        .then((r) => { if (!gone) setPlat({ key: platKey, svg: r.svg, lots: r.lots, err: r.err }); });
+      void drawPlatOffThread({ island: d.island, seed: d.seed, size: isFixed ? d.island : d.size, dev: d.dev, parks: d.parks === "medium" ? undefined : d.parks, streets: d.streets === "natural" && !isFixed ? d.streets : undefined },
+        (prices) => { if (!gone) setPlat((x) => x?.key === platKey ? { ...x, prices } : x); })
+        .then((r) => { if (!gone) setPlat((x) => ({ key: platKey, svg: r.svg, lots: r.lots, err: r.err, prices: x?.key === platKey ? x.prices : undefined })); });
     }, 250);
     return () => { gone = true; clearTimeout(t); };
   }, [platKey, isWritten]);
@@ -228,6 +234,13 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
               </div>
             </div>
           )}
+          <div className="hs-row">
+            <div className="hs-label">Build-out</div>
+            <div>
+              {seg(devs.map((x) => ({ id: x.id, label: x.name, note: x.note })), d.dev, (v) => up({ dev: v }), "How built up")}
+              <div className="hs-note">{devs.find((x) => x.id === d.dev)?.note}</div>
+            </div>
+          </div>
 
           {/* ------------------------------------------------------------ firm */}
           <div className="hs-row">
@@ -247,6 +260,15 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
                 {d.sandbox ? `Sandbox: ${usd(SANDBOX_CASH)}.` : CASH_NOTE[d.cash0] ?? `${usd(d.cash0)}.`}
                 {" "}Opens about <b>{nth(rank)} of {cr.firms + 1}</b>; rivals bring {usd(cr.lo)}–{usd(cr.hi)}.
               </div>
+              {!isWritten && (
+                <div className="hs-note" id="setup-prices">
+                  {!platFresh || !plat?.prices ? (platFresh && plat?.err ? "" : "Reading this town's prices…") : (() => {
+                    const { lo, mid, hi } = plat.prices;
+                    const n = mid.building > 0 ? opening / mid.building : 0;
+                    return <>In {islandWord}'s money: office about <b>${mid.officePsf.toFixed(0)}/sf</b> a year, a typical building about <b>{usd(mid.building)}</b>{n >= 1 ? <> — {usd(opening)} is about {n >= 10 ? Math.round(n) : n.toFixed(1)} of them</> : null}. What a dollar buys is drawn at Break ground: 8 towns in 10 open between ${lo.officePsf.toFixed(0)} and ${hi.officePsf.toFixed(0)}/sf ({usd(lo.building)}–{usd(hi.building)} a building).</>;
+                  })()}
+                </div>
+              )}
             </div>
           </div>
           <div className="hs-row">
@@ -311,13 +333,6 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
           <button type="button" className="hs-adv-toggle" aria-expanded={adv} onClick={() => setAdv(!adv)}>{adv ? "▾" : "▸"} Advanced</button>
           {adv && (
             <div className="hs-adv">
-              <div className="hs-row">
-                <div className="hs-label">Built up</div>
-                <div>
-                  {seg(devs.map((x) => ({ id: x.id, label: x.name, note: x.note })), d.dev, (v) => up({ dev: v }), "How built up")}
-                  <div className="hs-note">{devs.find((x) => x.id === d.dev)?.note}</div>
-                </div>
-              </div>
               {!isWritten && !isFixed && (
                 <div className="hs-row">
                   <div className="hs-label">Parks</div>

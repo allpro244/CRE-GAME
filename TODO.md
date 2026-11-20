@@ -28,7 +28,7 @@ Done 2026-11-11: letter cards' prose to hover; one rent-vs-market colour rule (a
 - [ ] **Industrial occupancy falls ~22% in the first 3 years** (seed 11: street industrial tenants lease 2.49M sf at month 1, 2.0M by year 3) and the vacancy weighs on industrial for decades. Not the opening over-filling industries (islandFill ~1.0); the tenants' staffing (`t.staff`) shrinks after signing while the town's factory employment holds. Small unrated tenants (90% of industrial) fail ~16%/yr on books with 3.5x leverage and 1.5 months of cash.
 - [ ] **Office effective rent still swings 9-11% a year** after the filtered read (was 19-25%; retail 4%). Office comps' dispersion is 28% around the address market rent: find what spreads them (packages, bargaining, quality normalisation).
 - [ ] **Cap rates move 60-120bp a year** (log sd 6-12%), in a 4-13% band; real classes move ~30-60bp.
-- [ ] Two tests already fail on main: `refi-strong` "coverage moves on standards" (expects a removed rule) and `loanbook` (calls the removed `deskRatePct`).
+- [x] (2026-11-20: `refi-strong` passes again; its premise "same coupon in both states" was out of date since a smaller loan prices cheaper, and it now checks the coverage leg at each quote's own coupon. `loanbook` already passes.) Two tests already fail on main: `refi-strong` "coverage moves on standards" and `loanbook`.
 
 ## Economy findings (2026-11-19: office hand-back probe, two bot playthroughs, seeds 31337 / 12007 / 550991 / 4000)
 Done: #823 space given back at renewal counts in the office clock; #824 build desk says which test sized the construction loan, rent floor on by default; #825 office rents answer vacancy without the 0.378 damping.

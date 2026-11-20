@@ -1981,12 +1981,37 @@ export function markRival(s: GameState, parcels: ParcelTable, r: Rival): { aum: 
  * `debtReleasedOnSale`. The sum of these over `r.bbls` is `markRival`, by
  * construction rather than by agreement.
  */
+/**
+ * THE APPRAISAL A FIRM'S BOOK CARRIES IS THE TOWN'S APPRAISAL (2026-11-20).
+ *
+ * A building on the tape, a building the player owns and the number every
+ * bidder is asked against are all `holdingValue` on the roll the deed conveys
+ * (leasing.ts conveyedValue). A firm's own book was `assetValue` — the same
+ * building through a second formula, which reads a let building 3-17% lower
+ * and an empty one at a tenth to a half. Measured on the firms' own buildings
+ * (seed 12007, month 24), book over appraisal, median: full flats 0.83, part-
+ * let flats 0.70, empty shops 0.29, empty sheds 0.55, empty offices 0.55.
+ * A firm buys at about the appraisal (the street's best bid is 0.87-0.95 of
+ * it), so each purchase was written down the month it closed: a 28,900 sf
+ * block of flats bought at $6.4M sat in the buyer's book at $3.2M against a
+ * $4.5M loan. Leverage, the corporate line and the plan to pay debt down all
+ * read that book, so by month 12 fifteen of forty-two firms had stopped
+ * buying to delever from losses nobody else in town could see.
+ *
+ * One building, one appraisal: the conveyed value at the grade this firm
+ * keeps it. Dirt has no roll and stays on `assetValue` (which is landValue).
+ */
+function bookAppraisal(s: GameState, rec: ParcelRecord, cond: Condition): number {
+  if (rec.class === "land" || !rec.bldgArea) return assetValue(rec, s.econ, cond);
+  return conveyedValue(s, rec, rec.bbl, false, cond);
+}
+
 export function markAsset(s: GameState, r: Rival, rec: ParcelRecord, fresh = false): { v: number; noi: number; occ?: number } {
   const cond = assetGrade(r, rec);
   // The book carries its last appraisal (appraiseBooks), not a monthly mark to
   // market; a deal orders a new one (`fresh`), as a lender does.
   const held = r.marks?.[rec.bbl];
-  const v = !fresh && held && held.k === markKey(rec, cond) ? held.v : assetValue(rec, s.econ, cond);
+  const v = !fresh && held && held.k === markKey(rec, cond) ? held.v : bookAppraisal(s, rec, cond);
   if (rec.class === "land" || !rec.bldgArea) return { v, noi: noiAfterTaxYr(rec, s.econ, cond, v) };
   // Start with THIS building's modeled occupancy, then carry only the firm's
   // portfolio-wide operating delta onto it. A weak location stays weak even
@@ -4848,7 +4873,7 @@ function appraiseBooks(s: GameState, parcels: ParcelTable) {
       const cond = assetGrade(r, rec);
       const k = markKey(rec, cond);
       const was = r.marks?.[bbl];
-      out[bbl] = !jan && was && was.k === k ? was : { v: assetValue(rec, s.econ, cond), m: s.month, k };
+      out[bbl] = !jan && was && was.k === k ? was : { v: bookAppraisal(s, rec, cond), m: s.month, k };
     }
     if (r.marks) for (const b of Object.keys(r.marks)) if (!held.has(b)) delete r.marks[b];
     r.marks = out;

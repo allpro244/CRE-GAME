@@ -133,15 +133,33 @@ in every run, because office was what kept clearing the coupon on the tape.
    the bot never phoned owners of unlisted lots, and it ignored lots at 0.9–0.99.
    Even so, a Frontier town that is mostly grass, where buying existing
    buildings beats building on it by this much, is the opposite of what the
-   Frontier preset's description promises a player. **This is the biggest
-   "feel" gap.**
+   Frontier preset's description promises a player.
+
+   **Follow-up (same day): mostly not a fake.** On the lots that fail, land is
+   2–10% of total cost: one $0.21M lot sat under an $8.4M building. Those
+   schemes do not pencil even with free land. The hurdle is exit yield × 1.17
+   (a 17% margin on cost, the industry standard). The exit yield is cap rate
+   plus property tax, because the plan's NOI is measured before tax, so the
+   hurdle is consistent with how buildings are marked. Low-demand frontier
+   lots stay grass because a new building there would be worth less than it
+   costs to build. That is the real reason land stays vacant. Where space
+   really was short, rents rose until building paid: apartments gained +70%
+   real in seed 12007, and rivals built 30–60k sf every three years. The
+   no-office decades in seed 12007 match 12–18% office vacancy. Nobody should
+   build into that.
 3. **The opening rent level swings about 5× on the market seed alone.** On the
    same map, office opened at $10.6–$52/sf and industrial at $2.2–$13.4/sf. The
    cause is `wage0` (0.26–0.60), which is drawn from the seed. $52 office in a
    two-storey frontier town is high. $2.60 industrial is plausible for a small
    town. The spread is not visible to the player at setup, so two "identical"
-   games are very different businesses. Worth confirming that this is a
-   deliberate region draw and showing it on the setup screen.
+   games are very different businesses.
+
+   **Follow-up:** this is deliberate. `market.ts` `initEcon` makes two seeded
+   draws, at the owner's request of 2026-10-12. The first is a price level,
+   which only sets the units money is counted in. The second is a dearness
+   draw, which is real economics. A third draw, the opening Tobin's q spread,
+   does the same. Under the 2026-11-20 no-dice rule, dearness should be
+   derived from the town itself. That is an owner decision, and it is open.
 4. **Industrial vacancy was stuck at 30–36% for about 30 years (seed 12007),**
    from 2010 through 2050, while real industrial rent fell only gently. Nothing
    converted, demolished or repurposed that space. The other two seeds stayed at

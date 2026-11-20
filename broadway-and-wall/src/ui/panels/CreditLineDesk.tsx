@@ -30,7 +30,10 @@ export function CreditLine() {
   const room = Math.max(avail, balance);
   return (
     <div className="page-section">
-      <div className="page-section-head">Line of credit</div>
+      <div className="page-section-head has-gloss"
+        title="The line covers a shortfall automatically before it can sink the run. Idle cash above a month of debt service pays it back down the same month, and the moment a sale, refinance or portfolio close puts cash in the account.">
+        Line of credit
+      </div>
       <div className="stat-strip">
         {(() => {
           const adv = nw > 0 ? limit / nw : 0.35;
@@ -68,8 +71,8 @@ export function CreditLine() {
               { at: room, label: "all" },
             ]}
             hint={amt > 0
-              ? `Costs ${usd((Math.min(amt, room) * rate) / 100 / 12)} a month in interest while it's out.`
-              : `Set an amount. Interest at ${rate.toFixed(2)}% runs only while money is out.`}
+              ? `${usd((Math.min(amt, room) * rate) / 100 / 12)}/mo interest`
+              : undefined}
           />
           <div className="btn-row">
             {/* "Draw $0" read as a bug. With nothing set the buttons name the
@@ -83,12 +86,8 @@ export function CreditLine() {
           </div>
         </>
       ) : (
-        <div className="hint">Build some net worth and the bank will open a line against it.</div>
+        <div className="dim" title="Build some net worth and the bank will open a line against it.">None</div>
       )}
-      <div className="hint">
-        The line covers a shortfall automatically before it can sink the run. Idle cash above a month of debt service pays it back down
-        the same month — and the moment a sale, refinance or portfolio close puts cash in the account.
-      </div>
     </div>
   );
 }

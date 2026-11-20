@@ -55,8 +55,6 @@ const { parcels, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 const SEEDS = (process.env.SEEDS ?? "7919,550991,12007,4242,91117,20603").split(",").map(Number);
 const YRS = Number(process.env.YRS ?? 40);
 const CL = ["office", "retail", "multifamily", "industrial"];
-// Natural vacancy per class, as the engine holds it — see NATURAL_VAC in market.ts.
-const NAT = { office: 11.5, retail: 8.5, multifamily: 4.5, industrial: 7.0 };
 
 const q = (a, p) => (a.length ? a.slice().sort((x, y) => x - y)[Math.floor(a.length * p)] : NaN);
 const pad = (n, w, d = 1) => (isFinite(n) ? n.toFixed(d) : "  -  ").padStart(w);
@@ -283,8 +281,10 @@ console.log("   cap rate over the policy rate      MED bp      real: 150-350bp o
 for (const c of CL) console.log(`     ${c.padEnd(13)}${pad(q(spread[c],.5)*100,10,0)}bp`);
 console.log("   concessions: effective / face rent");
 for (const c of CL) {
-  const lo = conc[c].filter((x) => x.vac < NAT[c]).map((x) => x.eff);
-  const hi = conc[c].filter((x) => x.vac > NAT[c] + 5).map((x) => x.eff);
+  // tight and glut by the run's own vacancy quartiles, not against a norm
+  const vs = conc[c].map((x) => x.vac), v25 = q(vs, 0.25), v75 = q(vs, 0.75);
+  const lo = conc[c].filter((x) => x.vac <= v25).map((x) => x.eff);
+  const hi = conc[c].filter((x) => x.vac >= v75).map((x) => x.eff);
   console.log(`     ${c.padEnd(13)} tight market ${lo.length ? pad(q(lo,.5),5,3) : "  -  "}   glut ${hi.length ? pad(q(hi,.5),5,3) : "  -  "}   (n=${lo.length}/${hi.length})`);
 }
 const tot = Object.values(phases).reduce((a, b) => a + b, 0);

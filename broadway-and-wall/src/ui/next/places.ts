@@ -56,7 +56,7 @@ export const PLACES: Place[] = [
     ],
   },
   {
-    id: "market", label: "Buy", key: "4", icon: "◎",
+    id: "market", label: "Marketplace", key: "4", icon: "◎",
     tabs: [
       { id: "forsale", label: "For sale", page: "market", view: "forsale", width: "wide" },
       { id: "all", label: "All buildings", page: "buildings", width: "wide" },
@@ -84,6 +84,7 @@ export const PLACES: Place[] = [
     tabs: [
       { id: "overview", label: "Overview", page: "economy", view: "m-overview", width: "wide" },
       { id: "sectors", label: "Sectors", page: "economy", view: "c-markets", width: "wide" },
+      { id: "industries", label: "Industries", page: "economy", view: "m-industries", width: "wide" },
       { id: "districts", label: "Districts", page: "economy", view: "m-districts", width: "wide" },
       { id: "building", label: "Construction", page: "economy", view: "m-building", width: "wide" },
     ],

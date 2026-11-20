@@ -43,7 +43,7 @@ function absorb(s: GameState, from: Rival, into: Rival) {
   syncDebt(s, into);
   from.bbls = []; from.debt = 0; from.cash = 0; from.uncalled = 0; from.aum = 0; from.stressMs = 0;
   from.heldSince = {};
-  delete from.extendedTo; delete from.deliveredM;
+  delete from.extendedTo; delete from.balloonSale; delete from.deliveredM;
   from.failedM = s.month;
   from.endReason = "absorbed";
   from.takenOverBy = into.id;
@@ -56,6 +56,14 @@ function overlap(a: Rival, b: Rival): number {
   let d = 0;
   for (const k of ks) d += Math.abs(a.sheet![k] - b.sheet![k]);
   return 1 - d / (ks.length * 100);
+}
+
+/** Equity multiple over the last `yrs` year-ends on the race chart; -Infinity when the chart is shorter. */
+function growthOver(r: Rival, yrs: number): number {
+  const h = r.eqHist ?? [];
+  if (yrs < 1 || h.length < yrs + 1) return -Infinity;
+  const e0 = h[h.length - 1 - yrs][1], e1 = h[h.length - 1][1];
+  return e0 > 0 ? e1 / e0 : -Infinity;
 }
 
 function mergers(s: GameState, parcels: ParcelTable) {
@@ -71,8 +79,19 @@ function mergers(s: GameState, parcels: ParcelTable) {
     const o = overlap(mid[i], mid[j]);
     if (o > 0.82 && (!best || o > best.o)) best = { a: mid[i], b: mid[j], o };
   }
-  if (!best || hash01(`${s.seed}:merge:${best.a.id}:${best.b.id}:${s.month}`) > 0.35) return;
+  if (!best) return;
   const [into, from] = (best.a.aum ?? 0) >= (best.b.aum ?? 0) ? [best.a, best.b] : [best.b, best.a];
+  // THE SMALLER FIRM HAS TO WANT IT. No die: its partners fold their book
+  // into the larger one's only when their own equity has grown more slowly
+  // on the race chart (eqHist) — a firm out-compounding its would-be partner
+  // keeps its name. The record is the last ten year-ends, or as many as both
+  // firms have (rivals.ts fiveYearReturn reads a short chart the same way).
+  // It was ten or nothing, so through a town's first decade no firm had a
+  // record and the smaller always agreed: measured over ten years on seeds
+  // 12007 / 31337 / 550991, 15 / 9 / 16 firms were merged away against 2 / 4
+  // / 3 that failed. A firm with no year-end yet still has no case to make.
+  const yrs = Math.min(10, (from.eqHist?.length ?? 0) - 1, (into.eqHist?.length ?? 0) - 1);
+  if (yrs >= 1 && growthOver(from, yrs) > growthOver(into, yrs)) return;
   // The combined book has to sit inside the survivor's own covenant.
   const aum = (into.aum ?? 0) + (from.aum ?? 0);
   if (aum <= 0 || (into.debt + from.debt) / aum > paramsOf(into).maxLtv) return;
@@ -85,9 +104,9 @@ function mergers(s: GameState, parcels: ParcelTable) {
   ((into.lessons ??= []).push({ y: year(s), text: `Merged with ${from.name} in ${year(s)}` }), logFirm(s, into, "event", `Merged with ${from.name} in ${year(s)}`));
   s.news.unshift({
     q: s.month, kind: "event",
-    text: `${into.name} and ${from.name} have merged. They were buying the same buildings in the same streets, and one of them `
-      + `would have lost the next deal to the other; now ${into.name} owns ${into.bbls.length} buildings, ${n} of them ${from.name}'s, `
-      + `and there is one fewer bidder on the tape.`,
+    text: `Merger · ${into.name} and ${from.name}. `
+      + `${into.name} now owns ${into.bbls.length} buildings, ${n} from ${from.name}. `
+      + `One fewer competing bidder.`,
   });
 }
 
@@ -104,7 +123,12 @@ function salesToInstitutions(s: GameState) {
     if (h.length < 11) continue;
     const e0 = h[h.length - 11][1], e1 = h[h.length - 1][1];
     if (!(e0 > 0) || e1 / e0 < 2) continue;
-    if (hash01(`${s.seed}:inst:${r.id}:${s.month}`) > 0.08) continue;
+    // THE FOUNDERS' DECISION. No die: they sell when two things hold — they
+    // have reached their own exit horizon (fifteen to thirty-four years in,
+    // staggered by a hash of the firm), and the credit window is open, so the
+    // institutions that buy platforms are buying (creditIdx at or above par).
+    const horizon = 180 + 12 * Math.floor(hash01(`${s.seed}:inst:${r.id}`) * 20);
+    if (s.month - (r.bornM ?? 0) < horizon || (s.econ.creditIdx ?? 1) < 1) continue;
     const buyer = INSTITUTIONS[Math.floor(hash01(`${s.seed}:instname:${r.id}`) * INSTITUTIONS.length)];
     const was = r.name;
     r.soldToM = s.month;
@@ -122,8 +146,8 @@ function salesToInstitutions(s: GameState) {
     ((r.lessons ??= []).push({ y: year(s), text: `Sold to ${buyer} in ${year(s)} — an institution's money now` }), logFirm(s, r, "event", `Sold to ${buyer} in ${year(s)} — an institution's money now`));
     s.news.unshift({
       q: s.month, kind: "event",
-      text: `${was} has sold itself to ${buyer}. Ten years of doubling its money made it the platform an institution wanted; `
-        + `the founders are out, the name stays, and the leverage, the hurry and the appetite for anybody else's trouble go with them.`,
+      text: `${was} sold itself to ${buyer} after a decade of strong returns. `
+        + `Founders out; name retained; expect a more conservative strategy.`,
     });
   }
 }
@@ -134,8 +158,11 @@ function successions(s: GameState, parcels: ParcelTable) {
     const family = r.style === "family" || r.profile === "dynasty" || r.profile === "preservationist";
     if (!family) continue;
     const since = r.genM ?? r.bornM ?? 0;
-    if (s.month - since < 300) continue;
-    if (hash01(`${s.seed}:heir:${r.id}:${s.month}`) > 0.25) continue;
+    // A GENERATION. Not a decision anybody takes and not a die: twenty-five
+    // years and then up to seven more, staggered by a hash of the firm and the
+    // generation, so families do not all hand over in the same September.
+    const generation = 300 + 12 * Math.floor(hash01(`${s.seed}:heir:${r.id}:${since}`) * 8);
+    if (s.month - since < generation) continue;
     r.genM = s.month;
     const sh = r.sheet;
     if (sh.grudge >= 70 && r.bbls.length >= 4) {
@@ -167,8 +194,8 @@ function successions(s: GameState, parcels: ParcelTable) {
       ((r.lessons ??= []).push({ y: year(s), text: `Split between the heirs in ${year(s)} — the other half is ${name}` }), logFirm(s, r, "event", `Split between the heirs in ${year(s)} — the other half is ${name}`));
       s.news.unshift({
         q: s.month, kind: "event",
-        text: `The ${base} family could not agree on what to do with the business, so they have halved it: ${half.length} buildings `
-          + `go to ${name}. The two branches will be bidding against each other within the year.`,
+        text: `${base} family split the firm: ${half.length} buildings `
+          + `go to ${name}. Two competing bidders now.`,
       });
     } else if (sh.hold >= 75) {
       // CARRYING ON, a little bolder: the next generation always is.
@@ -178,7 +205,7 @@ function successions(s: GameState, parcels: ParcelTable) {
       ((r.lessons ??= []).push({ y: year(s), text: `A new generation took over in ${year(s)}` }), logFirm(s, r, "event", `A new generation took over in ${year(s)}`));
       s.news.unshift({
         q: s.month, kind: "info",
-        text: `${r.name} has passed to the next generation. They are keeping the buildings, and they are going to want more of them.`,
+        text: `${r.name} passed to the next generation; keeping the buildings and looking to grow.`,
       });
     } else {
       // SELLING UP: the heirs never loved it. The book goes out over a few years.
@@ -187,8 +214,8 @@ function successions(s: GameState, parcels: ParcelTable) {
       ((r.lessons ??= []).push({ y: year(s), text: `The heirs decided to sell, in ${year(s)}` }), logFirm(s, r, "event", `The heirs decided to sell, in ${year(s)}`));
       s.news.unshift({
         q: s.month, kind: "deal",
-        text: `The heirs at ${r.name} have decided they do not want to be landlords. ${r.bbls.length} buildings will come to market `
-          + `over the next few years — family buildings, held a generation, on whatever terms the estate can get.`,
+        text: `${r.name} heirs are exiting: ${r.bbls.length} buildings to be sold `
+          + `over the next few years.`,
       });
     }
   }

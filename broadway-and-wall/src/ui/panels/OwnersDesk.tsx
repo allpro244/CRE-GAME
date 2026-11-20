@@ -62,23 +62,24 @@ export function Owners({ only: onlyIn, q = "" }: { only?: "all" | "firms" | "pri
 
   return (
     <div>
-      <div className="hint">
-        {rows.length} owners hold {usd(totAssets)} of property between them — {firms} of them are operating
-        firms that bid against you, and the other {rows.length - firms} are private holders who mostly do not.
-        The ten biggest own {totAssets > 0 ? ((top10 / totAssets) * 100).toFixed(0) : 0}% of it. Every name
-        here opens: what they own, what they owe on it, and what it earns them in a year.
+      <div className="grid" style={{ marginBottom: 8 }}
+        title={`${firms} operating firms bid against you; the other ${rows.length - firms} are private holders who mostly do not. Every name opens: what they own, what they owe on it, and what it earns them in a year.`}>
+        <Row k="Owners" v={`${rows.length} · ${firms} firms · ${rows.length - firms} private`} />
+        <Row k="Property held" v={usd(totAssets)} />
+        <Row k="Top 10 share" v={`${totAssets > 0 ? ((top10 / totAssets) * 100).toFixed(0) : 0}%`} />
       </div>
       {/* WHO IS LIKELY TO COME TO MARKET (COMPETITORS_PLAN.md §5a). A holder
           whose readiness has passed the tell — an estate in probate, a fund
           near the end of its hold, partners who have stopped talking — puts
           its whole book on the tape when it goes. Said before it happens. */}
       {likely.length > 0 && (
-        <div className="hint" style={{ borderLeft: "3px solid var(--accent, #8a6d1f)", paddingLeft: 8 }}>
-          <b>Likely to come to market:</b>{" "}
+        <div className="hint" style={{ borderLeft: "3px solid var(--accent, #8a6d1f)", paddingLeft: 8 }}
+          title="When a holder goes, its whole book lists at once.">
+          <b>Likely sellers:</b>{" "}
           {likely.slice(0, 5).map((x, i) => (
             <span key={x.h.id}>{i ? " · " : ""}{x.h.name} ({x.n} building{x.n === 1 ? "" : "s"})</span>
           ))}
-          {likely.length > 5 ? ` and ${likely.length - 5} more` : ""}. When a holder goes, its whole book lists at once.
+          {likely.length > 5 ? ` · +${likely.length - 5} more` : ""}
         </div>
       )}
       {!onlyIn && <div className="row-btns" style={{ marginBottom: 8 }}>
@@ -94,12 +95,12 @@ export function Owners({ only: onlyIn, q = "" }: { only?: "all" | "firms" | "pri
             <th className="num">Assets</th>
             <th className="num">Debt</th>
             <th className="num">Net worth</th>
-            <th>Standing</th>
+            <th title="An offer somebody finds insulting is not filed against the building — it is filed against them, and they own the other four. True of a fund and a family alike.">Standing</th>
           </tr>
         </thead>
         <tbody>
           {shown.length === 0 && (
-            <tr><td colSpan={6} className="dim">No owner by that name.</td></tr>
+            <tr><td colSpan={6} className="dim">No match</td></tr>
           )}
           {shown.map(({ o, sf: area }) => {
             const isOpen = open === o.id;
@@ -150,11 +151,6 @@ export function Owners({ only: onlyIn, q = "" }: { only?: "all" | "firms" | "pri
           })}
         </tbody>
       </table>
-      <div className="hint">
-        An offer somebody finds insulting is not filed against the building — it is filed against THEM, and
-        they own the other four. That is what the last column is for, and it is true of a fund and a family
-        alike.
-      </div>
     </div>
   );
 }

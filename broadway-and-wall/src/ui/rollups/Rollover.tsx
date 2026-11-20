@@ -53,7 +53,11 @@ export function Rollover() {
 
   return (
     <div className="page-section">
-      <div className="page-section-head">Lease rollover · next eight years</div>
+      {/* The explanation is on the head's hover (owner's UI rule). */}
+      <div className="page-section-head" title={"A cluster — over a quarter of the rent expiring into one year — renews at whatever that year's market pays, all of it at once."
+        + (roll.hasMf ? " The flats are not on this table: apartments carry no lease paper, and their occupancy churns month to month instead." : "")}>
+        Lease rollover · next eight years
+      </div>
       <div className="roll-rows">
         {roll.years.map((y) => {
           const share = y.rent / roll.totRent;
@@ -82,16 +86,12 @@ export function Rollover() {
         })}
       </div>
       {roll.beyondRent > 0 && (
-        <div className="hint">
-          {usd(roll.beyondRent)} of the roll — {((roll.beyondRent / roll.totRent) * 100).toFixed(0)}% —
-          runs past {START_YEAR + roll.years[7].yr}, which is the long paper doing what you signed it for.
+        <div className="roll-row" title="The long paper doing what you signed it for.">
+          <span className="roll-year">Later</span>
+          <div className="roll-track" />
+          <span className="roll-amt">{usd(roll.beyondRent)} · {((roll.beyondRent / roll.totRent) * 100).toFixed(0)}% · past {START_YEAR + roll.years[7].yr}</span>
         </div>
       )}
-      <div className="hint">
-        A cluster — over a quarter of the rent expiring into one year — renews at whatever that year's
-        market pays, all of it at once.
-        {roll.hasMf && " The flats are not on this table: apartments carry no lease paper, and their occupancy churns month to month instead."}
-      </div>
     </div>
   );
 }

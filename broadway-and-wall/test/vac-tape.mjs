@@ -5,7 +5,7 @@
 // harness exists to catch: office 3.68% for 20 years, industrial 1.54% for
 // 20 years, four flat gauges.
 //
-// Direct `cityVac` is clamped to frictionFloor. That is a statement about
+// Direct `cityVac` rests on residenceVac (dark floor + movers x relet clock). That is a statement about
 // empty landlord floors and it can sit there. What must not happen is the
 // CATCH-22 that made it load-bearing: sitePencil 0 → startOwed 0 → densify
 // refused → the short class converted to housing → stock fell while jobs
@@ -42,7 +42,7 @@ for (const [i, seed] of SEEDS.entries()) {
   const jobs0 = g.econ.jobs;
   const stock0 = { ...g.econ.stock };
   const pin = Object.fromEntries(CLASSES.map((k) => [k, 0]));
-  const series = Object.fromEntries(CLASSES.map((k) => [k, { vac: [], avail: [] }]));
+  const series = Object.fromEntries(CLASSES.map((k) => [k, { vac: [], avail: [], pin: [] }]));
   let histAvail = 0;
   for (let m = 0; m < HZ; m++) {
     if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
@@ -55,7 +55,9 @@ for (const [i, seed] of SEEDS.entries()) {
       const avail = E.availability(e, k);
       series[k].vac.push(vac);
       series[k].avail.push(avail);
-      if (vac <= E.frictionFloor(k) + 1e-6) pin[k]++;
+      const onFloor = vac <= E.residenceVac(e, k) + 1e-6;
+      series[k].pin.push(onFloor);
+      if (onFloor) pin[k]++;
     }
   }
   const jobsC = g.econ.jobs / jobs0 - 1;
@@ -70,7 +72,7 @@ for (const [i, seed] of SEEDS.entries()) {
     const vRange = vMax - vMin;
     const aRange = aMax - aMin;
     const unique = new Set(vac.map((v) => v.toFixed(4))).size;
-    const pinWin = vac.filter((v) => v <= E.frictionFloor(k) + 1e-6).length;
+    const pinWin = series[k].pin.slice(-WIN).filter(Boolean).length;
     const stockNow = g.econ.stock[k];
     const stockC = stockNow / stock0[k] - 1;
     console.log(

@@ -42,9 +42,25 @@ export interface ParcelRecord {
    */
   cornice?: number;
   maturity?: number;
+  /**
+   * The month and seed the record was resolved at, so a reader handed only
+   * (rec, econ) can read this site's own construction cost (value.ts
+   * `siteCostMult`, the draw dev.ts `projectCostMult` books the job at).
+   * Absent on a record nobody resolved.
+   */
+  siteAt?: { m: number; seed: number };
   floors: number;
   yearBuilt: number;
   unitsRes: number;
+  /**
+   * The island's share of its region's residents (city plan 18, citygen
+   * demand.mjs), the same on every lot of a town; absent on earlier plans.
+   * The engine opens the region's population at the island's residents over
+   * it (market.ts `initEcon`).
+   */
+  regionShare?: number;
+  /** The town's traded-industry draw (city plan 19, citygen specialty.mjs): the city seed and the CBP spread for its region's size, the same on every lot. */
+  specSeed?: number; specSd?: number;
   assessedLand: number;
   assessedTotal: number;
   /**

@@ -14,16 +14,34 @@
 // reporting a stale expression's bind rate after the engine's had been fixed,
 // because it had its own copy of the arithmetic.
 export const MODULES = [
+  // economy, industries and sfc: the city's firm books, industries and ledger (ONE_ECONOMY_PLAN.md steps 0-1).
+  "economy", "industries", "sfc",
+  // why: the cause ledger behind every "Why?" chain (ONE_ECONOMY_PLAN.md §6e).
+  "why",
+  // whyReads: the market-wide numbers' moves, written into the ledger once a month.
+  "whyReads",
+  // beliefs: what each firm believes of rent, vacancy and caps, from what it has seen (§6c-C).
+  "beliefs",
+  // tenantMarket: landlords price their own space, tenants shop (ONE_ECONOMY_PLAN.md step 4).
+  "tenantMarket",
   "sim", "leasing", "actions", "credit", "value", "dev", "debt", "demand",
-  "invariants", "rivals", "sponsor", "mix", "acquire", "comps", "market",
+  "invariants", "rivals", "sponsor", "mix", "acquire", "comps", "propmarket", "market",
   "zoning", "landdev", "lotcode", "lotsplit", "lotsplitGeom", "products", "platdesign", "homes", "homeprice", "growth", "roads", "towngrowth", "unpack", "lenders", "proforma", "workout", "portfolio", "portfoliosale", "auction", "notes",
-  "privateCredit", "broker", "loanbook", "amortize", "pricing", "ledger", "rivalDebt", "strategy", "corporate", "firmLog",
+  "privateCredit", "broker", "loanbook", "casualty", "amortize", "pricing", "ledger", "rivalDebt", "strategy", "corporate", "firmLog",
+  // streetLoans: the private owners' mortgages, loan by loan (ONE_ECONOMY_PLAN.md step 5).
+  "streetLoans",
   // absorption carries staleDiscount and leasingOdds — how an owner's ask falls
   // on space that will not let, which the harness bots have to read rather than
   // guess at. space carries the submarket roll-up.
   "absorption", "space", "bands",
   // blackswans: the rare city-dating events (fire, surge, capital wave).
   "blackswans",
+  // inputs: the nation's oil price and the input costs buildings and bids read.
+  "inputs",
+  // contractors: the named general contractors, their bids and the cost index they make.
+  "contractors",
+  // citygov: City Hall — budget, bonds, policies, the mayor.
+  "citygov",
   // plates is floorplate inventory — stacks, vacant blocks, size draws.
   "plates",
   // regime is the pre-history: nationPhase and simulateHistory, so a harness
@@ -97,6 +115,8 @@ export const MODULES = [
   "takeprivate",
   // renderView — the render contract Unreal draws from (test/render-view.mjs).
   "renderView",
+  // households — the household register (stage 1 shadow; tools/households.mjs).
+  "households",
 ];
 
 export function writeEntry(path) {

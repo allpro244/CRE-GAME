@@ -111,7 +111,10 @@ export function MaturityWall() {
 
   return (
     <div className="page-section">
-      <div className="page-section-head">The maturity wall · next ten years</div>
+      <div className="page-section-head has-gloss"
+        title="Each segment is one loan, showing its coverage today. Green is 1.35x coverage or better, brown is 1.20–1.35x, red is under 1.20x; grey paper is interest-only or untested, figure shown regardless. A wall (a third of the book due in one year) landing in a shut credit window means refinancing on the lender's terms, or not at all.">
+        The maturity wall · next ten years
+      </div>
       <div className="wall-rows">
         {wall.years.map((y) => {
           const share = wall.total > 0 ? y.total / wall.total : 0;
@@ -155,15 +158,12 @@ export function MaturityWall() {
         })}
       </div>
       {wall.beyond > 0 && (
-        <div className="hint">
-          {usd(wall.beyond)} more matures beyond {START_YEAR + Math.floor(wall.month / 12) + 10} and is not drawn.
+        <div className="wall-row">
+          <span className="wall-year">{START_YEAR + Math.floor(wall.month / 12) + 10}+</span>
+          <div className="wall-track" />
+          <span className="wall-amt">{usd(wall.beyond)}</span>
         </div>
       )}
-      <div className="hint">
-        Green is 1.35x coverage or better, brown is 1.20–1.35x, red is under 1.20x; grey paper is
-        interest-only or untested, figure shown regardless. A wall — a third of the book due in one
-        year — landing in a shut credit window means refinancing on the lender's terms, or not at all.
-      </div>
     </div>
   );
 }

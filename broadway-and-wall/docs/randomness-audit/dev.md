@@ -1,110 +1,118 @@
-# Fake-number audit: dev.ts, value.ts, landdev.ts, zoning.ts, plates.ts, homes.ts, roads.ts, tax.ts, platdesign.ts, mix.ts
+# Fake-number audit: dev.ts, value.ts, landdev.ts, zoning.ts, plates.ts, homes.ts, roads.ts, tax.ts, platdesign.ts, mix.ts, comps.ts
 
-Read-only audit against broadway-and-wall/CLAUDE.md "NO FAKE NUMBERS". Paths are relative to `broadway-and-wall/src/engine/`.
-Rows marked (out of scope) sit in other files but are links in the land-value chain, so they are included.
+Verified against main at c75ef8b (#838) plus the opening-dearness change, 2026-11-20.
+
+Read-only re-check of the first pass against broadway-and-wall/CLAUDE.md "NO FAKE NUMBERS". Paths are relative to `broadway-and-wall/src/engine/`. The working tree is mid-merge of `main` (MERGE_HEAD c75ef8b). Nothing was run. Rows marked (out of scope) sit in other files but are links in the land-value chain.
+
+Status: **STILL** = the same item is in the code (new file:line given); **CHANGED** = still there in a different form (described); **NEW** = not in the first pass. Rows that are gone are listed at the end.
 
 ## Findings
 
-| file:line | kind | quantity it decides | bucket | why | proposed replacement mechanism (FAKE only) | sev |
-|---|---|---|---|---|---|---|
-| value.ts:1546, 1563 | minmax (floor) | Land price floor for every non-farm lot: `texture = rec.landPsf * landIdx * level * envelopeRealisation * cpi * priceLevel`; `floor = texture * 0.30` | FAKE | `rec.landPsf` is a number the city generator stamped on the lot (citygen/build.mjs:528). The 0.30 is asserted. The in-code note (1532-1559) measured texture as the winning bid on 59.1% of vacant lots. So the generator's stamp sets the price for most of the city's land, and the residual does not. | Remove the stamp as a price. When the residual is not positive, the price should come from (a) the lot's interim-use income capitalised (surface parking, storage yard, farm: `farmUsePsf` already does this for ag lots), and (b) a real option value (see the holder row). Keep location texture only as an input to rent (it already reaches rent through demandScore), not as a $/sf floor. | high |
-| value.ts:1601-1609 | minmax | Builder residual is overridden: `if (base < floor) { base = floor; winner = "texture" }` | FAKE | A lot that pencils at $X/sf is priced at the stamped floor whenever X is below it. So land cannot fall to the residual, and the desk (which buys at the ask, dev.ts:911) never pencils on those lots. This fits the playtest: on a mostly-vacant town, almost no listed lot penciled for 30 years. | Price a transacted lot at the residual (the reservation/transaction split the comment at 1594-1600 already proposes). An owner who will not sell at the residual is shown as an unlisted lot or as a listed ask that decays with time on market (see the capitulation row). It should not be shown as a price. | high |
-| comps.ts:458-466 (out of scope) | minmax/mechanism | `holderCapitulation`: lowers landAdj only when `builder > 0` and texture wins. Floors landAdj at 0.25. | FAKE | The decay never runs on lots whose residual is zero or negative, which is most vacant land in a young town. Even where it runs, the floor stops at 0.25 × stamp × 0.30. | Time-on-market decay on every listed lot with no bid, driven by bids received (or not received), with no floor. A positive price comes only from interim-use income or option value. | high |
-| comps.ts:421 (out of scope) | clamp | landAdj in [0.25, 4] from district comp heat | FAKE (suspect) | landAdj multiplies only the stamped texture. Both rails are asserted levels. | Remove the rails. Let comps adjust the reservation price directly. Count how often each rail binds. | med |
-| dev.ts:5486-5488, 3170, 4797-4798 | minmax / asserted mult | `bumpLand`: ×1.06 on the player's delivery, ×1.05 on a city delivery, ×1.03 on each adjacent lot. Capped at 4. | FAKE | A fixed spillover that ratchets the stamped floor up with every delivery and never decays except through comps. After 30 years, neighbours' floors climb past their residuals. The cap of 4 is asserted. | Remove it. A delivery already changes neighbours through liveDemand/demandScore, then rent, then residual. If an amenity spillover is real, it belongs in the rent model (hedonic distance to new stock) and the residual picks it up. | high |
-| zoning.ts:214 | asserted mult | Variance granted: landAdj ×1.22 (cap 4) | FAKE | Counted twice: the extra FAR already reaches the residual through farMax + variance (value.ts:2620). The 1.22 is asserted. | Remove it. The residual already reprices the new envelope. | high |
-| dev.ts:3457-3551, 4029; rivals.ts:3185, 3203 | roll | Which use (office, multifamily, retail, mixed, industrial) a teardown or rival builds. Fixed programme weights (0.55/0.30/0.15, 0.40/0.40/0.20, 0.70/0.30/0.25) × order book. | FAKE | A die roll picks the use, while `residualScheme` (value.ts:761) computes the highest and best use for the same lot. The code comment admits the weights were "the whole decision". | Use `residualScheme(rec).use`, or run the pro forma over every permitted use and take the best hurdle, as developerLook already does over `dev.uses`. Drop the roll. | high |
-| dev.ts:4104 | roll | Densify in kind (rebuild the standing class) with probability `min(0.92, 0.70 + 1.2·structTight)` | FAKE | A roll decides the replacement use. | Underwrite both the in-kind scheme and the alternative, and take the better hurdle. | high |
-| dev.ts:5269-5273 | minmax / asserted rate | Developer looks per month = `max(0.5, stock·0.018/12/TYPICAL_SF·32)` | FAKE | The rate at which developers look at sites is pinned to the standing stock at an asserted 1.8%/yr delivery rate, not to opportunity. A mostly-vacant town (small stock) gets the 0.5/month floor no matter how many sites pencil. The town starves exactly where land is cheapest. | Free entry: looks (or new firms) arrive in proportion to expected profit. For example, sample the share of lots where residual − ask > 0, scaled by the town's builder capital. Zero profit, zero looks. | high |
-| dev.ts:4450-4460 | roll + score | Industrial demolition with no replacement: fires with p = `min(0.9, 0.3 + 2.2·share)` (0.12 if office is short), then picks a shed by a weighted score (condW 1.4/1.15, M-zone 1.25, age) | FAKE | Whether and which building leaves the stock is decided by a roll and asserted weights, not by owner economics. | Each owner's choice: demolish or mothball when NOI minus carrying cost is below zero and land value (interim use) exceeds the as-is value. The building that leaves is the one where that gap is widest. No roll. | high |
-| dev.ts:4575-4590 | roll + score | Surplus exit (office, retail, multifamily) with p = `clamp(2.2·worstShare, 0.06, 0.5)`; class picked by surplus-weighted roll; same score weights | FAKE | Same as the industrial exit. | Same owner-economics test for each building. | high |
-| value.ts:960-962 | minmax | `queueFactorOf` returns 0 when `absYr ≤ 0` | FAKE (binding guard) | Absorption is read only from the town's own 5-year tape. A young or stalled town has about zero take-up, so every lot behind the first is worth 0 as a building site. The price then falls to the stamped floor. This is a cold-start trap. | Seed take-up from modelled demand (job growth × sf per worker, household growth), not only from the tape. Use a finite wait, not zero. | med |
-| value.ts:571-572, 1513-1516 | asserted const | Holder (option) bid = residual at a certain 25% higher rent × 0.567 (5 years at 12%) | FAKE | A deterministic peak of +25% and a fixed 5-year wait are asserted. The comment at 1566-1573 measured this bid at 2.41× the builder's bid. | A real-option value (Titman 1985; Capozza-Helsley 1990) using the rent index's own measured volatility and drift, plus the queue's expected wait. | med |
-| value.ts:1485 | minmax | `level = max(0.35, 1 + 0.85·(demandIdx − locIdxMean))` scales the texture floor | FAKE | Asserted slope and floor, applied only to the stamped floor. | Goes away with the texture floor. | med |
-| value.ts:1593 | clamp | Comp reconciliation discount on the builder bid, clamped to [−25%, 0] | FAKE (suspect) | The −25% is asserted (it is 0.55 × the 0.6 heat floor), so the comps can pull the bid down by at most that much. | Reconcile from comps with weights from comp count and dispersion. No rail. | med |
-| market.ts:6909-6912 (out of scope) | asserted shape + rrange | landIdx target = (rent/cost)^1.15 × (1+0.16·cycleDev) × max(0.25, vacDisc) × bidders^0.6, plus ±0.3% noise | FAKE (shape) | A citywide index that multiplies only the stamped floor. It is a second land model running beside the residual. | Remove it once the floor goes. The residual already reads rent, cost, vacancy and credit. | med |
-| dev.ts:1756-1770 | roll | Build-to-suit anchor arrival: p = `min(0.09, (0.004+0.045·demand)·phaseHit/sizeHard)`, with phaseHit clamped [0.45, 1.1] and sizeHard [0.55, 2.4] | FAKE | The tenant arrival rate and both clamps are asserted. | Arrivals come from the space market's own demand: occupier firms whose space need, from employment growth by sector, exceeds this shell's size. | med |
-| dev.ts:2844-2856 | roll + clamp | Pre-leasing: p = clamp(0.055·rate·appetite·near·(…), 0, 0.42); size share rrange(0.16, 0.5); discount clamp [0.86, 0.99] | FAKE | Absorption on delivery is decided by a roll with asserted constants, separate from the leasing model. | Route pre-leasing through the same tenant-search/leasing model (plates.ts drawTenantSf + the market's demand pool), with the discount priced as delivery risk (time × the class's lease-up variance). | med |
-| dev.ts:3572-3578 | clamp | classAppetite = clamp(1 − 13·gap − 5·coming, 0, 2.1) × clamp(creditIdx, 0.25, 1.25) × devPencils | FAKE | An asserted gate with rails (the in-code note calls the same formula a "mirror"). It feeds pre-leasing. | Use forward vacancy and the pro forma (`forwardVacancy`, `hurdleAt`) directly. | med |
-| dev.ts:343, 389 | roll | New builder founded with probability 0.25 × clamp(creditIdx, 0.3, 1.5) when the roster is short | FAKE | Entry depends on a roster target, not on profit. | Entry when expected development profit exceeds the cost of setting up a firm (free entry). | med |
-| dev.ts:291 | clamp | builderTarget = clamp(1.5·looks, 10, 60) | FAKE | The number of firms is asserted. | Falls out of entry and exit on profit. | med |
-| dev.ts:4040 | asserted weights | Teardown candidate score = (0.35 + land/built) × densify × condW(1.35/1.15) × (1 + 2.2·structTight) | FAKE | Asserted weights rank which buildings get underwritten first. | Rank by residual − as-is value. That is the teardown test the loop already runs. | med |
-| dev.ts:4674 | minmax | Off-map stock exit at up to 0.4%/month | FAKE | Asserted withdrawal rate. | Same owner-economics test, applied to the off-map stock as a cohort. | med |
-| dev.ts:4739 | asserted | nudgeBlockDemand on delivery by min(3, 0.8 + sf/180k) | FAKE | An asserted spillover into demand. | A demand model that reads nearby stock or amenity. | med |
-| dev.ts:5472 | clamp | Opening pipeline utilisation clamp(1 − 7·slack, 0.18, 1) | FAKE | Asserted initial condition. | Seed the opening pipeline by running developerLook until no site pencils. | low |
-| value.ts:3369 | clamp | Cap rate rail [3.2%, 13%] | FAKE (suspect) | A cap-rate rail, the example given in CLAUDE.md. Load-bearing status unknown. | Count how often it binds. If it ever binds, fix the spread terms upstream. | med |
-| value.ts:4460 | minmax | Ground-lease yield = max(3.2, 0.55·indexRate + 2.1) | FAKE | Asserted formula and floor. | Ground yield from observed ground-lease trades, or as land cap = risk-free + land risk premium, sized from data. | med |
-| value.ts:4493 | minmax | Leased-fee value floored at 0.55 × land | FAKE | Asserted floor. | Value as the PV of rent plus reversion with no floor. | med |
-| value.ts:4789-4790 | clamp | Collateral as-is = assetValue(worn) × clamp(0.18 + 0.74·occ, 0.18, 0.72) | FAKE | A second valuation fitted to the model's own output (CLAUDE.md fake #3). | Value the actual rent roll and condition with the lease-up deductions (value.ts:4400-4424). | med |
-| value.ts:4118, 4160, 4173, 4182, 4188 | clamp | Distress cap-rate spreads (occupancy, rollover, concession, industry concentration), each clamped | FAKE (suspect) | Asserted slopes and rails. | Derive from income at risk (the expected NOI loss over the hold), discounted. | low |
-| dev.ts:5180-5183 | roll weights | Use specialisation base weights [0.40, 0.22, 0.20, 0.18] | FAKE | Asserted mix. | Firms specialise where they have made money (learn from their own results), or use weights sourced from Census/Dodge starts by type. | low |
-| plates.ts:380 | roll | Industrial tenant takes the whole bay 45% of the time | FAKE | Asserted. | Use the size distribution itself, or source the share from data. | low |
-| homes.ts:54-55, 717 | roll | Homebuilder entry probability 0.25 (0.5 if the lot is listed) when residual > 0 | FAKE | The entry rate is asserted. Only the condition (residual > 0) comes from the model. | Entry rate in proportion to residual × lots available. | low |
-| value.ts:3388, 3759 | asserted | Idle-land carry = 1.2% of land value | FAKE | A second tax/insurance number beside `taxRate`. | Use taxRate + insurance. | low |
-| value.ts:391 | clamp | envelopeRealisation floored at 0.30 | FAKE (suspect) | Asserted floor. It feeds both texture and residual. | Remove; physicalMaxFloors already defines it. | low |
-| value.ts:352, 362, 372, 1210, 1245, 1789 | clamp | Shop-depth rent mult [0.3, 1.6]; plate rent mult [0.85, 1.10]; locMult; lease-up floor 0.5; qualityCycle [0.6, 1.9] | FAKE (shape) | Shape rails, some sourced. | Count how often each binds. Remove any that bind. | low |
-| dev.ts:2291, 2313 | minmax | Takeover commitment = max(0.35, ltc − 0.12) | FAKE | Asserted LTC. | Size by the lender's own constraints. | low |
-| citygen/build.mjs:528 (out of scope) | minmax | `landPsf = max(30, assessedPsf/0.45 × (0.6 + 0.9·demand/100))` | FAKE | $30/sf minimum stamp. This is the base of the floor chain. | Goes away with the texture floor. | med |
-| value.ts:1092-1116 | hashNormal | Owner ask = model × belief lag × exp(0.15·N(0,1)) | EXOGENOUS | Sourced (Geltner 1993; Webb 1994). One concern: the per-lot error never re-draws, so a +1σ owner over-asks by 16% forever, and the ask multiplies the floor. | n/a (consider re-drawing the error on sale or after N years) | — |
-| value.ts:3376-3380 | hash | Appraisal display band ±3.5% bias, ±6% range | EXOGENOUS | Display only. Unsourced. | — | — |
-| dev.ts:1216-1224 | hashNormal | projectCostMult: lognormal σ 0.15 per site, re-drawn every 60 months | EXOGENOUS | Sourced (RSMeans quartiles). | — | — |
-| dev.ts:2695 | rrange | Cost-plus escalation noise ±0.08%/month | EXOGENOUS | Small. Unsourced. | — | — |
-| dev.ts:2704-2737 | roll + rrange | Site risk: change order 2.8%/month (×0.35 under GMP) at +1.5-7%; weather delay; sub default 0.7% at +3-9%, +2-5 months | EXOGENOUS | Genuine construction accidents. The rates are unsourced; size them from data (FMI / Dodge / CII overrun studies). | — | — |
-| dev.ts:1684 | roll | BTS tenant credit tier: 58% tier 2 | EXOGENOUS | Credit mix. Unsourced. | — | — |
-| dev.ts:307; homes.ts:112 | hash01 | Builder capital: lognormal around $3M | EXOGENOUS | Agent endowment (cites NAHB, loosely). | — | — |
-| dev.ts:5114-5179 | rng/gauss | drawDeveloper traits (LTC mix 25/75, bar σ 0.20, floor, ambition, outlook σ 0.10, momentum, vacTol, maxShare) | EXOGENOUS | Population heterogeneity. Partly sourced (MBA/SLOOS; Miller 1977). Shape parameters stated. | — | — |
-| dev.ts:4958 | rng | Per-look outlook jitter ±3% | EXOGENOUS | Belief noise. | — | — |
-| dev.ts:350, 399 | roll | Idle-founder retirement 2%/month after 15 idle years | EXOGENOUS | Life event. | — | — |
-| dev.ts:153-160, 374, 406 | hash/roll | Construction desk pick (appetite-weighted); builder pick (mandate-weighted / uniform) | EXOGENOUS | Who gets the job. The pro forma decides whether it happens. | — | — |
-| dev.ts:4011, 4457, 4587, 4966; 4829 | roll | Random site sampling (search friction); stochastic rounding of fractional looks | EXOGENOUS | Limited attention. The pro forma decides the outcome. | — | — |
-| plates.ts:362-376 | gauss | Tenant size lognormal (SIZE_DIST) | EXOGENOUS | Firm-size distribution. Check the source of SIZE_DIST. | — | — |
-| homes.ts:535-541, 648 | poisson | House sales arrivals around the modelled communityPace | EXOGENOUS | Arrival noise around a modelled mean. | — | — |
-| homes.ts:662 | roll | Tenure: SFR vs owner by sfrShare(year) | EXOGENOUS | Census share. | — | — |
-| zoning.ts:63-66, 198 | roll | Variance decision; odds clamp(…, 0.02, 0.82) | EXOGENOUS | Political outcome. The odds are an asserted shape. | — | — |
-| landdev.ts:55, 211 | roll | Entitlement decision; odds 0.80 to 0.45 by distance ([K], not measured) | EXOGENOUS | Political outcome. Size the odds from data. | — | — |
-| zoning.ts:241, 250 | roll | Landmarking 0.6%/month | EXOGENOUS | Political. Unsourced. | — | — |
-| roads.ts:145, 392-401 | roll | State highway funding odds clamp(0.45 + 35·g10, 0.25, 0.85); slip 24-72 months; drop 30% | EXOGENOUS | Outside the city. Asserted odds. | — | — |
-| tax.ts:48, 101 | roll | Tax appeal won with odds clamp(0.25 + 1.8·over, 0.15, 0.90) | EXOGENOUS | Board outcome. Asserted odds. Could instead be made deterministic from the assessor's evidence plus appraisal error. | — | — |
-| mix.ts:60-63 | hash01 | Derived retail share of a legacy mixed record clamp(…, 0.06, 0.42) | EXOGENOUS | Imputation of missing data. | — | — |
-| value.ts:4424 | minmax | Building value ≥ landValue | PHYSICAL | A completed building is worth at least its land. Ignores demolition cost, and inherits the texture floor. | — | — |
-| value.ts:272, 298 | clamp | Plate efficiency [0.72, 0.92], [0.78, 1] | PHYSICAL | Design range. | — | — |
-| dev.ts:1051, 2287, 2303 | minmax | Coverage [0.08, 0.9] | PHYSICAL | Site geometry. | — | — |
-| value.ts:2016, 2036, 3092, 3788, 4280, 4290, 4337, 4371, 4381, 1689; platdesign.ts:411 | clamp | Condition index, occupancy, shares, weights in [0, 1] or similar | PHYSICAL | Definitions. | — | — |
-| dev.ts:182, 333 | minmax | LTC ≤ 0.85; target LTV ≤ 0.8 | PHYSICAL | Legal/lending ceiling. | — | — |
-| tax.ts:213 | clamp | Depreciable land share [10%, 80%] | PHYSICAL | Regulatory allocation band. | — | — |
-| landdev.ts:47, 107 | clamp | Entitlement 12-24 months; infrastructure 6-18 months | PHYSICAL | Sourced durations. | — | — |
-| value.ts:799 | clamp | infillShare [0.15, 1] (only for unresolved records) | GUARD | — | — | — |
-| value.ts:962, 1283 | minmax | max(0.01, r); min(3, hurdle^1.2) | GUARD | — | — | — |
-| dev.ts:765 | minmax | buildClimate [0.10, 2.5]; measured binding 0% / 3% | GUARD | — | — | — |
-| dev.ts:1245, 1389, 1419, 5153, 5195, 5265 | minmax | appetite ≤ 3; infill ratio; spread floor [1, 1.25]; momentum ±25% | GUARD | — | — | — |
-| value.ts:1758 | minmax | specWearMult [0.75, 1.3] | GUARD | Sourced shape bounds. | — | — |
-| value.ts:405-409 | clamp | siteQualityMult [0.82, 1.22] | (dead) | No callers. Delete. | — | — |
-| dev.ts:4051-4055, 4239 | roll | teardownRoll, shareJitter, formerBuildRoll, formerDemoRoll are drawn and then discarded | (dead) | Kept only to hold the RNG stream steady. Remove them in a stream-breaking commit. | — | — |
+| file:line | kind | quantity it decides | bucket | why | proposed replacement mechanism (FAKE only) | sev | Status |
+|---|---|---|---|---|---|---|---|
+| value.ts:1736, 1762 | minmax (floor) | Land price floor for every non-farm lot: `texture = rec.landPsf × landIdx × level × envelopeRealisation × cpi × priceLevel`; `floor = texture × 0.30` | FAKE | Unchanged. `rec.landPsf` is still the generator's stamp (citygen/build.mjs:533), the 0.30 is asserted, and the comment (1739-1761) still quotes texture winning 59.1% of vacant lots. | Price from interim-use income (value.ts now has a car-park interim use, ~3720) and the real option (value.ts:578-622). Keep location texture only as a rent input. | high | STILL |
+| value.ts:1818 (ripe branch: `if (base < floor) { base = floor; winner = "texture" }`), 1820-1825 (else max(holder, floor)) | minmax | The builder's residual is overridden by the floor | FAKE | Unchanged. The comment calls the floor "sales-comparison", but it is the stamped texture × comp-adjusted landAdj. | Price a transacted lot at the residual; show an owner who will not sell as unlisted, or as an ask that decays on time-on-market. | high | STILL |
+| comps.ts:426 (landAdj clamp [0.25, 4]) | clamp | the comp heat adjustment on the stamped texture | FAKE (suspect) | Both rails asserted; landAdj multiplies only the stamp. | Remove the rails; let comps move the reservation price directly. Count binds. | med | STILL |
+| comps.ts:459-479 (`holderCapitulation`) | mechanism | the only downward force on the floor | FAKE | CHANGED: the 0.25 floor is gone ("NO FLOOR (2026-11-06)", rail audit #19 had it binding 36.7%). It is still gated on `builder > 0` and `winner === "texture"`, so lots with no positive residual (most of a young town's dirt) never decay. CAPITULATION 0.06 is a stated shape from 2007-11. | Time-on-market decay on every listed lot with no bid, driven by bids received or not received. | high | CHANGED |
+| zoning.ts:215 | asserted mult | Variance granted: landAdj ×1.22 (cap 4) | FAKE | Counted twice: the extra FAR already reaches the residual. | Remove. | high | STILL |
+| value.ts:1099 (`if (!(q.absYr > 0)) return 0`) | minmax | queue factor (wait to build) for any lot behind the first | FAKE (binding guard) | absYr is still five trailing years of the town's own tape (value.ts:1135-1141). A young or stalled town has none, every lot behind the first is worth 0 as a site, and the price falls to the texture floor. | Seed take-up from modelled demand (job and household growth × space per head); use a finite wait. | med | STILL |
+| value.ts:1684 | minmax | `level = max(0.35, 1 + 0.85·(demandIdx − mean))` scales the texture floor | FAKE | Asserted slope and floor, applied only to the stamp. | Goes with the floor. | med | STILL |
+| value.ts:1783 | clamp | comp reconciliation discount on the builder bid, [−25%, 0] | FAKE (suspect) | Asserted. | Weight by comp count and dispersion; no rail. | med | STILL |
+| dev.ts:4309 (`useForZone(…, rng(s,"dev"), e)`), 3621-3712 (programme weights 0.55/0.30/0.15, 0.40/0.40/0.20, 0.70/0.30/0.25 × `siteHurdle`); rivals.ts:3762 (out of scope) | roll | which use a teardown probes first; which use a rival builds | FAKE | CHANGED: for city teardowns the roll now only picks the probe. `replacementSearch` (dev.ts:4108, called at 4473) prices every permitted use and keeps the best hurdle, and the weights are multiplied by each class's `siteHurdle` instead of an order book. The roll still orders the sample and scores it. rivals.ts:3762 still takes the rolled use for a rival. | Drop the probe roll (rank by residual − as-is value). Route rivals through `replacementSearch`. | med | CHANGED |
+| dev.ts:4710 (industrial exit `onSchedule(…, officeShort ? 0.12 : min(0.9, 0.3 + 2.2·share))`), 4733-4735 (score condW 1.4/1.15 × M-zone 1.25 × age × demand) | asserted rate + score | whether and which shed leaves the stock | FAKE | CHANGED: no longer a die. The same asserted pace now runs on a deterministic schedule. Each candidate must pass `worthMoreCleared` (dev.ts:4637, an owner-economics test), but which one goes and how often are still asserted. | Every owner's own test each month (NOI − carry < 0 and cleared > as-is); the count follows from how many fail it. | high | CHANGED |
+| dev.ts:4834-4837 (surplus exit `p = min(0.5, max(0.06, 2.2·worstShare))` on schedule), 4855-4857 (score) | asserted rate + score | office/retail/flat surplus clearance | FAKE | CHANGED, as the industrial row: schedule, not dice; `worthMoreCleared` gate; gated on capitulated packages (`pkgDeepM`). The pace is still asserted. | Same owner test. | high | CHANGED |
+| dev.ts:5680-5684 (`openingTrade = max(0.5, stock·0.018/12/TYPICAL_SF·32)`), 306-308 (`builderTarget = clamp(1.5·looks, 10, 60)`), 429 (outsiders) | asserted rate + clamp | the opening roster of developers and the "outsiders" who look when shops are few | FAKE | CHANGED: monthly looks are now one per living firm (dev.ts:5097-5106); the quota is gone. The asserted 1.8%/yr×32 now sets only the opening roster and the outsider count (tagged [K]). The 10-60 clamp still sets how many firms a town opens with. | Opening roster from the opening stock's actual developer count (or free entry over the pre-history); outsiders from expected profit. | med | CHANGED (two old rows, developerLooksPerMonth and builderTarget, merged here) |
+| dev.ts:1855-1868 (BTS: `p = min(0.09, (0.004+0.045·demand)·phaseHit/sizeHard)`, phaseHit [0.45,1.1], sizeHard [0.55,2.4], `lookAcc` accumulator) | asserted rate + clamps | build-to-suit anchor arrival | FAKE | CHANGED: it is now a deterministic accumulator (hash-phased) instead of a coin. The rate and both clamps are still asserted. | Arrivals from occupier firms whose space need, from sector employment growth, exceeds the shell. | med | CHANGED |
+| dev.ts:2966-2988 (pre-leasing: fair share of `grossLettingsMo`, `near` clamp [0.35, 1.35], cap 0.42, discount clamp [0.86, 0.99]) | clamp + asserted | pre-letting of frames under construction | FAKE (shape) | CHANGED: no roll, and no per-class rate × appetite. It is the frame's fair share of the market's own gross lettings, accrued. The nearness ramp, the 0.42 cap and the discount band are still asserted. | Price the discount as delivery risk (time × lease-up variance); drop the cap. | low-med | CHANGED |
+| dev.ts:4319-4320 | asserted weights | teardown sample score `(0.35 + land/built) × densify × condW(1.35/1.15) × (1 + 2.2·structTight)` | FAKE | It ranks which candidates are underwritten first. | Rank by residual − as-is value. | med | STILL |
+| dev.ts:4928 | minmax | off-map stock exit at up to 0.4%/month | FAKE | Asserted withdrawal rate. | Owner test on the off-map cohort. | med | STILL |
+| dev.ts:4993 (`nudgeBlockDemand(min(3, 0.8 + sf/180k))` on city delivery) | asserted | demand spillover from a delivery | FAKE | Asserted spillover. | A demand model that reads nearby stock/amenity. | med | STILL |
+| dev.ts:3023 (`nudgeBlockDemand(min(4, 1 + sf/150k))` on the player's delivery) | asserted | demand spillover from the player's delivery | FAKE | A second spillover with different constants for the same event (rule 3). | Same as above; one law for both. | med | NEW |
+| value.ts:3827, 3833 (cap clamp [2%, 20%]) | clamp | cap rate per building | GUARD (stated) | CHANGED: the [3.2%, 13%] rail is now [2%, 20%], stated as "a guard on a broken input, not a price", and the spreads are gone (caps from bidders, propmarket.ts). Count binds to confirm. | — | low | CHANGED |
+| value.ts:5002 | minmax | ground-lease yield = `max(3.2, 0.55·indexRate + 2.1)` | FAKE | Asserted formula and floor. | From ground-lease trades, or risk-free plus a sized land premium. | med | STILL |
+| value.ts:5035 | minmax | leased-fee value floored at 0.55 × land | FAKE | Asserted floor. | PV of rent plus reversion, no floor. | med | STILL |
+| value.ts:4582 (residential `(0.94-occ)·2.2` [−0.12, 0.85]), 4643 (roll distance [−0.25, 0.70]), 4647 (flat 0.55 with no commercial roll), 4656 (occupancy), 4665 (concentration), 4671 (industry) | clamp | distress cap-rate spreads | FAKE (suspect) | Asserted slopes and rails. | Expected NOI loss over the hold, discounted. | low | STILL |
+| dev.ts:5517 | roll weights | use specialisation base weights [0.40, 0.22, 0.20, 0.18] | FAKE | Asserted mix. | Learn from own results, or Census/Dodge starts by type. | low | STILL |
+| homes.ts:54-55 (BUILDER_ENTRY_P 0.25, LISTED 0.5), 724-727 (schedule) | asserted rate | homebuilder entry | FAKE | CHANGED: no die. A builder looks on a hashed-phase schedule (every 4th month, every 2nd if listed, [K]); residual > 0 and room decide. The look rate is still asserted. | Entry in proportion to residual × lots available. | low | CHANGED |
+| value.ts:396 | clamp | envelopeRealisation floored at 0.30 | FAKE (suspect) | Asserted floor; feeds texture and residual. | Remove; physicalMaxFloors defines it. | low | STILL |
+| value.ts:357, 367 (shop-depth [0.3, 1.6]), 377 (plate rent [0.85, 1.10]) | clamp | shape rails on rent | FAKE (shape) | CHANGED: the locMult, lease-up 0.5 floor and qualityCycle rails from the first pass are no longer present. These three remain. | Count binds; remove any that bind. | low | CHANGED |
+| dev.ts:2394, 2416 | minmax | takeover commitment = `max(0.35, ltc − 0.12)` | FAKE | Asserted LTC. | Size by the lender's own constraints. | low | STILL |
+| citygen/build.mjs:533 (out of scope) | minmax | `landPsf = max(30, assessed/0.45 × (0.6 + 0.9·demand/100))` | FAKE | The $30/sf stamp at the base of the floor chain. | Goes with the texture floor. | med | STILL |
+| market.ts:1698-1705 (out of scope) | asserted shape | opening landIdx = (rent/cost)^1.15 | FAKE (shape) | CHANGED: the monthly target × cycleDev × vacDisc × bidders plus ±0.3% die is gone; the level is read off land trades (propmarket.ts `tickLandRead`, not re-audited). The opening identity remains and the floor multiplies it. | Open on the first land survey. | med | CHANGED |
+| dev.ts:5900-5913 (`pastSpaceMarket`: `cityVac = clamp(vac × then/now, 0.02, 0.40)`) | clamp | the space market the opening pipeline's backdated frames were decided in | FAKE (inherited) | It re-uses the regime.ts 2-40% opening pin and the `vacMultOf`/`rentMultOf` lines (see market.md). | Goes with simulating the pre-history's occupancy. | low | NEW |
+| value.ts:5182 (`max(landAppraisalFloor(…), v − roll)`) | minmax | as-is value of a building with a lease-up roll | FAKE (inherited) | The floor inherits the texture floor chain. | Goes with the texture floor. | low | NEW |
+| value.ts:1225-1229, 5015-5018 | hashNormal | owner ask = model × belief lag × exp(0.15·N(0,1)) | EXOGENOUS | Sourced (Geltner 1993; Webb 1994). The per-lot error never re-draws, and it multiplies the floor. | n/a (consider re-drawing on sale) | — | STILL |
+| value.ts:3837-3844 | hash | appraisal display band ±3.5% bias | EXOGENOUS | Display only. Unsourced. | — | — | STILL |
+| value.ts:1242-1250 (`siteCostMult`, SITE_COST_SIGMA 0.15, 60-month epoch staggered by lot) | hashNormal | per-site hard cost | EXOGENOUS | CHANGED: moved from dev.ts `projectCostMult` to value.ts so the appraisal and the desk read one number. Sourced (RSMeans quartiles). | — | — | CHANGED |
+| dev.ts:2797 | rrange | cost-plus escalation noise ±0.08%/month | EXOGENOUS | Small. Unsourced. | — | — | STILL |
+| dev.ts:2806-2839 | roll + rrange | site risk: change orders (+1.5-7%), weather delay, sub default (+3-9%, +2-5 months) | EXOGENOUS | Genuine accidents; rates unsourced (size from FMI/Dodge/CII). | — | — | STILL |
+| dev.ts:323; homes.ts:113 | hash01 | builder capital around $3M | EXOGENOUS | CHANGED (dev.ts): spread ×1.6 and ×8 for cash builders (`CASH_BUILDER_LTC`); a founder that cannot carry its first scheme is not created. homes.ts unchanged. | — | — | CHANGED |
+| dev.ts:5451-5530 | rng/gauss | drawDeveloper traits (LTC mix 25/75, bar σ 0.20, floor, ambition, outlook σ 0.10, momentum, maxShare) | EXOGENOUS | Population heterogeneity, partly sourced. | — | — | STILL |
+| dev.ts:5240 | rng | per-look outlook jitter ±3% | EXOGENOUS | Belief noise. | — | — | STILL |
+| dev.ts:160 (`pickConstructionDesk`), 446, 474 | hash/roll | construction desk pick; builder pick (AUM-faded) | EXOGENOUS | Who gets the job. | — | — | STILL |
+| dev.ts:4290, 4717, 4843, 5250; 5933 (opening backdate) | roll | site sampling (search friction); opening frame backdate | EXOGENOUS | Limited attention / timing. The pro forma decides. | — | — | STILL |
+| plates.ts:362-372 | gauss | tenant size lognormal (SIZE_DIST) | EXOGENOUS | Firm-size distribution. Check SIZE_DIST's source. | — | — | STILL |
+| homes.ts:536-541, 649 | poisson | house sales around the modelled pace | EXOGENOUS | Arrival noise around a modelled mean. | — | — | STILL |
+| zoning.ts:199; odds 118-126 | roll | variance decision; odds clamp(…, 0.08, 0.82) | EXOGENOUS | Political. The odds are an asserted shape. | — | — | STILL |
+| landdev.ts:55, 211; growth.ts:569 | roll | entitlement decision; odds 0.80 to 0.45 by distance ([K]) | EXOGENOUS | Political; size the odds from data. | — | — | STILL |
+| zoning.ts:248-250 (LANDMARK_RATE 0.006 on a hashed-phase schedule) | schedule | landmarking | EXOGENOUS | CHANGED: no monthly die; a flow on a schedule ([K]). | — | — | CHANGED |
+| roads.ts:397-414 | roll | state highway: funding, slip, drop | EXOGENOUS | CHANGED: funding is now `corridorWarranted` (the county's traffic counts), and a drop is deterministic (3 slips and no ten-year growth). Only the slip length `24 + rng·49` months (412) is still drawn. | — | — | CHANGED |
+| mix.ts:60-63 | hash01 | derived retail share of a legacy mixed record clamp(…, 0.06, 0.42) | EXOGENOUS | Imputation of missing data. | — | — | STILL |
+| dev.ts:2909 (`onSchedule`: `(month−1)·rate + hash01(seed:sched:key)`) | schedule | how the exit valves and other flows fire at a rate | GUARD/plumbing | Deterministic phasing of a rate; the rate itself is the fake where it is asserted (see exit rows). | — | — | NEW |
+| dev.ts:5629-5651 (`equityStretch` clamp [0.5, 2.5]) | clamp | profit-on-cost scaling with the equity share | GUARD (stated) | "The guard on the ratio is not meant to bind." | — | — | NEW |
+| value.ts:4966 | minmax | building value ≥ landValue | PHYSICAL | It ignores demolition cost and inherits the texture floor. | — | — | STILL |
+| value.ts:273, 299 | clamp | plate efficiency [0.72, 0.92], [0.78, 1] | PHYSICAL | Design range. | — | — | STILL |
+| dev.ts:1137, 2390, 2406 | minmax | coverage [0.08, 0.9] | PHYSICAL | Site geometry. | — | — | STILL |
+| value.ts:1919, 2264, 3772, 4264, 4609-4610, 4789, 4813-4815, 4913, 4923; platdesign.ts:411 | clamp | condition, occupancy, shares in [0, 1] | PHYSICAL | Definitions. | — | — | STILL |
+| dev.ts:193 | minmax | LTC ≤ 0.85 | PHYSICAL | Lending ceiling. | — | — | STILL |
+| tax.ts:224 | clamp | depreciable land share [LAND_SHARE_MIN, MAX] | PHYSICAL | Regulatory band. | — | — | STILL |
+| landdev.ts:47, 107 | clamp | entitlement 12-24 months; infrastructure 6-18 months | PHYSICAL | Sourced durations. | — | — | STILL |
+| value.ts:878 | clamp | infillShare [0.15, 1] (unresolved records only) | GUARD | — | — | — | STILL |
+| value.ts:1099, 1475 | minmax | max(0.01, r); min(3, hurdle^elasticity) | GUARD | — | — | — | STILL |
+| dev.ts:847 | minmax | buildClimate [0.10, 2.5] | GUARD | — | — | — | STILL |
+| dev.ts:5489, 5668 | minmax | spread floor [1, 1.25] | GUARD | — | — | — | STILL |
+| value.ts:1993 | minmax | specWearMult | GUARD | Sourced shape bounds. | — | — | STILL |
+| value.ts:410-414 | clamp | siteQualityMult [0.82, 1.22] | (dead) | Still no callers. Delete. | — | — | STILL |
+| dev.ts:4331-4335, 5718 | roll | teardownRoll, the old in-kind roll, shareJitter, formerBuildRoll, formerDemoRoll, formerDurationRoll: drawn then discarded | (dead) | Kept to hold the stream. Remove in a stream-breaking commit. | — | — | STILL |
 
-## How land value is set
+## How land value is set (now)
 
-1. `landValue(rec, econ)` at **value.ts:1669-1671** = `lotArea × landPsfNow(rec, econ)`. Callers include tax.ts:209, zoning.ts:87, platdesign.ts:316, dev.ts:4026, and the appraisal floor at value.ts:1683.
-2. `landPsfNow` at **value.ts:1288-1305** is a memo over `readLand(rec, econ, false, …)`.
-3. `readLand` at **value.ts:1477-1666** runs an auction:
-   - **builder** = `residualSchemeIn(rec, econ, 1)` (value.ts:761-911). This is the true residual: (NOI/exitYield)/(1+DEV_MARGIN 0.17) − non-land basis, divided by (1 + land carry), times `queueFactor` (value.ts:956-963). queueFactor returns **0** when the 5-year take-up on the town's own tape is zero.
-   - **holder** = the residual at PEAK_RENT_MULT 1.25 × WAIT_DISCOUNT 0.567 (value.ts:571-572, 1513-1516). It is computed only when builder ≤ 0.
-   - **texture floor** = `rec.landPsf × landIdx × level × envelopeRealisation × cpi × priceLevel × 0.30` (value.ts:1546, 1563).
-     - `rec.landPsf` = the generator stamp `max(30, assessed/0.45 × (0.6+0.9·demand/100))` (citygen/build.mjs:528).
-     - It is then × `s.landAdj` and × the demand ratio in resolveRec (value.ts:2624, 2643).
-     - landAdj is pushed by comps.ts:419-421 [0.25, 4], ratcheted up by bumpLand (dev.ts:5487, ×1.03-1.06 on deliveries and neighbours) and by the ×1.22 for a variance (zoning.ts:214), and pulled down only by holderCapitulation (comps.ts:458-466), which acts only when builder > 0.
-     - `landIdx` is a citywide (rent/cost)^1.15 index (market.ts:6909-6912).
-   - **Pricing rule:** if builder > 0, the price is builder × (1 + softDiscount), **but never below the floor** (value.ts:1609). Otherwise the price is max(holder, floor). Then max with farm (1641-1653) and homes (1658).
-4. **What the developer pays for an unowned vacant lot:** `ownerAskPsf` = landPsfNow × belief lag × exp(0.15·N) (value.ts:1114-1117), used at dev.ts:911.
+1. `landValue(rec, econ)` (value.ts:1858) = `lotArea × landPsfNow`, a memo over `readLand` (value.ts:1675-1855).
+2. `readLand` reads `residualCore`: **builder** = the best scheme's residual (after `queueFactor`, which still returns 0 with no five-year tape, value.ts:1099). **Option** = a real development option (value.ts:578-622; beta from the town's measured `landSigma`). The old "holder" (residual at a certain +25% peak × 0.567) is gone.
+3. **texture floor** = stamp × landIdx × level × envelopeRealisation × cpi × priceLevel × 0.30 (value.ts:1736, 1762). landAdj (comps.ts:426, [0.25, 4]) and the variance ×1.22 (zoning.ts:215) still push the stamp. `bumpLand` is gone. Capitulation pulls it down only where a positive builder bid exists (comps.ts:466).
+4. **Pricing rule (unchanged in shape):** if the option is ripe and builder > 0, price = builder (× the comp discount) **but never below the floor** (1818). Otherwise price = holder-option if ≥ floor, else the floor. Then max with farm, subdivider, homes.
+5. The owner's ask = landPsfNow × belief lag × exp(0.15·N) (value.ts:5015-5018).
 
-**Verdict.** The residual is computed correctly, but it is only one bid. On any lot where the residual is below the stamped floor, the floor sets the price, and the floor ratchets up with every delivery. The only downward force needs a positive residual and stops at 0.25. In a young or vacant town, queueFactor (no absorption history) and the small stock (0.5 looks/month) push the residual toward zero. Land then never falls to the residual, the owner's ask sits at or above the floor, and nothing pencils. The floor (value.ts:1563/1609), bumpLand, and the capitulation gate are the fakes that cause this.
+**Verdict.** The option value replaced the worst of the holder bid, the bumpLand ratchet is gone, and capitulation no longer stops at a floor. But the stamped texture floor still overrides the residual, and on lots with no positive residual nothing ever brings it down. The first pass's diagnosis stands.
 
 ## Summary
 
-Counts (rows, some grouping several lines): **FAKE 37** (high 11, med 19, low 7; this includes 4 out-of-scope chain rows and 6 suspects that need a count of how often they bind), **EXOGENOUS 21**, **PHYSICAL 8**, **GUARD 5**, dead code 2.
+Old rows: 73.
+- STILL: 44 (17 FAKE, 13 EXOGENOUS, 7 PHYSICAL, 5 GUARD, 2 dead)
+- CHANGED: 16 (12 FAKE, 4 EXOGENOUS)
+- GONE: 13 (9 FAKE, 4 EXOGENOUS)
+- NEW: 5 (3 FAKE, 2 guard/plumbing)
 
-Top 5 to fix first:
-1. **value.ts:1563 + 1609.** The texture floor, built on the generator's land stamp, overrides the builder's residual. Price transacted land at the residual. Use interim-use income or a real option value when the residual is not positive.
-2. **Land only falls through capitulation, and capitulation is gated.** comps.ts:458-466 needs builder > 0, and landAdj is floored at 0.25. Replace with time-on-market ask decay on every listed lot, with no floor.
-3. **dev.ts:5487 / 3170 / 4797 bumpLand and zoning.ts:214 ×1.22.** These asserted ratchets raise the floor and count the envelope twice. Delete them.
-4. **dev.ts:5272 developerLooksPerMonth.** Pinned to the stock, so a vacant town starves at the 0.5/month floor. Replace with free entry on expected profit. Related: value.ts:962, where queueFactor returns 0 with no tape. Seed take-up from modelled demand.
-5. **dev.ts:3457/4029/4104 useForZone and inKindRoll**, which pick a use by die roll, and **dev.ts:4450/4575**, where demolition-without-replacement is decided by a roll. Use the residual's highest and best use, and an owner-economics exit test.
+Top fakes left in this file set:
+1. **value.ts:1736/1762/1818** texture floor on the generator stamp (build.mjs:533), overriding the residual.
+2. **comps.ts:466** capitulation still gated on builder > 0. Together with **value.ts:1099** (queueFactor 0 without a tape), this keeps young-town dirt at the stamp.
+3. **zoning.ts:215** variance ×1.22, and **comps.ts:426** landAdj rails [0.25, 4].
+4. **dev.ts:4710 / 4834** exit valves: the dice are gone, but the asserted pace and score remain.
+5. **dev.ts:5680-5684 / 306** opening developer roster from the old 1.8%×32 quota, clamped 10-60.
+
+## Fixed since the first pass
+
+- dev.ts bumpLand (×1.06/1.05/1.03, cap 4): removed (dev.ts:5051-5056).
+- dev.ts:4104 in-kind roll `min(0.92, 0.70 + 1.2·structTight)`: dead. `replacementSearch` picks the use (the draw is kept at 4332).
+- dev.ts developerLooksPerMonth quota (0.5/month floor): every living firm looks each month (5097-5106).
+- dev.ts:343/389 new-builder coin 0.25 × credit: `foundersFor`, entry for schemes that pencil but no firm here can fund.
+- dev.ts:3572 classAppetite: deleted.
+- dev.ts:5472 opening pipeline utilisation clamp(1 − 7·slack, 0.18, 1): the opening crews start whatever pencils (`seedOpeningPipeline`).
+- value.ts:571 holder bid at a certain +25% peak × 0.567: a real development option (value.ts:578-622).
+- value.ts:4789 collateral clamp(0.18 + 0.74·occ): replaced (value.ts:5364).
+- value.ts:3388/3759 idle-land carry 1.2%: `idleLandCarryRate = taxRate + 0.1% insurance` (value.ts:3715-3716).
+- plates.ts:380 industrial whole-bay 45% die: `remnantSf` test.
+- dev.ts:1684 BTS credit tier 58% roll: covenant from size (`creditOfSize`, dev.ts:1777).
+- dev.ts:350/399 2%/month idle retirement coin: `builderDone` after 180 months without a start or a pencil.
+- homes.ts:662 tenure roll: SFR share accrued closing by closing (homes.ts:663-665).
+- tax.ts:48/101 appeal coin: decided on the evidence at the hearing (tax.ts:100-106). The odds at tax.ts:47 are now only a quote.

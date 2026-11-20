@@ -4,6 +4,7 @@ import type { Credit, GameState, PlanRow } from "./types";
 import { ensureLeasingPlan, starterPlan } from "./leasing";
 import { describeSetup } from "./setup";
 import { shortIndexOf } from "./market";
+import { packHouseholdsForSave, unpackHouseholds } from "./households";
 
 const DB = "broadway-and-wall";
 const STORE = "saves";
@@ -31,7 +32,7 @@ async function tx<T>(mode: IDBTransactionMode, fn: (store: IDBObjectStore) => ID
 }
 
 export async function saveGame(slot: string, state: GameState): Promise<void> {
-  await tx("readwrite", (s) => s.put({ state, savedAt: Date.now() }, slot));
+  await tx("readwrite", (s) => s.put({ state: packHouseholdsForSave(state), savedAt: Date.now() }, slot));
 }
 
 /**
@@ -287,6 +288,19 @@ function migrateDropJev(state: GameState): void {
   for (const r of state.rivals ?? []) delete (r as typeof r & { jev?: unknown }).jev;
 }
 
+/**
+ * There is no vacancy norm (2026-11-08): the learned "natural" availability
+ * (`econ.natVac`), the rent equation's pressure memory (`rentPress`) and the
+ * retired clock against it (`vacOverM`) are dropped from old saves.
+ */
+function migrateDropVacancyNorm(state: GameState): void {
+  const e = state.econ as (GameState["econ"] & { natVac?: unknown; rentPress?: unknown; vacOverM?: unknown }) | undefined;
+  if (!e) return;
+  delete e.natVac;
+  delete e.rentPress;
+  delete e.vacOverM;
+}
+
 /** Did this save predate the plat its own island now stands on? */
 function groundMovedUnder(state: { v?: unknown; cityIsland?: string }): boolean {
   const mark = GROUND_MOVED_AT[state.cityIsland ?? PROCEDURAL_ISLAND];
@@ -295,6 +309,8 @@ function groundMovedUnder(state: { v?: unknown; cityIsland?: string }): boolean 
 
 /** Pure save-shape migrations, also exported for a fast round-trip harness. */
 export function migrateSaveState(state: GameState): GameState {
+  // the household register travels as base64 columns (households.ts)
+  if (state.households) unpackHouseholds(state.households);
   migrateExtendedPaper(state);
   if (state.varianceApp) {
     state.varianceApps = {
@@ -313,6 +329,7 @@ export function migrateSaveState(state: GameState): GameState {
   migratePlanRows(state);
   migrateFloatingBench(state);
   migrateDropJev(state);
+  migrateDropVacancyNorm(state);
   if ((state.agent || state.renewalMgmt) && !state.leasingPlan) {
     ensureLeasingPlan(state);
   }

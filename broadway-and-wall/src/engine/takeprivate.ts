@@ -33,6 +33,7 @@
 // and the unsolicited approach are both hashed off the seed, the firm and the
 // month, so a city in which the player never picks up the phone is the same
 // city whether this file exists or not.
+import { NEVER_INSULTING_SHARE } from "./acquire";
 import type { ParcelTable } from "../data/types";
 import type { GameState, Rival, RivalStyle, TakePrivateRecord } from "./types";
 import { cloneState, monthLabel } from "./types";
@@ -42,11 +43,13 @@ import { assetGrade, livingRivals, marketAppetite, markRival, paramsOf, tie, tra
 import { observe } from "./competitorReads";
 import { sheetOf } from "./rivals";
 import { assumeBook, loanBookTouched, syncDebt } from "./rivalDebt";
-import { buyQuote, executePurchase, TRANSFER_TAX } from "./actions";
+import { buyQuote, executePurchase } from "./actions";
+import { transferTaxRate } from "./citygov";
 import { fundableNow, fundAndBook } from "./credit";
 import { isCivicLand } from "./demand";
-import { PRODUCTS, allInCostPct, productById } from "./debt";
+import { PRODUCTS, allInCostPct, productById, onIncome } from "./debt";
 import { newsChance } from "./market";
+import { BUY_CLOSING } from "./propmarket";
 
 const money = (n: number) =>
   Math.abs(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : Math.abs(n) >= 1e6 ? `$${(n / 1e6).toFixed(1)}M` : `$${Math.round(n / 1000)}K`;
@@ -82,6 +85,12 @@ function hash01(str: string): number {
  *    (see below). Its base is kept for the record; the healthy path never
  *    reaches it, because a healthy family is not for sale.
  *  - owner-user: a company's own premises, not a real estate firm at all.
+ *
+ * [S≠ Goodwin's REIT M&A reviews: public-target premiums averaged 16.4%
+ * (median 13.3%) over 2012-2017, ~27% over 2020-22 and ~35% over 2022-23;
+ * Nareit 2026: take-privates run 13+ points above public-public mergers. The
+ * core/REIT/family bases sit near the old median, the PE and merchant bases
+ * well under it; to reconcile.]
  */
 const BASE_PREMIUM: Record<RivalStyle, number | null> = {
   core: 1.12, reit: 1.12, foreign: 1.15, developer: 1.10,
@@ -206,7 +215,7 @@ function blockers(s: GameState, parcels: ParcelTable, r: Rival): string | null {
     const addr = resolveRec(parcels, s, bbl)?.address ?? bbl;
     if (s.holdings[bbl]) return `The record shows you already own ${addr}. The title company will not close this until that is straightened out.`;
     if (s.cityGroundLeases?.[bbl] || isCivicLand(s, bbl)) return `${addr} is not freehold — it cannot convey with the company.`;
-    if ((s.notes ?? []).some((n) => n.bbl === bbl)) return `You hold the paper on ${addr}. Settle the note before buying the borrower.`;
+    if ((s.notes ?? []).some((n) => n.bbl === bbl)) return `You hold the loan on ${addr}. Settle the note before buying the borrower.`;
     if (s.talks?.[bbl]) return `You are already negotiating for ${addr}. Finish or walk from that deal first.`;
   }
   return null;
@@ -325,7 +334,7 @@ function bestProduct(s: GameState, parcels: ParcelTable, bbl: string, price: num
   let best = { id: "cash", principal: 0, equity: cash.equity, allIn: Infinity };
   for (const p of PRODUCTS) {
     if (p.mezz || p.bridge) continue;
-    if (land ? p.uwDscr > 0 : p.uwDscr <= 0) continue;   // land loans have no income test
+    if (land ? onIncome(p) : !onIncome(p)) continue;   // land loans have no income test
     const q = buyQuote(s, parcels, bbl, price, p.id, 1);
     if (!(q.principal > 0)) continue;
     const allIn = allInCostPct(productById(p.id), q.ratePct);
@@ -379,9 +388,9 @@ function runClose(
   let estNeed = 0;
   q.deeds.forEach((d, i) => {
     const share = shares[i];
-    const legTt = Math.round(d.value * TRANSFER_TAX);
+    const legTt = Math.round(d.value * transferTaxRate(s));
     tt += legTt;
-    closing += Math.round(share * 0.02);
+    closing += Math.round(share * BUY_CLOSING);
     if (err) {
       // Past a failure, the rest is priced on the state where it stopped so the
       // desk can still say how far short the whole closing is.
@@ -453,7 +462,7 @@ function runClose(
   r.aum = 0;
   r.stressMs = 0;
   r.heldSince = {};
-  delete r.extendedTo;
+  delete r.extendedTo; delete r.balloonSale;
   delete r.deliveredM;
   r.failedM = cur.month;
   r.endReason = "takenPrivate";
@@ -475,9 +484,9 @@ function runClose(
   cur.news.unshift({
     q: cur.month, kind: "deal",
     text: `${q.name} is yours. ${q.deeds.length} building${q.deeds.length === 1 ? "" : "s"} marked at ${money(q.gross)} came across in one closing: `
-      + `${money(px)} to the owners — ${Math.abs(vsNav).toFixed(0)}% ${vsNav >= 0 ? "over" : "under"} the equity in the buildings, cash at par — `
-      + `${money(q.debt)} of their paper repaid at the table${loans > 0 ? `, ${money(loans)} of new mortgages written deed by deed` : ""}, `
-      + `and ${money(closing + tt)} to the advisers, the title company and the stamps. The name comes off the street.`,
+      + `${money(px)} to the owners (${Math.abs(vsNav).toFixed(0)}% ${vsNav >= 0 ? "over" : "under"} NAV, cash at par); `
+      + `${money(q.debt)} of their debt repaid${loans > 0 ? `, ${money(loans)} of new mortgages` : ""}; `
+      + `${money(closing + tt)} closing costs and transfer tax.`,
   });
   return { s: cur, terms };
 }
@@ -535,15 +544,16 @@ export function offerTakePrivate(
   if (struck < floor) {
     const next = cloneState(s);
     next.takePrivate ??= {};
-    const insult = struck < floor * 0.9;
+    // (never within ten per cent of the board's own ask: acquire.ts NEVER_INSULTING_SHARE)
+    const insult = struck < floor * 0.9 && struck < q.ask * NEVER_INSULTING_SHARE;
     (next.takePrivate.cool ??= {})[firmId] = next.month + (insult ? 24 : 12);
     if (insult) tie(next, firmId).insults++;
     if (next.takePrivate.offer?.firmId === firmId) delete next.takePrivate.offer;
     next.news.unshift({
       q: next.month, kind: "info",
       text: insult
-        ? `${poss(q.name)} board has thrown out your ${money(struck)} for the company. They asked ${money(q.ask)}, and they will remember the number.`
-        : `${poss(q.name)} board has turned down ${money(struck)} for the company. The ask was ${money(q.ask)}; they will not take the call again for a year.`,
+        ? `${poss(q.name)} board rejected your ${money(struck)} bid as a lowball (ask ${money(q.ask)}).`
+        : `${poss(q.name)} board rejected ${money(struck)} (ask ${money(q.ask)}). No new talks for a year.`,
     });
     return { s: next, refused: true, msg: insult ? "Thrown out — and they will remember it." : "Refused. The board will not talk again for a year." };
   }
@@ -588,7 +598,7 @@ export function tickTakePrivateApproach(s: GameState, parcels: ParcelTable) {
     if (est > purse) continue;
     const q = takePrivateQuote(s, parcels, r.id);
     if (!q?.available || q.situation === "healthy") continue;
-    const needEst = (q.ask - q.cash + q.debt) * 0.42 + q.gross * TRANSFER_TAX;
+    const needEst = (q.ask - q.cash + q.debt) * 0.42 + q.gross * transferTaxRate(s);
     if (needEst > purse) continue;
     if (!best || q.gross > best.q.gross) best = { r, q };
   }
@@ -599,8 +609,8 @@ export function tickTakePrivateApproach(s: GameState, parcels: ParcelTable) {
   s.takePrivate.offer = { firmId: r.id, name: r.name, m: s.month, expiresM: s.month + 4, ask: q.ask, why: q.situationWhy };
   s.news.unshift({
     q: s.month, kind: "deal",
-    text: `${poss(r.name)} board has retained a banker, and the banker has called you. ${q.situationWhy} `
-      + `They will talk about ${money(q.ask)} for the company — ${q.deeds.length} buildings marked at ${money(q.gross)}, ${money(q.debt)} of debt, ${money(q.cash)} in the account. The Competitors page has the book.`,
+    text: `Company for sale · ${r.name}: banker approached you. ${q.situationWhy} `
+      + `Ask ${money(q.ask)} — ${q.deeds.length} buildings marked at ${money(q.gross)}, ${money(q.debt)} debt, ${money(q.cash)} cash. Details on the Competitors page.`,
   });
 }
 
@@ -618,8 +628,9 @@ export function tickTakePrivateApproach(s: GameState, parcels: ParcelTable) {
 // are the 2% the street pays on any purchase. The target's owners are paid
 // out and the name comes off the street.
 //
-// Once a year, mid-year; a raider looks at most once. The look is hashed
-// (no RNG stream), so a raid cannot re-roll anything it did not cause.
+// Once a year, mid-year; a raider looks at most once, and only when it has
+// bought no building in the past year. No RNG stream is touched, so a raid
+// cannot re-roll anything it did not cause.
 
 export function tickRivalTakeovers(s: GameState, parcels: ParcelTable) {
   if (s.month % 12 !== 6) return;
@@ -627,7 +638,11 @@ export function tickRivalTakeovers(s: GameState, parcels: ParcelTable) {
     const sh = raider.sheet;
     if (!sh || raider.stressMs) continue;
     const raids = raider.profile === "raider" || (sh.capacity >= 85 && sh.reach >= 75 && sh.distress >= 60);
-    if (!raids || hash01(`${s.seed}:raid:${raider.id}:${s.month}`) > 0.5) continue;
+    if (!raids) continue;
+    // A RAIDER TURNS TO CORPORATE M&A WHEN THE TAPE HAS NOT FED IT. No die: a
+    // desk that took a deed in the last twelve months is busy with buildings;
+    // one that has not looks for a whole company instead.
+    if (Object.values(raider.heldSince ?? {}).some((m) => s.month - m < 12)) continue;
     const rm = markRival(s, parcels, raider);
     let pick: { q: TakePrivateQuote; t: Rival; score: number } | null = null;
     for (const t of livingRivals(s)) {
@@ -662,7 +677,7 @@ export function tickRivalTakeovers(s: GameState, parcels: ParcelTable) {
     t.distributed = (t.distributed ?? 0) + q.ask;
     t.bbls = []; t.debt = 0; t.cash = 0; t.uncalled = 0; t.aum = 0; t.stressMs = 0;
     t.heldSince = {};
-    delete t.extendedTo; delete t.deliveredM;
+    delete t.extendedTo; delete t.balloonSale; delete t.deliveredM;
     t.failedM = s.month;
     t.endReason = "absorbed";
     t.takenOverBy = raider.id;
@@ -672,8 +687,7 @@ export function tickRivalTakeovers(s: GameState, parcels: ParcelTable) {
     s.news.unshift({
       q: s.month, kind: "event",
       text: `${raider.name} has bought ${t.name} outright — ${q.deeds.length} building${q.deeds.length === 1 ? "" : "s"} marked at ${money(q.gross)}, `
-        + `${money(q.ask)} to the owners${q.situation === "distressed" ? " of a firm that was behind on its debt" : ""}, and ${money(q.debt)} of paper assumed. `
-        + `${t.name} comes off the street.`,
+        + `${money(q.ask)} to the owners${q.situation === "distressed" ? " (distressed)" : ""}, ${money(q.debt)} of debt assumed.`,
     });
   }
 }

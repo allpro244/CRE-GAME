@@ -24,12 +24,12 @@
 // falling market the second one is right, and it stops being right about six
 // months after everybody has worked that out.
 import type { ParcelTable } from "@/data/types";
-import type { Exit, GameState, Holding } from "./types";
+import type { Exit, GameState, Holding, Rival } from "./types";
 import { logBooks, moveDeposit, moveFundCash, monthLabel, raiseAlert, cloneState, closeDeedLedger } from "./types";
 import { firmShort } from "./firm";
-import { rng, rrange } from "./market";
+import { rrange } from "./market";
 import { sweepLocIdleCash } from "./credit";
-import { ownedHoldingValue, ownedHoldingNoiYr, resolveRec, holdingNOIYr, asIfOwned, rentableSf, useRentableSf } from "./value";
+import { ownedHoldingValue, ownedHoldingNoiYr, resolveRec, holdingNOIYr, asIfOwned, rentableSf, useRentableSf, inPlace } from "./value";
 import { depositsOn } from "./leasing";
 import { recordComp } from "./comps";
 import { EXCHANGE_WINDOW_M, transferGroundLeaseOffBook, saleProceedsToSeller } from "./actions";
@@ -37,6 +37,12 @@ import { FACILITY_MIN_ASSETS } from "./facility";
 import { sponsorStanding } from "./sponsor";
 import { money } from "./money";
 import { purseOf, partnerShare } from "./vehicles";
+import { livingRivals, deployRamp } from "./rivals";
+import { hash01 } from "./competitorTraits";
+import { packageCanClose, packageFinance } from "./portfoliosale";
+import { financePackage } from "./rivalDebt";
+import { logFirm } from "./firmLog";
+import { BUY_CLOSING } from "./propmarket";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
@@ -50,35 +56,32 @@ function occOf(rec: { bldgArea: number; floors: number }, h: Holding): number {
 
 /** How long a portfolio stays on the market before the process goes stale. */
 const RUN_M = 9;
+/** A desk underwrites a book only when its indicative is at least this share of the ask ([K], 2026-11-11: a quarter over is the walk-away). */
+const REACH = 0.8;
+/** An empty-book fund rings an owner unprompted once this far into its investment period (deployRamp, rivals.ts) — past half, with nothing bought ([K]). */
+const RING_RAMP = 0.5;
 
 /**
- * The desks that write portfolio cheques in this town.
+ * WHO WRITES PORTFOLIO CHEQUES IN THIS TOWN: the firms on the Players list
+ * that could close this exact book at this price, out of their own cash with
+ * their leverage inside their own limit (`packageCanClose`).
  *
- * Ordered loosely by patience (how close to indicative they will bid). The
- * floor used to be $6M — Bellwether — so a two-building book under that mark
- * could sit the full nine months with a rolled die and an empty pool, while
- * the quote lied that "1 buyer" could fund it. Riverside is the private desk
- * that still writes smaller tickets; below its min there is simply no market
- * for a bundle, and the desk has to say so.
+ * This was a list of six desks that existed nowhere else in the game —
+ * "Kestrel Core Fund", "Marchpane Institutional" — with a minimum ticket each
+ * and no balance sheet. They bid on the player's book, won it, paid with money
+ * that did not exist, and the buildings went into no one's portfolio. The
+ * owner built the largest book in the city, offered it, and was bid on by a
+ * name that was not on the players list. A buyer is now somebody you can
+ * click on, and the cheque comes out of its account; when nobody on the street
+ * is big enough, there is no bid.
  */
-const BUYERS = [
-  { name: "Kestrel Core Fund", min: 45_000_000, patience: 1.04 },
-  { name: "Marchpane Institutional", min: 30_000_000, patience: 1.02 },
-  { name: "Hollis Sterling Partners", min: 12_000_000, patience: 0.98 },
-  { name: "The Ashgrove Trust", min: 8_000_000, patience: 0.95 },
-  { name: "Bellwether Opportunity", min: 6_000_000, patience: 0.88 },
-  { name: "Riverside Private Capital", min: 2_000_000, patience: 0.84 },
-];
+export function portfolioBuyers(s: GameState, parcels: ParcelTable, bbls: string[], price: number): Rival[] {
+  return livingRivals(s).filter((r) => packageCanClose(s, parcels, r, bbls, price));
+}
 
-/** How many named buyers can underwrite a book of this size. */
-export function portfolioBuyerDepth(sumOfParts: number, infl = 1): number {
-  // The buyers' minimums are opening-year cheques, carried at inflation.
-  const real = sumOfParts / Math.max(0.01, infl);
-  const raw = BUYERS.filter((b) => real >= b.min).length;
-  // Past a certain cheque the room thins — the same three institutions who
-  // could write $40M cannot all write $200M in the same city the same year.
-  const crowdedOut = real > 200_000_000 ? 2 : real > 90_000_000 ? 1 : 0;
-  return Math.max(0, raw - crowdedOut);
+/** How many firms on the street can underwrite this book at this price. */
+export function portfolioBuyerDepth(s: GameState, parcels: ParcelTable, bbls: string[], price: number): number {
+  return portfolioBuyers(s, parcels, bbls, price).length;
 }
 
 export interface PortfolioQuote {
@@ -192,17 +195,19 @@ export function portfolioQuote(s: GameState, parcels: ParcelTable, bbls: string[
   }
 
   // --- who can actually write this cheque ----------------------------------
-  const depth = portfolioBuyerDepth(sumOfParts, s.econ.cpi ?? 1);
+  // Asked at the price the book is indicated at before this term.
+  const before = Math.round(sumOfParts * (1 + why.reduce((a, x) => a + x.pct, 0)));
+  const depth = portfolioBuyerDepth(s, parcels, rows.map((r) => r.bbl), before);
   if (depth <= 0) {
     why.push({
-      label: "No buyer in this city can fund a book this small as a portfolio — sell them one at a time",
+      label: "No firm in town can fund this book in one cheque — sell them one at a time",
       pct: -0.08,
     });
   } else {
     const thin = depth === 1 ? -0.06 : depth === 2 ? -0.025 : 0;
     if (thin < 0) {
       why.push({
-        label: `Thin bidder pool — ${depth} buyer${depth === 1 ? "" : "s"} in this city can fund it`,
+        label: `Thin bidder pool — ${depth} firm${depth === 1 ? "" : "s"} in town can fund it`,
         pct: thin,
       });
     }
@@ -303,13 +308,13 @@ export function listPortfolio(
   // a mixed bundle is the GP deciding, on both sides, how much of it the fund
   // gets — the conflict an LPAC exists to refuse. Bundle either book, not both.
   if (mixesVehicles(s, clean)) {
-    return { s, err: "That bundle mixes the fund's buildings with your own. One price across both is a conflict the LPs' advisory committee would refuse — sell the fund's deeds as their own book." };
+    return { s, err: "Cannot mix fund and firm buildings in one portfolio (LP conflict). Sell the fund's buildings separately." };
   }
   // A partner's building does not go into somebody else's package without them.
-  if (clean.some((b) => partnerShare(s, s.holdings[b]) > 0)) return { s, err: "One of those has a JV partner — they have consent on a sale in a package. Sell it on its own, or buy them out first." };
-  if (clean.length < 2) return { s, err: "A portfolio is two buildings or more. One building is a listing." };
+  if (clean.some((b) => partnerShare(s, s.holdings[b]) > 0)) return { s, err: "One building has a JV partner with consent rights. Sell it alone or buy them out first." };
+  if (clean.length < 2) return { s, err: "A portfolio needs at least two buildings." };
   if (clean.some((b) => s.workouts?.[b])) {
-    return { s, err: "One of these is in default. A lender in a workout controls that deed — clear the file first." };
+    return { s, err: "One building is in default workout. Resolve it first." };
   }
   // A CRANE IS NOT SALEABLE, IN A BUNDLE OR OUT OF ONE. `listForSale` has
   // always refused a deed under construction; this path did not, and the close
@@ -321,7 +326,7 @@ export function listPortfolio(
     return {
       s,
       err: `${cranes.length === 1 ? "One of these has" : `${cranes.length} of these have`} a crane on site. `
-        + `Deliver the building first, or leave that deed out of the bundle.`,
+        + `Deliver it first or exclude it.`,
     };
   }
   // A PLEDGED DEED IS NOT A REFUSAL, IT IS A COST. This used to bounce the
@@ -341,9 +346,8 @@ export function listPortfolio(
   if (q.depth <= 0) {
     return {
       s,
-      err: `No buyer in this city can underwrite a ${money(q.sumOfParts)} portfolio. `
-        + `Sell them one at a time, or bundle enough value that a private desk will take the ticket `
-        + `(roughly $2M of marks and up).`,
+      err: `No firm in town can fund a ${money(q.sumOfParts)} portfolio. `
+        + `Sell individually, or wait for a bigger buyer.`,
     };
   }
   const next = clone(s);
@@ -358,20 +362,20 @@ export function listPortfolio(
   const pledged = book.release + book.facilityDue;
   next.news.unshift({
     q: next.month, kind: "info",
-    text: `Took ${clean.length} buildings to market as a portfolio at ${money(ask)} — `
-      + `${money(q.sumOfParts)} of individual marks, so you are asking `
+    text: `Portfolio listed · ${clean.length} buildings · ask ${money(ask)} vs `
+      + `${money(q.sumOfParts)} sum of marks: `
       + `${ask >= q.sumOfParts ? "a premium" : `${((1 - ask / q.sumOfParts) * 100).toFixed(0)}% under the sum of the parts`}. `
-      + `${q.depth} buyer${q.depth === 1 ? "" : "s"} can fund it. `
+      + `${q.depth} firm${q.depth === 1 ? "" : "s"} in town can fund it. `
       + (richAsk
-        ? `The ask sits above what a bundle is indicated at (${money(q.indicative)}) — interest will be thin until you cut it. `
+        ? `Above the indicated value (${money(q.indicative)}); expect thin interest. `
         : eager >= 0.95
-          ? `Priced at the indication — expect a call inside a quarter if the book holds. `
+          ? `Priced at the indication; expect a bid within a quarter. `
           : "")
       + (pledged > 0
-        ? `${money(pledged)} of it goes straight back to the facility at the closing — the allocated shares at the `
-          + `release premium${book.facilityDue > 0 ? `, and the balance in full once the pool drops below ${FACILITY_MIN_ASSETS} deeds` : ""}. `
+        ? `${money(pledged)} goes to facility releases at closing (allocated shares at the `
+          + `release premium${book.facilityDue > 0 ? `, plus full repayment once the pool drops below ${FACILITY_MIN_ASSETS} assets` : ""}). `
         : "")
-      + `Indications inside ${RUN_M} months or the process goes stale.`,
+      + `Process expires in ${RUN_M} months without an indication.`,
   });
   return { s: next, msg: richAsk ? "In the market — ask is rich against the indication." : "In the market." };
 }
@@ -388,7 +392,7 @@ export function repricePortfolio(s: GameState, ask: number): { s: GameState; err
   // Nothing to reprice on a book you never listed: they named the number and
   // the answer to a number is a counter, not an ask.
   if (s.portfolioSale.unsolicited) {
-    return { s, err: "You did not put these on the market — they came to you. Counter their number or tell them no." };
+    return { s, err: "Unsolicited bid; nothing to reprice. Counter or decline." };
   }
   if (ask <= 0) return { s, err: "Name a price." };
   const next = clone(s);
@@ -399,8 +403,8 @@ export function repricePortfolio(s: GameState, ask: number): { s: GameState; err
     next.portfolioSale!.bids = [];
     next.news.unshift({
       q: next.month, kind: "warn",
-      text: `Raised the portfolio ask to ${money(ask)} mid-process. Every indication in hand just went away — `
-        + `moving the goalposts on an institutional buyer is how you get taken off their list.`,
+      text: `Portfolio ask raised to ${money(ask)} mid-process. `
+        + `All indications withdrawn.`,
     });
   } else {
     next.portfolioSale!.listedM = next.month - 1;
@@ -457,12 +461,12 @@ export function counterPortfolio(s: GameState, price: number): { s: GameState; e
   const ps = s.portfolioSale;
   const best = ps?.bids?.[0];
   if (!ps || !best) return { s, err: "Nothing to answer." };
-  if (best.countered) return { s, err: "You have already been back to them once on this one." };
+  if (best.countered) return { s, err: "Already countered once." };
   const next = clone(s);
   const nb = next.portfolioSale!.bids[0];
   const stretch = price / Math.max(1, best.price);
   nb.countered = true;
-  if (stretch <= 1.005) return { s, err: "That is their number. Take it or leave it." };
+  if (stretch <= 1.005) return { s, err: "That is their final price. Accept or decline." };
 
   const limit = best.limit ?? 1.11;
   if (stretch <= limit) {
@@ -472,29 +476,31 @@ export function counterPortfolio(s: GameState, price: number): { s: GameState; e
     nb.price = meet;
     next.news.unshift({
       q: next.month, kind: "deal",
-      text: `${best.name} came up to ${money(meet)} on the portfolio. That is their committee number and there is nothing behind it.`,
+      text: `${best.name} raised its portfolio bid to ${money(meet)}. Final.`,
     });
-    return { s: next, msg: "They moved." };
+    return { s: next, msg: "Bid raised." };
   }
 
   // Past the limit. How far past decides whether this is a no or a goodbye —
   // a bundle is a discretionary purchase and there is always another one, but
   // nobody abandons a live file over a few per cent.
   const over = (stretch - limit) / Math.max(0.01, limit - 1);
-  if (over < 1 && rng(next) > 0.30) {
+  // The buyer's own limit decides, not a 30% coin: a counter less than its
+  // room again past its limit is a no — it restates its bid and waits; one
+  // further out than that is a goodbye, and it withdraws.
+  if (over < 1) {
     next.news.unshift({
       q: next.month, kind: "warn",
-      text: `${best.name} would not chase ${money(price)}. Their ${money(best.price)} stands, and they have told you it is final.`,
+      text: `${best.name} declined ${money(price)}; holds at ${money(best.price)}, final.`,
     });
-    return { s: next, msg: "They held their number." };
+    return { s: next, msg: "Bid held." };
   }
   next.portfolioSale!.bids = next.portfolioSale!.bids.filter((b) => b.name !== best.name);
   next.news.unshift({
     q: next.month, kind: "warn",
-    text: `${best.name} withdrew from the portfolio rather than chase ${money(price)}. `
-      + `A bundle is a discretionary purchase — there is always another one next quarter.`,
+    text: `${best.name} withdrew from the portfolio rather than pay ${money(price)}.`,
   });
-  return { s: next, msg: "They walked." };
+  return { s: next, msg: "Bidder walked." };
 }
 
 /** One deed inside a bundle, priced and settled on its own. */
@@ -622,14 +628,32 @@ export function acceptPortfolioBid(
   if (!ps || !bid) return { s, err: "No live indication." };
   if (s.month > bid.expiresM) return { s, err: "That indication lapsed." };
   if (exchange && s.exchange) return { s, err: "One exchange at a time — close the live 1031 first." };
+  // THE BIDDER PAYS, AND IT HAS TO STILL BE ABLE TO. A firm that has failed,
+  // fallen into trouble or spent the money since it bid cannot close.
+  const firm0 = bid.firmId
+    ? (s.rivals ?? []).find((r) => r.id === bid.firmId)
+    : livingRivals(s).find((r) => r.name === bid.name);
+  if (!firm0 || firm0.failedM !== undefined) return { s, err: `${bid.name} is not on the street any more — there is nobody to close with.` };
+  if (!packageCanClose(s, parcels, firm0, ps.bbls.filter((b) => s.holdings[b]), bid.price)) {
+    return { s, err: `${bid.name} cannot fund ${money(bid.price)} for the book any more.` };
+  }
   const next = clone(s);
+  const winner = next.rivals.find((r) => r.id === firm0.id)!;
   const live = ps.bbls.filter((b) => next.holdings[b]);
   const book = portfolioSettlement(next, parcels, live, bid.price);
+  // What the winner underwrites, read before the deeds leave your book.
+  const fin = packageFinance(next, parcels, winner, live, bid.price);
+  const marks = live.map((b) => {
+    const rec = resolveRec(parcels, next, b);
+    const h = next.holdings[b];
+    const v = h ? Math.max(1, ownedHoldingValue(next, parcels, h)) : 1;
+    return { bbl: b, v, noi: rec ? Math.max(0, inPlace(rec, next, b, v).noi) : 0, klass: rec?.class, condition: h?.condition };
+  });
   if (book.totalMark <= 0) return { s, err: "There is nothing left in that portfolio." };
   // Refused at the door (listPortfolio, the unsolicited approach); refused
   // here too, because a vehicle can wind down under a live process.
   if (mixesVehicles(next, live)) {
-    return { s, err: "That book now mixes the fund's buildings with your own — one price across both is a conflict the LPs would refuse. Pull it and sell each book on its own." };
+    return { s, err: "Portfolio now mixes fund and firm buildings (LP conflict). Withdraw and sell each separately." };
   }
   // THE FUND'S BOOK SETTLES INTO THE FUND. Each fund deed's leg — proceeds
   // and deposits — runs through `fund.cash` exactly as acceptSaleOffer runs a
@@ -638,7 +662,7 @@ export function acceptPortfolioBid(
   // of four fund deeds lifted sponsor cash +$4.29M and net worth +36% in one
   // click, with the LPs' buildings gone and their vehicle not a dollar richer.
   const intoFund = live.length > 0 && onFundBook(next, live[0]);
-  if (exchange && intoFund) return { s, err: "The fund's gain belongs to the vehicle — it cannot roll into your own 1031." };
+  if (exchange && intoFund) return { s, err: "Fund gains cannot roll into your own 1031." };
 
   // Same waterfall as acceptSaleOffer, deed by deed: loan and mezzanine,
   // kicker, break fee, facility release, deposits (including assemblage
@@ -703,9 +727,8 @@ export function acceptPortfolioBid(
     logBooks(next, "sold", -book.facilityDue);
     next.news.unshift({
       q: next.month, kind: "warn",
-      text: `${money(book.facilityDue)} of the portfolio proceeds repaid the ${next.facility.lender} facility in full — `
-        + `the pool fell below ${FACILITY_MIN_ASSETS} deeds at the closing, and a facility with nothing behind it is `
-        + `a loan the desk never underwrote.`,
+      text: `${money(book.facilityDue)} of portfolio proceeds repaid the ${next.facility.lender} facility in full: `
+        + `the pool fell below ${FACILITY_MIN_ASSETS} assets at closing.`,
     });
     delete next.facility;
   }
@@ -727,16 +750,32 @@ export function acceptPortfolioBid(
     next.taxesPaid = (next.taxesPaid ?? 0) + taxTotal;
     logBooks(next, "taxes", taxTotal);
   }
+  // THE DEEDS LAND IN THE BUYER'S BOOK, ON THE BUYER'S MONEY. Equity and the
+  // the buyer's closing (BUY_CLOSING) out of its account, the rest on acquisition mortgages written
+  // deed by deed (rivalDebt.financePackage) — the same close a street book
+  // gets in tickPortfolios.
+  {
+    const closing = Math.round(bid.price * BUY_CLOSING);
+    winner.cash -= fin.equity + closing;
+    financePackage(next, winner, fin.debt, marks);
+    winner.basis = Math.round((winner.basis ?? 0) + fin.equity + closing);
+    winner.aum = Math.round((winner.aum ?? 0) + bid.price);
+    for (const b of live) {
+      if (!winner.bbls.includes(b)) winner.bbls.push(b);
+      (winner.heldSince ??= {})[b] = next.month;
+    }
+    logFirm(next, winner, "buy", `Bought ${live.length} buildings from ${firmShort(next)} as one portfolio`, live[0], bid.price);
+  }
   delete next.portfolioSale;
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Closed the portfolio: ${live.length} buildings to ${bid.name} at ${money(bid.price)}, `
       + (intoFund
-        ? `${money(toFund)} to the fund after payoffs — the LPs' buildings, the LPs' proceeds. `
+        ? `${money(toFund)} to the fund after payoffs. `
           + (cashToYou < 0 ? `${money(-cashToYou)} of your own went to the facility. ` : "")
         : `${money(cashToYou)} to you after payoffs. `)
       + (exchange
-        ? `1031 clock running — redeploy ${money(bid.price * 0.8)} by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} or ${money(taxTotal)} of tax comes due.`
+        ? `1031 open: redeploy ${money(bid.price * 0.8)} by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} or ${money(taxTotal)} tax is due.`
         : taxTotal > 0 ? `${money(taxTotal)} of tax withheld.` : "No gain, no tax."),
   });
   sweepLocIdleCash(next, { announce: true });
@@ -756,7 +795,7 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
     ps.bbls = ps.bbls.filter((b) => s.holdings[b]);
     if (ps.bbls.length < 2) {
       delete s.portfolioSale;
-      s.news.unshift({ q: s.month, kind: "warn", text: "The portfolio process collapsed — there are not two buildings left in it." });
+      s.news.unshift({ q: s.month, kind: "warn", text: "Portfolio sale cancelled: fewer than two buildings left." });
     }
   }
   const live = s.portfolioSale;
@@ -770,32 +809,39 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
         // A book you never listed cannot go stale — the caller simply stopped
         // calling, and the desk is yours again.
         text: live.unsolicited
-          ? `Nobody came back on the ${live.bbls.length} buildings you were approached about. `
-            + `That approach is closed and the bundling desk is free again.`
-          : `Nine months and no indication on the portfolio at ${money(live.ask)}. The process is stale — `
-            + `every buyer in town has now seen it and passed, which is worth knowing and expensive to have learned.`,
+          ? `Unsolicited portfolio approach on ${live.bbls.length} buildings lapsed. `
+            + `Portfolio desk free.`
+          : `Portfolio process expired · ask ${money(live.ask)} · `
+            + `no indication in nine months.`,
       });
     } else {
       const q = portfolioQuote(s, parcels, live.bbls);
-      const pool = BUYERS.filter((b) => q.sumOfParts >= b.min && !live.bids.some((x) => x.name === b.name));
+      const pool = portfolioBuyers(s, parcels, live.bbls, Math.min(live.ask, q.indicative))
+        .filter((r) => !live.bids.some((x) => x.firmId === r.id || x.name === r.name));
       // No desk left to call — do not burn months on a die that can never land.
       if (!pool.length && !live.bids.length) {
         if (age > 0 && age % 3 === 0) {
           s.news.unshift({
             q: s.month, kind: "warn",
-            text: `Still no desk that can fund the portfolio at ${money(q.sumOfParts)} of marks. `
-              + `Pull it and sell the deeds one at a time, or the process will go stale on an empty room.`,
+            text: `No firm in town can fund the portfolio at ${money(q.sumOfParts)} of marks. `
+              + `Withdraw it and sell individually, or it will expire.`,
           });
         }
       } else {
-        const eager = Math.min(1, q.indicative / Math.max(1, live.ask));
-        // Interest is a function of how far under the indicative your ask is,
-        // and it thins fast the longer it sits.
-        const arrive = 0.30 * Math.pow(eager, 3.2) * Math.max(0.25, 1 - age / (RUN_M + 3));
-        if (pool.length && rng(s) < arrive && live.bids.length < 3) {
-          const who = pool[Math.floor(rng(s) * pool.length)];
-          const price = Math.round(Math.min(live.ask, q.indicative * who.patience * rrange(s, 0.88, 1.02)));
-          live.bids.push({ name: who.name, price, expiresM: s.month + 3, limit: bidderLimit(s) });
+        // WHO INDICATES, AND WHEN. No die: each desk that can fund the book
+        // underwrites it, which takes it one to three months (staggered by a
+        // hash of the firm and the listing), and indicates when it is done —
+        // if the ask is within reach of what the book bundles to. A desk does
+        // not spend a committee on a book asking more than a quarter over its
+        // indicative ([K] REACH). One new indication a month, three in all.
+        const due = (r: Rival) => live.listedM + 1 + Math.floor(hash01(`${s.seed}:pfdd:${r.id}:${live.listedM}`) * 3);
+        const ready = q.indicative >= live.ask * REACH
+          ? pool.filter((r) => s.month >= due(r)).sort((a, b) => due(a) - due(b) || (a.id < b.id ? -1 : 1))
+          : [];
+        if (ready.length && live.bids.length < 3) {
+          const who = ready[0];
+          const price = Math.round(Math.min(live.ask, q.indicative * rrange(s, 0.88, 1.02)));
+          live.bids.push({ name: who.name, firmId: who.id, price, expiresM: s.month + 3, limit: bidderLimit(s) });
           live.bids.sort((a, b) => b.price - a.price);
           // EVERY indication is a decision with a fuse. The first one answers
           // whether anybody wanted the book; the second and third used to land
@@ -815,7 +861,7 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
             q: s.month, kind: "deal",
             text: `${who.name} indicated ${money(price)} on the portfolio — `
               + `${((1 - price / Math.max(1, q.sumOfParts)) * 100).toFixed(0)}% inside the sum of the individual marks. `
-              + `That spread is what you are paying to clear ${live.bbls.length} buildings in one closing.`,
+              + `Bulk discount for ${live.bbls.length} buildings in one closing.`,
           });
         }
       }
@@ -828,7 +874,14 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
   // never for the whole thing, never for the bad ones, and always for the
   // assets you would least like to part with, because those are the ones worth
   // buying.
-  if (!s.portfolioSale && Object.keys(s.holdings).length >= 5 && rng(s) < 0.012) {
+  // WHO RINGS. No die: a raised fund that has bought nothing and is past half
+  // its investment period (deployRamp) is the buyer that pays a premium to
+  // skip a contest, because the alternative is handing commitments back. It
+  // rings once. Funds with books do not cold-call for portfolios.
+  const ringers = !s.portfolioSale && Object.keys(s.holdings).length >= 5
+    ? livingRivals(s).filter((r) => r.rangPlayerM === undefined && deployRamp(s, r) >= RING_RAMP)
+    : [];
+  if (ringers.length) {
     const byClass = new Map<string, string[]>();
     for (const bbl of Object.keys(s.holdings)) {
       if (s.workouts?.[bbl] || s.holdings[bbl].sale) continue;
@@ -848,16 +901,22 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
     if (best && best[1].length >= 3) {
       const bbls = best[1].slice(0, 6);
       const q = portfolioQuote(s, parcels, bbls);
-      const who = BUYERS.filter((b) => q.sumOfParts >= b.min);
+      // An unsolicited approach is a real bid, not a lowball — they are
+      // paying for the right to not compete for it. That premium is the
+      // entire reason to answer the phone. Only a firm that could write it
+      // rings.
+      const price = Math.round(q.indicative * rrange(s, 1.0, 1.09));
+      const who = q.indicative > 0 ? ringers.filter((r) => packageCanClose(s, parcels, r, bbls, price)) : [];
       if (who.length) {
-        const buyer = who[Math.floor(rng(s) * who.length)];
-        // An unsolicited approach is a real bid, not a lowball — they are
-        // paying for the right to not compete for it. That premium is the
-        // entire reason to answer the phone.
-        const price = Math.round(q.indicative * rrange(s, 1.0, 1.09));
+        // The most pressed fund rings: the one closest to its deadline.
+        const buyer = who.sort((a, b) => deployRamp(s, b) - deployRamp(s, a))[0];
+        buyer.rangPlayerM = s.month;
+        // Declined at the switchboard (Deals page): drawn, not sent, so the
+        // stream does not shift with the setting.
+        if (s.noUnsolicited) return;
         s.portfolioSale = {
           bbls, ask: price, listedM: s.month, sumOfParts: q.sumOfParts, unsolicited: true,
-          bids: [{ name: buyer.name, price, expiresM: s.month + 4, limit: bidderLimit(s) }],
+          bids: [{ name: buyer.name, firmId: buyer.id, price, expiresM: s.month + 4, limit: bidderLimit(s) }],
         };
         // AN OFFER FOR A BOOK OF BUILDINGS IS NOT A NEWS LINE.
         //
@@ -883,10 +942,9 @@ export function tickPortfolio(s: GameState, parcels: ParcelTable) {
         });
         s.news.unshift({
           q: s.month, kind: "deal",
-          text: `${buyer.name} rang unprompted with ${money(price)} for ${bbls.length} of your ${best[0]} buildings — `
+          text: `Unsolicited portfolio bid · ${buyer.name} · ${money(price)} for ${bbls.length} of your ${best[0]} buildings — `
             + `${price >= q.sumOfParts ? "above" : `${((1 - price / q.sumOfParts) * 100).toFixed(0)}% inside`} the sum of the individual marks. `
-            + `Nobody offers on a portfolio they have not already underwritten, so this number is real. It is also `
-            + `for the buildings you would least like to sell, which is how you know they did the work.`,
+            + `Fully underwritten; targets your best buildings.`,
         });
       }
     }

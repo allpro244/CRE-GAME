@@ -59,9 +59,18 @@ check(!!l2 && Math.abs(l2.monthlyPmt - loan1.monthlyPmt) / loan1.monthlyPmt < 0.
 // refusals
 check(!!E.paydownLoan(g, parcels, bbl, loan0.balance + 10).err, "the whole balance is refused — that is Pay off");
 check(!!E.paydownLoan(g, parcels, bbl, 0).err, "zero is refused");
+// SHORT OF CASH, THE LINE PAYS (2026-11-10): a paydown is a cheque like any
+// other — cash first, then the revolver, as payoff and refinance already do.
 const poor = structuredClone(g); poor.cash = amt / 4;
+const room = E.fundableNow(poor, parcels);
 const rp = E.paydownLoan(poor, parcels, bbl, amt);
-check(!!rp.err && poor.loc !== undefined ? (poor.loc?.balance ?? 0) === (rp.s.loc?.balance ?? 0) : !!rp.err, `short of cash it refuses and does not draw the line (${rp.err?.slice(0, 50)})`);
+if (room >= amt + pen) {
+  check(!rp.err && (rp.s.loc?.balance ?? 0) > (poor.loc?.balance ?? 0), `short of cash, the line pays the rest (drew ${K((rp.s.loc?.balance ?? 0) - (poor.loc?.balance ?? 0))})`);
+} else {
+  check(!!rp.err, `short of cash and line, it refuses (${rp.err?.slice(0, 50)})`);
+}
+const broke = structuredClone(g); broke.cash = 0; broke.loc = { ...(broke.loc ?? {}), balance: 1e12 };
+check(!!E.paydownLoan(broke, parcels, bbl, amt).err, "with no cash and no line left, it refuses");
 
 // a stepdown note charges on the dollars prepaid
 const step = structuredClone(g);

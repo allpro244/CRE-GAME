@@ -21,7 +21,7 @@ for (let i = OFF; i < OFF + N; i++) {
     g = E.advanceQuarter(g, parcels, bbls, adjacency);
     if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
     const e = g.econ;
-    if ((e.cityVac[k]) <= E.frictionFloor(k) + 0.015) pinned++;
+    if ((e.cityVac[k]) <= E.residenceVac(e, k) + 0.015) pinned++;
     starts += e.starts?.[k] ?? 0;
     if (m % 60 !== 59) continue;
     const hm = [], hf = [], loc = [];

@@ -12,6 +12,14 @@
  * to the parcel table, and keeps its caches on object identity, so a tick on a
  * structured copy of the state is the same tick (measured: byte-identical
  * JSON against an in-place tick). See state/simClient.ts for the page's side.
+ *
+ * The registers (households.a, economy.f, economy.L.slot) are typed-array
+ * columns, about 1.6 MB on a standard City. On the way back their buffers are
+ * TRANSFERRED rather than copied: the worker never reads a state again once it
+ * has posted it, so it can hand the memory over. They are not transferred on
+ * the way in, because the page keeps drawing from the state it sent.
+ * test/worker-determinism.mjs runs this file under Node's worker_threads and
+ * checks 24 months against the same months on one thread, byte for byte.
  */
 import { advanceMonth, advanceUntilAttention } from "@/engine/sim";
 import type { GameState } from "@/engine/types";
@@ -25,7 +33,25 @@ export type SimRequest =
 export type SimReply = { id: number; s?: GameState; span?: ReturnType<typeof advanceUntilAttention>; err?: string };
 
 let town: Town | null = null;
-const post = (r: SimReply) => (self as unknown as Worker).postMessage(r);
+
+/** The buffers behind the state's register columns, each once. */
+export function registerBuffers(s: GameState | undefined): ArrayBuffer[] {
+  const out = new Set<ArrayBuffer>();
+  const take = (cols: unknown) => {
+    if (!cols || typeof cols !== "object") return;
+    for (const v of Object.values(cols)) {
+      if (ArrayBuffer.isView(v) && v.buffer instanceof ArrayBuffer) out.add(v.buffer);
+    }
+  };
+  if (s) {
+    take(s.households?.a);
+    take(s.economy?.f);
+    take(s.economy?.L?.slot);
+  }
+  return [...out];
+}
+
+const post = (r: SimReply) => (self as unknown as Worker).postMessage(r, registerBuffers(r.s ?? r.span?.s));
 
 self.onmessage = (e: MessageEvent<SimRequest>) => {
   const m = e.data;

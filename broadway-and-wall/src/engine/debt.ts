@@ -8,20 +8,20 @@ import { commercialShare } from "./mix";
 import type { Condition, Econ, GameState, Holding, Loan } from "./types";
 import { logBooks, monthLabel, cloneState} from "./types";
 import { openWorkout } from "./workout";
-import { lenderAppetite, lenderChase } from "./lenders";
+import { lenderAppetite, PRIOR_EL, deskPxOf } from "./lenders";
 import {
   ownedHoldingNoiYrFromRec, ownedHoldingValue, ownedContractNoiYr,
   ownedHoldingValueFromRec, proFormaNOIYr, capRateFor,
   isVacantLandLoanCollateral,
 } from "./value";
 import { walt } from "./leasing";
-import { INDUSTRY_LABEL, shortIndexOf, natUnempRise12 } from "./market";
+import { INDUSTRY_LABEL, shortIndexOf, natUnempRise12, CAP_BASE } from "./market";
 import { sponsorStanding } from "./sponsor";
 import { fundCashNeed, fundableNow, coverCashShortfall, sweepLocIdleCash, spendable, fundAndBook } from "./credit";
 import { sizeAreaScale } from "./cityscale";
 import { money } from "./money";
 import { monthlyPayment, scheduledPayment, recastPayment, CAP_PREMIUM_PCT, capPremiumOn } from "./amortize";
-import { deskRatePct, appetiteAdvance } from "./pricing";
+import { appetiteAdvance, bankRatePct, costFloor, liveSpread, lossClassOf } from "./pricing";
 import { CONSTRUCTION_LENDER } from "./types";
 export { monthlyPayment, scheduledPayment, recastPayment, CAP_PREMIUM_PCT, capPremiumOn };
 import { releaseCost, FACILITY_MIN_ASSETS } from "./facility";
@@ -42,13 +42,10 @@ export interface LoanProduct {
   label: string;
   lender: string;      // the institution behind the sheet
   blurb: string;       // what this money is FOR, in one line
-  ltv: number;
-  spread: number;      // over the index
   floating: boolean;
   ioM: number;
   amortYears: number;
   termM: number;       // balloon
-  uwDscr: number;      // the coverage the desk underwrites to
   debtYield: number;   // minimum NOI ÷ loan proceeds — the post-2009 backstop
   points: number;      // origination fee, as a share of principal
   recourse: boolean;   // a personal guarantee, and a cheaper coupon for it
@@ -99,12 +96,22 @@ export interface LoanProduct {
 //
 // spread. Both are listed as separate lines because that is how a term sheet
 // arrives.
+//
+// NO SPREADS ON THIS TABLE (2026-11-11): each desk prices every loan off its
+// own costs and a competitive margin — pricing.ts liveSpread, debt.ts
+// productSpread — and nothing here says what money costs.
+//
+// [K: judgement, no source found for the table as a whole — each desk's
+// advance, IO, term, coverage and debt-yield floor are set by eye
+// against general term-sheet practice, not read off one published survey.
+// The 1.25x coverage test matches agency term sheets, but the rest is not
+// checked row by row.]
 export const PRODUCTS: LoanProduct[] = [
   {
     id: "harbor", label: "First Harbor Bank · 5 yr, 25-yr am", lender: "First Harbor Bank",
     blurb: "The hometown bank. Small checks, honest spreads, recourse — and they answer the phone in a crunch, for their friends.",
-    ltv: 0.68, spread: 1.55, floating: false, ioM: 12, amortYears: 25, termM: 60,
-    uwDscr: 1.25, debtYield: 0.09, points: 0.006, recourse: true, prepay: "stepdown", prepayM: 36,
+    floating: false, ioM: 12, amortYears: 25, termM: 60,
+    debtYield: 0.09, points: 0.006, recourse: true, prepay: "stepdown", prepayM: 36,
     // The loose ongoing covenant is the community bank's real product: they do
     // not re-appraise you every quarter, they watch the payment arrive. The
     // sizing tests above are unchanged — this is the leash, not the cheque.
@@ -145,33 +152,40 @@ export const PRODUCTS: LoanProduct[] = [
   {
     id: "savings", label: "Alden Savings & Trust · 7 yr, 30-yr am", lender: "Alden Savings & Trust",
     blurb: "The regional. Bigger checks, covenant-happy, recourse like every bank — and they tighten fast when the cycle turns.",
-    ltv: 0.72, spread: 1.70, floating: false, ioM: 24, amortYears: 30, termM: 84,
-    uwDscr: 1.25, debtYield: 0.085, points: 0.008, recourse: true, prepay: "stepdown", prepayM: 48,
+    floating: false, ioM: 24, amortYears: 30, termM: 84,
+    debtYield: 0.085, points: 0.008, recourse: true, prepay: "stepdown", prepayM: 48,
     minDSCR: 1.30, maxLTV: 0.85, minLoan: 2_500_000, maxLoan: 25_000_000,
   },
   {
     // the 25-year sheet: same desk, sharper rate, faster paydown
     id: "savings25", label: "Alden Savings & Trust · 7 yr, 25-yr am · −25bps", lender: "Alden Savings & Trust",
     blurb: "Faster paydown buys a sharper rate. Less cash flow, more equity, and the bank sleeps better than you do.",
-    ltv: 0.72, spread: 1.45, floating: false, ioM: 36, amortYears: 25, termM: 84,
-    uwDscr: 1.25, debtYield: 0.085, points: 0.008, recourse: true, prepay: "stepdown", prepayM: 48,
+    floating: false, ioM: 36, amortYears: 25, termM: 84,
+    debtYield: 0.085, points: 0.008, recourse: true, prepay: "stepdown", prepayM: 48,
     minDSCR: 1.30, maxLTV: 0.85, minLoan: 2_500_000, maxLoan: 25_000_000,
   },
   {
     id: "pelican", label: "Pelican Life Insurance · 15 yr, 30-yr am", lender: "Pelican Life Insurance",
     blurb: "Life-company money: the cheapest debt in town, for well-kept product only. Low leverage, long memory, brutal to leave early.",
-    ltv: 0.58, spread: 1.15, floating: false, ioM: 24, amortYears: 30, termM: 180,
-    uwDscr: 1.35, debtYield: 0.095, points: 0.008, recourse: false, prepay: "yieldmaint", prepayM: 144,
+    floating: false, ioM: 24, amortYears: 30, termM: 180,
+    debtYield: 0.095, points: 0.008, recourse: false, prepay: "yieldmaint", prepayM: 144,
     // WELL-KEPT, NOT NEW. Life-company money wants quality — a good building,
     // or a standard one kept up, at a quarter point more. "Good only" made
     // the desk furniture: 5% of a generated city's stock grades good.
-    minDSCR: 1.30, maxLTV: 0.80, minLoan: 4_000_000, minCondition: "standard",
+    // LOW LEVERAGE IS THE LIFE COMPANY'S WHOLE BOOK (2026-11-18). Its sheet
+    // read 0.80, so with desks lending to policy (#813) Pelican wrote 62-74%
+    // of value — a bank's leverage at an insurer's coupon. Life companies'
+    // new commercial mortgage commitments average ~55-62% loan-to-value
+    // (ACLI quarterly commercial mortgage commitment survey, 1990s-2020s
+    // range), with program maximums of 65-70% on the best paper [S~]. The
+    // ceiling the desk writes to is this less three points: 65%.
+    minDSCR: 1.30, maxLTV: 0.68, minLoan: 4_000_000, minCondition: "standard",
   },
   {
     id: "conduit", label: "Meridian Street conduit · 10 yr, 5 yr IO", lender: "Meridian Street Capital",
     blurb: "The CMBS desk. Sharp pricing on big loans, five interest-only years — and the window slams shut the day markets wobble.",
-    ltv: 0.75, spread: 1.90, floating: false, ioM: 60, amortYears: 30, termM: 120,
-    uwDscr: 1.20, debtYield: 0.08, points: 0.010, recourse: false, prepay: "yieldmaint", prepayM: 108,
+    floating: false, ioM: 60, amortYears: 30, termM: 120,
+    debtYield: 0.08, points: 0.010, recourse: false, prepay: "yieldmaint", prepayM: 108,
     minDSCR: 1.15, maxLTV: 0.85, minLoan: 10_000_000, window: true,
   },
   /**
@@ -181,28 +195,25 @@ export const PRODUCTS: LoanProduct[] = [
    * floating-rate programs for apartments. What the borrower buys is the
    * short index instead of the loan index — no term premium (see
    * Econ.shortIndex) — and the freedom to leave: bank floaters prepay at par.
-   * What they pay for it is the rate risk, which the desk prices in three real
-   * ways: the spread is wider than the same bank's fixed sheet (2.35 over the
-   * short index against 1.55 over the loan index at First Harbor; bank
-   * floating spreads ran 75-100bp over their fixed sheets through the 2010s),
-   * the loan is SIZED at the cap strike rather than today's coupon (every
-   * floating desk underwrites the stressed rate — see sizeRest), and the
-   * agency requires a cap at closing. Spreads are calibrated to those
-   * observed gaps, not to make floating win or lose: whether it pays is the
-   * path of the policy rate, which is the point of the choice.
+   * What they pay for it is the rate risk: the loan is SIZED at the cap
+   * strike rather than today's coupon (every floating desk underwrites the
+   * stressed rate — see sizeRest), and the agency requires a cap at closing.
+   * The spread is the desk's own cost, matched to the short rate (pricing.ts
+   * liveSpread): whether floating pays is the path of the policy rate, which
+   * is the point of the choice.
    */
   {
     id: "harborFloat", label: "First Harbor Bank · 5 yr floating, 25-yr am", lender: "First Harbor Bank",
     blurb: "The hometown bank's floater: the short index plus a spread, prepay at par, recourse. Cheaper when rates fall, dearer when they don't.",
-    ltv: 0.68, spread: 2.35, floating: true, ioM: 12, amortYears: 25, termM: 60,
-    uwDscr: 1.25, debtYield: 0.09, points: 0.006, recourse: true, prepay: "open", prepayM: 0,
+    floating: true, ioM: 12, amortYears: 25, termM: 60,
+    debtYield: 0.09, points: 0.006, recourse: true, prepay: "open", prepayM: 0,
     minDSCR: 1.15, maxLTV: 0.82, maxLoan: 6_000_000,
   },
   {
     id: "savingsFloat", label: "Alden Savings & Trust · 5 yr floating, 30-yr am", lender: "Alden Savings & Trust",
     blurb: "The regional's floater. Bigger checks off the short index, open to prepay, the same tight covenant — and the same rate risk.",
-    ltv: 0.70, spread: 2.45, floating: true, ioM: 24, amortYears: 30, termM: 60,
-    uwDscr: 1.25, debtYield: 0.085, points: 0.008, recourse: true, prepay: "open", prepayM: 0,
+    floating: true, ioM: 24, amortYears: 30, termM: 60,
+    debtYield: 0.085, points: 0.008, recourse: true, prepay: "open", prepayM: 0,
     minDSCR: 1.30, maxLTV: 0.85, minLoan: 2_500_000, maxLoan: 25_000_000,
   },
   {
@@ -213,8 +224,8 @@ export const PRODUCTS: LoanProduct[] = [
     // of the multifamily paper in 2009-10.
     id: "agencyArm", label: "Keystone agency ARM · 10 yr floating, apartments", lender: "Keystone Agency Finance",
     blurb: "Agency floating money for apartments only: non-recourse, ten years, a cap at closing, 1% to leave after year one.",
-    ltv: 0.75, spread: 2.10, floating: true, ioM: 12, amortYears: 30, termM: 120,
-    uwDscr: 1.25, debtYield: 0.075, points: 0.010, recourse: false, prepay: "stepdown", prepayM: 12,
+    floating: true, ioM: 12, amortYears: 30, termM: 120,
+    debtYield: 0.075, points: 0.010, recourse: false, prepay: "stepdown", prepayM: 12,
     minDSCR: 1.15, maxLTV: 0.85, minLoan: 1_000_000, classes: ["multifamily"],
   },
   {
@@ -223,8 +234,8 @@ export const PRODUCTS: LoanProduct[] = [
     // sized to coverage, yield maintenance to nearly the end.
     id: "agencyFixed", label: "Keystone agency fixed · 10 yr, 30-yr am, apartments", lender: "Keystone Agency Finance",
     blurb: "The agency's ten-year fixed loan for apartments: non-recourse, the cheapest long money a flats owner can get, and open through a crunch.",
-    ltv: 0.75, spread: 1.55, floating: false, ioM: 24, amortYears: 30, termM: 120,
-    uwDscr: 1.25, debtYield: 0.07, points: 0.010, recourse: false, prepay: "yieldmaint", prepayM: 114,
+    floating: false, ioM: 24, amortYears: 30, termM: 120,
+    debtYield: 0.07, points: 0.010, recourse: false, prepay: "yieldmaint", prepayM: 114,
     minDSCR: 1.15, maxLTV: 0.85, minLoan: 1_000_000, classes: ["multifamily"],
   },
   {
@@ -232,31 +243,33 @@ export const PRODUCTS: LoanProduct[] = [
     // term, the same appetite for well-kept buildings only.
     id: "ashford", label: "Ashford Life & Annuity · 10 yr, 30-yr am", lender: "Ashford Life & Annuity",
     blurb: "A second life company's money: long, fixed and cheap, for buildings that are kept up. A shade more leverage than Pelican, ten years instead of fifteen.",
-    ltv: 0.62, spread: 1.25, floating: false, ioM: 24, amortYears: 30, termM: 120,
-    uwDscr: 1.30, debtYield: 0.09, points: 0.008, recourse: false, prepay: "yieldmaint", prepayM: 108,
-    minDSCR: 1.25, maxLTV: 0.80, minLoan: 3_000_000, minCondition: "standard",
+    floating: false, ioM: 24, amortYears: 30, termM: 120,
+    debtYield: 0.09, points: 0.008, recourse: false, prepay: "yieldmaint", prepayM: 108,
+    // A shade more leverage than Pelican, still an insurer's: a 70% ceiling,
+    // the top of the life companies' program range (see Pelican) [S~].
+    minDSCR: 1.25, maxLTV: 0.73, minLoan: 3_000_000, minCondition: "standard",
   },
   {
     // The money-centre bank's balance-sheet loan: big tickets, non-recourse
     // for size, five years fixed. Its hold is the biggest any bank here has.
     id: "bowline", label: "Bowline National Bank · 5 yr, 30-yr am", lender: "Bowline National Bank",
     blurb: "The out-of-town money-centre bank: the biggest bank check in the city, non-recourse on size, priced off its own funding — and gone the week the money markets lock.",
-    ltv: 0.65, spread: 1.75, floating: false, ioM: 24, amortYears: 30, termM: 60,
-    uwDscr: 1.25, debtYield: 0.085, points: 0.0075, recourse: false, prepay: "stepdown", prepayM: 36,
+    floating: false, ioM: 24, amortYears: 30, termM: 60,
+    debtYield: 0.085, points: 0.0075, recourse: false, prepay: "stepdown", prepayM: 36,
     minDSCR: 1.20, maxLTV: 0.80, minLoan: 8_000_000, maxLoan: 120_000_000,
   },
   {
     id: "cordage", label: "Cordage Debt Partners · 3 yr, floating IO", lender: "Cordage Debt Partners",
     blurb: "The debt fund. They will lend on anything, at a price, in any market. The price is the point.",
-    ltv: 0.80, spread: 4.10, floating: true, ioM: 36, amortYears: 30, termM: 36,
-    uwDscr: 0.90, debtYield: 0.055, points: 0.020, recourse: false, prepay: "open", prepayM: 0,
+    floating: true, ioM: 36, amortYears: 30, termM: 36,
+    debtYield: 0.055, points: 0.020, recourse: false, prepay: "open", prepayM: 0,
     minDSCR: 0.90, maxLTV: 0.92, bridge: true,
   },
   {
     id: "mezz", label: "Cordage mezzanine · behind the senior", lender: "Cordage Debt Partners",
     blurb: "Stacks to 85%. The coupon is why nobody does this twice.",
-    ltv: 0.85, spread: 8.00, floating: false, ioM: 120, amortYears: 30, termM: 84,
-    uwDscr: 1.05, debtYield: 0.055, points: 0.025, recourse: false, prepay: "stepdown", prepayM: 48,
+    floating: false, ioM: 120, amortYears: 30, termM: 84,
+    debtYield: 0.055, points: 0.025, recourse: false, prepay: "stepdown", prepayM: 48,
     mezz: true, minDSCR: 1.00, maxLTV: 0.95,
   },
   {
@@ -264,8 +277,8 @@ export const PRODUCTS: LoanProduct[] = [
     // short, recourse — the hometown bank doing a favor it expects returned.
     id: "land", label: "First Harbor land loan · 3 yr, recourse", lender: "First Harbor Bank",
     blurb: "The only money that will look at dirt. Half the price, and you sign for it.",
-    ltv: 0.50, spread: 3.60, floating: true, ioM: 36, amortYears: 30, termM: 36,
-    uwDscr: 0, debtYield: 0, points: 0.015, recourse: true, prepay: "open", prepayM: 0,
+    floating: true, ioM: 36, amortYears: 30, termM: 36,
+    debtYield: 0, points: 0.015, recourse: true, prepay: "open", prepayM: 0,
     minDSCR: 0, maxLTV: 0.70,
   },
   {
@@ -273,8 +286,8 @@ export const PRODUCTS: LoanProduct[] = [
     // hometown bank, a shorter leash, and it wants to fund the building too.
     id: "tideLand", label: "Tidewater land & development loan · 2 yr, recourse", lender: "Tidewater Community Bank",
     blurb: "Further on dirt than anyone else in town, and cheaper than it should be. They want the construction loan next.",
-    ltv: 0.60, spread: 3.20, floating: true, ioM: 24, amortYears: 30, termM: 24,
-    uwDscr: 0, debtYield: 0, points: 0.012, recourse: true, prepay: "open", prepayM: 0,
+    floating: true, ioM: 24, amortYears: 30, termM: 24,
+    debtYield: 0, points: 0.012, recourse: true, prepay: "open", prepayM: 0,
     minDSCR: 0, maxLTV: 0.75,
   },
 ];
@@ -416,6 +429,9 @@ export function windowOpen(s: GameState, p: LoanProduct): boolean {
  * points of file barely move the quote and the last twenty move it a lot — a
  * borrower who has closed twice is not a relationship, and a borrower who has
  * closed eleven times and never missed a payment is.
+ *
+ * [K: judgement, no source found — the caps by desk are set by eye; the
+ * relationship-lending literature measures a discount, not these shares.]
  */
 const REL_MAX: Record<string, number> = { bank: 0.40, life: 0.30, fund: 0.25, conduit: 0 };
 export function lenderRelOf(s: GameState, lender: string): number {
@@ -477,11 +493,51 @@ export function singleNameCap(kind: string | undefined): number {
   return kind === "bank" ? 0.12 : kind === "life" ? 0.30 : kind === "conduit" ? 0.30 : 0.35;
 }
 
+/**
+ * THE MOST ONE DESK MAY HOLD AGAINST ONE BORROWER, in dollars — every loan,
+ * the mortgages, the line and the construction loans together.
+ *
+ * A BANK'S LIMIT IS ITS CAPITAL'S, NOT ITS BOOK'S (2026-11-06). The legal
+ * lending limit (12 CFR 32.3(a)(1), and the state rules modelled on it) is
+ * 15% of the bank's capital and surplus to one borrower; the further 10% of
+ * 32.3(a)(2) needs readily marketable collateral, which real estate is not.
+ * The limit had been 12% of the BOOK: at an 11% capital ratio that is more
+ * than a whole bank's capital on one name, and measured on main (seed 11)
+ * the hometown bank held 0.6-1.4x its capital against single firms from year
+ * three, until one firm's failure wrote off $262M against $149M of capital.
+ * A bank whose capital is impaired has no limit left, which is the law too.
+ * The national books (life, conduit, fund) are limited against balance
+ * sheets the game does not carry, so theirs stays a share of their slice.
+ *
+ * [S: 12 U.S.C. 84(a)(1) and 12 CFR 32.3(a) — loans to one borrower "may not
+ * exceed 15 percent of the bank's or savings association's capital and
+ * surplus", plus 10 percent more only if fully secured by readily marketable
+ * collateral.]
+ */
+export const LEGAL_LENDING_LIMIT = 0.15;
+/**
+ * A BANK IS MORE THAN ITS CRE BOOK (2026-11-12). A desk's `capital` here is
+ * what stands behind its commercial real estate loans in this town; the
+ * legal limit is on the WHOLE bank's capital, which also stands behind its
+ * home mortgages, business loans and securities. Community banks held
+ * nonfarm nonresidential ($571.4B) and construction ($156.2B) loans against
+ * $2,698.3B of total assets at the end of 2023 — 27% (FDIC Quarterly 2024
+ * vol. 18 no. 1, Table II-B) [S]. The whole bank's capital is the CRE desk's
+ * over that share. Read on its CRE capital the hometown bank's limit was
+ * ~$0.9M a borrower, and its CRE book 900% of its capital, three times the
+ * 300% at which the 2006 interagency guidance flags a concentration; read
+ * on the whole bank, ~245%. (Losses still fall on the CRE desk's capital.)
+ */
+export const BANK_CRE_SHARE = 0.27;
+export function nameLimit(l: { kind?: string; book: number; capital: number }, book = l.book): number {
+  if (l.kind === "bank") return LEGAL_LENDING_LIMIT * Math.max(0, l.capital) / BANK_CRE_SHARE;
+  return Math.max(0, book) * singleNameCap(l.kind);
+}
+
 export function concentrationRoom(s: GameState, p: LoanProduct, klass?: string): { mult: number; capRoom: number; why?: string } {
   const l = lenderByNameLocal(s, p.lender);
   if (!l || l.book <= 0) return { mult: 1, capRoom: Infinity };
-  const nameCap = singleNameCap(l.kind);
-  const capRoom = Math.max(0, l.book * nameCap - l.yours);
+  const capRoom = Math.max(0, nameLimit(l) - l.yours);
   let mult = 1; let why: string | undefined;
   // The class test is a local balance sheet's: a national lender's property-
   // type allocation is set across the country, where this town's office
@@ -527,23 +583,27 @@ function lenderByNameLocal(s: GameState, name: string) {
  * the product's terms saw a 4.10 bridge spread on a loan written at 2.10.
  * They are named for what they are now. Not on any desk's sheet — `PRODUCTS`
  * is what a borrower can ask for — but `productById` knows them.
+ *
+ * [K: judgement, no source found — terms set by eye, as for PRODUCTS.]
  */
 export const INTERNAL_PRODUCTS: LoanProduct[] = [
   {
     id: "miniperm", label: "Construction takeout · 5 yr mini-perm", lender: CONSTRUCTION_LENDER,
     blurb: "The construction lender rolling its own facility at delivery: interest-only while it fills, five years to stabilise it.",
-    ltv: 0.75, spread: 2.1, floating: true, ioM: 24, amortYears: 30, termM: 60,
-    uwDscr: 1.05, debtYield: 0.07, points: 0, recourse: false, prepay: "open", prepayM: 0,
+    floating: true, ioM: 24, amortYears: 30, termM: 60,
+    debtYield: 0.07, points: 0, recourse: false, prepay: "open", prepayM: 0,
     minDSCR: 1.05, maxLTV: 0.9,
   },
   {
     id: "private", label: "Private paper · a firm on the street", lender: "Cordage Debt Partners",
     blurb: "Short, expensive, interest-only money from a named firm — the cheque that clears when the desks will not.",
-    ltv: 0.65, spread: 6.0, floating: true, ioM: 18, amortYears: 30, termM: 18,
-    uwDscr: 0.9, debtYield: 0.05, points: 0.02, recourse: false, prepay: "open", prepayM: 0,
+    floating: true, ioM: 18, amortYears: 30, termM: 18,
+    debtYield: 0.05, points: 0.02, recourse: false, prepay: "open", prepayM: 0,
     minDSCR: 0.9, maxLTV: 0.92, bridge: true,
   },
 ];
+/** Paper underwritten on a building's income — everything but the land loans, which lend on the dirt. */
+export const onIncome = (p: LoanProduct): boolean => lossClassOf(p) !== "land";
 export const productById = (id: string): LoanProduct =>
   PRODUCTS.find((p) => p.id === id) ?? INTERNAL_PRODUCTS.find((p) => p.id === id) ?? PRODUCTS[0];
 
@@ -562,6 +622,14 @@ export function isPrivatePaper(l: { product: string; holder?: string }): boolean
  */
 export const loanLender = (l: { holder?: string; product: string }): string => l.holder ?? productById(l.product).lender;
 
+/**
+ * The cost of closing a refinancing, as a share of the balance, charged on
+ * top of the desk's points.
+ * [S~] All-in commercial closing costs run 2-6% of the loan (biz2credit,
+ * "Commercial refinance hidden costs"), of which origination is 0.25-5% and title
+ * about 0.5% (StackSource 2020, "Typical closing costs for a commercial
+ * mortgage"). Net of the points the desk already charges, about one point.
+ */
 export const REFI_FEE = 0.01;
 
 /**
@@ -633,7 +701,11 @@ export function underwritingStandards(s: GameState): number {
   // recessions, measured by tools/bankplay.mjs). The Fed's loan-officer
   // survey reads near zero through an ordinary expansion and swings hard at
   // the turns, and that is the shape this now has.
-  const window = clampSigned((ci - 1.0) / 0.22);
+  // ...AND THE ORDINARY YEAR IS THE LENDERS' OWN DECADE (2026-11-11). Read
+  // against 1.0, a credit index that settled near 0.86 read "tight" in nearly
+  // every month: banks' advances sat at 55-60% with 2-3x coverage in
+  // ordinary years. Now the window is the index against its trailing mean.
+  const window = clampSigned((ci - (s.econ.creditIdxMean ?? 1.0)) / 0.22);
   // appetite runs 0-1.15: the whole street flush is +1, the street at 0.65 is −1
   const app = s.bankApp ?? 0.9;
   const balance = clampSigned((app - 0.90) / 0.25);
@@ -658,40 +730,14 @@ export function standardsWord(st: number): string {
 }
 
 /**
- * HOW FAR EACH DESK'S SHEET MOVES WITH STANDARDS, in points of advance,
- * up at +1 and down at −1. A life company barely moves — it was never the
- * marginal lender at the top and it does not have to retreat at the bottom.
- * The conduit and the banks are the marginal lenders, so they move most. Land
- * money is the first to go and the last to come back, which is why its band
- * is the widest of all.
- */
-const ADVANCE_BAND: Record<string, { up: number; down: number }> = {
-  harbor: { up: 0.05, down: 0.10 },
-  savings: { up: 0.06, down: 0.12 },
-  savings25: { up: 0.06, down: 0.12 },
-  pelican: { up: 0.03, down: 0.06 },
-  conduit: { up: 0.05, down: 0.12 },
-  cordage: { up: 0.05, down: 0.10 },
-  mezz: { up: 0.05, down: 0.10 },
-  land: { up: 0.10, down: 0.15 },
-  tideLand: { up: 0.10, down: 0.20 },
-};
-
-/**
- * PROPERTY TYPE MOVES THE SHEET. Apartments are the most financeable asset
- * there is — the agencies stand behind them and every bank knows a hundred
- * flats do not go dark at once — and they get five points over the sheet.
- * Warehouses two. Shops two under, because retail income is one tenant's
- * lease away from nothing. Offices are the sheet.
- */
-const CLASS_ADVANCE: Record<string, number> = { multifamily: 0.05, industrial: 0.02, office: 0, retail: -0.02 };
-
-/**
  * THE ENGINEER'S REPORT. A worn building closes with an immediate-repairs
  * holdback — the desk funds the loan and keeps back the cost of the work it
  * saw on the property condition assessment. Three points of advance is what
  * that comes to on an ordinary tired building; an obsolete one, the same, and
  * the life company will not look at either.
+ *
+ * [K: judgement, no source found — agency guides size a repair escrow off the
+ * property condition report's own estimate, not as a share of value.]
  */
 const REPAIRS_HOLDBACK = 0.03;
 
@@ -722,25 +768,341 @@ export function relAdvance(s: GameState, p: LoanProduct): number {
  * Clamped a hair under the covenant `maxLTV`: no desk writes a loan that is
  * in breach of its own covenant on the day it closes.
  */
+/**
+ * HOW FAR A DESK WILL ADVANCE ON INCOME PROPERTY, worked out by the desk
+ * (owner, 2026-11-11: "banks need to be simulated and compete without
+ * anything hard coded"). Not a sheet: the advance at which the loan's
+ * expected loss, a year, comes to the loss the desk is prepared to carry.
+ *
+ * The loss is the balloon's: value at maturity is lognormal off today's,
+ * drifting at the class's MEASURED drift and spreading at its MEASURED
+ * volatility (market.ts measurePropertyVol, the town's own tape; the drift
+ * is what a loan officer extrapolates). The desk loses what the balance is
+ * over what a foreclosure recovers, R times value (Merton 1974; the
+ * structural model of mortgage default, Kau, Keenan, Muller & Epperson
+ * 1987 / Titman & Torous 1989):
+ *
+ *   EL = L N(-d2) - R e^{mu T} N(-d1),  d1 = (ln(R/L) + (mu + sigma^2/2) T) / (sigma sqrt T)
+ *
+ * The budget is the industry's long-run income-property loss rate (PRIOR_EL,
+ * Fed/FDIC charge-offs) scaled by the desk's own appetite — a desk with
+ * capital to spare and a quiet watch list reaches further, a stretched one
+ * pulls in — so desks with different books quote different advances on the
+ * same building and compete on it. A volatile or falling market cuts every
+ * desk's advance; a calm rising one lifts it. Null where the tape is too
+ * short to measure (the town's first two years): the desk's sheet stands.
+ */
+/** US commercial property price volatility, annual, ~10% (transaction-based indices: MIT/NCREIF TBI, RCA/Green Street CPPI, 1985-2020) [S~]. */
+const NATIONAL_PROPERTY_VOL = 0.10;
+/** The national record counts as ten years of local evidence [K: a credibility weight]. */
+const PRIOR_YEARS = 10;
+const RECOVERY = 0.85;   // [K: value net of foreclosure, carry and resale costs; liquidation costs of ~10-20% of value are the range the CMBS loss-severity literature reports]
+/**
+ * A DESK'S VIEW OF HOW A CLASS'S VALUES MOVE: volatility and drift, a year,
+ * in logs. The local tape weighted by its years against the national record
+ * as ten years' worth of prior (a credibility weight); the drift is the
+ * measured one capped at expected inflation (an underwriter counts on no
+ * appreciation beyond inflation, but does believe a falling market). With no
+ * class named, or no tape for it yet, the national record alone.
+ */
+export function deskRiskView(s: GameState, klass?: string): { sigma: number; mu: number; local: boolean } {
+  const infl = Math.log(1 + (s.econ.nat?.inflExp ?? 0.02));
+  if (klass === "land") return landRiskView(s, infl);
+  const sig = klass ? (s.econ.landSigma as Record<string, number> | undefined)?.[klass] : undefined;
+  const drift = klass ? (s.econ.landDrift as Record<string, number> | undefined)?.[klass] : undefined;
+  if (!(sig !== undefined && sig > 0.005) || drift === undefined) return { sigma: assetVol(NATIONAL_PROPERTY_VOL), mu: infl, local: false };
+  const yrs = Math.min(10, (s.econ.history?.length ?? 0) / 12);
+  const w = yrs / (yrs + PRIOR_YEARS);
+  // THE DRIFT CARRIES THE SAME CREDIBILITY WEIGHT AS THE VOLATILITY
+  // (2026-11-12). It was the raw local mean: two years into a town whose
+  // opening caps re-priced from ~6% to ~9%, the tape read multifamily values
+  // falling 43% a year, every desk extrapolated that over the loan's whole
+  // term, and every income advance sat on the 20% floor (measured at month
+  // 24: all eleven income desks, both classes) — the owner's "5.14 DSCR at
+  // 34% LTV". Two years of one town is not a forecast; the national record
+  // (values keeping pace with inflation) is the prior, weighted exactly as
+  // the volatility's is. Still capped at inflation: an underwriter counts on
+  // no appreciation, but a long local fall does pull the drift down.
+  const muLocal = w * drift + (1 - w) * infl;
+  return { sigma: assetVol(Math.sqrt(w * sig * sig + (1 - w) * NATIONAL_PROPERTY_VOL * NATIONAL_PROPERTY_VOL)), mu: Math.min(muLocal, infl), local: true };
+}
+
+/**
+ * ONE BUILDING MOVES MORE THAN THE MARKET. A desk lends on a single asset,
+ * whose value carries its own risk — a tenant leaving, a roof, the block
+ * turning — on top of the index's. Structural models of commercial-mortgage
+ * default put a single property's value volatility near 15% a year (Titman &
+ * Torous 1989, J. Finance 44(2), calibrated on commercial mortgage pricing;
+ * the CMBS default literature uses 15-20%) against ~10% for the index, which
+ * leaves ~11% of building-specific risk, independent of the market's [S~].
+ */
+const IDIO_VOL = 0.112;
+const assetVol = (indexVol: number) => Math.sqrt(indexVol * indexVol + IDIO_VOL * IDIO_VOL);
+
+/**
+ * DIRT: the town's land index, read the same way — annual log changes over
+ * the last ten years, blended with the national record of land prices as ten
+ * years' prior. Land is the levered claim on what can be built, so it moves
+ * two to three times as hard as finished property: US land-price indices run
+ * an annual volatility of ~20% (Davis & Heathcote 2007, residential land
+ * 1975-2006; Nichols, Oliner & Mulhall 2013, commercial land 1990s-2012, which
+ * fell by half in 2007-10) [S~].
+ */
+const NATIONAL_LAND_VOL = 0.20;
+// SPEED (2026-11-12): read ~32,000 times a month and it changes only when a
+// month is added to the record. Remembered for the last record it read: the
+// same array, the same length, the same latest entry and land index, the same
+// inflation give the same answer.
+let landRiskMemo: { h: unknown; n: number; last: unknown; idx: number | undefined; infl: number; out: { sigma: number; mu: number; local: boolean } } | null = null;
+function landRiskView(s: GameState, infl: number): { sigma: number; mu: number; local: boolean } {
+  const h = s.econ.history ?? [];
+  const last = h[h.length - 1];
+  const M = landRiskMemo;
+  if (M && M.h === h && M.n === h.length && M.last === last && M.idx === last?.landIdx && M.infl === infl) return M.out;
+  const out = landRiskRead(h, infl);
+  landRiskMemo = { h, n: h.length, last, idx: last?.landIdx, infl, out };
+  return out;
+}
+function landRiskRead(h: NonNullable<GameState["econ"]["history"]>, infl: number): { sigma: number; mu: number; local: boolean } {
+  const xs: number[] = [];
+  for (let i = Math.max(12, h.length - 120); i < h.length; i++) {
+    const a = h[i - 12]?.landIdx, b = h[i]?.landIdx;
+    if (a && b && a > 0 && b > 0) xs.push(Math.log(b / a));
+  }
+  if (xs.length < 24) return { sigma: assetVol(NATIONAL_LAND_VOL), mu: infl, local: false };
+  const m = xs.reduce((x, y) => x + y, 0) / xs.length;
+  const sd = Math.sqrt(xs.reduce((x, y) => x + (y - m) * (y - m), 0) / Math.max(1, xs.length - 1));
+  const yrs = Math.min(10, xs.length / 12);
+  const w = yrs / (yrs + PRIOR_YEARS);
+  return { sigma: assetVol(Math.sqrt(w * sd * sd + (1 - w) * NATIONAL_LAND_VOL * NATIONAL_LAND_VOL)), mu: Math.min(m, infl), local: true };
+}
+
+/** Expected loss a year, as a share of the balance, on a loan at advance L held to a balloon in T years (Merton; see deskAdvance). */
+export function balloonEl(L: number, T: number, sigma: number, mu: number): number {
+  if (!(L > 0)) return 0;
+  const N = (x: number) => 0.5 * (1 + erf(x / Math.SQRT2));
+  const sd = sigma * Math.sqrt(T);
+  const d1 = (Math.log(RECOVERY / L) + (mu + sigma * sigma / 2) * T) / sd, d2 = d1 - sd;
+  return Math.max(0, (L * N(-d2) - RECOVERY * Math.exp(mu * T) * N(-d1)) / (L * T));
+}
+
+/**
+ * WHAT A LOAN LOSES OVER ITS LIFE, per dollar of value under it, at opening
+ * advance L — two ways a commercial mortgage goes bad, both off the desk's
+ * view of the building's value (lognormal, deskRiskView):
+ *
+ *   in the term   the borrower stops paying when the building no longer
+ *                 covers its debt service AND the equity is gone — the
+ *                 "double trigger" (Goldberg & Capone 2002; Kau et al. 1987).
+ *                 With value proportional to income, income falls short of
+ *                 debt service once value is under L × k / y (k the mortgage
+ *                 constant, y the cap rate), so the default barrier is
+ *                 L × min(1, k/y): the first time value touches it (Black &
+ *                 Cox 1976 first passage), the desk forecloses and recovers
+ *                 R × the barrier on the balance then owed;
+ *   at the balloon  a loan that survives the term pays off out of value at
+ *                 maturity, or the desk takes R × that value (Merton 1974).
+ *
+ * The balloon balance is what amortisation has left of it. Land has no
+ * income, so it defaults as soon as it is under water. [M: the balloon leg
+ * is not conditioned on surviving the term, which overstates it slightly.]
+ */
+function lossOver(L: number, product: LoanProduct, v: { sigma: number; mu: number }, kOverY: number, left: number): number {
+  if (!(L > 0)) return 0;
+  const T = Math.max(1, product.termM / 12);
+  const N = (x: number) => 0.5 * (1 + erf(x / Math.SQRT2));
+  const bar = L * Math.min(1, kOverY);
+  const nu = v.mu - v.sigma * v.sigma / 2, sd = v.sigma * Math.sqrt(T);
+  const hit = bar > 0 && bar < 1
+    ? Math.min(1, N((Math.log(bar) - nu * T) / sd) + Math.pow(bar, 2 * nu / (v.sigma * v.sigma)) * N((Math.log(bar) + nu * T) / sd))
+    : bar >= 1 ? 1 : 0;
+  const owedMid = L * (1 + left) / 2;
+  const termLoss = Math.max(0, owedMid - RECOVERY * bar);
+  const Lb = L * left;
+  const balloonLoss = Lb * balloonEl(Lb, T, v.sigma, v.mu) * T;
+  return hit * termLoss + (1 - hit) * balloonLoss;
+}
+
+/** The desk's inputs for one loan: its view of the asset, the coverage barrier, the balance left at the balloon. */
+/** What the loss model may be told about one building: its own income yield (NOI ÷ value) and the coupon the loan is underwritten at. */
+export interface LossAt { yieldPct?: number; ratePct?: number }
+function lossInputs(s: GameState, product: LoanProduct, klass?: string, at: LossAt = {}) {
+  const land = lossClassOf(product) === "land";
+  const v = deskRiskView(s, land ? "land" : klass);
+  const coupon = at.ratePct ?? s.econ.indexRate + costFloor(deskPxOf(s, product.lender), "income");
+  const left = balloonLeft(product, coupon);
+  const k = product.termM <= product.ioM ? coupon / 100 : (12 * monthlyPayment(1, coupon, product.amortYears));
+  // The class's going-in cap rate today; with no class named, the town's average.
+  const caps = (s.econ.capRate ?? CAP_BASE) as Record<string, number>;
+  const capPct = at.yieldPct ?? (klass && caps[klass] ? caps[klass] : Object.values(caps).reduce((a, b) => a + b, 0) / Math.max(1, Object.values(caps).length));
+  const kOverY = land ? Infinity : k / Math.max(0.01, capPct / 100);
+  return { v, left, kOverY, k };
+}
+
+/** Expected loss a year, as a share of the tranche's balance, on paper from `attach` to `L` of value. */
+function trancheEl(s: GameState, product: LoanProduct, L: number, klass?: string, attach = 0, at: LossAt = {}): number {
+  const { v, left, kOverY } = lossInputs(s, product, klass, at);
+  const T = Math.max(1, product.termM / 12);
+  if (attach > 0 && L > attach) return (lossOver(L, product, v, kOverY, left) - lossOver(attach, product, v, kOverY, left)) / ((L - attach) * T);
+  return L > 0 ? lossOver(L, product, v, kOverY, left) / (L * T) : 0;
+}
+
+/**
+ * THE EXPECTED LOSS ON THIS LOAN, a year, in points — what the desk prices:
+ * the loss model at the loan's own advance, term and schedule (lossOver),
+ * scaled by the desk's own loss experience against the industry's (px.el /
+ * PRIOR_EL: a desk that has just written off a year of loans believes the
+ * model less kindly). A junior piece takes the slice of the loss between
+ * where it attaches and where it detaches. Land and the fund's bridge paper
+ * price off the desk's own experience on the class (a business plan, not a
+ * rent roll, is what a bridge loan is lending against).
+ */
+export function loanEl(s: GameState, product: LoanProduct, ltv: number, klass?: string, attach = 0): number | undefined {
+  const cls = lossClassOf(product);
+  if (cls === "land" || (cls === "junior" && !product.mezz)) return undefined;
+  const px = deskPxOf(s, product.lender);
+  const exp = Math.max(0.25, (px.el[cls === "junior" ? "income" : cls] ?? PRIOR_EL.income) / PRIOR_EL.income);
+  return 100 * exp * trancheEl(s, product, ltv, klass, attach);
+}
+
+/** The share of the opening balance still owed at the balloon: interest-only months, then the schedule. */
+export function balloonLeft(p: LoanProduct, ratePct: number): number {
+  const k = Math.max(0, p.termM - p.ioM), n = Math.max(1, p.amortYears * 12);
+  const i = Math.max(1e-6, ratePct / 1200);
+  if (k <= 0) return 1;
+  return Math.max(0, (Math.pow(1 + i, n) - Math.pow(1 + i, Math.min(n, k))) / (Math.pow(1 + i, n) - 1));
+}
+
+/**
+ * WHAT THIS DESK CHARGES FOR THIS LOAN TODAY, over the benchmark it is
+ * written on: pricing.ts liveSpread with the loan's own expected loss. `ltv`
+ * defaults to what the desk would advance on the class today.
+ */
+export function productSpread(s: GameState, product: LoanProduct, opts: { ltv?: number; klass?: string; ease?: number; attach?: number } = {}): number {
+  const ltv = opts.ltv ?? statedLtv(s, product, opts.klass, undefined, true).ltv;
+  return liveSpread(deskPxOf(s, product.lender), lossClassOf(product), opts.ease ?? 1, loanEl(s, product, ltv, opts.klass, opts.attach));
+}
+
+/**
+ * HOW FAR THIS DESK WILL ADVANCE ON THIS PAPER: the advance at which the
+ * loan's expected loss, a year, meets the desk's loss budget — the industry's
+ * long-run loss rate on that kind of loan (PRIOR_EL: income property, land,
+ * junior) scaled by the desk's own appetite. The same balloon model for every
+ * kind of paper, on the risk it actually carries:
+ *
+ *   senior income   the class's value, at the balance left at the balloon;
+ *   land            the town's land index (deskRiskView "land");
+ *   bridge          the building's value, on the fund's junior budget — a
+ *                   desk that budgets four times the loss reaches further;
+ *   mezzanine       the slice between the senior (`attach`) and the top of
+ *                   the stack: the stack top whose slice loses the budget.
+ *
+ * With no local tape the national record stands in (deskRiskView), so no
+ * desk ever falls back on a rate card.
+ */
+/**
+ * A DESK LENDS AS FAR AS THE LOAN STILL EARNS ITS KEEP (2026-11-12). Pricing
+ * already charges each loan its own expected loss (pricing.ts liveSpread:
+ * funding + this loan's loss + running cost + capital + rationing + the
+ * competitive margin), so the limit is the marginal loan: the advance at
+ * which this loan's priced loss uses up all the room the desk's going price
+ * leaves over its full cost — its book's loss allowance plus its competitive
+ * margin (px.el + px.chase). Past it the desk would be lending below the
+ * return its own capital asks. Priced loss is the model's loss scaled by the
+ * desk's own experience against the industry's (exp, as loanEl prices it), so
+ * a desk that has just written off a year of loans believes the model less
+ * kindly and pulls in; a desk short of capital pulls in by its appetite.
+ *
+ * This replaced a budget of twice the industry's average loss (a [K]
+ * multiplier, MARGINAL_EL_MULT), which held every bank at 53-70% even on a
+ * building covering its debt 2.5 times — where desks write to their policy
+ * ceiling (75-80%) in good credit (owner's market read). Regulation and
+ * policy are the ceiling above it (product.maxLTV, statedLtv).
+ */
+export function deskAdvance(s: GameState, product: LoanProduct, klass?: string, attach = 0, at: LossAt = {}): number {
+  const cls = lossClassOf(product);
+  const px = deskPxOf(s, product.lender);
+  const own = px.el[cls] ?? PRIOR_EL[cls];
+  const exp = Math.max(0.25, own / PRIOR_EL[cls]);
+  const appetite = Math.max(0.2, lenderAppetite(s, product.lender));
+  // SPEED (2026-11-12): the search below reads only these numbers, so its
+  // answer is remembered on exactly them. It ran ~28,000 times a month for
+  // ~1,200 distinct inputs — 38% of a late month — with the loss inputs
+  // (the desk's risk view, the balloon) recomputed at every one of its 40 steps.
+  const { v, left, kOverY } = lossInputs(s, product, klass, at);
+  const T = Math.max(1, product.termM / 12);
+  // THE LOSS A DESK PLANS FOR IS THE LOSS AT ITS OWN POLICY LIMIT
+  // (2026-11-18). The budget was the class's AVERAGE loss rate (own + chase),
+  // and the marginal loan was held to it — but each loan is already priced
+  // for its own expected loss at its own advance (productSpread → loanEl →
+  // liveSpread), so a loan past the average still pays for its risk; holding
+  // it to the average counted that risk twice. Every bank opened lending
+  // 49-72% on office whatever the income (Alden Savings: 45% of price on flats
+  // covering their debt 1.99x, bound by "credit"), where a bank in good
+  // credit writes to its policy ceiling and lets coverage, debt yield and
+  // value bind. The budget is now the model's loss on the reference loan —
+  // the class's own building at the sheet's policy ceiling (the class's cap,
+  // not this building's yield) — so in an ordinary market a desk with an
+  // ordinary record lends to policy; it lends less where the building is
+  // riskier than the class (thin coverage reads a higher loss at every
+  // advance), where its own losses run over the industry's (exp), and where
+  // it is short of capital, margin or deposits (appetite).
+  const policy = Math.min(0.99, Math.max(attach + 0.02, product.maxLTV - 0.03));
+  // ...in an ORDINARY market: the national record's volatility and drift
+  // (deskRiskView's prior), so a town that moves more than the nation reads a
+  // higher loss than the reference at every advance and is lent less, as
+  // desks do in a volatile market.
+  const ref = lossInputs(s, product, klass, {});
+  const refV = { sigma: assetVol(NATIONAL_PROPERTY_VOL), mu: Math.log(1 + (s.econ.nat?.inflExp ?? 0.02)), local: false };
+  const refEl = attach > 0 && policy > attach
+    ? (lossOver(policy, product, refV, ref.kOverY, ref.left) - lossOver(attach, product, refV, ref.kOverY, ref.left)) / ((policy - attach) * T)
+    : lossOver(policy, product, refV, ref.kOverY, ref.left) / (policy * T);
+  const budget = ((refEl + Math.max(0, px.chase) / 100) / exp) * appetite;
+  const key = `${product.termM}|${attach}|${budget}|${v.sigma}|${v.mu}|${kOverY}|${left}`;
+  const hit = deskAdvanceMemo.get(key);
+  if (hit !== undefined) return hit;
+  const lo0 = attach > 0 ? lossOver(attach, product, v, kOverY, left) : 0;
+  // trancheEl, with its inputs computed once
+  const el = (L: number) => attach > 0 && L > attach
+    ? (lossOver(L, product, v, kOverY, left) - lo0) / ((L - attach) * T)
+    : L > 0 ? lossOver(L, product, v, kOverY, left) / (L * T) : 0;
+  let lo = Math.max(0.2, attach + 0.01), hi = 0.99;
+  if (!(lo >= hi || el(lo) > budget)) {
+    for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (el(m) < budget) lo = m; else hi = m; }
+  }
+  if (deskAdvanceMemo.size > 20_000) deskAdvanceMemo.clear();
+  deskAdvanceMemo.set(key, lo);
+  return lo;
+}
+const deskAdvanceMemo = new Map<string, number>();
+/** Abramowitz & Stegun 7.1.26 (max error 1.5e-7) [M]. */
+function erf(x: number): number {
+  const t = 1 / (1 + 0.3275911 * Math.abs(x));
+  const y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x);
+  return x >= 0 ? y : -y;
+}
+
 export function statedLtv(
-  s: GameState, product: LoanProduct, klass?: string, condition?: string, street = false, ease = 1,
-): { ltv: number; why: string[] } {
-  const st = underwritingStandards(s);
-  const band = ADVANCE_BAND[product.id] ?? { up: 0.05, down: 0.10 };
-  // `ease` is the hometown bank cutting a friend slack in a crunch: half the
-  // retreat, none of the stretch — see crunchEase in quote.
-  const cyc = st >= 0 ? st * band.up : st * band.down * ease;
-  const cls = klass && klass !== "land" && product.uwDscr > 0 ? (CLASS_ADVANCE[klass] ?? 0) : 0;
-  const worn = product.uwDscr > 0 && (condition === "worn" || condition === "obsolete") ? -REPAIRS_HOLDBACK : 0;
+  s: GameState, product: LoanProduct, klass?: string, condition?: string, street = false, attach = 0, at: LossAt = {}, over = 1,
+): { ltv: number; why: string[]; solved?: boolean } {
+  // THE DESK'S OWN ADVANCE (deskAdvance), on every kind of paper — on the
+  // building's own income yield when the quote has one (`at`). `over` is the
+  // appraisal over the basis the advance is quoted on (quote): the model
+  // lends against the appraisal, so its advance on a basis under it is that
+  // much more of the basis, up to the desk's policy ceiling.
+  const model = deskAdvance(s, product, klass, attach, at);
+  const own = model * Math.max(1, over);
+  const income = onIncome(product);
+  const worn = income && (condition === "worn" || condition === "obsolete") ? -REPAIRS_HOLDBACK : 0;
   const rel = street ? 0 : relAdvance(s, product);
-  const ltv = Math.max(0.20, Math.min(product.maxLTV - 0.03, product.ltv + cyc + cls + worn + rel));
-  const pts = (x: number) => `${x > 0 ? "+" : "−"}${Math.abs(Math.round(x * 100))}`;
-  const why: string[] = [`their ${Math.round(product.ltv * 100)}% sheet`];
-  if (Math.abs(cyc) >= 0.005) why.push(`${pts(cyc)} with standards ${standardsWord(st)}`);
-  if (cls) why.push(`${pts(cls)} for ${klass}`);
-  if (worn) why.push(`${pts(worn)} held back for the repairs on the engineer's report`);
-  if (rel >= 0.005) why.push(`${pts(rel)} for your file with them`);
-  return { ltv: +ltv.toFixed(4), why };
+  const ltv = Math.max(0.20, Math.min(product.maxLTV - 0.03, own + worn + rel));
+  const on = lossClassOf(product) === "land" ? "dirt" : klass ?? "property";
+  const why = [product.mezz ? `their own risk model: the stack to ${Math.round(model * 100)}% on ${on} here`
+    : `their own risk model: ${Math.round(model * 100)}% on ${on} here`];
+  if (over > 1.005 && own + worn + rel > product.maxLTV - 0.03) why.push(`that is of the appraisal, ${Math.round((over - 1) * 100)}% over the basis they lend on, so their policy ceiling of ${Math.round((product.maxLTV - 0.03) * 100)}% of the basis is what binds`);
+  if (worn) why.push(`−${Math.round(-worn * 100)} held back for the repairs on the engineer's report`);
+  if (rel >= 0.005) why.push(`+${Math.round(rel * 100)} for your file with them`);
+  return { ltv: +ltv.toFixed(4), why, solved: true };
 }
 
 /**
@@ -763,9 +1125,9 @@ export function statedLtv(
  * market would otherwise write.
  */
 export function streetRefiProceeds(
-  s: GameState, value: number, noiYr: number, maxLtv: number, stab?: StabView,
-): { principal: number; binding: string; lender: string } {
-  let best = 0, binding = "advance rate", lender = "";
+  s: GameState, value: number, noiYr: number, maxLtv: number, stab?: StabView, only?: string[],
+): { principal: number; binding: string; lender: string; ratePct: number; product?: string } {
+  let best = 0, binding = "advance rate", lender = "", ratePct = 0, product: string | undefined;
   // WHICH DESKS EVEN LOOK AT IT. The three income desks — the regional, the
   // hometown bank, then hard money — walk any building. A SITE has no income,
   // so all three size it at zero on coverage, and the only money in this town
@@ -777,7 +1139,7 @@ export function streetRefiProceeds(
   // street used to call quote() without it, so a lease-up sized to nearly
   // nothing on in-place income while the player could finance the plan — an
   // asymmetry in the player's favour that nobody asked for.
-  const desks = noiYr > 0 ? ["savings", "harbor", "cordage"] : ["land"];
+  const desks = noiYr > 0 ? (only ?? ["savings", "harbor", "cordage"]) : ["land"];
   for (const p of desks.map(productById)) {
     if (!windowOpen(s, p)) continue;
     const q = quote(s, p, value, noiYr, undefined, true, p.bridge ? stab : undefined);
@@ -786,18 +1148,31 @@ export function streetRefiProceeds(
       best = pr;
       binding = pr < q.principal ? "their own covenant"
         : q.stabConstrained ? "stab"
-        : q.dyConstrained ? "debt yield" : q.dscrConstrained ? "coverage" : "advance rate";
+        : q.dyConstrained ? "debt yield" : q.modelConstrained ? "risk model" : q.dscrConstrained ? "coverage" : "advance rate";
       lender = p.lender;
+      ratePct = q.ratePct;
+      product = p.id;
     }
   }
-  return { principal: Math.round(Math.max(0, best)), binding, lender };
+  return { principal: Math.round(Math.max(0, best)), binding, lender, ratePct, product };
+}
+
+/**
+ * WHAT A DESK CHARGES A BORROWER WHO IS NOT YOU FOR A LOAN OF THIS SIZE: its
+ * coupon at `ltv` of the basis (the loss at that advance, loanEl, through its
+ * live spread). A buyer who borrows half the price pays for half the price's
+ * risk, not for the most the desk would have written (2026-11-18).
+ */
+export function streetRateAt(s: GameState, product: LoanProduct, ltv: number, klass?: string): number {
+  const bench = product.floating ? shortIndexOf(s.econ) : s.econ.indexRate;
+  return bankRatePct(bench, productSpread(s, product, { ltv: Math.max(0.05, ltv), klass }));
 }
 
 /** Whether this desk will look at you at all today. */
 export function productOpen(s: GameState, p: LoanProduct): boolean {
   if (sponsorStanding(s).institutional) return true;
   // hard money does not care about your history; it prices it
-  return p.id === "cordage" || p.id === "mezz" || p.uwDscr <= 0;   // land money lends on the dirt, not the file
+  return p.id === "cordage" || p.id === "mezz" || !onIncome(p);   // land money lends on the dirt, not the file
 }
 
 /**
@@ -885,7 +1260,7 @@ export function payOffLoan(
   if (!rec) return { s, err: "Unknown parcel." };
   { const why = consentFor(s, h, "debt"); if (why) return { s, err: why }; }
   if (next.facility?.bbls.includes(bbl)) {
-    return { s, err: "This deed is pledged to your facility. Release it there, or repay the facility — a mortgage payoff does not cut the crossed lien." };
+    return { s, err: "Pledged to your facility. Release it or repay the facility first." };
   }
   const senior = payOffDue(h.loan, next.month, next.econ);
   const mezz = h.mezz && h.mezz.balance > 0 ? payOffDue(h.mezz, next.month, next.econ) : null;
@@ -896,14 +1271,14 @@ export function payOffLoan(
     h.loan = null;
     if (h.mezz) h.mezz = null;
     if (next.workouts?.[bbl]) delete next.workouts[bbl];
-    return { s: next, msg: "Cleared — nothing was left on the note." };
+    return { s: next, msg: "Loan cleared; balance was zero." };
   }
   if (fundableNow(next, parcels) < due) {
     const short = due - fundableNow(next, parcels);
     return {
       s,
       err: penalty > 0
-        ? `Need $${due.toLocaleString()} to retire this ($${balance.toLocaleString()} balance + $${penalty.toLocaleString()} to break the paper) — short $${short.toLocaleString()}.`
+        ? `Need $${due.toLocaleString()} to retire this ($${balance.toLocaleString()} balance + $${penalty.toLocaleString()} prepayment) — short $${short.toLocaleString()}.`
         : `Need $${due.toLocaleString()} cash to retire this loan — short $${short.toLocaleString()}.`,
     };
   }
@@ -925,10 +1300,10 @@ export function payOffLoan(
     text: penalty > 0
       ? `Paid off ${addr}: $${balance.toLocaleString()} to ${lender}`
         + (mezz ? " and Cordage mezz" : "")
-        + ` plus $${penalty.toLocaleString()} to break the paper. The deed is free and clear.`
+        + ` plus $${penalty.toLocaleString()} prepayment penalty. Free and clear.`
       : `Paid off ${addr}: $${balance.toLocaleString()} to ${lender}`
         + (mezz ? " and Cordage mezz" : "")
-        + `. The deed is free and clear.`,
+        + `. Free and clear.`,
   });
   return {
     s: next,
@@ -960,22 +1335,28 @@ export function paydownLoan(
   { const why = consentFor(s, h0, "debt"); if (why) return { s, err: why }; }
   if (!resolveRec(parcels, s, bbl)) return { s, err: "Unknown parcel." };
   if (s.facility?.bbls.includes(bbl)) {
-    return { s, err: "This deed is pledged to your facility. Pay the facility down there — the mortgage is not what holds the lien." };
+    return { s, err: "Pledged to your facility. Pay down the facility instead." };
   }
   const amt = Math.round(amount);
   if (!Number.isFinite(amt) || amt <= 0) return { s, err: "Pay down a positive amount." };
   const bal = Math.round(h0.loan.balance);
-  if (amt >= bal) return { s, err: "That is the whole balance — use Pay off, which releases the lien." };
+  if (amt >= bal) return { s, err: "That is the full balance. Use Pay off." };
   const next = cloneState(s);
   const h = next.holdings[bbl]!;
   const loan = h.loan!;
   const penalty = prepayPenalty({ ...loan, balance: amt }, next.month, next.econ);
   const due = amt + penalty;
-  if (next.cash < due) {
-    return { s, err: `Need $${due.toLocaleString()} in cash${penalty > 0 ? ` ($${amt.toLocaleString()} + $${penalty.toLocaleString()} to prepay early)` : ""} — you have $${Math.max(0, Math.round(next.cash)).toLocaleString()}.` };
+  // CASH OR THE LINE (2026-11-10). A paydown is paid like any other cheque:
+  // operating cash first, then the revolver. Firms draw their lines to pay
+  // down term debt, and payoff, refinance and balloon gaps already fund this
+  // way. It took cash only, so a firm with $50K in the account and an open
+  // line was told it could not pay down a mortgage.
+  const room = fundableNow(next, parcels);
+  if (room < due) {
+    return { s, err: `Need $${due.toLocaleString()}${penalty > 0 ? ` ($${amt.toLocaleString()} + $${penalty.toLocaleString()} to prepay early)` : ""} — you have $${Math.max(0, Math.round(room)).toLocaleString()} in cash and on your line.` };
   }
-  const paid = fundCashNeed(next, parcels, due, { allowLoc: false });
-  if (paid < due) return { s, err: `Could not raise the $${due.toLocaleString()} from cash.` };
+  const paid = fundCashNeed(next, parcels, due);
+  if (paid < due) return { s, err: `Could not raise the $${due.toLocaleString()} from cash and the line.` };
   logBooks(next, "debtSvc", due, bbl);
   loan.balance = Math.max(0, loan.balance - amt);
   recastPayment(loan, next.month);
@@ -1029,6 +1410,8 @@ export interface Quote {
   principal: number;
   ratePct: number;
   dscrConstrained: boolean;
+  /** Of a coverage-bound quote, whether the desk's own loss model (deskAdvance on this building's yield) set the size rather than the DSCR test itself. */
+  modelConstrained?: boolean;
   dyConstrained: boolean;
   debtYield: number;
   concWhy?: string;
@@ -1050,6 +1433,10 @@ export interface Quote {
   /** The three sizing legs, in dollars, before min(). Instrumentation — the panel and the harness read these. */
   byLtv?: number;
   byDscr?: number;
+  /** The coverage leg alone: income over the payment at the desk's required DSCR (requiredDscr), before the risk model's cap. */
+  byCover?: number;
+  /** The coverage the loan closes at (sizeRest). */
+  uwDscr?: number;
   byDebtYield?: number;
 }
 
@@ -1092,15 +1479,33 @@ export function stabViewFor(
  * $20M building on a bank's balance sheet. Half the loan is the middle of
  * practice for a small sponsor; the cap grows as you do, which is the
  * mid-game the sponsor record never had a positive side to.
+ *
+ * Freddie Mac Small Balance Loan term sheets: guarantor net worth at least
+ * equal to the loan amount, with liquidity of 9 months' principal and
+ * interest — a multiple of 1.0 [S]. It read 2.0, which no source gave.
  */
+const GUARANTOR_NW_MULT = 1.0;
 export interface Guarantor { nw: number }
-const GUARANTOR_NW_MULT = 2.0;
 export function guarantorCap(g: Guarantor | undefined, p: LoanProduct): number {
   if (!g || !p.recourse) return Infinity;
   return Math.max(0, Math.round(g.nw * GUARANTOR_NW_MULT));
 }
 
-export function quote(s: GameState, product: LoanProduct, price: number, noiYr: number, klass?: string, street = false, stab?: StabView, condition?: string, guarantor?: Guarantor): Quote {
+export function quote(s: GameState, product: LoanProduct, price: number, noiYr: number, klass?: string, street = false, stab?: StabView, condition?: string, guarantor?: Guarantor, appraisal?: number): Quote {
+  // WHAT THE DESK WOULD RECOVER ON IS THE BUILDING, NOT THE PRICE (2026-11-13).
+  // `price` is the basis its policy advance is struck on — the lesser of cost
+  // and appraisal on a purchase or an unseasoned refinance (the supervisory
+  // loan-to-value definition, 12 CFR 34 Subpart D App. A) [S]. `appraisal` is
+  // what its appraiser says the building is worth, and that is what its loss
+  // model lends against: a building bought at a third of its value is not a
+  // riskier loan at 79% of the price than one bought at par at 26%. The model
+  // read the price as the value, so a cheap purchase covering its debt 4.5
+  // times sized at 64% of cost at the hometown bank (seed 11, month 1; the
+  // owner's worked example: $1M paid, $216K of income, ~$3M of value). Now
+  // the model's advance is on the appraisal, the policy ceiling on the basis,
+  // and the loan is the lesser.
+  const worth = Math.max(price, appraisal ?? 0);
+  const over = price > 0 ? worth / price : 1;
   // Capital availability moves the terms, not just the index. When the credit
   // window closes, spreads widen, advance rates come down and the desk
   // underwrites to a fatter coverage — all at once, which is what makes a
@@ -1125,15 +1530,32 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
   // the life company prices a standard building a quarter point over its good-building sheet
   const qualityAdd = product.minCondition === "standard" && condition === "standard" ? 0.25 : 0;
   // and a guarantor worth three times the paper is worth a tenth of a point on recourse paper
-  const strongName = !street && guarantor && product.recourse && guarantor.nw >= 3 * product.ltv * price ? 0.10 : 0;
+  const strongNameAt = (ltv: number) => !street && guarantor && product.recourse && guarantor.nw >= 3 * ltv * price ? 0.10 : 0;
   // Fixed paper prices off the loan index; floating off the short index.
   const bench = product.floating ? shortIndexOf(s.econ) : s.econ.indexRate;
-  const ratePct = deskRatePct(bench, product.spread, {
-    ci, app, ease: crunchEase, standingAdd: st.spreadAdd, rel, dealAdd: qualityAdd - strongName + lenderChase(s, product.lender),
+  // THE DESK'S OWN PRICE (pricing.ts liveSpread): its sheet, moved by its
+  // own funding, its own loss experience on this kind of loan, what a desk
+  // short of capital charges, and where it is pitching against its rivals.
+  // `app` still sizes the advance (advanceFactor) below; it prices through
+  // the rationing charge inside the live spread.
+  void app;
+  // THE SHEET TODAY, not the sheet on the brochure — see statedLtv. A desk
+  // that solved its own advance has its appetite in it already (deskAdvance).
+  // THE ADVANCE IS SIZED ON THIS BUILDING, NOT THE CLASS (2026-11-12). The
+  // sheet read the class's average cap rate, so a building covering its debt
+  // 2.5 times got the same advance as an average one — 60% where a desk
+  // today writes to its policy ceiling (75-80%) once coverage is not the
+  // constraint (owner's market read). The loss model already takes the
+  // building's own yield (lossInputs `at`); coverage sizing used it, the
+  // advance did not.
+  const ownYield = onIncome(product) && worth > 0 && noiYr > 0 ? { yieldPct: 100 * noiYr / worth } : {};
+  const sheet = statedLtv(s, product, klass, condition, street, 0, ownYield, over);
+  // Priced on the loss at the advance it writes (loanEl).
+  const ratePct = bankRatePct(bench, productSpread(s, product, { ltv: sheet.ltv, klass, ease: crunchEase }), {
+    standingAdd: st.spreadAdd, rel, dealAdd: qualityAdd - strongNameAt(sheet.ltv),
   });
-  const adv = advanceFactor(s, product.lender);
-  // THE SHEET TODAY, not the sheet on the brochure — see statedLtv.
-  const sheet = statedLtv(s, product, klass, condition, street, crunchEase);
+  // The desk's appetite is in its own advance already (deskAdvance's budget).
+  const adv = 1;
   const byLtv = Math.min(conc.capRoom,
     sheet.ltv * adv * (1 - st.advanceCut) * conc.mult * price);
   // WHAT "ADVANCE RATE" MEANS TODAY. The desk's stated advance is a number on
@@ -1187,7 +1609,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
     // in", and that is the whole defect: a quote with no reason is a dead
     // button. `holdCapped` carries the fact up to the panel.
     const hq: Quote = {
-      ...sizeRest(s, product, Math.min(byLtv, holdMax), price, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass),
+      ...sizeRest(s, product, Math.min(byLtv, holdMax), worth, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass, condition),
       concWhy: conc.why,
       holdCapped: true,
       advanceLtvToday,
@@ -1197,7 +1619,7 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
     };
     const gcap = street ? Infinity : guarantorCap(guarantor, product);
     return hq.principal > gcap
-      ? { ...hq, principal: Math.round(gcap), guarantorConstrained: true, guarantorWhy: `${product.lender} wants a guarantor worth half the loan — your balance sheet carries ${usdM(guarantor!.nw)}, so they will sign ${usdM(gcap)}` }
+      ? { ...hq, principal: Math.round(gcap), guarantorConstrained: true, guarantorWhy: `${product.lender} wants a guarantor worth at least the loan — your balance sheet carries ${usdM(guarantor!.nw)}, so they will sign ${usdM(gcap)}` }
       : hq;
   }
   if (!street && product.minLoan && byLtv < loanMin(s, product)) return { principal: 0, ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why };
@@ -1208,12 +1630,37 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
     const cap = street ? Infinity : guarantorCap(guarantor, product);
     if (!(q.principal > cap)) return q;
     return { ...q, principal: Math.round(cap), guarantorConstrained: true,
-      guarantorWhy: `${product.lender} wants a guarantor worth half the loan — your balance sheet carries ${usdM(guarantor!.nw)}, so they will sign ${usdM(cap)}` };
+      guarantorWhy: `${product.lender} wants a guarantor worth at least the loan — your balance sheet carries ${usdM(guarantor!.nw)}, so they will sign ${usdM(cap)}` };
   };
-  if (product.uwDscr <= 0) {
+  if (!onIncome(product)) {
     return withGuarantor({ principal: Math.max(0, Math.round(byLtv)), ratePct, dscrConstrained: false, dyConstrained: false, debtYield: 0, concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy });
   }
-  return withGuarantor({ ...sizeRest(s, product, byLtv, price, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass), concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy });
+  // PRICED ON THE LOAN IT WRITES (2026-11-18). The coupon was the loss at
+  // the sheet's advance whatever the loan came to, so a building that
+  // coverage held to 60% paid the coupon of a 76% loan — a desk charging for
+  // risk it was not taking. Each loan is priced on its own advance (the
+  // written principal over the basis): a lower coupon lets coverage carry a
+  // little more, which moves the advance, so the two are solved together
+  // (two passes settle it to a few basis points), and the final coupon is
+  // the one at the advance actually written.
+  let sized = sizeRest(s, product, byLtv, worth, noiYr, ratePct, tight, product.bridge ? stab : undefined, klass, condition);
+  const priceAt = (ltv: number) => bankRatePct(bench, productSpread(s, product, { ltv, klass, ease: crunchEase }), {
+    standingAdd: st.spreadAdd, rel, dealAdd: qualityAdd - strongNameAt(ltv),
+  });
+  for (let pass = 0; pass < 2 && price > 0; pass++) {
+    const at = sized.principal / price;
+    if (!(at > 0) || at >= sheet.ltv - 0.005) break;
+    const r = priceAt(at);
+    if (Math.abs(r - sized.ratePct) < 0.005) break;
+    const next = sizeRest(s, product, byLtv, worth, noiYr, r, tight, product.bridge ? stab : undefined, klass, condition);
+    const atNext = next.principal / price;
+    // the coupon at the advance this pass writes, never under it
+    const rFinal = atNext > at + 0.0005 ? priceAt(Math.min(sheet.ltv, atNext)) : r;
+    sized = rFinal > r + 0.0005
+      ? sizeRest(s, product, Math.min(byLtv, next.principal), worth, noiYr, rFinal, tight, product.bridge ? stab : undefined, klass, condition)
+      : next;
+  }
+  return withGuarantor({ ...sized, concWhy: conc.why, advanceLtvToday, advanceWhy, statedLtv: sheet.ltv, sheetWhy });
 }
 
 /**
@@ -1241,20 +1688,27 @@ export function quote(s: GameState, product: LoanProduct, price: number, noiYr: 
  * The as-is advance still caps it. A lender lends against the lesser of cost and
  * appraisal whatever the plan says — you cannot borrow the upside twice.
  */
-function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: number, noiYr: number, ratePct: number, tight: number, stab?: StabView, klass?: string) {
-  void price; void tight;
-  // THE COVERAGE TESTS MOVE WITH STANDARDS, in both directions and on the
-  // one variable. A shut window adds fifteen hundredths of coverage and a
-  // quarter to the debt-yield floor (1.25x → 1.40x, 9% → 11.25%: the 2009
-  // bank sheet); the top of the cycle takes seven hundredths off the
-  // coverage and a tenth off the floor (1.18x, 7.9%: the 2006 conduit
-  // sheet, and the reason a boom's loans are the ones that go wrong). These
-  // used to read `tight` (1 − creditIdx) on the way down and standards on
-  // the way up — two variables for one cycle.
+/**
+ * THE COVERAGE A DESK UNDERWRITES TO TODAY: its normal minimum (product.minDSCR)
+ * moved by the same underwriting standards that move its debt-yield floor —
+ * a quarter more when credit is shut, an eighth less when it is loose — and a
+ * tenth of a turn more on a worn or obsolete building, whose income a lender
+ * trusts less. Conduit underwriting ran ~1.2x in 2006-07 and ~1.4-1.5x in
+ * 2010-11 [S~: Trepp / Moody's CMBS underwritten-DSCR series]; Class B/C
+ * assets carry minimums ~0.05-0.15x above Class A on lender term sheets [S~].
+ */
+export function requiredDscr(s: GameState, product: LoanProduct, condition?: string): number {
   const st = underwritingStandards(s);
   const loose = Math.max(0, st), shut = Math.max(0, -st);
-  // DSCR gate: size the loan so underwriting NOI covers debt service
-  const maxAnnualDS = Math.max(0, noiYr) / (product.uwDscr + 0.15 * shut - 0.07 * loose);
+  const worn = condition === "worn" || condition === "obsolete" ? 0.10 : 0;
+  return Math.max(1, product.minDSCR * (1 + 0.25 * shut - 0.12 * loose) + worn);
+}
+
+function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: number, noiYr: number, ratePct: number, tight: number, stab?: StabView, klass?: string, condition?: string) {
+  void price; void tight;
+  // The debt-yield floor still moves with standards (below).
+  const st = underwritingStandards(s);
+  const loose = Math.max(0, st), shut = Math.max(0, -st);
   // A FLOATER IS SIZED AT THE STRESSED RATE. Every floating desk underwrites
   // coverage at the rate the loan could reach, not the one it starts at —
   // in practice the cap strike, which here is a point over the index at
@@ -1269,11 +1723,30 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
   const uwRate = product.floating
     ? Math.max(ratePct + 1.0, ratePct - shortIndexOf(s.econ) + s.econ.indexRate)
     : ratePct;
-  const i = uwRate / 100;
-  const byDscrIO = maxAnnualDS / i;
-  const qp = monthlyPayment(1, uwRate, product.amortYears) * 12; // annual DS per $1
-  const byDscrAmort = maxAnnualDS / qp;
-  const byDscr = product.ioM >= 12 ? Math.min(byDscrIO, byDscrAmort * 1.08) : byDscrAmort;
+  // COVERAGE IS THE DESK'S OWN LOSS MODEL ON THIS BUILDING'S INCOME
+  // (2026-11-11). Not a ratio off a sheet: the advance at which the loan's
+  // expected loss meets the desk's budget (deskAdvance), with the default
+  // barrier set by THIS building's yield and the coupon the loan is
+  // underwritten at — so a building yielding under its mortgage constant
+  // sizes small because it would default the first year its value slipped,
+  // and one yielding well over it sizes on value alone. The coverage the loan
+  // closes at is an outcome, reported as `uwDscr`.
+  //
+  // And a permanent loan is repaid out of the building's income: a desk does
+  // not write paper the rent roll cannot pay on the day it closes (the
+  // repayment-capacity test of the Interagency Guidelines for Real Estate
+  // Lending Policies, 12 CFR 34 Subpart D App. A) — coverage of at least one,
+  // a definition rather than a cushion; the cushion over it is the model's.
+  // Bridge money lends on the plan, not the rent roll, and is exempt.
+  const yieldPct = price > 0 ? 100 * Math.max(0, noiYr) / price : 0;
+  const kUw = product.termM <= product.ioM ? uwRate / 100 : 12 * monthlyPayment(1, uwRate, product.amortYears);
+  const byModel = noiYr > 0 && price > 0 ? deskAdvance(s, product, klass, 0, { yieldPct, ratePct: uwRate }) * price : 0;
+  // Coverage is sized AT THE LOAN'S OWN COVENANT (minDSCR): a desk does not
+  // write a loan that is in breach of the coverage test the day it closes. It
+  // sized to 1.00x and tested the covenant only afterwards — hidden while the
+  // advance was held low, exposed once desks lent to their ceilings.
+  const byCover = Math.max(0, noiYr) / Math.max(1e-6, kUw * requiredDscr(s, product, condition));
+  const byDscr = product.bridge ? byModel : Math.min(byModel, byCover);
   // DEBT YIELD. Coverage flatters a loan when rates are low and cap rates are
   // lower — you can cover 1.25x on a building yielding four points, and the
   // lender still has no equity underneath them. Since 2009 the desk also
@@ -1300,11 +1773,19 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
     // When the plan is what sized it, the in-place tests did not bind and
     // saying they did would send the borrower off to fix the wrong thing.
     dscrConstrained: !onPlan && byDscr < byLtv && byDscr <= byDebtYield,
+    // ...and which half of it: the desk's loss model on this building's own
+    // income, or the coverage test. A quote at 2.6x coverage labelled
+    // "coverage" (Pelican, seed 31337) sends a borrower to fix income that
+    // is not the problem (2026-11-18).
+    modelConstrained: !onPlan && byDscr < byLtv && byDscr <= byDebtYield && byModel < byCover,
     dyConstrained: !onPlan && byDebtYield < byLtv && byDebtYield < byDscr,
     stabConstrained: onPlan,
     debtYield: principal > 0 ? Math.max(0, noiYr) / principal : 0,
+    /** The coverage the loan closes at, at its underwriting coupon — an outcome of the sizing, not a sheet number. */
+    uwDscr: principal > 0 ? Math.max(0, noiYr) / (principal * kUw) : 0,
     byLtv: Math.round(byLtv),
     byDscr: Math.round(byDscr),
+    byCover: Math.round(byCover),
     byDebtYield: Math.round(byDebtYield),
   };
 }
@@ -1323,6 +1804,11 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
  * The upside it buys is bought at a price the engine already models — floating,
  * three years, interest-only, two points, and a balloon that lands whether or
  * not the building ever let.
+ *
+ * [S~] Lender guides cap CRE bridge loans at 70% of stabilised value (Private
+ * Lender Link, "Maximum LTV for CRE bridge loans", 2022; multifamily.loans),
+ * Arbor at 75%; 65-75% of as-is is the common quote (rets.ai, 2026). 0.65 is
+ * the conservative end of that range.
  */
 const STAB_LTV = 0.65;
 
@@ -1335,12 +1821,12 @@ const STAB_LTV = 0.65;
 // sizes without it writes a different coupon and principal than it quoted.
 export function originate(
   s: GameState, product: LoanProduct, price: number, noiYr: number, lev = 1,
-  condition?: string, klass?: string, stab?: StabView, guarantor?: Guarantor, spec?: number,
+  condition?: string, klass?: string, stab?: StabView, guarantor?: Guarantor, spec?: number, appraisal?: number,
 ): Loan | null {
   if (!productOpen(s, product)) return null;
   if (!windowOpen(s, product)) return null;
   if (!conditionOk(product, condition, spec)) return null;
-  const full = quote(s, product, price, noiYr, klass, false, stab, condition, guarantor);
+  const full = quote(s, product, price, noiYr, klass, false, stab, condition, guarantor, appraisal);
   const qd = { ...full, principal: Math.round(full.principal * Math.max(0, Math.min(1, lev))) };
   if (qd.principal < 100_000) return null;
   const pmt = scheduledPayment(qd.principal, qd.ratePct, product.ioM > 0, product.amortYears);
@@ -1371,12 +1857,15 @@ export function originate(
     // bare sheet spread dropped every one of those the month after closing:
     // a floater signed in a crunch fell a point or more the next month while
     // the fixed loan beside it stayed at the crunch price.
-    spread: product.floating ? +(qd.ratePct - shortIndexOf(s.econ)).toFixed(2) : product.spread,
+    spread: +(qd.ratePct - (product.floating ? shortIndexOf(s.econ) : s.econ.indexRate)).toFixed(2),
     ioUntilM: s.month + product.ioM,
     amortYears: product.amortYears,
     maturityM: s.month + product.termM,
     monthlyPmt: pmt,
-    minDSCR: product.minDSCR,
+    // The covenant is what the loan was underwritten to, never tighter than
+    // the desk's normal: a loan signed in loose credit is not in breach the
+    // month after it closes.
+    minDSCR: +Math.min(product.minDSCR, requiredDscr(s, product, condition)).toFixed(2),
     maxLTV: product.maxLTV,
     sweep: false,
     cleanQs: 0,
@@ -1394,9 +1883,30 @@ export function dscr(rec: ParcelRecord, s: GameState, h: Holding): number | null
   return ownedHoldingNoiYrFromRec(s, rec, h) / ds;
 }
 
+/**
+ * WHAT THE LENDER THINKS THE BUILDING IS WORTH. A covenant is tested against
+ * an appraisal, and a lender orders one a year, not every month; an appraiser
+ * anchors on last year's figure and the comps behind it, so the appraisal
+ * trails the market. Geltner (1993, "Estimating Market Values from Appraised
+ * Values without Assuming an Efficient Market", JRER) puts the weight an
+ * annual appraisal gives the current year's market value at about 0.4 [S~].
+ * Below the market in a rise, above it in a fall: one bad quarter no longer
+ * trips every LTV covenant at once.
+ */
+const APPRAISAL_ALPHA = 0.4;   // [S~] Geltner 1993, annual appraisal smoothing parameter
+export function lenderValue(s: GameState, rec: ParcelRecord, h: Holding): number {
+  return h.apprV ?? ownedHoldingValueFromRec(s, rec, h);
+}
+function reappraise(s: GameState, rec: ParcelRecord, h: Holding): void {
+  if (h.apprM !== undefined && s.month - h.apprM < 12) return;
+  const mark = ownedHoldingValueFromRec(s, rec, h);
+  h.apprV = Math.round(h.apprV === undefined ? mark : APPRAISAL_ALPHA * mark + (1 - APPRAISAL_ALPHA) * h.apprV);
+  h.apprM = s.month;
+}
+
 export function ltv(rec: ParcelRecord, s: GameState, h: Holding): number | null {
   if (!h.loan) return null;
-  const v = ownedHoldingValueFromRec(s, rec, h);
+  const v = lenderValue(s, rec, h);
   return v > 0 ? h.loan.balance / v : null;
 }
 
@@ -1416,11 +1926,17 @@ export function equityCureNeed(rec: ParcelRecord, s: GameState, h: Holding): num
   let target = loan.balance;
   if (d !== null && d < loan.minDSCR && d > 0) {
     target = Math.min(target, loan.balance * (d / loan.minDSCR));
-  } else if (d !== null && d <= 0) {
-    // No income against the test — cure is not a rounding error; demand a
-    // meaningful paydown so the desk has something to underwrite against.
-    target = Math.min(target, loan.balance * 0.88);
   }
+  // NO INCOME, NO COVERAGE CURE (2026-11-20). With nothing coming in there is
+  // no balance at which the rent roll covers the payment, so no paydown puts
+  // the coverage test back onside. This asked for 12% of the balance anyway
+  // ("a meaningful paydown"), and the monthly cure below took it again every
+  // month the building stayed empty: measured on a replay, a non-recourse
+  // loan paid from $1.74M to $0.81M in six months out of the firm's cash,
+  // with no choice offered, after its one tenant left. The coverage breach
+  // stands (the sweep, then the workout desk after two years); what the
+  // sponsor can be asked to cure with a cheque is the loan-to-value test
+  // below, which has an answer.
   if (l !== null && l > loan.maxLTV && value > 0) {
     target = Math.min(target, loan.maxLTV * value);
   }
@@ -1435,6 +1951,7 @@ export function tickLoan(
   const loan = h.loan;
   if (!loan || !rec) return 0;
   const q = s.month;
+  reappraise(s, rec, h);
 
   // AN ACCELERATED LOAN IS NOT SERVICED. Once the lender has filed, the whole
   // balance is due and nobody sends the monthly cheque any more — the meter
@@ -1457,7 +1974,7 @@ export function tickLoan(
   if (loan.floating ?? loan.product === "float") {
     if (loan.cap && q >= loan.cap.expiresM) {
       delete loan.cap;
-      s.news.unshift({ q, kind: "info", text: `The rate cap at ${rec.address} expired — you're floating naked again.` });
+      s.news.unshift({ q, kind: "info", text: `Rate cap expired · ${rec.address}. Loan floating unhedged.` });
     }
     const idx = loan.bench === "short" ? shortIndexOf(s.econ) : s.econ.indexRate;
     const effIndex = loan.cap ? Math.min(idx, loan.cap.strike) : idx;
@@ -1531,7 +2048,11 @@ export function tickLoan(
    * by the same factor and lands DSCR on its minimum; the LTV leg is
    * `maxLTV x value` by definition. Whichever binds, binds.
    */
-  if (breached && fundableNow(s, parcels, { allowLoc: false }) > 0) {
+  // ...AND IT IS A RIGHT, NOT AN OBLIGATION (2026-11-20): an owner who has
+  // told the firm not to cure by itself (`noAutoCure`, the Debt page) keeps
+  // the cash; the breach stands, the sweep and the two-year clock run, and
+  // the cheque is the owner's to write by hand (paydownLoan) or not at all.
+  if (breached && !s.noAutoCure && fundableNow(s, parcels, { allowLoc: false }) > 0) {
     const need = equityCureNeed(rec, s, h);
     // Cash only — sponsor cheque, not a line draw. Taken immediately so two
     // breached buildings in the same month cannot both spend the same dollar.
@@ -1550,8 +2071,7 @@ export function tickLoan(
         if (loan.sweep || (loan.breachMs ?? 0) > 0) {
           s.news.unshift({
             q, kind: "info",
-            text: `Covenant cured at ${rec.address} — ${pay >= 1e6 ? `${money(pay)}` : `$${Math.round(pay / 1000)}K`} of equity into the loan, and the test passes again. `
-              + `A sponsor with the money does not hand back a building over a technical default.`,
+            text: `Covenant cured at ${rec.address} — ${pay >= 1e6 ? `${money(pay)}` : `$${Math.round(pay / 1000)}K`} equity paydown; test passes.`,
           });
         }
         loan.sweep = false;
@@ -1566,7 +2086,7 @@ export function tickLoan(
     if (!loan.sweep) {
       s.news.unshift({
         q, kind: "warn",
-        text: `Covenant breach at ${rec.address} (${d !== null && d < loan.minDSCR ? `DSCR ${d.toFixed(2)}` : `LTV ${(100 * (l ?? 0)).toFixed(0)}%`}) — the lender trapped the cash flow.`,
+        text: `Covenant breach at ${rec.address} (${d !== null && d < loan.minDSCR ? `DSCR ${d.toFixed(2)}` : `LTV ${(100 * (l ?? 0)).toFixed(0)}%`}) — cash flow trapped.`,
       });
     }
     if (!loan.sweep) bumpLenderRel(s, loanLender(loan), -3);  // a tripped covenant sours the coffee
@@ -1589,10 +2109,10 @@ export function tickLoan(
       openWorkout(s, h.bbl, "covenant", cure);
       s.news.unshift({
         q, kind: "warn",
-        text: `Two years of broken covenants at ${rec.address} and no sign of a cure. `
-          + `${loanLender(loan)} has moved it to their workout desk — inject `
-          + `${cure >= 1e6 ? `${money(cure)}` : `$${Math.round(cure / 1000)}K`} of equity, ask them `
-          + `to restructure, or hand back the deed. They will not file while the note stays current.`,
+        text: `Workout · ${rec.address}: covenants broken for two years. `
+          + `${loanLender(loan)} options: inject `
+          + `${cure >= 1e6 ? `${money(cure)}` : `$${Math.round(cure / 1000)}K`} of equity, `
+          + `restructure, or hand back the deed. No filing while payments are current.`,
       });
     }
   } else if (loan.sweep) {
@@ -1601,7 +2121,7 @@ export function tickLoan(
     if (loan.cleanQs >= 2) {
       loan.sweep = false;
       loan.breachMs = 0;
-      s.news.unshift({ q, kind: "info", text: `Covenants cured at ${rec.address} — the sweep is off.` });
+      s.news.unshift({ q, kind: "info", text: `Covenants cured at ${rec.address}; cash sweep lifted.` });
     }
   }
   // sweep: surplus asset cash flow pays down principal instead of reaching you
@@ -1629,9 +2149,9 @@ export function tickLoan(
   if (short && (loan.arrearsMs ?? 0) < 3) {
     s.news.unshift({
       q, kind: "warn",
-      text: `${rec.address} did not cover its debt service and there is nothing left to make it up with — `
-        + `$${Math.round(gap / 1000)}K short, month ${loan.arrearsMs} of it. `
-        + `${loanLender(loan)} opens a file at three, and from there it is a notice period and an auction.`,
+      text: `Missed payment · ${rec.address}: debt service not covered and no cash to fund it — `
+        + `$${Math.round(gap / 1000)}K short, month ${loan.arrearsMs}. `
+        + `${loanLender(loan)} files at three months, then notice and auction.`,
     });
   }
   if ((loan.arrearsMs ?? 0) >= 3 && !s.workouts?.[h.bbl]) {
@@ -1639,8 +2159,8 @@ export function tickLoan(
     s.news.unshift({
       q, kind: "warn",
       text: `Three months of missed payments at ${rec.address}. ${loanLender(loan)} has `
-        + `opened a file — the arrears are ${Math.round(loan.monthlyPmt * (loan.arrearsMs ?? 3) / 1000)}K and they `
-        + `want them, or they want the building.`,
+        + `opened a default file; arrears ${Math.round(loan.monthlyPmt * (loan.arrearsMs ?? 3) / 1000)}K `
+        + `due or foreclosure follows.`,
     });
   }
 
@@ -1722,10 +2242,10 @@ export function tickLoan(
         (fresh as { renewedM?: number }).renewedM = q;
         s.news.unshift({
           q, kind: "deal",
-          text: `The balloon at ${rec.address} renewed with ${product.lender} — the same `
+          text: `Balloon renewed · ${rec.address} · ${product.lender} · `
             + `${money(rolled)} at ${qd.ratePct.toFixed(2)}% for ${Math.round(product.termM / 12)} years, `
-            + `$${fresh.monthlyPmt.toLocaleString()} a month, $${(fee / 1000).toFixed(0)}K of fee. `
-            + `Nothing came out and nothing went in: a bank does not hand you equity unasked, and cash-out is a refi you choose.`,
+            + `$${fresh.monthlyPmt.toLocaleString()}/month, $${(fee / 1000).toFixed(0)}K fee. `
+            + `No cash out; refinance separately for that.`,
         });
       }
     }
@@ -1743,8 +2263,8 @@ export function tickLoan(
         if (h.mezz) h.mezz = null;
         s.news.unshift({
           q, kind: "deal",
-          text: `Balloon at ${rec.address}: no clean refinancing, so you retired the `
-            + `${money(payoff)} note${mezzDue ? ` and ${money((mezzDue))} of mezz` : ""} out of firm liquidity. The building is free and clear.`,
+          text: `Balloon at ${rec.address}: no refinance available; repaid the `
+            + `${money(payoff)} loan${mezzDue ? ` and ${money((mezzDue))} of mezz` : ""} from firm liquidity. Free and clear.`,
         });
       } else if (fundableNow(s, parcels) >= shortfall) {
         const paid = fundCashNeed(s, parcels, shortfall);
@@ -1769,7 +2289,7 @@ export function tickLoan(
         }
         s.news.unshift({
           q, kind: "warn",
-          text: `Balloon at ${rec.address}: today's market only refinances $${(qd.principal / 1e6).toFixed(1)}M — you wrote a ${money(shortfall)} check to close the gap.`,
+          text: `Balloon at ${rec.address}: refinanced $${(qd.principal / 1e6).toFixed(1)}M; paid ${money(shortfall)} to close the gap.`,
         });
       } else {
         // NOT A SALE — A DEFAULT, WHICH IS A CONVERSATION.
@@ -1782,12 +2302,12 @@ export function tickLoan(
         const room = fundableNow(s, parcels);
         s.news.unshift({
           q, kind: "warn",
-          text: `The balloon came due at ${rec.address} and no desk will refinance the whole of it — today's market writes `
-            + `${money(qd.principal)} against a ${money(loan.balance)} balance plus a `
-            + `$${(fee / 1000).toFixed(0)}K fee: ${money(shortfall)} short, and you can raise `
-            + `${money(room)} of it from cash and the line. `
-            + `${loanLender(loan)} has put it in workout: you have until ${monthLabel(s.month + 6)} to `
-            + `pay the difference, ask them to extend, sell it, or hand back the deed before they file.`,
+          text: `Balloon due · ${rec.address}: no full refinance. Market sizes `
+            + `${money(qd.principal)} vs ${money(loan.balance)} balance plus `
+            + `$${(fee / 1000).toFixed(0)}K fee: ${money(shortfall)} short; available `
+            + `${money(room)} (cash and line). `
+            + `${loanLender(loan)} put it in workout. By ${monthLabel(s.month + 6)}: `
+            + `pay the gap, request an extension, sell, or hand back the deed.`,
         });
       }
     }
@@ -1834,7 +2354,7 @@ function serviceMezz(
       s.news.unshift({
         q: s.month, kind: "warn",
         text: `Mezz at ${rec.address} has missed three coupons. ${m.holder ?? "Cordage Debt Partners"} `
-          + `has opened a file — the senior is still current, but the junior is not.`,
+          + `opened a default file; senior loan still current.`,
       });
     }
   }
@@ -1852,8 +2372,8 @@ function serviceMezz(
       openWorkout(s, h.bbl, "balloon", m.balance);
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `The mezz balloon came due at ${rec.address} and you cannot clear `
-          + `${money(m.balance)}. Cordage has put the junior in workout.`,
+        text: `Mezz balloon due at ${rec.address}; cannot repay `
+          + `${money(m.balance)}. Cordage put the mezz in workout.`,
       });
     }
   }
@@ -1894,20 +2414,21 @@ export function mezzQuote(s: GameState, parcels: ParcelTable, bbl: string): Mezz
     return { ...empty, why: "Cordage will not look at mezz for you right now." };
   }
   const value = ownedHoldingValueFromRec(s, rec, h);
-  // the stack tops out at the mezz desk's sheet TODAY — 85% mid-cycle, less in a crunch
-  const room = Math.max(0, value * statedLtv(s, product, rec.class, h.condition).ltv - h.loan.balance);
+  // the stack tops out where the slice behind this senior loses what the fund budgets (deskAdvance)
+  const room = Math.max(0, value * statedLtv(s, product, rec.class, h.condition, false, value > 0 ? h.loan.balance / value : 0).ltv - h.loan.balance);
   const principal = Math.floor(room / 25_000) * 25_000;
   if (principal < 250_000) {
-    return { ...empty, why: "No room behind the senior to the 85% stack — pay down the first lien or wait for value." };
+    return { ...empty, why: "No room behind the senior to the top of the stack Cordage will write — pay down the first lien or wait for value." };
   }
   // THE SAME PRICE LAW AS EVERY OTHER DESK. This was index + 8 in a boom and
   // index + 8 in a panic, so in a crunch — when the senior desks widen by
   // half again — the junior got relatively cheaper, which is backwards: mezz
   // spreads roughly doubled in 2008-09 while senior spreads widened by half.
   // A desk's spread widens in proportion to itself, so the junior moves most.
-  const ratePct = deskRatePct(s.econ.indexRate, product.spread, {
-    ci: s.econ.creditIdx ?? 1,
-    app: lenderAppetite(s, product.lender),
+  // Priced on the slice of the loss between the senior and the top of the stack.
+  const stackTop = value > 0 ? (h.loan.balance + principal) / value : 0;
+  const attach = value > 0 ? h.loan.balance / value : 0;
+  const ratePct = bankRatePct(s.econ.indexRate, productSpread(s, product, { ltv: stackTop, klass: rec.class, attach }), {
     standingAdd: sponsorStanding(s).spreadAdd,
   });
   return {
@@ -1947,7 +2468,7 @@ export function placeMezz(
     principal: q.principal,
     balance: q.principal,
     ratePct: q.ratePct,
-    spread: productById("mezz").spread,
+    spread: +(q.ratePct - next.econ.indexRate).toFixed(2),
     ioUntilM: next.month + productById("mezz").ioM,
     amortYears: 30,
     maturityM: next.month + q.termM,
@@ -1962,13 +2483,19 @@ export function placeMezz(
   bumpLenderRel(next, "Cordage Debt Partners", 2);
   next.news.unshift({
     q: next.month, kind: "deal",
-    text: `Cordage stacked ${money(q.principal)} of mezz behind the senior at ${rec.address} — `
+    text: `Mezz closed · ${rec.address} · Cordage · ${money(q.principal)} — `
       + `${q.ratePct.toFixed(2)}%, ${(q.points * 100).toFixed(1)} points, due ${monthLabel(next.month + q.termM)}. `
-      + `You cleared ${money(net)}. The coupon is why nobody does this twice.`,
+      + `Net proceeds ${money(net)}.`,
   });
   sweepLocIdleCash(next, { announce: true });
   return { s: next, msg: `Mezz closed — ${money(q.principal)}.` };
 }
+/**
+ * The term of the rate cap a floating borrower buys, months.
+ * [S~] Chatham Financial ("What is an interest rate cap"; "Springing interest
+ * rate cap requirements"): the cap is matched to the bridge loan's initial term,
+ * typically two or three years; 36 months is the three-year case.
+ */
 export const CAP_TERM_M = 36;
 export function rateCapCost(loan: Loan): number {
   return capPremiumOn(loan.balance);
@@ -1979,8 +2506,8 @@ export function buyRateCap(s: GameState, parcels: ParcelTable, bbl: string): { s
   const h = next.holdings[bbl];
   const rec = resolveRec(parcels, next, bbl);
   if (!h || !rec) return { s, err: "You don't own that." };
-  if (!h.loan || !(h.loan.floating ?? h.loan.product === "float")) return { s, err: "Caps hedge floating debt — this loan is fixed." };
-  if (h.loan.cap) return { s, err: "This loan already carries a live cap." };
+  if (!h.loan || !(h.loan.floating ?? h.loan.product === "float")) return { s, err: "Fixed-rate loan; a cap only hedges floating debt." };
+  if (h.loan.cap) return { s, err: "This loan already has a rate cap." };
   const cost = rateCapCost(h.loan);
   // A cap premium is a financing cost on paper the firm already owns, and the
   // revolver is what a sponsor funds financing costs with. Refusing it for want
@@ -1990,8 +2517,8 @@ export function buyRateCap(s: GameState, parcels: ParcelTable, bbl: string): { s
   if (room.total < cost) {
     return {
       s,
-      err: `The cap desk wants ${money(cost)} premium and you can raise `
-        + `${money(room.total)} — ${money(room.cash)} of cash and ${money(room.line)} on the line.`,
+      err: `Rate cap premium is ${money(cost)}; available `
+        + `${money(room.total)} (${money(room.cash)} cash, ${money(room.line)} on the line).`,
     };
   }
   const strike = capStrikeFor(next, h.loan);
@@ -2143,14 +2670,47 @@ export function collateralHaircut(h: Holding, month: number, econ?: Econ, rec?: 
  * already has the real stabilised leg (`stabViewFor` → `sizeRest`); permanent
  * desks underwrite the roll you have. Both paths share this collateral view.
  */
+/**
+ * Months of ownership before a refinance is sized on the appraisal rather than
+ * on cost. [S~: six months is the common floor for investment-property
+ * cash-out refinances; banks range 6-24 months (lender guides and investor
+ * reports, 2024-26); short-hold value increases must be documented by
+ * improvements and income growth (Berkadia, Freddie Mac SBL case study).]
+ */
+export const REFI_SEASON_M = 6;
+/**
+ * WHO WAITS FOR THE SEASONING. Banks, life companies and the agencies value an
+ * unseasoned refinance at what was paid; transitional and private paper (the
+ * debt fund's bridge, mezzanine, hard money) lends on the appraisal the next
+ * month — it underwrites the business plan, and charges for it in its own
+ * advance and coupon [S~: "no-seasoning" cash-out refinances are offered by
+ * private and DSCR lenders, typically at lower LTV and higher rates (lender
+ * guides, 2024-26)].
+ */
+export function collateralFor(p: LoanProduct, c: { value: number; costCap?: number }): number {
+  return c.costCap === undefined || lossClassOf(p) === "junior" ? c.value : Math.min(c.value, c.costCap);
+}
 export function debtCollateral(
   s: GameState, parcels: ParcelTable, h: Holding, rec: ParcelRecord,
 ): {
   value: number; noi: number; vacantDirt: boolean; quoteClass: string;
   hair: { mult: number; why?: string }; stab: StabView | undefined;
+  /** Inside REFI_SEASON_M of a purchase: what the owner paid, the most a seasoning desk will value it at (collateralFor). */
+  costCap?: number;
 } {
   const vacantDirt = isVacantLandLoanCollateral(s, h, rec);
-  const value = ownedHoldingValue(s, parcels, h);
+  const appraised = ownedHoldingValue(s, parcels, h);
+  // SEASONING. A desk asked to refinance a building bought months ago at well
+  // under its appraisal lends on what the borrower paid until the hold has
+  // seasoned: the value jump on a short hold has to be proved by income and
+  // improvements, not asserted by an appraiser. Inside REFI_SEASON_M the
+  // collateral is the lesser of cost (price, closing, improvements:
+  // costBasis) and the appraisal; after it, the appraisal. A building the
+  // owner delivered is lent on as completed, the way a construction
+  // take-out is.
+  const fresh = h.deliveredM === undefined || h.deliveredM < (h.boughtM ?? 0);
+  const costCap = fresh && s.month - (h.boughtM ?? -Infinity) < REFI_SEASON_M && h.costBasis > 0 ? h.costBasis : undefined;
+  const value = appraised;
   // Contract rent, abatements as a reserve — how a desk underwrites a roll.
   // The cash reading zeroed an anchor for its free months and the whole
   // sheet moved with it (see value.ts contractNoiYr).
@@ -2161,7 +2721,7 @@ export function debtCollateral(
     ? stabViewFor(rec, s.econ, h.condition, value, h.condIdx)
     : undefined;
   const stab = plan ? seasonPlan(plan, s.month - planStartM(h)) : undefined;
-  return { value, noi, vacantDirt, quoteClass, hair, stab };
+  return { value, noi, vacantDirt, quoteClass, hair, stab, costCap };
 }
 
 /**
@@ -2216,7 +2776,8 @@ export function seasonPlan(plan: StabView, ageM: number): StabView | undefined {
 export function balloonLadder(
   s: GameState, parcels: ParcelTable, h: Holding, rec: ParcelRecord, balance: number,
 ) {
-  const { value, noi, vacantDirt, quoteClass, hair, stab } = debtCollateral(s, parcels, h, rec);
+  const coll = debtCollateral(s, parcels, h, rec);
+  const { value, noi, vacantDirt, quoteClass, hair, stab } = coll;
     // The sponsor signs the renewal the way it signs a refinance: recourse
     // desks size against its balance sheet, so the ladder must quote that too.
     const guarantor: Guarantor = { nw: netWorth(s, parcels) };
@@ -2228,7 +2789,7 @@ export function balloonLadder(
         // `originate` refuses at the table after the ladder has already picked.
         && conditionOk(p, h.condition, rec.buildSpec));
     const sized = ladder.map((p) => {
-      const raw = quote(s, p, value, noi, quoteClass, false, stab, h.condition, guarantor);
+      const raw = quote(s, p, collateralFor(p, coll), noi, quoteClass, false, stab, h.condition, guarantor, coll.value);
       return { p, qd: { ...raw, principal: Math.round(raw.principal * hair.mult) } };
     });
     // THE LENDER'S OWN UNDERWRITING DECIDES, NOT A PREFERENCE ORDER. A quote
@@ -2290,11 +2851,12 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
   const h = s.holdings[bbl];
   const rec = resolveRec(parcels, s, bbl);
   if (!h || !rec) return { quotes: [], value: 0, payoff: 0 };
-  const { value, noi, vacantDirt, quoteClass, hair, stab } = debtCollateral(s, parcels, h, rec);
+  const coll = debtCollateral(s, parcels, h, rec);
+  const { value, noi, vacantDirt, quoteClass, hair, stab } = coll;
   const release = refiFacilityRelease(s, parcels, bbl);
   const guarantor: Guarantor = { nw: netWorth(s, parcels) };
   const quotes = PRODUCTS.map((p) => {
-    const raw = quote(s, p, value, noi, quoteClass, false, stab, h.condition, guarantor);
+    const raw = quote(s, p, collateralFor(p, coll), noi, quoteClass, false, stab, h.condition, guarantor, coll.value);
     const q = { ...raw, principal: Math.round(raw.principal * hair.mult) };
     // COVERAGE ON THE PAYMENT THE DESK SIZED TO. The card printed coverage on
     // the interest-only year's payment (1.71x) beside "binds coverage" from a
@@ -2327,7 +2889,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       // Covenant max LTV (breach test), not the advance rate used to size.
       maxLTV: p.maxLTV,
       // The sheet TODAY — standards, class, condition and your file — not the brochure.
-      advanceLtv: raw.statedLtv ?? p.ltv,
+      advanceLtv: raw.statedLtv ?? statedLtv(s, p).ltv,
       sheetWhy: raw.sheetWhy,
       noiUw: noi,
       minDSCR: p.minDSCR,
@@ -2340,12 +2902,16 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
         : q.holdCapped ? "their hold size"
         : q.stabConstrained ? "stabilised plan"
         : q.dyConstrained ? "debt yield"
+        : q.modelConstrained ? "their risk model"
         : q.dscrConstrained ? "coverage"
         : "advance rate",
       bindingWhy: (() => {
         const parts: string[] = [];
         const onAdvance = !q.holdCapped && !q.stabConstrained && !q.dyConstrained && !q.dscrConstrained && !q.guarantorConstrained;
         if (q.guarantorConstrained && q.guarantorWhy) parts.push(q.guarantorWhy);
+        if (q.modelConstrained && !q.guarantorConstrained && !q.holdCapped) {
+          parts.push(`${p.lender}'s own loss model on this building's income, in this town's market, lends ${Math.round((value > 0 ? q.principal / value : 0) * 100)}% — under its ${Math.round((p.maxLTV - 0.03) * 100)}% ceiling and its ${p.minDSCR.toFixed(2)}x coverage test`);
+        }
         if (onAdvance && q.advanceWhy) parts.push(q.advanceWhy);
         if (hair.mult < 0.995 && raw.principal > 0) {
           parts.push(`then the desk takes ${Math.round((1 - hair.mult) * 100)}% off for the roll`
@@ -2368,7 +2934,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       available: !productOpen(s, p) || !windowOpen(s, p) ? false
         : !conditionOk(p, h.condition, rec.buildSpec) ? false
         : p.mezz ? false
-        : p.uwDscr <= 0 ? vacantDirt
+        : !onIncome(p) ? vacantDirt
         : !vacantDirt && q.principal > 0,
       why: !productOpen(s, p)
         ? `This desk won't look at you — ${sponsorStanding(s).label}. It recovers with clean payments; bridge money will still talk in the meantime.`
@@ -2392,11 +2958,11 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
         ? `${raw.concWhy}.`
         : hair.why && hair.mult < 0.95 && !p.mezz
         ? `Proceeds cut ${((1 - hair.mult) * 100).toFixed(0)}% — ${hair.why}.`
-        : p.uwDscr <= 0 && !vacantDirt
+        : !onIncome(p) && !vacantDirt
         ? (h.groundLeased
-          ? "Land money is for vacant dirt. This fee has a ground rent to underwrite — use an income desk."
-          : "Land money is for dirt. This one has a building on it.")
-        : p.uwDscr > 0 && vacantDirt ? "No income to underwrite — a vacant site only gets a land loan."
+          ? "Land loans are for vacant land. This site has ground rent; use an income lender."
+          : "Land loans are for vacant land. This site has a building.")
+        : onIncome(p) && vacantDirt ? "No income to underwrite — a vacant site only gets a land loan."
         : release
         ? (release.unwind
           ? `Pledged to your facility, which is at its ${FACILITY_MIN_ASSETS}-deed minimum: the proceeds repay the whole line (${money(release.price)}) and every deed in the pool comes free.`
@@ -2417,22 +2983,24 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   const release = refiFacilityRelease(next, parcels, bbl);
   const product = productById(productId);
   if (product.mezz) {
-    return { s, err: "Mezzanine sits behind a senior — use Place mezz, do not replace the first lien." };
+    return { s, err: "Mezz is subordinate. Use Place mezz instead." };
   }
   if (!productOpen(next, product)) {
-    return { s, err: `${product.label} won't quote you — ${sponsorStanding(next).label}. Bridge money will still talk.` };
+    return { s, err: `${product.label} declined: ${sponsorStanding(next).label}. Bridge lenders may still quote.` };
   }
-  const { value, noi, vacantDirt, quoteClass, hair, stab } = debtCollateral(next, parcels, h, rec);
-  if (product.uwDscr <= 0 && !vacantDirt) {
+  const coll = debtCollateral(next, parcels, h, rec);
+  const { noi, vacantDirt, quoteClass, hair, stab } = coll;
+  const value = collateralFor(product, coll);
+  if (!onIncome(product) && !vacantDirt) {
     return { s, err: h.groundLeased
-      ? "Land money is for vacant dirt. This fee has a ground rent — take it to an income desk."
-      : "Land money is for dirt. This one has a building on it." };
+      ? "Land loans are for vacant land. This site has ground rent; use an income lender."
+      : "Land loans are for vacant land. This site has a building." };
   }
-  if (product.uwDscr > 0 && vacantDirt) {
-    return { s, err: "No income to underwrite — a vacant site only gets a land loan." };
+  if (onIncome(product) && vacantDirt) {
+    return { s, err: "No income to underwrite. Vacant land qualifies only for a land loan." };
   }
   // Same quote the card showed — haircut, stabilised bridge leg, and all.
-  const full = quote(next, product, value, noi, quoteClass, false, stab, h.condition, { nw: netWorth(next, parcels) });
+  const full = quote(next, product, value, noi, quoteClass, false, stab, h.condition, { nw: netWorth(next, parcels) }, coll.value);
   const qd = { ...full, principal: Math.round(full.principal * hair.mult * Math.max(0, Math.min(1, lev))) };
   const seniorBal = h.loan?.balance ?? 0;
   const mezzBal = h.mezz?.balance ?? 0;
@@ -2459,7 +3027,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
             : "Proceeds don't cover the payoff — you're underwater on this refi.",
     };
   }
-  const newLoan = originate(next, product, value, noi, lev * hair.mult, h.condition, quoteClass, stab, { nw: netWorth(next, parcels) }, rec.buildSpec);
+  const newLoan = originate(next, product, value, noi, lev * hair.mult, h.condition, quoteClass, stab, { nw: netWorth(next, parcels) }, rec.buildSpec, coll.value);
   if (!newLoan) return { s, err: "No lender will size a loan against this income." };
   // PRINCIPAL INTO CASH IS A LEDGER EVENT. Fees stay in debtSvc; net new
   // principal that lands in the operating account is `borrowed` — the bucket
@@ -2501,9 +3069,9 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
     q: next.month, kind: "deal",
     text: `Refinanced ${rec.address}: ${money(qd.principal)} at ${qd.ratePct.toFixed(2)}% (${product.label})`
       + (mezzBal > 0 ? `, retiring ${money(mezzBal)} of mezz` : "")
-      + (penalty > 0 ? `, after ${money(penalty)} to break the old paper` : "")
+      + (penalty > 0 ? `, ${money(penalty)} prepayment penalty` : "")
       + (capPremium > 0 ? `, plus ${money(capPremium)} for the rate cap` : "")
-      + (release ? (release.unwind ? `, repaying the facility in full (${money(releasePrice)}) — the pool is unencumbered` : `, paying the facility ${money(releasePrice)} to release the deed`) : "")
+      + (release ? (release.unwind ? `, repaying the facility in full (${money(releasePrice)})` : `, facility release ${money(releasePrice)}`) : "")
       + ".",
   });
   // Cash-out proceeds pay the revolver before they sit idle.

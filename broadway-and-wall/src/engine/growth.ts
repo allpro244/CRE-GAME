@@ -49,6 +49,7 @@ import {
 import { platLocation, homeTargetPsf, platQuoteNow } from "./homes";
 import { pickConstructionDesk } from "./dev";
 import { lenderByName, chargeLenderLoss } from "./lenders";
+import { constructionRatePct } from "./proforma";
 import { voidContract } from "./acquire";
 import { money } from "./money";
 import {
@@ -135,6 +136,8 @@ export interface GrowthState {
   unpacked?: Record<number, number>;
   /** the town's occupied flats at the first count, sf (towngrowth.ts scales the opening's dwellings by it) */
   mf0?: number;
+  /** new land developers owed to the county's entry flow, in firms (pickDev) */
+  entryAcc?: number;
   /** the year's counters, reset at each annual record */
   yr: { bought: number; refused: number };
   hist: GrowthYear[];
@@ -166,13 +169,12 @@ const REHEAR_M = 24;
 /**
  * WHAT THE DESK ADVANCES a land developer: the interagency supervisory
  * loan-to-value limits (12 CFR 34 App. A to Subpart D; OCC / FDIC / Fed) —
- * 65% against raw land, 75% against land development [S] — at the
- * construction desk's coupon, the loan index plus 2.4 points (proforma.ts
- * CONSTR_SPREAD). The developer's own money is the rest, and the board's
+ * 65% against raw land, 75% against land development [S] — at its
+ * desk's live coupon on land paper (proforma.ts constructionRatePct). The developer's own money is the rest, and the board's
  * fees, which no bank lends against.
  */
 const LAND_ADVANCE = 0.65, DEV_ADVANCE = 0.75;
-const devRate = (s: GameState) => ((s.econ.indexRate ?? 5.4) + 2.4) / 100;
+const devRate = (s: GameState, d: LandDev) => constructionRatePct(s.econ, d.lender, 0, "land") / 100;
 /**
  * THE RELEASE PRICE: the desk is repaid 120% of its loan per lot as each lot
  * closes, so the note is retired before the last lots sell (the same release
@@ -320,13 +322,23 @@ function devName(s: GameState, g: GrowthState): string {
 }
 /**
  * Who buys: most fringe land in a county this size is taken down by a handful
- * of regional developers. An existing one takes the next deal unless a new
- * name enters, about one deal in three [K].
+ * of regional developers. New names enter at about one deal in three [K]: an
+ * arrival flow, accrued on the county's count (`entryAcc`) so a new firm comes
+ * in when a whole one is owed. Otherwise the deal goes to the existing
+ * developer with the most money free for it — the one that can sign soonest
+ * and carry it furthest (2026-11-11; it was a die for entry and a die for
+ * which firm).
  */
 function pickDev(s: GameState, g: GrowthState, ownNeed: number): string | null {
   // only a developer with the money for its share can sign
-  const names = Object.keys(g.devs).sort().filter((n) => devFunds(s, g.devs[n]) >= ownNeed);
-  if (names.length && rng(s, "growth") > 1 / 3) return names[Math.floor(rng(s, "growth") * names.length)];
+  const free = new Map(Object.keys(g.devs).map((n) => [n, devFunds(s, g.devs[n])] as const));
+  const names = [...free.keys()].filter((n) => free.get(n)! >= ownNeed)
+    .sort((a, b) => free.get(b)! - free.get(a)! || a.localeCompare(b));
+  if (names.length) {
+    g.entryAcc = (g.entryAcc ?? 0) + 1 / 3;
+    if (g.entryAcc < 1) return names[0];
+    g.entryAcc -= 1;
+  }
   const n = devName(s, g);
   const d = newDev(s, n);
   if (d.cash! < ownNeed) return names.length ? names[0] : null;
@@ -404,7 +416,7 @@ function tickDevBooks(s: GameState, parcels: ParcelTable) {
     if (d.failedM !== undefined) continue;
     booksOf(s, d);
     if ((d.debt ?? 0) > 0) {
-      const i = Math.round(d.debt! * devRate(s) / 12);
+      const i = Math.round(d.debt! * devRate(s, d) / 12);
       d.cash! -= i; d.interestPaid = (d.interestPaid ?? 0) + i;
     }
     d.stressMs = d.cash! < 0 ? (d.stressMs ?? 0) + 1 : 0;
@@ -443,9 +455,9 @@ function failDev(s: GameState, parcels: ParcelTable, d: LandDev) {
   }
   const debt = d.debt ?? 0;
   const loss = Math.max(0, Math.round(debt - worth - Math.max(0, d.cash ?? 0)));
-  if (d.lender && loss > 0) chargeLenderLoss(s, d.lender, loss);
+  if (d.lender && loss > 0) chargeLenderLoss(s, d.lender, loss, { borrower: d.name, id: "ld:" + d.name, cls: "land", how: "land developer failed" });
   d.debt = 0; d.cash = 0; d.loans = {}; d.stressMs = 0;
-  s.news.unshift({ q: s.month, kind: "warn", text: `${d.name}, land developer, has failed: ${money(debt)} owed${d.lender ? ` to ${d.lender}` : ""} against ${tracts} tracts and ${lots} unsold lots${loss > 0 ? `; the desk takes a ${money(loss)} loss` : ""}. Its land goes back on the market.` });
+  s.news.unshift({ q: s.month, kind: "warn", text: `${d.name}, land developer, has failed: ${money(debt)} owed${d.lender ? ` to ${d.lender}` : ""} against ${tracts} tracts and ${lots} unsold lots${loss > 0 ? `; lender loss ${money(loss)}` : ""}. Its land returns to the market.` });
 }
 
 function tickLandMarket(s: GameState, parcels: ParcelTable, bbls: string[]) {
@@ -502,7 +514,7 @@ function tickLandMarket(s: GameState, parcels: ParcelTable, bbls: string[]) {
     if (!mine || !base || !(mine.bid > Math.max(base.farm, c.rd.bid, playerOffer(s, c.rd.bbl)) * (1 + LAND_CLOSING))) continue;
     const talks = s.talks?.[c.rd.bbl];
     if (!buyTract(s, parcels, g, c.rd.bbl, Math.round(ask(c.rd)), mine)) continue;
-    if (talks) voidContract(s, parcels, c.rd.bbl, `${g.held[c.rd.bbl]} bought ${parcels[c.rd.bbl]?.address ?? c.rd.bbl} out from under you while you were negotiating, at ${money(ask(c.rd))}`);
+    if (talks) voidContract(s, parcels, c.rd.bbl, `${g.held[c.rd.bbl]} bought ${parcels[c.rd.bbl]?.address ?? c.rd.bbl} at ${money(ask(c.rd))} during your negotiation`);
     bought++;
     cands = cands.filter((x) => x.rd.bbl !== c.rd.bbl);
   }

@@ -10,6 +10,7 @@ import { LineChart } from "@/ui/Chart";
 import { thesisLabel } from "@/engine/strategy";
 import { movesOf, streetMoves } from "@/engine/firmLog";
 import { usd } from "@/ui/format";
+import { resolveRec } from "@/engine/value";
 
 // THE CAST — COMPETITORS_PLAN.md §6–§7. Who matters right now, what each is in
 // the middle of, and what is about to happen to it. Everything here reads the
@@ -148,7 +149,8 @@ export function FirmSheet({ r }: { r: Rival }) {
   const unseen = (r.quirks ?? []).length - quirks.length;
   return (
     <div style={{ marginBottom: 8 }}>
-      <div className="page-section" style={{ marginTop: 0 }}>
+      <div className="page-section" style={{ marginTop: 0 }}
+        title="Your read of them, 1–100. Faint numbers are guesses that sharpen as you trade with them and watch the tape; ?? has not shown yet.">
         {labelOf(r)}
         {!r.sheet && <span className="dim" style={{ fontWeight: 400 }}> · read off its style (an older firm)</span>}
       </div>
@@ -182,9 +184,6 @@ export function FirmSheet({ r }: { r: Rival }) {
             ))}
           </div>
         ))}
-      </div>
-      <div className="dim" style={{ fontSize: 11, marginTop: 6 }}>
-        Your read of them, 1–100. Faint numbers are guesses that sharpen as you trade with them and watch the tape; <span className="mono">??</span> has not shown yet.
       </div>
     </div>
   );
@@ -255,7 +254,7 @@ export function FirmMoves({ r, n = 10 }: { r: Rival; n?: number }) {
   const parcels = useStore((s) => s.parcels);
   const focus = useStore((s) => s.focus);
   const moves = movesOf(game, r.id, n);
-  if (!moves.length) return <div className="dim" style={{ fontSize: 12 }}>Nothing on the record yet — it has been quiet since you arrived.</div>;
+  if (!moves.length) return <div className="dim" style={{ fontSize: 12 }} title="Nothing on the record since you arrived">None</div>;
   return (
     <div style={{ fontSize: 12, lineHeight: "18px" }}>
       {moves.map((x, i) => (
@@ -356,17 +355,39 @@ export function SignatureTraits({ r }: { r: Rival }) {
 /** What the whole street did lately — a ticker at the top of the page. */
 export function StreetTicker({ onOpen }: { onOpen: (id: string) => void }) {
   const game = useStore((s) => s.game)!;
-  const moves = streetMoves(game, game.month - 6, 8);
-  if (!moves.length) return null;
+  const parcels = useStore((s) => s.parcels);
+  // ONE TRADE, ONE LINE. A firm-to-firm sale is logged twice (rivals.ts: the
+  // buyer's "Bought X from Y" and the seller's "Sold X to Z", same month, deed
+  // and price); the pair prints once as seller → buyer.
+  const raw = streetMoves(game, game.month - 6, 24);
+  const used = new Set<number>();
+  const lines: { m: number; kind: string; firmId: string; text: string; title?: string; px?: number }[] = [];
   const nameOf = (id: string) => game.rivals.find((x) => x.id === id)?.name ?? "A firm";
+  raw.forEach((x, i) => {
+    if (used.has(i)) return;
+    if ((x.kind === "buy" || x.kind === "sell") && x.bbl) {
+      const j = raw.findIndex((y, k) => k !== i && !used.has(k) && y.bbl === x.bbl && y.m === x.m && y.px === x.px
+        && y.kind === (x.kind === "buy" ? "sell" : "buy"));
+      if (j >= 0) {
+        used.add(j);
+        const buy = x.kind === "buy" ? x : raw[j], sell = x.kind === "buy" ? raw[j] : x;
+        const addr = (parcels && resolveRec(parcels, game, x.bbl)?.address) ?? x.bbl;
+        lines.push({ m: x.m, kind: "buy", firmId: buy.firmId, text: `${nameOf(sell.firmId)} → ${nameOf(buy.firmId)} · ${addr}`, title: buy.text, px: x.px });
+        return;
+      }
+    }
+    lines.push({ m: x.m, kind: x.kind, firmId: x.firmId, text: `${nameOf(x.firmId)} — ${x.text.charAt(0).toLowerCase() + x.text.slice(1)}`, px: x.px });
+  });
+  const moves = lines.slice(0, 8);
+  if (!moves.length) return null;
   return (
     <div style={{ margin: "4px 0 12px", padding: "8px 10px", background: "rgba(43,37,26,0.04)", borderRadius: 6 }}>
       <div className="dim" style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 4 }}>On the street lately</div>
       {moves.map((x, i) => (
-        <div key={i} style={{ display: "flex", gap: 6, fontSize: 12, lineHeight: "18px", cursor: "pointer" }} onClick={() => onOpen(x.firmId)}>
+        <div key={i} style={{ display: "flex", gap: 6, fontSize: 12, lineHeight: "18px", cursor: "pointer" }} title={x.title} onClick={() => onOpen(x.firmId)}>
           <span className="dim mono" style={{ minWidth: 62 }}>{monthLabel(x.m)}</span>
           <span style={{ minWidth: 12, color: x.kind === "buy" ? "#2f9e44" : x.kind === "sell" ? "#c0392b" : x.kind === "build" || x.kind === "open" ? "#3b6fb6" : "#8a6d1f" }}>{MOVE_ICON[x.kind]}</span>
-          <span style={{ flex: 1 }}><strong style={{ fontWeight: 600 }}>{nameOf(x.firmId)}</strong> — {x.text.charAt(0).toLowerCase() + x.text.slice(1)}</span>
+          <span style={{ flex: 1 }}>{x.text}</span>
           {x.px ? <span className="mono dim">{usd(x.px)}</span> : null}
         </div>
       ))}

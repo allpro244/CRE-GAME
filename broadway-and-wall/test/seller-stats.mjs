@@ -1,5 +1,8 @@
-// Seller reservation curve — bidOdds monotonicity, distress, cold holders (#33).
-// Phase 4.1 measurement: also print accept odds by seller kind / distress / rel.
+// One seller for every buyer (PARITY_PLAN.md P1). An offer under the ask on
+// the tape goes into the month's bid round: it is taken when it clears the
+// seller's own floor (listingReserve) and beats every bid from a firm that can
+// close. This checks the rule through buyListing itself, then reports what a
+// player must pay, as a share of the ask, across seeds.
 //   pnpm engine && pnpm seller-stats
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
@@ -17,154 +20,90 @@ const ok = (name, cond, detail = "") => {
   else console.log(`PASS  ${name}${detail ? " — " + detail : ""}`);
 };
 
-// --- Unit surface on one seed (existing gates) ---
+/** What it takes to win this listing this month: the seller's floor and the best bid that can close. */
+function bar(g, li) {
+  const rec = E.resolveRec(parcels, g, li.bbl);
+  const building = rec.class !== "land" && rec.bldgArea > 0;
+  const top = building ? E.bidRound(g, parcels, rec, li).bids[0]
+    : !li.halfBuilt ? E.landBidRound(g, parcels, rec, li).bids[0] : undefined;
+  return { floor: E.listingReserve(li), top: top?.bid ?? 0 };
+}
+
+// --- The rule, on one seed ---
 {
   let g = E.firstListings(E.newGame(550991, parcels), parcels, bbls);
-  // The reservation-curve gates are for a voluntary seller. After citygen
-  // recut the opening tape, the first $500k listing on this seed is already
-  // distressed — 94% of ask is then ~0.84, 70% is not a long shot, and
-  // stamping `distress: true` is a no-op. Income on rentable feet then
-  // dropped every ask ~17%, so a $500k floor found nobody: the opening
-  // tape's best voluntary ask on this seed is ~$444k. Take the dearest
-  // voluntary listing that is actually on the tape. Distress vs voluntary
-  // is measured on the histogram below, not on this one row.
-  const listing = [...(g.listings ?? [])]
-    .filter((l) => !l.distress && l.ask > 0)
-    .sort((a, b) => b.ask - a.ask)[0];
-  ok("tape has a listing", !!listing);
-  if (!listing) process.exit(1);
+  for (let m = 0; m < 24; m++) g = E.advanceMonth(g, parcels, bbls, adjacency ?? {});
+  g = { ...g, cash: 1e10 };
+  // A voluntary building whose bar sits under its ask, so there is a number to win it with.
+  const li = g.listings.find((l) => {
+    const rec = E.resolveRec(parcels, g, l.bbl);
+    if (l.distress || !rec || rec.class === "land" || !(rec.bldgArea > 0)) return false;
+    const b = bar(g, l);
+    return Math.max(b.floor, b.top) + 1000 < l.ask;
+  });
+  ok("tape has a voluntary building winnable under its ask", !!li);
+  if (!li) process.exit(1);
+  const b = bar(g, li);
+  const win = Math.round(Math.max(b.floor, b.top) + 1000);
 
-  const bbl = listing.bbl;
-  let prev = -0.01;
-  for (const pct of [0.65, 0.75, 0.85, 0.90, 0.94, 0.97, 1.0]) {
-    const p = E.bidOdds(g, parcels, bbl, listing, Math.round(listing.ask * pct));
-    ok(`odds rise at ${(pct * 100).toFixed(0)}% of ask`, p >= prev - 1e-9, `p=${p.toFixed(3)} prev=${prev.toFixed(3)}`);
-    prev = p;
-  }
+  const under = E.buyListing(g, parcels, li.bbl, "cash", 1, Math.round(Math.max(b.floor, b.top) - 1000));
+  ok("an offer under the bar is refused", !!under.refused && !under.s.holdings[li.bbl], under.msg ?? under.err);
+  const again = E.buyListing(under.s, parcels, li.bbl, "cash", 1, win);
+  ok("a second number the same month is not taken", !!again.err && !again.s.holdings?.[li.bbl], again.err);
 
-  const kind = E.sellerOf(g, parcels, bbl).kind;
-  const mid = E.bidOdds(g, parcels, bbl, listing, Math.round(listing.ask * 0.94));
-  const typical = kind === "local" || kind === "developer" || kind === "partnership";
-  if (typical) {
-    ok("94% of ask is near coin flip for a typical seller", mid > 0.35 && mid < 0.75,
-      `${kind} p=${mid.toFixed(3)}`);
-  } else if (kind === "institution") {
-    ok("institution holds the last points at 94%", mid < 0.40, `p=${mid.toFixed(3)}`);
-  } else {
-    ok(`${kind} takes 94% more readily than a typical seller`, mid > 0.55, `p=${mid.toFixed(3)}`);
-  }
+  const took = E.buyListing(g, parcels, li.bbl, "cash", 1, win);
+  ok("an offer over the floor and every closing bid is taken", !!took.s.holdings?.[li.bbl],
+    `${took.msg ?? took.err} · floor ${Math.round(b.floor)} · top bid ${Math.round(b.top)} · ask ${li.ask}`);
 
-  const low = E.bidOdds(g, parcels, bbl, listing, Math.round(listing.ask * 0.70));
-  ok("70% of ask is long shot", low < 0.08, `p=${low.toFixed(4)}`);
-
-  const distress = { ...listing, distress: true };
-  const distressMid = E.bidOdds(g, parcels, bbl, distress, Math.round(listing.ask * 0.94));
-  ok("distress listing accepts lower bids", distressMid > mid,
-    `distress=${distressMid.toFixed(3)} normal=${mid.toFixed(3)}`);
-
-  const estateMid = E.reserveMidOf("estate");
-  const instMid = E.reserveMidOf("institution");
-  const localMid = E.reserveMidOf("local");
-  ok("estate reservation sits under a local", estateMid < localMid,
-    `estate=${estateMid} local=${localMid}`);
-  ok("institution reservation sits over a local", instMid > localMid,
-    `institution=${instMid} local=${localMid}`);
-  ok("local mid is the 0.94 sale-to-list coin flip", Math.abs(localMid - 0.94) < 1e-9,
-    String(localMid));
-  const band = E.closingBand("estate");
-  ok("estate closing band includes 90% of ask", band.lo <= 0.90 && band.hi >= 0.90,
-    `${band.lo}–${band.hi}`);
-  ok("institution band sits above an estate band", E.closingBand("institution").lo > band.hi,
-    `inst lo=${E.closingBand("institution").lo} estate hi=${band.hi}`);
-
-  for (let m = 0; m < 48 && !E.holderOf(g, parcels, bbl); m++) {
-    g = E.advanceQuarter(g, parcels, bbls, adjacency ?? {});
-    const li = g.listings.find((l) => l.bbl === bbl);
-    if (!li) break;
-  }
-  const held = E.holderOf(g, parcels, bbl);
+  // A cold holder does not take your call at any price.
+  const held = E.holderOf(g, parcels, li.bbl);
   if (held) {
-    E.offend(g, held.id, 18, parcels);
-    const li2 = g.listings.find((l) => l.bbl === bbl) ?? listing;
-    ok("cold holder → bidOdds 0", E.bidOdds(g, parcels, bbl, li2, li2.ask) === 0);
+    const g2 = structuredClone(g);
+    E.offend(g2, held.id, 18, parcels);
+    const cold = E.buyListing(g2, parcels, li.bbl, "cash", 1, win);
+    ok("cold holder refuses", !cold.s.holdings?.[li.bbl], cold.err ?? cold.msg);
   } else {
     console.log("SKIP  cold-holder case (no named holder on sample listing)");
   }
+
+  // The negotiation desk still reads the kind table (acquire.ts reservationOf).
+  ok("estate reservation sits under a local", E.reserveMidOf("estate") < E.reserveMidOf("local"));
+  ok("institution reservation sits over a local", E.reserveMidOf("institution") > E.reserveMidOf("local"));
 }
 
-// --- Phase 4.1 report: histogram across seeds (measurement + light gates) ---
+// --- Report: what a player must pay, as a share of the ask ---
 {
-  const SEEDS = [550991, 12007, 73303, 11, 22, 33, 4242, 7777, 99, 1013];
-  const YEARS = 40;
-  const byKind = {};
-  const byDistress = { yes: [], no: [] };
-  const byRel = { cold: [], warm: [], hot: [], none: [] };
-  let n = 0;
-
-  const advance = E.advanceMonth ?? ((s, p, b, a) => E.advanceQuarter(s, p, b, a));
+  const SEEDS = [550991, 11, 22, 33, 4242];
+  const YEARS = 30;
+  const rows = { voluntary: [], distressed: [], contested: [] };
   for (const seed of SEEDS) {
     let g = E.firstListings(E.newGame(seed, parcels), parcels, bbls);
     for (let m = 0; m < YEARS * 12; m++) {
       if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
       if (m % 12 === 0) {
         for (const li of g.listings) {
-          if (li.ask < 250_000) continue;
-          const seller = E.sellerOf(g, parcels, li.bbl);
-          const kind = seller?.kind ?? "unknown";
-          const p94 = E.bidOdds(g, parcels, li.bbl, li, Math.round(li.ask * 0.94));
-          (byKind[kind] ??= []).push(p94);
-          (li.distress ? byDistress.yes : byDistress.no).push(p94);
-          const held = E.holderOf(g, parcels, li.bbl);
-          if (!held) byRel.none.push(p94);
-          else if (E.isCold(g, held.id)) byRel.cold.push(p94);
-          else {
-            const deals = E.relOf(g, held.id)?.deals ?? 0;
-            if (deals >= 2) byRel.hot.push(p94);
-            else byRel.warm.push(p94);
-          }
-          n++;
+          if (!(li.ask > 250_000)) continue;
+          const b = bar(g, li);
+          const need = Math.max(b.floor, b.top) / li.ask;
+          (li.distress ? rows.distressed : rows.voluntary).push(need);
+          rows.contested.push(b.top > b.floor ? 1 : 0);
         }
       }
-      g = advance(g, parcels, bbls, adjacency ?? null);
+      g = E.advanceMonth(g, parcels, bbls, adjacency ?? null);
     }
   }
-
-  const mean = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : NaN);
-  const sorted = (arr) => [...arr].sort((a, b) => a - b);
-  const fmt = (arr) => {
-    if (!arr.length) return "n=0";
-    const s = sorted(arr);
-    return `n=${arr.length}  mean@94%=${mean(arr).toFixed(3)}  p10=${s[Math.floor(arr.length * 0.1)].toFixed(3)}  p90=${s[Math.floor(arr.length * 0.9)].toFixed(3)}`;
-  };
-
-  console.log("\n--- #33 Phase 4.1 surface (report) ---");
-  console.log(`samples: ${n} listing-years across ${SEEDS.length} seeds × ${YEARS}y (annual tape snapshot)`);
-  console.log("\nby seller kind (bidOdds at 94% of ask):");
-  for (const k of Object.keys(byKind).sort()) console.log(`  ${k.padEnd(14)} ${fmt(byKind[k])}`);
-  console.log("\nby distress:");
-  console.log(`  voluntary     ${fmt(byDistress.no)}`);
-  console.log(`  distressed    ${fmt(byDistress.yes)}`);
-  console.log("\nby holder relationship:");
-  for (const k of ["none", "warm", "hot", "cold"]) console.log(`  ${k.padEnd(14)} ${fmt(byRel[k])}`);
-
-  ok("sampled listings for histogram", n >= 50, `n=${n}`);
-  const vol = mean(byDistress.no);
-  const dist = mean(byDistress.yes);
-  if (byDistress.yes.length >= 10 && byDistress.no.length >= 10) {
-    ok("distress mean odds ≥ voluntary @94%", dist + 1e-9 >= vol,
-      `distress=${dist.toFixed(3)} voluntary=${vol.toFixed(3)}`);
-  } else {
-    console.log("SKIP  distress vs voluntary mean (thin sample)");
-  }
-  const estate = byKind.estate ?? [];
-  const inst = byKind.institution ?? [];
-  if (estate.length >= 10 && inst.length >= 10) {
-    ok("estate mean odds at 94% beat an institution",
-      mean(estate) > mean(inst) + 0.05,
-      `estate=${mean(estate).toFixed(3)} institution=${mean(inst).toFixed(3)}`);
-  } else {
-    console.log("SKIP  estate vs institution mean (thin sample)");
-  }
+  const q = (a, p) => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(p * (s.length - 1))] : NaN; };
+  const fmt = (a) => `n=${a.length}  p10=${q(a, 0.1).toFixed(3)}  median=${q(a, 0.5).toFixed(3)}  p90=${q(a, 0.9).toFixed(3)}`;
+  console.log(`\nwhat it takes to win, as a share of the ask (${SEEDS.length} seeds × ${YEARS}y, annual tape):`);
+  console.log(`  voluntary     ${fmt(rows.voluntary)}`);
+  console.log(`  distressed    ${fmt(rows.distressed)}`);
+  const share = rows.contested.reduce((a, x) => a + x, 0) / Math.max(1, rows.contested.length);
+  console.log(`  a firm's bid over the seller's floor on ${(share * 100).toFixed(0)}% of listings`);
+  ok("sampled listings", rows.voluntary.length >= 50, `n=${rows.voluntary.length}`);
+  if (rows.distressed.length >= 10) {
+    ok("distress clears cheaper than voluntary (median)", q(rows.distressed, 0.5) <= q(rows.voluntary, 0.5) + 1e-9,
+      `distressed=${q(rows.distressed, 0.5).toFixed(3)} voluntary=${q(rows.voluntary, 0.5).toFixed(3)}`);
+  } else console.log("SKIP  distress vs voluntary (thin sample)");
 }
 
 console.log(`\n${fails === 0 ? "seller-stats pass" : `${fails} seller-stats failure(s)`}`);

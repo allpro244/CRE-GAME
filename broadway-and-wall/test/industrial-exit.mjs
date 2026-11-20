@@ -45,7 +45,7 @@ for (const seed of SEEDS) {
     const before = g.econ.stock.industrial;
     g = keepAlive(E.advanceMonth(g, parcels, bbls, adjacency));
     if (g.econ.stock.industrial < before - 1) demSf += before - g.econ.stock.industrial;
-    if ((g.econ.cityVac.industrial ?? 0) > E.NATURAL_VAC.industrial) soft++;
+    if ((g.econ.cityVac.industrial ?? 0) > E.OPENING_VAC.industrial) soft++;
   }
   const yrs = HZ / 12;
   const ic = g.econ.industComp ?? 1;

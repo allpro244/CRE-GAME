@@ -1,5 +1,48 @@
 # Frontier playthrough: $5M, City size, 50 years (20 Nov 2026)
 
+> **Read this first.** Everything below the line was measured on a checkout
+> that turned out to be **a month old**: 76403d5, PR #474 of 22 Oct. Main was
+> 799 commits ahead, at #838. This section is the same bot and the same three
+> seeds, re-run on **current main plus the opening-dearness change** in this
+> PR. The current map generator makes 1,400 lots at City size.
+
+## Re-run on current main (c75ef8b, #838) — the numbers that count
+
+| Seed | Net worth 2050 | Rank | Leader | Rival failures | Own ground-up starts | Population | Real rent over 50 years: office / retail / apartments / industrial | Vacancy range: office / retail / apartments / industrial |
+|---|---|---|---|---|---|---|---|---|
+| 12007 | $159M | 6 of 48 | $2.15B | 67 | 0 | 51k→69k | −22% / +1% / **+94%** / −11% | 6–22% / 3–13% / 4–11% / 1–14% |
+| 550991 | $248M | 4 of 54 | $2.01B | 98 | 2 | 50k→83k | −9% / +24% / **+104%** / −7% | 6–23% / 2–11% / 4–11% / 1–17% |
+| 655720 | $163M | 6 of 18 | $1.29B | 84 | 14 | 51k→73k | −9% / +16% / **+89%** / −24% | 6–16% / 1–11% / 3–11% / 0–17% |
+
+What changed against the month-old engine:
+
+- **Becoming the richest is now hard.** The player compounds at 7–8% a year,
+  from $5M to $159–248M, and finishes 4th–6th. The leaders reach $1.3–2.2B,
+  and one family firm (Wentworth Trust, 347 buildings in seed 655720) ends up
+  owning a large share of the town. The old finding "too easy, #1 by year 6"
+  no longer holds.
+- **Rivals die en masse.** There were 67–98 failures, and in seed 655720 the
+  field shrank from 56 firms to 17, leaving one dominant survivor. That fits
+  `RANDOMNESS_AUDIT.md` item 2: one cash pot per firm, and failure seizes
+  every building, including loans that were current.
+- **Apartment rents roughly double in real terms in every seed,** while
+  apartment vacancy stays at 3–11%. Supply is not catching up. That fits the
+  flats-occupancy rail, which binds in about 26% of months on the reference
+  town (audit item 8: the looking-pool cap deletes excess demand instead of
+  letting it bid).
+- **Office is the weak class:** real rent −9% to −22%, and vacancy up to
+  22–23%.
+- **Ground-up development happens,** but unevenly: 0, 2 and 14 of the bot's
+  own starts.
+- **Seed 655720 had a decade-long shortage of shops and sheds:** retail and
+  industrial were 0.3–2% vacant from 2012 to 2021, with the index rate at
+  8–10.6%. High rates froze supply. That direction is real, but the length is
+  worth checking.
+
+---
+
+## First pass (month-old engine, 76403d5) — kept for the record
+
 **Setup:** generated island, City size (1,466 lots), **Frontier** build-out
 (591 vacant lots), $5M start, 50 years (2000–2050). Three market seeds on the
 same map. Driver: `tools/play50-frontier.mjs` (deterministic):

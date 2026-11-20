@@ -28,7 +28,6 @@ const checks = [
   ["property history", "property-history.mjs"],
   ["tax appeals", "tax-appeal.mjs"],
   ["rent causality", "rent-why.mjs"],
-  ["finite demand", "demand-finite.mjs"],
   ["economy honesty", "economy-honesty.mjs"],
   ["rival intelligence", "rival-smart.mjs"],
   ["supply answers demand", "supply-answers.mjs", { SEEDS: "550991,12007,22,7", HZ: "1200" }],

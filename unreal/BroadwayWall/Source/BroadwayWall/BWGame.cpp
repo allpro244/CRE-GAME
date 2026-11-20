@@ -133,7 +133,14 @@ void ABWCameraPawn::Tick(float Dt)
 			const double Extent = FMath::Max(Hb, Span * 0.75) + 1500;
 			const FRotator Rot(Pt, DeskYaw, 0);
 			const FVector Look(Base.X, Base.Y, DeskZoom < 0.3 ? 300.0 : Hb * (DeskZoom < 1 ? 0.2 : 0.45));
-			if (bDeskOnMain)
+			// A SITE, NOT A BUILDING (a plat on a farm tract, a big assemblage): framing all of it
+			// threw the camera far out every frame the land panel was open (owner: "the camera
+			// still shoots to zoom out"). Past ~150 m the main view stays where the player put it.
+			if (bDeskOnMain && Span > 15000.0)
+			{
+				// leave the camera alone
+			}
+			else if (bDeskOnMain)
 			{
 				const double Aspect = Camera->AspectRatio > 0 ? Camera->AspectRatio : 16.0 / 9.0;
 				const double TanV = FMath::Tan(FMath::DegreesToRadians(Camera->FieldOfView * 0.5)) / Aspect;
@@ -285,7 +292,10 @@ void ABWPlayerController::PlayerTick(float Dt)
 	// hover card: own mouse when Unreal has it, the page's when it forwards it
 	{
 		float MX, MY;
-		if (GetMousePosition(MX, MY)) HoverPx = FVector2D(MX, MY);
+		// the page's pointer wins while it is sending: under the web layer Unreal's own
+		// mouse position is the last one it saw, and it kept dragging the hover back there
+		PageHoverAge += Dt;
+		if (PageHoverAge > 0.5 && GetMousePosition(MX, MY)) HoverPx = FVector2D(MX, MY);
 		HoverClock += Dt;
 		if (HoverClock > 0.1 && HoverPx.X >= 0) { HoverClock = 0; Hovered = PickAt(HoverPx); if (City.IsValid()) City->SetHighlight(Selected, Hovered, (Cast<ABWCameraPawn>(GetPawn()) ? FVector::Dist(Cast<ABWCameraPawn>(GetPawn())->GetActorLocation(), Cast<ABWCameraPawn>(GetPawn())->Focus) : 0)); }
 		// ask the page for the hovered lot's four numbers, once per lot
@@ -304,7 +314,7 @@ void ABWPlayerController::PlayerTick(float Dt)
 }
 
 /**
- * THE PRESETS, as option strings (the Settings page offers the same four and
+ * THE PRESETS, as option strings (the Settings page offers the same five and
  * lets every option be changed after). Measured on the metro city at 1080p,
  * RTX 2080 (see UE58_PLAN.md for the table): the render resolution and the
  * lighting method are the two big levers; the rest are a few ms each.
@@ -314,6 +324,7 @@ FString BWGraphicsPreset(const FString& Name)
 	// (Low keeps Lumen at its lowest: the screen-space fallback measured slower here)
 	if (Name == TEXT("low"))    return TEXT("res=50;up=auto;gi=lumen;giq=2;refl=ssr;shadow=1;view=1;tex=2;fx=1;post=1;clouds=1;life=1;fps=0;vsync=0;blur=0");
 	if (Name == TEXT("medium")) return TEXT("res=67;up=auto;gi=lumen;giq=2;refl=lumen;shadow=2;view=2;tex=3;fx=2;post=2;clouds=1;life=2;fps=0;vsync=0;blur=0");
+	if (Name == TEXT("max"))    return TEXT("res=100;up=auto;gi=lumen;giq=4;refl=lumen;shadow=4;view=4;tex=4;fx=4;post=4;clouds=2;life=3;fps=0;vsync=0;blur=0");
 	if (Name == TEXT("ultra"))  return TEXT("res=100;up=auto;gi=lumen;giq=4;refl=lumen;shadow=4;view=4;tex=3;fx=3;post=3;clouds=2;life=2;fps=0;vsync=0;blur=0");
 	return TEXT("res=100;up=auto;gi=lumen;giq=3;refl=lumen;shadow=3;view=3;tex=3;fx=3;post=3;clouds=2;life=2;fps=0;vsync=0;blur=0");   // high
 }
@@ -386,11 +397,11 @@ void ABWPlayerController::PageInput(const FString& Type, double X, double Y, dou
 	else if (Type == TEXT("kd") && Key == TEXT("F3")) Cam->SetMode(ABWCameraPawn::EMode::Street);
 	else if (Type == TEXT("kd")) PageKeys.Add(Key);
 	else if (Type == TEXT("ku")) PageKeys.Remove(Key);
-	else if (Type == TEXT("hover")) HoverPx = FVector2D(X * W, Y * H);
+	else if (Type == TEXT("hover")) { HoverPx = FVector2D(X * W, Y * H); PageHoverAge = 0; }
 	else if (Type == TEXT("quality") || Type == TEXT("gfx"))
 	{
 		// GRAPHICS, from the game's Settings page: a preset ("quality", key
-		// low|medium|high|ultra) or the full set of choices ("gfx", key
+		// low|medium|high|ultra|max) or the full set of choices ("gfx", key
 		// "res=67;gi=lumen;..."); see ApplyGraphics.
 		BWApplyGraphics(GetWorld(), Type == TEXT("quality") ? BWGraphicsPreset(Key) : Key);
 	}
@@ -501,20 +512,21 @@ void ABWHUD::DrawHUD()
 	// MAP HUD (Phase 5): a small native card beside the pointer, at frame rate
 	if (const FBWParcel* P = PC->Hovered; P && P != PC->Selected && PC->HoverPx.X >= 0)
 	{
-		// THE FOUR NUMBERS (owner): appraised, occupancy, building sf, land acres — from the page
+		// THE FIVE NUMBERS (owner): appraised, demand, occupancy, building sf, land acres — from the page
 		const bool bInfo = PC->InfoBbl == P->Bbl;
 		auto Money = [](double V) { return V >= 1e6 ? FString::Printf(TEXT("$%.2fM"), V / 1e6) : FString::Printf(TEXT("$%.0fK"), V / 1e3); };
 		const double Ac = bInfo ? PC->InfoAcres : P->LotArea / 43560.0;
 		const FString Acres = Ac >= 10 ? FString::Printf(TEXT("%.0f ac"), Ac) : Ac >= 1 ? FString::Printf(TEXT("%.1f ac"), Ac) : FString::Printf(TEXT("%.2f ac"), Ac);
-		const FString Rows[4] = {
+		const FString Rows[5] = {
 			FString::Printf(TEXT("Appraised   %s"), bInfo ? *Money(PC->InfoAppraised) : TEXT("…")),
+			FString::Printf(TEXT("Demand      %s"), !bInfo || PC->InfoDemand < 0 ? TEXT("…") : *FString::Printf(TEXT("%d / 100"), PC->InfoDemand)),
 			FString::Printf(TEXT("Occupancy   %s"), !bInfo ? TEXT("…") : PC->InfoOcc < 0 ? TEXT("—") : *FString::Printf(TEXT("%d%%"), PC->InfoOcc)),
 			FString::Printf(TEXT("Building    %s"), !bInfo ? TEXT("…") : PC->InfoBldgSf <= 0 ? TEXT("—") : *(FText::AsNumber(PC->InfoBldgSf).ToString() + TEXT(" sf"))),
 			FString::Printf(TEXT("Land        %s"), *Acres) };
 		const float X = PC->HoverPx.X + 18 * S, Y = PC->HoverPx.Y + 14 * S;
-		Panel(X, Y, 240 * S, 118 * S);
+		Panel(X, Y, 240 * S, 139 * S);
 		Text(P->Address, X + 10 * S, Y + 6 * S, 1.05f, FLinearColor::White);
-		for (int32 r = 0; r < 4; ++r) Text(Rows[r], X + 10 * S, Y + (30 + r * 21) * S, 0.9f, FLinearColor(0.82f, 0.85f, 0.88f));
+		for (int32 r = 0; r < 5; ++r) Text(Rows[r], X + 10 * S, Y + (30 + r * 21) * S, 0.9f, FLinearColor(0.82f, 0.85f, 0.88f));
 	}
 	if (const FBWParcel* P = PC->Selected; P && !bPage)
 	{
@@ -1150,10 +1162,10 @@ void ABWGameMode::OnPageInput(const FString& Json)
 	if (T == TEXT("preview-off") && City) { City->ClearPreview(); return; }
 	if (T == TEXT("hoverinfo"))
 	{
-		FString Bbl; double A = 0, Oc = -1, Sf = 0, Ac = 0;
+		FString Bbl; double A = 0, Oc = -1, Sf = 0, Ac = 0, Dm = -1;
 		O->TryGetStringField(TEXT("bbl"), Bbl); O->TryGetNumberField(TEXT("a"), A); O->TryGetNumberField(TEXT("o"), Oc);
-		O->TryGetNumberField(TEXT("s"), Sf); O->TryGetNumberField(TEXT("ac"), Ac);
-		PC->InfoBbl = Bbl; PC->InfoAppraised = A; PC->InfoOcc = int32(Oc); PC->InfoBldgSf = int32(Sf); PC->InfoAcres = Ac;
+		O->TryGetNumberField(TEXT("s"), Sf); O->TryGetNumberField(TEXT("ac"), Ac); O->TryGetNumberField(TEXT("d"), Dm);
+		PC->InfoBbl = Bbl; PC->InfoAppraised = A; PC->InfoOcc = int32(Oc); PC->InfoBldgSf = int32(Sf); PC->InfoAcres = Ac; PC->InfoDemand = int32(Dm);
 		return;
 	}
 	// the lens: the page's number per deed, tinted on the lots (ui-revamp step 7)
@@ -1298,7 +1310,8 @@ void ABWGameMode::SetSeason(int32 Month)
 	}
 	if (Fog)
 	{
-		Fog->GetComponent()->SetFogDensity(Wx == Rain ? 0.005f : Wx == Overcast ? 0.0028f : bSummer ? 0.0012f : 0.0009f);
+		// (fair-weather fog halved: from the region's kilometre-up views it washed every colour to mud — owner)
+		Fog->GetComponent()->SetFogDensity(Wx == Rain ? 0.005f : Wx == Overcast ? 0.0028f : bSummer ? 0.0006f : 0.00045f);
 	}
 	if (Post)
 	{
@@ -1363,7 +1376,7 @@ void ABWGameMode::SetSeason(int32 Month)
 	// moisture and the far shore goes soft in it, while a winter high is crisp.
 	if (Atmosphere)
 	{
-		const float Haze = bSummer ? 1.5f : bWinter ? 1.0f : 1.25f;
+		const float Haze = bSummer ? 1.1f : bWinter ? 0.8f : 0.95f;   // was 1.5 / 1.0 / 1.25: the far ground went to milk
 		Atmosphere->SetMieScatteringScale(0.003996f * Haze * (Wx >= Overcast ? 1.4f : 1.f));
 	}
 	// streets wet in rain, damp for a while after it in the grey months

@@ -4,103 +4,120 @@ The owner's rule (2026-11-20): *"no artificial numbers, no dice rolls, no caps,
 no rails… a perfectly real simulation."* The standard is in `CLAUDE.md`
 ("Randomness: only at the boundary of the model").
 
-Four read-only auditors covered every random draw and every bound on an
-economic quantity in `src/engine/`. Their full tables, with file:line,
-bucket, reason and proposed mechanism, are in `docs/randomness-audit/`:
+Read-only auditors went over every random draw and every bound on an economic
+quantity in `src/engine/`. They sorted each into EXOGENOUS (a genuine outside
+shock: keep, and source it), PHYSICAL (a definition), GUARD (never binds), or
+FAKE (a roll deciding what the model can compute, or a load-bearing bound,
+asserted level or tuned constant). The first pass read a month-old checkout.
+A second pass re-verified every row against **main at c75ef8b (#838)**. Full
+tables, with file:line, status, reason and proposed mechanism, are in
+`docs/randomness-audit/`.
 
-| Area | Files | FAKE | EXOGENOUS | PHYSICAL | GUARD |
-|---|---|---|---|---|---|
-| Market core (`market.md`) | market, regime, demand, absorption, growth, towngrowth, bands | 32 | ~30 draw sites | ~25 | ~60 |
-| Leasing & deals (`leasing.md`) | actions, leasing, streetRolls, notes, auction, offmarket, owners | 89 | 34 | 13 | 15 |
-| Development & value (`dev.md`) | dev, value, landdev, zoning, plates, homes, roads, tax, platdesign, mix | 37 | 21 | 8 | 5 |
-| Rivals & finance (`rivals.md`) | rivals, sim, blackswans, swans, privateCredit, lenders, debt, credit, portfolio(sale), investors, competitorTraits | 40 | 18 | 10 | 7 |
+| Table | Files | Open FAKE rows | Fixed on main since the first pass |
+|---|---|---|---|
+| `market.md` | market, regime, demand, absorption, growth, towngrowth, bands | 17 | 22 rows |
+| `dev.md` | dev, value, landdev, zoning, plates, homes, roads, tax, platdesign, mix, comps | 30 | 13 rows |
+| `leasing.md` | actions, leasing, streetRolls, notes, auction, offmarket, owners, tenantMarket | 61 | 40 rows |
+| `rivals.md` | rivals, sim, blackswans, swans, privateCredit, lenders, debt, credit, portfolio(sale), investors, competitorTraits, workout, sponsor | 31 | 18 rows |
+| `propmarket-economy.md` | propmarket, economy, households, plus draws and main bounds in 15 other files | 33 | (first pass) |
 
-The counts are table rows, and one row can cover several lines. The auditors
-read code; they did not run it. A bound marked "binds" is from the code's own
-comments or from arithmetic until `tools/rails.mjs` measures it.
+Counts are table rows, and one row can cover several lines. The auditors read
+code; they did not run it. "Binds" means the code's comments or arithmetic
+say so, until `tools/rails.mjs` measures it.
 
-## Fixed
+**Not yet covered** (economically important): proforma, facility, fund,
+streetLoans, reputation, supply, industries, industryData, syndicate, raise,
+waterfall, peers, loanbook, jv, leasehold, space, pricing, products, buybox,
+capplan, books, standing. The full list, including plumbing and UI files, is
+at the end of `propmarket-economy.md`.
 
-- **Opening dearness** (`market.ts` `initEcon`). The seeded "dearness" draw
+## Fixed in this PR
+
+- **Opening dearness** (`market.ts` `initEcon`). The seeded dearness draw
   (σ 0.20) and the per-class opening-q draw (σ 0.15) are gone. The opening
-  Tobin's q is now the town's: `openingTobinQ`, from its vacant-land share.
+  Tobin's q is the town's own: `openingTobinQ`, from its vacant-land share.
   It is calibrated to Glaeser–Gyourko–Saks 2005 and Saiz 2010: q ≈ 1 where
-  land is plentiful, about 1.8 at Metropolis build-out. The fix also found
-  and removed a bias that predates it. Every town had opened at about 0.68 of
-  the q it was solved to, because the solver read its own rent moves as
-  developer "momentum" (up to +45% optimism) against a stale `rentExp`, and
-  the price level was applied after the solve.
+  land is plentiful, about 1.8 at Metropolis build-out. q is struck at
+  long-run cap rates, and the history's actual rates then move values, not
+  rents. The price level (units only) stays a draw, `openingPriceLevel`.
+  The change also stops the solver reading its own rent moves as developer
+  momentum against a stale `rentExp`.
 
-## The pattern that keeps coming back
+## Already fixed on main (found by the first pass, gone by the second)
 
-The model often *already computes* the answer, then decides the outcome with
-a roll that ignores it:
+- the 45% city-vacancy cap;
+- construction starts as a share of stock × a die;
+- the monthly land-index formula and its die;
+- monthly rent and cap dice where the tape was thin;
+- the street-lease rent noise;
+- `bumpLand`'s ratchet;
+- listed sellers' acceptance, now a floor plus a rival-bid test instead of a
+  re-rolled probability;
+- bank closure, now a regulatory rule instead of a roll;
+- rival default losses, now settled loan by loan at a market forced-sale
+  price.
 
-- a tenant's indifference rent exists, but acceptance is a re-rolled logit;
-- an owner's private price exists, but the bid outcome is a slope plus a
-  roll;
-- the best use of a lot is computed (`residualScheme`), but the use built is
-  rolled;
-- the street's lease rents carry a 0.94–1.03 uniform multiplier;
-- rents and cap rates take a monthly die wherever the deal tape is thin.
+## The pattern that remains
 
-The fix is the same each time: draw the private value once (who the
-counterparty is, which is EXOGENOUS), then make the outcome a comparison
-against it.
+The model often already computes the answer, then decides the outcome with a
+roll that ignores it:
 
-## Fix queue (highest value first)
+- **Tenants:** counters, walks and renewals are each a fresh probability.
+- **Off-market owners:** accept, counter and blind-bid by roll against a
+  reserve that is already computed.
+- **The player's letters:** TI and free rent are dice, while the street solves
+  the same quantities from net effective rent (one quantity, two answers).
 
-Each item is one PR. Each must re-run `pnpm conserve` and
-`pnpm baseline:check`, and say in the commit why the standing numbers moved.
+The fix each time: draw the private value once (*who* the counterparty is is
+EXOGENOUS), then make the outcome a comparison against it.
 
-1. **Land price is a label, not a residual.** A stamped texture floor wins
-   on 59% of vacant lots (`value.ts` ~1563/1609). It ratchets up on every
-   delivery (`bumpLand`, ×1.03–1.06; a variance adds ×1.22, counting the
-   envelope twice) and only comes down through `holderCapitulation` (floor
-   0.25). The land index itself is a hand-shaped rent/cost formula plus a
-   ±0.3% monthly die (`market.ts` ~6912). → The residual blended with
-   observed land sales.
-2. **City vacancy capped at 45%** (`market.ts` ~5885, 5901). A glut past it
-   reads a different vacancy from occupied ÷ stock. → Remove it; the glut
-   curve already flattens past its fitted range (`DEEP_RATE`). Run stress on
-   overbuild first.
-3. **Street lease rent noise and random concessions** (`streetRolls.ts`
-   ~619, 631; `leasing.ts` ~2346, 2356, 1931, 2060). They feed the rent index
-   every month, and the 0.985 mean drags rents down. → A bargain between the
-   firm's and the landlord's reservation rents, with net-effective
-   concessions.
-4. **Construction starts are a share of stock × a ±30% die** (`market.ts`
-   ~5069, `catchUp` 4.5). → Starts from the sites that actually pencil
-   (`sitePencil`), rationed by credit, each site with its own start hazard.
-5. **Rivals die too easily** (`rivals.ts`). One cash pot per firm, and
-   failure seizes every building, including loans that were current
-   (~4924–4988). Opening firms have 6–16% of equity in cash and no recallable
-   capital (~1569, 3589). The reserve and payout constants are tuned
-   (~4559–4601). The credit line is resized to current income monthly
-   (~3570). Banks are closed by a roll (`lenders.ts` ~1327). → Non-recourse
-   asset-level debt, real reserves and commitments, and loan modification.
-6. **Tenant/seller acceptance re-rolled every counter** (`leasing.ts`
-   ~4441/5129, `actions.ts` ~585–640, 2359, 2416–2470). The player can fish
-   for a yes. → A stored private value and a comparison.
-7. **The sales tape's trade probability, an invented bidder, and a 0.92
-   reserve** (`actions.ts` ~3851–3922). → Run the existing second-price
-   auction on every listing with real qualifying firms.
-8. **Monthly rent and cap dice where there is no tape** (`market.ts` ~6703,
-   6857). → A tape for sheds and flats; appraisal smoothing with no die.
-9. **Renewal intent on its 0.96 ceiling, and two expiry models**
-   (`leasing.ts` ~1171–1237 vs `streetRolls.ts` ~331). → One expiry model;
-   renewal rent as a split of the tenant's moving-cost saving.
-10. **The credit window's 0.4 floor plus a die** (`market.ts` ~1949), and the
-    looking-pool cap that deletes unmet demand (~5665).
+## Fix queue (highest value first; one PR each)
+
+Each PR must re-run `pnpm conserve` and `pnpm baseline:check`, compare against
+a control on main, and say in the commit why the standing numbers moved.
+
+1. **Land price is a label.** The texture floor, built on the generator's
+   stamped price, overrides the builder's residual (`value.ts` ~1736, 1762,
+   1818; `citygen/build.mjs` ~533). Land decay only runs where a builder
+   would pay something (`comps.ts` ~466). `queueFactor` is 0 for a town with
+   no sales history (`value.ts` ~1099). A variance multiplies land by 1.22
+   (`zoning.ts` ~215). → The residual blended with land sales.
+2. **Rivals: one cash pot and firm-wide death.** On a 20-month arrears clock
+   every building goes back to the lenders (`rivals.ts` ~5011–5022,
+   5554–5612). Opening firms have no uncalled capital and 6–16% cash (~1694).
+   The reserve and payout constants are tuned (~5102, 5147). → Asset-level
+   non-recourse SPVs, real commitments and reserves.
+3. **TI and free rent on the player's letters are dice** (`leasing.ts`
+   ~2433, 2443, 2028, 2162). → The street's net-effective rule, one answer.
+4. **Tenant acceptance and renewal rolls** (`leasing.ts` ~1250–1299, 2069,
+   4572–4600, 5270–5366). The renewal odds have six asserted factors and a
+   0.10–0.96 clamp; two computed factors are never applied. → A stored
+   reservation rent and a comparison.
+5. **Off-market owner rolls** (`actions.ts` ~2244–2258, 2327, 2407–2423).
+6. **Opening vacancy × d(0.88, 1.12), pinned 2–40%** (`regime.ts` ~211). The
+   exact example in CLAUDE.md.
+7. **The credit index's 0.4 floor plus a ±1.2-point monthly die**
+   (`market.ts` ~1790).
+8. **The looking-pool cap with a 25% bleed deletes excess demand**
+   (`market.ts` ~4479). Also behind the flats-occupancy rail, which binds in
+   ~26% of months on the reference town.
+9. **Town-centre drift and noise picked for when the centre shows**
+   (`demand.ts` ~163–261); the ±16 cap binds in long games.
+10. **Households and firm-credit fakes** (`propmarket-economy.md`):
+    - the job-fill rate is held fixed because the elastic version "ran away"
+      (`households.ts` ~447);
+    - the renewal rent floor of rent × 0.97 (~3755);
+    - an in-migration form with a min(1) cap (~3144);
+    - the firm credit gate is shut below a credit index of 0.5 (`economy.ts`
+      ~1464);
+    - an unsourced 10% shade on every sealed bid (`propmarket.ts` ~118);
+    - a ±1.5pp valuation error in every bid (~307).
 11. **Smaller items:**
-    - the opening vacancy jitter (`regime.ts` 188);
-    - the use-by-roll and demolition-by-roll (`dev.ts` 3457, 4029, 4104, 4450);
-    - developers' looks tied to standing stock (`dev.ts` 5272);
-    - the rumour draw on the economy stream (`market.ts` 3653);
-    - dead "rail" helpers kept alive with `void`;
-    - the 2.50 cap on `devPencils` that the opening solve skips on (dense-town
-      apartments);
-    - the NPL notes on current loans (`notes.ts` ~603).
+    - the exit valves and build-to-suit arrivals on fixed asserted schedules;
+    - the private-rescue arrears reduced by two months by assertion
+      (`privateCredit.ts` ~342);
+    - the 2.50 cap on `devPencils` that the opening solve skips on
+      (dense-town flats).
 
 ## Keep (EXOGENOUS) — needs sourcing, not removal
 

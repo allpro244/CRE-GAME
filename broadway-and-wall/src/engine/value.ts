@@ -8,12 +8,12 @@ export { START_YEAR };
 import type { BuiltClass, UseMix } from "./types";
 import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
-import { industryStress, NATURAL_VAC, CAP_BASE, developerOptimism, concessionTarget, CONC_DEPTH, LEASE_TERM_M, forwardVacancy } from "./market";
+import { industryStress, openingVac, CAP_BASE, developerOptimism, LEASE_TERM_M, forwardVacancy, RENT_BASE, underwrittenGrowthPct } from "./market";
 import { gpInterestInFund } from "./fund";
-import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE } from "./proforma";
-import { splitRule, coverageMax, MINOR_FIXED, MINOR_PER_LOT, CORNER_K } from "./lotcode";
+import { developmentProForma, LAND_CARRY_RATE, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE, leaseUpMonthsOf, stabilisedVacancy, wreckCost } from "./proforma";
 import { productOf, PRODUCT_TYPES, PRODUCT_KEYS, layoutProduct, type ProductKey } from "./products";
 import { homeLotBidPsf } from "./homeprice";
+import { GROCER_SALES } from "./grocerHook";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -94,7 +94,7 @@ export function zoneUseBar(
  * the gradient should be steeper that is its own decision, made deliberately
  * with the harnesses and not smuggled in behind this one.
  */
-const DEMAND_GAMMA = 1.05;   // must match DEMAND_GAMMA in src/citygen/build.mjs
+const DEMAND_GAMMA = 1.05;   // must match DEMAND_GAMMA in src/citygen/build.mjs [K: a display shape, no source]
 export function demandIdx(demandScore: number): number {
   // One-entry memo: the pro forma asks this of the same lot dozens of times in
   // a row, and a pow is the whole cost. Pure, so the number cannot change.
@@ -207,9 +207,10 @@ import { tableVersion } from "./tableVersion";
  * all unchanged and only the spread around them is new. This constant is the
  * difficulty dial for the whole of development: raising it makes every
  * building slightly worse and every big site relatively better.
+ * [D: measured off the generated city — a normaliser, not a world figure.]
  */
 export const REF_PLATE_SF = 4300;
-/** The median lot, for the same reason. */
+/** The median lot, for the same reason. [D: measured off the generated city] */
 export const REF_LOT_SF = 4950;
 /**
  * THE FIXED PART OF A CORE IS VERTICAL CIRCULATION, AND A LOW BUILDING NEEDS
@@ -304,6 +305,7 @@ export function plateEfficiency(plateSf: number): number {
 // of depth there is no window, and the extra area is corridor. So assembling
 // gets you an office or an industrial site, and not necessarily a residential
 // one, which is a decision rather than a bonus.
+// [K: judgement, no source found.]
 const PLATE_RENT_BETA: Partial<Record<BuiltClass, number>> = {
   office: 0.07, retail: 0.05, industrial: 0.08, multifamily: 0,
 };
@@ -334,6 +336,9 @@ export function plateOf(rec: { bldgArea: number; floors: number }): number {
  * convention as REF_PLATE_SF. The zone width and halving are the method's own
  * constants, not tuned. The clamp is a guard: a plate under 20 ft deep is all
  * Zone A (the ceiling, 1.57) and only a big box past ~250 ft reaches the floor.
+ * Zone width: 6.1 m (20 ft) zones from the window, each half the one in front,
+ * the remainder half of zone C (VOA, "How we value small shops", 2022) [S];
+ * REF_SHOP_DEPTH_FT is measured off the generated towns [D].
  */
 const ZONE_FT = 20;
 export const REF_SHOP_DEPTH_FT = 38;
@@ -373,7 +378,7 @@ export function plateRentMult(rec: { bldgArea: number; floors: number; lotFront?
 }
 
 // the footprints a new building may take (proforma.ts MIN_COVERAGE to the
-// widest MAX_COVERAGE)
+// widest MAX_COVERAGE) [D: 0.6 to 0.85 in five-point steps]
 const COVERAGE_LADDER = [0.6, 0.65, 0.7, 0.75, 0.8, 0.85];
 /**
  * How much of its own zoning envelope this dirt can physically carry, at the
@@ -390,7 +395,7 @@ export function envelopeRealisation(rec: { lotArea: number; farMaxComm: number; 
   }
   return clamp(best / far, 0.30, 1);
 }
-/** The median lot reaches 98.5% of its envelope. Measured over three cities. */
+/** The median lot reaches 98.5% of its envelope. Measured over three cities. [D: measured off the generated cities] */
 const REF_REALISATION = 0.985;
 const siteQ = (plateSf: number) => plateEfficiency(plateSf) * plateRentMult({ bldgArea: plateSf, floors: 1 }, "office");
 const REF_SITE_Q = siteQ(REF_LOT_SF * 0.70);
@@ -528,13 +533,27 @@ export function constructionTypeMult(use: BuiltClass, floors: number): number {
   const fl = Math.max(1, floors || 1);
   return fl <= 3 ? 0.68 : fl <= 7 ? 0.83 : 1;
 }
+// [S~] Soft cost as a share of TOTAL development cost: 15-25% for multifamily
+// (Fannie Mae Multifamily / RSMeans, "Location, location, location: multifamily
+// construction"); 16.2% for seniors housing (CBRE 2026 Senior Housing
+// Development Costs, Q2 2026; 18.5% in its 2022 survey). 0.16 of hard cost is
+// ~14% of hard + soft, at the bottom of that band. Kept, not raised: the
+// surveys' totals carry items (land carry, developer fee) this engine books
+// elsewhere.
 export const SOFT_COST = 0.16;    // design, legal, permits, insurance, financing fees
+// [S~] Hard-cost contingency: most commercial projects carry 5-10% of hard cost,
+// 5-8% with complete documents and a bid GC contract (Terrapin, "Commercial
+// Construction Contingency by Project Type", 2026).
 export const CONTINGENCY = 0.06;  // held against change orders; unspent is yours
 
 /**
  * THE DEVELOPER'S MARGIN — what the trade requires to take the risk, as a
  * share of cost. 15-20% on cost is the standard hurdle a lender underwrites
  * to and a developer will not go below; below it, nobody breaks ground.
+ * [S~] RICS Land Journal, "Approaches to developer returns in appraisals": the
+ * margin most small and medium developers required was 15-20%; NSW Local
+ * Government Housing Kit, Module 4: developer's margin on total project cost
+ * typically 15-20%. 0.17 sits inside both.
  */
 export const DEV_MARGIN = 0.17;
 
@@ -557,19 +576,65 @@ export function developmentHurdle(yieldOnCost: number, exitCap: number): {
  * and the desk carries the identical charge in its basis.
  */
 /**
- * AND WHEN NOTHING PENCILS TODAY, THE DIRT IS STILL WORTH SOMETHING.
+ * AND WHEN NOTHING PENCILS TODAY, THE DIRT IS STILL WORTH SOMETHING — the
+ * option to develop it (McDonald & Siegel 1986; Capozza & Helsley 1990;
+ * Williams 1991). An owner holds the right, not the duty, to put up the
+ * building: V, the finished value net of the developer's margin, against K,
+ * the non-land cost, both in today's money per square foot of land. V moves
+ * as the town's property value moves. The owner builds when V first reaches
  *
- * Most land in most cities does not support a new building at today's rents,
- * and it does not therefore trade at zero — it trades on the option. Somebody
- * holds it, pays the taxes and waits for the rent to arrive, and what they
- * will pay is the residual at the rents they expect at the next peak,
- * discounted for the wait. About five years at the same 12%:
- *   1 / 1.12^5 = 0.567
- * and a peak is worth roughly a quarter more than the middle of the cycle,
- * which is the amplitude the rent index actually runs at.
+ *   V* = beta/(beta-1) * K
+ *
+ * and until then the dirt is worth (V/V*)^beta * (V* - K), which is more than
+ * V - K whenever there is anything to wait for. beta is the positive root of
+ *
+ *   1/2 sigma^2 beta(beta-1) + (r - delta) beta - r = 0
+ *
+ * with sigma the town's OWN measured volatility of the class's property value
+ * (`econ.landSigma`, market.ts measurePropertyVol), delta the payout the
+ * finished building would throw off (its exit yield: what a holder of the
+ * option forgoes by waiting), and r the land rate the residual already
+ * discounts the wait at — the town's long rate (`econ.indexRate`), risk-neutral. This replaced a holder bid
+ * struck at a hand-set "peak" (rents x 1.25) and a hand-set five-year wait
+ * (x 0.567).
+ *
+ * With no measured sigma (a town's first two years) the root is the
+ * deterministic limit r/(r - delta): the wait is still worth what the drift
+ * alone makes it.
  */
-const WAIT_DISCOUNT = 0.567;
-const PEAK_RENT_MULT = 1.25;
+export type LandOption = {
+  /** The option's price, $/sf of land, after the build queue. */
+  psf: number;
+  /** V - K, $/sf of land, before the queue: what building today would pay. */
+  intrinsicPsf: number;
+  /** V, K and the trigger V*, $/sf of land (today's money). */
+  v: number; k: number; vStar: number;
+  beta: number; sigma: number; delta: number;
+  /** V >= V*: the owner builds now; the dirt is worth what building pays. */
+  exercise: boolean;
+  use: BuiltClass;
+};
+
+/** The positive root beta of 1/2 sigma^2 beta(beta-1) + (r-delta) beta - r = 0 (Infinity: never worth waiting). */
+export function optionBeta(sigma: number, r: number, delta: number): number {
+  const a = 0.5 * sigma * sigma;
+  const b = r - delta - a;
+  const d = Math.sqrt(b * b + 4 * a * r);
+  // the stable form of (-b + sqrt D)/2a: it holds as sigma -> 0
+  const den = b + d;
+  return den > 1e-12 ? (2 * r) / den : Infinity;
+}
+
+/** The development option: the price of dirt whose building is worth V and costs K. */
+function optionValue(v: number, k: number, beta: number): { f: number; vStar: number; exercise: boolean } {
+  const finite = Number.isFinite(beta) && beta < 1e6;
+  if (!(k > 0)) return { f: Math.max(0, v), vStar: 0, exercise: v > 0 };
+  if (!finite) return { f: Math.max(0, v - k), vStar: k, exercise: v >= k };
+  const vStar = (beta / (beta - 1)) * k;
+  if (!(v > 0)) return { f: 0, vStar, exercise: false };
+  if (v >= vStar) return { f: v - k, vStar, exercise: true };
+  return { f: Math.pow(v / vStar, beta) * (vStar - k), vStar, exercise: false };
+}
 
 /**
  * THE SHAPE EACH USE HAS. Shops and sheds are flat — two floor plates is the
@@ -753,12 +818,26 @@ export function residualLandPsf(rec: ParcelRecord, econ: Econ, rentMult = 1): nu
 }
 
 export function residualScheme(rec: ParcelRecord, econ: Econ, rentMult = 1): ResidualScheme | null {
-  return residualSchemeIn(rec, econ, rentMult, null);
+  return residualCore(rec, econ, rentMult, null).best;
 }
 
-/** `ctx` is landPsfNow's per-market cache; null everywhere else. Same numbers. */
-function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: LandCtx | null): ResidualScheme | null {
-  if (!rec.lotArea) return null;
+/** The development option on this lot (see `LandOption`); null where nothing can be built. */
+export function landOption(rec: ParcelRecord, econ: Econ): LandOption | null {
+  return residualCore(rec, econ, 1, null).opt;
+}
+
+type ResidualCore = { best: ResidualScheme | null; opt: LandOption | null };
+
+/**
+ * `ctx` is landPsfNow's per-market cache; null everywhere else. Same numbers.
+ * One pass over the schemes gives both today's residual (`best`, the winner
+ * among schemes that pay for their own dirt) and the development option
+ * (`opt`, the best option over EVERY scheme: one that cannot pay today
+ * still carries the right to wait for the day it can).
+ */
+function residualCore(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: LandCtx | null): ResidualCore {
+  const none: ResidualCore = { best: null, opt: null };
+  if (!rec.lotArea) return none;
   // The envelope you can actually reach, not the one the zoning text allows.
   // This is what siteQualityMult was reaching for and could not express as a
   // price multiplier: a narrow lot that cannot fit an efficient floor plate
@@ -797,9 +876,28 @@ function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: 
   const legalFar = farMaxFor(rec) * envelopeRealisation(rec);
   const known = rec.cornice !== undefined && rec.maturity !== undefined;
   const far = known ? legalFar : legalFar * clamp(econ.infillShare ?? 1, 0.15, 1);
-  if (!(far > 0)) return null;
+  if (!(far > 0)) return none;
 
   let best: ResidualScheme | null = null;
+  let opt: LandOption | null = null;
+  // r is the RISK-FREE rate, not a developer's hurdle: the option is priced
+  // risk-neutrally (McDonald & Siegel 1986), and the risk lives in sigma.
+  // Struck at a 12% hurdle the trigger sat at V ~ 2K and almost no lot was
+  // ever ripe; at the long rate it lands near 1.3K, where Quigg (1993) found it.
+  const r = Math.max(0.005, (econ.indexRate ?? LAND_CARRY_RATE * 100) / 100);
+  const consider = (use: BuiltClass, value: number, nonLand: number, carry: number, exitYieldPct: number): void => {
+    const v = value / (1 + DEV_MARGIN) / (1 + carry) / rec.lotArea;
+    const k = nonLand / (1 + carry) / rec.lotArea;
+    const sigma = econ.landSigma?.[use] ?? 0;
+    const delta = exitYieldPct / 100;
+    const beta = optionBeta(sigma, r, delta);
+    const o = optionValue(v, k, beta);
+    if (!(o.f > 0)) return;
+    const psf = o.f * queueFactor(econ, use, o.f);
+    if (!opt || psf > opt.psf) {
+      opt = { psf, intrinsicPsf: v - k, v, k, vStar: o.vStar, beta, sigma, delta, exercise: o.exercise, use };
+    }
+  };
   const all: { use: BuiltClass; psf: number }[] = [];
   const uw = ctx ? ctxUnderwriting(ctx, econ, rentMult) : underwritingEcon(econ, rentMult);
   const quote = ctx
@@ -838,14 +936,27 @@ function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: 
       //
       // which is the residual method with the margin taken on value and the
       // wait charged at the land rate for the scheme's own schedule.
+      // THE SITE'S OWN COST IS IN ITS PRICE (2026-11-19). The desk books a
+      // job at its site's cost (`siteCostMult`) and this priced the dirt at
+      // the town's median: a lot that is a quarter cheaper to build on sold
+      // for what an ordinary one does, and its buyer kept the difference.
+      // Measured, seed 12007: every one of the five vacant lots that cleared
+      // office at the opening drew a cost 12-25% under the median, the desk
+      // could pay $77-161/sf for the dirt where this bid $13-47, and the
+      // town's builders found those lots one after another — office starts
+      // ran on into 20-25% vacancy, a quarter more office in five years.
+      // A site's advantages are capitalised into what it sells for (Ricardo):
+      // the same cost on both sides of the trade.
       const pf = developmentProForma(rec, econ, {
         use, floors, coverage, contract: "gmp", spec: 0.5,
         envelopeFar: farUse, asIfVacant: true, rentMult, uw,
-        quote,
+        quote, custom: { costMult: recCostMult(rec, use) },
       });
       if (!pf || !(pf.exitYieldPct > 0)) continue;
       const value = pf.stabNoi / (pf.exitYieldPct / 100);
-      const nowTotal = (value / (1 + DEV_MARGIN) - pf.nonLandBasis) / (1 + pf.landCarryRate);
+      // (the income the lease-up gives up is a cost of the scheme the land is priced on: proforma.ts leaseUpForgone)
+      const nowTotal = (value / (1 + DEV_MARGIN) - pf.nonLandBasis - pf.leaseUpForgone) / (1 + pf.landCarryRate);
+      consider(use, value, pf.nonLandBasis + pf.leaseUpForgone, pf.landCarryRate, pf.exitYieldPct);
       // ...AND THE LOT WAITS ITS TURN. See `queueFactor`.
       const landTotal = nowTotal > 0 ? nowTotal * queueFactor(econ, use, nowTotal / rec.lotArea) : nowTotal;
       const psf = landTotal / rec.lotArea;
@@ -882,11 +993,12 @@ function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: 
       const pf = developmentProForma(rec, econ, {
         use: p.use, floors: 1, coverage: 1, contract: "gmp", spec: 0.5,
         envelopeFar: far, asIfVacant: true, rentMult, uw, quote,
-        custom: { product: { key, ...(draw !== undefined ? { draw } : {}) } },
+        custom: { product: { key, ...(draw !== undefined ? { draw } : {}) }, costMult: recCostMult(rec, p.use) },
       });
       if (!pf || !(pf.exitYieldPct > 0)) continue;
       const value = pf.stabNoi / (pf.exitYieldPct / 100);
-      const nowTotal = (value / (1 + DEV_MARGIN) - pf.nonLandBasis) / (1 + pf.landCarryRate);
+      const nowTotal = (value / (1 + DEV_MARGIN) - pf.nonLandBasis - pf.leaseUpForgone) / (1 + pf.landCarryRate);
+      consider(p.use, value, pf.nonLandBasis + pf.leaseUpForgone, pf.landCarryRate, pf.exitYieldPct);
       const landTotal = nowTotal > 0 ? nowTotal * queueFactor(econ, p.use, nowTotal / rec.lotArea) : nowTotal;
       const psf = landTotal / rec.lotArea;
       const row = all.find((x) => x.use === p.use);
@@ -901,7 +1013,8 @@ function residualSchemeIn(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: 
       }
     }
   }
-  return best && { ...best, all };
+  const b = best as ResidualScheme | null;
+  return { best: b && { ...b, all }, opt };
 }
 /** The smallest site any product comes on: a pad's half-acre outparcel, less the 20% layoutProduct allows. */
 const PRODUCT_LOT_MIN_SF = 0.5 * 43_560 * 0.8;
@@ -940,33 +1053,56 @@ const PRODUCT_LOT_MIN_SF = 0.5 * 43_560 * 0.8;
  * back on its own.
  */
 export function queueFactor(econ: Econ, use: BuiltClass, psf: number): number {
-  // THE QUEUE IS MEASURED ONCE A YEAR AND READ EVERY MONTH, so the measurement
-  // glides in over the year instead of landing as a step (2026-10-14). A step
-  // moved every lot's price at once each January — measured on a Great City
-  // career, sites under construction marked -34%, +37%, -30% in successive
-  // re-measurements with nothing about the lots changed.
-  const w = econ.landQueueW ?? 1;
-  const now = queueFactorOf(econ.landQueue?.[use], psf);
-  if (w >= 1 || !econ.landQueuePrev?.[use]) return now;
-  return w * now + (1 - w) * queueFactorOf(econ.landQueuePrev[use], psf);
+  // The queue is re-measured every month (refreshLandQueue), so there is no
+  // older measurement to glide in from. A save from before that carries
+  // landQueuePrev / landQueueW; both are cleared at its next month.
+  return queueFactorOf(econ.landQueue?.[use], psf);
 }
 
 function queueFactorOf(q: NonNullable<Econ["landQueue"]>[BuiltClass] | undefined, psf: number): number {
   if (!q || !(psf > 0) || !q.psf.length) return 1;
-  let ahead = q.total;
-  for (let i = 0; i < q.psf.length; i++) {
-    if (psf >= q.psf[i]) { ahead = q.ahead[i]; break; }
+  // THE QUEUE IS A SAMPLE, READ AS A CURVE (2026-11-17). refreshLandQueue
+  // measures it on a sample of lots and each sampled site stands for `step`
+  // lots' floor area — in a City, eleven to thirteen office sites carrying up
+  // to 480k sf each, five years of the town's office take-up. Read as a
+  // staircase, a lot whose residual edged past one sampled site jumped five
+  // years up the queue, and its land price doubled in a month and fell back
+  // the next with rents, caps and costs unchanged (seed 20261, a 9,598 sf
+  // warehouse: land $199 -> $397 -> $269 /sf of lot in months 137-139, and the
+  // building's mark with it). A sampled site is evidence of floor area spread
+  // around its residual, not an atom at it, so the wait is read off the line
+  // between neighbouring samples (and, below the last, down to a residual of
+  // nothing behind the whole queue). Same samples, same total, same best and
+  // worst place in line; only the steps between them are gone.
+  const n = q.psf.length;
+  let ahead: number;
+  if (psf >= q.psf[0]) ahead = q.ahead[0];
+  else {
+    let i = 1;
+    while (i < n && psf < q.psf[i]) i++;
+    if (i < n) {
+      // between sample i (cheaper) and i-1 (dearer): ahead runs from ahead[i]
+      // at psf[i] to ahead[i-1] at psf[i-1]
+      const hi = q.psf[i - 1], lo = q.psf[i];
+      const t = hi > lo ? (hi - psf) / (hi - lo) : 1;
+      ahead = q.ahead[i - 1] + (q.ahead[i] - q.ahead[i - 1]) * t;
+    } else {
+      // under the cheapest sample: its floor area spread down to a residual of nothing
+      const last = q.psf[n - 1];
+      const t = last > 0 ? Math.min(1, (last - psf) / last) : 1;
+      ahead = q.ahead[n - 1] + (q.total - q.ahead[n - 1]) * t;
+    }
   }
   if (!(ahead > 0)) return 1;
   if (!(q.absYr > 0)) return 0;
   return Math.pow(1 + Math.max(0.01, q.r), -ahead / q.absYr);
 }
 
-/** Lots sampled per refresh — the queue is a distribution, and a Great City has ~6,000 lots. */
+/** Lots sampled per refresh — the queue is a distribution, and a Great City has ~6,000 lots. [K: a sample size for speed, not an economic quantity] */
 const LAND_QUEUE_SAMPLE = 400;
 
 /**
- * MEASURE THE QUEUE, once a year. The residuals are struck WITHOUT the queue
+ * MEASURE THE QUEUE, every month. The residuals are struck WITHOUT the queue
  * (it is what the market would build if it could), on a deterministic sample
  * of lots scaled to the town. A standing building joins only where its dirt
  * beats the building on it — that is the stock the wrecking ball is pointed
@@ -975,19 +1111,27 @@ const LAND_QUEUE_SAMPLE = 400;
 export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRecord>, bbls: string[]): void {
   const e = s.econ;
   // OWNERS LEARN THE LAND MARKET SLOWLY — see `ownerAskPsf`. Monthly, toward
-  // the level the yearly sample last measured.
+  // the level the panel last measured.
   if (e.landMkt !== undefined) {
     e.landBelief = (e.landBelief ?? e.landMkt) + BELIEF_MONTHLY * (e.landMkt - (e.landBelief ?? e.landMkt));
   }
   const h = e.history ?? [];
   const L = Math.min(60, h.length - 1);
   if (L < 12) return;
-  // THE TAKE-UP IS READ EVERY MONTH, THE RANKING ONCE A YEAR (2026-10-12).
-  // Absorption and the yield are off the tape, which is published monthly and
-  // costs nothing to read; only the site ranking needs the expensive survey.
-  // Read yearly, a bust's collapse in take-up reached every site's wait on one
-  // January morning: a prime lot's dirt fell 68% in a month (developer run,
-  // month 875) while the absorption behind it had been sliding all year.
+  // THE QUEUE IS MEASURED EVERY MONTH, RANKING AND ALL (2026-11-17). The
+  // take-up was read monthly but the ranking once a year, and a lot's place in
+  // line was found by setting ITS residual this month against the dollar
+  // residuals the panel's sites had LAST JANUARY. Residuals are a thin slice of
+  // a building's value (value / (1 + margin) - cost), so a 10% move in rents or
+  // cap rates moves every residual in town by half: between measurements every
+  // lot slid years up or down a queue that had not changed order, and slid back
+  // when January re-ranked it. Measured on seed 31337, years 15-35: builders'
+  // value/cost held at 1.34-1.67 while the median vacant lot's best builder bid
+  // per unit of its texture went 9.7, 1.6, 6.7, 7.2, 2.1, 8.3, 15.8 in
+  // successive Julys. A site's place in line is its rank among the others, and
+  // a market move that lifts them all together leaves it where it was; the
+  // panel is re-struck every month so the lot is always ranked against the
+  // same month's residuals (~0.2 s a month on a City's 400-lot panel).
   const absYrOf = (use: BuiltClass): number => {
     const now = h[h.length - 1], then = h[h.length - 1 - L];
     let netAbs = 0, comp = 0;
@@ -996,25 +1140,9 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
     return (Math.max(0, netAbs) + Math.max(0, lost)) * 12 / L;
   };
   const rOf = (use: BuiltClass): number => (e.capExp?.[use] ?? e.capRate[use]) / 100;
-  if (e.landQueue && s.month % 12 !== 0) {
-    const q: NonNullable<Econ["landQueue"]> = {};
-    for (const use of BUILT_CLASSES) {
-      const old = e.landQueue[use];
-      if (old) q[use] = { ...old, absYr: Math.round(absYrOf(use)), r: rOf(use) };
-    }
-    e.landQueue = q;
-    // ...and the previous measurement keeps its own clock, so the blend in
-    // queueFactor compares like with like.
-    if (e.landQueuePrev) {
-      const p: NonNullable<Econ["landQueue"]> = {};
-      for (const use of BUILT_CLASSES) { const o = e.landQueuePrev[use]; if (o) p[use] = { ...o, absYr: Math.round(absYrOf(use)), r: rOf(use) }; }
-      e.landQueuePrev = p;
-    }
-    e.landQueueW = Math.min(1, (s.month % 12) / 12);
-    return;
-  }
-  if (e.landQueue) { e.landQueuePrev = e.landQueue; e.landQueueW = 0; }
-  const bare = { ...e, landQueue: undefined } as Econ;
+  // the yearly measurement's glide (landQueuePrev / landQueueW) has nothing to glide between now
+  e.landQueuePrev = undefined; e.landQueueW = undefined;
+  const bare = { ...e, landQueue: undefined, landQueuePrev: undefined } as Econ;
   const n = bbls.length;
   const take = Math.min(n, LAND_QUEUE_SAMPLE);
   const step = n / take;
@@ -1034,7 +1162,7 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
     const bbl = bbls[Math.min(n - 1, Math.floor(j * step) + off)];
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || !(rec.lotArea > 0)) continue;
-    { const p = landPsfNow(rec, e); if (p > 0) { mktSum += p; mktN++; } }
+    { const p = landPsfNow(rec, e); if (p > 0) { mktSum += Math.log(p); mktN++; } }
     const sch = residualScheme(rec, bare);
     if (!sch || !(sch.psf > 0)) continue;
     let sf = sch.usable * rec.lotArea;
@@ -1056,8 +1184,12 @@ export function refreshLandQueue(s: GameState, parcels: Record<string, ParcelRec
     q[use] = { psf, ahead, total: Math.round(cum), absYr: Math.round(absYr), r: rOf(use) };
   }
   e.landQueue = q;
+  // THE LAND MARKET'S LEVEL IS AN INDEX OF THE TYPICAL LOT, NOT THE MEAN DOLLAR (2026-11-07): the geometric
+  // mean of the panel's prices (a Jevons index; land indices are log-hedonic: Nichols, Oliner & Mulhall 2013).
+  // The arithmetic mean of $/sf was the few prime lots whose residuals swing hardest — real land read 107, 41,
+  // 53, 21 over nine years of flat property values on seed 11 — and every owner's ask scales by belief over it.
   if (mktN > 0) {
-    e.landMkt = mktSum / mktN;
+    e.landMkt = Math.exp(mktSum / mktN);
     if (e.landBelief === undefined) e.landBelief = e.landMkt;
   }
 }
@@ -1095,6 +1227,32 @@ const OWNER_ERR_SIGMA = 0.15;
 function ownerErr(bbl: string): number {
   return hashNormal(bbl);
 }
+/**
+ * WHAT IT COSTS TO BUILD ON THIS SITE, against the town's cost index
+ * (2026-11-19; moved from dev.ts `projectCostMult`, which now reads it).
+ * Comparable buildings of one type in one city spread about +/-15% around the
+ * median between the quartiles (RSMeans square-foot costs, 25th/75th
+ * percentile), a log spread near 0.2, some of it specification the engine
+ * models separately — so each site draws its own hard cost, lognormal with
+ * sigma 0.15 [S~: shape set from that spread]. It is a property of the site
+ * and of whoever controls it (ground conditions, assemblage, the builder's
+ * crews and subs), so it persists, and it turns over with control of the
+ * site about every five years, staggered by lot. The job is booked at it.
+ */
+export const SITE_COST_SIGMA = 0.15;
+const SITE_COST_TERM_M = 60;
+export function siteCostMult(bbl: string, use: string, month: number, seed: number): number {
+  let h = 2166136261;
+  for (let i = 0; i < bbl.length; i++) { h ^= bbl.charCodeAt(i); h = Math.imul(h, 16777619); }
+  const phase = (h >>> 0) % SITE_COST_TERM_M;
+  const epoch = Math.floor((month + phase) / SITE_COST_TERM_M);
+  return Math.exp(SITE_COST_SIGMA * hashNormal(`${bbl}|${use}|${epoch}|${seed}`));
+}
+/** The site's own cost on a resolved record (1 on one nobody resolved: the town's median). */
+function recCostMult(rec: ParcelRecord, use: string): number {
+  return rec.siteAt ? siteCostMult(rec.bbl, use, rec.siteAt.m, rec.siteAt.seed) : 1;
+}
+
 /** A standard normal hashed off a key: deterministic, persistent, never the RNG. */
 export function hashNormal(key: string): number {
   // Two independent uniform hashes off the key -> one standard normal
@@ -1106,9 +1264,25 @@ export function hashNormal(key: string): number {
     h1 ^= c; h1 = Math.imul(h1, 16777619);
     h2 = Math.imul(h2, 33) ^ c;
   }
-  const u1 = ((h1 >>> 0) % 1_000_000 + 0.5) / 1_000_000;
-  const u2 = ((h2 >>> 0) % 1_000_000 + 0.5) / 1_000_000;
+  // MIXED BEFORE USE (2026-10-29). Unmixed, a key that differs only in its
+  // last characters — a month, a quarter — moved h2 by a few units, so u2 and
+  // the sign of the draw barely changed: consecutive months' draws for one
+  // firm correlated 0.77. A tenant's fortune (tenantBooks.ts, AR(1) at 0.985
+  // on these draws) then wandered like a random walk with its own drift: its
+  // spread reached 0.48 in two years and ~2.0 in fifty against the 0.19 it
+  // was sized to, and its mean e^z 1.6 to 4 — so half of the town's
+  // professional firms ran at a loss while their industry made 22%. The
+  // murmur3 finaliser makes each key's draw independent of its neighbour's.
+  const u1 = (fmix32(h1) % 1_000_000 + 0.5) / 1_000_000;
+  const u2 = (fmix32(h2 ^ h1) % 1_000_000 + 0.5) / 1_000_000;
   return Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+}
+/** murmur3's 32-bit finaliser: every input bit moves every output bit. */
+function fmix32(h: number): number {
+  h ^= h >>> 16; h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13; h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
+  return h >>> 0;
 }
 export function ownerAskPsf(rec: ParcelRecord, econ: Econ): number {
   const model = landPsfNow(rec, econ);
@@ -1133,6 +1307,8 @@ export type LandRead = {
   /** Which bid set the price, and the scheme behind the builder's. */
   winner: "builder" | "holder" | "texture" | "farm" | "homes" | "subdivider";
   scheme: ResidualScheme | null;
+  /** The development option the price was struck on (see LandOption); null where nothing can be built. */
+  option?: LandOption | null;
   /** A homebuilder's bid for a finished lot on a plat, $/sf (homeprice.ts homeLotBidPsf); 0 elsewhere. */
   homes?: number;
 };
@@ -1203,7 +1379,16 @@ export function farmUsePsf(rec: ParcelRecord, econ: Econ): number {
  * and a conviction still builds into a thin margin — he just does it less
  * often — and a negative margin stops him dead.
  */
-export function devPencils(e: Econ, k: BuiltClass = "office"): number {
+export function devPencils(
+  e: Econ, k: BuiltClass = "office",
+  /**
+   * Charge the lease-up (the developer's pencil, default). False reads the
+   * finished building's Tobin's q — stabilised value against replacement
+   * cost, which is how q is defined: the opening's rent solve (market.ts)
+   * reads it so, and the lease-up does not move an opening rent.
+   */
+  leaseUp = true,
+): number {
   const pivot = e.locIdxMeanBy?.[k] ?? e.locIdxMean ?? 0.62;
   const shape = LOC_SPREAD[k] ?? LOC_SPREAD.office;
   const where = e.locIdxDevP90 ?? e.locIdxMean ?? 0.62;
@@ -1221,29 +1406,33 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   // shortage. Measured on industrial (3 worlds x 50 years): each time sheds
   // finally pencilled, 15-20% of stock started inside five years against a
   // shortage of ~4.5% of stock, and vacancy went to 15-25% for a decade.
-  // What the market can absorb by delivery is the unhoused queue plus the
-  // tenant base's trend growth over a typical build (18 months), at its own
-  // demand elasticity.
-  const nat = NATURAL_VAC[k];
-  const vacNow = e.cityVac?.[k] ?? nat;
-  const vac = forwardVacancy(e, k);
-  // ...and the concession package that vacancy will command, against the one
-  // today's vacancy commands. Both read off the same schedule, so with
-  // nothing in the pipeline and nothing to absorb the rent is untouched.
-  const effAt = (1 - CONC_DEPTH * concessionTarget(vac - nat))
-    / Math.max(0.05, 1 - CONC_DEPTH * concessionTarget(vacNow - nat));
-  const rent = (e.effRentIdx?.[k] ?? e.rentIdx?.[k] ?? 0) * effAt * locMult * (1 + developerOptimism(e, k));
+  // What the market can absorb by delivery is the tenant base's trend growth
+  // over a typical build (18 months).
+  // TODAY'S PACKAGE, AS SIGNED: the effective index is what the comps
+  // signed at. This multiplied in the package a "natural" vacancy schedule
+  // gave at forward vacancy over today's; what the pipeline does to the
+  // scheme is now its lease-up at the market's own lettings, below.
+  const rent = (e.effRentIdx?.[k] ?? e.rentIdx?.[k] ?? 0) * locMult * (1 + developerOptimism(e, k));
   if (!(rent > 0)) return 0;
   // THE PRO FORMA READS THE MARKET'S VACANCY. This underwrote 90% (95% for
   // flats) whatever the market was doing, so the pipeline kept starting into
   // a glut: seed 20603 delivered 78 buildings while office vacancy sat at 30%
-  // and the city lost a fifth of its people. A developer's lease-up
-  // assumption is the market's, with a margin: untouched up to one and a
-  // half times the natural vacancy, then down to half at three times it —
-  // at which point nothing pencils, which is what a glut is for.
-  const excess = Math.max(0, vac - 1.5 * nat);
-  const leaseUp = Math.max(0.5, 1 - excess / (1.5 * nat));
-  const occ = (k === "multifamily" ? 0.95 : 0.90) * leaseUp;
+  // and the city lost a fifth of its people. Then it read a haircut against
+  // one and a half times a "natural" vacancy. Now (2026-11-07) it reads what
+  // the market shows, as the site pro forma does: stabilised at the vacancy
+  // the scheme opens into (`forwardVacancy`, its own feet in it; never fuller
+  // than its own turnover allows, `stabilisedVacancy`).
+  //
+  // ...AND THE LEASE-UP AT THE MARKET'S OWN LETTINGS: the months its empty
+  // feet take to let at fair share of what the market lets (proforma.ts
+  // `leaseUpMonthsOf`), each a month of full rent lost — the reserve the site
+  // pro forma carries. It is a developer's carry, not part of the finished
+  // building's q, so the opening's rent solve reads the pencil without it
+  // (`leaseUp` false): charged there, opening rents rose 6-52% (seeds
+  // 11/22/33: office +33/+9/+6%, sheds +52/+11/+31%) to pay for it.
+  const ownSf = rentableFromSpec(45_000, 3);
+  const fwd = forwardVacancy(e, k, ownSf);
+  const occ = 1 - stabilisedVacancy(e, k, fwd);
   // the P90 site's opex, not the mean's — same station as its rent
   const opex = opexPsf(k, e, false) * Math.pow(locMult, OPEX_LOC_ELASTICITY);
   const recov = RECOVERY_RATE[k] ?? 0;
@@ -1254,8 +1443,11 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   // A city's infill is low-rise; the tower is the exception and it prices
   // itself through `heightPremium` where it is actually planned — and
   // low-rise apartments are wood frame (constructionTypeMult).
-  const costPsf = HARD_COST_PSF[k] * constructionTypeMult(k, 3) * e.costIdx * (1 + SOFT_COST) * (1 + CONTINGENCY);
-  const yoc = noiPsf / Math.max(1, costPsf);
+  const lostRent = leaseUp ? rent * occ * leaseUpMonthsOf(e, k, ownSf, 0, fwd) / 12 : 0;
+  // per gross foot, like the cost (REAL_ECONOMY_PLAN 2.6): the NOI and the lost rent are per rentable foot, the hard cost per gross
+  const costPsf = HARD_COST_PSF[k] * constructionTypeMult(k, 3) * e.costIdx * (1 + SOFT_COST) * (1 + CONTINGENCY)
+    + lostRent * ownSf / 45_000;
+  const yoc = noiPsf * ownSf / 45_000 / Math.max(1, costPsf);
   const hurdle = developmentHurdle(yoc, (e.capRate?.[k] ?? CAP_BASE[k]) / 100);
   // THE RESPONSE CURVE WAS CALIBRATED FOR INPUTS THIS FUNCTION NO LONGER HAS.
   //
@@ -1282,7 +1474,7 @@ export function devPencils(e: Econ, k: BuiltClass = "office"): number {
   // appetite.
   return Math.min(3, Math.pow(Math.max(0, hurdle.hurdleRatio), Q_ELASTICITY_DEV));
 }
-/** Same supply elasticity `buildClimate` uses; see the note there. */
+/** Same supply elasticity `buildClimate` uses; see the note there. [D: equal to dev.ts Q_ELASTICITY, which cites Saiz 2010] */
 const Q_ELASTICITY_DEV = 1.2;
 
 export function landPsfNow(rec: ParcelRecord, econ: Econ): number {
@@ -1319,11 +1511,9 @@ type LandMemoEntry = {
   cornice: number | undefined; maturity: number | undefined;
   psf?: number;
   read?: LandRead;
-  /** residualSchemeIn at rentMult 1 and at PEAK_RENT_MULT; undefined until run. */
-  now?: ResidualScheme | null;
-  peak?: ResidualScheme | null;
+  /** residualCore at today's rents (the residual and the option); undefined until run. */
+  now?: ResidualCore;
   nowAt?: ResidualGate;
-  peakAt?: ResidualGate;
 };
 /**
  * WHAT THE MEMO KEY DOES NOT COVER AND A RESIDUAL STILL READS. The price and
@@ -1372,6 +1562,12 @@ let LAND_MKT: unknown[] | null = null;
 const LAND_DICTS = [
   "locIdxMeanBy", "cityVac", "structTight", "sublet", "stock", "pipeline", "classDrvTrend", "landQueue",
   "rentIdx", "effRentIdx", "rentExp", "capRate", "capExp",
+  // the lease-up clock (proforma.ts leaseUpMonths: gross lettings and the
+  // between-tenants floor read the occupied stock, its measured turnover, net
+  // take-up, the looking pool and the dark floors)
+  "occupied", "absorb12", "turnMeas", "pool", "darkSf",
+  // the land option's sigma (market.ts measurePropertyVol), re-measured yearly
+  "landSigma",
 ] as const;
 const LAND_SCALARS = [
   "locIdxMean", "landIdx", "cpi", "infillShare", "costIdx", "indexRate",
@@ -1381,6 +1577,9 @@ const LAND_SCALARS = [
   "homesStamp", "wageIdx", "population", "homesG12", "priceLevel",
   // the land developers' bids for farm tracts (growth.ts tractBid); growth.ts bumps it on every rewrite
   "growthStamp",
+  // the property-tax rate the council set (citygov.ts), and its policy stamp
+  // (abatements reach the residual through the pro forma)
+  "taxMult", "govStamp",
 ] as const;
 const LAND_CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
 const LAND_MKT_LEN = LAND_SCALARS.length + LAND_DICTS.length * (1 + LAND_CLASSES.length);
@@ -1484,36 +1683,27 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
   const mean = econ.locIdxMean ?? 0.62;
   const level = Math.max(0.35, 1 + 0.85 * (demandIdx(rec.demandScore) - mean));
 
-  // THE PRICE OF DIRT IS THE BETTER OF TWO OFFERS, WHICH IS WHAT AN AUCTION IS.
+  // THE PRICE OF DIRT IS WHAT THE RIGHT TO BUILD ON IT IS WORTH.
   //
-  // A BUILDER bids the residual: what the finished building is worth less what
-  // it costs to build less the margin the trade requires. See residualLandPsf.
-  //
-  // A HOLDER bids the option: most land in most cities does not support a new
-  // building at today's rents and does not therefore trade at nothing. Somebody
-  // pays the taxes and waits for the rent to arrive, and what they will pay is
-  // the residual at the rents they expect at the next peak, discounted for the
-  // wait. That bid is what puts a floor under fringe dirt, and it is why a
-  // vacant lot on a bad street still costs money.
-  //
-  // Whichever of them wants it more sets the price. On a prime corner in a good
-  // market the builder wins and the number is large; on a fringe lot in a slump
-  // the holder wins and the number is small but real; and the crossover between
-  // them is exactly where redevelopment pressure starts, which is the most
-  // important line in a city and the game could not draw it before.
-  // (`memo` is the lot's memo entry: each residual is run at most once a market.)
-  let scheme: ResidualScheme | null;
-  if (memo && memo.now !== undefined && residualGateHolds(memo.nowAt!, econ)) scheme = memo.now;
-  else { scheme = residualSchemeIn(rec, econ, 1, ctx); if (memo) { memo.now = scheme; memo.nowAt = residualGate(econ); } }
+  // A BUILDER's residual is what the finished building is worth less what it
+  // costs to build less the margin the trade requires (see residualLandPsf).
+  // That is the option's intrinsic value, and it is the price only when the
+  // owner would build NOW: when V has reached the trigger V* (see LandOption).
+  // Below the trigger the dirt trades on the option, which is worth more than
+  // the residual (more than nothing where nothing pencils) because the right
+  // to wait for the rent is itself worth something. The crossover, V = V*, is
+  // where redevelopment starts, which is the most important line in a city.
+  // (`memo` is the lot's memo entry: the residual is run at most once a market.)
+  let core: ResidualCore;
+  if (memo && memo.now !== undefined && residualGateHolds(memo.nowAt!, econ)) core = memo.now;
+  else { core = residualCore(rec, econ, 1, ctx); if (memo) { memo.now = core; memo.nowAt = residualGate(econ); } }
+  const scheme = core.best;
+  const option = core.opt;
   const builder = scheme?.psf ?? 0;
-  let peak: ResidualScheme | null = null;
-  if (whole || !(builder > 0)) {
-    if (memo && memo.peak !== undefined && residualGateHolds(memo.peakAt!, econ)) peak = memo.peak;
-    else { peak = residualSchemeIn(rec, econ, PEAK_RENT_MULT, ctx); if (memo) { memo.peak = peak; memo.peakAt = residualGate(econ); } }
-  }
-  const holder = whole || !(builder > 0)
-    ? (peak?.psf ?? 0) * WAIT_DISCOUNT
-    : 0;
+  const ripe = !!option?.exercise && builder > 0;
+  // `holder` is the option's price where the owner would rather wait
+  const holder = ripe ? 0 : option?.psf ?? 0;
+  void whole;
 
   // AND WHAT THE CITY GENERATOR THOUGHT, which is not nothing.
   //
@@ -1612,8 +1802,10 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
   // finding in REALISM_AUDIT_2026-08.md rather than half-shipped here.
   let base: number;
   let winner: LandRead["winner"];
-  if (builder > 0) {
-    base = builder;
+  if (ripe) {
+    // exercise: the option is worth what building pays (the best option and
+    // the best residual can be different schemes; the higher is the price)
+    base = Math.max(builder, option?.psf ?? 0);
     winner = "builder";
     if (softDiscount < 0) base = builder * (1 + softDiscount);
     // ...BUT NEVER BELOW THE SALES-COMPARISON FLOOR. A residual that has
@@ -1662,6 +1854,7 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
     builder, holder, texture: floor,
     winner,
     scheme,
+    option,
     homes,
   };
 }
@@ -1671,25 +1864,68 @@ export function landValue(rec: ParcelRecord, econ: Econ): number {
 }
 
 /**
- * WHAT A STANDING BUILDING CANNOT FALL BELOW.
+ * BUYING A BUILDING EMPTY.
  *
- * Vacant dirt is the residual. A completed building is at least that dirt —
- * nobody demolishes a new tower to sell a lot. The 0.92 haircut is a
- * demolition allowance for old empty fabric, and it was also how a
- * just-delivered office marked below the land it sat on and called the
- * revolver. Lease-up uses the full residual; older stock still pays the
- * demo haircut.
+ * There is no legal way to knock down an occupied building, and waiting out a
+ * rent roll takes a decade. So you buy the leases: every sitting tenant is
+ * offered the whole remaining value of their contract, plus a quarter again on
+ * top for the inconvenience of moving a business they did not want to move.
+ *
+ * The premium is what makes this a decision rather than a button. A building
+ * full of leases with eight years to run costs a fortune to empty, which is
+ * precisely why the site under a well-let building is worth less than the site
+ * under a half-empty one — and why the buildings that get redeveloped in real
+ * cities are the ones whose leases were about to roll anyway.
  */
-export function landAppraisalFloor(rec: ParcelRecord, econ: Econ, inLeaseUp: boolean | number): number {
-  const land = landValue(rec, econ);
-  // A number is how new the fabric still is (leaseUpWeight: 1 through the
-  // market's lease-up span, fading to 0 at twice it), so the demolition
-  // allowance arrives as the building ages rather than as a one-month step
-  // the day a calendar window closes.
-  const w = typeof inLeaseUp === "number" ? clamp(inLeaseUp, 0, 1) : inLeaseUp ? 1 : 0;
-  return land * (0.92 + 0.08 * w);
+export const BUYOUT_PREMIUM = 1.25;
+
+/**
+ * WHAT IT COSTS TO HAND OVER A STANDING BUILDING AS A CLEAR SITE: the leases
+ * bought out (the remaining rent on each and the premium, leasing.ts
+ * buyOutTenants) and the flats emptied (a year of their rent at the same
+ * premium), at today's roll. The demolition is landAppraisalFloor's.
+ */
+export function vacantPossessionCost(rec: ParcelRecord, econ: Econ, h: Holding, month: number): number {
+  let c = 0;
+  for (const t of h.tenants ?? []) {
+    if (t.defaulted) continue;
+    c += (t.rentPsf * t.sf / 12) * Math.max(0, t.endM - month) * BUYOUT_PREMIUM;
+  }
+  const resSf = useRentableSf(rec, "multifamily") * (h.occ ?? 0);
+  if (resSf > 0) c += resSf * useRentPsfYr(rec, econ, h.condition, "multifamily", h.condIdx) * BUYOUT_PREMIUM;
+  return c;
 }
 
+/**
+ * WHAT A STANDING BUILDING CANNOT FALL BELOW: the site it stands on, as a
+ * buyer would get it — the land, less taking the building down (proforma.ts
+ * wreckCost, the cost the Build desk and the redevelopment test charge) and
+ * less clearing it (`clearing`, vacantPossessionCost: the leases bought out).
+ *
+ * This was the land x 0.92, a flat "demolition allowance": a different answer
+ * from the one development gives the same question (dev.ts demolitionCost,
+ * and the redevelopment test income < land - demolition), and it ignored the
+ * leases altogether, so a fully let building was floored at the price of the
+ * empty site under it.
+ *
+ * A building in its first lease-up is not a demolition candidate: nobody
+ * knocks down a tower that opened this month, so its floor is the whole site
+ * (the weight is leaseUpWeight: 1 through the market's lease-up span, fading
+ * to 0 at twice it, so the costs of clearing arrive as the fabric ages rather
+ * than as a step the day a window closes).
+ */
+export function landAppraisalFloor(rec: ParcelRecord, econ: Econ, inLeaseUp: boolean | number, clearing = 0): number {
+  const land = landValue(rec, econ);
+  const w = typeof inLeaseUp === "number" ? clamp(inLeaseUp, 0, 1) : inLeaseUp ? 1 : 0;
+  const toClear = rec.class !== "land" && rec.bldgArea > 0 ? wreckCost(rec.bldgArea, econ.costIdx) + clearing : 0;
+  return Math.max(0, land - (1 - w) * toClear);
+}
+
+/**
+ * Rent by grade. good : standard = 1.20 against a Class A premium over lower
+ * grades of ~25% (Savills, late 2023; 25.5% over Class B, Q1 2026, ConnectCRE)
+ * [S~]. The worn and obsolete steps below standard are still judgements [K].
+ */
 export const CONDITION_RENT_MULT: Record<Condition, number> = {
   obsolete: 0.62, worn: 0.82, standard: 1.0, good: 1.2,
 };
@@ -1723,7 +1959,7 @@ export function specRentMult(spec = 0.5): number {
  * THE FOUR WAYS TO BUILD. The spec number stays 0..1 underneath — saves,
  * gut renovations and every reader keep working on it — and the desk offers
  * four named points on it. Cost is `specCostMult` at each point, untouched.
- * BUILD_CLASS_PLAN.md.
+ * BUILD_CLASS_PLAN.md. [K: the four points are a design choice.]
  */
 export const BUILD_TIERS = [
   { key: "value" as const, label: "Value", spec: 0.15,
@@ -1769,24 +2005,6 @@ export function openingCondIdx(spec = 0.5): number {
   const x = Math.max(0, Math.min(1, spec));
   // At and above market spec this is exactly the old 0.90 + 0.09 x spec.
   return x >= 0.5 ? 0.90 + 0.09 * x : 0.80 + 0.29 * x;
-}
-
-/**
- * HOW THE MARKET TREATS QUALITY RIGHT NOW. Flight to quality is not a level,
- * it is a beta: when a market is soft, good space comes down to where tenants
- * in lesser space can afford to trade up, and they do — lesser space empties
- * first and refills last. When it is tight, the good space is full and
- * tenants settle. Washington trophy office ~10% vacant against ~26% for B/C,
- * Houston trophy 21% against 27.5% Class A (Q4 2024), both at ~25% overall;
- * CBRE: Class A/trophy rents +3%/yr since 2021, everything else −1%/yr.
- * 1.0 at the natural vacancy rate, so across a cycle the level the
- * "Specification" factor was set at is kept; rising in a glut, falling below
- * one when the market is tight. A shape parameter, stated as one.
- */
-export function qualityCycle(econ: Econ, use: BuiltClass): number {
-  const nat = NATURAL_VAC[use] ?? 0.08;
-  const vac = econ.cityVac?.[use] ?? nat;
-  return Math.max(0.6, Math.min(1.9, 0.4 + 0.6 * (vac / Math.max(0.01, nat))));
 }
 
 /**
@@ -1845,6 +2063,7 @@ export function buildingScore(
  * slab), so it is the closest to even. A 50/50 blend ranked a score-64 office
  * on a demand-48 corner above a score-57 one on a demand-77 corner that let
  * for $3/sf more; at these weights the order is the market's.
+ * [K: chosen against the measured correlations above, not fitted.]
  */
 export const SCORE_LOC_WEIGHT: Record<BuiltClass, number> = { office: 0.7, retail: 0.8, multifamily: 0.65, industrial: 0.55 };
 export function overallScore(rec: ParcelRecord, econ: Econ, use?: BuiltClass, condIdx?: number): number {
@@ -1858,10 +2077,38 @@ export function overallScore(rec: ParcelRecord, econ: Econ, use?: BuiltClass, co
   return Math.max(1, Math.min(100, w * Math.max(0, Math.min(100, dem ?? 50)) + (1 - w) * b));
 }
 /**
+ * THE ONE NUMBER, AND WHAT IT IS MADE OF (2026-11-18) — for the listing card.
+ * `score` is `overallScore` itself, the number tenants shop on; the parts are
+ * its own inputs, read the same way: the address (`location`, retail on its
+ * walk-in draw), the building (`buildingScore`: bones, condition, newness
+ * against the town's stock, and its letter) and the address's weight in the
+ * blend. Nothing here is a second opinion of the building; it is the first
+ * one, shown.
+ */
+export interface ScoreParts {
+  score: number; location: number; locWeight: number;
+  building: BuildingScore | null;
+}
+export function scoreParts(rec: ParcelRecord, econ: Econ, use?: BuiltClass, condIdx?: number): ScoreParts {
+  const cls = (use ?? rec.class) as BuiltClass;
+  const ctx = econ.tierCtx;
+  const dem = cls === "retail" ? retailDemandOf(rec) : rec.demandScore;
+  const building = ctx && rec.class !== "land" && rec.bldgArea
+    ? buildingScore(rec, condIdx !== undefined ? { condIdx } : null, { month: ctx.month, stockVintage: ctx.vintage })
+    : null;
+  return {
+    score: Math.round(overallScore(rec, econ, use, condIdx)),
+    location: Math.round(Math.max(0, Math.min(100, dem ?? 50))),
+    locWeight: SCORE_LOC_WEIGHT[cls] ?? 0.5,
+    building,
+  };
+}
+/**
  * `buildingScore(...).score` behind a one-entry memo on exactly what it reads
  * — the record's year, spec and class, the condition index, the clock and the
  * class's stock vintage. A pro forma scores the same paper building three
  * times per use; this is the same number without the three allocations.
+ * [M: not a parameter — a memo cell; NaN is empty.]
  */
 const BSCORE = { yearBuilt: NaN as unknown, buildSpec: NaN as unknown, cls: NaN as unknown, condIdx: NaN as unknown, month: NaN as unknown, vintage: NaN as unknown, score: 0 };
 function buildingScoreOf(rec: ParcelRecord, condIdx: number | undefined, ctx: NonNullable<Econ["tierCtx"]>): number {
@@ -1879,6 +2126,7 @@ function buildingScoreOf(rec: ParcelRecord, condIdx: number | undefined, ctx: No
  * THE STREET'S STOCK BY SCORE, IN TEN-POINT BANDS — bookkeeping, not tiers:
  * a tenant and a building each carry their exact score, and every reader
  * below interpolates across bands, so a 74 and a 76 are the same market.
+ * [M: ten-point bands of a 0-100 score.]
  */
 export const N_BANDS = 10;
 export const bandCenter = (b: number) => b * 10 + 5;
@@ -1898,30 +2146,10 @@ function bandKernel(score: number): Float64Array {
   }
   return KERNEL;
 }
-/**
- * THE NATURAL VACANCY AT A SCORE. The best space runs tighter than the class
- * and the worst looser, at every point in the cycle: US office Class A has
- * sat roughly 1-3 points under B/C through most cycles and trophy well under
- * both (CBRE / JLL quarterly); the bottom of the stock carries the
- * structural vacancy — floors nobody wants at any rent. 1.45x the class's
- * natural rate at score 0 falling to 0.7x at 100, renormalised on this
- * street's own stock so the scale averages to the class. A shape parameter.
- */
-export function scoreNatVac(econ: Econ, use: BuiltClass, score: number): number {
-  const raw = (sc: number) => NATURAL_VAC[use] * (1.45 - 0.75 * sc / 100);
-  const st = econ.bands?.[use]?.stock;
-  let mean = NATURAL_VAC[use];
-  if (st) {
-    let a = 0, w = 0;
-    for (let b = 0; b < N_BANDS; b++) { a += raw(bandCenter(b)) * st[b]; w += st[b]; }
-    if (w > 0) mean = a / w;
-  }
-  return raw(score) * NATURAL_VAC[use] / Math.max(1e-9, mean);
-}
 /** The street's vacancy around a score (kernel over the bands); absent bands, the street's or the city's. */
 export function scoreVacOf(econ: Econ, use: BuiltClass, score: number): number {
   const bk = econ.bands?.[use];
-  const fallback = econ.streetVac?.[use] ?? econ.cityVac?.[use] ?? NATURAL_VAC[use];
+  const fallback = econ.streetVac?.[use] ?? econ.cityVac?.[use] ?? openingVac(use);
   if (!bk) return fallback;
   let st = 0, oc = 0;
   const k = bandKernel(score);
@@ -2059,6 +2287,7 @@ function condMult(c: Condition): number {
  * continuous. So every price reader takes the index and interpolates between
  * the grades' centres; the grade keeps its jobs as a label and a gate (the
  * life company's "good", the desk's repairs holdback).
+ * [D: midpoints of COND_BANDS — 0-0.34, 0.34-0.52, 0.52-0.78, and 0.78-0.95 for good.]
  */
 const COND_CENTRE: Record<Condition, number> = { obsolete: 0.17, worn: 0.43, standard: 0.65, good: 0.865 };
 const COND_PTS = new Map<Record<Condition, number>, [number, number][]>();
@@ -2077,6 +2306,7 @@ function condLerp(idx: number, table: Record<Condition, number>): number {
 }
 /** The rent multiplier at a condition index — the grade table, read continuously. */
 export function condMultAt(idx: number): number { return condLerp(idx, CONDITION_RENT_MULT); }
+/** The cap-rate spread by grade, points. [K: judgement, no source found] */
 const QUAL_SPREAD: Record<Condition, number> = { obsolete: 1.85, worn: 0.70, standard: 0, good: -0.40 };
 /** The cap-rate spread for the state of the building, read continuously. */
 export function qualSpreadAt(idx: number): number { return condLerp(idx, QUAL_SPREAD); }
@@ -2290,8 +2520,8 @@ export function useRentPsfYr(rec: ParcelRecord, econ: Econ, condition: Condition
  * exactly what it was. It moves only where height already varies, which is
  * where a real comp set would have found the argument.
  */
-const COMP_RADIUS_M = 300;
-const M_PER_DEG_LAT = 111_320;
+const COMP_RADIUS_M = 300;   // [K: judgement, no source found]
+const M_PER_DEG_LAT = 111_320;   // [M] metres per degree of latitude
 type BlockGeo = {
   /** the cut of the table it was built from (tableVersion.ts) */
   v?: number;
@@ -2464,7 +2694,9 @@ export function resolveRec(parcels: Record<string, ParcelRecord>, s: GameState, 
   // then prices the building the city would actually permit here.
   // ...AND FOR A LOT BIG ENOUGH TO CARRY A CENTRE, THE ADDRESS ITS ANCHOR
   // WOULD GIVE IT (tradeAreaDemand): the desk and the residual read one number.
-  return stampTradeDraw(s, parcels, { ...r, cornice: corniceDatum(s, parcels, r.block), maturity: townMaturity(s) });
+  // ...AND WHAT IT COSTS TO BUILD ON (`siteCostMult`): the month and seed its
+  // site's own cost is drawn at.
+  return stampTradeDraw(s, parcels, { ...r, cornice: corniceDatum(s, parcels, r.block), maturity: townMaturity(s), siteAt: { m: s.month, seed: s.seed } });
 }
 
 /**
@@ -2815,16 +3047,10 @@ export function tradeAreaDemand(s: GameState, parcels: Record<string, ParcelReco
  * The smallest lot an anchored centre fits on: a 30,000 sf neighbourhood
  * centre at its solved site plan (products.ts) needs about 100,000 sf. Only
  * vacant lots this big carry the trade-area reads, so the reader is never
- * asked of an ordinary town lot.
+ * asked of an ordinary town lot. [D: the products.ts site plan]
  */
 const ANCHORED_LOT_MIN_SF = 100_000;
 const ANCHOR_RADII = [...new Set(PRODUCT_KEYS.map((k) => PRODUCT_TYPES[k]).filter((p) => p.tradeRadiusM && p.anchors.length).map((p) => p.tradeRadiusM!))];
-/**
- * The grocer's sales reader (towngrowth.ts grocerSales), handed in by
- * towngrowth when it loads: value.ts importing towngrowth would close a module
- * cycle through dev.ts whose top-level constants then initialise out of order.
- */
-export const GROCER_SALES: { read?: (s: GameState, parcels: Record<string, ParcelRecord>, bbl: string) => number | undefined } = {};
 function stampTradeDraw(s: GameState, parcels: Record<string, ParcelRecord>, r: ParcelRecord): ParcelRecord {
   if (r.class !== "land" || !(r.lotArea >= ANCHORED_LOT_MIN_SF) || r.zoneDist === "AG" || r.bldgArea > 0) return r;
   const draw: Record<number, number> = {};
@@ -2881,9 +3107,30 @@ export function managedRentPsfYr(rec: ParcelRecord, econ: Econ, h: Holding, use?
   // explicit lobby×1.04×facade×1.08 = 1.12×, both together 1.35× — the same
   // cheque twice. The condition channel stays; the arrival factor in
   // absorption.ts is velocity, not a third price. See QUALITY_BALANCE_PLAN.md §2.
-  m *= 1 + 0.08 * (h.stance ?? 0);
-  if (h.landmarked) m *= 1.07;
-  return m;
+  return m * askPremium(h);
+}
+
+/** The owner's asking posture and the landmark premium, on top of the market (managedRentPsfYr, absorption.ts currentAskPsfYr). */
+export function askPremium(h: Pick<Holding, "stance" | "landmarked">): number {
+  return (1 + ASK_STEP * (h.stance ?? 0)) * (h.landmarked ? 1.07 : 1);
+}
+/**
+ * One unit of `Holding.stance` on the ask: 8%. The stance was Fill / Market /
+ * Push (−1 / 0 / +1) and is now any number — the owner's ask over or under
+ * the market, as far as they like — kept in the old unit so a save's Push is
+ * still +8%. [M: a unit, not a quantity.]
+ */
+export const ASK_STEP = 0.08;
+/** The lowest ask an owner can post, in points against the market: a tenth of it. [M: a guard — an ask is a positive rent; nothing rests on it.] */
+const ASK_MIN_PCT = -90;
+/** A stance as whole points of ask against the market (+3 = 3% over). */
+export function askPctOfStance(stance: number | undefined): number {
+  return Math.round((stance ?? 0) * ASK_STEP * 100);
+}
+/** Whole points of ask against the market, as a stance. */
+export function askStanceOfPct(pct: number): number {
+  const p = Number.isFinite(pct) ? Math.max(ASK_MIN_PCT, Math.round(pct)) : 0;
+  return p / (ASK_STEP * 100);
 }
 
 /**
@@ -2921,9 +3168,9 @@ export function flatsRollPsf(rec: ParcelRecord, econ: Econ, h: Holding): number 
 //              real rolls (streetRolls.ts), and a 68% building is 68% because
 //              of who left it and who would not come.
 // RETIRED. This was the level occupancy sat at, and it disagreed with
-// 1 - NATURAL_VAC by 1.5-6.0pp per class — see the derivation at `base` in
-// useOccupancy. The level now comes from NATURAL_VAC, which is the same number
-// the city's own vacancy model is calibrated to, so there is one answer to
+// 1 - the natural rate by 1.5-6.0pp per class — see the derivation at `base` in
+// useOccupancy. The level then came from a natural rate, and since 2026-11-08
+// from the market's own vacancy (the tier's), so there is one answer to
 // "how full is this class" instead of two. Kept only as a record of what the
 // numbers used to be: office 0.84, retail 0.89, multifamily 0.94, industrial
 // 0.87, against 0.885 / 0.915 / 0.955 / 0.930.
@@ -2985,6 +3232,12 @@ export function streetLetShare(rec: ParcelRecord, econ: Econ, use: BuiltClass): 
   return Math.max(0, Math.min(1, l / cap));
 }
 
+/**
+ * `stabilised`: false — as is (a street building's own roll; else the model's read with the lease-up);
+ * true — the occupancy it runs at once no longer new: its tier's vacancy today, its location kept, its
+ * own roll and calendar out — what an appraiser capitalises before deducting the lease-up
+ * (stabilisedIncome). There is no "natural" mode: no market publishes a vacancy norm.
+ */
 export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, stabilised = false): number {
   // THE STREET'S BUILDINGS HAVE TENANTS NOW (streetRolls.ts). As-is, a
   // standing building the player does not own is exactly as full as its own
@@ -3035,61 +3288,34 @@ export function useOccupancy(rec: ParcelRecord, econ: Econ, use: BuiltClass, sta
   // of 0.23%. The market was a set of numbers on a page about a city it could
   // not touch.
   //
-  // The wire is a DIFFERENCE from natural vacancy, not a level, so that at the
-  // frictional rate this term is exactly zero and the whole existing
-  // calibration is untouched — what is new is only the response. It is damped
-  // to 0.85 because a building does not reprice the instant the market does:
-  // the paper in it has years to run, and that is what stops citywide vacancy
-  // from arriving as a step change on every roll in the city.
+  // THE LEVEL IS THE MARKET'S OWN OCCUPANCY (no-normal-vacancy step 7,
+  // 2026-11-08). This was a DIFFERENCE from a "natural" vacancy — 1 − natural
+  // at the tier, plus 85% of the gap between natural and today's — so a
+  // building with no roll read most of the cycle and a fixed yardstick for
+  // the rest, and the appraisers' "natural" mode read the yardstick alone.
+  // Now it is the vacancy the building's own tier runs at today
+  // (`scoreVacOf`, the street's bands by quality: a Class C building reads
+  // the C market, where a glut of new towers lands), with its location on
+  // top. Damping toward a norm is gone with the norm: a building that does
+  // not reprice the moment the market does is one with a roll, and that is
+  // read off the roll above.
   // The street's own vacancy (market.ts streetVac): the player's empty floors
   // are not an incumbent's, and the tenants the player takes from it are.
-  //
-  // ...AND OF ITS OWN TIER (TENANT_TIERS_PLAN.md). A Class C building does not
-  // read the office market, it reads the C market: in a glut of new towers
-  // the prime tier fills out of the tier below and the vacancy lands on the
-  // oldest, cheapest floors. With the tiers live, the tier's own vacancy
-  // against the tier's own natural rate replaces the class's, and the vintage
-  // tilt below — which was standing in for exactly this — stands down.
   const tierLive = !!econ.bands?.[use];
   const sc = tierLive ? overallScore(rec, econ, use) : 50;
-  const natHere = tierLive ? scoreNatVac(econ, use, sc) : NATURAL_VAC[use];
-  const vacNow = tierLive ? scoreVacOf(econ, use, sc) : (econ.streetVac?.[use] ?? econ.cityVac?.[use]);
-  let mktDelta = Number.isFinite(vacNow) ? (natHere - (vacNow as number)) * 0.85 : 0;
-  // QUALITY SEGMENTS THE MARKET (ECONOMY.md): when the market sheds tenants,
-  // the 1928 building sheds ~3x what last year's does — flight to quality is
-  // the pain of new supply landing on the oldest competing stock. Applied
-  // only on the DOWNSIDE (a tight market does not favour old bones), and
-  // renormalised by the city's measured vintage mean so the books reconcile.
-  if (mktDelta < 0 && !tierLive) {
+  const vacNow = tierLive ? scoreVacOf(econ, use, sc) : (econ.streetVac?.[use] ?? econ.cityVac?.[use] ?? openingVac(use));
+  // QUALITY SEGMENTS THE MARKET (ECONOMY.md) where the tiers are not live
+  // (a scratch economy): the 1928 building carries ~3x the vacancy last
+  // year's does, renormalised by the city's measured vintage mean so the
+  // books reconcile. With the tiers live their own vacancy carries this.
+  let vacHere = vacNow;
+  if (!tierLive) {
     const age = Math.max(0, 2000 - (rec.yearBuilt || 1960));
     const vintage = Math.min(1.7, Math.max(0.5, 0.5 + age / 80));
-    mktDelta *= vintage / (econ.vintageMean ?? 1.0);
+    vacHere *= vintage / (econ.vintageMean ?? 1.0);
   }
-  // THE LEVEL IS 1 - NATURAL VACANCY, AND THE SHAPE TERMS DO NOT MOVE IT.
-  //
-  // `mktDelta` is deliberately written as a DIFFERENCE from natural vacancy so
-  // that at the natural rate it is exactly zero and the calibration underneath
-  // is untouched. That intent was defeated by the thing it is a difference
-  // from: OCC_BASE was a free constant sitting 1.5-6.0pp BELOW 1 - NATURAL_VAC
-  // (office 0.84 against 0.885, industrial 0.87 against 0.930), so at the very
-  // moment the city model said a class was exactly at its natural rate, this
-  // function said its buildings were several points emptier than that.
-  //
-  // On top of it both shape terms have non-zero means and were spending the
-  // level rather than describing a spread: E[idio] = k*(0.5-0.62) = -0.12k and
-  // E[trouble] = k*0.06 (integrating k*(1-u/0.12) over u in [0,0.12]), so
-  // together they cost commercial 4.32pp and residential 2.28pp of LEVEL for
-  // shape nobody asked to pay for. They are still exactly as skewed as they
-  // were — one building in eight is still troubled, the tail is still a tail of
-  // pain — the mean is simply added back so the skew describes the spread
-  // around the market rather than pulling the market down with it.
-  //
-  // Measured before, sf-weighted over the built stock at month 300: the model
-  // ran 9-16pp under 1 - cityVac depending on class and seed, with no mechanism
-  // between the two and nothing asserting they should agree. They are the same
-  // quantity — how full this city's buildings are — and CLAUDE.md fake number 3
-  // says one of two answers to that is fiction.
-  const base = clamp((1 - natHere) + mktDelta + loc, 0.28, 0.99);
+  // The 0.28-0.99 band is a guard, not a level.
+  const base = clamp(1 - vacHere + loc, 0.28, 0.99);
   // AS-IF-STABILISED IS THE SAME BUILDING WITHOUT THE CALENDAR. `stabilised`
   // asks for the occupancy this building runs at once it is no longer new —
   // which is what an appraiser means by the phrase, and what the stabilised
@@ -3150,10 +3376,11 @@ export function physicalOcc(rec: ParcelRecord, h: Holding): number {
  * about 1% — the visible change is in the operating statement reading like an
  * industrial building instead of an office one, and in what a VACANT shed
  * costs to sit on, which is where the whole difference lands.
+ * [K: the class levels and the fee are judgements; no survey figure checked.]
  */
 export const OPEX_CONTROLLABLE: Record<BuiltClass, number> = { office: 4.17, retail: 3.20, multifamily: 6.21, industrial: 0.50 };
 export const OPEX_FIXED: Record<BuiltClass, number> = { office: 1.72, retail: 1.54, multifamily: 2.01, industrial: 0.30 };
-export const MGMT_FEE = 0.04;   // of effective gross income, industry standard
+export const MGMT_FEE = 0.04;   // of effective gross income; office fees run 3-4% Class A, 4-5.5% Class B (CORE Advisors, Commercial Property Management Fees 2026) [S~]
 /**
  * THE REPLACEMENT RESERVE ON A BLOCK OF FLATS, and it is NOT the management
  * fee — which is the confusion this constant exists to end.
@@ -3166,25 +3393,74 @@ export const MGMT_FEE = 0.04;   // of effective gross income, industry standard
  * turns — roughly $250-350 a unit a year, which on ordinary unit sizes is
  * about three points of collections. Together they are the seven points that
  * were there before, so this splits a number rather than changing one.
+ * (Fannie Mae Multifamily Selling and Servicing Guide, Part III 105.01, 2026:
+ * the replacement reserve is at least $250 per unit per year) [S]
  */
 export const APT_RESERVE = 0.03;
 
+/**
+ * OPERATING COST IS ITS INPUTS (ONE_ECONOMY_PLAN.md step 8; FORMULA_LEDGER
+ * item 17). The stack above was one number per class times the construction
+ * cost index, so the janitor's pay, the electricity and the insurance all
+ * moved with the price of concrete. Each line now follows what it is made of:
+ *
+ *   labour   cleaning, security, engineers, the office — the town's wage
+ *   energy   the utilities the owner carries — the nation's prices and its oil
+ *   repairs  repairs and maintenance — what the trades charge (the cost index)
+ *   fixed    insurance and the like — the replacement cost it insures (the
+ *            cost index) times the property-insurance market's rate, which
+ *            hardens after a heavy loss year and when yields fall, then
+ *            softens as capital comes back (inputs.ts)
+ *
+ * Shares of the controllable stack by class [S]: office from BOMA's
+ * Experience Exchange Report (2019: cleaning $1.70, security and grounds
+ * $0.90, administration $1.80 — labour 0.49; utilities $2.20 — 0.25; repairs
+ * and maintenance $2.30 — 0.26); apartments from the NAA Survey of Operating
+ * Income & Expenses (payroll, administration and marketing ~0.60 of the
+ * controllable stack, utilities ~0.22, repairs ~0.18); retail common area
+ * maintenance (ICSC: cleaning, security and landscaping ~0.45, utilities
+ * ~0.25, repairs ~0.30); industrial is a roof, a slab and a lot (repairs
+ * ~0.65, utilities 0.15, labour 0.20).
+ *
+ * Every component index equals the cost index on the day it began, so the
+ * opening's opex is to the cent what it was.
+ */
+export const OPEX_MIX: Record<BuiltClass, { labour: number; energy: number; repairs: number }> = {
+  office: { labour: 0.49, energy: 0.25, repairs: 0.26 },
+  retail: { labour: 0.45, energy: 0.25, repairs: 0.30 },
+  multifamily: { labour: 0.60, energy: 0.22, repairs: 0.18 },
+  industrial: { labour: 0.20, energy: 0.15, repairs: 0.65 },
+};
+/** The controllable stack's index for a class: its inputs, weighted. */
+export function opexCtrlIdx(cls: BuiltClass, econ: Econ): number {
+  const o = econ.opexIdx;
+  if (!o) return econ.costIdx;
+  const w = OPEX_MIX[cls];
+  return w.labour * o.labour + w.energy * o.energy + w.repairs * econ.costIdx;
+}
+/** The fixed stack's index: the cost index (replacement cost insured) times the insurance market's rate. */
+export function opexFixedIdx(econ: Econ): number {
+  const o = econ.opexIdx;
+  return o ? econ.costIdx * Math.exp(o.ins) : econ.costIdx;
+}
+
 /** Total operating cost per sf/yr before management fee and property tax. */
 export function opexPsf(cls: BuiltClass, econ: Econ, systemsDone: boolean, service?: -1 | 0 | 1): number {
-  return (OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) * serviceSpec(service).opex + OPEX_FIXED[cls]) * econ.costIdx;
+  return OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) * serviceSpec(service).opex * opexCtrlIdx(cls, econ)
+    + OPEX_FIXED[cls] * opexFixedIdx(econ);
 }
 
 /** Controllable opex only — the half the service level moves; fixed costs are separate. */
 function controllableOpexPsf(
   cls: BuiltClass, econ: Econ, systemsDone: boolean, service?: -1 | 0 | 1,
 ): number {
-  return OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) * serviceSpec(service).opex * econ.costIdx;
+  return OPEX_CONTROLLABLE[cls] * (systemsDone ? 0.82 : 1) * serviceSpec(service).opex * opexCtrlIdx(cls, econ);
 }
 
 function managedOpexPsf(
   cls: BuiltClass, econ: Econ, systemsDone: boolean, service?: -1 | 0 | 1,
 ): number {
-  return controllableOpexPsf(cls, econ, systemsDone, service) + OPEX_FIXED[cls] * econ.costIdx;
+  return controllableOpexPsf(cls, econ, systemsDone, service) + OPEX_FIXED[cls] * opexFixedIdx(econ);
 }
 
 /**
@@ -3232,22 +3508,72 @@ export function locOpexMult(rec: ParcelRecord, econ: Econ | undefined, cls: Buil
 /**
  * What share of the expense stack a TYPICAL roll of each class bills back.
  *
- * These are not free parameters — they fall out of the lease structures
- * `rollRecovery` actually writes. Retail and industrial are overwhelmingly
- * triple-net, so the owner is close to flat on expenses. Office is mostly
- * base-year, which recovers only the growth above the stop and therefore
- * recovers about a third of the stack across a roll of mixed vintages.
- * Apartments recover nothing: a residential lease is gross, always.
+ * These are not free parameters — they fall out of the lease basis each class
+ * is written on (leasing.ts leaseBasis, one per class, owner 2026-11-18).
+ * Shops and sheds are triple-net: the tenants pay the whole bill on what they
+ * occupy. Office is full-service with a base-year stop, which recovers only the
+ * growth above each lease's stop: across a roll whose leases are spread over
+ * an 84-month term, at 2.5% a year, the recovered share of today's bill is the
+ * mean over lease ages a in [0, 7] of 1 - 1.025^-a, about 8%. Apartments
+ * recover nothing: a residential lease is gross, always.
  *
  * This exists so that the income quoted on the tape is the income the
  * building earns. Ignore recoveries and a triple-net retail building looks a
  * third poorer than it is; assume full recovery and a gross office building
  * looks richer. Either way the number on the screen is a lie, and the loan
  * sized against it is a lie too.
+ * [D: triple-net 1; base-year 1 - (1 - 1.025^-7)/(7 ln 1.025) = 0.08; gross 0.
+ * The mix it replaced — office 30% NNN, 58% base-year, 12% gross — read the
+ * base-year leases as recovering a third, which they do only after decades of
+ * inflation, and gave office 0.50.]
  */
 export const RECOVERY_RATE: Record<BuiltClass, number> = {
-  retail: 0.88, industrial: 0.92, office: 0.50, multifamily: 0,
+  retail: 1, industrial: 1, office: 0.08, multifamily: 0,
 };
+
+/**
+ * WHAT A CLASS'S RENT IS QUOTED ON, and the same rent on a net basis (2026-11-18).
+ * The class rent indices are the face of the leases that signed, and a class's
+ * leases are each written on one basis (leasing.ts leaseBasis): office full-service with a
+ * base-year stop (the landlord pays the bills, the tenant only their growth),
+ * shops and sheds triple-net, flats gross. So an office's $25 and a
+ * shop's $14 are not the same kind of number, and set side by side they read
+ * as office at nearly twice the shop. The net-equivalent takes out what the
+ * landlord pays and does not recover: the class's unrecovered share
+ * (1 - RECOVERY_RATE, the class's basis) of the market operating bill and
+ * of the tax on an average building of the class (its value read as the NOI
+ * at the class cap; tax left out of that NOI, a one-pass estimate) [D].
+ */
+export const LEASE_BASIS: Record<BuiltClass, { short: string; long: string }> = {
+  office: { short: "full-service", long: "full-service with a base-year stop: the rent covers operating costs and tax; the tenant pays only their growth over the year it signed" },
+  retail: { short: "NNN", long: "triple-net: the tenant pays its share of operating costs and tax on top of the rent" },
+  industrial: { short: "NNN", long: "triple-net: the tenant pays its share of operating costs and tax on top of the rent" },
+  multifamily: { short: "gross", long: "gross: the landlord pays operating costs and tax" },
+};
+/**
+ * THE CLASS'S AVERAGE BILL, $/sf a year: the market operating bill for the
+ * class and the tax on an average building of it (its value read as the NOI
+ * at the class cap, tax left out of that NOI: a one-pass estimate) [D]. What
+ * a triple-net tenant pays on top of its rent, and what a full-service rent
+ * carries inside it.
+ */
+export function classExpensePsf(econ: Econ, k: BuiltClass, rent = econ.rentIdx?.[k] ?? 0): { opex: number; tax: number; total: number } {
+  const opex = opexPsf(k, econ, false);
+  const unrec = 1 - (RECOVERY_RATE[k] ?? 0);
+  const occ = 1 - (econ.cityVac?.[k] ?? 0.08);
+  const cap = Math.max(0.03, (econ.capRate?.[k] ?? 7) / 100);
+  const valuePsf = Math.max(0, (Math.max(0, rent) * occ - unrec * opex) / cap);
+  const tax = valuePsf * taxRate(econ);
+  return { opex, tax, total: opex + tax };
+}
+export function netEquivalentRent(econ: Econ, k: BuiltClass, rent = econ.rentIdx?.[k] ?? 0): number {
+  if (!(rent > 0)) return 0;
+  return Math.max(0, rent - (1 - (RECOVERY_RATE[k] ?? 0)) * classExpensePsf(econ, k, rent).total);
+}
+/** What the market pays gross, $/sf a year: a triple-net rent plus the class's average bill; a full-service or gross rent is already gross. */
+export function grossRent(econ: Econ, k: BuiltClass, rent = econ.rentIdx?.[k] ?? 0): number {
+  return LEASE_BASIS[k].short === "NNN" ? rent + classExpensePsf(econ, k, rent).total : rent;
+}
 
 /** The share of the property-tax bill this building's owner actually eats. */
 export function taxBorneShare(rec: ParcelRecord): number {
@@ -3307,67 +3633,206 @@ export function recoveryFor(
   return { opex: total * share, tax: total * (1 - share) };
 }
 
-// Property tax: ~1.1% of assessed value a year. On net leases the tenant
+// PROPERTY TAX, BILLED THE WAY A TOWN BILLS IT. On net leases the tenant
 // reimburses it; the landlord eats the share on vacant space and gross leases.
-export const TAX_RATE = 0.011;
+//
+//   bill = roll value x ASSESS_RATIO x MILL_RATE x taxMult
+//
+// `h.assessed` (and citygov's `g.assessed`) is the ROLL VALUE — the assessor's
+// fair market value as of the last revaluation, not today's price. The taxable
+// assessment is a statutory fraction of it, and the mill rate is levied on
+// that. This is the formula the Lincoln Institute / Minnesota Center for
+// Fiscal Excellence study computes every city's bill with: "Net Tax Bill =
+// [(Market Value x Sales Ratio) - Exemptions] x Assessment Ratio x Tax Rate"
+// (50-State Property Tax Comparison Study for Taxes Paid in 2023, July 2024,
+// p. 8). The sales ratio is not a constant here: it is the roll's lag behind
+// the market, produced by the revaluation cycle below.
+//
+// THE CONVENTION IS CONNECTICUT'S, because one state's whole rulebook is
+// coherent where a pick of numbers from several is not:
+//   - ASSESS_RATIO: real property is assessed at 70% of its fair market value
+//     at the last revaluation (CGS §12-62a(b); CT OPM, "Phase-In Revaluation
+//     Overview": "70% of the property's revalued fair market value") [S].
+//   - REVAL_YEARS: "Each municipality shall implement a revaluation not later
+//     than the first day of October and every five years thereafter" (CGS
+//     §12-62(b); CT OPM, Revaluation Date by Municipality) [S]. Between
+//     revaluations the grand list does not follow the market.
+//   - Not modelled: the local-option phase-in of increases over up to five
+//     years (CGS §12-62c) — a town that adopts none bills the full new value
+//     at once, which is what is built.
+//   - WHERE THIS DEPARTS FROM CONNECTICUT: a SALE re-marks the deed at the
+//     price (actions.ts executePurchase, `asIfOwned` below, every buyer's
+//     quote). Connecticut does not reassess on sale; that is California's rule
+//     (a change in ownership sets a new base-year value, Cal. Const. art. XIII
+//     A §2, R&T Code §110.1). It stays because changing it reaches the
+//     closing, the comps and every quote — recorded as a follow-up in
+//     REAL_ECONOMY_PLAN.md, not hidden.
+//
+// THE LEVEL: the effective tax on a $1M commercial property averaged 1.809%
+// of market value across the largest city in each state (53 cities) in 2023
+// (median of the 53: 1.79%) (Lincoln Institute / MCFE, same study, p. 26)
+// [S]. COMMERCIAL_EFFECTIVE is that figure on a FRESH roll (sales ratio 1,
+// the level an IAAO ratio study targets); the study's cities carry their own
+// sales ratios, so the bill this town actually levies on market value runs
+// below it by exactly as much as its roll lags — which is the point. (This
+// was 1.1%, tagged as disputed: its only source was NAHB's 0.89% on owner-occupied
+// homes, not commercial property.)
+/** Assessed at 70% of fair market value (CGS §12-62a(b); CT OPM) [S]. */
+export const ASSESS_RATIO = 0.70;
+/** A revaluation every five years (CGS §12-62(b); CT OPM) [S]. */
+export const REVAL_YEARS = 5;
+/** Commercial effective rate, $1M property, 53 largest cities, 2023: 1.809% (Lincoln Institute / MCFE 50-State Study, 2024) [S]. */
+export const COMMERCIAL_EFFECTIVE = 0.01809;
+/** The statutory rate on the taxable assessment (2.584%, 25.84 mills) — derived, not chosen [D]. */
+export const MILL_RATE = COMMERCIAL_EFFECTIVE / ASSESS_RATIO;
+/** The bill per dollar of ROLL value at the adopted rate: mill rate x assessment ratio [D]. */
+export const TAX_RATE = MILL_RATE * ASSESS_RATIO;
 /**
- * The rate this year: the statutory one times whatever the city has had to
- * levy on top of it (`taxMult` — a fiscal crisis, blackswans.ts). One in
- * ordinary times, so every reader is unchanged unless a city goes broke.
+ * IS THIS JANUARY A REVALUATION? Every REVAL_YEARS years from the town's
+ * founding (which opens on a fresh roll). One schedule for the whole town:
+ * the city's grand list (citygov.ts) and every deed on it (sim.ts) are
+ * re-marked the same January, the player's and everyone else's.
+ */
+export const isRevaluation = (m: number) => m > 0 && m % 12 === 0 && (m / 12) % REVAL_YEARS === 0;
+/**
+ * The rate this year: the statutory one times what City Hall levies against
+ * it (`taxMult`, set every month by citygov.ts from the rate the council
+ * adopted — a budget, a mayor's platform, a control board's surcharge). One
+ * where no government has been seated, so an old save reads as before.
  */
 export const taxRate = (econ?: { taxMult?: number }) => TAX_RATE * (econ?.taxMult ?? 1);
 
-// Cap rates aren't one number per class: a trophy on the square trades tighter
-// than a tired walk-up on the edge of town. Demand is location; condition is
-// quality. Spread runs roughly ±0.6 points around the citywide class cap.
-export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition, condIdx?: number): number {
-  // A buyer underwrites each part against its own comps and adds them up; the
-  // blended cap rate is what falls out, not something quoted anywhere.
-  const base = rec.class === "land" ? 6 : blend(rec, econ.capRate) || 6;
-  // LOCATION IS PRICED, AND IT IS PRICED HARD.
-  //
-  // This band used to be eight tenths of a point wide across the entire demand
-  // scale, which meant a fringe walk-up on a dead street traded within sixty
-  // basis points of a corner on the best block in Ashport. That is not a
-  // market; it is a spreadsheet with a location column nobody reads. Real
-  // prime-to-fringe spreads run two and a half to four points, and that gap is
-  // the central trade of the business: the fringe asset pays you more today
-  // and asks you to believe the street will change, while the prime one costs
-  // a fortune and lets you sleep. Without the spread there was no such choice
-  // and no reason ever to buy anything but the highest yield on the tape.
-  const locSpread = -((demandLinear(rec.demandScore) - 50) / 50) * 1.1;
-  // and so is the state of the building — a tired asset needs a discount to
-  // move, because the buyer is pricing the capital they are about to spend
-  // and so is the state of the building — a tired asset needs a discount to
-  // move, because the buyer is pricing the capital they are about to spend, and
-  // an obsolete one is priced as the capital plus a demolition risk
-  const qualSpread = condIdx !== undefined ? qualSpreadAt(condIdx) : qualSpreadAt(COND_CENTRE[condition] ?? 0.65);
-  // Permanent bones, not today's paint. Class A office trades ~50-100 bp
-  // tighter than Class B in the CBRE cap-rate surveys (2015-2024), trophy at
-  // the wide end; part of that is the condition gap qualSpread already prices,
-  // so the bones carry ±40 bp across spec 0..1 (Signature ~30 bp tighter than
-  // market, Box ~18 bp wider). It was ±15 bp, which left a trophy trading
-  // like a commodity building with a nicer lobby.
-  const specSpread = (0.5 - (rec.buildSpec ?? 0.5)) * 0.80;
-  // AFTER A SURGE THE WATER'S EDGE CARRIES A RISK PREMIUM (blackswans.ts).
-  // THE BUYER PRICES THE RESERVE THE BUILDING WILL NEED. A capital plan that
-  // holds the line costs CAP_PLAN_RATE of value a year scaled by wear (see
-  // tickLeasing), so a perpetual extra reserve of k of value a year is k on
-  // the cap — the buyer deducts replacement reserves before they pay, which is
-  // underwriting practice. Only the DIFFERENCE from market-spec plant is
-  // charged here: the market-spec reserve is already in the cap the street
-  // trades at, and charging it again would reprice every building in town.
-  // This is what stops a seller handing a value box's short-life plant to the
-  // next owner for free. BUILD_CLASS_PLAN.md.
-  const cls = (rec.class === "land" ? "office" : rec.class) as BuiltClass;
-  const age = Math.max(0, START_YEAR + Math.floor((econ.m ?? 0) / 12) - (rec.yearBuilt || START_YEAR));
-  const wearRatio = (COND_DECAY[cls] ?? 0.0024) * (1 + Math.min(0.50, age / 220)) / COND_WEAR_REF;
-  const reserveSpread = 100 * CAP_PLAN_RATE * (specWearMult(rec.buildSpec) - 1) * wearRatio;
-  // A PRODUCT'S BUYER POOL (products.ts capSpread): a fifteen-year credit pad
-  // trades inside a centre, a single-purpose plant well outside a box [CBRE-C] [BG].
-  const productSpread = rec.product ? (productOf(rec.product)?.capSpread ?? 0) : 0;
-  return clamp(base + locSpread + qualSpread + specSpread + reserveSpread + productSpread, 3.2, 13);
+/**
+ * WHAT A YEAR OF HOLDING IDLE DIRT COSTS, as a share of its value: the
+ * property tax the council actually levies (`taxRate`), and a vacant-land
+ * liability policy. This was a flat 1.2% — the statutory 1.1% plus a tenth of
+ * a point — so a council that halved or doubled its rate (citygov.ts
+ * `taxMult`) never reached the owner of an empty lot (found in #565). The
+ * tenth of a point is the insurance that 1.2% always carried above the tax:
+ * vacant-land general-liability cover runs a few hundred dollars a year a
+ * lot, around 0.1% of a typical urban lot's value (commercial-lines quotes;
+ * no building, so no property cover). [K: no quote checked.]
+ */
+const IDLE_LAND_INS = 0.001;
+export const idleLandCarryRate = (econ?: { taxMult?: number }) => taxRate(econ) + IDLE_LAND_INS;
+
+/**
+ * WHAT A VACANT LOT EARNS WHILE IT WAITS, $/sf of land a year, net of what it
+ * costs to run: a surface car park (2026-11-08).
+ *
+ * The engine gave a waiting lot no income at all — only the farm tracts had
+ * one — so a lot nobody can build on was worth exactly its option, and once
+ * the option was priced on a rent that reverts (propmarket.ts holdValueFor) a
+ * fringe lot's option went to nothing, the broker's land survey printed
+ * 0.0001-0.09 of the opening texture, and land-backed credit came apart
+ * (60-year centuries, seeds 22/33). Vacant urban land in life is not idle:
+ * the commonest interim use is a pay car park, run "as a temporary use of
+ * land being held for future development" (VTPI, Transportation Cost and
+ * Benefit Analysis 5.4, Parking, 2022), and the lot as an option to build
+ * that pays a holding return while it waits is the textbook model of vacant
+ * land (Titman 1985; Capozza & Helsley 1990). One rule for every holder: the
+ * player books it as the lot's NOI (holdingNOIYr), a rival through its mark
+ * (noiYr), and a land bidder counts it as the dividend of the option.
+ *
+ *   Spaces: off-street lots need 250-350 sf a space with aisles, 125-175 an
+ *   acre by design; six surveyed lots averaged 85 an acre (VTPI 5.4) [S].
+ *   Price: the US median monthly unreserved rate across 44 downtowns,
+ *   $166.26 (Colliers International, North America Parking Rate Survey 2012)
+ *   [S], in table dollars by CPI-U (229.6 -> 313.7, 2012 -> 2024) [S]. A town's
+ *   downtown is its ninth-decile building site (locIdxDevP90, where devPencils
+ *   prices the city's pro forma); away from it, and as the town's offices
+ *   rise and fall, the rate moves with the office rent at the lot — parking
+ *   is priced off the same commuters' demand. That proportionality is a
+ *   stated shape [K], not a measured elasticity.
+ *   Fill: the share of the town's offices let — a lot fills with the jobs
+ *   around it [K].
+ *   Cost: a simple suburban-standard surface lot, $436 a space a year of
+ *   annualised paving and $400 of operation and maintenance (VTPI Table
+ *   5.4.3-8, 2022 dollars; CPI-U 292.7 -> 313.7) [S], at the town's
+ *   construction cost (costIdx). Property tax and the liability policy are
+ *   the carry already charged (idleLandCarryRate).
+ *
+ * Zero where it does not pay, on farm and plat land (they have their own
+ * income and buyers), and in a houses-only district (a pay lot is a
+ * commercial use).
+ */
+const PARK_SF_PER_SPACE = 43_560 / 85;
+const PARK_RATE_MO = 166.26 * (313.7 / 229.6);
+const PARK_COST_YR = (436 + 400) * (313.7 / 292.7);
+export function interimUsePsfYr(rec: ParcelRecord, econ: Econ): number {
+  if (!(rec.lotArea > 0) || rec.ag || rec.homeLot || rec.tract) return 0;
+  if (rec.class !== "land" && rec.bldgArea > 0) return 0;
+  if (rec.zoneDist === "AG" || rec.zoneDist === "OS" || (rec.zoneDist !== undefined && HOMES_ONLY_ZONES.has(rec.zoneDist))) return 0;
+  const office = econ.effRentIdx?.office ?? econ.rentIdx?.office ?? 0;
+  if (!(office > 0)) return 0;
+  const pivot = econ.locIdxMeanBy?.office ?? econ.locIdxMean ?? 0.62;
+  const shape = LOC_SPREAD.office;
+  const cbd = Math.min(shape.max, Math.max(shape.min, Math.pow((econ.locIdxDevP90 ?? econ.locIdxMean ?? 0.62) / Math.max(0.01, pivot), shape.exp)));
+  const rateMo = PARK_RATE_MO * (office / RENT_BASE.office) * locationRentMult(rec, econ, "office") / cbd;
+  const fill = 1 - clamp(econ.cityVac?.office ?? openingVac("office"), 0, 1);
+  const net = rateMo * 12 * fill - PARK_COST_YR * (econ.costIdx ?? 1);
+  return net > 0 ? net / PARK_SF_PER_SPACE : 0;
 }
+
+/**
+ * WHAT A FOOT OF EACH CLASS IS WORTH, citywide: NOI at the class's occupancy
+ * today (or at `occ`) the way this engine computes NOI, capitalised at the class's cap
+ * rate with the tax solve V = NOI / (cap + t(1 - recovery)). One copy, read by
+ * the build brake (dev.ts cityValueToReplacement) and by the assessor's roll
+ * (citygov.ts) — the city taxes the same value the market builds against.
+ */
+export function classValuePsf(e: Econ, k: BuiltClass, occ: number = 1 - (e.cityVac?.[k] ?? openingVac(k))): number {
+  const rent = e.effRentIdx?.[k] ?? e.rentIdx[k];
+  const opex = opexPsf(k, e, false);
+  const recov = RECOVERY_RATE[k] ?? 0;
+  const egi = rent * occ + opex * recov * occ;
+  const noiPsf = egi - opex - egi * MGMT_FEE;
+  const cap = Math.max(3, e.capRate[k]) / 100;
+  return noiPsf / (cap + taxRate(e) * (1 - recov));
+}
+
+/**
+ * THE SHARE OF A HOLDING'S TAX BILL AN ABATEMENT STILL FORGIVES (421-a, ICAP —
+ * citygov.ts): the abatement the job was started under, for its years from
+ * delivery. Zero once it has run out, or for a building that never had one.
+ */
+export function abatedShare(h: { taxAbate?: { pct: number; untilM: number } }, econ?: { m?: number }): number {
+  const a = h.taxAbate;
+  return a && (econ?.m ?? 0) < a.untilM ? a.pct : 0;
+}
+
+/**
+ * THE APPRAISER'S CAP RATE FOR THIS BUILDING: comps plus income.
+ *
+ * The class's cap rate is what its closed deals say (propmarket.ts
+ * tickCapRead: the appraisers' index of the prints, restated to a reference
+ * building through a time-dummy hedonic grid), and this building's is that read moved by the adjustment grid
+ * the same prints were fitted to — location, condition and spec, each worth
+ * whatever the buyers who closed actually paid for it (econ.capFit). Before
+ * any print exists the grid is flat and the read is the opening survey's.
+ *
+ * Nothing here is a spread asserted by a formula: the location, quality,
+ * spec, reserve and product spreads and the floor over the ten-year
+ * (FORMULA_LEDGER.md #2, #3) are gone. A trophy trades tighter than a walk-up
+ * on the edge of town only if the bidders paid more for it — and they do when
+ * the stack of money that wants it is cheaper, its plant needs less reserve,
+ * and more of them are in the room (propmarket.ts valueTo / bidRound).
+ *
+ * The bound at 2-20% is a guard on a broken input, not a price.
+ */
+export function capRateFor(rec: ParcelRecord, econ: Econ, condition: Condition, condIdx?: number): number {
+  const base = rec.class === "land" ? 6 : blend(rec, econ.capRate) || 6;
+  const cls = (rec.class === "land" ? "office" : rec.class) as BuiltClass;
+  const b = econ.capFit?.[cls];
+  if (!b) return clamp(base, 2, 20);
+  const loc = Math.max(0, Math.min(1, demandLinear(rec.demandScore) / 100));
+  const q = condIdx ?? COND_CENTRE[condition] ?? 0.65;
+  const spec = rec.buildSpec ?? 0.5;
+  // the reference building (propmarket.ts CAP_REF_X): mid location, standard, market spec
+  const adj = b[0] * (loc - 0.5) + b[1] * (q - 0.6) + b[2] * (spec - 0.5);
+  return clamp(base * Math.exp(adj), 2, 20);
+}
+
 
 // Appraisals are opinions. Each parcel's appraisal carries a stable bias off
 // true value, and the honest range around it is about ±6%. Offers and lender
@@ -3382,10 +3847,15 @@ export function appraise(bbl: string, value: number): { lo: number; mid: number;
 
 // market-implied NOI before property tax (unowned parcels; also the
 // stabilized case for owned). Tax is capitalized in assetValue.
-export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition, stabilised = false, condIdx?: number): number {
+export function noiYr(
+  rec: ParcelRecord, econ: Econ, condition: Condition, stabilised = false, condIdx?: number,
+  /** A forecast occupancy by use in place of the market read (a pro forma's: proforma.ts `developmentProForma`). */
+  occOf?: (use: BuiltClass) => number,
+): number {
   if (rec.class === "land" || !rec.bldgArea) {
-    // carry: taxes and insurance bleed on idle land
-    return -landValue(rec, econ) * 0.012;
+    // carry: taxes and insurance bleed on idle land (idleLandCarryRate),
+    // against what the lot earns as a car park while it waits (interimUsePsfYr)
+    return interimUsePsfYr(rec, econ) * rec.lotArea - landValue(rec, econ) * idleLandCarryRate(econ);
   }
   // ONE OPERATING-COST MODEL.
   //
@@ -3410,7 +3880,7 @@ export function noiYr(rec: ParcelRecord, econ: Econ, condition: Condition, stabi
     // number still standing — every rent, NOI and cap rate ~17% high.
     const sf = useRentableSf(rec, use);
     if (sf <= 0) continue;
-    const occ = useOccupancy(rec, econ, use, stabilised);
+    const occ = occOf ? occOf(use) : useOccupancy(rec, econ, use, stabilised);
     const op = sf * opexPsf(use, econ, false) * locOpexMult(rec, econ, use);
     rent += sf * useRentPsfYr(rec, econ, condition, use, condIdx) * occ;
     opex += op;
@@ -3719,10 +4189,15 @@ export function ownedContractNoiYr(
 // The landlord's share of the property-tax bill: net leases reimburse it,
 // so you pay on the vacant + gross-leased fraction of the building.
 /** The gross property-tax bill, before anyone reimburses anything. */
-export function grossTaxYr(rec: ParcelRecord, h: Holding, econ?: { taxMult?: number }): number {
-  const assessed = h.assessed ?? h.costBasis;
+export function grossTaxYr(rec: ParcelRecord, h: Holding, econ?: { taxMult?: number; m?: number }): number {
+  const roll = h.assessed ?? h.costBasis;
   if (rec.class === "land" || !rec.bldgArea) return 0; // land carry already covers it
-  return assessed * taxRate(econ);
+  // roll value x assessment ratio x mill rate (x the council's levy): the
+  // value on the roll since the last revaluation, not today's price.
+  const bill = roll * ASSESS_RATIO * MILL_RATE * (econ?.taxMult ?? 1);
+  // An abated building is assessed at full value and billed less (citygov.ts).
+  const ab = abatedShare(h, econ);
+  return ab ? bill * (1 - ab) : bill;
 }
 
 /**
@@ -3734,7 +4209,8 @@ export function propertyTaxYr(rec: ParcelRecord, h: Holding, econ?: Econ): numbe
   const bill = grossTaxYr(rec, h, econ);
   if (!bill) return 0;
   if (rec.class === "multifamily") return bill;   // residential leases are gross
-  const taxPsf = bill / Math.max(1, rec.bldgArea);
+  // PER RENTABLE FOOT (REAL_ECONOMY_PLAN 2.6): recoveries bill t.sf, which is rentable; on gross feet a fully let NNN building recovered only rentable/gross (~83-90%) of its tax (BOMA Z65.1 pro-rata share).
+  const taxPsf = bill / Math.max(1, rentableSf(rec));
   const opexNowPsf = econ ? opexPsf(rec.class as BuiltClass, econ, h.programsDone?.systems !== undefined, recoverableService(h.service)) * locOpexMult(rec, econ, rec.class as BuiltClass) : taxPsf;
   let recovered = 0;
   for (const t of h.tenants) recovered += recoveryFor(t, opexNowPsf, taxPsf).tax;
@@ -3756,7 +4232,7 @@ export function holdingNOIYr(rec: ParcelRecord, econ: Econ, h: Holding, currentQ
   // insurance, operating cost and vacancy despite the ground lease explicitly
   // putting every one of them on the lessee.
   if (h.groundLeased) return 0;
-  if (rec.class === "land" || !rec.bldgArea) return -landValue(rec, econ) * 0.012;
+  if (rec.class === "land" || !rec.bldgArea) return interimUsePsfYr(rec, econ) * rec.lotArea - landValue(rec, econ) * idleLandCarryRate(econ);
   return operatingStatement(rec, econ, h, currentQ).noi;
 }
 
@@ -3819,7 +4295,7 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   let opexBill = 0;
   for (const u of legs) opexBill += useRentableSf(rec, u) * opexAt(u, h.service);
   const taxBill = grossTaxYr(rec, h, econ);
-  const taxNowPsf = taxBill / Math.max(1, rec.bldgArea);
+  const taxNowPsf = taxBill / Math.max(1, rentableSf(rec));   // per rentable foot, as billed (see above)
   let baseRent = 0, leasedSf = 0, recOpex = 0, recTax = 0, free = 0;
   for (const t of h.tenants) {
     leasedSf += t.sf;
@@ -3851,46 +4327,6 @@ export function operatingStatement(rec: ParcelRecord, econ: Econ, h: Holding, mo
   };
 }
 
-/**
- * EXCESS LAND (The Appraisal of Real Estate, Appraisal Institute, 15th ed.,
- * ch. 12): land a building does not need that could be SOLD SEPARATELY is
- * valued as land and added to the value of the building on the site it needs.
- * SURPLUS land — beyond the building's needs but too small or too narrow to
- * stand as a lot of its own — adds little and is not added here.
- *
- * What the building needs is the lot code's (lotcode.ts, the rules a lot split
- * is held to): enough land that its plate stays inside the district's lot
- * coverage maximum (which is where the parking, the truck court and the yards
- * live) and its floor area inside the FAR, plus its side yard along the new
- * line, and never less than the district's minimum lot. What is left is excess
- * when it is a legal lot itself (the minimum area and, pro rata, the minimum
- * frontage). It is worth the land read of that lot (no corner: the building
- * keeps it), less what it costs to split it off — a minor split of two lots.
- * Returns null where there is none, or none worth splitting off.
- */
-export function excessLand(rec: ParcelRecord, econ: Econ): { sf: number; net: number; need: ParcelRecord } | null {
-  if (rec.class === "land" || !(rec.bldgArea > 0) || !(rec.lotArea > 0) || rec.ag || rec.tract || rec.hoa) return null;
-  const rule = splitRule(rec.zoneDist);
-  const far = farMaxFor(rec);
-  if (!(far > 0)) return null;
-  const plate = rec.bldgArea / Math.max(1, rec.floors);
-  const depth = rec.lotDepth ?? Math.sqrt(rec.lotArea);
-  const need = Math.max(rule.minSf, plate / Math.min(coverageMax(rec), rule.cov), rec.bldgArea / far) + rule.sideFt * depth;
-  const sf = rec.lotArea - need;
-  if (sf < rule.minSf) return null;
-  const front = (rec.lotFront ?? 0) * (sf / rec.lotArea);
-  if (front < rule.minFt) return null;
-  const lostCorner = !!rec.corner;
-  const lot: ParcelRecord = {
-    ...rec, bbl: `${rec.bbl}~excess`, class: "land", bldgClass: "V1", mix: undefined, suites: undefined, product: undefined,
-    bldgArea: 0, floors: 0, yearBuilt: 0, unitsRes: 0, buildSpec: undefined, lotArea: sf, lotFront: front, corner: false,
-    ...(lostCorner ? { demandScore: Math.max(4, Math.min(100, Math.round(rec.demandScore * Math.pow(CORNER_K, -DEMAND_GAMMA)))) } : {}),
-  };
-  const net = landValue(lot, econ) - (MINOR_FIXED + 2 * MINOR_PER_LOT) * econ.costIdx;
-  if (!(net > 0)) return null;
-  return { sf, net, need: { ...rec, lotArea: rec.lotArea - sf, lotFront: (rec.lotFront ?? 0) - front || rec.lotFront } };
-}
-
 /** The street's value of a parcel: the site whole (excess land is the owner's option to split, holdingValue). */
 export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition, condIdx?: number): number {
   const land = landValue(rec, econ);
@@ -3918,23 +4354,30 @@ export function assetValue(rec: ParcelRecord, econ: Econ, condition: Condition, 
  * The appraiser's answer is the as-is value: capitalise the income at
  * STABILISED occupancy, then subtract the rent lost while the market leases
  * back up (Appraisal Institute, The Appraisal of Real Estate, ch. 22, "as is"
- * vs "as stabilized"). Stabilised here is this building at the market's
- * natural vacancy — its own character, troubles and location kept, only the
- * cycle taken out. The lease-up runs as long as the market's own measured
+ * vs "as stabilized"). Stabilised here is this building at its tier's
+ * vacancy today — its location kept, its own roll and calendar taken out
+ * (useOccupancy, stabilised): no-normal-vacancy step 7, 2026-11-08; it was
+ * the market's "natural" vacancy, a yardstick no market publishes. The lease-up runs as long as the market's own measured
  * gross absorption (`landQueue.absYr`, five trailing years) takes to soak up
  * the excess vacant feet, and the loss shrinks linearly as it does. A market
  * absorbing nothing never leases up, and the value is today's income
  * capitalised, exactly as before; a fast market is through it in a year.
  *
- * The other side is the same rule: occupancy above the natural rate is held
+ * The other side is the same rule: occupancy above the market's is held
  * by leases, not by the market, and it is worth its excess for the half-term
  * the average lease has left — then the building is a stabilised building.
  */
 function stabilisedIncome(rec: ParcelRecord, econ: Econ, condition: Condition, capY: number, condIdx?: number): number {
   const noiNow = noiYr(rec, econ, condition, false, condIdx);
   if (!econ.cityVac || !econ.landQueue) return noiNow / capY;
-  const natEcon = { ...econ, cityVac: { ...econ.cityVac, ...NATURAL_VAC } } as Econ;
-  const noiNat = noiYr(rec, natEcon, condition, false, condIdx);
+  // THE BUILDING AT ITS TIER'S OCCUPANCY (REAL_ECONOMY_PLAN 2.1,
+  // 2026-11-05; the market's own, not a "natural" one, since 2026-11-08). This
+  // swapped the city's vacancy for a normal rate — but a
+  // street building's as-is occupancy is its own roll (useOccupancy), which
+  // that swap never touched: noiNat equalled noiNow on 292 of 292 sampled
+  // buildings (seed 11, year 10), so every street building was valued as if
+  // today's roll lasted forever — a 60%-let office (the street's p10) at 60%.
+  const noiNat = noiYr(rec, econ, condition, true, condIdx);
   const gap = noiNat - noiNow;
   if (!(Math.abs(gap) > 0)) return noiNow / capY;
   const rc = Math.log(1 + capY);
@@ -3943,17 +4386,35 @@ function stabilisedIncome(rec: ParcelRecord, econ: Econ, condition: Condition, c
     const yrs = LEASE_TERM_M[use] / 24;
     return noiNat / capY - gap * (1 - Math.exp(-rc * yrs)) / rc;
   }
+  // THE LEASE-UP IS THIS BUILDING'S, at the pace the market lets space: its
+  // own shortfall from its tier's occupancy over the share of the class's stock
+  // the market absorbs a year (`landQueue.absYr`, five trailing years of gross
+  // absorption). It was the CITY's excess over the city's absorption, so a
+  // half-empty building in a market at its normal rate had no lease-up to
+  // deduct, and one full building in a glut was charged the glut's.
+  const short = Math.max(0, useOccupancy(rec, econ, use, true) - useOccupancy(rec, econ, use, false));
+  const lossPv = leaseUpLossPv(econ, use, gap, short, capY);
+  return lossPv === null ? noiNow / capY : noiNat / capY - lossPv;
+}
+
+/**
+ * THE RENT LOST LEASING BACK UP, in today's money: a loss that starts at
+ * `gap` a year and falls linearly to zero over T years, where T is the
+ * building's shortfall from its tier's occupancy (`short`, a share of its feet)
+ * over the share of the class's stock the market absorbs a year
+ * (`landQueue.absYr`, five trailing years of gross absorption):
+ * gap * (1/r - (1 - e^{-rT}) / (r^2 T)). T -> infinity is gap / r (today's
+ * income capitalised); T -> 0 is nothing. Null when the market measures no
+ * absorption to lease up at.
+ */
+function leaseUpLossPv(econ: Econ, use: BuiltClass, gap: number, short: number, capY: number): number | null {
   const h = econ.history ?? [];
   const stock = h.length ? (h[h.length - 1].stock?.[use] ?? 0) : 0;
-  const excess = Math.max(0, ((econ.cityVac[use] ?? NATURAL_VAC[use]) - NATURAL_VAC[use]) * stock);
-  const absYr = econ.landQueue[use]?.absYr ?? 0;
-  // PV of a loss that starts at `gap` and falls linearly to zero over T years:
-  // gap * (1/r - (1 - e^{-rT}) / (r^2 T)). T -> infinity is gap / r, today's
-  // income capitalised; T -> 0 is nothing.
-  if (!(absYr > 0)) return noiNow / capY;
-  const T = excess / absYr;
-  const lossPv = T > 0 ? gap * (1 / rc - (1 - Math.exp(-rc * T)) / (rc * rc * T)) : 0;
-  return noiNat / capY - lossPv;
+  const absYr = econ.landQueue?.[use]?.absYr ?? 0;
+  if (!(absYr > 0) || !(stock > 0)) return null;
+  const rc = Math.log(1 + capY);
+  const T = short / (absYr / stock);
+  return T > 0 ? gap * (1 / rc - (1 - Math.exp(-rc * T)) / (rc * rc * T)) : 0;
 }
 
 /**
@@ -4094,6 +4555,9 @@ export function industryConcentration(h: Holding, econ?: Econ): { share: number;
   return { share: topV / total, sector: top, stressed: stressed / total };
 }
 
+/** The trade of space assumed re-let (`rollQualitySpread` relet): its own, and not in trouble (no industry reads it). */
+const RELET_TRADE = "\u0000relet" as unknown as Sector;
+
 /** The largest tenant's share of the rent roll. */
 export function concentration(h: Holding): number {
   let top = 0, total = 0;
@@ -4118,7 +4582,26 @@ function residentialSpread(h: Holding): number {
   return clamp((0.94 - occ) * 2.2, -0.12, 0.85);
 }
 
-export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number, econ?: Econ): number {
+/**
+ * `relet`: grade the roll AS IF `relet.sf` more feet were let today on one
+ * fresh lease at `relet.rentPsf` — what an appraiser assumes of space still
+ * to let (`leaseUpMark`). The new lease is the class's ordinary term
+ * (market.ts LEASE_TERM_M), the street's average covenant (1.05 on the 0-2
+ * scale [D: tenantBooks.ts STREET_GRADE_SF, 0.30 x 2 + 0.45 x 1]), on the
+ * class's lease basis (shops and sheds net), and is a name and a trade of
+ * its own that is not in trouble: a one-tenant building re-let is still a
+ * one-tenant building.
+ */
+export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number, econ?: Econ, relet?: { sf: number; rentPsf: number }): number {
+  if (relet && relet.sf > 0 && rec.class !== "land" && rec.bldgArea) {
+    const cls = rec.class as BuiltClass;
+    const net = cls === "retail" || cls === "industrial";
+    const phantom = {
+      ...(h.tenants[0] ?? {}), name: "\u0000relet", fid: undefined, sf: relet.sf, rentPsf: relet.rentPsf, credit: 1.05,
+      startM: month, endM: month + LEASE_TERM_M[cls], recovery: net ? "nnn" : "gross", net, use: cls, sector: RELET_TRADE,
+    } as unknown as Tenant;
+    return rollQualitySpread(rec, { ...h, tenants: [...h.tenants, phantom] }, month, econ);
+  }
   if (rec.class === "land" || !rec.bldgArea) return 0.55;
   // The commercial part is what the tenants lease. Measuring a rent roll
   // against the WHOLE building marked a full block of flats with shops at
@@ -4186,8 +4669,10 @@ export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number, 
   // market prices both, and it prices the second one harder.
   const ind = industryConcentration(h, econ);
   const indSpread = clamp((Math.max(0, ind.share - 0.45) / 0.55) * 0.40 + ind.stressed * 0.55, 0, 0.85);
-  const revSpread = wRev / sfTot;
-  const comm = waltSpread + creditSpread + occSpread + structSpread + concSpread + indSpread + revSpread;
+  // The roll's distance from market (wRev) is no longer a spread: holdingValue
+  // prices it in dollars, term and reversion. Kept as a reading only.
+  void wRev;
+  const comm = waltSpread + creditSpread + occSpread + structSpread + concSpread + indSpread;
   // A mixed building is graded as what it is: part rent roll, part occupancy.
   return resShare > 0.02 ? comm * (1 - resShare) + residentialSpread(h) * resShare : comm;
 }
@@ -4264,6 +4749,30 @@ export function remainingAbatement(h: Holding, month: number): number {
  * is what the in-place leg is there to price. The as-is premium over the blend
  * fades out linearly between one and two market spans (see leaseUpWeight).
  */
+/**
+ * HOW FAST AN IN-PLACE INCOME GAP CLOSES: rent and vacancy gaps close about a
+ * quarter a year (Wheaton & Torto; the same REVERT_PER_YR builders read in
+ * rivals.ts) [S~]. One law for every reader of a rent roll: the street's
+ * bidders (propmarket.ts valueTo) and the appraiser (holdingValue).
+ */
+export const GAP_CLOSE_YR = 0.25;
+/** Years of an income gap a buyer pays for: the gap decaying at `kappa` a year, discounted at `r` (a geometric sum). */
+export function gapDuration(r: number, kappa = GAP_CLOSE_YR): number {
+  return 1 / Math.max(0.05, 1 - (1 - kappa) / (1 + r));
+}
+/**
+ * TERM AND REVERSION: the stabilised value plus what the roll in place pays
+ * over or under it while the gap lasts. `noiAfterTax` is the owner's NOI
+ * after its tax bill; at stabilised that is `cap × stabilised`, so the gap is
+ * the difference. The same arithmetic the street's bidders use (valueTo:
+ * `V += (noiPre − stabPre) × dur`), discounted at the appraiser's yield plus
+ * the growth it capitalises.
+ */
+function termAndReversion(econ: Econ, stabilised: number, noiAfterTax: number, cap: number, yAll: number): number {
+  const r = yAll + underwrittenGrowthPct(econ) / 100;
+  return stabilised + (noiAfterTax - cap * stabilised) * gapDuration(r);
+}
+
 function leaseUpMark(
   rec: ParcelRecord, econ: Econ, h: Holding, month: number,
   capNoRoll: number, cap: number, contractNoi: number, stabNoi: number,
@@ -4287,12 +4796,43 @@ function leaseUpMark(
   // leaseUpMarkAt (its risk line is the "empty building is a project" spread
   // in dollars), so charging both would price the same vacancy twice. At a
   // full gap it is the plain cap, at no gap it is exactly the blend's cap.
-  const inPlaceShare = clamp(letShare / Math.max(0.01, stabOcc), 0, 1);
-  const capFilled = capNoRoll + (cap - capNoRoll) * inPlaceShare;
-  const filledNoi = contractNoi + leaseUpGapNoiYr(rec, econ, h, gap * rentableSf(rec));
-  const filled = Math.max(0, filledNoi) / capFilled * 0.55
-    + stabNoi / (capFilled + taxRate(econ) * taxBorneShare(rec)) * 0.45;
-  const mark = leaseUpMarkAt(rec, econ, h.condition, sinceM, letShare, capNoRoll, filled, h.condIdx);
+  //
+  // ...AND THE GAP, ONCE LET, IS A LEASE LIKE ANY OTHER (2026-11-19). The cap
+  // here shed the roll's whole spread in proportion to the gap, so a building
+  // that lost its only tenant was valued "filled" at the cap of a building
+  // with no roll to grade — tighter than the cap it carried the day before.
+  // Measured on 32 held buildings (seed 31337, month 300), each emptied on a
+  // clone: the one-tenant commercial rolls carried +1.4 to +2.1 points, the
+  // "filled" value came out 16-37% over the let building's own mark, and the
+  // deductions below (15-34% of stabilised) all but cancelled it — sheds
+  // marked 0.96 of let when empty, shops 0.87, while the street's bidders
+  // paid 0.57-0.66 of that. A one-tenant building re-let is a one-tenant
+  // building: the roll is graded with the gap let on a fresh market lease
+  // (`rollQualitySpread` relet). Flats have no roll to grade and are as they were.
+  const gapSf = gap * rentableSf(rec);
+  const flats = clamp(1 - commercialShare(rec), 0, 1) > 0.5;
+  const capFilled = flats
+    ? capNoRoll + (cap - capNoRoll) * clamp(letShare / Math.max(0.01, stabOcc), 0, 1)
+    : capNoRoll + rollQualitySpread(rec, h, month, econ, { sf: gapSf, rentPsf: marketRentPsfYr(rec, econ, h.condition, h.condIdx) }) / 100;
+  const gapNoi = leaseUpGapNoiYr(rec, econ, h, gapSf);
+  const filledNoi = contractNoi + gapNoi;
+  const yFilled = capFilled + taxRate(econ) * taxBorneShare(rec);
+  const filled = termAndReversion(econ, stabNoi / yFilled, filledNoi, capFilled, yFilled);
+  // THE INCOME GIVEN UP IS WHAT THE GAP WOULD EARN, FOR AS LONG AS THIS MARKET
+  // TAKES TO LET IT (2026-11-19): the months to let of the building's own
+  // tier today (proforma.ts leaseUpMonthsOf on value.ts scoreVacOf — the clock
+  // a developer's lease-up, a construction lender's takeout and an office
+  // landlord's ask all read). It was half of what is left of a fixed 3.2-year
+  // span (1.6 for flats) whatever the market: at month 300 of the same run the
+  // market's clock read 32 months for office, 14 for shops, 3.5 for sheds and
+  // 1.8 for flats. Empty feet falling at the market's rate lose its time
+  // constant in months of their rent (the integral of the decay), and that
+  // rent is the whole of what letting them adds to the owner's statement —
+  // the costs the owner carries on dark space included.
+  const cls = rec.class as BuiltClass;
+  const toLetM = leaseUpMonthsOf(econ, cls, 0, 0, scoreVacOf(econ, cls, overallScore(rec, econ, cls, h.condIdx)), false);
+  const forgone = gapNoi * toLetM / 12;
+  const mark = leaseUpMarkAt(rec, econ, h.condition, sinceM, letShare, capNoRoll, filled, h.condIdx, forgone);
   return mark === null ? null : { mark, weight };
 }
 
@@ -4301,14 +4841,14 @@ function leaseUpMark(
  * holdingNOIYr runs the real roll through, on a lease of the class's typical
  * recovery. After tax, like holdingNOIYr, because it is added to it.
  */
-function leaseUpGapNoiYr(rec: ParcelRecord, econ: Econ, h: Holding, gapSf: number): number {
+export function leaseUpGapNoiYr(rec: ParcelRecord, econ: Econ, h: Holding, gapSf: number): number {
   if (!(gapSf > 0)) return 0;
   const cls = rec.class as BuiltClass;
   const rent = marketRentPsfYr(rec, econ, h.condition, h.condIdx);
   if (cls === "multifamily") return gapSf * rent * (1 - MGMT_FEE - APT_RESERVE);
   const systemsDone = h.programsDone?.systems !== undefined;
   const opexRecoverPsf = managedOpexPsf(cls, econ, systemsDone, recoverableService(h.service)) * locOpexMult(rec, econ, cls);
-  const taxNowPsf = grossTaxYr(rec, h, econ) / Math.max(1, rec.bldgArea);
+  const taxNowPsf = grossTaxYr(rec, h, econ) / Math.max(1, rentableSf(rec));   // per rentable foot, as billed
   return gapSf * (rent + RECOVERY_RATE[cls] * (opexRecoverPsf + taxNowPsf)) * (1 - MGMT_FEE);
 }
 
@@ -4358,6 +4898,8 @@ export function leaseUpMarkAt(
   filled?: number,
   /** the exact condition, so a thousandth of it is a thousandth of value */
   condIdx?: number,
+  /** The income given up while it lets, when the caller has the owner's statement and the market's clock (`leaseUpMark`). */
+  forgoneIn?: number,
 ): number | null {
   if (!rec.bldgArea || sinceM < 0 || !(leaseUpWeight(rec, sinceM) > 0)) return null;
   const apt = (rec.class as BuiltClass) === "multifamily";
@@ -4413,7 +4955,7 @@ export function leaseUpMarkAt(
   // 2. The income it does not earn on the way there. Space lets in over the
   //    window rather than all at the end, so on average half of what is empty
   //    today is empty for the time that is left.
-  const forgone = stab * (capNoRoll + taxLoad) * gapFrac * left * 0.5;
+  const forgone = forgoneIn ?? stab * (capNoRoll + taxLoad) * gapFrac * left * 0.5;
   // 3. And the part nobody underwrites away: it may not let. A wholly empty
   //    building is a project, and it is priced like one.
   const risk = stab * 0.08 * gapFrac;
@@ -4609,8 +5151,8 @@ export function ownedHoldingValueFromRec(
   // as a building job is (portfolioMark); the lots' own marks take over at
   // completion, so the step there is the plat's real gain or loss.
   const plat = s.plats?.[h.bbl];
-  if (plat && !plat.done) return holdingValue(rec, s.econ, h, s.month, true) + plat.cost;
-  let v = holdingValue(rec, s.econ, h, s.month, true);
+  if (plat && !plat.done) return holdingValue(rec, s.econ, h, s.month) + plat.cost;
+  let v = holdingValue(rec, s.econ, h, s.month);
   // A TENANT WHO HAS SAID THEY ARE GOING IS GONE (2026-10-15). The notice
   // lands six months out, and from then the space is known to go dark; the
   // mark carried the ordinary renewal odds (66-96%) to the last day and then
@@ -4623,7 +5165,7 @@ export function ownedHoldingValueFromRec(
     (t.nonRenewM !== undefined || !!t.leavingFor) && t.endM > s.month && !t.defaulted;
   if (rec.class !== "land" && rec.bldgArea > 0 && h.tenants?.some(leaving)) {
     const stay = { ...h, tenants: h.tenants.filter((t) => !leaving(t)) };
-    const dark = holdingValue(rec, s.econ, stay, s.month, true);
+    const dark = holdingValue(rec, s.econ, stay, s.month);
     const owed = h.tenants.filter(leaving).reduce((a, t) => a + t.rentPsf * t.sf * (t.endM - s.month) / 12, 0);
     v = Math.min(v, dark + owed);
   }
@@ -4648,27 +5190,29 @@ export function ownedHoldingValueFromRec(
  * rather than imported. Absent (a bundle that never loaded leasing.ts) the
  * mark is the plain capitalised contract, as before.
  */
-let rolloverReader: ((s: GameState, rec: ParcelRecord, h: Holding) => number) | null = null;
+// `var` with no initialiser, not `let ... = null` (2026-11-08): leasing.ts
+// registers the reader as it loads, and when the bundle's import cycle loads
+// leasing.ts before this line has run, a `let` is still in its temporal dead
+// zone and the registration throws ("Cannot access 'rolloverReader' before
+// initialization"). That killed the sim worker on load (#678 moved the load
+// order), and every month then ran on the page's thread: the game froze while
+// playing. A hoisted `var` is undefined until registered, and this line never
+// resets it.
+// eslint-disable-next-line no-var
+var rolloverReader: ((s: GameState, rec: ParcelRecord, h: Holding) => number) | undefined;
 export function registerRolloverReader(fn: (s: GameState, rec: ParcelRecord, h: Holding) => number): void {
   rolloverReader = fn;
 }
 
 /**
- * `excess`: value the excess land too (excessLand). Only YOUR deeds are marked
- * with it, because only you can realise it: the split desk (lotsplit.ts) is
- * how excess land is sold off, and the street has no split-and-infill path on
- * a built lot yet. Measured, crediting it to the street's prices (its vessels:
- * asks, sale marks, owners' books) without that path cost the baseline's six
- * seeds employment -6.0% and floor area -3.0% (t -2.1 / -1.8): land priced
- * for a split nobody on the street can make sits unbuilt. A buyer on the
- * street pays for the site whole; the option to split it is yours.
+ * ONE VALUE FOR ONE BUILDING, WHOEVER OWNS IT (2026-11-17). Your deeds used
+ * to add the land a building does not need, priced as a lot of its own
+ * (excessLand), because only you could split it off — a value no buyer on the
+ * street paid, so a book sold whole came in under its marks. Lot splitting is
+ * gone (owner, 2026-11-17), and with it the only way to realise that land.
  */
-export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: number, excess = false): number {
-  const whole = holdingValueOn(rec, econ, h, month);
-  if (h.groundLeased || !excess) return whole;
-  // the building on the land it needs, and the land it does not, sold apart (excessLand)
-  const ex = excessLand(rec, econ);
-  return ex ? Math.max(whole, holdingValueOn(ex.need, econ, h, month) + ex.net) : whole;
+export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: number): number {
+  return holdingValueOn(rec, econ, h, month);
 }
 
 function holdingValueOn(rec: ParcelRecord, econ: Econ, h: Holding, month?: number): number {
@@ -4696,7 +5240,12 @@ function holdingValueOn(rec: ParcelRecord, econ: Econ, h: Holding, month?: numbe
   // A leasehold is marked as the freehold less the ground rent's value, so the
   // in-place leg is struck on the NOI before the ground rent and the rent is
   // taken off once, at the end, at the yield it trades at.
-  const contractNoi = holdingNOIYr(rec, econ, h, inGut ? month : Number.POSITIVE_INFINITY) + (h.groundRentOut?.rentYr ?? 0);
+  // A TAX ABATEMENT IS NOT INCOME FOREVER (citygov.ts). The roll pays the
+  // abated bill this year; a buyer capitalises the full bill and adds what is
+  // left of the abatement as the present value it is — the pro forma's
+  // exit-value identity, read on a standing building.
+  const tAb = month !== undefined ? taxAbatementTerms(rec, econ, h, month) : null;
+  const contractNoi = holdingNOIYr(rec, econ, h, inGut ? month : Number.POSITIVE_INFINITY) + (h.groundRentOut?.rentYr ?? 0) - (tAb?.saveYr ?? 0);
   // AND YOU CANNOT DIVIDE A NEGATIVE NOI BY A CAP RATE AT ALL.
   //
   // A building with no tenants pays operating costs and taxes and bills
@@ -4727,21 +5276,29 @@ function holdingValueOn(rec: ParcelRecord, econ: Econ, h: Holding, month?: numbe
   // so an identical stabilised net-leased building had two values ~14% apart
   // depending on which desk was asked (one quantity, two answers — CLAUDE.md).
   const stabNoi = noiYr(rec, econ, h.condition, true, h.condIdx);
-  const stabilized = stabNoi / (cap + taxRate(econ) * taxBorneShare(rec));
-  const blended = inPlace * 0.55 + stabilized * 0.45;
+  const yAll = cap + taxRate(econ) * taxBorneShare(rec);
+  const stabilized = stabNoi / yAll;
+  // THE ROLL, VALUED THE WAY A BUYER VALUES IT (2026-11-10): the stabilised
+  // building plus the in-place gap — rent over or under market, space let or
+  // dark — for as long as such gaps last (termAndReversion). It was 55% of the
+  // in-place income capitalised forever and 45% of the stabilised mark, with
+  // the roll's distance from market priced again as a cap spread: a held
+  // office let 40% over market marked ~15% above what the street would bid,
+  // because the appraisal capitalised rent the leases' expiry takes away.
+  void inPlace;
+  const blended = termAndReversion(econ, stabilized, contractNoi, cap, yAll);
   const abate = month === undefined ? 0 : remainingAbatement(h, month);
   // A BUILDING IN ITS FIRST LEASE-UP IS NOT A BUILDING WITH A VACANCY PROBLEM.
   // Until it stabilises the as-is-on-completion mark governs, and it retires
   // on its own as the space lets — see leaseUpMark. It never marks BELOW the
   // ordinary blend, so a job that fills fast keeps the upside the roll has
-  // earned it. And it never marks below the dirt: the 0.92 floor is a
-  // demolition allowance for old empty fabric, not a haircut on a tower that
-  // opened this month.
+  // earned it. And it never marks below the clear site: landAppraisalFloor.
   const asIs = month === undefined ? null : leaseUpMark(rec, econ, h, month, capNoRoll, cap, contractNoi, stabNoi);
   // The dirt floor follows the age of the fabric, not the roll: a new tower
   // that let fast is no more a demolition candidate than one still filling.
   const floor = landAppraisalFloor(rec, econ,
-    h.deliveredM !== undefined && month !== undefined ? leaseUpWeight(rec, month - h.deliveredM) : 0);
+    h.deliveredM !== undefined && month !== undefined ? leaseUpWeight(rec, month - h.deliveredM) : 0,
+    month === undefined ? 0 : vacantPossessionCost(rec, econ, h, month));
   // VACANCY IS A LEASE-UP TOO (2026-10-14). A stabilised office that lost one
   // of its three tenants marked down 41% the month the suite emptied and back
   // up 51% when it let again two months later — the in-place leg is the rent
@@ -4755,15 +5312,33 @@ function holdingValueOn(rec: ParcelRecord, econ: Econ, h: Holding, month?: numbe
     : leaseUpMark(rec, econ, h, month, capNoRoll, cap, contractNoi, stabNoi, true);
   const firstUp = asIs !== null ? blended + asIs.weight * Math.max(0, asIs.mark - blended) : blended;
   const marked = vac !== null ? Math.max(firstUp, vac.mark) : firstUp;
-  const freehold = Math.max(floor, marked - abate);
+  const freehold = Math.max(floor, marked - abate) + (tAb?.pv ?? 0);
   return h.groundRentOut ? Math.max(0, freehold - leaseholdGroundPv(h, econ)) : freehold;
+}
+
+/** What an abatement still saves the owner a year, and its present value at the building's all-in yield. */
+export function taxAbatementTerms(rec: ParcelRecord, econ: Econ, h: Holding, month: number): { saveYr: number; pv: number } | null {
+  const a = h.taxAbate;
+  if (!a || month >= a.untilM || !(a.pct > 0)) return null;
+  const full = propertyTaxYr(rec, { ...h, taxAbate: undefined }, econ);
+  const saveYr = Math.max(0, full - propertyTaxYr(rec, h, econ));
+  if (!(saveYr > 0)) return null;
+  const y = Math.max(0.01, capRateFor(rec, econ, h.condition, h.condIdx) / 100 + taxRate(econ) * taxBorneShare(rec));
+  const yrs = (a.untilM - month) / 12;
+  return { saveYr, pv: saveYr * (1 - Math.pow(1 + y, -yrs)) / y };
 }
 
 export function monthlyNOI(rec: ParcelRecord, econ: Econ, h: Holding, currentQ: number): number {
   return holdingNOIYr(rec, econ, h, currentQ) / 12;
 }
 
+// Office: JLL's average office renovation cost runs $297-303/sf in the dearest
+// markets (San Francisco, New York, San Jose; CoStar, "Here's what it costs to
+// build the office tenants say they want") and mid-range remodels $70-150/sf
+// (Atlanta, swivl cost guide); $210 sits between [S~]. Retail, flats and
+// industrial are still judgements [K].
 export const RENO_COST_PSF: Record<BuiltClass, number> = { office: 210, retail: 150, multifamily: 165, industrial: 90 };
+// [K: renovation time is a judgement, no schedule survey checked.]
 export const RENO_MONTHS = 6;
 
 export function renovationCost(rec: ParcelRecord, econ: Econ): number {
@@ -4772,22 +5347,45 @@ export function renovationCost(rec: ParcelRecord, econ: Econ): number {
 }
 
 /**
- * WHAT A BUILDING IS WORTH THE DAY YOU TAKE IT OFF A RECEIVER.
+ * WHAT A BUILDING IS WORTH THE DAY YOU TAKE IT OFF A RECEIVER — the
+ * appraiser's as-is value of a worn building holding `occ` of its feet.
  *
- * Not assetValue. assetValue prices a building at MARKET occupancy in a stated
- * condition, and a building whose owner stopped paying the mortgage is neither
- * at market occupancy nor in stated condition — he stopped leasing a year
- * before he stopped paying, and he stopped fixing the roof a year before that.
+ * Not assetValue. A building whose owner stopped paying the mortgage is
+ * neither at market occupancy nor in stated condition — he stopped leasing a
+ * year before he stopped paying, and he stopped fixing the roof a year before
+ * that. So: the worn building's income at its tier's occupancy today,
+ * capitalised, less the rent lost while it leases from `occ` back up at the
+ * pace the market absorbs space (leaseUpLossPv, the same rule every as-is
+ * value in the engine uses — The Appraisal of Real Estate, ch. 22). A
+ * building fuller than its tier is worth its stabilised value: the excess is
+ * held by leases a distressed roll does not carry far. Never below what the
+ * dirt appraises at.
  *
- * Measured (n=400 commercial parcels, month 120): assetValue(worn) is 0.69x
- * assetValue(standard); a worn building holding half its roll marks at 0.49x
- * assetValue(worn), a full one at 0.70x and an empty one at 0.18x. So a half-
- * let worn building is worth 0.43x a clean comparable, and that number is the
- * entire reason buying notes is a business rather than an arbitrage.
+ * This replaced assetValue(worn) x min(0.72, 0.18 + 0.74 x occ), a line
+ * fitted to marks (n=400, month 120) that sat at its 0.72 cap in 94% of
+ * calls, so most collateral was 72% of the worn mark whatever the roll.
+ * The receiver's time and costs are the note buyer's (its own discount and
+ * the sale's costs), not the building's value.
  */
 export function collateralAsIs(rec: ParcelRecord, econ: Econ, occ: number): number {
-  const o = Math.max(0.15, Math.min(0.95, occ));
-  return assetValue(rec, econ, "worn") * Math.max(0.18, Math.min(0.72, 0.18 + 0.74 * o));
+  const cond: Condition = "worn";
+  if (rec.class === "land" || !rec.bldgArea) return assetValue(rec, econ, cond);
+  const capY = capRateFor(rec, econ, cond) / 100 + taxRate(econ) * taxBorneShare(rec);
+  const noiNat = noiYr(rec, econ, cond, true);
+  const o = Math.max(0, Math.min(1, occ));
+  let gap = 0, shortSf = 0, sfAll = 0;
+  for (const use of uses(rec)) {
+    const sf = useRentableSf(rec, use);
+    const nat = useOccupancy(rec, econ, use, true);
+    const short = Math.max(0, nat - o);
+    gap += sf * short * useRentPsfYr(rec, econ, cond, use);
+    shortSf += sf * short; sfAll += sf;
+  }
+  const use = (rec.class as BuiltClass);
+  const lossPv = gap > 0 ? leaseUpLossPv(econ, use, gap, sfAll > 0 ? shortSf / sfAll : 0, capY) : 0;
+  // A market that absorbs nothing never leases up: the roll's income, capitalised.
+  const income = lossPv === null ? Math.max(0, noiNat - gap) / capY : noiNat / capY - lossPv;
+  return Math.max(Math.max(0, income), landAppraisalFloor(rec, econ, 0));
 }
 
 /**

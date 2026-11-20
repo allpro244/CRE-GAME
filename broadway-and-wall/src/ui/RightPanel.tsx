@@ -11,11 +11,12 @@ import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { PortfolioPage } from "@/ui/panels/PortfolioPage";
 import { DealsPage } from "@/ui/panels/DealsPage";
 import { MarketPage, BuildingDatabase } from "@/ui/panels/MarketPage";
-import { PulsePage } from "@/ui/panels/PulsePage";
 import { PlayersPage } from "@/ui/panels/PlayersPage";
 import { NotesPage } from "@/ui/panels/NotesPage";
 import { EconomyPage } from "@/ui/panels/EconomyPage";
 import { RankingsPage } from "@/ui/panels/RankingsPage";
+import { Industries } from "@/ui/panels/IndustriesView";
+import { LandPage, BrokersPage } from "@/ui/panels/MarketPage";
 import { BooksPage } from "@/ui/panels/BooksPage";
 import { NewsPage } from "@/ui/panels/NewsPage";
 import { SavesPage, SettingsPage, PrimerPage } from "@/ui/panels/MiscPages";
@@ -24,6 +25,7 @@ import { DebtPage } from "@/ui/panels/DebtPage";
 import { InvestorsPage } from "@/ui/panels/InvestorsPage";
 import { BanksPage } from "@/ui/panels/BankProfile";
 import { PropertyPage } from "@/ui/panels/PropertyPage";
+import { BizSheet } from "@/ui/BizSheet";
 import {
   DecisionModal, AlertModal, AuctionModal, DefaultNoticeModal, GameOverPage,
 } from "@/ui/panels/modals";
@@ -114,7 +116,7 @@ export default function GamePanels() {
         e.preventDefault();
         if (st.autoplay) { st.setAutoplay(0); return; }
         if (onScreen(".modal-backdrop")) {
-          useStore.setState({ toast: { text: "Answer or dismiss the card on your desk before playing.", kind: "err", at: Date.now() } });
+          useStore.setState({ toast: { text: "Resolve the open card first.", kind: "err", at: Date.now() } });
           return;
         }
         if (!st.game?.gameOver) st.setAutoplay(1);
@@ -125,7 +127,7 @@ export default function GamePanels() {
       if (wantsTime && onScreen(".modal-backdrop")) {
         e.preventDefault();
         useStore.setState({
-          toast: { text: "Answer or dismiss the card on your desk before advancing time.", kind: "err", at: Date.now() },
+          toast: { text: "Resolve the open card first.", kind: "err", at: Date.now() },
         });
         return;
       }
@@ -140,53 +142,16 @@ export default function GamePanels() {
   // The room on screen, plus the desks kept warm behind it.
   const views = open && !kept.includes(page) ? [...kept, page] : kept;
   if (!hasGame) return null;
-  const title = page === "portfolio" ? "Portfolio"
-    : page === "deals" ? "The Deals Desk"
-    : page === "books" ? "The Books"
-    : page === "news" ? "News"
-    : page === "leasing" ? "Leasing & Occupancy"
-    : page === "debt" ? "Debt"
-    : page === "investors" ? "Investors"
-    : page === "banks" ? "The Banks"
-    : page === "property" ? (propAddr ?? "Property")
-    : page === "saves" ? "Saved Games"
-    : page === "economy" ? "Markets"
-    : page === "pulse" ? "The City"
-    : page === "players" ? "Players"
-    : page === "buildings" ? "Every Building"
-    : page === "rankings" ? "Rankings"
-    : page === "notes" ? "The Note Desk"
-    : page === "firm" ? "The Record"
-    : page === "settings" ? "Settings"
-    : page === "primer" ? "How this business works"
-    : "The Marketplace";
+  // ONE LINE OF HEADER (UI clean-up, 2026-11): the kicker and the one-line
+  // subtitle under every title are gone; a desk with rooms is titled by the
+  // desk and its tabs say which room.
   const desk = deskOf(page);
-  const kicker = page === "property" ? (propOwned ? "Portfolio · your building" : "Property file")
-    : desk ? desk.label
-    : page === "saves" ? "Campaign"
-    : page === "settings" ? "Preferences"
+  const title = page === "property" ? (propAddr ?? "Property")
+    : desk && desk.tabs.length > 1 ? desk.label
+    : page === "saves" ? "Saves"
+    : page === "settings" ? "Settings"
     : page === "primer" ? "Primer"
-    : "";
-  const subtitle = page === "portfolio" ? "Value, income, concentration and the shape of what you own."
-    : page === "deals" ? "Every live negotiation, bid, contract and clock on your desk."
-    : page === "books" ? "Cash movement, operating results and the record of the firm."
-    : page === "news" ? "The stories buried in the city's records, the wire's headlines and the closed sales."
-    : page === "leasing" ? "Occupancy, expirations and the mandate you have delegated."
-    : page === "debt" ? "Coverage, maturities, pricing and refinancing risk across the book."
-    : page === "investors" ? "What investors think of you, what they will put in and on what terms — deal by deal, and the fund."
-    : page === "banks" ? "Every lender in town, with its books open — capital, income, losses, terms, limits and every loan."
-    : page === "property" ? "The complete operating, financing and development record."
-    : page === "saves" ? "Named snapshots you can return to. The live campaign autosaves on its own."
-    : page === "economy" ? "Each market in depth — space, land, credit, employers and the zoning board."
-    : page === "pulse" ? "How the city is doing and what changed, on one screen."
-    : page === "players" ? "Who else owns this town, how big they are, and how much rope they have left."
-    : page === "buildings" ? "Every standing building in town — size, income, value and owner."
-    : page === "rankings" ? "Size, growth, jobs, pay and rent against thirty-two real US cities."
-    : page === "notes" ? "Buy bank paper, write private bridges, service what you hold."
-    : page === "firm" ? "Every deed, delivery, exit and refinancing since founding — the campaign on one strip."
-    : page === "settings" ? "Display, interruption and simulation controls."
-    : page === "primer" ? "The quantities this game expects you to reason with."
-    : "On-market listings, off-market calls and motivated sellers.";
+    : desk?.label ?? "";
   // The map card is a glance. Firm desks open as rooms (~1100px parchment)
   // so a rent roll, deal stage or debt book is readable — the narrow right
   // dock from the map-first pass was too small for that work.
@@ -215,9 +180,8 @@ export default function GamePanels() {
           >
             <div className="page-head">
               <div className="page-heading">
-                <div className="page-kicker">{kicker}</div>
+                {page === "property" && <div className="page-kicker">{propOwned ? "Yours" : "Property file"}</div>}
                 <div className="page-title">{title}</div>
-                <div className="page-subtitle">{subtitle}</div>
               </div>
               <button className="panel-close page-close" aria-label={`Close ${title}`} onClick={() => setPage("none")}>×</button>
             </div>
@@ -246,6 +210,8 @@ export default function GamePanels() {
           .modal-backdrop`), and the rest wait their turn behind it with a
           count on screen (CardQueue). So: what happened, then what it does to
           your own deed, then what wants an answer, then the auction. */}
+      {/* a business's books, over whatever page named it (BizLink) */}
+      <BizSheet />
       <AlertModal />
       <DefaultNoticeModal />
       <DecisionModal />
@@ -266,12 +232,14 @@ const PAGE_VIEW: Partial<Record<Page, ReactElement>> = {
   portfolio: <PortfolioPage />,
   deals: <DealsPage />,
   market: <MarketPage />,
-  pulse: <PulsePage />,
   players: <PlayersPage />,
   buildings: <BuildingDatabase />,
   notes: <NotesPage />,
   economy: <EconomyPage />,
   rankings: <RankingsPage />,
+  land: <LandPage />,
+  brokers: <BrokersPage />,
+  industries: <Industries />,
   books: <BooksPage />,
   news: <NewsPage />,
   saves: <SavesPage />,
@@ -389,7 +357,7 @@ function DeskTabs({ desk, page }: { desk: Desk; page: Page }) {
  * Refinance entry opens Debt and lands on "Loan by loan" — and is consumed
  * here, once, after the first scan finds it.
  */
-const OWN_VIEWS = new Set<Page>(["pulse", "players", "news", "buildings"]);
+const OWN_VIEWS = new Set<Page>(["players", "news", "buildings", "economy"]);
 const HEAD_SEL = ".page-section-head, .deal-head, .page-section";
 type Sec = { el: HTMLElement; label: string };
 
@@ -562,7 +530,7 @@ function useHintFolds(ref: React.RefObject<HTMLDivElement | null>, page: Page) {
         if (el.querySelector("button, a, input, select, textarea")) continue;
         if ((el.textContent ?? "").length < FOLD_CHARS) continue;
         el.classList.add("hint-fold");
-        el.title = "Click to read the rest";
+        el.title = "Expand";
       }
     };
     scan();

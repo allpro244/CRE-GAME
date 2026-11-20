@@ -61,13 +61,7 @@ export function Districts() {
   const dists = [...new Set(Object.values(parcels).map((p) => p.district).filter(Boolean))].sort();
   return (
     <div>
-      <div className="page-section">Districts — the zoning board</div>
-      <div className="hint">
-        A rezoning is the largest single value event that can happen to a piece of dirt, and it lands on a
-        whole district at once. This is the record: where each district's envelope sits against what it was
-        generated with, and the last time the board moved it. You do not control it — you read it, and you
-        own the dirt before it lands or you do not.
-      </div>
+      <div className="page-section" title="A rezoning is the largest single value event that can happen to a piece of dirt, and it lands on a whole district at once. This is the record: where each district's envelope sits against what it was generated with, and the last time the board moved it. You do not control it — you read it, and you own the dirt before it lands or you do not.">Districts</div>
       {/* YOUR OWN PAPER IN FRONT OF THE BOARD. The parcel card shows one
           application on one lot; a firm with three filings pending had no page
           that listed them, and a hearing date you cannot see is a hearing you
@@ -148,12 +142,7 @@ export function Employers() {
   const game = useStore((s) => s.game)!;
   return (
     <div>
-      <div className="page-section">Employers — the trades that fill the space</div>
-      <div className="hint">
-        Industries run their own cycles, on their own volatility, independent of the property market that houses
-        them. Office can be a landlord's market while finance is shedding staff — and the building let to five
-        startups empties while the one across the street let to insurers does not.
-      </div>
+      <div className="page-section" title="Industries run their own cycles, on their own volatility, independent of the property market that houses them. Office can be a landlord's market while finance is shedding staff — and the building let to five startups empties while the one across the street let to insurers does not.">Employers</div>
       <table className="tbl">
         <thead>
           <tr><th>Trade</th><th>Cycle</th><th className="num">Momentum</th><th className="num">Your exposure</th><th>Read</th></tr>

@@ -98,10 +98,11 @@ void ACityBuilder::SetSeasonGrass(int32 MonthOfYear)
 	// heat, a second green in September, browning from November. Multipliers on
 	// the lawn's own greens (M_BW_Grass "Season").
 	static const FLinearColor ByMonth[12] = {
-		{ 1.95f, 1.15f, 1.55f }, { 1.95f, 1.15f, 1.55f }, { 1.6f, 1.15f, 1.3f },   // Jan Feb Mar: dormant
+		// (dormant months softened: at 1.95 / 1.55 a January region read as bare dirt from the air — owner)
+		{ 1.35f, 1.12f, 1.15f }, { 1.35f, 1.12f, 1.15f }, { 1.2f, 1.15f, 1.05f },   // Jan Feb Mar: dormant
 		{ 1.15f, 1.2f, 1.0f },   { 1.0f, 1.12f, 0.95f },  { 1.0f, 1.0f, 1.0f },    // Apr May Jun
 		{ 1.12f, 1.0f, 0.9f },   { 1.3f, 1.05f, 0.9f },   { 1.05f, 1.02f, 0.95f }, // Jul Aug Sep
-		{ 1.2f, 1.05f, 0.95f },  { 1.55f, 1.12f, 1.25f }, { 1.85f, 1.15f, 1.5f } };// Oct Nov Dec
+		{ 1.2f, 1.05f, 0.95f },  { 1.25f, 1.1f, 1.05f }, { 1.35f, 1.12f, 1.12f } };// Oct Nov Dec
 	if (BWGrassMaterial()) Grass->SetVectorParameterValue(TEXT("Season"), ByMonth[((MonthOfYear % 12) + 12) % 12]);
 	// The street trees: April's fresh yellow-green, summer's full green, a
 	// little dusty by August, turning through October, russet and thinning in
@@ -545,9 +546,47 @@ void ACityBuilder::BuildGround()
 			}
 		}
 	}
+	// THE COUNTRY GOES ON (owner: the region ended in a square slab over the sea). On every side of the
+	// region's window that is land at its edge, farmland runs on out to the horizon, a few cm under the
+	// map's own ground so the two never fight; a side that meets the sea is left to the sea.
+	FMeshBuf Country;
+	if (City.Size == TEXT("region"))
+	{
+		TArray<const TArray<FVector2D>*> LandRings;
+		for (const TPair<FString, TArray<TArray<FVector2D>>>& L : City.Ground)
+			if (L.Key == TEXT("land")) for (const TArray<FVector2D>& R : L.Value) LandRings.Add(&R);
+		auto OnLand = [&](const FVector2D& Q)
+		{
+			if (!LandRings.Num()) return true;
+			for (const TArray<FVector2D>* Rp : LandRings)
+			{
+				const TArray<FVector2D>& R = *Rp;
+			{
+				bool b = false;
+				for (int32 i = 0, j = R.Num() - 1; i < R.Num(); j = i++)
+					if ((R[i].Y > Q.Y) != (R[j].Y > Q.Y) && Q.X < (R[j].X - R[i].X) * (Q.Y - R[i].Y) / (R[j].Y - R[i].Y) + R[i].X) b = !b;
+				if (b) return true;
+			}
+			}
+			return false;
+		};
+		const FBox2D W = City.Bounds, F = W.ExpandBy(6000000.0);   // 60 km: the haze has it by then
+		const FVector2D Wc[4] = { W.Min, FVector2D(W.Max.X, W.Min.Y), W.Max, FVector2D(W.Min.X, W.Max.Y) };
+		const FVector2D Fc[4] = { F.Min, FVector2D(F.Max.X, F.Min.Y), F.Max, FVector2D(F.Min.X, F.Max.Y) };
+		for (int32 e = 0; e < 4; ++e)
+		{
+			// a side is land if most of it is (sampled a little inside the edge)
+			int32 Dry = 0;
+			const FVector2D A = Wc[e], E = Wc[(e + 1) % 4], In = (W.GetCenter() - (A + E) * 0.5).GetSafeNormal() * 3000.0;
+			for (int32 k = 1; k < 20; ++k) if (OnLand(FMath::Lerp(A, E, k / 20.0) + In)) ++Dry;
+			if (Dry < 12) continue;
+			Country.AddCap({ A, Fc[e], Fc[(e + 1) % 4], E }, -30, FLinearColor::White);
+		}
+	}
 	Sea.Emit(Ground, 0, false);
 	TArray<UMaterialInterface*> Mats = { GroundMaterial(TEXT("sea")) };
 	if (Far.V.Num()) { Far.Emit(Ground, 1, false); Mats.Add(BWGrassMaterial()); }
+	if (Country.V.Num()) { Country.Emit(Ground, Mats.Num(), false); Mats.Add(GroundMaterial(TEXT("farm1"))); }
 
 	// land and its dressing, each layer a centimetre above the last so nothing
 	// fights. THE FOOTWAY IS A STEP UP: sidewalks, medians and lawns stand a
@@ -626,7 +665,10 @@ void ACityBuilder::BuildGround()
 		static const TArray<FShare> Land = { { Gravel, 0.30f }, { Meadow, 0.30f }, { Dirt, 0.20f }, { Worn, 0.20f } };
 		// a small town's empty lots have gone back to weeds; the pale gravel
 		// slabs read as blanks across a low-rise grid
-		static const TArray<FShare> LandTown = { { Meadow, 0.70f }, { Dirt, 0.15f }, { Worn, 0.15f } };
+		static const TArray<FShare> LandTown = { { Meadow, 0.85f }, { Worn, 0.15f } };   // (owner: the town read as brown dirt; the dirt share went)
+		// A HOUSE'S LOT IS A LAWN (owner: "everything sits on brown dirt"): a one- or two-storey home in the
+		// region stands in grass, not on the apartment yard's concrete
+		static const TArray<FShare> YardHouse = { { Lawn, 0.85f }, { Meadow, 0.15f } };
 		// the front (the strip between the building and the street)
 		static const TArray<FShare> FrontResLow = { { Lawn, 0.70f }, { Plaza, 0.15f }, { ConcLight, 0.15f } };
 		static const TArray<FShare> FrontResHigh = { { Plaza, 0.55f }, { ConcLight, 0.25f }, { Lawn, 0.20f } };
@@ -719,7 +761,8 @@ void ACityBuilder::BuildGround()
 				}
 				continue;
 			}
-			Cov[Pick(bRes ? YardRes : bOff ? YardOff : bRet ? YardRet : YardInd, H)].AddCap(P.Ring, Zp, FLinearColor::White);
+			const bool bHouseLot = bRegionMap && bRes && P.Floors <= 2;
+			Cov[Pick(bHouseLot ? YardHouse : bRes ? YardRes : bOff ? YardOff : bRet ? YardRet : YardInd, H)].AddCap(P.Ring, Zp, FLinearColor::White);
 			const bool bHigh = P.Floors >= 6;
 			const ECover Front = Pick(bRes ? (bHigh ? FrontResHigh : FrontResLow) : bOff ? (bHigh ? FrontOffHigh : FrontOffLow) : bRet ? FrontRet : FrontInd, H >> 10);
 			double Area2 = 0;

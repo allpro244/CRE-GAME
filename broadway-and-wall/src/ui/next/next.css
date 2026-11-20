@@ -360,7 +360,7 @@ html.ui-next .map-root { left: var(--rail-w); top: var(--hud-h); }
 .mk-state { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; opacity: .8; }
 .mk-state.pos { color: #3a7d46; }
 .mk-state.neg { color: #a8402e; }
-.mk-figs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 6px; }
+.mk-figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(56px, 1fr)); gap: 4px; margin-bottom: 6px; }
 .mk-figs small { display: block; font-size: 10px; opacity: .65; }
 .mk-note { font-size: 11.5px; line-height: 1.35; opacity: .8; margin-top: 6px; }
 .mk-legend { display: flex; gap: 14px; font-size: 12px; margin: 4px 0 8px; }

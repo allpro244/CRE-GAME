@@ -5,7 +5,7 @@
  * engine functions the figure itself came from. If the engine does not
  * compute a line, the line is not here.
  */
-import type { GameState, Holding } from "@/engine/types";
+import type { BuiltClass, GameState, Holding } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import { monthLabel } from "@/engine/types";
 import {
@@ -13,6 +13,7 @@ import {
   marketRentPsfYr, operatingStatement, ownedHoldingNoiYr, resolveRec,
 } from "@/engine/value";
 import { replacementCost } from "@/engine/dev";
+import { capReadLine } from "@/engine/propmarket";
 import { buildBalanceSheet } from "@/engine/books";
 import { firmOverheadMonthly, portfolioMonthlyCF } from "@/engine/sim";
 import { occupancyRead, portfolioOccupancy } from "@/engine/leasing";
@@ -238,6 +239,8 @@ export const DRILLS: Record<DrillKey, (g: GameState, p: ParcelTable, a: DrillArg
         row("NOI", ip.noi),
         row("Price", price),
         { label: "Market cap", value: pct(mkt), strong: true },
+        // where the market cap comes from: the class's closed deals (propmarket.ts)
+        ...(r.rec.class !== "land" ? [{ label: "From the deals", value: capReadLine(g.econ, r.rec.class as BuiltClass) ?? "—" }] : []),
       ],
       formula: "NOI ÷ price",
     };

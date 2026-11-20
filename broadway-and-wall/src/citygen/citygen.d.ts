@@ -27,6 +27,14 @@ declare module "@/citygen/index.mjs" {
     reserved?: Record<string, ReservedParcel>;
     /** The region map only: its ground layers in draw order (unrealExport, platPreview). */
     groundLayers?: string[];
+    /**
+     * The region map only: the heavy industry round the window (region/facilities.mjs) — drawn,
+     * named and clickable, never parcels, never for sale. Each carries its BEA industry code, so a
+     * later step can give it a firm's books.
+     */
+    facilities?: RegionFacility[];
+    /** The region map only: the country those stand in, past the window's edge. */
+    hinterland?: Hinterland;
     size?: string;
     stats: {
       lots: number; blocks: number; coverage: number; edges: number;
@@ -38,13 +46,59 @@ declare module "@/citygen/index.mjs" {
     };
   }
 
+  type LL = [number, number];
+  export type FacilityKind = "airport" | "railyard" | "refinery" | "metals" | "quarry" | "farm" | "orchard" | "forest" | "power";
+  /**
+   * One piece of a facility as the renderer draws it (region/facilities.mjs): `t` is the shape
+   * (pad, line, box, cyl, stack, ctower, sphere, cone, mound, tower, gantry, rack, pit, inst, scatter,
+   * rows) and `k` what it is. Points are lon/lat, `u` a world unit direction (x east, y north), sizes m.
+   * An `inst` entry is [lon, lat, heading (rad from east), scale, colour index, tier, kind].
+   */
+  export interface FacilityPart {
+    t: string; k?: string;
+    c?: LL; u?: LL; rows?: LL; w?: number; d?: number; h?: number; z0?: number; r?: number; r2?: number;
+    ring?: LL[]; hole?: LL[]; pts?: LL[]; at?: (number | string)[][];
+    [more: string]: unknown;
+  }
+  export interface RegionFacility {
+    /** stable within the region: "fac:airport", "fac:quarry:2" */
+    id: string;
+    kind: FacilityKind;
+    name: string;
+    /** BEA summary industry code (481, 482, 324, 331, 212, 111CA, 113FF, 22) and its plain word */
+    industry: string;
+    industryName: string;
+    footprint: LL[];
+    centroid: LL;
+    m2: number;
+    acres: number;
+    parts: FacilityPart[];
+    [more: string]: unknown;
+  }
+  export interface Hinterland {
+    /** how far past the window's edge the country is drawn, m */
+    belt: number;
+    extent: LL[];
+    /** polygons (outer ring, then holes): the country's land, the window excluded */
+    land: LL[][][];
+    /** the outline of all the land, window and country together: where the sea stops */
+    shoreline: LL[];
+    fields: { ring: LL[]; k: string; rows: LL }[];
+    water: { pts: LL[]; w: number; name?: string }[];
+    roads: { pts: LL[]; w: number; kind: string }[];
+    rail: { pts: LL[]; name?: string }[];
+  }
+
   /** Fetch a city's baked data (Manhattan's plat) before makeCity. Idempotent. */
   export function preloadCity(cityId: string): Promise<void>;
   /** Manhattan's baked plat, fetched once (preloadCity uses this). */
   export function loadManhattanPlat(): Promise<unknown>;
   /** Hand the plat to a context that already holds it (the town worker). */
   export function setManhattanPlat(data: unknown): void;
-  export function makeCity(cityId: string, seed: number, opts?: { density?: string; size?: string; planV?: number; parks?: string }): GeneratedCity;
+  export function makeCity(cityId: string, seed: number, opts?: { density?: string; size?: string; planV?: number; parks?: string; streets?: string }): GeneratedCity;
+  /** Which street generator cuts a generated town: the setup page's choice (natural.mjs). */
+  export const STREET_PLANS: { id: "classic" | "natural"; name: string; note: string }[];
+  export const DEFAULT_STREETS: string;
   /** How much of a generated town is park: the setup page's choice (island.mjs). */
   export const PARK_AMOUNTS: { id: "low" | "medium" | "high"; name: string; note: string }[];
   export const DEFAULT_PARKS: string;
@@ -156,4 +210,11 @@ declare module "@/citygen/unrealExport.mjs" {
   /** The city as the Unreal build reads it ("bw-city/1"); see unrealExport.mjs. */
   export function toBwCity(city: GeneratedCity, opts?: { familyFor?: (cls: string, year: number, h: number, roll?: number, district?: number, nb?: number) => string; tints?: Record<string, number[][]> }): unknown;
   export const GROUND_LAYERS: string[];
+}
+
+declare module "@/citygen/specialty.mjs" {
+  /** The CBP spread of log location quotients for a region of `jobs` employment. */
+  export function specSpread(jobs: number): number;
+  /** The town's location quotient by industry id (traded industries only; others are 1). */
+  export function townLQ(seed: number, sd: number): Record<string, number>;
 }

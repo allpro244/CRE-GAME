@@ -33,6 +33,7 @@ import { resolveRec, assetValue, initialCondition, farmUsePsf } from "./value";
 import { INFRA_PER_FRONT_FT, IMPACT_FEE, ENTITLE_PER_LOT, ENTITLE_FIXED, PLAT_STREET_SHARE } from "./landdev";
 import { sweepLocIdleCash } from "./credit";
 import { pickConstructionDesk } from "./dev";
+import { constructionRatePct } from "./proforma";
 import { landDevSold } from "./growth";
 import { lenderByName, chargeLenderLoss } from "./lenders";
 import { saleTaxQuote } from "./actions";
@@ -47,7 +48,7 @@ import {
 
 /**
  * A homebuilder notices a plat with lots for sale and a residual worth paying
- * within a few months: a quarter a month [K]; twice that when the plat is
+ * within a few months: it looks every fourth month [K]; twice as often when the plat is
  * listed to the builders, which is what a land broker is paid for. An offer
  * stands two months.
  */
@@ -121,8 +122,8 @@ function newBuilder(s: GameState, name: string): HomeBuilder {
  * own money is the rest. A desk that has failed advances nothing.
  */
 const LOT_ADVANCE = 0.75, HOUSE_ADVANCE = 0.85;
-/** The construction desk's coupon: the loan index plus 2.4 points (proforma.ts CONSTR_SPREAD). */
-const builderRate = (s: GameState) => ((s.econ.indexRate ?? 5.4) + 2.4) / 100;
+/** The builder's desk's coupon on construction paper (proforma.ts constructionRatePct). */
+const builderRate = (s: GameState, b: HomeBuilder) => constructionRatePct(s.econ, b.lender) / 100;
 const deskOpen = (s: GameState, b: HomeBuilder) => !!b.lender && lenderByName(s, b.lender)?.failedM === undefined;
 /** Can the builder fund `cost` of lot (and the cash share of the house it starts on it)? */
 function canFund(s: GameState, b: HomeBuilder, lotCost: number, houseBudget: number): boolean {
@@ -439,7 +440,7 @@ export function acceptLotOffer(s: GameState, parcels: ParcelTable, parent: strin
   const o = s.homes?.offers?.[parent];
   if (!o || s.month > o.expiresM) return { s, err: "That offer has lapsed." };
   if (s.homes?.contracts?.[parent] && o.kind !== "bulk") return { s, err: "A builder already has a takedown here." };
-  if (freeLots(s, parcels, parent).mine.length <= (s.homes?.contracts?.[parent]?.left ?? 0)) return { s, err: "You have no free lots left on this plat to sell (a lot with a loan or a street listing is not free)." };
+  if (freeLots(s, parcels, parent).mine.length <= (s.homes?.contracts?.[parent]?.left ?? 0)) return { s, err: "No free lots left on this plat (lots with a loan or a listing are not free)." };
   const next = cloneState(s);
   const msg = signOffer(next, parcels, parent);
   return { s: next, msg };
@@ -567,7 +568,7 @@ function failBuilder(s: GameState, parcels: ParcelTable, b: HomeBuilder): void {
   // the desk is repaid from the sale and whatever cash is left; the rest is its loss
   const recovered = Math.min(b.debt, price + Math.max(0, b.cash));
   const loss = Math.max(0, Math.round(b.debt - recovered));
-  if (b.lender && loss > 0) chargeLenderLoss(s, b.lender, loss);
+  if (b.lender && loss > 0) chargeLenderLoss(s, b.lender, loss, { borrower: b.name, id: "hb:" + b.name, cls: "construction", how: "homebuilder failed" });
   const owed = b.debt;
   b.debt = 0; b.cash = 0; b.stressMs = 0;
   // the contracts it had with you die with it
@@ -599,7 +600,7 @@ function failBuilder(s: GameState, parcels: ParcelTable, b: HomeBuilder): void {
   s.news.unshift({
     q: s.month, kind: "warn",
     text: `${b.name}, homebuilder, has failed: ${money(owed)} owed${b.lender ? ` to ${b.lender}` : ""} against ${units.length} houses and ${held.length} lots`
-      + (nb ? `, sold to ${nb.name} for ${money(price)}` : "") + (loss > 0 ? `; the desk takes a ${money(loss)} loss.` : "."),
+      + (nb ? `, sold to ${nb.name} for ${money(price)}` : "") + (loss > 0 ? `; lender loss ${money(loss)}.` : "."),
   });
 }
 
@@ -624,7 +625,7 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
   // cannot pay its way for three months fails (step 5)
   for (const b of Object.values(h.builders)) {
     if (b.failedM !== undefined || !(b.debt > 0)) continue;
-    const i = Math.round(b.debt * builderRate(s) / 12);
+    const i = Math.round(b.debt * builderRate(s, b) / 12);
     b.cash -= i; b.interestPaid += i;
   }
   // 1. THE FRAMES GO UP, the desk advancing its share of each draw, and the finished ones stand
@@ -659,7 +660,12 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
     if (u.soldM === undefined || u.closedM !== undefined || s.month < u.doneM || u.spent < u.budget) continue;
     u.closedM = s.month;
     // who bought it, and the household it houses: one fewer renting a flat (market.ts)
-    u.tenure = rng(s, "homes") < sfrShare(START_YEAR + Math.floor(s.month / 12)) ? "sfr" : "owner";
+    // Investors take their share of the town's closings (sfrShare, sourced), accrued
+    // closing by closing: the house goes to a rental investor when a whole one is
+    // owed (2026-11-11; it was a die on the share for each house).
+    h.sfrAcc = (h.sfrAcc ?? 0) + sfrShare(START_YEAR + Math.floor(s.month / 12));
+    u.tenure = h.sfrAcc >= 1 ? "sfr" : "owner";
+    if (h.sfrAcc >= 1) h.sfrAcc -= 1;
     s.econ.newHomes = (s.econ.newHomes ?? 0) + 1;
     s.econ.newHomesRef ??= Math.max(1, s.econ.occupied?.multifamily ?? 1);
     const b = h.builders[u.by];
@@ -693,7 +699,7 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
     const c = h.contracts?.[parent];
     // the builder walks when the lots are no longer worth what it agreed to pay
     if (c && (c.left <= 0 || q.residualPsf < WALK_AT * c.psf)) {
-      if (c.left > 0) s.news.unshift({ q: s.month, kind: "warn", text: `${c.builder} walked from its takedown at ${parcels[parent]?.address ?? parent}: ${c.left} lots left untaken. Houses here no longer pay $${c.psf.toFixed(2)}/sf for the dirt.` });
+      if (c.left > 0) s.news.unshift({ q: s.month, kind: "warn", text: `${c.builder} walked from its takedown at ${parcels[parent]?.address ?? parent}: ${c.left} lots left untaken. Houses here no longer support $${c.psf.toFixed(2)}/sf for the land.` });
       delete h.contracts![parent];
     }
     const contract = h.contracts?.[parent];
@@ -713,8 +719,12 @@ export function tickHomes(s: GameState, parcels: ParcelTable): void {
     const crowded = salesPace(e, q.price / pm.loc, 0, Math.max(1, n)) > COMMUNITY_SALES_CAP;
     const canEnter = !here.size || crowded;
     const want = spare.length > 0 && !h.offers?.[parent];
-    const entryP = listing ? LISTED_ENTRY_P : BUILDER_ENTRY_P;
-    if (q.residual > 0 && ((want && (listing || canEnter)) || (canEnter && f.market.length)) && rng(s, "homes") < entryP) {
+    // A builder's rounds: it looks at each plat every 1/entryP months (every
+    // fourth month; every second when listed), on a schedule staggered by the
+    // plat's id — no dice. When it looks, the residual and the room decide.
+    const every = Math.round(1 / (listing ? LISTED_ENTRY_P : BUILDER_ENTRY_P));
+    const looksNow = (s.month + Math.floor(hash01(`hb-look:${s.seed}:${parent}`) * every)) % every === 0;
+    if (q.residual > 0 && ((want && (listing || canEnter)) || (canEnter && f.market.length)) && looksNow) {
       let name: string;
       const existing = [...here].sort()[0];
       if (existing && !canEnter) name = existing;

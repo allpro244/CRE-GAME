@@ -29,19 +29,20 @@
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { AuctionLot, AuctionResultRow, Exit, GameState, Holding, Rival } from "./types";
 import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, closeDeedLedger, autoLeaseOnClose } from "./types";
-import { rng, rrange, cycleHot, cycleDown } from "./market";
+import { rng, rrange } from "./market";
+import { bidRound } from "./propmarket";
 import { openReoPortfolio } from "./portfoliosale";
 import { collateralAsIs, ownedHoldingValue, resolveRec } from "./value";
-import { lenderPressure, lenderByName, chargeLenderLoss } from "./lenders";
-import { distressPrice, markSponsor } from "./sponsor";
+import { lenderPressure, lenderByName, chargeLenderLoss, lenderConstitution } from "./lenders";
+import { markSponsor } from "./sponsor";
 import { recordComp } from "./comps";
 import { firmShort } from "./firm";
 import { genRentRoll, depositsOn } from "./leasing";
 import { bumpLenderRel } from "./debt";
 import { saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
 import { takeDeed, FILE_COST } from "./notes";
-import { clearRivalClaims, fitOf, forgetDeed, noteLost } from "./rivals";
-import { dropDeed, originateRow } from "./rivalDebt";
+import { clearRivalClaims, forgetDeed, noteLost, markAsset } from "./rivals";
+import { dropDeed, originateRow, syncDebt } from "./rivalDebt";
 import { reinstateFundedForeclosures } from "./workout";
 import { spendable, fundAndBook } from "./credit";
 import { money } from "./money";
@@ -49,8 +50,14 @@ import { routeProceeds } from "./vehicles";
 
 const clone = (s: GameState): GameState => cloneState(s);
 
-/** Down the day you register, forfeit if you cannot close. */
+/**
+ * Down the day you register, forfeit if you cannot close. [S: New York
+ * foreclosure terms of sale — 10% of the bid by certified check to the referee
+ * at the sale, the balance within 30 days (NY courts' Queens and New York County
+ * auction rules).]
+ */
 export const DEPOSIT_PCT = 0.10;
+/** Lots on one docket. [K] a size for the screen, not a fact. */
 const MAX_LOTS = 8;
 
 /**
@@ -93,13 +100,27 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
     // and any borrower with the arrears in hand does exactly that.
     const cure = Math.max(1, Math.round(f.debt * 0.08));
     const canFund = r.cash >= cure;
-    if (canFund && ((r.stressMs ?? 0) === 0 || rng(s) < 0.09)) {
+    // THE BORROWER'S OWN SUM, NOT A DIE (2026-11-10). A firm still in the
+    // squeeze used to reinstate on a 9% monthly coin. It now does what a
+    // borrower with the arrears in hand does: pays them when the building is
+    // worth more than the debt on it — the cure buys back equity it would
+    // otherwise lose at the July sale (any surplus at the hammer goes to the
+    // borrower, but a sale as-is, with no diligence, rarely leaves one). An
+    // underwater building is handed back: paying arrears on a loan larger than
+    // the asset throws good money after bad. Its value is the same as-is
+    // collateral read the docket and the note desks use.
+    const equity = collateralAsIs(rec, s.econ, Math.max(0.15, Math.min(0.95, r.occ ?? 0.6))) - f.debt;
+    if (canFund && ((r.stressMs ?? 0) === 0 || equity > cure)) {
       r.cash -= cure;
       s.bankFcls.splice(i, 1);
+      // Reinstating IS paying the arrears: the row is current again, or the
+      // desk would file on the same missed months next tick.
+      const row = s.cityLoans?.[f.bbl];
+      if (row && row.lender === f.lender && row.obligorId === r.id) row.arrearsMs = 0;
       s.news.unshift({
         q: s.month, kind: "info",
         text: `${r.name} paid $${(cure / 1000).toFixed(0)}K to reinstate at ${rec.address}; ${f.lender} has withdrawn the sale. `
-          + `Most of the foreclosures this town starts end exactly like this, which is worth remembering in July.`,
+          + `Sale cancelled.`,
       });
     }
   }
@@ -108,7 +129,6 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
   if (s.bankFcls.length >= 4) return;
   for (const l of s.lenders ?? []) {
     if (l.failedM !== undefined) continue;
-    if (l.delinquent < 0.035 || rng(s) > 0.09) continue;
     // A DESK FILES ON ITS OWN LOAN, AND ONLY ONE THAT IS NOT BEING PAID. The
     // pool used to be any firm four months into a squeeze, on any of its
     // buildings, for an owed figure drawn as 75-115% of the building's as-is
@@ -119,12 +139,47 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
       && !s.holdings[x.bbl] && !s.bankFcls!.some((f) => f.bbl === x.bbl)
       && (s.rivals ?? []).some((r) => r.id === x.obligorId && r.failedM === undefined && r.bbls.includes(x.bbl)));
     if (!rows.length) continue;
-    const row = rows[Math.floor(rng(s) * rows.length)];
+    // The longest-unpaid file first (it was a random one of them).
+    const row = rows.reduce((a, b) => ((b.arrearsMs ?? 0) > (a.arrearsMs ?? 0) || ((b.arrearsMs ?? 0) === (a.arrearsMs ?? 0) && b.balance > a.balance) ? b : a));
     const r = (s.rivals ?? []).find((x) => x.id === row.obligorId)!;
     const bbl = row.bbl;
     const rec = resolveRec(parcels, s, bbl);
     if (!rec || rec.class === "land") return;
     if (row.balance < 600_000) return;
+    // FORECLOSE, MODIFY OR WAIT: THE DESK'S OWN SUMS (2026-11-11). This was a
+    // 9% coin for a desk 3.5% delinquent; filing on every 90-day default set
+    // off fire-sale cascades. A real desk works the loan out when that beats
+    // the courthouse (the 2009 interagency policy statement on prudent CRE
+    // loan workouts; "extend and pretend", 2009-12):
+    //   MODIFY when the building's own income still covers an interest-only
+    //   coupon — the arrears go on the balance, the term runs on a year, and a
+    //   paying loan is worth more than a forced sale. Once per two years.
+    //   WAIT when foreclosing would book a loss that takes the desk under its
+    //   own capital target: it carries the loan rather than recognise the hole.
+    //   FILE otherwise.
+    {
+      const noi = markAsset(s, r, rec).noi;
+      const ioCoupon = row.balance * (row.ratePct / 100);
+      const recovery = collateralAsIs(rec, s.econ, Math.max(0.15, Math.min(0.95, r.occ ?? 0.6))) * (1 - FILE_COST);
+      const loss = Math.max(0, row.balance - recovery);
+      const target = lenderConstitution(l).target;
+      const capAfter = l.book > 0 ? (l.capital - loss) / Math.max(1, l.book - row.balance) : 1;
+      const lastMod = (row as { modM?: number }).modM;
+      if (noi >= ioCoupon && (lastMod === undefined || s.month - lastMod >= 24)) {
+        row.balance = Math.round(row.balance + ioCoupon / 12 * (row.arrearsMs ?? 0));
+        row.arrearsMs = 0;
+        row.maturityM = Math.max(row.maturityM, s.month) + 12;
+        (row as { modM?: number }).modM = s.month;
+        // The arrears are owed on the note now, and the firm's debt says so
+        // (2026-11-18). Left unsynced, the ledger's backstop (ledger.ts
+        // tickLedger) read r.debt as short of its rows and PAID THE ROWS DOWN
+        // to match — the capitalised interest forgiven with no cash moving
+        // (rival-loans: gaps of $98K-$698K a month on four seeds).
+        syncDebt(s, r);
+        continue;
+      }
+      if (loss > 0 && capAfter < target) continue;
+    }
     const debt = Math.round(row.balance);
     s.bankFcls.push({
       bbl, lender: l.name, firmId: r.id, firm: r.name, debt,
@@ -134,7 +189,7 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
       q: s.month, kind: "event",
       text: `${l.name} has noticed a foreclosure sale on ${r.name}'s building at ${rec.address} — `
         + `${money(debt)} owed, down for the ${monthLabel(nextJulyAfter(s.month, 5))} auction. `
-        + `${r.name} has until the hammer to find the arrears, and firms in a squeeze this deep usually do not.`,
+        + `${r.name} can reinstate until the sale.`,
     });
     return;
   }
@@ -230,40 +285,16 @@ function buildDocket(s: GameState, parcels: ParcelTable) {
   s.auction = { m: july + 1, lots, deposit: 0 };
   s.news.unshift({
     q: july, kind: "event",
-    text: `The county's foreclosure docket is out: ${lots.length} lot${lots.length === 1 ? "" : "s"} cross the block this month. `
-      + `As-is, ten per cent down, no financing and no warranty — the hammer falls at the end of July.`,
+    text: `County foreclosure auction: ${lots.length} lot${lots.length === 1 ? "" : "s"} this month. `
+      + `As-is, 10% down, all cash, no warranty. Sale at the end of July.`,
   });
 }
 
 // ------------------------------------------------------------------ the hammer
 
-/** Who shows up with money, and how hard they push. The room IS the cycle. */
-function roomBid(s: GameState, est: number): { px: number; heads: number } {
-  const ci = s.econ.creditIdx ?? 1;
-  const hot = ci > 1.02 && cycleHot(s.econ) > 0.5;
-  const crunch = ci < 0.92 || cycleDown(s.econ) > 0.5;
-  const heads = hot ? 2 + Math.floor(rng(s) * 4) : crunch ? Math.floor(rng(s) * 2) : 1 + Math.floor(rng(s) * 2);
-  let best = 0;
-  for (let i = 0; i < heads; i++) {
-    best = Math.max(best, est * distressPrice(s) * rrange(s, 0.84, 1.02));
-  }
-  // fever: a crowded room forgets it is buying somebody's failure
-  if (heads >= 4) best *= rrange(s, 1.03, 1.14);
-  return { px: Math.round(best), heads };
-}
-
-/** A named buyer if one on the street can carry it; out-of-town money if not. */
-function thirdPartyTakes(s: GameState, parcels: ParcelTable, rec: ParcelRecord, px: number): string {
-  // WHO IS IN THE ROOM: firms whose sheet hunts distress (Distress 55+), the
-  // building fitting what they buy, and the keenest of them takes it — the
-  // ALWAYS-at-the-courthouse shop first. A firm with no sheet keeps its style.
-  const keen = (x: Rival) => x.sheet
-    ? (x.sheet.distress >= 55 ? (x.sheet.distress / 100) ** 2 * (x.rules?.includes("alwaysCourthouse") ? 2 : 1) * fitOf(s, parcels, x, rec, true) : 0)
-    : (x.style === "opportunistic" || x.style === "core" ? 0.5 : 0);
-  const r = (s.rivals ?? [])
-    .filter((x) => x.failedM === undefined && !x.stressMs && x.cash > px * 0.3 && keen(x) > 0)
-    .sort((a, b) => keen(b) * b.cash - keen(a) * a.cash)[0];
-  if (r) {
+/** The firm in the room takes the deed onto its own book, on its own money. */
+function thirdPartyTakes(s: GameState, _parcels: ParcelTable, rec: ParcelRecord, px: number, r: Rival): string {
+  {
     const equity = Math.min(r.cash, Math.round(px * 0.35));
     r.cash -= equity;
     r.bbls.push(rec.bbl);
@@ -278,7 +309,6 @@ function thirdPartyTakes(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
     r.basis = Math.round((r.basis ?? 0) + px);
     return r.name;
   }
-  return "money from out of town";     // the building leaves the street's books
 }
 
 /** The player takes a lot for cash: worn bones, the roll the borrower left. */
@@ -356,19 +386,33 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       }
       s.news.unshift({
         q: s.month, kind: "info",
-        text: `Lot at ${lot.address} was pulled on the courthouse steps — the borrower reinstated, or the file died first. `
-          + `That is most of what happens to foreclosures, and it happened to this one at the last minute.`,
+        text: `Lot at ${lot.address} was pulled on the courthouse steps — borrower reinstated or the case was dropped.`,
       });
       continue;
     }
 
     // ---- the room, the credit bid, and your number ------------------------
-    const { px: room, heads } = roomBid(s, lot.est);
+    // THE ROOM IS THE FIRMS WHO REGISTER (2026-11-06). Every named firm that
+    // buys distress and can close bids its own number for the building
+    // (propmarket bidRound, open outcry: each stays in up to what it can pay).
+    // This replaced a room of 0-5 phantom heads drawn off the cycle, each at
+    // distressPrice x 84-102%, and a x1.03-1.14 "fever" when four showed up.
+    const round = bidRound(s, parcels, rec, { bbl: lot.bbl, ask: lot.est, distress: true, open: true });
+    const roomFirm = round.bids[0]?.r;
+    const topV = round.bids[0]?.bid ?? 0;
+    const secondV = round.bids[1]?.bid ?? 0;
+    let heads = round.bids.length;
     // an impaired holder does not protect its whole debt — cash beats REO
     const holderL = lot.kind === "yours" || lot.kind === "bank" ? lenderByName(s, lot.holder) : undefined;
     const protect = lot.kind === "note" ? lot.debt
       : lot.kind === "receiver" ? lot.upset
       : Math.round(lot.debt * (1 - 0.35 * lenderPressure(holderL)));
+    // An English auction: the top firm stays in until the runner-up drops out
+    // or the floor (the credit bid) is met, whichever is higher — and it will
+    // go on against you up to its own limit, so you take it only at `topV`.
+    const floor = lot.kind === "note" ? Math.round(lot.debt * 1.01) : protect;
+    let room = topV >= floor ? Math.max(secondV, floor) : topV;
+    if (!roomFirm) { room = 0; heads = 0; }
     // your bid only counts if you can actually close the balance — and on
     // your own note's lot the cash you owe is only the part above your debt
     const owedAtHammer = lot.kind === "note" ? Math.max(0, bid - lot.debt) : bid;
@@ -379,8 +423,8 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     if (yours > 0 && spendable(s, parcels).total + deposit < owedAtHammer) {
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `You could not close on ${lot.address} — the balance was due at the hammer and the cash was not there. `
-          + `The referee kept your ${money(deposit)} deposit, which is what the deposit is for.`,
+        text: `Auction default · ${lot.address}: balance unfunded at the sale. `
+          + `${money(deposit)} deposit forfeited.`,
       });
       said(lot.bbl, lot.address, "nocash", bid, 0, undefined,
         `The balance was due at the hammer and the cash was not there. The referee kept your ${money(deposit)} deposit.`);
@@ -392,9 +436,9 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
 
     const bestCash = Math.max(room, yours);
     // AT the posted minimum is a sale: "minimum is X — bid that" has to win.
-    const youWin = yours > 0 && yours >= room && bestCash >= protect
+    const youWin = yours > 0 && yours >= topV && yours >= room && bestCash >= protect
       && !(lot.kind === "note");       // your own lot: handled below, credit bid first
-    const notePlayerWins = lot.kind === "note" && (yours >= Math.max(room, lot.debt) || room <= lot.debt);
+    const notePlayerWins = lot.kind === "note" && (yours >= Math.max(topV, lot.debt) || room <= lot.debt);
 
     // ---- settle, by kind --------------------------------------------------
     if (lot.kind === "note") {
@@ -402,10 +446,10 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       const r = s.rivals?.find((x) => x.id === n.obligorId);
       if (!notePlayerWins) {
         // outbid over your debt: you are PAID OFF, they get the building
-        const paid = Math.round(Math.max(room, lot.debt * 1.01));
+        const paid = Math.round(Math.max(room, yours, lot.debt * 1.01));
         s.cash += lot.debt; logBooks(s, "sold", lot.debt);
         const surplus = Math.max(0, paid - lot.debt);
-        const buyer = thirdPartyTakes(s, parcels, rec, paid);
+        const buyer = thirdPartyTakes(s, parcels, rec, paid, roomFirm!);
         if (r) {
           r.bbls = r.bbls.filter((b) => b !== n.bbl);
           noteLost(s, r, n.bbl);
@@ -423,9 +467,8 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
           `Over your debt, so you were paid off in full — ${money(lot.debt)} against ${money(n.basis)} in.`);
         s.news.unshift({
           q: s.month, kind: "deal",
-          text: `${buyer} took ${lot.address} on the steps at ${money(paid)} — over your debt, so you were paid off in full: `
-            + `${money(lot.debt)} against ${money(n.basis)} in. ${surplus > 0 ? `The ${money(surplus)} above the debt went to ${n.obligor}, because that is the law. ` : ``}`
-            + `You held the mortgage; the room decided you got the money, not the keys.`,
+          text: `${buyer} took ${lot.address} on the steps at ${money(paid)}, over your debt; note repaid in full: `
+            + `${money(lot.debt)} vs ${money(n.basis)} basis.${surplus > 0 ? ` Surplus ${money(surplus)} to ${n.obligor}.` : ``}`,
         });
       } else {
         // the room stopped under your debt — or you overbid to be sure
@@ -468,9 +511,9 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
         else {
           const seniorHole = Math.min(shortfall, seniorBal + (w?.accrued ?? 0));
           const mezzHole = shortfall - seniorHole;
-          if (seniorHole > 0) chargeLenderLoss(s, lot.holder, seniorHole);
+          if (seniorHole > 0) chargeLenderLoss(s, lot.holder, seniorHole, { borrower: "You", id: "player", bbl: lot.bbl, cls: "income", how: "auction" });
           if (mezzHole > 0) {
-            chargeLenderLoss(s, h.mezz?.holder ?? "Cordage Debt Partners", mezzHole);
+            chargeLenderLoss(s, h.mezz?.holder ?? "Cordage Debt Partners", mezzHole, { borrower: "You", id: "player", bbl: lot.bbl, cls: "junior", how: "auction" });
           }
         }
       }
@@ -496,7 +539,14 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
           held.payoff = Math.min(bal, net + (recourse ? shortfall : 0));
         }
       }
-      recordComp(s, rec, gross, toREO ? lot.holder : "the courthouse steps", firmShort(s), true, h.condition);
+      // Outbid: the firm in the room takes the deed onto its own book.
+      const roomBuyer = toREO ? null : thirdPartyTakes(s, parcels, rec, gross, roomFirm!);
+      // A CREDIT BID IS NOT A PRICE (2026-11-11). When nobody beats the lender,
+      // `gross` is what it was owed, not what anyone paid — recorded as a sale
+      // it put the loan on the comps sheet, above what the building was worth,
+      // for every appraisal and bid that reads the tape. The lender's resale
+      // is the trade the tape sees.
+      if (!toREO) recordComp(s, rec, gross, roomBuyer!, firmShort(s), true, h.condition);
       if (s.groundLeases?.[lot.bbl]) transferGroundLeaseOffBook(s, lot.bbl);
       moveDeposit(s, h, -depositsOn(h));
       s.lastTradeM = s.lastTradeM ?? {};
@@ -504,7 +554,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       delete s.holdings[lot.bbl];
       delete s.workouts![lot.bbl];
       s.lois = s.lois.filter((l) => l.bbl !== lot.bbl);
-      said(lot.bbl, lot.address, "lostyours", 0, gross, toREO ? lot.holder : "the room",
+      said(lot.bbl, lot.address, "lostyours", 0, gross, toREO ? lot.holder : roomBuyer!,
         shortfall > 0
           ? (recourse ? `You signed for this one — the ${money(shortfall)} shortfall came out of your account.`
                       : `Non-recourse, so ${lot.holder} ate the ${money(shortfall)}.`)
@@ -514,12 +564,12 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       sold++;
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `${lot.address} crossed the block at ${money(gross)}${toREO ? ` — no bid met ${lot.holder}'s credit bid, so it is their REO now` : ` to the room`}. `
+        text: `${lot.address} crossed the block at ${money(gross)}${toREO ? ` — no bid met ${lot.holder}'s credit bid, so it is their REO now` : ` to ${roomBuyer}`}. `
           + (shortfall > 0
             ? recourse
-              ? `You signed for this one: the ${money(shortfall)} shortfall came out of your account.`
-              : `The paper was non-recourse, so ${lot.holder} ate the ${money(shortfall)}.`
-            : `It cleared the debt and ${money(surplus)} came back to you — the steps owe you nothing further.`),
+              ? `Recourse: ${money(shortfall)} shortfall charged to you.`
+              : `Non-recourse: ${lot.holder} absorbs the ${money(shortfall)} shortfall.`
+            : `Debt cleared; surplus to you ${money(surplus)}.`),
       });
       continue;
     }
@@ -547,15 +597,14 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
       const leased = s.holdings[lot.bbl]!.tenants.reduce((x, t) => x + t.sf, 0);
       s.news.unshift({
         q: s.month, kind: "deal",
-        text: `The hammer fell to YOU at ${lot.address} — ${money(paid)}, as-is, ${heads} other head${heads === 1 ? "" : "s"} in the room. `
-          + `It is worn, ${rec.bldgArea > 0 ? `${Math.round(100 * leased / Math.max(1, rec.bldgArea))}% of it is let` : "it is a site"}, `
-          + `and nobody is coming to fix either of those but you.`,
+        text: `The hammer fell to YOU at ${lot.address} — ${money(paid)}, as-is, ${heads} other bidder${heads === 1 ? "" : "s"}. `
+          + `Worn condition, ${rec.bldgArea > 0 ? `${Math.round(100 * leased / Math.max(1, rec.bldgArea))}% leased` : "vacant site"}.`,
       });
       continue;
     }
     if (room > protect && room >= lot.upset) {
-      const paid = room;
-      const buyer = thirdPartyTakes(s, parcels, rec, paid);
+      const paid = Math.max(room, Math.min(topV, yours));
+      const buyer = thirdPartyTakes(s, parcels, rec, paid, roomFirm!);
       if (bid > 0) said(lot.bbl, lot.address, "outbid", bid, paid, buyer,
         `The room went past you. Your deposit came back.`);
       if (r) {
@@ -598,8 +647,8 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
           s.lastTradeM[lot.bbl] = s.month;
           s.news.unshift({
             q: s.month, kind: "event",
-            text: `No bid reached ${lot.holder}'s number on ${lot.address}. It is their REO now, and it is already `
-              + `back on the tape at ${money(lst)} — a bank is not in the landlord business and does not want to be.`,
+            text: `No bid reached ${lot.holder}'s number on ${lot.address}. It is their REO now, `
+              + `listed at ${money(lst)}.`,
           });
         }
       }
@@ -633,7 +682,7 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     s.news.unshift({
       q: s.month, kind: "info",
       text: `The July sale is done: ${sold} lot${sold === 1 ? "" : "s"} hammered${reo ? `, ${reo} struck to the lender` : ""}`
-        + `${pulled ? `, ${pulled} pulled by reinstatement` : ""}. The county will do it all again next year.`,
+        + `${pulled ? `, ${pulled} pulled by reinstatement` : ""}.`,
     });
   }
 }
@@ -674,7 +723,7 @@ export function tickAuction(s: GameState, parcels: ParcelTable) {
 export function registerAuctionBids(
   s: GameState, parcels: ParcelTable, bids: Record<string, number>,
 ): { s: GameState; err?: string; msg?: string } {
-  if (!s.auction) return { s, err: "There is no sale on the calendar. The county's docket comes out in July." };
+  if (!s.auction) return { s, err: "No auction scheduled. The county docket is published in July." };
   const next = clone(s);
   const a = next.auction!;
   // hand back whatever was already down
@@ -686,10 +735,10 @@ export function registerAuctionBids(
     const lot = a.lots.find((x) => x.id === id);
     if (!lot || !(amt > 0)) continue;
     if (lot.kind === "yours") {
-      return { s, err: `That is your own foreclosure. You do not bid on it — you cure it, hand back the keys, or let the room decide.` };
+      return { s, err: `Your own foreclosure; you cannot bid. Cure it or hand back the keys.` };
     }
     if (lot.kind !== "note" && amt < lot.upset) {
-      return { s, err: `The referee's minimum on ${lot.address} is ${money(lot.upset)}. Bid that or stay home.` };
+      return { s, err: `Minimum bid on ${lot.address} is ${money(lot.upset)}.` };
     }
     lot.yourBid = Math.round(amt);
     dep += depositFor(lot, Math.round(amt));
@@ -712,8 +761,8 @@ export function registerAuctionBids(
   if (dep > liq.total) {
     return {
       s,
-      err: `Registering these bids takes ${money(dep)} down today and you can raise ${money(liq.total)} — `
-        + `${money(liq.cash)} of cash and ${money(liq.line)} on the line.`,
+      err: `Bid deposits total ${money(dep)}; available ${money(liq.total)} `
+        + `(${money(liq.cash)} cash, ${money(liq.line)} on the line).`,
     };
   }
   if (dep) fundAndBook(next, parcels, dep, "bought");

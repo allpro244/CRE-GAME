@@ -60,7 +60,8 @@ console.log("\nOn (the default): every builder is a firm");
   ok(g.builderFirms === true, "on by default for a new game");
   ok(firms.length > 0 && firms.every((r) => r.founder && r.builderProf && ["merchant", "developer"].includes(r.style)), "the builders are firms: a founder, the register's habits, a merchant or developer style");
   ok(after.length > 0 && anon.length === 0, `nothing started after the opening is anonymous (${anon.length} of ${after.length})`);
-  ok(starts.filter((j) => j.opening).every((j) => !j.firmId), "the frames already standing at the opening are the city's");
+  // Owner, Oct 2026: "Every developer needs to be a visible player as well, as soon as the game starts."
+  ok(starts.filter((j) => j.opening).every((j) => firms.some((r) => r.id === j.firmId)), "the frames already standing at the opening belong to builder firms on the list");
   const owned = delivered.filter((d) => g.rivals.find((r) => r.id === d.firmId)?.builderProf);
   ok(owned.length > 0, `builder firms take the deed to what they build (${owned.length} buildings)`);
   ok(live.every((r) => r.endReason !== "woundUp"), "a builder between schemes is not wound up as a husk");

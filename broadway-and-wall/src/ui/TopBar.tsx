@@ -1,5 +1,4 @@
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { headlineEpithet } from "@/engine/firm";
 import { useStore, type Page } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { currentCity, currentSeed } from "@/state/city";
@@ -9,10 +8,10 @@ import { derive, nwOf, standingOf } from "@/ui/derive";
 import { ordinal, type Standing } from "@/engine/standing";
 import { openViewOn } from "@/ui/panels/shared";
 import { firmBookStress, firmOverheadMonthly, portfolioMonthlyCF } from "@/engine/sim";
-import { portfolioOccupancy, portfolioRentPsf } from "@/engine/leasing";
+import { portfolioOccupancy } from "@/engine/leasing";
 import { usd, pct } from "./format";
 import { nextDue } from "./nextDue";
-import { DESKS, tabCounts, tabLabel, RAIL_GROUPS, PAGE_ICON, railEntry } from "./desks";
+import { DESKS, tabCounts, tabLabel, deskOf, deskCount, deskLanding, visibleTabs } from "./desks";
 import DeltaChip from "@/ui/vitals/DeltaChip";
 import Waterfall, { usablePrev } from "@/ui/vitals/Waterfall";
 import ClockProgress from "@/ui/ClockProgress";
@@ -78,7 +77,7 @@ function BackButton() {
       className="nav-back"
       onClick={goBack}
       disabled={depth === 0}
-      title={where ? `Back to ${where}${deed} (Alt+←)` : "Nowhere to go back to yet"}
+      title={where ? `Back to ${where}${deed} (Alt+←)` : "Back"}
       aria-label={where ? `Back to ${where}` : "Back"}
     >
       <span className="nav-back-arrow" aria-hidden="true">←</span>
@@ -144,7 +143,7 @@ export default function TopBar() {
   const vitals = useMemo(() => {
     if (!deferredGame) {
       return {
-        nw: 0, cf: 0, occ: null as number | null, rentPsf: null as number | null, vacDpp: null as number | null,
+        nw: 0, cf: 0, occ: null as number | null, vacDpp: null as number | null,
         line: 0, counts: {} as ReturnType<typeof tabCounts>,
         dNw: null as number | null, nwSpark: [] as number[],
         dCf: null as number | null, dCfSince: null as number | null,
@@ -184,7 +183,6 @@ export default function TopBar() {
     // Leasing total: leased over lettable, operated deeds only.
     const occ = parcels ? (portfolioOccupancy(deferredGame, parcels)?.occ ?? null) : null;
     // What the leased feet pay on average — same deeds as occupancy.
-    const rentPsf = parcels ? portfolioRentPsf(deferredGame, parcels) : null;
     // Badges: one counter shared with the desk tabs, so the rail and the
     // tab inside the desk cannot disagree about what is waiting.
     const counts = tabCounts(deferredGame);
@@ -217,12 +215,12 @@ export default function TopBar() {
     const due = nextDue(deferredGame, parcels);
     return {
       standing, dRank, due,
-      nw, cf, occ, rentPsf, vacDpp, line, counts,
+      nw, cf, occ, vacDpp, line, counts,
       dNw, nwSpark, dCf, dCfSince, dRateBp,
     };
   }, [deferredGame, deferredPrev]);
   const {
-    nw, cf, occ, rentPsf, vacDpp, line, counts, dNw, dCf, dCfSince, dRateBp, standing, dRank, due,
+    nw, cf, occ, vacDpp, line, counts, dNw, dCf, dCfSince, dRateBp, standing, dRank, due,
   } = vitals;
 
   // WHICH TOWN IS NOT ASKED HERE ANY MORE. The island, the size and the
@@ -389,7 +387,7 @@ export default function TopBar() {
                 for the second, in plain sight. Two tiles, one question each:
                 what do I have, and what more can I borrow tonight. */}
             <Stat label="Cash" value={usd(game.cash)} n={game.cash} bad={game.cash < 0} w={72} keep
-              title="GP liquidity — the firm's own cash. Vehicle cash, if any, is separate." />
+              title="Firm cash (GP). Excludes fund vehicle cash." />
             {(line > 0 || (game.loc?.balance ?? 0) > 0) && (() => {
               const drawn = game.loc?.balance ?? 0;
               const left = Math.max(0, line - drawn);
@@ -397,10 +395,13 @@ export default function TopBar() {
               // Drawn, the line costs money every month: show what it charges.
               const rate = locRate(game);
               return (
-                <Stat label="Line left" value={usd(left)} n={left} bad={tight} w={72} keep
+                // drop 4, with Book: the last tile to go, and only where the bar cannot
+                // hold date, cash and net worth otherwise (a phone: at 390 px it pushed
+                // Net worth off the screen). The Capital desk has it a tap away.
+                <Stat label="Line left" value={usd(left)} n={left} bad={tight} w={72} keep drop={4}
                   delta={drawn > 0 ? <span className={"tstat-of" + (tight ? " neg" : "")}>{usd(drawn)} drawn · {rate.toFixed(2)}%</span> : null}
                   onClick={() => setPage("debt", "Line of credit")}
-                  title={`Undrawn revolver: ${usd(left)} of a ${usd(line)} line sized against net worth${drawn > 0 ? `; ${usd(drawn)} drawn at ${rate.toFixed(2)}%` : ""}. It draws on its own when cash runs short. Click for the line on Capital → Debt.`} />
+                  title={`Undrawn ${usd(left)} of ${usd(line)} revolver${drawn > 0 ? ` · ${usd(drawn)} drawn at ${rate.toFixed(2)}%` : ""}. Auto-draws on cash shortfall.`} />
               );
             })()}
             {game.fund && !game.fund.settled && (
@@ -409,7 +410,7 @@ export default function TopBar() {
                 value={usd(game.fund.cash)}
                 w={88}
                 keep
-                title={`Fund vehicle cash (LP capital). Called ${(game.fund.called / 1e6).toFixed(1)}M; uncalled ${(game.fund.uncalled / 1e6).toFixed(1)}M. Not GP liquidity.`}
+                title={`Fund cash (LP). Called ${(game.fund.called / 1e6).toFixed(1)}M · uncalled ${(game.fund.uncalled / 1e6).toFixed(1)}M.`}
               />
             )}
             {/* THE NUMBER THAT ANSWERS A CLICK. Net worth moves every month for
@@ -429,7 +430,7 @@ export default function TopBar() {
                 n={nw}
                 w={80}
                 keep
-                title={`Firm going-concern equity ${usd(nw)} (cash + property − debt − deposits + CIP + notes; vehicle cash separate). Click for the waterfall — what moved it, and by how much.`}
+                title={`Cash + property − debt − deposits + CIP + notes = ${usd(nw)}. Click for attribution.`}
                 onClick={toggleNwPop}
                 expanded={nwOpen}
                 delta={dNw !== null ? (
@@ -437,7 +438,7 @@ export default function TopBar() {
                     value={dNw}
                     fmt={usd}
                     epsilon={10_000}
-                    title="Net worth vs a month ago. Click the readout for the full waterfall."
+                    title="Change vs last month"
                   />
                 ) : null}
               />
@@ -469,8 +470,8 @@ export default function TopBar() {
                 w={72}
                 bad={dRank < 0}
                 title={standing.above
-                  ? `${ordinal(standing.rank)} of ${standing.of} firms by equity — how big you are. How investors rank your record is on the Capital page. Next up: ${standing.above.name} at ${usd(standing.above.eq)} — ${usd(standing.above.eq - standing.equity)} ahead. The biggest book is ${standing.leader.name} at ${usd(standing.leader.eq)}. Click for the league table.`
-                  : `The biggest book in town, of ${standing.of} firms. Click for the league table.`}
+                  ? `${ordinal(standing.rank)} of ${standing.of} by equity. Next: ${standing.above.name} ${usd(standing.above.eq)} (+${usd(standing.above.eq - standing.equity)}). Leader: ${standing.leader.name} ${usd(standing.leader.eq)}.`
+                  : `1st of ${standing.of} by equity.`}
                 onClick={() => { openViewOn("players", "street"); useStore.getState().setPage("players"); }}
               />
             )}
@@ -486,10 +487,10 @@ export default function TopBar() {
                     value={dCf * 12}
                     fmt={usd}
                     epsilon={12_000}
-                    title={`Annualised cash flow vs ${dCfSince !== null ? monthLabel(dCfSince) : "last month"} — the same walk as the readout, run on the pre-advance book.`}
+                    title={`Change vs ${dCfSince !== null ? monthLabel(dCfSince) : "last month"}`}
                   />
                 ) : null}
-                title={`After debt service and overhead. Firm cash flow annualised: deed NOI (including ground rent) less mortgages, mezz, construction interest, facility, the revolver, and the firm's own G&A. ${usd(cf)} / mo. Reconciled 2026-08: this walk is net of every facility that actually charges. Portfolio rows now subtract mezz and a pooled facility share; their strip is still deeds-only (no construction / revolver).`}
+                title={`NOI − debt service (mortgage, mezz, construction, facility, line) − G&A. ${usd(cf)}/mo.`}
               />
             </span>
             {/* THE NEXT CLOCK — see ui/nextDue.ts. Never shed: in a game of
@@ -501,7 +502,7 @@ export default function TopBar() {
                 bad={due.m - game.month <= 1}
                 keep
                 w={96}
-                title={`${due.title}. Click to open it.`}
+                title={due.title}
                 onClick={() => {
                   const st = useStore.getState();
                   if (due.key) st.openAttention(due.key);
@@ -520,17 +521,8 @@ export default function TopBar() {
               drop={2}
               w={64}
               title={occ !== null
-                ? `Portfolio occupancy: ${(100 * occ).toFixed(1)}% of lettable feet leased across operated buildings (excludes ground-leased fees). Same total as Leasing.`
-                : "Portfolio occupancy — appears once you own an operated building."}
-            />
-            )}
-            {rentPsf !== null && (
-            <Stat
-              label="Avg $ psf"
-              value={`$${rentPsf.toFixed(2)}`}
-              drop={2}
-              w={64}
-              title={`Average in-place rent across your leased feet: $${rentPsf.toFixed(2)} per square foot a year. Commercial tenants at their contract rent, apartments at the rent their leases hold. Leased space only — the occupancy beside it carries the vacancy.`}
+                ? `Leased / leasable sf, operated buildings (excl. ground leases).`
+                : "Portfolio occupancy"}
             />
             )}
             {/* ONE READOUT FOR THE STREET. Base rate, vacancy change, the phase
@@ -558,17 +550,16 @@ export default function TopBar() {
                     fmt={(n) => `${Math.round(n)}bp`}
                     epsilon={4}
                     goodWhenUp={false}
-                    title="10-year vs a year ago. Up means dearer fixed loans and wider cap rates."
+                    title="10-yr vs 1 yr ago"
                   />
                 ) : null}
                 title={[
                   `10-year ${pct(game.econ.indexRate)} (fixed loans, cap rates) · SOFR ${pct(game.econ.shortIndex ?? game.econ.indexRate)} (floating loans) · Fed ${pct(game.econ.nat?.policy ?? game.econ.indexRate)} · ${game.econ.phase}.`,
                   vacDpp === null
-                    ? "Office vacancy change appears after the first year of tape."
+                    ? ""
                     : vacDpp >= 2
-                      ? `Office vacancy is ${vacDpp.toFixed(1)} points higher than a year ago — the soft-market tell. In simulated centuries, real rents were lower three years later ~93% of the time.`
-                      : `Office vacancy vs a year ago: ${vacDpp >= 0 ? "+" : ""}${vacDpp.toFixed(1)} pp. Rising ≥2 pp is the soft-market tell.`,
-                  "Click for the Economy.",
+                      ? `Office vacancy +${vacDpp.toFixed(1)} pp YoY (soft market; real rents lower 3 yrs later ~93% of runs).`
+                      : `Office vacancy ${vacDpp >= 0 ? "+" : ""}${vacDpp.toFixed(1)} pp YoY.`,
                 ].filter(Boolean).join(" ")}
               />
             </span>
@@ -588,10 +579,10 @@ export default function TopBar() {
           <button className={"advance-btn advance-main" + (advancing ? " advance-pulse" : "")} onClick={() => advance()} disabled={!!game.gameOver || advancing} title="One month">
             Advance <span className="advance-unit">1 mo</span>
           </button>
-          <button className={"advance-btn advance-fast" + (advancing ? " advance-pulse" : "")} onClick={advanceYear} disabled={!!game.gameOver || advancing} title="A year, stopping if something needs you (Y)">
+          <button className={"advance-btn advance-fast" + (advancing ? " advance-pulse" : "")} onClick={advanceYear} disabled={!!game.gameOver || advancing} title="1 year; stops on decisions (Y)">
             {advancing ? "…" : "1 yr ▸▸"}
           </button>
-          <button className={"advance-btn advance-fast" + (advancing ? " advance-pulse" : "")} onClick={advanceUntil} disabled={!!game.gameOver || advancing} title="Skip to the next thing that needs a decision, up to 3 years (N)" aria-label="Skip to next decision">
+          <button className={"advance-btn advance-fast" + (advancing ? " advance-pulse" : "")} onClick={advanceUntil} disabled={!!game.gameOver || advancing} title="To next decision, max 3 yrs (N)" aria-label="Skip to next decision">
             {advancing ? "…" : "⏭"}
           </button>
         </div>
@@ -615,14 +606,8 @@ export default function TopBar() {
                 recomputed every quarter from state the player could have looked
                 up themselves. It costs nothing to read and nothing to maintain. */}
             {game?.firm && (
-              <span className="firm-id" title={(game.firm.epithets ?? []).map((e) => e.text).join(" · ") || "The town has not formed a view yet."}>
+              <span className="firm-id" title={(game.firm.epithets ?? []).map((e) => e.text).join(" · ") || "—"}>
                 <span className="firm-name">{game.firm.name}</span>
-                {(() => {
-                  const e = headlineEpithet(game);
-                  if (!e) return null;
-                  const yrs = Math.floor((game.month - e.sinceM) / 12);
-                  return <span className="firm-epithet">{e.text}{yrs >= 8 ? ` — ${yrs} years now` : ""}</span>;
-                })()}
               </span>
             )}
             {/* YOU DO NOT GET TO CHANGE TOWNS MID-CAMPAIGN.
@@ -638,8 +623,7 @@ export default function TopBar() {
             {game ? (
               <span
                 className="brand-sub city-locked"
-                title={`You are playing ${manifest?.city ?? currentCity()}, built from seed ${game.citySeed ?? currentSeed()}. `
-                  + `A campaign belongs to its town — to play a different one, start a new game.`}
+                title={`${manifest?.city ?? currentCity()} · seed ${game.citySeed ?? currentSeed()}. New city requires a new game.`}
               >
                 {manifest?.city ?? currentCity()}
               </span>
@@ -654,56 +638,49 @@ export default function TopBar() {
               </span>
             )}
             {manifest?.source === "synthetic" && (
-              <span className="badge badge-warn" title="Generated stand-in data — run `pnpm pipeline` on an open network to fetch real PLUTO data.">
+              <span className="badge badge-warn" title="Synthetic data. Run `pnpm pipeline` for real PLUTO data.">
                 SYNTHETIC DEV DATA
               </span>
             )}
           </div>
         </div>
         <div className="siderail-scroll">
-          {/* EVERY ROOM, NAMED, UNDER THE JOB IT SERVES (desks.ts RAIL_GROUPS).
-              It was six bare icons over seventeen rooms; now each room is its
-              own labelled line and carries its own badge. */}
-          {RAIL_GROUPS.map((grp) => (
-            <div key={grp.label} className="rail-group" role="group" aria-label={grp.label}>
-              <div className="rail-group-label">{grp.label}</div>
-              {grp.pages.map((p) => {
-                const e = railEntry(p);
-                if (!e) return null;
-                if (e.tab.when && page !== p && !(game && e.tab.when(game))) return null;
-                const on = page === p || (p === "portfolio" && page === "property");
-                const n = counts[p] ?? 0;
-                const warn = p === "debt" ? counts.debtWarn : null;
-                const debtBal = counts.debtBal ?? 0, debtWall = counts.debtWall ?? 0;
-                const label = e.tab.label === "Holdings" ? "Portfolio" : e.tab.label;
-                const title = [
-                  `${label} — ${e.tab.note}`,
-                  p === "market" && n > 0 && counts.bcallSoon !== undefined
-                    ? `${n} file${n === 1 ? "" : "s"} waiting; the soonest off-market call lapses in ${counts.bcallSoon} mo.` : "",
-                  p === "debt" && debtBal > 0
-                    ? `${(debtBal / 1e6).toFixed(1)}M outstanding${warn ? ` — ${((debtWall / debtBal) * 100).toFixed(0)}% matures inside 3y` : ""}.` : "",
-                ].filter(Boolean).join(" ");
-                return (
-                  <button
-                    key={p}
-                    type="button"
-                    className={"rail-item" + (on ? " on" : "")}
-                    aria-current={on ? "page" : undefined}
-                    title={title}
-                    onClick={() => setPage(on && page !== "property" ? "none" : p)}
-                  >
-                    <span className="rail-ico" aria-hidden="true">{PAGE_ICON[p] ?? e.desk.icon}</span>
-                    <span className="rail-label">{label}</span>
-                    {/* A NUMBER MEANS AN ANSWER IS OWED; the tape's news is unread, not owed — a dot. */}
-                    {n > 0 && p === "news" ? <span className="rail-dot" aria-label="new on the tape" />
-                      : n > 0 ? <span className="rail-badge" aria-label={`${n} waiting`}>{n}</span>
-                      : warn ? <span className="rail-badge rail-badge-warn" aria-label={warn === "swept" ? "cash sweep on" : "maturity wall"}>{warn === "swept" ? "⚠" : "!"}</span>
-                      : null}
-                  </button>
-                );
-              })}
-            </div>
-          ))}
+          {/* ONE LINE PER DESK (desks.ts DESKS); the rooms are tabs inside it.
+              Fifteen room lines became six desks (UI clean-up, 2026-11): the
+              badge is the desk's total and the tab inside says which room. */}
+          {DESKS.map((d) => {
+            const on = deskOf(page)?.id === d.id;
+            const n = deskCount(d, counts);
+            const warn = d.id === "capital" ? counts.debtWarn : null;
+            const debtBal = counts.debtBal ?? 0, debtWall = counts.debtWall ?? 0;
+            const title = [
+              `${d.label} (${d.key}) — ${visibleTabs(d, game, page).map((t) => t.label).join(" · ")}`,
+              d.id === "market" && (counts.brokers ?? 0) > 0 && counts.bcallSoon !== undefined
+                ? `${counts.brokers} off-market call${counts.brokers === 1 ? "" : "s"} · next off-market call lapses in ${counts.bcallSoon} mo.` : "",
+              d.id === "capital" && debtBal > 0
+                ? `${(debtBal / 1e6).toFixed(1)}M outstanding${warn ? ` · ${((debtWall / debtBal) * 100).toFixed(0)}% matures within 3 yrs` : ""}.` : "",
+            ].filter(Boolean).join(" ");
+            // the Tape's news is unread, not owed: a dot, not a number
+            const owed = d.tabs.reduce((k, t) => k + (t.page === "news" ? 0 : counts[t.page] ?? 0), 0);
+            const unread = n > owed;
+            return (
+              <button
+                key={d.id}
+                type="button"
+                className={"rail-item" + (on ? " on" : "")}
+                aria-current={on ? "page" : undefined}
+                title={title}
+                onClick={() => setPage(on && page !== "property" ? "none" : deskLanding(d, counts, game))}
+              >
+                <span className="rail-ico" aria-hidden="true">{d.icon}</span>
+                <span className="rail-label">{d.label}</span>
+                {owed > 0 ? <span className="rail-badge" aria-label={`${owed} waiting`}>{owed}</span>
+                  : warn ? <span className="rail-badge rail-badge-warn" aria-label={warn === "swept" ? "cash sweep on" : "maturity wall"}>{warn === "swept" ? "⚠" : "!"}</span>
+                  : unread ? <span className="rail-dot" aria-label="unread news" />
+                  : null}
+              </button>
+            );
+          })}
         </div>
         {/* THE TOOLS, ONE ROW. Saves, the primer, settings and the view modes
             are things you reach for, not places you work — icons with their
@@ -712,7 +689,7 @@ export default function TopBar() {
           <button
             type="button"
             className={"rail-item" + (page === "saves" ? " on" : "")}
-            title="Saves — the live campaign autosaves; create or load named snapshots here"
+            title="Saves (autosave on)"
             onClick={() => setPage(page === "saves" ? "none" : "saves")}
           >
             <span className="rail-ico" aria-hidden="true">⛁</span><span className="rail-label">Saves</span>
@@ -720,7 +697,7 @@ export default function TopBar() {
           <button
             type="button"
             className={"rail-item" + (page === "primer" ? " on" : "")}
-            title="Primer — cap rates, NOI and appraisals, in plain words"
+            title="Primer: cap rates, NOI, appraisals"
             onClick={() => setPage(page === "primer" ? "none" : "primer")}
           >
             <span className="rail-ico" aria-hidden="true">?</span><span className="rail-label">Primer</span>
@@ -728,7 +705,7 @@ export default function TopBar() {
           <button
             type="button"
             className={"rail-item" + (page === "settings" ? " on" : "")}
-            title="Settings — sounds, pop-up cards, broker calls, the auction card"
+            title="Settings"
             onClick={() => setPage(page === "settings" ? "none" : "settings")}
           >
             <span className="rail-ico" aria-hidden="true">⚙</span><span className="rail-label">Settings</span>
@@ -737,7 +714,7 @@ export default function TopBar() {
             type="button"
             className={"rail-item" + (mapOnly ? " on" : "")}
             aria-pressed={mapOnly}
-            title="Map only — hide firm pages and watch the skyline (M). Inbox and glance cards stay."
+            title="Map only (M)"
             onClick={() => setMapOnly(!mapOnly)}
           >
             <span className="rail-ico" aria-hidden="true">◈</span><span className="rail-label">Map</span><kbd className="rail-key" aria-hidden="true">M</kbd>
@@ -745,7 +722,7 @@ export default function TopBar() {
           <button
             type="button"
             className="rail-item"
-            title="Photo frame — hide all chrome for a clean skyline still (P)"
+            title="Photo mode: hide UI (P)"
             onClick={() => useStore.getState().setPhotoFrame(true)}
           >
             <span className="rail-ico" aria-hidden="true">◻</span><span className="rail-label">Photo</span><kbd className="rail-key" aria-hidden="true">P</kbd>
@@ -757,7 +734,7 @@ export default function TopBar() {
             <button
               type="button"
               className={"rail-item rail-danger" + (armNewRun ? " on" : "")}
-              title="End this campaign and go back to the start screen, where you pick the island, the size and how built up the town is. Named saves are left alone. No holdings, the opening bankroll you choose, a brand new town."
+              title="End campaign and return to start screen. Named saves kept."
               onClick={() => {
                 if (!armNewRun) { setArmNewRun(true); setTimeout(() => setArmNewRun(false), 12000); return; }
                 setArmNewRun(false);
@@ -882,8 +859,8 @@ function PlayButton() {
       onClick={() => useStore.getState().setAutoplay(autoplay ? 0 : 1)}
       disabled={over}
       aria-pressed={autoplay > 0}
-      title={autoplay === 0 ? "Play — a month a second, pausing when something needs you (Space)"
-        : "Playing a month a second — click to pause (Space)"}
+      title={autoplay === 0 ? "Play: 1 mo/sec; pauses on decisions (Space)"
+        : "Pause (Space)"}
     >
       {autoplay === 0 ? "▶ 1×" : "❚❚ Pause"}
     </button>

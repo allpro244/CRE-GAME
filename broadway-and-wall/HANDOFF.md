@@ -1419,3 +1419,170 @@ park amount are fixed. CITY_PLAN 15 (islands byte-identical to 14).
   never reaching the market, the island untouched by plan 15, month tick
   timing. `node test/bwcity-contract.mjs <file>` checks an Unreal export;
   `node unreal/tools/export-city.mjs --city region --seed N` writes one.
+
+## 14. CITY HALL (citygov.ts, Oct 2026)
+
+The owner: "a city politics system that has taxes and other policies that
+actually affect the game." `src/engine/citygov.ts` is the city government —
+a monthly budget, a bond book, a pension plan, policies and a mayor — held in
+`econ.gov` and ticked right after `tickBlackSwans`. `node test/citygov.mjs`.
+
+- **The budget is an identity.** Revenue: property tax on the assessor's roll
+  (the map's buildings at `classValuePsf` — the solve the build brake reads —
+  plus the town's houses, chasing the market on a 36-month lag, less what
+  abatements forgive), payroll tax, local sales tax, transfer tax on last
+  month's deeds, fees, state aid, interest. Spending: services and schools
+  (per head and per pupil at the town's wage), the pension contribution, debt
+  interest, capital. Δcash = rev − spend − principal + borrowed, every month.
+  Every constant carries its source in the file.
+- **The opening is solved, not chosen**: statutory 1.1% property tax; debt =
+  the steady state of 20-year serial issues for the capital programme; a
+  two-month reserve; pension 5.5× payroll at 75% funded — and the payroll tax
+  is whatever balances that budget (2.8% on the reference town; real range 1-4%).
+- **A crisis is a failed rollover and nothing else.** A maturity cash cannot
+  cover is rolled on notes; if the market is closed to the city that month
+  (spread ≥ 3 pts, or ≥ 1.25 while credit is shut — panic, `debtShut`,
+  `creditIdx < 0.55`) the state lends and a control board takes the budget:
+  services cut 5-20% and a property-tax surcharge of 5-40%, both sized off the
+  gap; capital deferred; held until three balanced years and a spread under
+  1.5. This REPLACES `FISCAL_HAZ` in blackswans.ts — the "shock" stream lost a
+  draw a month, so the other swans' timing re-rolled.
+- **Policies reach the engine through hooks that already existed**:
+  `econ.taxMult` (property tax → every NOI, value, residual, pro forma);
+  `taxAbate` on a development (fixed at groundbreak) and its holding (from
+  delivery) → `grossTaxYr`, the pro forma's exit yield (PV of the forgiven
+  tax, so the land residual prices it too), `holdingValue` (PV of what is
+  left); `transferTaxRate(s)` → `saleTaxQuote`, `streetSaleCost`, JV,
+  leasehold, recap, take-private; rent stabilisation → `flatRollStep` (your
+  flats) and `renewalAsk` (the street's); the service level and the payroll
+  tax → jobs through `bsJobPull`, a level effect over two years, and residents
+  weigh services and the payroll tax per household in staying and coming
+  (`e.fiscalRel`, households.ts `hereRel`). Civic works (demand.ts hearings) are refused under a
+  board or a closed market, and a funded one is charged to the capital budget.
+- **A citywide service level does not move `demandScore`**: that surface is
+  relative and centred every month by design, so a uniform shift is removed.
+  It moves population and jobs instead, which every rent reads.
+- **The mayor**: elections every four years, three platforms (pro-growth,
+  populist, austerity); a logit vote on unemployment, the tax burden and rent
+  burden against the opening, and the city's fiscal state, with incumbency, a
+  retrospective jobs term, and a 2-point candidate draw on the "citygov" stream.
+
+---
+
+## 15. THE OPENING'S RESTING POINT (Nov 2026, PRs #774-#787)
+
+The owner's complaint was "rents over the first three years look broken and
+most firms are losing money". Almost every fault found was the same class:
+**the opening is not at the model's own resting point**, so the first years
+are a start-up transient (stocks seeded off their flows), not an economy.
+Re-measure before believing any number here.
+
+### How to test an early-years change (learned the hard way)
+- **12 towns x 3 years** (seeds 101-112, ~2 min a batch, 4 at a time) is the
+  instrument for opening effects. 4 towns is too noisy: each change reshuffles
+  the opening and a single town swings 5-10 points.
+- **4 towns x 50 years** (11 / 31337 / 22 / 7919, ~18 min) only for late harm.
+- Scratch tools that do this (not in the repo): a `long50.mjs` that snapshots
+  months 0-36 and every year after, and a paired comparison printing the mean
+  and "B lower in n/12 towns" per metric. Rebuild them; they are short.
+
+### What shipped (each with conserve + mechanism audit unchanged)
+- #779 opening labour settled; mainland rents struck in the opening month;
+  each side of the island/mainland line sorted to its own threshold.
+- #780 new firms replace closures as they close (12-month mean of feet lost).
+- #781 asking rents no longer ratchet up on comps noise.
+- #782 a mainland record worn below one island household can still let a flat
+  (`letTo` donor weight) - island vacancy no longer climbs late.
+- #783 a full year of island lookers at the opening (RESID_MOVE movers
+  included), and `priceFlats` charges each free flat the MEAN wait
+  (free+1)/2k, not the last flat's free/k. Year-1 island rent 0.63 -> 0.80.
+- #784 an opening earner is placed in the industry its drawn pay says, and
+  keeps that pay (it was re-dealt by lot after leases were signed against it).
+- #785 THREE firm faults: (1) `freeUntilM ?? -1` read "no free rent" as free
+  until month -1, and the opening history runs on negative months, so firms
+  paid no rent in their books before the game - TRAP: any sentinel compared
+  against `s.month` must survive negative months; use -Infinity. (2) the
+  firms' sales anchor (`revAnchor`) is reset to the index the opening's leases
+  signed at. (3) the island target is measured as the street measures shops
+  (`islandHeld0`). Shop rent year 1 +13% -> +1.5%.
+- #786 opening positions carry the nation's openings rate (NAT_OPEN_RATE), and
+  movers are drawn only by openings above that rate.
+- #787 a pension counts as verifiable income for leaving doubling-up, and a
+  tenant bumped off the mainland ladder (`disp` column) takes the next free home.
+
+### Open, ranked by what the player will notice
+1. **Island renters buy homes at 15-22% a year, every year** (national
+   first-time rate ~4.6% of renters, FIRST_BUY_YR). `solveOwnMu` targets 4.6%
+   of ALL renters, but mainland renters (realistically poor: incomes are in the
+   starting year's dollars, wageIdx ~0.35, mainland renters ~0.55 of the
+   regional median) almost never qualify, so the island carries all of it.
+   Buying is the largest single outflow from island flats (about 40% of
+   move-outs) and the main reason island rents still dip ~11-17% in year one.
+   Likely real fix: island homes for sale (co-ops/condos), so a buyer need not
+   leave the island; re-basing the target is a calibration change - argue it
+   from a source, do not tune it.
+2. **Doubled-up households climb over decades.** #787 slowed it but, measured
+   over 50 years, sent mainland vacancy to 15-31%: the ladder in
+   `tickMainland` counted ready doubled-up BIDDERS toward the homes and put
+   sitting renters out for them. Fixed by counting only renters (`accR`);
+   mainland vacancy back to 2-4% over 12 years, 4 towns. What remains
+   doubled-up is mostly very poor households that cannot save the three
+   months' rent `readyToRent` asks (the source says first month + 1-2 months'
+   deposit, so 2-3 months; 3 is the top of the range).
+3. **Opening job-matching re-pays ~3% of island renters out of their rent**
+   (burden over 0.8 goes 4.2% -> 6.2% in month two, settled 3.2%):
+   `settleLabour` rematches separated workers at bestJob pay and leaves some
+   unemployed against rents set on their drawn pay. Evictions run 2x the
+   settled rate in months 8-13.
+4. **Shops empty out over decades in some towns (15-21% vacancy by years
+   30-50) because the low-paid trades cannot staff.** Town 7919: restaurants
+   74% staffed at year 2, 25% at year 10, 21% at year 25 (general merchandise
+   27%, grocers 47%) with unemployment 4-6%; a local trade serves only what
+   its staff can make (economy.ts `served`, 1.0 -> 0.5), so half the town's
+   shop spending leaves and occupied shop floor falls 20% while population
+   grows 36%. Cause: a worker takes the best-paying of JOB_SHORTLIST (6)
+   draws and every worker ranks industries alike (pay = going rate x own
+   standing), so the bottom rung drains upward faster than entrants and the
+   jobless refill it; the pay response to openings (V_SLOPE 0.5 [K]) is too
+   weak to compete. TRIED: weighting each draw by the odds the industry
+   would hire a worker with this pay record (within-industry spread from the
+   register) - restaurants 25% -> 36% staffed at year 10 but shop vacancy and
+   rents not better beyond noise over 20 years, year-1 island rents lower;
+   not shipped. SHIPPED (#790): JOB_SHORTLIST 6 -> 2, the offers a worker
+   holds rather than the applications it sends (Faberman, Mueller, Sahin &
+   Topa 2022): restaurants 51% staffed at year 10, shop vacancy at year 10
+   5.0/12.2/11.5/19.0% -> 7.0/6.9/9.3/10.0% (4 towns); early years slightly
+   worse for island rents (-1-2 points). Still open: firms in a trade that cannot staff should close
+   or shrink their posted positions (impliedHeads reads demand, not what
+   they can serve), and/or occupational sorting stronger than a pay screen.
+   Shop vacancy of 9-10% in the early years is within the real range
+   (REIS neighbourhood/community centres ran 8-11%, 1980s-2019).
+5. **Values slide in the first three years in every town** (cap rates +1.2-2
+   points in every class while the loan rate falls). #789 removed about a
+   third of it (opening track records in the wrong dollars, so nobody could
+   raise successor funds). The rest: the roster's cash falls 75-80% in two
+   years as it buys from the street; banks tighten as the watch list rises
+   1.3% -> 12% of loans by year 3; the investor pool's allocation sits on its
+   2x rail (reAllocation) once spreads widen; the endowment/pension money is
+   reachable only by firms in the top two bands, which almost none reach.
+   TRIED: holding builders' construction reserve back from acquisitions -
+   office cap 9.4 -> 15.7% in year 1 (builders were the survey's
+   second-highest bidders); not shipped.
+   Office overbuilding (one of four towns at ~20% vacancy by year 5) follows
+   the same capital wave; not systematic across towns.
+6. `test/tenantmarket.mjs` "rent indices are the comps read back" fails 7-8 of
+   360 class-months - pre-existing, untraced.
+
+### Checked and NOT faults
+- Unemployment rising ~1 point by year 3 follows the nation's own cycle (a
+  national downturn around years 2-3 in most seeds), not a local leak.
+- Age mix over 50 years (children 24% -> 18%, 65+ 15% -> 24%) is ordinary
+  ageing, close to US projections.
+
+### Tried and dropped (do not retry without a new reason)
+- Two-way migration at parity (base MOVE_M leaving): towns shrank, jobs -2.5%.
+- Island movers touring from their own flat: year-1 rents better, 15-18%
+  island vacancy by year 50.
+- Buy decision against the mainland rent instead of the island rent: no
+  measurable effect (the calibration re-centres on the same 4.6%).
+- Stock-and-flow landlord pricing for flats: island vacancy worse.

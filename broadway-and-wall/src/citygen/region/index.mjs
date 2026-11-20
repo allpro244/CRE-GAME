@@ -30,7 +30,7 @@ import { buildCityData } from "../build.mjs";
 import { makeProjection } from "../geom.mjs";
 import {
   ACRE, FT, SQFT_PER_M2, makeRng, add, sub, mul, dist, norm, perp, resample, rdp, circle, capsules, hull,
-  rectRing, ringAreaAbs, ringCentroid, pointInRing, distToLine, maskOutline, CELL, cumLen, pointAt, slicePl,
+  rectRing, ringAreaAbs, ringCentroid, pointInRing, distToLine, maskOutline, chaikinClosed, CELL, cumLen, pointAt, slicePl,
 } from "./util.mjs";
 import { generateLand, NAME_A, NAME_B, SZ } from "./land.mjs";
 import { storyPrep, townFootprint } from "./story.mjs";
@@ -39,6 +39,7 @@ import { townConfig, villageConfig } from "./town.mjs";
 import { makeFrame } from "./frame.mjs";
 import { packBits, PLAT_GEN, ERA_YEARS, platFor } from "./plats.mjs";
 import { designPlat } from "./platdesign.mjs";
+import { placeFacilities } from "./facilities.mjs";
 
 export const REGION = "region";
 // A fictional place on the Public Land Survey (central Illinois). Only the
@@ -59,7 +60,9 @@ export function regionName(seed) {
 
 export function makeRegion(seed, opts = {}) {
   seed = seed >>> 0;
-  const M = generateLand(seed);
+  const planV = opts.planV ?? 15;
+  const M = generateLand(seed, planV);
+  SEED_PLAN.set(seed, planV);
   storyPrep(M);
   townFootprint(M);
   placeOuter(M);
@@ -81,7 +84,6 @@ export function makeRegion(seed, opts = {}) {
     land: { rS: (p) => M.story.rS(F.toC(p)), ind: (p) => M.story.ind(F.toC(p)) },
     center: LONLAT, name, abbr: "RG",
   });
-  const planV = opts.planV ?? 15;
   const density = opts.density;
   const town = generateCity({ ...cfg, seed: (seed ^ 0x52474e31) >>> 0, density, planV });
   const towns = [{ cfg, city: town, base: 1 }];
@@ -108,6 +110,11 @@ export function makeRegion(seed, opts = {}) {
   // Sizes [S, approximate]: a pre-war house 6-9 m wide and 10-13 m deep; 60% two storeys; one family 60%,
   // a two-flat 30%, three flats 10%.
   const housed = new Set();
+  // HOW FAR OUT A LOT SITS IN ITS TOWN, 0 at the centre and 1 on the edge (owner: "downtown has
+  // such a clear defined limit"): the centre-to-edge share along the lot's own ray, so a lobe of town
+  // reads its own edge. The taper below and the houses pass both read it.
+  const ringW = W(M.townRing).concat([F.toW(M.townRing[0])]), centreW = F.toW(M.centre);
+  const outward = (q) => { const dc = dist(q, centreW), de = distToLine(q, ringW); return dc / Math.max(1, dc + de); };
   const h01 = (s, salt) => { let h = 2166136261 ^ salt; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } h ^= h >>> 13; h = Math.imul(h, 2246822507); h ^= h >>> 16; return (h >>> 0) / 4294967296; };
   for (const tw of towns) {
     const resi = new Set(Object.entries(tw.cfg.districts).filter(([, d]) => d.flavor === "resi").map(([k]) => k));
@@ -116,11 +123,28 @@ export function makeRegion(seed, opts = {}) {
     const drop = new Set();
     for (const f of tw.city.parcels.features) {
       const p = f.properties;
-      if (!resi.has(p.district) || p.bldgclass !== "D0" || !(p.lotarea <= 9000) || (p.corridorm ?? 9999) < 12) continue;
-      if (p.corner === 1 && h01(p.bbl, 7) < 0.5) continue;   // half the corners keep their corner building
-      const bs = bldgOf.get(p.bbl);
-      if (!bs?.length || h01(p.bbl, 1) > 0.82) continue;
+      // toward the town's edge the houses take over: bigger lots qualify and fewer stay apartments
+      // (the fringe of a pre-war town is houses on their own lots, not walk-ups) [K, shape choice]
       const lot = f.geometry.coordinates[0].slice(0, -1).map(proj.toXY);
+      const t = tw.base === 1 && planV >= 17 ? outward(ringCentroid(lot)) : 0;   // plan 17 on
+      const fringe = Math.max(0, (t - 0.55) / 0.45);
+      // THE EMPTY BAND (measured, seed 2: ~600 of the town's outer lots were platted and vacant — the
+      // brown ring between downtown and the suburbs). A real town's outer additions are built up with
+      // houses; three in four of those vacant house lots get one, the rest stay land for sale [K].
+      const vacantHouseLot = p.bldgclass === "V1" && t > 0.45 && (resi.has(p.district) || String(p.district).startsWith("oldtown"))
+        && p.lotarea <= 18000 && h01(p.bbl, 9) < 0.75;
+      if (!vacantHouseLot && (!resi.has(p.district) || p.bldgclass !== "D0" || !(p.lotarea <= 9000 + 9000 * fringe))) continue;
+      if ((p.corridorm ?? 9999) < 12) continue;
+      if (p.corner === 1 && h01(p.bbl, 7) < 0.5 - 0.4 * fringe) continue;   // half the corners keep their corner building (fewer at the fringe)
+      let bs = bldgOf.get(p.bbl);
+      if (vacantHouseLot) {
+        // a house on an empty lot: a new building, built in the addition's own years (1900-1950, later outward)
+        const b = { type: "Feature", geometry: null, properties: { base_bbl: p.bbl, heightroof: 0, cnstrct_yr: 0 } };
+        tw.city.buildings.features.push(b); bs = [b];
+        p.yearbuilt = Math.round(1900 + 30 * t + 20 * h01(p.bbl, 10));
+        b.properties.cnstrct_yr = p.yearbuilt;
+        p.landuse = "01";
+      } else if (!bs?.length || h01(p.bbl, 1) > 0.82 + 0.15 * fringe) continue;
       // the lot's depth runs along its longest side
       let ax = [1, 0], best = 0;
       for (let i = 0; i < lot.length; i++) { const e = sub(lot[(i + 1) % lot.length], lot[i]), L = Math.hypot(e[0], e[1]); if (L > best) { best = L; ax = [e[0] / L, e[1] / L]; } }
@@ -140,6 +164,64 @@ export function makeRegion(seed, opts = {}) {
       housed.add(p.bbl);
     }
     if (drop.size) tw.city.buildings.features = tw.city.buildings.features.filter((f) => !drop.has(f));
+  }
+
+  // ---------------- THE TOWN TAPERS TO ITS EDGE (owner: "it needs to blend and mesh with the rest of
+  // the surrounding land"). The island generator fills its ring at one density right to the line, so the
+  // old city stood as a mid-rise block against the corn. A real town's heights fall off from the core:
+  // here a lot's storeys are capped by how far out it sits — no cap in the inner half, then down to
+  // two or three storeys at the edge (with a little per-lot jitter so the fall is not a contour). The
+  // floor area and the building's assessed value fall with the storeys; the lot and its land do not.
+  // The cap is a shape choice [K]: the shape of every small Midwest county seat's skyline.
+  for (const tw of towns) {
+    if (tw.base !== 1 || planV < 17) continue;   // plan 17 on: a plan-16 save rebuilds its town as it was
+    const bldgOf = new Map();
+    for (const f of tw.city.buildings.features) { const b = f.properties.base_bbl; if (b) { const l = bldgOf.get(b); if (l) l.push(f); else bldgOf.set(b, [f]); } }
+    for (const f of tw.city.parcels.features) {
+      const p = f.properties;
+      if (housed.has(p.bbl) || !(p.numfloors > 0) || !(p.bldgarea > 0)) continue;
+      const t = outward(ringCentroid(f.geometry.coordinates[0].slice(0, -1).map(proj.toXY)));
+      if (t < 0.35) continue;
+      // storeys: 8 at a third of the way out, two or three over the outer third
+      const cap = Math.max(2, Math.round(8 - 15 * (t - 0.35) + 2 * (h01(p.bbl, 11) - 0.5)));
+      // SETBACKS: the fringe's buildings stand back on their lots (a yard, a side drive, a car park)
+      // instead of filling them to the line — the footprint shrinks about its own middle to as little as
+      // 55% of its area at the edge [K]
+      const fringe = Math.max(0, (t - 0.55) / 0.45), s = 1 - 0.26 * fringe * (0.8 + 0.4 * h01(p.bbl, 12));
+      const kF = p.numfloors > cap ? cap / p.numfloors : 1, kA = s * s;
+      if (kF === 1 && s > 0.995) continue;
+      if (s < 0.995) for (const b of bldgOf.get(p.bbl) ?? []) {
+        const r = b.geometry.coordinates[0].slice(0, -1).map(proj.toXY), c = ringCentroid(r);
+        const r2 = r.map((q) => add(c, mul(sub(q, c), s)));
+        b.geometry = { type: "Polygon", coordinates: [[...r2.map(LLw), LLw(r2[0])]] };
+      }
+      p.numfloors = Math.min(p.numfloors, cap);
+      p.bldgarea = Math.round(p.bldgarea * kF * kA);
+      p.assesstot = p.assessland + Math.round((p.assesstot - p.assessland) * kF * kA);
+      if (kF < 1) for (const b of bldgOf.get(p.bbl) ?? []) b.properties.heightroof = +Math.max(20, b.properties.heightroof * kF).toFixed(1);
+    }
+  }
+
+  // ---------------- NO LONE TOWERS (plan 17; owner: one tall slab stood alone over three-storey blocks). A
+  // county seat's tall buildings stand together — the courthouse square, a bank, a hotel. A building of ten
+  // storeys or more with fewer than two of six or more within 120 m comes down to twice its neighbours'
+  // median, at least six [K]. Floor area and assessed building value fall with the storeys.
+  if (planV >= 17) {
+    const tw = towns[0], bldgOf = new Map();
+    for (const f of tw.city.buildings.features) { const b = f.properties.base_bbl; if (b) { const l = bldgOf.get(b); if (l) l.push(f); else bldgOf.set(b, [f]); } }
+    const ps = tw.city.parcels.features.filter((f) => f.properties.numfloors > 0).map((f) => ({ p: f.properties, c: ringCentroid(f.geometry.coordinates[0].slice(0, -1).map(proj.toXY)) }));
+    for (const a of ps) {
+      if (a.p.numfloors < 10) continue;
+      const near = ps.filter((b) => b !== a && dist(a.c, b.c) < 120);
+      if (near.filter((b) => b.p.numfloors >= 6).length >= 2) continue;
+      const fl = near.map((b) => b.p.numfloors).sort((x, y) => x - y), med = fl.length ? fl[Math.floor(fl.length / 2)] : 3;
+      const cap = Math.max(6, 2 * med);
+      if (a.p.numfloors <= cap) continue;
+      const k = cap / a.p.numfloors;
+      a.p.numfloors = cap; a.p.bldgarea = Math.round(a.p.bldgarea * k);
+      a.p.assesstot = a.p.assessland + Math.round((a.p.assesstot - a.p.assessland) * k);
+      for (const b of bldgOf.get(a.p.bbl) ?? []) b.properties.heightroof = +Math.max(20, b.properties.heightroof * k).toFixed(1);
+    }
   }
 
   // ---------------- the region's ordinary parcels: the market out past the town
@@ -364,15 +446,18 @@ export function makeRegion(seed, opts = {}) {
   const dry = (ring) => coastY ? ring.map((p) => [p[0], Math.min(p[1], coastY(p[0]))]) : ring;
   // marsh: the floodplains
   const rs = M.river.pts;
-  for (let i = 0; i < rs.length - 8; i += 8) ground("marsh", dry(hull(circle(rs[i], M.river.fp[i], 16).concat(circle(rs[i + 8], M.river.fp[i + 8], 16)))));
-  for (const c of M.creeks) for (const cap of capsules(rdp(c.pts, 4), c.fp)) ground("marsh", dry(cap));
-  if (M.coast) { const L = M.coast.line; ground("marsh", L.concat(L.slice().reverse().map((p) => [p[0], p[1] - M.coast.band]))); }
+  // (plan 17: no floodplain, so no marsh along the river, the creeks or the coast)
+  if (planV < 17) for (let i = 0; i < rs.length - 8; i += 8) ground("marsh", dry(hull(circle(rs[i], M.river.fp[i], 16).concat(circle(rs[i + 8], M.river.fp[i + 8], 16)))));
+  if (planV < 17) for (const c of M.creeks) for (const cap of capsules(rdp(c.pts, 4), c.fp)) ground("marsh", dry(cap));
+  if (M.coast && planV < 17) { const L = M.coast.line; ground("marsh", L.concat(L.slice().reverse().map((p) => [p[0], p[1] - M.coast.band]))); }
   // fields, woods and yards from the raster, so nothing lands on the water or in the town
   const openCell = (k) => !M.water[k] && !M.isSea(G.ctr(k)) && !M.flood[k] && !town0(k);
-  for (const r of maskRects(G, [0, 0, S, S], (k) => M.forestL[k] === 1)) ground("woods", r);
+  // plan 17: traced and smoothed outlines instead of 20 m squares (owner: the comb-toothed edges were the ugliest thing on screen)
+  const shapes = planV >= 17 ? (box, ok) => maskShapes(G, box, ok) : (box, ok) => maskRects(G, box, ok);
+  for (const r of shapes([0, 0, S, S], (k) => M.forestL[k] === 1)) ground("woods", r);
   for (const t of M.tracts) {
-    for (const r of maskRects(G, t.r, (k) => openCell(k) && !M.forestL[k] && !M.phase[k] && !M.lotL[k] && !M.hwL[k])) ground(t.era ? "farm" : t.wood ? "woods" : "farm", r);
-    if (t.keep) for (const r of maskRects(G, t.r, (k) => openCell(k) && M.phase[k] && !M.hwL[k] && !M.lotL[k])) ground("yard", r);
+    for (const r of shapes(t.r, (k) => openCell(k) && !M.forestL[k] && !M.phase[k] && !M.lotL[k] && !M.hwL[k])) ground(t.era ? "farm" : t.wood ? "woods" : "farm", r);
+    if (t.keep) for (const r of shapes(t.r, (k) => openCell(k) && M.phase[k] && !M.hwL[k] && !M.lotL[k])) ground("yard", r);
   }
   // water: the river and the creeks (pavement drawn after, so the roads cross on bridges)
   for (let i = 0; i < rs.length - 2; i += 2) ground("stream", hull(circle(rs[i], M.river.half[i], 12).concat(circle(rs[i + 2], M.river.half[i + 2], 12))));
@@ -381,7 +466,9 @@ export function makeRegion(seed, opts = {}) {
   const inTownC = (p) => { const k = G.idx(p); return k >= 0 && (M.townMask[k] || M.townL[k]); };
   const road = (pl, cls, wm) => {
     if (pl.length < 2) return;
-    line("centerline", pl, { w: wm, mk: 0, cls });
+    // paint (plan 17; owner: "these streets look so boring"): a highway's double yellow and lane lines, a
+    // county road's dashed centre; a subdivision street is unpainted, as it is in life
+    line("centerline", pl, { w: wm, mk: planV >= 17 ? (cls === "highway" ? 2 : cls === "arterial" ? 1 : 0) : 0, cls });
     for (const cap of capsules(pl, wm / 2, 8)) ground("pavement", cap);
   };
   for (const h of M.highways) for (const s of h.segs) if (s.built) road(rdp(s.pts, 1), "highway", ROAD_W.highway);
@@ -405,7 +492,18 @@ export function makeRegion(seed, opts = {}) {
   }
   // trees: one street tree per two houses, the woodlots and the forest belt on a jittered grid under a cap
   const trees = [];
-  for (const t of M.tracts) if (t.keep) for (const i of t.keep) if (i % 2 === 0) { const lot = t.plat.lots[i]; const m = lot.front[0].map((v, j) => (v + lot.front[1][j]) / 2); trees.push(add(m, mul(norm(sub(lot.house.c, m)), 3))); streetTrees++; }
+  for (const t of M.tracts) if (t.keep) for (const i of t.keep) if (i % 2 === 0 || planV >= 17) { const lot = t.plat.lots[i]; const m = lot.front[0].map((v, j) => (v + lot.front[1][j]) / 2); trees.push(add(m, mul(norm(sub(lot.house.c, m)), 3))); streetTrees++; }
+  // BACK-YARD CANOPY (plan 17; owner: the subdivisions read as bare ground): from the air a settled
+  // neighbourhood is mostly trees with roofs among them — two in each back yard, behind the house,
+  // to either side [K]. Placed before the woods so the cap spaces the woods out, never the yards.
+  if (planV >= 17) {
+    const yr = makeRng("yards:" + seed);
+    for (const t of M.tracts) if (t.keep) for (const i of t.keep) {
+      const lot = t.plat.lots[i], m = lot.front[0].map((v, j) => (v + lot.front[1][j]) / 2);
+      const back = norm(sub(lot.house.c, m)), side = perp(back);
+      for (const sd of [-1, 1]) trees.push(add(lot.house.c, add(mul(back, 9 + 4 * yr()), mul(side, sd * (3 + 3 * yr())))));
+    }
+  }
   const woodTr = M.tracts.filter((t) => !t.era && t.wood);
   const forestCells = M.forestL.reduce((a, v) => a + v, 0);
   const woodArea = woodTr.reduce((a, t) => a + (t.r[2] - t.r[0]) * (t.r[3] - t.r[1]), 0) + forestCells * CELL * CELL;
@@ -486,6 +584,10 @@ export function makeRegion(seed, opts = {}) {
     bbox: [Math.min(...lons), Math.min(...lats), Math.max(...lons), Math.max(...lats)],
     region: { km: S / 1000, centre: LL(M.centre), commerce: { county: M.commerce.county, townHouseholds: M.commerce.townHh, sites: M.commerce.placed.map((s) => ({ type: s.type, name: s.name, sf: s.sf, lotSf: s.lotSf, parcels: s.parcels })) }, river: M.river.name, coast: !!M.coast, rotation: F.k, towns: M.towns.map((t) => t.name), townAreaKm2: +(M.townArea / 1e6).toFixed(2) },
   };
+  // ---------------- THE COUNTRY BEYOND THE WINDOW (facilities.mjs): the airport, the yard, the refinery, the
+  // works, the quarries, the big farms and the power station, drawn round the market and never in it. Its own
+  // stream; the land model is only read, so everything above is byte-identical with or without it.
+  const { facilities, hinterland } = regionFacilitiesLL(M, seed, F, LL);
   const reservedCount = { homes: 0, farm: 0, civic: 0 };
   for (const r of Object.values(reserved)) reservedCount[r.tenure]++;
   return {
@@ -496,10 +598,51 @@ export function makeRegion(seed, opts = {}) {
     buildings3d: b3,
     reserved,
     groundLayers: REGION_GROUND_LAYERS,
+    facilities,
+    hinterland,
     stats: {
       ...data.stats, blocks: towns.reduce((a, t) => a + (t.city.stats?.blocks ?? 0), 0), coverage: town.stats?.coverage?.pct ?? 0,
       reserved: reservedCount, neighbourhoods: nbStats.length, homes: nbStats.reduce((a, n) => a + n.homes, 0),
       townHouses: [...houseLike].length, streetTrees, trees: Math.min(TREE_CAP, trees.length),
+    },
+  };
+}
+
+// ---------------------------------------------------------------- the background facilities, in lon/lat
+/**
+ * placeFacilities (canonical metres) turned into the world: points to lon/lat, directions to world unit
+ * vectors (x east, y north), an instance's heading to a world angle (radians from east).
+ */
+function regionFacilitiesLL(M, seed, F, LL) {
+  const { facilities, hinterland } = placeFacilities(M, seed);
+  const dirW = (u) => { const w = F.dirW(u); return [+w[0].toFixed(5), +w[1].toFixed(5)]; };
+  const ang = (u) => { const w = F.dirW(u); return +Math.atan2(w[1], w[0]).toFixed(4); };
+  const ring = (r) => r.map(LL);
+  const part = (p) => {
+    const o = { ...p };
+    if (p.c) o.c = LL(p.c);
+    if (p.u) o.u = dirW(p.u);
+    if (p.rows) o.rows = dirW(p.rows);
+    if (p.ring) o.ring = ring(p.ring);
+    if (p.hole) o.hole = ring(p.hole);
+    if (p.pts) o.pts = ring(p.pts);
+    if (p.at) o.at = p.at.map(([x, y, ux, uy, s, col, z, k]) => [...LL([x, y]), ang([ux, uy]), s, col, z, k]);
+    return o;
+  };
+  return {
+    facilities: facilities.map((f) => ({
+      ...f, footprint: ring(f.footprint), centroid: LL(f.centroid),
+      acres: +(f.m2 / ACRE).toFixed(0), parts: f.parts.map(part),
+    })),
+    hinterland: {
+      belt: hinterland.belt,
+      extent: ring(hinterland.extent),
+      land: hinterland.land.map((poly) => poly.map(ring)),
+      shoreline: ring(hinterland.shoreline),
+      fields: hinterland.fields.map((f) => ({ ring: ring(f.ring), k: f.k, rows: dirW(f.rows) })),
+      water: hinterland.water.map((w) => ({ pts: ring(w.pts), w: Math.round(w.w), name: w.name })),
+      roads: hinterland.roads.map((r) => ({ pts: ring(r.pts), w: r.w, kind: r.kind })),
+      rail: hinterland.rail.map((r) => ({ pts: ring(r.pts), name: r.name })),
     },
   };
 }
@@ -517,12 +660,15 @@ function buildableM2(M, r) {
 }
 const MODELS = new Map();
 /** The region's land model for a seed (the river, the town, the outer lots), kept for platting. */
+// the plan the seed's town was last cut under (makeRegion), so a farm is platted on the same land the game drew
+const SEED_PLAN = new Map();
 function regionModel(seed) {
-  let M = MODELS.get(seed);
+  const planV = SEED_PLAN.get(seed >>> 0) ?? 17, key = `${seed}:${planV}`;
+  let M = MODELS.get(key);
   if (!M) {
-    M = generateLand(seed); storyPrep(M); townFootprint(M); placeOuter(M);
+    M = generateLand(seed, planV); storyPrep(M); townFootprint(M); placeOuter(M);
     if (MODELS.size > 2) MODELS.clear();
-    MODELS.set(seed, M);
+    MODELS.set(key, M);
   }
   return M;
 }
@@ -742,6 +888,54 @@ function maskRects(G, [x0, y0, x1, y1], ok) {
   }
   for (const r of open.values()) out.push(r);
   return out.map((r) => { const xa = Math.max(x0, r.a * C), xb = Math.min(x1, (r.b + 1) * C), ya = Math.max(y0, r.j0 * C), yb = Math.min(y1, (r.j1 + 1) * C); return [[xa, ya], [xb, ya], [xb, yb], [xa, yb]]; });
+}
+/**
+ * THE MASK AS SHAPES, NOT SQUARES (plan 17). Each 4-connected piece of the mask inside the box is traced
+ * as one ring, its 20 m staircase straightened (RDP at 0.7 of a cell) and its corners rounded (two Chaikin
+ * passes), so a wood's edge, a field cut by a diagonal road or the river's bank reads as a line and not a
+ * comb. A piece with a hole in it (a field round a farmstead) keeps its squares: the ground layer is drawn
+ * as simple rings, and a ring traced round a hole would paint over what is in it.
+ */
+function maskShapes(G, [x0, y0, x1, y1], ok) {
+  const C = CELL, i0 = Math.max(0, Math.floor(x0 / C)), i1 = Math.min(G.W - 1, Math.ceil(x1 / C) - 1);
+  const j0 = Math.max(0, Math.floor(y0 / C)), j1 = Math.min(G.W - 1, Math.ceil(y1 / C) - 1);
+  const W = G.W, seen = new Uint8Array(G.N), mine = new Uint8Array(G.N), out = [];
+  const inBox = (k) => { const i = k % W, j = (k - i) / W; return i >= i0 && i <= i1 && j >= j0 && j <= j1; };
+  const nb = (k) => { const i = k % W; return [i > i0 ? k - 1 : -1, i < i1 ? k + 1 : -1, k - W >= 0 ? k - W : -1, k + W < G.N ? k + W : -1]; };
+  for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+    const k0 = j * W + i;
+    if (seen[k0] || !ok(k0)) continue;
+    const cells = [k0]; seen[k0] = 1;
+    let bi0 = i, bi1 = i, bj0 = j, bj1 = j;
+    for (let h = 0; h < cells.length; h++) for (const m of nb(cells[h])) {
+      if (m < 0 || seen[m] || !inBox(m) || !ok(m)) continue;
+      seen[m] = 1; cells.push(m);
+      const mi = m % W, mj = (m - mi) / W; bi0 = Math.min(bi0, mi); bi1 = Math.max(bi1, mi); bj0 = Math.min(bj0, mj); bj1 = Math.max(bj1, mj);
+    }
+    for (const c of cells) mine[c] = 1;
+    // a hole: a cell in the piece's box that is not in the piece and cannot reach the box's edge
+    const bw = bi1 - bi0 + 1, bh = bj1 - bj0 + 1, outside = new Uint8Array(bw * bh), q = [];
+    const at = (ii, jj) => (jj - bj0) * bw + (ii - bi0);
+    const seed = (ii, jj) => { const a = at(ii, jj); if (!mine[jj * W + ii] && !outside[a]) { outside[a] = 1; q.push([ii, jj]); } };
+    for (let ii = bi0; ii <= bi1; ii++) { seed(ii, bj0); seed(ii, bj1); }
+    for (let jj = bj0; jj <= bj1; jj++) { seed(bi0, jj); seed(bi1, jj); }
+    while (q.length) {
+      const [ii, jj] = q.pop();
+      for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const ni = ii + di, nj = jj + dj; if (ni >= bi0 && ni <= bi1 && nj >= bj0 && nj <= bj1) seed(ni, nj); }
+    }
+    let holes = false;
+    for (let jj = bj0; jj <= bj1 && !holes; jj++) for (let ii = bi0; ii <= bi1; ii++) if (!mine[jj * W + ii] && !outside[at(ii, jj)]) { holes = true; break; }
+    const ring = !holes && cells.length >= 3 ? maskOutline(G, mine, { i0: bi0, i1: bi1, j0: bj0, j1: bj1 }) : null;
+    if (ring && ring.length >= 4) {
+      let r = closedRdp(ring, C * 0.7);
+      if (r.length >= 3) r = chaikinClosed(r, 2);
+      if (r.length >= 3) out.push(r.map((p) => [Math.min(x1, Math.max(x0, p[0])), Math.min(y1, Math.max(y0, p[1]))]));
+    } else {
+      out.push(...maskRects(G, [Math.max(x0, bi0 * C), Math.max(y0, bj0 * C), Math.min(x1, (bi1 + 1) * C), Math.min(y1, (bj1 + 1) * C)], (k) => mine[k] === 1));
+    }
+    for (const c of cells) mine[c] = 0;
+  }
+  return out;
 }
 export { SZ, ROAD_W, pointInRing, cumLen, pointAt, perp };
 

@@ -2,6 +2,7 @@
 // ground furniture, water and crossings, and the per-lot outlines. Lifted out
 // of the retired classic renderer (ThreeBuildings), which defined it first.
 import type { BuildingDesign } from "@/engine/types";
+import type { RegionFacility, Hinterland } from "@/citygen/index.mjs";
 
 /** Street furniture arrives with a baked bearing. */
 export interface Oriented { p: [number, number]; r: number }
@@ -36,6 +37,9 @@ export interface CityCtx {
   paths?: [number, number][][];
   /** The parcel outlines, by BBL — a redevelopment stands on its lot, not on what was knocked down. */
   lots?: Record<string, [number, number][]>;
+  /** The region map only: the background facilities round the window, and the country they stand in (facilities.ts). */
+  facilities?: RegionFacility[];
+  hinterland?: Hinterland;
 }
 
 /** A building the player or a rival put up, or is putting up. */

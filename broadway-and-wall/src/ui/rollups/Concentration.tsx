@@ -112,15 +112,14 @@ export function Concentration() {
 
   return (
     <div className="page-section">
-      <div className="page-section-head">Concentration</div>
-      <Bar label="By use" note={`value-weighted · largest ${top(conc.cls, conc.totV)}`} list={conc.cls} total={conc.totV} />
-      <Bar label="By district" note={`value-weighted · largest ${top(conc.dist, conc.totV)}`} list={conc.dist} total={conc.totV} />
-      <Bar label="By tenant trade" note={conc.totRent > 0 ? `share of contract rent · largest ${top(conc.sect, conc.totRent)}` : ""} list={conc.sect} total={conc.totRent} />
-      <div className="hint">
-        A diversified book is the one where the biggest bar can have a bad decade without taking the
-        firm with it. Use and district weigh appraised value; the trade bar weighs the rent the leases
-        actually pay.
+      {/* The explanation is the heading's tooltip, not a paragraph under the bars. */}
+      <div className="page-section-head"
+        title="A diversified book is the one where the biggest bar can have a bad decade without taking the firm with it. Use and district weigh appraised value; the trade bar weighs the rent the leases actually pay.">
+        Concentration
       </div>
+      <Bar label="By use" note={`largest ${top(conc.cls, conc.totV)}`} list={conc.cls} total={conc.totV} />
+      <Bar label="By district" note={`largest ${top(conc.dist, conc.totV)}`} list={conc.dist} total={conc.totV} />
+      <Bar label="By tenant trade" note={conc.totRent > 0 ? `of rent · largest ${top(conc.sect, conc.totRent)}` : ""} list={conc.sect} total={conc.totRent} />
     </div>
   );
 }

@@ -26,6 +26,66 @@
 import type { Credit, Econ, Tenant } from "./types";
 import { FIRM_PROFILE, LENDER_COVER, SF_PER_JOB } from "./market";
 import { hashNormal } from "./value";
+import { INDUSTRIES, INDUSTRY_IDS, TRADE_TO_INDUSTRY, type IndustryId } from "./industries";
+
+/**
+ * A SHED TENANT KEEPS A SHED BUSINESS'S BOOKS (2026-11-10). The trade
+ * profiles (market.ts FIRM_PROFILE) are the office and shop trades': a food
+ * or apparel firm there is a restaurant or a clothes shop, paying ~9% of its
+ * sales in rent. The street's shed firms are in those trades too — a food
+ * plant, a garment works, a wholesaler — and kept the shop's books, so a shed
+ * firm sold a shop's sales on its floor (revenue per foot = rent per foot over
+ * the rent share), three times the rent's weight on its margin; every point
+ * shed rents outran its trade's sales took ~0.1 points of margin, not ~0.03.
+ * Measured, seed 11, years 3-8: shed tenants went dark at 15% of shed stock a
+ * year (offices 2.7%, shops 4.7%), food plants 15%, garment works 42%; the
+ * record for industrial tenants is ~1-3% (Prologis bad debt ~0.3-0.5% of
+ * revenue, retention 69-87%; BDS establishment exits in manufacturing and
+ * wholesale ~6-8% a year counting moves and lease-end closures).
+ *
+ * A shed firm's books are its industry's, renting its floor:
+ *   rent share  US industrial rent 2023 (~$9.8/sf a year NNN, Cushman &
+ *               Wakefield MarketBeat: $9.59 Q2 2023, +10% over the year) [S~]
+ *               times the industry's feet a worker over its output a worker
+ *               (industries.ts sfPerWorker, BEA output over CES heads) [D].
+ *               It reproduces the BEA rent row where the floor is mostly
+ *               rented — wholesale 3.2% against BEA 3.8%, trucking 3.5%
+ *               against 2.3% — and gives the renter's share where plants
+ *               are mostly owned (food plants 1.5% against BEA's 0.5%).
+ *   margin      the industry's EBITDA over sales, US listed firms, January
+ *               2026 (Damodaran, NYU Stern, margin.html) [S]: distributors
+ *               11.4%, food processing 15.3%, apparel 11.5%, trucking 15.6%,
+ *               transportation 9.8%. The grade still scales it (`GRADE`).
+ * Leverage, floating share and spread stay the trade's (FINANCE_LIKE).
+ */
+const SHED_RENT_PSF_2023 = 9.8;
+const SHED_MARGIN: Partial<Record<IndustryId, number>> = {
+  wholesale: 0.114, warehousing: 0.098, transportsup: 0.098, trucking: 0.156,
+  food: 0.153, textiles: 0.115, apparel: 0.115,
+};
+function shedBook(ind: IndustryId): { margin: number; rent: number } {
+  const I = INDUSTRIES[ind];
+  const rent = SHED_RENT_PSF_2023 * I.sfPerWorker / Math.max(1, I.outPerWorkerK * 1000);
+  return { margin: SHED_MARGIN[ind] ?? I.gos, rent: Math.max(0.005, Math.min(0.15, rent)) };
+}
+const SHED_BOOK: Partial<Record<IndustryId, { margin: number; rent: number }>> = {};
+/**
+ * The margin and rent share a tenant's books are built on: its trade's
+ * (FIRM_PROFILE), or on a shed floor its industry's (`shedBook`) — the one
+ * the city's books hold it in, else its trade's shed industries weighted by
+ * US employment (TRADE_TO_INDUSTRY).
+ */
+export function bookProfile(t: { sector: Tenant["sector"]; use?: string; ind?: number }): { margin: number; rent: number } {
+  const P = FIRM_PROFILE[t.sector];
+  if (t.use !== "industrial") return P;
+  const id = t.ind !== undefined ? INDUSTRY_IDS[t.ind] : undefined;
+  if (id && INDUSTRIES[id]?.space.startsWith("industrial")) return (SHED_BOOK[id] ??= shedBook(id));
+  const opts = TRADE_TO_INDUSTRY.industrial[t.sector];
+  if (!opts?.length) return P;
+  let w = 0, mg = 0, rt = 0;
+  for (const [k, x] of opts) { const b = (SHED_BOOK[k] ??= shedBook(k)); w += x; mg += x * b.margin; rt += x * b.rent; }
+  return { margin: mg / w, rent: rt / w };
+}
 
 export interface TenantFin {
   /** revenue at signing, $/yr, and the trade's sales per worker then */
@@ -47,13 +107,24 @@ export interface TenantFin {
  * A FIRM'S OWN FORTUNES (2026-10-16). Two firms in one trade do not have one
  * year: one wins the big client and the other loses it. Each firm's sales run
  * on its trade's plus a persistent shock of its own — monthly persistence 0.985,
- * so a good or bad run lasts years — sized so a small unrated firm's sales sit
- * about 19% either side of its trade's (the dispersion of small-firm revenue
- * growth in the Census Business Dynamics Statistics runs 20-35%). Failures come out of
- * this and the trade's year through the books; nothing is drawn at a fixed rate.
+ * so a good or bad run lasts years — sized so a small unrated firm's sales
+ * GROW at the dispersion small firms' do: 20-35% a year either side of its
+ * trade's (Census Business Dynamics Statistics) [S]. A year's change in z
+ * has a spread of Z_SIG/sqrt(1-rho^2) x sqrt(2(1-rho^12)) = 3.33 Z_SIG, so
+ * 0.075 gives 25% [D]; the level then sits 0.43 either side of the trade's, a
+ * 90/10 ratio of ~3 in sales per head, inside the 2-4 measured within US
+ * industries (Syverson 2011, JEL) [S]. Failures come out of this and the
+ * trade's year through the books; nothing is drawn at a fixed rate.
+ * (Until 2026-10-29 this was 0.033, "19% either side" as a LEVEL, and the
+ * draws it scaled were correlated 0.77 month to month (value.ts hashNormal,
+ * unmixed), so the fortunes wandered far wider than either number said.
+ * Measured on seed 550991 over ten years, firms going dark a year by grade,
+ * small / mid-market / investment grade, against ~5% / ~1.5% / ~0.5%
+ * (S&P long-run, SBA): correlated draws at 0.033, 7.2% / 3.8% / 2.1%;
+ * independent draws at 0.033, 0.6% / 0.1% / 0.1%; at 0.075, 4.7% / 0.8% / 0.2%.)
  */
 const Z_RHO = 0.985;
-const Z_SIG = 0.033;
+const Z_SIG = 0.075;
 /**
  * ...and by covenant, because covenant is mostly size: an investment-grade
  * name sells to thousands of customers in several lines, a small unrated
@@ -77,8 +148,46 @@ function tradeProd(e: Econ, t: Tenant): number {
 }
 
 /** The opening's rent per foot and price level, which sales per head are measured from. */
-export function revAnchor(e: Econ): { cpi: number; rent: Partial<Record<string, number>> } {
-  return (e.revAnchor ??= { cpi: e.cpi ?? 1, rent: { office: e.rentIdx?.office, retail: e.rentIdx?.retail, industrial: e.rentIdx?.industrial } });
+export function revAnchor(e: Econ): { cpi: number; rent: Partial<Record<string, number>>; eff?: Partial<Record<string, number>>; prod?: Partial<Record<string, number>> } {
+  return (e.revAnchor ??= { cpi: e.cpi ?? 1, rent: { office: e.rentIdx?.office, retail: e.rentIdx?.retail, industrial: e.rentIdx?.industrial },
+    eff: { office: e.effRentIdx?.office ?? e.rentIdx?.office, retail: e.effRentIdx?.retail ?? e.rentIdx?.retail, industrial: e.effRentIdx?.industrial ?? e.rentIdx?.industrial } });
+}
+
+/**
+ * WHAT A FIRM'S TRADE CAN PAY FOR SPACE NOW, AGAINST WHAT THE MARKET ASKS
+ * (REAL_ECONOMY_PLAN 4.1, 2026-11-05). A firm values space at the market rent
+ * for the address (tenantMarket.ts worthOf) — and the market rent is what firms
+ * paid, so what a firm would pay rose with the rent index itself and nothing a
+ * firm earned ever pushed back: shop rents climbed 90% through a run to 27%
+ * vacancy (audit seed 11). What a trade can pay for space is its rent share of
+ * what it sells, and what it sells per foot is the opening's (the anchor the
+ * books are sized from) carried forward by the price level and the trade's own
+ * sales per worker. This is that capacity over today's rent index: exactly 1
+ * at the opening, under 1 once rents outrun what the trade earns, over 1 when
+ * they lag it. It multiplies what the space is worth to the firm.
+ */
+export function rentCapacity(e: Econ, t: { sector?: Tenant["sector"] }, k: "office" | "retail" | "industrial"): number {
+  const A = revAnchor(e);
+  // EFFECTIVE AGAINST EFFECTIVE (2026-11-08): the capacity multiplies the
+  // building's market rent, which is effective (value.ts useRentPsfYr), so it
+  // is read against the effective index and the effective rent the trade paid
+  // at the anchor. Read against the asking index, a firm's worth of a suite
+  // carried the town's concession level — a firm valued its space 10-20% less
+  // whenever landlords gave more free rent, so every glut's packages cut what
+  // every firm would pay for space (a firm's value of space set by its
+  // landlords' marketing, not by what it sells). The anchor is read at the
+  // new game, before the town's first lease, so it is the opening's rent
+  // before any package: against the asking index the opening's growth then
+  // set (19.3 against an anchor of 16.3 on office, seed 11), every office firm
+  // started at 84% of what its space was worth to it. A save without the
+  // effective anchor takes the asking one, read at the same moment.
+  const idx = e.effRentIdx?.[k] ?? e.rentIdx?.[k];
+  const r0 = (A.eff ??= {})[k] ??= A.rent[k];
+  if (!(idx && idx > 0) || !(r0 && r0 > 0) || !t.sector) return 1;
+  const prod = tradeProd(e, t as Tenant);
+  const p0 = ((A.prod ??= {})[t.sector] ??= prod);
+  const cap = r0 * ((e.cpi ?? 1) / Math.max(1e-6, A.cpi)) * (prod / Math.max(1e-9, p0));
+  return cap / idx;
 }
 
 /**
@@ -101,6 +210,7 @@ export function entrantMargin(e: Econ, sector: Tenant["sector"], k: "office" | "
 export function tenantFin(e: Econ, t: Tenant): TenantFin {
   if (t.fin) return t.fin as TenantFin;
   const P = FIRM_PROFILE[t.sector];
+  const B = bookProfile(t);
   const g = GRADE[t.credit];
   const key = `${t.name}|${t.startM}|${t.sector}`;
   const z1 = hashNormal(key + "|m"), z2 = hashNormal(key + "|r"), z3 = hashNormal(key + "|l");
@@ -122,12 +232,12 @@ export function tenantFin(e: Econ, t: Tenant): TenantFin {
   const mkt = Math.max(0.01, e.rentIdx?.[k] ?? t.rentPsf);
   const rel = Math.max(0.2, Math.min(5, t.rentPsf / mkt));
   const heads = (t.hcRef ?? t.sf) / Math.max(0.2, t.staffSign ?? 1) / Math.max(1, SF_PER_JOB[k] || 230);
-  const perHead = (A.rent[k] ?? mkt) * (SF_PER_JOB[k] || 230) / P.rent
+  const perHead = (A.rent[k] ?? mkt) * (SF_PER_JOB[k] || 230) / B.rent
     * ((e.cpi ?? 1) / Math.max(1e-6, A.cpi)) * tradeProd(e, t) * rel;
   void z2;
   const rev0 = Math.max(rentYr * 1.05, heads * perHead);
   const rentShare = rentYr / rev0;
-  const margin = Math.min(0.45, P.margin * g.margin * Math.exp(0.25 * z1)) + P.rent - rentShare;
+  const margin = Math.min(0.45, B.margin * g.margin * Math.exp(0.25 * z1)) + B.rent - rentShare;
   const n = e.nat;
   const long = (e.indexRate ?? 5.4) / 100;
   // Leverage as the trade carries it, adjusted for the grade — but no more
@@ -165,7 +275,9 @@ export function tickTenantFin(e: Econ, t: Tenant, rentDueYr: number, creditOpen:
   const priceLevel = (e.cpi ?? 1) / Math.max(1e-6, f.cpi0);
   const mth = e.m ?? 0;
   if (f.zM !== mth) {
-    f.z = Z_RHO * (f.z ?? 0) + Z_SIG * Z_GRADE[t.credit] * hashNormal(`${t.name}|${t.sector}|${Math.round(f.rev0)}|z|${mth}`);
+    // ...plus a named customer won or lost last month (economy.ts `tickLinks`): its share of sales, moved from or to its rivals
+    const link = t.fid !== undefined ? (e.eco?.linkDz?.[t.fid] ?? 0) : 0;
+    f.z = Z_RHO * (f.z ?? 0) + Z_SIG * Z_GRADE[t.credit] * hashNormal(`${t.name}|${t.sector}|${Math.round(f.rev0)}|z|${mth}`) + link;
     f.zM = mth;
   }
   const sig = Z_SIG * Z_GRADE[t.credit];
@@ -213,30 +325,43 @@ export function tickTenantFin(e: Econ, t: Tenant, rentDueYr: number, creditOpen:
 }
 
 /**
- * Monthly odds this tenant stops paying and goes dark. A healthy business
- * carries a small background risk (fraud, a founder's death, a lost contract);
- * the rest is its books — interest cover under two, under a month of costs in
- * the bank, and a business already burning borrowed cash it cannot replace.
+ * A TENANT FAILS WHEN ITS BOOKS DO (2026-11-11): it is out of cash after
+ * drawing everything its lender will give it (tickTenantFin draws on the bank
+ * when cash runs short, up to what its earnings will carry and only while
+ * the credit window is open), so it cannot pay what falls due — cash-flow
+ * insolvency, the test for an involuntary bankruptcy petition (US Bankruptcy
+ * Code §303(h)(1): "generally not paying such debtor's debts as such debts
+ * become due") [S]. It was a hazard curve on interest cover and cash
+ * (FAIL_K × e^(1.1·cover stress + 2.2·cash stress)) fitted so the street
+ * produced the rated default rates; now the default rate is whatever the
+ * firms' own fortunes produce. What no set of accounts sees coming — fraud,
+ * a founder's death — stays a hazard (BACKGROUND_FAIL), being the outside
+ * world rather than a decision.
  */
-export function tenantFailOdds(f: TenantFin, credit: Credit): number {
-  // FAILURE IS THE BOOKS (2026-10-16). What is left of a background is what
-  // no set of accounts sees coming — fraud, a founder's death — at a few
-  // hundredths of a per cent a year. The rest is the firm's own position:
-  // odds climb from 2.5x interest cover down and from under a month of costs
-  // in the bank, and a firm whose cash has run out and whose bank will not
-  // lend it more goes within months. With each firm's own fortunes on top of
-  // its trade's (`Z_SIG`), that gives the observed rated-debt default rates —
-  // ~0.5% a year investment grade, ~1.5% mid-market, ~5% for small unrated
-  // firms (S&P long-run; SBA loan performance) — out of the accounts, and
-  // roughly doubles them in a recession (US business bankruptcies 2007-09).
-  const coverStress = Math.max(0, Math.min(4.5, 2.5 - f.cover));
-  const cashStress = Math.max(0, 1 - f.liqM);
-  const broke = f.cash < 0 ? Math.min(0.25, 0.04 * (1 - f.liqM)) : 0;
-  return Math.min(0.5, BACKGROUND_FAIL[credit] + FAIL_K * (Math.exp(1.1 * coverStress + 2.2 * cashStress) - 1) + broke);
+export function tenantInsolvent(f: TenantFin): boolean {
+  return f.cash < 0;
 }
 
-/** Odds per unit of book stress (see tenantFailOdds). */
-const FAIL_K = 0.00005;
+/**
+ * THE GRADE ITS BOOKS EARN (2026-11-10), the financial half of a rating. S&P
+ * rates a company on its business risk and its financial risk together
+ * (S&P Global Ratings, Corporate Methodology, 2013) [S]; here the business
+ * half is the firm's size (tenantMarket.ts creditOfSize — the street's own
+ * covenant rule) and this is the financial half, off EBITDA / interest on
+ * S&P's standard-volatility ratio grid (Corporate Methodology: Ratios And
+ * Adjustments, 2013): cover of about 6x and above reads "intermediate" or
+ * better, under 2x "highly leveraged" [S~: the two cut-offs as recalled, not
+ * re-checked against the document]. Intermediate or better carries an
+ * investment-grade name (2), the bands between a mid-market one (1), highly
+ * leveraged no better than small unrated (0).
+ * Under a month of costs in the bank is "weak" liquidity, which S&P caps at
+ * 'b-' whatever the ratios (Liquidity Descriptors For Global Corporate
+ * Issuers, 2014) [S] — grade 0. A firm's grade is the lower of the two halves.
+ */
+export function finGrade(f: TenantFin): Credit {
+  if (f.liqM < 1 || f.cover < 2) return 0;
+  return f.cover >= 6 ? 2 : 1;
+}
 
 /** 0..~3: how hard the business is squeezed — what makes a tenant write for relief. */
 export function tenantSqueeze(f: TenantFin): number {
@@ -253,7 +378,7 @@ export function tenantSqueeze(f: TenantFin): number {
 //
 // The street now carries representative tenants — one per trade and credit
 // grade in each commercial class — sized off the street's occupied space and
-// keeping exactly the books above (`tickTenantFin`, `tenantFailOdds`). A
+// keeping exactly the books above (`tickTenantFin`, `tenantInsolvent`). A
 // cohort's failures hand its space back; the failed share is replaced by new
 // tenants on fresh books as the market re-lets it, so a cohort is a mix of
 // survivors and entrants rather than one firm dying slowly.
@@ -311,9 +436,9 @@ export function tickStreetTenants(e: Econ, k: "office" | "retail" | "industrial"
     t.rentPsf += (marketRent - t.rentPsf) / 96;
     t.sf = 1000 * (t.staff ?? 1);
     const f = tickTenantFin(e, t, t.rentPsf * t.sf, e.creditIdx ?? 1);
-    const odds = tenantFailOdds(f, t.credit);
-    const excess = Math.max(0, odds - BACKGROUND_FAIL[t.credit]);
-    failed += c.w * excess;
+    // the cohort's insolvent share fails (tenantInsolvent); the background is the market's ordinary churn
+    const odds = tenantInsolvent(f) ? 1 : BACKGROUND_FAIL[t.credit];
+    failed += c.w * (tenantInsolvent(f) ? 1 : 0);
     // The failed share is re-let to newcomers on fresh books: blend toward a
     // healthy balance sheet at today's revenue, in proportion to the turnover
     // (failures plus ordinary roll, an eighth a year).

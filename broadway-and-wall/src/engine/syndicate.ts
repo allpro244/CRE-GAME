@@ -39,7 +39,7 @@ import { logBooks, pnlAdd } from "./types";
 import { accrueMonth, contribute, settlePeriod, seriesIrr, sponsorPosition, lpCapShare } from "./waterfall";
 import { resolveRec, ownedHoldingValue, cipEquity, ownedHoldingNoiYr } from "./value";
 import { playerTerms } from "./reputation";
-import { openSources, investorPool, SOURCE_LABEL, type InvestorSource } from "./investors";
+import { openSources, investorPool, commitLocal, SOURCE_LABEL, type InvestorSource } from "./investors";
 
 /** The investors a first-time sponsor can call. */
 export const FF_INVESTOR = "Friends and family";
@@ -75,6 +75,8 @@ export function ffAvailable(s: GameState): number {
     const ff = w.sources ? (w.sources.ff ?? 0) / Math.max(1, w.lpCommit) : 1;
     committed += ff * Math.max(0, w.lpCommit - w.lpDist);
   }
+  // A live fund's friends-and-family commitment is the network's money too.
+  if (s.fund && !s.fund.settled) committed += s.fund.ffCommit ?? 0;
   return Math.max(0, cap - committed);
 }
 
@@ -143,6 +145,8 @@ export function formSyndication(s: GameState, bbl: string, lpCommit: number, cas
   const src = sources ?? allocateSources(s, lpCommit);
   const pool = investorPool(s);
   for (const [id, v] of Object.entries(src)) if (id !== "ff" && v) pool.used[id] = (pool.used[id] ?? 0) + v;
+  // ...and the local cheques are the town's savers' money (investors.ts commitLocal).
+  commitLocal(s, src.local ?? 0);
   const lead = (Object.entries(src) as [InvestorSource, number][]).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "ff";
   // The terms are the sponsor's band's on the day the deal closes, and they
   // stay with the deal: investors do not reprice a signed agreement.
@@ -291,7 +295,7 @@ export function reviewSyndications(s: GameState, parcels: ParcelTable): void {
       const f = (w.flags ??= []);
       if (f.includes(key)) return;
       f.push(key);
-      s.news.unshift({ q: s.month, kind: "warn", text: `Your investors in ${resolveRec(parcels, s, w.bbl)?.address ?? w.bbl} flagged the quarter's report: ${why}. Everyone you ask for money next will see it on your tear sheet.` });
+      s.news.unshift({ q: s.month, kind: "warn", text: `Investor flag · ${resolveRec(parcels, s, w.bbl)?.address ?? w.bbl} quarterly report: ${why}. Recorded on your track record.` });
     };
     const building = !!s.developments?.[w.bbl];
     if (w.pitchDeliverM !== undefined && ((building && s.month > w.pitchDeliverM + 6) || (h.deliveredM !== undefined && h.deliveredM > w.pitchDeliverM + 6))) add("late", "delivery is more than six months behind what you pitched");
@@ -329,7 +333,7 @@ export function closeSyndication(s: GameState, parcels: ParcelTable, w: Syndicat
     q: s.month, kind: lpOut >= lpIn ? "deal" : "warn",
     text: `The syndicate on ${resolveRec(parcels, s, w.bbl)?.address ?? w.bbl} is ${recap ? "bought out — the building is yours alone" : "wound up"}. `
       + `Your ${w.investor.toLowerCase()} put in $${Math.round(lpIn).toLocaleString()} and took back $${Math.round(lpOut).toLocaleString()} (${multiple.toFixed(2)}x)`
-      + (lpOut >= lpIn ? " — and they will tell people." : ". Most of them will not invest with you again."),
+      + (lpOut >= lpIn ? "." : ". Loss recorded on your track record."),
   });
   delete s.syndications![w.bbl];
 }

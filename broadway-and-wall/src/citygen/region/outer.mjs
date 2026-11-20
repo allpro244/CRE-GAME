@@ -11,7 +11,9 @@ import { tractShare, RINGS } from "./land.mjs";
 import { platFor, ERA_YEARS } from "./plats.mjs";
 import { placeCommerce } from "./commerce.mjs";
 
-const OUTER_HOUSES = 600;   // [O] houses in the outer subdivisions at the opening (spike: ~2,000 in all with the inner blocks)
+// [O] houses in the outer subdivisions at the opening. Plan 17: enough to ring the town so it meets the farms
+// through its suburbs, not at a line (owner); plan 16 and before: 600.
+const outerHouses = (M) => (M.planV >= 17 ? 2400 : 600);
 
 export function placeOuter(M) {
   const G = M.G, St = M.story, rS = St.rS, rng = makeRng("outer:" + M.seed);
@@ -97,7 +99,11 @@ export function placeOuter(M) {
   const all = [];
   for (const t of cands) {
     t.era = rS(t.c) < 2000 && !nearHw[G.idx(t.c)] ? "prewar" : "postwar";
-    t.recipe = { seed: M.seed, tract: t.r, era: t.era, id: t.id, bearing: roadBearing(t), waterNear: waterNear(t), scale: scaleFor(t, t.era) };
+    // SQUARE TO THE SURVEY (plan 17; owner: the suburbs read as a patchwork). Out past the old town nearly
+    // every Midwest subdivision is laid on the section lines; only a pre-war addition hard by the town
+    // still takes the old road it was platted along [S, any county plat book].
+    const bearing = M.planV >= 17 && !(t.era === "prewar" && dist(t.c, M.centre) < 1400) ? undefined : roadBearing(t);
+    t.recipe = { seed: M.seed, tract: t.r, era: t.era, id: t.id, bearing, waterNear: waterNear(t), scale: scaleFor(t, t.era) };
     t.plat = platFor(t.recipe, ok);
     t.plat.lots.forEach((lot, i) => all.push({ t, i, m: lot.house.c, r: rS(lot.house.c) }));
   }
@@ -108,6 +114,7 @@ export function placeOuter(M) {
   const grow = G.layer();
   for (let k = 0; k < G.N; k++) if (M.townMask[k]) G.disk(grow, G.ctr(k), 200);
   let n = 0;
+  const OUTER_HOUSES = outerHouses(M);
   for (let added = 1; added && n < OUTER_HOUSES;) {
     added = 0;
     for (const a of all) {

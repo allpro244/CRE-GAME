@@ -6,18 +6,20 @@
 import { distressTally } from "./history";
 import { stampBands } from "./bands";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
-import type { BuiltClass, Exit, GameState, Listing } from "./types";
+import type { BuiltClass, Exit, GameState, Listing, Rival } from "./types";
 import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit, moveFundCash } from "./types";
-import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels, cycleHot, cycleDown } from "./market";
+import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels, cycleDown } from "./market";
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, resolveRecBare, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
 import { tickPlanning } from "./zoning";
 import { tickLandDev, materializePlats, materializePlat } from "./landdev";
-import { tickSplits, tickRivalSplits, materializeSplits, materializeSplit } from "./lotsplit";
+import { tickSplits, materializeSplits, materializeSplit } from "./lotsplit";
 import { tickHomes } from "./homes";
 import { tickGrowth } from "./growth";
+import { tickHouseholdRegister } from "./households";
+import { tickFirms, tickEconomy, economyToEngine, migrateEconomy } from "./economy";
 import { materializeNeighbourhoods, materializeNeighbourhood } from "./unpack";
-import { useRentableSf, overallScore, N_BANDS } from "./value";
+import { useRentableSf, overallScore, N_BANDS, isRevaluation } from "./value";
 import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls";
 import { settleLeasingPayables, tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCash, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
 import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
@@ -26,22 +28,27 @@ import { stampYearMark, recordMarks } from "./standing";
 import { splitMonthCf } from "./jv";
 import { tickTalks, reconcileContracts } from "./acquire";
 import { tickLoan, productById, loanLender, stackPayoff, balloonLadder, drawLeaseUpReserve, leaseUpRoom } from "./debt";
-import { distressPrice, markSponsor } from "./sponsor";
+import { markSponsor } from "./sponsor";
 import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow, fundCashNeed, parkedOnLine, monthlyDebtService } from "./credit";
 import { releaseCost, tickFacility, FACILITY_CURE_M } from "./facility";
-import { tickHolders } from "./owners";
+import { tickHolders, holderOf } from "./owners";
+import { holderBidder } from "./ownership";
 import { reoAsk } from "./lenders";
 import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit, seedOpeningPipeline } from "./dev";
 import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind, tickTrustNote, TRUST_NOTE_M, fundReserve } from "./fund";
 import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
+import { tickBeliefs } from "./beliefs";
 import { tickCorporate } from "./corporate";
-import { initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements } from "./rivals";
-import { initLenders, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
+import { markRival, initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose, landFundBid, streetSaleCost } from "./rivals";
+import { loanBookTouched, syncDebt } from "./rivalDebt";
+import { openingCapSurvey, openingLandSurvey, tickBrokerSurvey, tickLandSurvey, noteListed, anchoredAsk, forcedSaleAsk, foreclosureSale, BUY_CLOSING, bidRound, valueTo } from "./propmarket";
+import { initLenders, publishOpeningPrices, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
+import { tickStreetLoans, retireFoldedLoans } from "./streetLoans";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
-import { tickWorkouts, couponFundable } from "./workout";
+import { tickWorkouts, couponFundable, NOTICE_M } from "./workout";
 import { tickPortfolios } from "./portfoliosale";
 import { tickTakePrivateApproach, tickRivalTakeovers, poss } from "./takeprivate";
 import { tickOffMarketCalls } from "./offmarket";
@@ -55,6 +62,8 @@ import { depreciableBasis, deprLifeYrs, settleIncomeTax, tickTaxAppeals } from "
 import { maybeEarlyLook } from "./broker";
 import { money } from "./money";
 import { tickBlackSwans } from "./blackswans";
+import { tickCityGov } from "./citygov";
+import { tickOilPrice, tickOpexInputs } from "./inputs";
 import { netWorth, landRead, landValue, refreshLandQueue, ownerAskPsf } from "./value";
 import { normalizeSetup, inheritPortfolio, shortFirmName, SANDBOX_CASH, type GameSetup } from "./setup";
 import { purseOf, partnerShare, routeProceeds, taxShare } from "./vehicles";
@@ -119,39 +128,6 @@ export function hangUpOnCall(s: GameState, bbl: string): GameState {
   const next = { ...s, approaches: { ...s.approaches } };
   delete next.approaches[bbl];
   return next;
-}
-
-// 0.5–1.5% of the city is on the market at any time: thin in expansions
-// (owners hold), heavier in recessions (distress shakes assets loose).
-/**
- * Standing inventory, as a share of the city.
- *
- * Transaction volume in this business is PROCYCLICAL and violently so. It
- * peaks with confidence and collapses in a crunch — 2009 saw volume fall by
- * four fifths — because the bid and the ask stop being in the same postcode
- * and anyone who does not have to sell simply doesn't. Having the most
- * inventory in a recession, as this did, turned every downturn into a
- * shopping trip with no downside: exactly why a hundred playthroughs showed
- * nobody able to lose.
- *
- * So: thin the tape in a crunch, and let what IS on it be distress. Waiting
- * for the bottom should be a skill that costs you patience, not a free option.
- */
-function targetListings(s: GameState, totalLots: number): number {
-  // Owners list into rising payrolls and go quiet in a downturn: 0.4% of
-  // lots a month at a standstill, ~1.2% in a full boom (the old table's
-  // recession and peak), continuously in between.
-  const base = 0.004 + 0.008 * cycleHot(s.econ) * (1 - 0.5 * cycleDown(s.econ));
-  // and the credit window gates it further — no debt, no buyers, no listings
-  const ci = s.econ.creditIdx ?? 1;
-  // NO FLOOR OF FOUR (2026-10-13). The tape was never allowed under four
-  // listings, which bound 64% of months on a small town: the market stocked
-  // a shop window the town's owners had not filled. The expected count is
-  // drawn instead — rounded up with the odds of its fraction — so a quiet
-  // village can have one listing, or none, as one does.
-  const mean = totalLots * base * (0.55 + 0.5 * ci);
-  const whole = Math.floor(mean);
-  return whole + (rng(s) < mean - whole ? 1 : 0);
 }
 
 /**
@@ -249,7 +225,16 @@ export function newGame(
   // ...and the banks are sized in this town's own dollars, which the opening
   // only knows once the economy has drawn its price level.
   if (parcels) s.lenders = initLenders(stockFromParcels(parcels), s.econ.priceLevel ?? 1);
+  // ...and every desk publishes its price before anybody asks it for one:
+  // the opening's own deals (rivals' books, the opening leverage, the first
+  // pro formas) are priced off the desks' costs, not off a rate card.
+  publishOpeningPrices(s);
   if (parcels) s.rivals = initRivals(s, parcels, Object.keys(parcels));
+  // Cap rates open where the street's own bidders say (propmarket.ts).
+  if (parcels) openingCapSurvey(s, parcels);
+  // ...and so does the land level (the first survey used to arrive six
+  // months in and halve the town's dirt on the way to it).
+  if (parcels) openingLandSurvey(s, parcels);
   // Make the map agree with itself before anybody looks at it: what is BUILT
   // on a block is part of what makes that block valuable, and the generator's
   // gravity score did not know that. See reconcileDemand.
@@ -336,7 +321,12 @@ function listHolderExit(s: GameState, parcels: ParcelTable) {
     // whether the building was a tenth let or fully let.
     const value = conveyedValue(s, rec, bbl, distress);
     if (value <= 0) continue;
-    const ask = Math.round(value * (distress ? rrange(s, 0.78, 0.93) : rrange(s, 0.96, 1.08)) / 1000) * 1000;
+    // An estate or split partnership prices to move (what the street would bid
+    // today); any other holder asks its anchor (propmarket.ts). The old bands'
+    // draws are kept so the stream does not re-roll. FORMULA_LEDGER #23.
+    void (distress ? rrange(s, 0.78, 0.93) : rrange(s, 0.96, 1.08));
+    const heard = distress ? forcedSaleAsk(s, parcels, rec, bbl, value) : 0;
+    const ask = Math.round((distress ? (heard > 0 ? heard : value) : anchoredAsk(s, rec, value)) / 1000) * 1000;
     // Only a holder whose register kind IS an estate may stamp reason:"estate".
     // Partnership/fund/developer exits used to wear that badge too —
     // Marketplace then read every book sale as an estate. Voluntary is the
@@ -350,13 +340,35 @@ function listHolderExit(s: GameState, parcels: ParcelTable) {
     };
     if (rec.class !== "land" && rec.bldgArea > 0) stampListing(s, rec, listing);
     s.listings.push(listing);
+    // An estate or a partnership selling out hires a shop like any other
+    // owner, so its mandate lands on a broker's desk and a buyer the shop
+    // knows hears first — the same as the tape's other anonymous listings
+    // (refreshListings). Without it, once holder exits filled most of the tape
+    // the refill below rarely ran and first looks all but vanished (buybox:
+    // none in twenty years for a firm three fees deep with every shop).
+    maybeEarlyLook(s, listing, rec.address);
   }
 }
 
-export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string[]) {
+export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string[], opening = false) {
   // The register's own life runs first, so a book that came to market this
   // month is on the tape the player reads this month.
   listHolderExit(s, parcels);
+  // AT THE OPENING THE TAPE HAS A PAST (2026-11-18). Holders leave the market
+  // at their own pace — estates, partnerships splitting, funds at the end of
+  // their life (tickHolders) — and what they list stays on the tape for a
+  // listing's life (LISTING_LIFE_M). A tape opened in its first month carried
+  // one month of those exits and nothing older, so some towns opened with not
+  // one building for sale (seed 550991: 33 listings, every one a lot) where a
+  // month or three on they carried 13-36. The opening runs the same register
+  // for the months a listing lives, each listing dated the month it came up.
+  if (opening) {
+    for (let age = 1; age < LISTING_LIFE_M[0]; age++) {
+      const before = new Set(s.listings.map((l) => l.bbl));
+      listHolderExit(s, parcels);
+      for (const l of s.listings) if (!before.has(l.bbl)) { l.listedM -= age; l.expiresM -= age; }
+    }
+  }
   // STALE LISTINGS REPRICE DOWN — TO A FLOOR, NOT TO ZERO.
   //
   // A monthly 1.5% cut compounded for the life of a listing, and the market
@@ -377,6 +389,18 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   // disagreeing on NOI. Stamping here catches all of them the tick after they
   // appear, and costs nothing: the roll is deterministic per building and
   // drawn from a private stream. See stampListing.
+  // A LOT SOMEBODY HAS BROKEN GROUND ON COMES OFF THE TAPE (2026-11-19). No
+  // new listing is written on a lot with a live city job (`blocked`, below;
+  // `landSales`), but a lot listed BEFORE its job started stayed listed: it
+  // negotiated to an agreed price and then refused at the closing table
+  // ("Crane on site", actions.ts) — 39 times in one 25-year playthrough, one
+  // lot still on the tape with its building ten months from delivery. The
+  // builder bought the dirt; the listing is over. (A stalled job a receiver
+  // is selling half-built is `orphaned` and keeps its own listing.)
+  {
+    const live = new Set((s.cityJobs ?? []).filter((j) => !j.orphaned).map((j) => j.bbl));
+    if (live.size && s.listings.some((l) => live.has(l.bbl) && !l.halfBuilt)) s.listings = s.listings.filter((l) => !live.has(l.bbl) || l.halfBuilt);
+  }
   for (const li of s.listings) {
     // A DISCLOSED ROLL AGES WITH THE CALENDAR. It was stamped once and never
     // looked at again, so a lease that ended while the building sat on the
@@ -435,6 +459,8 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
       continue;
     }
     if (floor > 0 && li.ask < floor) li.ask = Math.round(floor / 1000) * 1000;
+    // ...and a named seller never asks under its own reservation (propmarket.ts).
+    if (li.reserve !== undefined && li.ask < li.reserve) li.ask = li.reserve;
   }
   if (withdrawn.length) {
     const pulled = new Set(withdrawn);
@@ -448,105 +474,141 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
   s.listings = s.listings.filter((l) =>
     (l.expiresM > s.month || s.talks?.[l.bbl]) && !s.holdings[l.bbl] && !isCivicLand(s, l.bbl));
   const listed = new Set(s.listings.map((l) => l.bbl));
-  const target = targetListings(s, bbls.length);
-  // Distress on the tape is owners who have run out of road: slack and
-  // shrinking payrolls (cycleDown) and a shut credit window.
-  const pDistress = Math.min(0.5, 0.03 + 0.33 * cycleDown(s.econ) + 0.15 * Math.max(0, 1 - (s.econ.creditIdx ?? 1)));
-  let guard = 0;
-  // Cap consecutive rejects so a city whose deeds are mostly on hold clocks
-  // does not burn thousands of assetValue calls filling a short tape — that
-  // was a multi-tens-of-ms spike inside otherwise quiet Year advances.
-  let rejects = 0;
-  while (s.listings.length < target && guard++ < 4000 && rejects < 250) {
-    const bbl = bbls[Math.floor(rng(s) * bbls.length)];
-    if (listed.has(bbl) || s.holdings[bbl] || s.merged?.[bbl] || s.cityGroundLeases?.[bbl] || isCivicLand(s, bbl)) { rejects++; continue; }
-    // A LOT WITH A CRANE ON IT IS NOT FOR SALE AS DIRT. A merchant builder's
-    // live job stayed in `cityJobs` while the tape sold the lot underneath it;
-    // the buyer's own development then queued a second delivery on the same
-    // parcel and the supply ledger held two dates for one site (`pnpm test`,
-    // builder bot, "live city job missing from deliveryQueue"). Half-built
-    // receiver sales are the exception and carry their own path: an orphaned
-    // job is what `halfBuilt` listings convey.
-    if ((s.cityJobs ?? []).some((j) => j.bbl === bbl && !j.orphaned)) { rejects++; continue; }
-    // A BUILDING THAT SOLD LAST YEAR IS NOT FOR SALE THIS YEAR.
-    //
-    // This picked a parcel at random with no memory of what had just traded,
-    // so a building the market absorbed came straight back onto the tape.
-    // Measured over fifty years: 68 E 10th St was sold thirty-one times and
-    // 116 W 4th St twenty-nine — the same addresses, over and over, which is
-    // most of why the news read as a generator rather than as a city.
-    //
-    // Real holds run years, and they vary: a trader is out in three, an estate
-    // sits for twenty. Hash the parcel so each building keeps its own tempo
-    // instead of every building sharing one cooldown.
-    const traded = s.lastTradeM?.[bbl];
-    if (traded !== undefined) {
-      let h = 2166136261;
-      for (let i = 0; i < bbl.length; i++) { h ^= bbl.charCodeAt(i); h = Math.imul(h, 16777619); }
-      const hold = 34 + ((h >>> 0) % 122);          // 34 to 155 months
-      if (s.month - traded < hold) { rejects++; continue; }
-    }
-    const rec = resolveRec(parcels, s, bbl);
-    if (!rec) { rejects++; continue; }
-    // Distress is drawn BEFORE the value, because a receiver's building conveys
-    // a different roll and a notched grade — so the ask has to be struck on the
-    // deed this seller is actually offering, not on the healthy version of it.
-    const distress = rng(s) < pDistress;
-    const value = conveyedValue(s, rec, bbl, distress);
-    if (value <= 0) { rejects++; continue; }
-    if (value > 60_000_000 && rng(s) > 0.12) { rejects++; continue; }
-    rejects = 0;
-    // THE BID-ASK GAP. A seller under no pressure does not mark their building
-    // to the new cap rate; they hold last year's number and wait. So in a
-    // downturn the honest asks vanish and the tape fills with either dreamers
-    // or people who have run out of road — and telling those apart is the job.
-    const dn = cycleDown(s.econ);
-    const denial = rrange(s, 0.94 + 0.16 * dn, 1.10 + 0.18 * dn);
-    // A lender clearing troubled paper prices at loan basis, not appraisal.
-    const cl = distress ? s.cityLoans?.[bbl] : undefined;
+  // OWNERS DECIDE WHAT COMES TO MARKET (2026-11-11, REAL_ECONOMY_PLAN phase 3).
+  //
+  // The tape used to be a quota: a target count from the cycle and the credit
+  // window, topped up by drawing random parcels, with distress on a coin read
+  // off the same cycle. Nobody had decided to sell any of it. Now the supply
+  // is the owners' own decisions:
+  //
+  //   A DEFAULT. A building whose loan has gone unpaid is sold by its owner or
+  //   its lender (below) — the only source of distress on this tape.
+  //
+  //   A REVIEW. Every private owner looks at each of its buildings once a year
+  //   (staggered by a hash of the parcel, no draw) and lists when selling beats
+  //   holding on its own numbers: what the street would pay today (the bid
+  //   round's best bid) less the cost of selling (streetSaleCost: brokerage,
+  //   legal, transfer tax) against the building's value to it in use
+  //   (valueTo, on the owner's own terms: ownership.ts holderBidder) plus the
+  //   closing it would pay to put the money back into property — the round
+  //   trip. Owners with a lower cost of capital than the street's best bidder
+  //   hold; the market's own bids decide who sells.
+  //
+  // The register's exits (estates, splits, funds at term: listHolderExit) and
+  // the hold clock (a building that sold recently is not for sale) stay.
+  const distressList = (bbl: string, rec: ParcelRecord, value: number, lender?: string, balance?: number) => {
     let ask: number;
     let loanBasis: number | undefined;
     let receiverFor: string | undefined;
     let reason: Listing["reason"] | undefined;
-    if (cl && (cl.status === "watch" || cl.status === "workout")) {
-      loanBasis = Math.min(value, Math.max(0, cl.balance));
-      ask = reoAsk(s, value, cl.balance, cl.lender);
-      receiverFor = cl.lender;
+    if (lender && balance !== undefined) {
+      // A lender clearing troubled paper prices at loan basis, not appraisal.
+      loanBasis = Math.min(value, Math.max(0, balance));
+      ask = reoAsk(s, value, balance, lender);
+      receiverFor = lender;
       reason = "receiver";
     } else {
-      ask = Math.round(value * (distress ? rrange(s, 0.72, 0.90) : denial) / 1000) * 1000;
+      // AN OWNER WHO HAS RUN OUT OF ROAD prices to move: at what its broker
+      // hears the street values it at today (propmarket.ts forcedSaleAsk), or
+      // the appraisal when nobody would.
+      const heard = forcedSaleAsk(s, parcels, rec, bbl, value);
+      ask = Math.round((heard > 0 ? heard : value) / 1000) * 1000;
     }
-    // THE ROLL IS WRITTEN WHEN IT COMES TO MARKET, NOT AT THE CLOSING.
-    // See Listing.roll. A scratch holding is used purely as a vessel for
-    // genRentRoll to fill; nothing but the roll and the residential occupancy
-    // is kept, and executePurchase takes them over verbatim so the deed and
-    // the offering memorandum can never disagree.
     const listing: Listing = {
-      bbl,
-      ask,
-      listedM: s.month,
+      bbl, ask, listedM: s.month,
       expiresM: s.month + Math.round(rrange(s, ...LISTING_LIFE_M)),
-      distress: distress || undefined,
-      reason,
-      receiverFor,
-      loanBasis,
+      distress: true, reason, receiverFor, loanBasis,
+    };
+    if (rec.class !== "land" && rec.bldgArea > 0) stampListing(s, rec, listing);
+    s.listings.push(listing);
+    listed.add(bbl);
+    maybeEarlyLook(s, listing, rec.address);
+    if (newsChance(s, "motivated:" + bbl, 0.6)) {
+      s.news.unshift({ q: s.month, kind: "event", text: `Motivated seller: ${rec.address} listed at ${money(ask)}, well under appraisal.` });
+    }
+  };
+  const blocked = (bbl: string) =>
+    listed.has(bbl) || !!s.holdings[bbl] || !!s.merged?.[bbl] || !!s.cityGroundLeases?.[bbl] || isCivicLand(s, bbl)
+    // A LOT WITH A CRANE ON IT IS NOT FOR SALE AS DIRT: a live city job is
+    // somebody's construction site (half-built receiver sales carry their own path).
+    || (s.cityJobs ?? []).some((j) => j.bbl === bbl && !j.orphaned);
+  // THE DEFAULTS. A firm's loan in workout (rivalDebt markPayments) past the
+  // cure period (NOTICE_M months unpaid, workout.ts — before that the firm may
+  // still cure, refinance or sell it itself) is sold by its lender at what
+  // clears the paper (reoAsk); a
+  // private owner whose mortgage is in default (streetLoans.ts payMonth)
+  // lists to get out before the desk forecloses. A note somebody bought off
+  // the desk (heldBy) is its new holder's to work, not the tape's.
+  for (const bbl in s.cityLoans ?? {}) {
+    const cl = s.cityLoans![bbl];
+    if (cl.status !== "workout" || (cl.arrearsMs ?? 0) < NOTICE_M || cl.heldBy || blocked(bbl)) continue;
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec) continue;
+    const value = conveyedValue(s, rec, bbl, true);
+    if (value > 0) distressList(bbl, rec, value, cl.lender, cl.balance);
+  }
+  for (const bbl in s.streetLoans ?? {}) {
+    if (s.streetLoans![bbl].status !== "default" || blocked(bbl) || ownerOf(s, bbl)) continue;
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec) continue;
+    const value = conveyedValue(s, rec, bbl, true);
+    if (value > 0) distressList(bbl, rec, value);
+  }
+  // THE ANNUAL REVIEW.
+  const turn = s.month % 12;
+  for (const bbl of bbls) {
+    let h = 2166136261;
+    for (let i = 0; i < bbl.length; i++) { h ^= bbl.charCodeAt(i); h = Math.imul(h, 16777619); }
+    h >>>= 0;
+    if (h % 12 !== turn || blocked(bbl)) continue;
+    // A BUILDING THAT SOLD LAST YEAR IS NOT FOR SALE THIS YEAR. Real holds
+    // run years, and they vary: a trader is out in three, an estate sits for
+    // twenty. Each building keeps its own tempo off the same hash.
+    const traded = s.lastTradeM?.[bbl];
+    if (traded !== undefined && s.month - traded < 34 + (h % 122)) continue;   // 34 to 155 months
+    // A named firm's building goes to market through its own disposals (rivals.ts).
+    const holder = holderOf(s, parcels, bbl);
+    if (!holder || holder.kind === "lender") continue;
+    const rec = resolveRec(parcels, s, bbl);
+    // Buildings only: vacant land comes to market when it ripens or under
+    // duress (landSales, below), and a lot's value to its holder is the same
+    // builder's residual the street bids.
+    if (!rec || rec.class === "land" || !(rec.bldgArea > 0)) continue;
+    const value = conveyedValue(s, rec, bbl, false);
+    if (value <= 0) continue;
+    const ask = Math.round(anchoredAsk(s, rec, value) / 1000) * 1000;
+    // AT THE OPENING THE BANKS HAVE THE OPENING'S ROOM (2026-11-20). A firm
+    // bids only with a desk that has room for its loan (bidRound), and a
+    // desk's room is its capital over its target less its book — which the
+    // opening sets exactly equal, so before the first month had run no desk
+    // in town could write one loan, no firm could bid, no owner's review
+    // found a buyer, and the tape opened with only the register's exits on
+    // it. Measured, six seeds: 0 to 16 buildings for sale at the opening
+    // (seed 4242: none, on a tape of 26 lots), 30-35 a month later. The
+    // opening's own rule for a desk's room (rivalDebt.ts deskRoom `opening`,
+    // the one the firms' opening leverage is settled on) is read here too.
+    const round = bidRound(s, parcels, rec, { bbl, ask, distress: false, opening });
+    const best = round.bids[0]?.bid ?? 0;
+    if (!(best > 0) || !round.view) continue;
+    const keep = valueTo(s.econ, round.view, holderBidder(holder)).V;
+    if (best - streetSaleCost(best, s) <= keep * (1 + BUY_CLOSING)) continue;
+    // THE ASK is the seller's anchor (anchoredAsk, propmarket.ts: loss
+    // aversion on what it paid — Genesove & Mayer), struck on the roll the
+    // deed conveys (conveyedValue).
+    const listing: Listing = {
+      bbl, ask, listedM: s.month,
+      expiresM: s.month + Math.round(rrange(s, ...LISTING_LIFE_M)),
       // Anonymous tape inventory is not a named firm's voluntary trim —
       // `reason: "voluntary"` is reserved for rival mandate/trim exits that
       // carry a sellerId. Leaving reason unset keeps the two markets distinct.
     };
-    if (rec.class !== "land" && rec.bldgArea > 0) {
-      // The grade the deed will convey: today's grade, less the notch a
-      // distressed building takes at the closing (see executePurchase). Stamped
-      // on the listing so the tape and the deed cannot disagree about it.
-      stampListing(s, rec, listing);
-    }
+    stampListing(s, rec, listing);
     s.listings.push(listing);
     listed.add(bbl);
+    // the firms that would chase it take it onto their lists for the month (propmarket.ts pursuits)
+    noteListed(s, parcels, rec, listing, opening);
     // A shop that knows you rings before the tape prints. Seed-hashed, no draw.
     maybeEarlyLook(s, listing, rec.address);
-    if (distress && newsChance(s, "motivated:" + bbl, 0.6)) {
-      s.news.unshift({ q: s.month, kind: "event", text: `Motivated seller: ${rec.address} hits the tape at ${money(ask)} — well under appraisal. It won't last.` });
-    }
   }
   landSales(s, parcels, bbls, listed);
 }
@@ -577,8 +639,8 @@ export function refreshListings(s: GameState, parcels: ParcelTable, bbls: string
  * (0.72-0.90x value), capped at three a month. Its own rng channel, so the
  * rest of the city's stream is not re-rolled by the land market.
  */
-const RIPE_CHECK_SHARE = 1 / 12;
-const RIPE_LIST_P = 0.25;
+/** An owner looks at its vacant lot once a year [K: the annual budget/tax-bill cycle an owner reviews a holding on]. */
+const RIPE_REVIEW_M = 12;
 // Forced land sales follow distress — slack and shrinking payrolls — at up to
 // 0.6% of vacant lots a month in a full downturn (the old depression row).
 function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: Set<string>) {
@@ -616,26 +678,55 @@ function landSales(s: GameState, parcels: ParcelTable, bbls: string[], listed: S
     // listing and bid it to the comps. The owner's private misread pays a
     // developer only in a direct approach (`planDevelopment`'s land basis),
     // where one buyer meets one seller (Garmaise & Moskowitz 2004).
-    const value = Math.max(landValue(rec, s.econ), ownerAskPsf(rec, s.econ) * rec.lotArea);
+    const belief = ownerAskPsf(rec, s.econ) * rec.lotArea;
+    const value = Math.max(landValue(rec, s.econ), belief);
     if (!(value > 0)) return;
-    const ask = Math.round(value * (distress ? rrange(s, 0.72, 0.90, "land") : rrange(s, 0.97, 1.08, "land")) / 1000) * 1000;
+    const struck = Math.round(value * (distress ? rrange(s, 0.72, 0.90, "land") : rrange(s, 0.97, 1.08, "land")) / 1000) * 1000;
+    // NO OWNER LISTS UNDER ITS OWN RESERVATION (2026-11-20). The broker's
+    // number runs 0.97-1.08 of the value, so about a quarter of the lots were
+    // listed 1-3% under the reservation stamped below, and a buyer offering
+    // the full ask in the listing month was refused; the next month's refresh
+    // lifted the ask to the reservation (refreshListings). Listed there at once.
+    const ask = distress ? struck : Math.max(struck, Math.round(belief / 1000) * 1000);
     s.listings.push({
       bbl, ask, listedM: s.month,
       expiresM: s.month + Math.round(rrange(s, LISTING_LIFE_M[0], LISTING_LIFE_M[1], "land")),
       distress: distress || undefined,
+      // ...AND THE RESERVATION IS STAMPED, or it is not one. Without it the
+      // floor was 92% of the CURRENT ask, which the haggle walks down 5% a
+      // round toward the one bid in the room: owners under no compulsion sold
+      // lots at 1-9% of appraisal to a builder bidding its thin residual, and
+      // those prints took the land level from 1.12 to 0.10 in four years
+      // (seed 4). An owner who will not get its number lets the listing lapse.
+      ...(distress ? {} : { reserve: Math.round(belief / 1000) * 1000 }),
     });
     listed.add(bbl);
     if (distress && newsChance(s, "motivated:" + bbl, 0.4)) {
-      s.news.unshift({ q: s.month, kind: "event", text: `Motivated seller: the lot at ${rec.address} is on the tape at ${money(ask)} — well under appraisal.` });
+      s.news.unshift({ q: s.month, kind: "event", text: `Motivated seller: lot at ${rec.address} listed at ${money(ask)}, well under appraisal.` });
     }
   };
   // ripe dirt finds its builder
   for (const v of vacant) {
-    if (rng(s, "land") >= RIPE_CHECK_SHARE) continue;
+    // Each owner reviews its dirt once a year, staggered by a hash of the
+    // parcel — no die (2026-11-11; it was a 1-in-12 draw every month).
+    let hb = 2166136261;
+    for (let i = 0; i < v.bbl.length; i++) { hb ^= v.bbl.charCodeAt(i); hb = Math.imul(hb, 16777619); }
+    if (((hb >>> 0) % RIPE_REVIEW_M) !== s.month % RIPE_REVIEW_M) continue;
     const rec = full(v);
     const read = landRead(rec, s.econ);
-    if (!(read.builder > 0) || read.winner !== "builder") continue;
-    if (rng(s, "land") < RIPE_LIST_P) put(v.bbl, rec, false);
+    // ...OR A LAND FUND WANTS IT. Dirt nobody can build on today has buyers
+    // too: the funds that hold lots for the builders who come later
+    // (rivals.ts landFundBid — their own discounted residuals). An owner whose
+    // reservation such a fund would clear gets the same call a ripe lot's
+    // owner does, and the lot goes to market where every fund and builder can
+    // bid it — which is what puts a sale of unripe dirt on the land tape.
+    const ripe = read.builder > 0 && read.winner === "builder";
+    if (!ripe) {
+      const reservation = Math.max(landValue(rec, s.econ), ownerAskPsf(rec, s.econ) * rec.lotArea);
+      if (!(reservation > 0) || landFundBid(s, rec) < reservation * (1 + BUY_CLOSING)) continue;
+    }
+    // A buyer clears its number at the review: it lists (the 25% coin is gone).
+    put(v.bbl, rec, false);
   }
   // forced sellers clear land through a slump
   const h = 0.006 * cycleDown(s.econ);
@@ -692,6 +783,8 @@ function tickMonth(
   // a save's finished plats are lots before anything reads the table (landdev.ts)
   restoreCuts(s, parcels, bbls);
   setRivalAdjacency(adjacency);
+  // a save from before the 68 industries reopens its books on them (economy.ts)
+  migrateEconomy(s);
   s.month++;
   const drawnAtOpen = s.loc?.drawnTotal ?? 0;
 
@@ -712,15 +805,34 @@ function tickMonth(
   syncStreetRolls(s, parcels, bbls);
   tickStreetRolls(s, parcels);
   tickEcon(s);
+  // The nation's oil, priced for everything live that reads it (inputs.ts).
+  tickOilPrice(s);
+  // ...and what a building costs to run: labour, energy, insurance (inputs.ts).
+  tickOpexInputs(s);
   // ...and the town's renters move, to the households the city houses.
   tickStreetFlats(s, parcels);
+  // ...the city's firms set their heads (economy.ts, the labour demand), the
+  // household register follows the flats and fills those jobs (households.ts),
+  // and the firms' books are kept (economy.ts), each on its own stream. The
+  // engine reads them next month: the town's jobs, people and the demand for
+  // space are theirs (ONE_ECONOMY_PLAN.md step 2).
+  tickFirms(s);
+  tickHouseholdRegister(s, parcels);
+  tickEconomy(s);
+  // ...and what the engine reads of them next month (ONE_ECONOMY_PLAN.md step 2).
+  economyToEngine(s);
   // The neighbourhood settles before anyone acts on it: last month's
   // deliveries and lettings are now standing, so the city, the tenants and
   // the appraisers all read the same block this month.
   tickDemand(s, parcels);
+  // ...and every firm revises what it believes from what it has seen this quarter (beliefs.ts).
+  tickBeliefs(s, parcels);
   tickFund(s);
   windDownFund(s, parcels);
   tickTrustNote(s);
+  // The private owners pay their mortgages, or do not, before the desks
+  // close the month's books (streetLoans.ts).
+  tickStreetLoans(s, parcels);
   tickLenders(s);
   // Workouts run AFTER the holdings debt pass below: equity cures and this
   // month's NOI have to land before the desk decides whether to file. Running
@@ -756,9 +868,8 @@ function tickMonth(
   tickFirmHeldLoans(s);
   tickPlanning(s, parcels, bbls);
   tickLandDev(s, parcels, bbls);
-  // lot splits: the staff sign-offs and the board (lotsplit.ts), and a firm cutting an oversized lot
+  // lot splits already filed in an older save finish here (lotsplit.ts); new ones are no longer filed
   tickSplits(s, parcels, bbls);
-  tickRivalSplits(s, parcels);
   // the plats' houses: draws, buyers, closings, the builders (homes.ts)
   tickHomes(s, parcels);
   // the region growing: land developers, the roads, the town (growth.ts; region only)
@@ -766,6 +877,9 @@ function tickMonth(
   // The rare thing that dates a city (blackswans.ts) — before the builders
   // look, so a district that burned this month is dirt they can see.
   tickBlackSwans(s, parcels, bbls, adjacency);
+  // City Hall: the budget, the bonds, the mayor — after the swans have reset
+  // the month's job and migration pulls it adds to (citygov.ts).
+  tickCityGov(s);
   tickCityGrowth(s, parcels, bbls, adjacency);
   tickDevelopments(s, parcels);
   // Player site-risk can slip a job after econ settled it. Put the SF back
@@ -786,7 +900,7 @@ function tickMonth(
         q: s.month, kind: "warn",
         text: `A foreclosure wave: ${q3.defaults} buildings went back to their lenders this quarter`
           + `${q3.firms ? `, ${q3.firms} firm${q3.firms === 1 ? "" : "s"} went under` : ""}${q3.banks ? ` and ${q3.banks} bank${q3.banks === 1 ? "" : "s"} closed` : ""}.`
-          + ` The receivers will be selling into a market with no buyers — see the distress board.`,
+          + ` Receiver sales ahead; see the distress board.`,
       });
     }
   }
@@ -802,6 +916,8 @@ function tickMonth(
   tickLandComps(s, parcels);
   tickBrokerCalls(s, parcels, bbls);
   tickListingAbsorption(s, parcels); // other buyers work the tape too
+  tickBrokerSurvey(s, parcels);     // every class, each quarter: the brokers' indications
+  tickLandSurvey(s, parcels);       // ...and so does dirt
   tickPortfolios(s, parcels);        // and the package market, where books trade whole
   tickTakePrivateApproach(s, parcels); // and a board that wants out rings the buyers who could close
   tickTalks(s, parcels);             // a negotiation left open goes stale
@@ -813,7 +929,7 @@ function tickMonth(
     logBooks(s, "taxes", s.exchange.deferredTax);
     s.news.unshift({
       q: s.month, kind: "warn",
-      text: `The 1031 clock ran out — ${money(s.exchange.deferredTax)} of deferred capital-gains tax comes due.`,
+      text: `1031 window expired · ${money(s.exchange.deferredTax)} deferred capital-gains tax now due.`,
     });
     s.exchange = null;
   }
@@ -844,7 +960,7 @@ function tickMonth(
       h.condition = condGrade(h.condIdx);
       h.lastCapM = s.month;
       delete h.renovatingUntilM;
-      s.news.unshift({ q: s.month, kind: "deal", text: `Renovation complete at ${rec.address} — space re-opens at the new rent.` });
+      s.news.unshift({ q: s.month, kind: "deal", text: `Renovation complete · ${rec.address}. Space back on the market at the new rent.` });
     }
     // Deed NOI — building roll OR the absolutely-net ground coupon. holdingNOIYr
     // is correctly zero on a leased fee (opex sits with the lessee); cash still
@@ -872,7 +988,7 @@ function tickMonth(
         delete h.loan.leaseUpRoom;
         s.news.unshift({
           q: s.month, kind: "info",
-          text: `${rec.address} is let and carrying its loan — the lender has closed the lease-up reserve with ${money(left)} undrawn, never borrowed.`,
+          text: `Lease-up reserve closed · ${rec.address}: leased and covering debt service. ${money(left)} undrawn.`,
         });
       }
     }
@@ -945,8 +1061,8 @@ function tickMonth(
         s.loc.payingNotes = true;
         s.news.unshift({
           q: s.month, kind: "info",
-          text: `You are out of operating cash. Your line of credit drew $${Math.round(lineDrew / 1000).toLocaleString()}K `
-            + `to keep your notes current and will keep paying them while it has room — at ${locRate(s).toFixed(2)}%.`,
+          text: `Operating cash exhausted. Your line of credit drew $${Math.round(lineDrew / 1000).toLocaleString()}K `
+            + `to keep notes current; it will keep paying while it has room, at ${locRate(s).toFixed(2)}%.`,
         });
       }
     } else if (s.loc.payingNotes && s.cash > 0) {
@@ -1002,7 +1118,7 @@ function tickMonth(
     if (cut > 0) {
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `The capital plan went unfunded on ${cut} building${cut > 1 ? "s" : ""} this year. Deferred maintenance is the cheapest money you will ever borrow and the dearest you will ever repay — those assets are ageing faster than the rest of the book.`,
+        text: `Capital plan unfunded on ${cut} building${cut > 1 ? "s" : ""} this year. Deferred maintenance: those buildings age faster.`,
       });
     }
   }
@@ -1060,7 +1176,7 @@ function tickMonth(
       delete s.approaches[bbl];
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `${rec.address}: the owner has withdrawn their number. The ground has moved since they gave it to you.`,
+        text: `${rec.address}: owner withdrew their asking price (market moved).`,
       });
     }
   }
@@ -1084,17 +1200,19 @@ function tickMonth(
     for (const h of Object.values(s.holdings)) {
       const rec = resolveRec(parcels, s, h.bbl);
       if (!rec) continue;
-      // phased reassessment: assessed value closes a quarter of the gap to market
-      // THE ASSESSOR RATCHETS. This closed a quarter of the gap in both
-      // directions, which is not how a tax roll behaves anywhere on earth: an
-      // assessment chases a rising market almost at once and comes down
-      // grudgingly, over years, and only if somebody files and wins. That
-      // asymmetry is most of what makes a downturn expensive for an owner with
-      // no debt — the mortgage is the levered owner's problem, and a 1.1% bill
-      // on a value that no longer exists is everybody's.
+      // THE TOWN REVALUES ON A CYCLE, NOT EVERY JANUARY (value.ts
+      // REVAL_YEARS, CGS §12-62(b)). Between revaluations the roll value
+      // stands where the last one left it: in a rising market the bill trails
+      // the price, in a falling one it sits on a value that no longer exists
+      // until the next revaluation — or until the owner files and wins
+      // (tax.ts). A revaluation re-marks to the appraisal in BOTH directions:
+      // Connecticut lets a town phase in increases but not decreases (CGS
+      // §12-62c), and no phase-in is modelled. This used to close 32% of the
+      // gap up and 9% down every January — a ratchet with no statute behind
+      // either number. The city's own grand list follows the same schedule
+      // (citygov.ts), as does every other deed in town.
       const v = ownedHoldingValue(s, parcels, h);
-      const prior = h.assessed ?? h.costBasis;
-      h.assessed = Math.round(prior + (v > prior ? 0.32 : 0.09) * (v - prior));
+      h.assessed = isRevaluation(s.month) ? Math.round(v) : (h.assessed ?? h.costBasis);
       // taxable income: NOI less interest less straight-line depreciation on
       // the improvement half of the basis.
       // Taxable income includes the ground coupon on a leased fee — same deed
@@ -1184,7 +1302,7 @@ function tickMonth(
       // nothing from the best tax outcome the business offers.
       s.news.unshift({
         q: s.month, kind: "info",
-        text: `Tax season: no income tax due — depreciation and interest ran the book to a paper loss. `
+        text: `Tax season: no income tax due — depreciation and interest produced a taxable loss. `
           + `${M(yr.carry - priorCarry)} banked against future income; ${M(yr.carry)} carried forward in all.`,
       });
     }
@@ -1227,13 +1345,18 @@ function tickMonth(
     // finished at fourteen. Creditors do not wait longer for one borrower than
     // for another: seizures from six months, the end at two years.
     if (s.insolventMs === 3) {
-      s.news.unshift({ q: s.month, kind: "warn", text: "Your creditors have noticed the negative balance. Three more months of this and they start seizing assets." });
+      s.news.unshift({ q: s.month, kind: "warn", text: "Cash negative for three months. Creditors begin seizing assets in three more." });
     }
     if ((s.underwaterMs ?? 0) >= 24) {
       s.gameOver = {
-        cause: "Insolvency: two years underwater without a month above water, and the hole still grows. The run ends here.",
+        // IT IS CASH, NOT NET WORTH (2026-11-12): the clock counts months the
+        // firm could not pay its bills. A firm can hold buildings marked well
+        // above their debt and still be here — illiquid, its seized buildings
+        // sold at distressed bids that barely clear their loans. The message
+        // said "negative net worth", and a playthrough ended with $3.6M of it.
+        cause: "Insolvency: two years unable to pay your bills (cash below zero) — creditors took over. Game over.",
       };
-      s.news.unshift({ q: s.month, kind: "warn", text: "The run is over — the creditors have waited long enough." });
+      s.news.unshift({ q: s.month, kind: "warn", text: "Game over: two years with cash below zero — your creditors foreclosed, whatever the buildings are marked at." });
     } else if (s.insolventMs >= 6) {
       // Last draw before the bailiff — if the line still covers the hole,
       // there is nothing to seize.
@@ -1288,7 +1411,8 @@ function tickMonth(
         // waterfall pays them their share first. The sponsor's creditors get
         // what the sponsor's interest was worth.
         const gpOut = !!s.syndications?.[pick.bbl];
-        const gross = Math.round(pickV * (gpOut ? 0.97 : Math.min(0.85, distressPrice(s))));
+        // Otherwise the creditors sell it to the room (foreclosureSale).
+        const gross = gpOut ? Math.round(pickV * 0.97) : foreclosureSale(s, parcels, rec, pick.bbl, pickV).px;
         // A SEIZURE IS STILL A SALE, AND A SALE HAS A WATERFALL.
         //
         // The whole gross used to land in the account. Measured on a
@@ -1318,9 +1442,19 @@ function tickMonth(
         // pump a voluntary sale pays releaseCost to stop.
         const release = releaseCost(s, parcels, pick.bbl);
         // A JV partner takes its share of any surplus that reaches the owners.
-        const rpB = routeProceeds(s, pick, net - lien - breakFee - release);
-        const toBorrower = rpB.toSponsor + rpB.toVehicle;
         const shortfall = Math.max(0, lien + breakFee - net);
+        // THE MORTGAGE'S SHORTFALL IS SETTLED ONCE, BELOW, BY WHOEVER OWES IT
+        // (2026-11-17). The owners' share was net - lien - fee - release, which
+        // on an underwater building is the shortfall with a minus sign — and
+        // it was added to cash. A non-recourse borrower paid the whole hole
+        // while the lender charged the same dollars off, and a recourse
+        // borrower paid it twice (test/seizure-shortfall.mjs; a playtest's
+        // $646K non-recourse note took cash from -$29K to -$604K). The lien
+        // takes what the sale nets and no more; the rest is the recourse
+        // charge or the lender's loss.
+        const secured = !!(pick.loan || pick.mezz);
+        const rpB = routeProceeds(s, pick, net - lien - breakFee + (secured ? shortfall : 0) - release);
+        const toBorrower = rpB.toSponsor + rpB.toVehicle;
         // toBorrower can go negative when the release premium exceeds net —
         // same as acceptSaleOffer: the lien settles even if cash deepens.
         s.cash += toBorrower;
@@ -1344,10 +1478,10 @@ function tickMonth(
             const seniorHole = Math.min(shortfall, stack.seniorBal + stack.seniorPenalty);
             const mezzHole = shortfall - seniorHole;
             if (seniorHole > 0 && pick.loan) {
-              chargeLenderLoss(s, pick.loan.holder ?? productById(pick.loan.product).lender, seniorHole);
+              chargeLenderLoss(s, pick.loan.holder ?? productById(pick.loan.product).lender, seniorHole, { borrower: "You", id: "player", bbl: pick.bbl, cls: "income", how: "forced sale" });
             }
             if (mezzHole > 0) {
-              chargeLenderLoss(s, pick.mezz?.holder ?? "Cordage Debt Partners", mezzHole);
+              chargeLenderLoss(s, pick.mezz?.holder ?? "Cordage Debt Partners", mezzHole, { borrower: "You", id: "player", bbl: pick.bbl, cls: "junior", how: "forced sale" });
             }
           }
         }
@@ -1356,7 +1490,6 @@ function tickMonth(
           s.facility.bbls = s.facility.bbls.filter((b) => b !== pick.bbl);
           if (s.facility.balance <= 0) delete s.facility;
         }
-        recordComp(s, rec, gross, "a distressed buyer", firmShort(s), true, pick.condition);
         {
           const ex: Exit = { bbl: pick.bbl, address: rec.address, boughtM: pick.boughtM, soldM: s.month, price: gross, basis: pick.costBasis, gain: gross - pick.costBasis, forced: true };
           closeDeedLedger(s, ex);
@@ -1368,6 +1501,25 @@ function tickMonth(
         s.lastTradeM[pick.bbl] = s.month;
         delete s.holdings[pick.bbl];
         if (s.workouts?.[pick.bbl]) delete s.workouts[pick.bbl];
+        // THE FIRE-SALE BUYER IS A FIRM ON THE STREET. "A distressed buyer"
+        // paid for the deed and took it into no book at all. The creditors'
+        // sale goes to the firm keenest on distress among those that can pay
+        // the price (cash or line); if none can, the creditors hold the deed
+        // and put it on the tape as a distress listing for the street to buy.
+        let fireBuyer: string | null = null;
+        if (!gpOut) {
+          const keen = (r: Rival) => (r.sheet ? r.sheet.distress : 50) * Math.max(0, r.cash);
+          const able = rivalsWhoCanClose(s, parcels, rec, gross).sort((a, b) => keen(b) - keen(a))[0];
+          const took = able ? rivalBuys(s, parcels, rec, gross, able, firmShort(s)) : null;
+          if (took) fireBuyer = took.name;
+          else {
+            recordComp(s, rec, gross, "your creditors", firmShort(s), true, pick.condition);
+            s.listings = s.listings.filter((l) => l.bbl !== pick.bbl);
+            s.listings.push({ bbl: pick.bbl, ask: gross, listedM: s.month, expiresM: s.month + 12, distress: true });
+          }
+        } else {
+          recordComp(s, rec, gross, "the deal's investors", firmShort(s), true, pick.condition);
+        }
         markSponsor(s, shortfall > 0 && pick.loan?.recourse ? "deficiency" : "seized", rec.address, shortfall);
         s.lois = s.lois.filter((l) => l.bbl !== pick.bbl);
         // A seizure can leave cash still short while the revolver still has
@@ -1377,14 +1529,14 @@ function tickMonth(
         s.news.unshift({
           q: s.month, kind: "warn",
           text: (gpOut
-            ? `Your creditors took your interest in ${rec.address}. The investors replaced you as manager and took the building at ${money(gross)}, the appraisal less the costs of the change; their share came off first. `
-            : `The creditors took ${rec.address} — sold at ${money(gross)}, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. `)
+            ? `Your creditors took your interest in ${rec.address}. Investors replaced you as manager and took the building at ${money(gross)} (appraisal less transfer costs; their share first). `
+            : `The creditors took ${rec.address} — sold ${fireBuyer ? `to ${fireBuyer} ` : "on credit and listed for the street "}at ${money(gross)}, ${(100 * (1 - gross / Math.max(1, pickV))).toFixed(0)}% under the mark. `)
             + (lien > 0 || release > 0
               ? shortfall > 0
-                ? `It did not cover the ${money(lien)} mortgage${pick.loan?.recourse ? `, and you signed for the ${money(shortfall)} shortfall` : `, and the paper was non-recourse`}. `
-                : `Liens of $${(((lien + release) / 1e6)).toFixed(2)}M came off the top and ${money(Math.max(0, toBorrower))} of surplus reached you. `
-              : `${money(Math.max(0, toBorrower))} reached you after the costs of the sale${owed > 0 ? ` and ${money(owed)} of tax on the gain` : ``}. `)
-            + `${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
+                ? `Did not cover the ${money(lien)} mortgage${pick.loan?.recourse ? `; recourse shortfall ${money(shortfall)}` : `; loan was non-recourse`}. `
+                : `Liens of $${(((lien + release) / 1e6)).toFixed(2)}M repaid; surplus to you ${money(Math.max(0, toBorrower))}. `
+              : `Net to you ${money(Math.max(0, toBorrower))} after sale costs${owed > 0 ? ` and ${money(owed)} tax on the gain` : ``}. `)
+            + `${s.cash < 0 ? "Cash still negative." : "Cash back to positive."}`,
         });
         s.insolventMs = s.cash < 0 ? 6 : 0;
       } else if (locAvailable(s, parcels) > 0 || fundableNow(s, parcels) > 0) {
@@ -1413,7 +1565,7 @@ function tickMonth(
         const surplus = Math.max(0, net - lien), shortfall = Math.max(0, lien - net);
         s.cash += surplus;
         if (surplus > 0) logBooks(s, "sold", surplus, d.bbl);
-        if (shortfall > 0) chargeLenderLoss(s, d.lender ?? "the construction lender", shortfall);
+        if (shortfall > 0) chargeLenderLoss(s, d.lender ?? "the construction lender", shortfall, { borrower: "You", id: "player", bbl: d.bbl, cls: "construction", how: "forced sale" });
         (s.cityJobs ??= []).push({ bbl: d.bbl, use: d.use, sf: d.sf, floors: d.floors ?? 1, startM: d.startM, deliverM: d.deliverM, cost: Math.round(d.costTotal), spent: sunk, orphaned: true });
         stallSupplyProject(s, d.bbl);
         {
@@ -1429,16 +1581,16 @@ function tickMonth(
         coverCashShortfall(s, parcels);
         s.news.unshift({
           q: s.month, kind: "warn",
-          text: `The receiver took your job at ${rec.address} — the site and a frame ${Math.round(100 * sunk / Math.max(1, d.costTotal))}% built, valued at ${money(gross)}. `
-            + (surplus > 0 ? `After the construction lender, ${money(surplus)} reached you. ` : `It did not cover the construction lender. `)
-            + `It goes to the tape for somebody else to finish. ${s.cash < 0 ? "They're not done." : "The balance is square, barely."}`,
+          text: `Receiver took your project at ${rec.address}: site and frame ${Math.round(100 * sunk / Math.max(1, d.costTotal))}% built, valued at ${money(gross)}. `
+            + (surplus > 0 ? `Surplus after the construction lender: ${money(surplus)}. ` : `Did not cover the construction loan. `)
+            + `${s.cash < 0 ? "Cash still negative." : "Cash back to positive."}`,
         });
         s.insolventMs = s.cash < 0 ? 6 : 0;
       } else {
         s.gameOver = {
-          cause: "Insolvency: the creditors took everything, and it wasn't enough. A hundred-year town remembers a bankruptcy.",
+          cause: "Insolvency: creditors seized all assets and debts remain. Game over.",
         };
-        s.news.unshift({ q: s.month, kind: "warn", text: "The run is over — the creditors own it now." });
+        s.news.unshift({ q: s.month, kind: "warn", text: "Game over: creditors seized all assets." });
       }
       } // cash still negative after the last draw
     }
@@ -1460,7 +1612,7 @@ function tickMonth(
     if (emptySf > 8000 && liquid < Math.max(400_000, emptySf * 0.35) && s.month % 6 === 0) {
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `You have ${(emptySf / 1000).toFixed(0)}k sf waiting on leases and only ${liquid >= 1e6 ? `${money(liquid)}` : `$${(liquid / 1000).toFixed(0)}k`} of cash and line — signing costs land before rent does.`,
+        text: `${(emptySf / 1000).toFixed(0)}k sf vacant vs ${liquid >= 1e6 ? `${money(liquid)}` : `$${(liquid / 1000).toFixed(0)}k`} of cash and line. TI and commissions are due at signing.`,
       });
     }
   }
@@ -1529,7 +1681,7 @@ function tickMonth(
     const empty0 = Math.round(100 * (1 - s.builtAtStart / Math.max(1, s.totalLots)));
     s.news.unshift({
       q: s.month, kind: "event",
-      text: `◆ A hundred years. The place you arrived in was ${empty0}% empty lots; ${built}% of it stands built today, and ${Object.keys(s.holdings).length} of those buildings are yours. The clock keeps running.`,
+      text: `◆ 100 years. Vacant lots then: ${empty0}%; built today: ${built}%; your buildings: ${Object.keys(s.holdings).length}.`,
     });
   }
 
@@ -1584,6 +1736,8 @@ export function advanceMonth(
   if (prev.gameOver) return prev;
   const s: GameState = cloneState(prev);
   tickMonth(s, parcels, bbls, adjacency);
+  // a lot folded into a site after the loan desks' tick: its owner's note was paid at that sale
+  retireFoldedLoans(s);
   return s;
 }
 
@@ -1670,7 +1824,7 @@ export function firmBookStress(s: GameState): { label: string; bad: boolean; tit
     return {
       label: "over line",
       bad: true,
-      title: `Credit line over-advanced ${s.locOverMs} months — the bank has stopped asking politely. City phase: ${s.econ.phase}.`,
+      title: `Credit line over-advanced ${s.locOverMs} months; default risk. City phase: ${s.econ.phase}.`,
     };
   }
   if ((s.locOverMs ?? 0) > 0) {
@@ -1702,7 +1856,7 @@ export function firmBookStress(s: GameState): { label: string; bad: boolean; tit
   return {
     label: "steady",
     bad: false,
-    title: `Your book is current. City cycle: ${s.econ.phase} — that label is about the street, not your firm.`,
+    title: `All loans current. City cycle: ${s.econ.phase} (market, not your firm).`,
   };
 }
 
@@ -1812,8 +1966,8 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     out.push({
       key: `watch:${li.bbl}:${li.listedM}`,
       label: li.reason === "receiver"
-        ? `★ ${addr(li.bbl)} is on the tape — bank-owned at ${money(li.ask)}${li.receiverFor ? ` (${li.receiverFor})` : ""}`
-        : `★ ${addr(li.bbl)} is on the tape`,
+        ? `★ ${addr(li.bbl)} listed — bank-owned at ${money(li.ask)}${li.receiverFor ? ` (${li.receiverFor})` : ""}`
+        : `★ ${addr(li.bbl)} listed`,
     });
   }
   // THE FUND'S WINDOW IS CLOSING WITH MONEY UNSPENT. After the investment
@@ -2140,7 +2294,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
         critical: true,
         key: `facility-arrears:${ms}`,
         label: `${s.facility.lender} facility payment short ${ms} month${ms === 1 ? "" : "s"} — `
-          + `${s.facility.bbls.length} buildings stand behind it`,
+          + `${s.facility.bbls.length} buildings pledged`,
       });
     }
     // THE MATURITY HAS BEEN CALLED and the cure window is running. Keyed on the
@@ -2372,7 +2526,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
       out.push({
         key: `sheet-review:${s.month}`,
         lastM: s.month + 2,
-        label: `Leasing review: ${rev.map((r) => `${r.use} at ${(r.target * 100).toFixed(0)}% against the street's ${(r.street * 100).toFixed(0)}%`).join(", ")}`
+        label: `Leasing review: ${rev.map((r) => `${r.use} at ${(r.target * 100).toFixed(0)}% vs market ${(r.street * 100).toFixed(0)}%`).join(", ")}`
           + (d ? ` — last quarter ${d.signed} signed, ${d.vacMonths} vacant-months` : ""),
       });
     }
@@ -2482,19 +2636,23 @@ export function windDownFund(s: GameState, parcels: ParcelTable) {
   if (boughtIn + inKind > 0) {
     s.news.unshift({
       q: s.month, kind: inKind ? "warn" : "deal",
-      text: `The fund's extension ran out. ${boughtIn ? `You bought in ${boughtIn} building${boughtIn === 1 ? "" : "s"} at NAV for ${money(paidTotal)}, paid through the waterfall.` : ""}`
-        + `${inKind ? ` ${inKind} went to the LPs' liquidating trust in kind — underwater or beyond what you could fund, they leave with their mortgages.` : ""}`
+      text: `Fund extension expired. ${boughtIn ? `You bought ${boughtIn} building${boughtIn === 1 ? "" : "s"} at NAV for ${money(paidTotal)}, through the waterfall.` : ""}`
+        + `${inKind ? ` ${inKind} distributed in kind to the LPs' liquidating trust with their mortgages.` : ""}`
         + (toGp && toGp.total > 0
-          ? ` Your share of the trust — ${money(toGp.advance)} of GP advances, senior, and ${money(toGp.coinvest)} for your co-invest`
-            + `${toGp.promote > 0 ? ` and ${money(toGp.promote)} of promote` : ""} — is a note on the trust, paid as it sells over ${TRUST_NOTE_M} months.`
+          ? ` Your trust share: ${money(toGp.advance)} GP advances (senior), ${money(toGp.coinvest)} co-invest`
+            + `${toGp.promote > 0 ? `, ${money(toGp.promote)} promote` : ""}; paid as a note over ${TRUST_NOTE_M} months.`
           : "")
-        + (toGp && toGp.writtenOff > 0 ? ` ${money(toGp.writtenOff)} of GP advances is more than the trust is worth and is written off.` : ""),
+        + (toGp && toGp.writtenOff > 0 ? ` ${money(toGp.writtenOff)} of GP advances written off.` : ""),
     });
   }
   settleFund(s);
 }
 
-/** A typical first-mortgage advance on stabilised product, for "could you close this" screens only. */
+/**
+ * A typical first-mortgage advance on stabilised product, for "could you close
+ * this" screens only. [S~: ACLI life-company originations averaged 63% LTV
+ * over 2007-2023 (58.7% in 2023), via NFG's 2026 commercial-mortgage paper.]
+ */
 const TYPICAL_LTV = 0.65;
 
 /** Exported for the UI's continuous play, which must stop on exactly what Yr / Skip stop on. */
@@ -2712,7 +2870,41 @@ export function firstListings(s: GameState, parcels: ParcelTable, bbls: string[]
   // written, so the tape discloses the tenants who are actually there.
   next.econ.playerNow ??= playerSpace(next, parcels);
   syncStreetRolls(next, parcels, bbls);
-  refreshListings(next, parcels, bbls);
+  // THE FIRMS' BOOKS ARE MARKED BEFORE THE OPENING TAPE IS WRITTEN
+  // (2026-11-20). A firm bids only inside its own leverage limit, struck on
+  // the mark of its book (propmarket.ts bidRound: debt over `aum`), and its
+  // corporate line is sized on the same marks (rivals.ts lineRoom). They
+  // were first written by the first month's tick, so at the opening every
+  // firm with a mortgage read as over its limit on a book worth nothing and
+  // did not bid (see refreshListings, the annual review). The same mark the
+  // first tick writes, written first.
+  for (const r of next.rivals ?? []) {
+    if (r.failedM !== undefined || !r.bbls?.length) continue;
+    const mk = markRival(next, parcels, r);
+    r.aum = Math.round(mk.aum); r.markNoi = mk.noiYr; r.markLand = mk.landV;
+    // ...AND ITS OPENING PAPER IS PAPER ON THE BUILDING AS IT STANDS. The
+    // opening mortgage was sized on the building's value before the street's
+    // tenants were grown (rivals.ts initRivals: the house's own loan-to-value
+    // of `v`); the mark above reads the tenants who are actually there. One
+    // building, two values: a house handed an office building the rolls left
+    // empty opened owing several times its mark (seed 12007: a firm at 3.9
+    // times its book on day one, another at 1.14) — a book fabricated
+    // insolvent, which initRivals says an opening book must not be. The
+    // house's loan-to-value, on the mark: what it owes over that, it never
+    // borrowed.
+    let trimmed = false;
+    for (const bbl of r.bbls) {
+      const row = next.cityLoans?.[bbl];
+      const v = mk.byBbl[bbl]?.v;
+      if (!row || row.obligorId !== r.id || v === undefined) continue;
+      const cap = Math.max(0, Math.round(v * r.targetLtv));
+      if (row.balance <= cap) continue;
+      if (cap > 0) { row.balance = cap; row.origValue = Math.round(v); } else delete next.cityLoans![bbl];
+      trimmed = true;
+    }
+    if (trimmed) { loanBookTouched(); syncDebt(next, r); }
+  }
+  refreshListings(next, parcels, bbls, true);
   return next;
 }
 

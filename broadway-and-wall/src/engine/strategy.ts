@@ -17,7 +17,7 @@
 //   accumulate   everyone else: one class, one district, until the money is in
 //
 // It steers buying through `thesisFit` (a multiplier on the sheet's own fit —
-// focus, not a new rule) and selling through `thesisSellMult`. It is revised
+// focus, not a new rule) and selling through the hold/sell review (rivals.ts: a harvester reviews quarterly, a deleveraging firm sells its weakest). It is revised
 // once a year: when it runs out, when equity falls a fifth under it, when an
 // accumulation has found nothing in two years, or when leverage forces a
 // pull-back. The firm card and "what's coming" read its label.
@@ -225,12 +225,6 @@ export function thesisFit(r: Rival, x: ThesisSite): number {
       return cls * where;
     }
   }
-}
-
-/** How the plan bends the firm's selling: a harvester sells into strength, a firm paying down debt sells its weakest. */
-export function thesisSellMult(r: Rival): number {
-  const k = r.thesis?.kind;
-  return k === "harvest" ? 3 : k === "deleverage" ? 4 : 1;
 }
 
 /** The block an assembler is building toward, if it owns enough of it to build. */

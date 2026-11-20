@@ -1,76 +1,88 @@
-# Broadway & Wall — master to-do
+# Broadway & Wall: open items (owner requests)
 
-Owner: chief of staff (Claude). Updated 2026-10-21 evening. Integration branch:
-`claude/region-preview` (region map, land dev, homebuilding, commerce, perf).
-Each item: **who** · status. "You" = the owner.
+Updated 2026-10-23. Classic is the only interface; the new shell is shelved (`?ui=next`).
 
-## Now (2026-10-22)
-- Merged since the list was written: #411 #413 #414 #415 #417 #418 #419 #421 #422 #423 #425 #426 #427 #428 #429. CI is a ~35 s smoke test; I merge PRs myself.
-- In flight: product types #424 (conflict fix), growth #420 (after #424), UI steps 6–8, procedural retail building generator (then houses and industrial).
-- New gaps from the end-to-end check:
-  - Floodplain-only tracts (60–100% flood) offer a 0-lot plat. The land card should say "floodplain, not developable" and skip the desk.
-  - The design desk's default grid fits 10–25% fewer lots than the improved grid (plat-yield fix). Unify on the better layout.
-  - Plat profitability: some near-town tracts pay (IRR 20–70% on seeds 3 and 6); high-rate maps (index ~7%) lose everywhere. Measured, realistic, keep.
+## Doing now: lot development in Classic
+- [x] Test: sell lots to homebuilders end to end. Engine test `test/homebuild.mjs` passes on seeds 2, 3, 5: builders sign takedowns, build and sell the houses, and the ledger reconciles.
+- [ ] Pro forma before you start: cost and time for each stage (permits/rezoning, streets, lot sales) plus the total.
+- [ ] Stage timeline while it runs: each stage's length, how far along it is, and months left.
+- [ ] Rename "rezoning" to "Apply for permits", and show its timeline when buying a lot.
+- [ ] Platted lots show in the portfolio as one neighborhood (lots, sold, value), not one holding per lot.
 
-## A. Blocking / needs you
-1. **Merge PR #411 on GitHub** — its CI "smoke" job runs the whole suite and has sat >4 h; my merges are blocked by the CI gate. Everything behind it (#413 #414 #415 #416, the region branch) waits on it. · **You** (tap Merge) — or tell me to make CI fast (A2).
-2. **Make CI a smoke test, not the full suite** (minutes, not hours) so PRs can land. · Me · not started
-3. **Fab asset packs** — houses, retail/strip/grocery/big-box, warehouses/trucks, farm buildings, US road kit. · **You** · I import once they're in your library
+## UI clean-up follow-ups (2026-11-10, ui-revamp/CLEANUP_PLAN.md)
+Done 2026-11-11: letter cards' prose to hover; one rent-vs-market colour rule (above market red, below green, ±10% plain); a held building under construction is one Portfolio row; the Debt table fits at 1366px; your own Deals 12m.
+- [ ] Players' "Deals 12m" counts the street log, which keeps 600 entries; a bigger town could truncate it.
+- [ ] Lender capital multiples like 115.81× and 1111× (Tidewater, Bowline): engine numbers, worth a look by whoever owns lenders.ts.
+- [ ] Investor rows are named by matching the engine's "N.NNx held" label to `reputation.held` in order; an engine-side `bbl` on the evidence row would make it exact.
+- [ ] Not checked inside Unreal itself (the unreal MCP server was unreachable); checked in Chromium at 1920x1080 with ?host=unreal and at 1366x768.
 
-## B. In progress (agents)
-4. **CRITICAL money pump: R-2 lots valued as apartment sites** (+$5.3M phantom net worth) — R-2 = single-family only; one lot value everywhere; regression test. · Phase 3 agent
-5. **Remove player homebuilding**; player sells lots to builders only (offers, listing a plat, expected bids/take-down). · Phase 3 agent
-6. **Rezoning refile wait** (~12 months after refusal), stale "zoned for agriculture" text, sell-out pace 13.7/mo check. · Phase 3 agent
-7. **Land development design desk** — editable plat map, lot mix, street patterns, parks/amenities with cited premiums, live P&L, A&D loan. · Plat-design agent
-8. **Growth sim (Phase 4)** — households drive subdivision; rivals platting; downtown redevelops fringe houses; upzoning with lag; commerce follows rooftops; county/state roads over time. · Phase 4 agent
-9. **Buildable retail & industrial product types** — pad, strip, neighbourhood/community/power centre, flex, warehouse/DC, manufacturing, industrial park plats; anchors/co-tenancy. · Product-types agent
-10. **UI revamp steps 5–8** — replace classic Rent roll/Money/Market/Capital; Settings›Buying; refinance quotes; Unreal lens bridge; year review; short toasts; land-dev views in Holdings/Inbox; rebase onto region branch. · UI agent
-11. **Region month under 250 ms** (now ~300 ms; was 1,000) and game start under 2 s. · Engine-speed session
+## Economy findings to fix (2026-11-12, measured on 4 seeds x 50 years)
+- [ ] **NEXT PROJECT: the region's housing market and migration.** Seed 31337, 30 years: mainland homes +8% (9,719 -> 10,488) while renters + doubled-up go 9,300 -> 18,700; wages keep up (x2.63 vs rent x2.80). (1) households.ts tickMainland's supply is anchored to the opening (pencil = q/q0); flats caps drift 5.8% -> 8% so q/q0 sits at 0.76-0.95 and almost nothing is built, though value covers construction + a 30% land share 1.0-1.2x on absolute numbers. (2) In-migration and household formation do not respond to housing availability/cost, so new households arrive and double up (22% doubled by year 30; US ~7-8%). Flats end 15-19% vacant at year 50.
+- [x] (#765) Building values: office value swings 8-11%/yr (was 14-18%); industrial vacancy 2-10% at y50 (was up to 26%); asking rents take half of each cut; City > Industries explainer.
+- [ ] ~~FIRST: building values swing too hard.~~ done in #765: 50-year $1M playtest on the build after #762 (tools/play1m.mjs, seed 4242): net worth -84% in year 1 (two buildings bought at the new 77-80% LTV into a recession), then -41%, +139%, -30% years on a steady book; $90.5M at year 50 (7th of 19). Cap rates (log sd 6-15%/yr, one office spike to 15.4%) and office effective rent (~10%/yr) both feed marks. Also 76 covenant-sweep stops.
+- [ ] "GLUT" label on office at 3.3% vacancy (driven by a 7% pipeline) reads wrong in Classic City > Markets.
+- [x] Opening in equilibrium, first cut (#762): the opening cap survey asks what firms can pay; opening caps 5.4-6.9% instead of 4.8-5.2% under a 5.5% index.
+- [ ] **NEXT BIG FIX: an opening in equilibrium (rest).** Opening cap rates (CAP_BASE, then the pre-game years) land at 4.9-7.9% and re-price to 8-10% within a few years. Everything anchored to "the opening was normal" stays distorted: the mainland builders' pencil (households.ts tickMainland: homes0 x pencil^1.75, pencil includes cap0/cap) falls ~40% and mainland building stalls, so mainland rents outrun pay (+62% in a decade on seed 31337), households fail the rent screen and double up (22% of households by year 30; 2,252 doubled-up households with a deposit still cannot rent). Also why lenders ignore the first 24 months (VOL_OPENING_M) and flats' rent swings in year 1.
+- [x] Doubled-up households in work save for move-in costs and can take island flats (2026-11-12): doubled up -12% at year 30 on seed 31337; the rest is the chain above.
+- [ ] **Flats grow fastest while 14-20% vacant.** Stock grows 25-60% over 50 years; the vacancy sits in blocks that get leads, asking ~1.1x the flats' market rent. Each household's guest card already prices its best alternative, so landlords are not simply over-counting leads. Suspect the demand side: how many households look for an island flat may not respond to lower rents, so an overbuilt market stays empty whatever landlords ask, rents follow budgets, and builders keep building. Check `want` / the mainland pool's response to rent (households.ts), and what builders read when they pencil flats.
+- [ ] **Industrial occupancy falls ~22% in the first 3 years** (seed 11: street industrial tenants lease 2.49M sf at month 1, 2.0M by year 3) and the vacancy weighs on industrial for decades. Not the opening over-filling industries (islandFill ~1.0); the tenants' staffing (`t.staff`) shrinks after signing while the town's factory employment holds. Small unrated tenants (90% of industrial) fail ~16%/yr on books with 3.5x leverage and 1.5 months of cash.
+- [ ] **Office effective rent still swings 9-11% a year** after the filtered read (was 19-25%; retail 4%). Office comps' dispersion is 28% around the address market rent: find what spreads them (packages, bargaining, quality normalisation).
+- [ ] **Cap rates move 60-120bp a year** (log sd 6-12%), in a 4-13% band; real classes move ~30-60bp.
+- [x] (2026-11-20: `refi-strong` passes again; its premise "same coupon in both states" was out of date since a smaller loan prices cheaper, and it now checks the coverage leg at each quote's own coupon. `loanbook` already passes.) Two tests already fail on main: `refi-strong` "coverage moves on standards" and `loanbook`.
 
-## C. Gaps left by finished work (to assign next)
-12. **Rival homebuilders off-book** — need cash/debt/failure like commercial rivals. · Phase 3 agent (queued)
-13. **New houses not real** — not drawn on map/Unreal, not in housing stock, never resell. · Phase 3 agent (queued)
-14. **Existing-house valuation ~10× local incomes** (land not scaled to town money) — base engine inconsistency. · Phase 3 agent (queued)
-15. **Conserve coverage: `fees NO` on region** — the gate may exit non-zero; verify against base and fix the bot or the category. · Me
-16. **Farmland price checks** — appraisal $71–80K vs assessed $164K vs ask $172K on the same tract (two answers). · Me
-17. **No regional mall ever spawns** (seed 3 qualifies, no site); seed 1 industrial park only 72 ac; gas stations crowded out by strips. · Region agent
-18. **Region demand misses transit/second-centre terms** (44 of 100 points read zero) — needs a car-access term. · Region agent
-19. **Freeway reuse through town** (verges, parking, 1970s buildings) not modelled. · Backlog
-19a. **Retail kit (RetailBuilder) rough edges** — pad stalls still park against store fronts; QSR/bank side lanes only partly kept clear; grocery vestibule reads dark; text is lit-colour not emissive at night; no cart corrals out in the lot; pylon only per centre (pads have pole signs). Next: same kit approach for houses and industrial (dock doors, trailers, columns already in /Game/BW/Kit). · Me
-20. **UI speed P5** (no blur/animation in Unreal) never measured inside Unreal. · UI agent
-21. **Streetscape leftovers** — pale-blue wedges near parks (cause unknown), signals are posts only (no mast arms), no snow. · Visuals pass (later)
-22. **Hedgerows and farmsteads** skipped. · Visuals pass (later)
-23. **Retail building detail** — real storefronts/signage, loading docks, pylon signs drawn (deco "sign" volumes exported, not yet drawn). · Visuals pass / assets
-24. **Houses look bad** — procedural stopgap until Fab pack. · Visuals pass / assets
-25. **Roads look bad** — region roads read brown; rural shoulders; markings. · Visuals pass / assets
-25a. **Product types (#424) gaps:**
-    - Flex rents at the plain industrial rent. Blending its office share at the town office rent gave $38–50/sf, which is CBD money, so I refused it.
-    - Pads get no drive-through or arterial premium.
-    - Inline tenants sign the leasing engine's generic terms, not the product's lease.
-    - There is no dark-anchor rent cut or termination right.
-    - Anchors always sign (no grocer-availability gate).
-    - The anonymous street growth path never builds products.
-    - Industrial plats put only ~39% of the tract into lots.
-    - DevelopDesk product picker not yet seen in a browser or Unreal. · Product-types agent
+## Economy findings (2026-11-19: office hand-back probe, two bot playthroughs, seeds 31337 / 12007 / 550991 / 4000)
+Done: #823 space given back at renewal counts in the office clock; #824 build desk says which test sized the construction loan, rent floor on by default; #825 office rents answer vacancy without the 0.378 damping.
+- [x] (#826) **Empty buildings appraise almost as if let** (both playthroughs). Emptied on a clone, 32 held buildings: sheds 0.96 of let, shops 0.87, while street bidders pay 0.57-0.66 of that. `value.ts leaseUpMark` drops the roll's cap spread when the gap is assumed let (+16-37% of value) and charges lost rent over a fixed 3.2 years whatever the market. Lenders read the same number: Cordage offered 85% on a 0%-let building, and two shops drew a bigger loan empty than let. Fix drafted (roll graded as re-let; lost rent over the market's own months to let): sheds 0.86, shops 0.75. Street bidders now price empty space on the same clock (2026-11-20): bid empty/let 0.92 sheds, 0.77 shops, 0.87 flats against the appraiser's 0.86 / 0.75 / 0.89; office still thinly tested (one building: 0.66 against 0.92).
+- [x] (mid-lease fix; 6-10% shops, 10-16% sheds after) **Shops and sheds churn 17-25% of their floor a year** (office 4-5%). A firm may sign for half the floor it wants (REQ_FIT 0.5) and the mid-lease "outgrown" line is 1.5x, so 22-26% of them go back to market the day they move in: 12-18% of let floor moves mid-lease every year. Fix drafted (go looking mid-lease only after growing half again since signing).
+- [ ] **Unrated tenants fail at 5% (office), 12% (sheds), 15% (shops) a year**; mid-grade 0.7 / 3.4 / 5.4%; investment grade ~0. By floor: 8-10% of shop and shed space a year, because 76% of shed floor is unrated. High against BLS establishment deaths (~8-9% by count, mostly very small firms). Not changed.
+- [ ] (first half done: the opening's change of count is no longer booked as absorption; month-1 shed clock 28 months, advance 22-23%. Still open: reported shed vacancy jumps 4.7% -> 9.1% between the opening and month 1, and the 3.1% turnover prior against 9-10% measured) **The start of a game reads sheds as unlettable**: month 1, industrial lettings 1.7% of stock a year (prior 3.1% turnover, absorb12 -3.1% as shed vacancy jumps 4.7% -> 7.9% in the first month), so the takeout test offers 12-13% on a shed the bank values at 1.4x cost. A year later the clock reads 8 months.
+- [x] (24 months: the initial term's year and one extension) **The construction takeout test may be too tight in an ordinary market**: 12 months after delivery (`TAKEOUT_LEASE_M`). Office at an 18-month clock is 48% let and gets 20%. Real loans carry extension options; check the window against term sheets before changing it.
+- [x] (2026-11-20: the cause was the pro forma, not the rent level. A slow lease-up cost a developer nothing unless the money was borrowed; the income not earned while a building lets is now in the yield and the land residual. Office stock at year 10: +1% to +15%, was +8% to +29%) **Opening office rents sit about 1.5x what later proves sustainable**: every town builds +20-40% office in years 1-12 and real rent settles near 0.6 of the opening (0.86-1.1 in the one town that does not overbuild). An opening in equilibrium should have the marginal office just pencil.
+- [ ] **Office renewals run 73-100% of expiring floor** (studies 40-79%). Moving costs 2-2.5 years' rent once rents halve; no unrealistic decision found. CompStak 2024 shows renewals getting concessions close to new leases, so "landlords squeeze sitting tenants" is not supported.
+- [ ] **Exploits a bot found**: withdraw and relist a sale until a bid at ~100% of the mark arrives (listing costs nothing; top bids reach 110-131%); equity for a job drawn on the credit line whose limit grows off the same marks; the portfolio facility advanced 81% on a pool with an empty building, under the bank's single-asset rate.
+- [x] (no paydown demanded on a building with no income, #831; the cure is a switch on the Debt page, 2026-11-20: Automatic or I decide) **Forced equity cure on non-recourse debt** (`debt.ts tickLoan` / `equityCureNeed`): 12% of the balance a month taken from firm cash when a tenant leaves, with no choice. A non-recourse borrower can hand back the keys.
+- [x] (#828) **Listed lots with a crane on them** stay on the tape and negotiate to a price, then refuse at closing ("Crane on site"): 39 times in one run.
+- [ ] Identical bids to the $1K from four or more bidders in 15 of 61 campaigns; purchases mark up a median 7% the day they close; multifamily caps moved 5.55 -> 7.30 -> 8.81 -> 6.00 in consecutive years on a 3.2-4.9% index.
+- [x] (fixed by the opening-tape change: the test passes) `test/free-listing.mjs` fails on main ("bought a building to sell": seed 4242's opening tape has nothing the fixture can buy for cash), and was failing before 2026-11-19.
+- [x] (passes since the opening tape has buildings on it, #829) `test/leaseup-mark.mjs` fails on main ("sampled 2 buildings": the opening tape has too few single-use office/flat listings), as does `refi-strong` (already listed above).
 
-25b. **UI owner round (2026-10-22: capital plan #467, negotiation panel #469, home screen) gaps:**
-    - The capital plan's 10-year path holds the plan bill at today's value; the tick re-reads value monthly.
-    - A listing's band is `closingBand` + phase. The negotiation's hidden reservation also divides by the seller's certainty discount, so the band is a guide and not the line. There is no odds % on a listing (the reservation is hidden by design).
-    - The negotiation thread lives for the session only; the engine keeps only the last two numbers (`Talks`).
-    - tools/playtest.mjs land flow failed twice on net-worth marks at month 3/23 in one of three runs (random economy); not from the UI work.
-    - The classic AcquireDesk stays under the Deal tab's "Desk ▾" for custom stacks; retire it once the preset covers mezz and leverage curves. · UI
+- [x] (2026-11-20: a firm with a deals-a-year count chases only as many listings as it has room for, and an owner's review asks whether its building would make a firm's list. Opening tape 31-39 buildings, was 36-56; 22 of 31 lots at the opening have no rival bid, where every lot was refused at twice the ask) **The opening's firms all have unused buying capacity**: at the opening 18-22 firms bid on a building and the best bid is a median 1.02-1.05x its value; from month 2 it is about 10 firms and 0.9x. So 36-56 buildings list at the opening and ~22 the month after, against a steady 6-25. (Before 2026-11-20 the same burst landed in month 1 on an empty opening tape.)
 
-## D. Merges and builds
-26. Land #411 → #413 → #414 → #415 → #416, then a PR for `claude/region-preview` (with Phases 1–4, commerce, plat desk, product types) into main. · Me (after A1/A2)
-27. Packaged build with the region game. · Me — last one (`D:\Builds\BroadwayWall-new`) predates the region
-28. Close stale PRs #211, #256 (months old). · Me, with your OK
-29. Discard the dead web-fix session's uncommitted edits (obsolete; those tests pass now). · Me
+- [ ] `test/covenant.mjs` is not stuck, it is slow: 2 x 4 towns x 420 months with a 14-building book is about two hours at today's engine speed (HANDOFF says ~2 min). `N=2` halves it.
+- [x] (2026-11-20: the ten labels trimmed; the checker passes) `tools/ui-words.mjs` (the first step of `pnpm check`) fails on main: 10 lines in `ui/next/BuildDesk.tsx` over the three-word budget.
 
-## E. Next phases (REGION_PLAN §7)
-30. **Phase 5: rendering at scale** — aggregate distant neighbourhoods, LOD, 60 fps on the new PC (arrives Oct 26; RTX 5070 Ti, enable frame generation).
-31. **Jurisdictions** — town vs county rules, different fees/approval odds.
-32. **Build-to-rent** (owner deferred).
-33. **Rivals entitling/platting** (part of Phase 4) and phased infrastructure (build a plat in sections).
+- [~] **The street's best bid is far under the appraisal in most years, and flats and offices often have one or two bidders** (seed 31337, every held-by-an-owner building asked at its appraisal, main after #831): best bid over appraisal, median, year 2 / 6 / 10: shops 0.68 / 0.87 / 0.71, sheds 0.71 / 0.89 / 0.77, flats 0.09 / 0.67 / 0.26, office 0.02 / 0.67 / 0.14. Flats and offices: 1-2 bidders in years 2 and 10, whose bid is what they can fund (2-26% of the price). The winner's own value is 0.68-0.95 of the appraisal: it needs 8-12% on a book 21-67% levered while the appraiser caps at 5.5-7.4%. Not bank room (every firm has a desk with room from month 1): the firms' own leverage limits, deals-a-year caps and class lists. So an appraisal is not what the building would fetch, net worth is overstated by 10-30%, and cap rates swing with who happens to be able to bid. Needs its own project: who buys flats and offices, and an appraisal read off what buyers pay. **2026-11-20 update:** after #832 and #834 most town-years already draw 9-12 bidders; ten named buyers of flats and offices added, the bid round counts the line draw against a firm's leverage limit, and the opening mortgage is sized on the building as marked. Three towns, every flats and office building asked at its appraisal, years 2 / 6 / 10 (nine town-years): office best bid over appraisal 0.68 mean, worst 0.07 -> 0.95 mean, worst 0.73; flats 0.87, worst 0.70 -> 0.87, worst 0.69; fewest bidders 2 -> 3. Different towns are dealt (ten more firms), so the means carry seed noise; the floor is the finding.
+- [ ] **What still thins the market: firms run out of equity together.** The opening roster deploys its reserves in year one (100 deeds, debt 68M -> 155M on seed 12007), and by year two 13-19 of ~40 firms have shelved their plans to pay debt down (15 with the changes above). Every sale by a private holder takes money out of the firms for good (holders never buy), so depth depends on new raises. Not fixed.
+- [x] (2026-11-20, book PR) **A firm's book marked a building far under what it just paid.** The book used `assetValue`, the tape and every bidder `holdingValue` on the conveyed roll: book over appraisal on the firms' own buildings (seed 12007, month 24), median, full flats 0.83, part-let flats 0.70, empty shops 0.29, empty sheds and offices 0.55. A block of flats bought at $6.4M sat in the buyer's book at $3.2M against a $4.5M loan. The book now carries the conveyed value at the firm's own grade. Bidders per building, nine town-years: flats 8.7 -> 9.2, offices 9.0 -> 10.8; no firm reads more than a few points over its limit.
+- [x] (owner, 2026-11-20: leave it as it is, do not change) **Firms still lever to their limit on the corporate line and then stop buying.** With the book fixed, 13-16 of ~45 firms are paying debt down at months 12 and 24 (seed 12007), each sitting at its own ceiling with $1-4M on its line: an office REIT with a 50% target at 78%, a neighbourhood operator with a 40% target at 84%. The line is used as permanent equity for purchases (`affordable`, `closingFinance`) up to the covenant less two points (`lineRoom`); the plan to delever starts three points under it. In practice a revolver bridges a closing and is repaid (annual clean-down clauses; REIT revolvers are termed out with bonds or equity). A purchase draw limited to what the firm can repay inside a year would end the lever-up/sell-down cycle, and would also cut how much the street can buy.
+- [x] (2026-11-20, tax PR) **A firm's tax basis was quoted away, and a purchase added only its down payment to it.** `propmarket.ts sellerTerms` (a price quote) called the settling half of the gains tax, taking a building's share off the basis each time; `rivalBuys` added equity plus closing, not the price. All firms, seed 12007, six years: basis $257M -> $148M while deeds went 229 -> 723, and the lifetime tax tally read $694M against $745M of equity. Fixed: basis $1,152M beside a $1,383M book, tax $42M, equity $848M. Firms that failed in ten years, three towns: 1 / 8 / 2 -> 2 / 3 / 0.
+- [~] **Most firms that ended were merged away.** Ten years, three towns (12007 / 31337 / 550991): 15 / 9 / 16 absorbed against 2 / 4 / 3 failed. `corporate.ts mergers` compared a ten-year record or nothing, so through a town's first decade the smaller firm always agreed. It now compares the years both firms have: 9 / 4 / 13 absorbed (with the tax fix as well: 14 / 6 / 8). Still about one merger a year among ~45 firms, a pension fund and family houses among them; whether that rate is right is open. The firms' marked books grow five-fold in ten years while office caps fall 8.9 -> 5.4. Not examined.
+- [x] (owner, 2026-11-20: accepted — only firms buy, no private buyers) **The named firms swallow the town.** Private holders sell and never buy (owner's rule, Oct 2026: only firms buy), so every sale moves a deed to the street for good. Deeds held by firms, of 1,440 parcels (1,023 buildings), opening -> year 8: 229 -> 781 (seed 12007), 217 -> 727 (31337), 387 -> 747 (4000); their debt 98M -> 759M, 119M -> 662M, 127M -> 377M. Sixteen per cent of the town to fifty-four in eight years.
+- [ ] **The big firms sit on cash they cannot place.** Year 10, seed 12007: $334M of cash across 43 firms, $72M each at an office REIT (book $253M, 2 purchases that year, buys offices only) and a family house (book $360M, at its 7-deals-a-year count). A firm's deal count is fixed by its sheet (1 + capacity/13) while its book grows twenty-fold and the town's buildings stay $0.5-6M, so the largest firms cannot deploy; and a REIT keeps cash a real one would have to pay out (90% of taxable income). Not examined further.
+- [ ] Two apartment owners still fail around year nine on seed 31337 at 74% leverage when the index rate goes from 3.1 to 4.6; flats there draw two bidders that year. Not examined.
+- [ ] The opening still books shed occupancy about 2% of stock over the street's own count (reported vacancy 4.7% -> 6.2% in month 1; it was 9.1% before the mid-lease fix).
 
-## Done today (for the record)
-Region map (6×6 km, graded lot sizes, retail/industrial hierarchy, industrial park, truck stop) · land dev (buy→entitle→plat→sell) · homebuilder lot residuals · plat yield 10–49% → ~63% · region generation 5.3 s → 2.1 s · month 1.0 s → 0.3 s · game start 11 s → 3.6 s · car parks with stalls/cars/islands/lights · farm Build-tab bug · raise test · PR #412 merged.
+## Next
+- [ ] Offer system revamp (waiting on owner OK): price plus terms (deposit, due diligence, financing, closing speed), a seller read, back-and-forth as a thread, live numbers.
+- [ ] Bring the new shell's features into Classic where they're worth it:
+  - Markets charts
+  - Lease offer cards with Sign / Counter / Decline
+  - Refinance borrow slider and fixed/floating options
+  - Rent roll leasing plan
+  - Holdings: under-construction tag and completion date
+  - For sale: Demand column
+- [ ] Downtown blends into the land around it: parcel sizes, building density and streets taper off instead of stopping at a hard edge.
+- [ ] Streets look boring: medians, lane markings, crosswalks, street furniture, variety.
+- [ ] Camera zoom-out: two causes fixed (the "2" key; plat preview framing). Confirm in play that it no longer happens.
+
+## On hold
+- [ ] Multifamily rent roll unit mix (1-beds, 2-beds...): owner said wait.
+- [ ] House and road visuals: waiting on asset packs.
+- [ ] Farm/tract value re-mark after a rezoning filing: half-done in worktree `agent-adc0c0135f6ee69fc` (`claude/land-marks2`).
+- [ ] `unreal/tools/region-driver.js`: update for the new home screen.
+
+## Done this round
+- Hover outline and info card; Go to; yellow roofs removed; floodplain removed; pop-ups on by default
+- Classic is the only interface; the Classic build desk spans the page
+- Design preview quality; build desk Form / Look / loan options
+- Packaging fix: rebuild `playable/` before every package, and PRs go to `--base main`

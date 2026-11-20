@@ -133,7 +133,7 @@ function build(g: GameState, p: ParcelTable | null, a: AttentionItem): Omit<Inbo
         subject: addr(bbl),
         facts: `${bids.length} bid${bids.length === 1 ? "" : "s"} · best ${usd(bids[0].price)} · ${bids[0].name}`,
         verbs: [
-          { label: "Take best", primary: true, confirm: true, run: () => S().takeBid(bbl, 0) },
+          { label: "Take best", primary: true, confirm: true, run: () => S().takeBid(bbl, 0, bids[0].name) },
           { label: "Best & final", run: () => S().runBestAndFinal(bbl) },
           openVerb(a.key),
         ],

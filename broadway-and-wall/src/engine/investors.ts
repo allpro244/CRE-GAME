@@ -72,16 +72,91 @@ export function cityAttractiveness(e: Econ): number {
   return Math.max(0.4, Math.min(1.6, 1 + 3 * growth + 4 * gap));
 }
 
-/** The year's pool, opened (or reopened at the turn of the year) on first touch. Mutates `s`. */
+/**
+ * THE SHARE OF ITS INVESTABLE MONEY A SAVER PUTS IN REAL ESTATE: 10.8%, the
+ * average target allocation to real estate across investors surveyed by the
+ * Hodes Weill & Associates / Cornell Baker Real Estate Allocations Monitor
+ * (2023). That survey is of institutions; it is used for the town's
+ * wealthier savers as well, the people who buy into a local sponsor's fund.
+ * Calibration. [S]
+ */
+export const RE_ALLOC = 0.108;
+
+/**
+ * THE TOWN'S SAVERS, as the household register reads them (households.ts
+ * fills these in: investableSurplus, commitSavings). A hook rather than an
+ * import, because the register imports half the engine and this file is
+ * imported by the other half.
+ */
+export const SAVERS: {
+  surplus?: (s: GameState) => { dollars: number; savers: number } | null;
+  commit?: (s: GameState, amount: number, alloc: number) => { taken: number; savers: number };
+} = {};
+
+/**
+ * WHAT REAL ESTATE IS EXPECTED TO PAY, against the ten-year (FORMULA_LEDGER
+ * #21): the street's going-in yield (the mean of its cap rates by class) plus
+ * rents growing with expected inflation, less the ten-year yield. Savers and
+ * institutions move money into the class when that premium is wide and out
+ * of it when it is thin.
+ */
+export function rePremium(e: Econ): number {
+  const caps = Object.values(e.capRate ?? {}).filter((x) => Number.isFinite(x) && x > 0);
+  if (!caps.length) return RE_PREMIUM_NORM;
+  const cap = caps.reduce((a, x) => a + x, 0) / caps.length / 100;
+  return cap + (e.inflExp ?? 0.02) - (e.indexRate ?? 0) / 100;
+}
+/**
+ * The long-run premium of unlevered property over the ten-year: about three
+ * points (NCREIF NPI total return 1978-2023 ~8.5% a year against a ten-year
+ * Treasury averaging ~5.6%). Calibration. [S]
+ */
+const RE_PREMIUM_NORM = 0.03;
+/**
+ * THE SHARE OF ITS INVESTABLE MONEY A SAVER PUTS IN REAL ESTATE THIS YEAR:
+ * the surveyed target allocation (RE_ALLOC, 10.8%) at the class's normal
+ * premium, in proportion to the premium on offer — nothing when property
+ * yields no more than the ten-year, twice the target at twice the normal
+ * premium (a guard). Proportional is a shape parameter (unit elasticity of the
+ * allocation to the expected excess return), not a fit. [K]
+ */
+export function reAllocation(e: Econ): number {
+  return RE_ALLOC * Math.max(0, Math.min(2, rePremium(e) / RE_PREMIUM_NORM));
+}
+
+/**
+ * The year's pool, opened (or reopened at the turn of the year) on first touch. Mutates `s`.
+ *
+ * LOCAL MONEY IS THE TOWN'S SAVERS (FORMULA_LEDGER #21): once the household
+ * register is running, the local investors' pool is what its households hold
+ * over their goals (households.ts investableSurplus) at this year's
+ * allocation to real estate (reAllocation). Before the register exists (the
+ * opening, an old save) it is the per-head calibration's local share. The
+ * institutions' money is the per-head calibration (header), at the same
+ * allocation response to what the class is expected to pay.
+ */
 export function investorPool(s: GameState) {
   const yr = Math.floor(s.month / 12);
   if (!s.investorPool || s.investorPool.yr !== yr) {
-    const total = Math.max(0, (s.econ.population ?? 0) * EQUITY_PER_HEAD * dollarLevel(s.econ) * cityAttractiveness(s.econ));
+    const tilt = reAllocation(s.econ) / RE_ALLOC;
+    const total = Math.max(0, (s.econ.population ?? 0) * EQUITY_PER_HEAD * dollarLevel(s.econ) * cityAttractiveness(s.econ)) * tilt;
     const cap = {} as Record<string, number>;
     for (const t of INVESTOR_TYPES) cap[t.id] = Math.round(total * t.share);
+    const sur = SAVERS.surplus?.(s);
+    if (sur) cap.local = Math.round(sur.dollars * reAllocation(s.econ));
     s.investorPool = { yr, cap, used: {}, rivals: 0, attract: cityAttractiveness(s.econ) };
   }
   return s.investorPool;
+}
+
+/**
+ * Local money committed to a fund — the rivals' raises, the player's
+ * syndicates and funds alike — leaves the savers' accounts (households.ts
+ * commitSavings). Returns the households (weighted) that put money in.
+ */
+export function commitLocal(s: GameState, amount: number): number {
+  if (!(amount > 0) || !s.households) return 0;
+  return SAVERS.commit?.(s, amount, reAllocation(s.econ)).savers ?? 0;
 }
 
 /** What is left this year of one investor type's money. */
@@ -95,16 +170,22 @@ export function poolLeft(s: GameState, id: Exclude<InvestorSource, "ff">): numbe
  * entry): the local money first, then the family offices. It does not wait on
  * the pool yet (see header). Mutates `s`.
  */
-export function drawRivalRaise(s: GameState, equity: number, ids: Exclude<InvestorSource, "ff">[] = ["local", "family"]): void {
+export function drawRivalRaise(s: GameState, equity: number, ids: Exclude<InvestorSource, "ff">[] = ["local", "family"]): RaiseFrom {
   const p = investorPool(s);
   let rest = Math.max(0, equity);
+  const out: RaiseFrom = { savers: 0 };
   for (const id of ids) {
     const take = Math.min(rest, Math.max(0, (p.cap[id] ?? 0) - (p.used[id] ?? 0)));
     p.used[id] = (p.used[id] ?? 0) + take;
+    out[id] = take;
+    if (id === "local" && take > 0) out.savers = commitLocal(s, take);
     rest -= take;
   }
   p.rivals += Math.max(0, equity);
+  return out;
 }
+/** Where a rival's raise came from: dollars by investor type, and the local households (weighted) that put money in. */
+export type RaiseFrom = Partial<Record<Exclude<InvestorSource, "ff">, number>> & { savers: number };
 
 /** The sources a sponsor in `band` can raise from, with what each has left. */
 export function openSources(s: GameState, band: Band, ffLeft: number): { id: InvestorSource; left: number }[] {

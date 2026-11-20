@@ -4,6 +4,8 @@ import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import { initialCondition, marketAppraisal, ownedHoldingNoiYr, resolveRec, rollQualitySpread, operatingStatement, remainingAbatement, inPlace } from "@/engine/value";
 import { farMaxFor, maxBuildable, replacementCost } from "@/engine/dev";
+import { dscr } from "@/engine/debt";
+import "@/ui/cleanup-building.css";
 import { demandNow } from "@/engine/demand";
 import { walt, unitStatus } from "@/engine/leasing";
 import { taxAppealQuote } from "@/engine/tax";
@@ -12,6 +14,9 @@ import { usd, sf, pctSigned } from "@/ui/format";
 import { syndicateView } from "@/engine/syndicate";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { AssetHistory, WorkoutDesk } from "@/ui/panels/PropertyDesks";
+import { WhyButton } from "@/ui/WhyChain";
+import { capWhy, valueLead } from "@/ui/whyLinks";
+import { dominantUse } from "@/engine/mix";
 import { useLabel, band, PropTab, Big, Row, occRead, occLabel, occTitle, ShortBy } from "@/ui/panels/shared";
 
 /**
@@ -25,7 +30,7 @@ function buildableLine(rec: Parameters<typeof maxBuildable>[0]): string {
   const b = maxBuildable(rec);
   const env = rec.lotArea * farMaxFor(rec);
   return b.gsf < env * 0.98
-    ? `${sf(b.gsf)} · ${b.floors} floors — the lot tops out before the ${sf(env)} envelope`
+    ? `${sf(b.gsf)} · ${b.floors} floors · lot-limited (envelope ${sf(env)})`
     : `${sf(b.gsf)} · up to ${b.floors} floors`;
 }
 
@@ -112,142 +117,112 @@ export function PropertyPage() {
   const active = shown.some((t) => t.key === tab) ? tab : "summary";
   return (
     <div className="prop-page">
+      {/* SIX TILES, THEN ONE LINE (UI clean-up, 2026-11). The header was twelve
+          tiles and a facts column, 560px before any tab; the secondary reads are
+          the same numbers, smaller, each with its tooltip. */}
       <div className="stat-strip">
-        <Big label="Appraisal" value={band(bbl, value)} />
+        <Big label="Appraisal" value={band(bbl, value)}
+          why={built ? <WhyButton id={capWhy(game, dominantUse(rec))} lead={valueLead(game, dominantUse(rec), value, noi)} /> : undefined} />
         <Big
           label={leasedFee ? "Ground rent / yr" : "NOI / yr"}
           value={(built || leasedFee) ? usd(noi) : "—"}
           bad={noi < 0}
         />
-        <Big label="Debt service / yr" value={dsYr ? usd(-dsYr) : "—"} />
-        <Big label="Cash flow / yr" value={usd(noi - dsYr)} bad={noi - dsYr < 0} />
         {leasedFee ? (
           <Big label="Your role" value="leased fee" />
         ) : (
-          // ONE BASIS, THE ONE EVERY OTHER SCREEN USES. This printed physical
-          // occupancy — let feet over all rentable feet — while the card below,
-          // Leasing and the top bar read lettable feet, so one building with an
-          // unlettable remainder showed 88% here, "fully let" underneath and
-          // 100.0% at the top of the screen.
+          // ONE BASIS, THE ONE EVERY OTHER SCREEN USES: lettable feet.
           (() => {
             const r = ipHdr.h ? occRead(rec, ipHdr.h) : null;
             const v = r ? r.lettableOcc : occ;
             return <Big label="Occupancy" value={!built ? "—" : r ? occLabel(r) : (v * 100).toFixed(0) + "%"} bad={built && v < 0.75} title={r ? occTitle(r) : undefined} />;
           })()
         )}
-        {leasedFee && rec.bldgArea > 0 && game.groundLeases?.[bbl] && (
-          <>
-            <Big label="Lessee building" value={`${game.groundLeases[bbl].floors ?? rec.floors} fl · ${sf(rec.bldgArea)}`} />
-            <Big label="Lessee" value={game.groundLeases[bbl].tenant} />
-          </>
+        {h && <Big label="Cash flow / yr" value={usd(noi - dsYr)} bad={noi - dsYr < 0} />}
+        {h && (h.loan || h.mezz) && (
+          <Big label="Debt" value={usd((h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0))}
+            title={`Debt service ${usd(dsYr)} / yr${h.mezz ? ` · mezz ${usd(h.mezz.balance)}` : ""}`} />
         )}
-        {built && h && (() => {
-          const u = unitStatus(rec, h, game.month);
-          return <Big label="Spaces leased" value={`${u.leased} / ${u.total}`} bad={u.leased < u.total * 0.6} />;
+        {h && h.loan && (() => {
+          const d = dscr(rec, game, h);
+          return <Big label="DSCR" value={d === null ? "—" : `${d.toFixed(2)}×`} bad={d !== null && d < (h.loan.minDSCR ?? 1.2)}
+            title={`NOI / debt service${h.loan.minDSCR ? ` · covenant ${h.loan.minDSCR.toFixed(2)}×` : ""}`} />;
         })()}
-        {built && h && h.tenants.length > 0 && (
-          <Big label="WALT" value={`${walt(h, game.month).toFixed(1)} yrs avg`} bad={walt(h, game.month) < 3} />
-        )}
-        {built && h && (
-          <Big
-            label="Expense leakage"
-            title="The share of the building's operating and tax bill that no lease reimburses — it comes out of your NOI."
-            value={`${(operatingStatement(rec, game.econ, h, game.month).leakage * 100).toFixed(0)}%`}
-            bad={operatingStatement(rec, game.econ, h, game.month).leakage > 0.45}
-          />
-        )}
-        {built && h && (
-          <Big
-            label="Roll quality"
-            title="What the rent roll adds to this building's cap rate: short terms, weak credit or empty space widen it, and a buyer prices that in. Positive is a discount to the price."
-            value={`${rollQualitySpread(rec, h, game.month, game.econ) >= 0 ? "+" : ""}${(rollQualitySpread(rec, h, game.month, game.econ) * 100).toFixed(0)} bps`}
-            bad={rollQualitySpread(rec, h, game.month, game.econ) > 0.15}
-          />
-        )}
-        {/* Concessions already granted and not yet burned off. A buyer credits
-            this off the price at closing, so it moves the appraisal directly —
-            and there was nowhere to see it. */}
-        {built && h && remainingAbatement(h, game.month) > 0 && (
-          <Big label="Free rent owed" value={usd(-remainingAbatement(h, game.month))} bad />
-        )}
-        {/* THE SANITY CHECK EVERY DEVELOPER RUNS AND THIS GAME COULD NOT.
-            Above replacement cost, somebody will build a competitor across the
-            street. Below it, nobody can — and you are buying bricks for less
-            than the bricks cost. */}
-        {built && (() => {
+        {h && !h.loan && !h.mezz && (() => {
+          const syn = syndicateView(game, parcels, bbl);
+          if (syn) return <Big label="Sponsor equity" value={usd(syn.yours)} title={`Total ${usd(syn.equity)} · LPs ${usd(syn.theirs)}`} />;
+          return <Big label={h.jv ? `Equity · yours ${Math.round((1 - h.jv.share) * 100)}%` : "Equity"} value={usd(value * (1 - (h.jv?.share ?? 0)))} />;
+        })()}
+        {!h && built && (() => {
           const rc = replacementCost(rec as never, game.econ);
-          if (!rc) return null;
-          const x = value / rc;
-          return (
-            <Big
-              label="Value vs cost to build"
-              title="Appraisal over what it would cost to put this building up today. Under 1× nobody builds a competitor; well over it, somebody will."
-              value={`${x.toFixed(2)}×`}
-              bad={x > 1.25}
-            />
-          );
-        })()}
-        {(() => {
-          // A syndicated deed: the sponsor's equity is what the waterfall pays it.
-          const syn = h ? syndicateView(game, parcels, bbl) : null;
-          if (syn) return <Big label="Equity · yours, through the waterfall" value={usd(syn.yours)} title={`Of ${usd(syn.equity)} at the mark — ${usd(syn.theirs)} is your investors'.`} />;
-          return <Big label={h?.jv ? `Equity · yours ${Math.round((1 - h.jv.share) * 100)}%` : "Equity"} value={h ? usd((value - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0)) * (1 - (h.jv?.share ?? 0))) : "—"} />;
-        })()}
-        {h && (() => {
-          // The same ledger read the Portfolio's "Returns to date" prints.
-          const r = returnsToDate(game, parcels).find((x) => x.bbl === bbl);
-          if (!r) return null;
-          return <Big label="Your return to date" title="On your equity, before tax: cash back plus today's equity at the mark, over what you put in. Closing costs put a new deed under 1× on day one." value={`${r.multiple.toFixed(2)}×${r.irr !== null ? ` · ${pctSigned(r.irr)} IRR` : ""}`} bad={r.multiple < 1} />;
+          return rc ? <Big label="Value / replacement" title="Appraisal / replacement cost. Above 1× invites new supply." value={`${(value / rc).toFixed(2)}×`} bad={value / rc > 1.25} /> : null;
         })()}
       </div>
       <div className="prop-head">
-        <div>
-          {/* The address is the room's title now (RightPanel); this line is the deed. */}
-          <div className="panel-bbl mono">Parcel {rec.bbl} · {useLabel(rec)} · {rec.zoneDist}</div>
-          {/* Every building in this game is somewhere. Closing the page and
-              putting the camera on it is one click, not a hunt.
-              AND SELLING IS THE OTHER ONE. The exit used to be the ninth card
-              down a page that is mostly operating detail — which is the wrong
-              way round, because the decision to sell is the one you open this
-              page having already half made. */}
-          <div className="btn-row" style={{ marginTop: 6 }}>
-            {/* THE BUY SIDE GETS A FRONT DOOR TOO. An owner had "Sell this
-                building" up here; a buyer had to find the Acquire tab. */}
-            {!h && game.listings.some((l) => l.bbl === bbl) && (
-              // under contract or mid-talks it is no longer an offer to make
-              <button className="btn btn-buy" onClick={() => setTab("deal")}
-                title="The asking price, the in-place income, your offer and the money to close it">
-                {game.talks?.[bbl]?.agreed ? "Fund the closing ▸" : game.talks?.[bbl] ? "Back to the talks ▸" : "Make an offer ▸"}
-              </button>
-            )}
-            {!h && (
-              <button className={"btn" + (game.watch?.includes(bbl) ? " btn-on" : "")}
-                onClick={() => useStore.getState().toggleWatch(bbl)}
-                title="Follow this building: the docket tells you the month it comes to market, and its news files under Your book.">
-                {game.watch?.includes(bbl) ? "★ Watching" : "☆ Watch"}
-              </button>
-            )}
-            {h && (
-              <button className="btn btn-sell" onClick={() => setTab("deal")}
-                title={h.sale ? "Your listing, the bids and the offers" : "Take it to market — quietly or as a campaign"}>
-                {h.sale
-                  ? "◆ On the market — open the file"
-                  : (leasedFee ? "Sell this leased fee" : built ? "Sell this building" : "Sell this lot")}
-              </button>
-            )}
-            <button className="btn" onClick={() => useStore.getState().focus(bbl, true)}
-              title="Close this page and fly the map to the building">
-              ⌖ Go to property
-            </button>
-          </div>
+        <div className="prop-facts">
+          {(() => {
+            const f: { k: string; v: string; title?: string; bad?: boolean }[] = [];
+            if (built) f.push({ k: "", v: `${sf(rec.bldgArea)} · ${rec.floors} fl · ${rec.yearBuilt}` });
+            f.push({ k: "Lot", v: sf(rec.lotArea) });
+            f.push({ k: "FAR", v: `${(rec.bldgArea / Math.max(1, rec.lotArea)).toFixed(1)} / ${farMaxFor(rec).toFixed(1)}`, title: `Built / envelope · buildable at max: ${buildableLine(rec)}` });
+            f.push({ k: "Demand", v: String(Math.round(demandNow(game, rec))) });
+            if (built && h) {
+              const u = unitStatus(rec, h, game.month);
+              f.push({ k: "Spaces", v: `${u.leased} / ${u.total}`, bad: u.leased < u.total * 0.6 });
+              if (h.tenants.length > 0) f.push({ k: "WALT", v: `${walt(h, game.month).toFixed(1)} y`, bad: walt(h, game.month) < 3 });
+              const os = operatingStatement(rec, game.econ, h, game.month);
+              f.push({ k: "Leakage", v: `${(os.leakage * 100).toFixed(0)}%`, title: "Opex and tax not recovered from tenants.", bad: os.leakage > 0.45 });
+              const rq = rollQualitySpread(rec, h, game.month, game.econ);
+              f.push({ k: "Roll", v: `${rq >= 0 ? "+" : ""}${(rq * 100).toFixed(0)} bps`, title: "Cap rate spread from term, credit and vacancy. Positive = price discount.", bad: rq > 0.15 });
+              if (remainingAbatement(h, game.month) > 0) f.push({ k: "Free rent owed", v: usd(-remainingAbatement(h, game.month)), bad: true, title: "Concessions granted and not yet burned off; a buyer credits this off the price." });
+              const rc = replacementCost(rec as never, game.econ);
+              if (rc) f.push({ k: "V / RC", v: `${(value / rc).toFixed(2)}×`, title: "Appraisal / replacement cost. Above 1× invites new supply.", bad: value / rc > 1.25 });
+            }
+            if (h && (h.loan || h.mezz)) {
+              const syn = syndicateView(game, parcels, bbl);
+              if (syn) f.push({ k: "Sponsor equity", v: usd(syn.yours), title: `Total ${usd(syn.equity)} · LPs ${usd(syn.theirs)}` });
+              else f.push({ k: h.jv ? `Equity ${Math.round((1 - h.jv.share) * 100)}%` : "Equity", v: usd((value - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0)) * (1 - (h.jv?.share ?? 0))) });
+            }
+            if (h) {
+              const r = returnsToDate(game, parcels).find((x) => x.bbl === bbl);
+              if (r) f.push({ k: "Return", v: `${r.multiple.toFixed(2)}×${r.irr !== null ? ` · ${pctSigned(r.irr)}` : ""}`, title: "Pre-tax: (distributions + marked equity) / equity invested; IRR.", bad: r.multiple < 1 });
+            }
+            if (leasedFee && rec.bldgArea > 0 && game.groundLeases?.[bbl]) {
+              f.push({ k: "Lessee", v: `${game.groundLeases[bbl].tenant} · ${game.groundLeases[bbl].floors ?? rec.floors} fl · ${sf(rec.bldgArea)}` });
+            }
+            return f.map((x, i) => (
+              <span key={i} className="prop-fact" title={x.title}>
+                {x.k && <span className="prop-fact-k">{x.k}</span>}
+                <span className={"mono" + (x.bad ? " neg" : "")}>{x.v}</span>
+              </span>
+            ));
+          })()}
         </div>
-        <div className="grid" style={{ minWidth: 320 }}>
-          {built && <Row k="Building" v={`${sf(rec.bldgArea)} · ${rec.floors} floors`} strong />}
-          <Row k="Land" v={sf(rec.lotArea)} />
-          <Row k="FAR built / envelope" v={`${(rec.bldgArea / Math.max(1, rec.lotArea)).toFixed(1)} / ${farMaxFor(rec).toFixed(1)}`} />
-          <Row k="Buildable at max" v={buildableLine(rec)} />
-          {built && <Row k="Built" v={String(rec.yearBuilt)} />}
-          <Row k="Demand" v={Math.round(demandNow(game, rec)) + " / 100"} />
+        <div className="btn-row">
+          {!h && game.listings.some((l) => l.bbl === bbl) && (
+            // under contract or mid-talks it is no longer an offer to make
+            <button className="btn btn-buy" onClick={() => setTab("deal")}
+              title="Ask, in-place NOI, offer, funding">
+              {game.talks?.[bbl]?.agreed ? "Fund the closing ▸" : game.talks?.[bbl] ? "Negotiation ▸" : "Make an offer ▸"}
+            </button>
+          )}
+          {!h && (
+            <button className={"btn" + (game.watch?.includes(bbl) ? " btn-on" : "")}
+              onClick={() => useStore.getState().toggleWatch(bbl)}
+              title="Alert when listed; news filed under Your book.">
+              {game.watch?.includes(bbl) ? "★ Watching" : "☆ Watch"}
+            </button>
+          )}
+          {h && (
+            <button className="btn btn-sell" onClick={() => setTab("deal")}
+              title={h.sale ? "Listing and bids" : "List off-market or marketed"}>
+              {h.sale ? "◆ Listed · view bids" : "Sell"}
+            </button>
+          )}
+          <button className="btn" onClick={() => useStore.getState().focus(bbl, true)}
+            title={`Show on map · parcel ${rec.bbl} · ${useLabel(rec)} · ${rec.zoneDist}`}>
+            ⌖ Map
+          </button>
         </div>
       </div>
       {/* A default is not a tab. It is the only thing on the page that matters
@@ -276,8 +251,8 @@ export function PropertyPage() {
           <div className="page-section-head">Assessment under appeal</div>
           <div className="grid">
             <Row k="Tax roll" v={usd(h.taxAppeal.assessedAtFile)} />
-            <Row k="Market evidence filed" v={usd(h.taxAppeal.target)} strong />
-            <Row k="Board sits" v={monthLabel(h.taxAppeal.decideM)} />
+            <Row k="Filed value" v={usd(h.taxAppeal.target)} strong />
+            <Row k="Decision" v={monthLabel(h.taxAppeal.decideM)} />
             <Row k="Odds as filed" v={`${(h.taxAppeal.odds * 100).toFixed(0)}%`} />
           </div>
         </div>
@@ -286,26 +261,25 @@ export function PropertyPage() {
           <div className="page-section-head">Property-tax appeal</div>
           <div className="grid">
             <Row k="Tax assessment" v={usd(taxAppeal.assessed)} bad />
-            <Row k="Current market evidence" v={usd(taxAppeal.target)} strong />
+            <Row k="Market value" v={usd(taxAppeal.target)} strong />
             <Row k="Potential annual saving" v={usd(taxAppeal.annualSavings)} />
             <Row k="Appraisal + counsel" v={usd(taxAppeal.fee)} />
-            <Row k="Board timing / odds" v={`${taxAppeal.months} months · ${(taxAppeal.odds * 100).toFixed(0)}%`} />
+            <Row k="Decision" v={`${taxAppeal.months} mo · ${(taxAppeal.odds * 100).toFixed(0)}%`} />
           </div>
           <button className="btn" style={{ marginTop: 8 }} disabled={game.cash < taxAppeal.fee}
-            title={game.cash < taxAppeal.fee ? `The filing costs ${usd(taxAppeal.fee)} — you have ${usd(game.cash)}` : undefined}
+            title={game.cash < taxAppeal.fee ? `Fee ${usd(taxAppeal.fee)} · cash ${usd(game.cash)}` : undefined}
             onClick={() => useStore.getState().appealTax(bbl)}>
             Appeal the assessment · {usd(taxAppeal.fee)}
           </button>
           <ShortBy need={taxAppeal.fee} have={game.cash} cash />
           <div className="hint">
-            The assessor follows markets up quickly and down slowly. You are paying for independent evidence;
-            losing leaves the roll unchanged, and another challenge must wait three years.
+            Fee non-refundable. If denied: assessment unchanged, 3-yr wait to refile.
           </div>
         </div>
       ) : null)}
       {active === "history" && (
         <div className="page-section">
-          <div className="page-section-head">What has happened on this deed</div>
+          <div className="page-section-head">Property history</div>
           <div className="mini-list">
             {timeline.map((event, i) => {
               const row = describePropertyEvent(event);
@@ -321,8 +295,7 @@ export function PropertyPage() {
             })}
           </div>
           <div className="hint">
-            Trades, major leases, construction, planning decisions and enforcement stay with the property,
-            whoever owns it next. Your operating charts on Money cover only your own hold period.
+            Record stays with the property across owners.
           </div>
         </div>
       )}
@@ -346,25 +319,25 @@ export function PropertyPage() {
                 in the basis the yield was underwritten against. */}
             <Row k="Budget" v={usd(dev.costTotal)} />
             <Row
-              k="All in so far"
+              k="All-in cost to date"
               v={`${usd(dev.costTotal + (dev.landBasis ?? 0) + dev.interestReserve)} · $${((dev.costTotal + (dev.landBasis ?? 0) + dev.interestReserve) / Math.max(1, dev.sf)).toFixed(0)}/sf`}
               strong
-              title="Land, construction as it stands today including every change order booked so far, and the interest reserve. Compare it to what finished buildings on this street trade for per square foot — if the budget has drifted past that, the building is worth less than it costs to finish."
+              title="Land + hard/soft cost incl. change orders + interest reserve."
             />
             {/* Financed with the job, spent on tenants rather than steel, and
                 paid across as cash the day the building opens. */}
             {(dev.leaseUpReserve ?? 0) > 0 && (
-              <Row k="Lease-up reserve" v={`${usd(dev.leaseUpReserve!)} — released at delivery`} />
+              <Row k="Lease-up reserve" v={`${usd(dev.leaseUpReserve!)} · released at delivery`} />
             )}
             <Row k="Delivers" v={monthLabel(dev.deliverM)} />
             {/* STILL TO FUND. The one number a developer mid-build checks every
                 month, and it was nowhere on this screen. */}
             <Row
-              k="Equity you have put in"
+              k="Equity funded"
               v={`${usd(dev.equitySpent)} of ${usd(dev.equityBudget)}`}
             />
             <Row
-              k="Still to come out of your account"
+              k="Equity remaining"
               v={usd(Math.max(0, dev.equityBudget - dev.equitySpent))}
               strong
               bad={dev.equityBudget - dev.equitySpent > game.cash}

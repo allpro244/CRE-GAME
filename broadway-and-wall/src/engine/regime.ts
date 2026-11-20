@@ -36,14 +36,14 @@
  * WHY THE CITY IS NOT SIMULATED TOO. The city's space market is a function of
  * the map: its stock grows only when somebody builds on a real parcel, so a
  * city run for forty years with nobody developing it runs out of space
- * (measured: office vacancy pinned at 5.4% within ten years, against 11.5%
- * natural). So the city opens positioned on the nation's recent history —
+ * (measured: office vacancy pinned at 5.4% within ten years, against the
+ * 11.5% US office has averaged). So the city opens positioned on the nation's recent history —
  * vacancy on the last three years of unemployment, rents on that vacancy,
  * cap rates at the target tickEcon itself chases — and from month one the
  * full model runs both.
  */
 import type { Econ, GameState, MarketPhase } from "./types";
-import { mulberry32Step, initStreams, tickNation, stepCredit, capTargetOf, capFlowsOf, inflationOverBumpPct } from "./market";
+import { mulberry32Step, initStreams, tickNation, stepCredit } from "./market";
 
 /**
  * THIS DRAWS FROM ITS OWN GENERATOR. The engine has one shared PRNG for the
@@ -99,6 +99,17 @@ export function nationPhase(n: NonNullable<Econ["nat"]>): MarketPhase {
   return "expansion";
 }
 
+/** Opening vacancy as a multiple of each class's long-run US average (OPENING_VAC), on three years' mean national unemployment (calibration in simulateHistory). */
+export function vacMultOf(uTrail: number): number {
+  return Math.max(0.65, Math.min(1.8, 0.835 + 15 * (uTrail - 0.0475)));
+}
+/** Rent against the long-run base at that vacancy multiple (the same five openings: ~0.55 of rent per unit of multiple). */
+export function rentMultOf(vacMult: number): number {
+  return 1.09 - 0.55 * (vacMult - 0.835);
+}
+/** How many of the pre-history's months the opening pipeline can look back into: the longest build backdated (~48 months) plus the longest lead to a start (15). */
+const PRE_VAC_KEEP = 72;
+
 export interface History {
   months: number;
   /** national unemployment, mean over the last 36 months */
@@ -110,8 +121,9 @@ export interface History {
  * on it. Called from initEcon after the long-run baseline is laid down.
  *
  * Where the history STARTS is the model's own steady state: inflation at a 2%
- * target, unemployment at the 4.8% the rule calls full, policy where the rule
- * sits there. Two slow variables are drawn because nothing in a twenty-year
+ * target, unemployment at the natural rate of the year the town opens in
+ * (opening.ts: CBO's estimate for a year of the 1990-2024 record, 4.42-5.73%),
+ * policy where the rule sits there. Two slow variables are drawn because nothing in a twenty-year
  * window would move them far enough to forget a fixed start: the neutral real
  * rate's anchor (anywhere inside the 0.4-3.2% band market.ts lets it wander —
  * Laubach-Williams puts r* near 3.5% in the 1960s and 0.5% after 2010) and how
@@ -119,7 +131,7 @@ export interface History {
  * spent by the model from there). The length of the history is drawn too, so
  * the same start does not always arrive at the same point in its own cycle.
  */
-export function simulateHistory(econ: Econ, seed: number, natural: Record<string, number>): History {
+export function simulateHistory(econ: Econ, seed: number, longRun: Record<string, number>): History {
   let k = 0;
   const d = (lo: number, hi: number) => pick(rrng(seed, k++), lo, hi);
   const anchor = d(0.004, 0.032);
@@ -135,11 +147,12 @@ export function simulateHistory(econ: Econ, seed: number, natural: Record<string
   const scratchEcon = {
     ...econ,
     nat: {
-      infl: 0.02, inflExp: 0.02, inflSm: 0.02, unemp: 0.048, policy: +(100 * (anchor + 0.02)).toFixed(2),
+      // around the natural rate of the year the town opens in (opening.ts; 4.8% for an older save)
+      infl: 0.02, inflExp: 0.02, inflSm: 0.02, unemp: econ.uStar ?? 0.048, uStar: econ.uStar, policy: +(100 * (anchor + 0.02)).toFixed(2),
       neutralReal: anchor, neutralAnchor: anchor, inflTarget: 0.02, credibility: cred,
       shockM: 0, shockSev: 0, recM: 0, expM: 60, deep: false, pressureM: 0,
     },
-    creditIdx: 1, phase: "expansion" as MarketPhase, unemployment: 0.048,
+    creditIdx: 1, phase: "expansion" as MarketPhase, unemployment: econ.uStar ?? 0.048,
     // The history's first month must not read the town it is about to make:
     // the corporate debt ladder (tickNation) remembers the long rate it opens on.
     indexRate: +(100 * (anchor + 0.02) + 1).toFixed(2),
@@ -171,51 +184,49 @@ export function simulateHistory(econ: Econ, seed: number, natural: Record<string
   econ.rateEma = econ.indexRate;
   const tail = uHist.slice(-36);
   const uTrail = tail.reduce((a, x) => a + x, 0) / Math.max(1, tail.length);
+  // ...and the same reading for each of the history's last PRE_VAC_KEEP
+  // months, for the frames that were decided in them (dev.ts
+  // seedOpeningPipeline). No draws: the sequence below is unchanged.
+  const pre: number[] = [];
+  for (let end = Math.max(1, uHist.length - PRE_VAC_KEEP + 1); end <= uHist.length; end++) {
+    const w = uHist.slice(Math.max(0, end - 36), end);
+    pre.push(+vacMultOf(w.reduce((a, x) => a + x, 0) / Math.max(1, w.length)).toFixed(4));
+  }
+  econ.preVacMult = pre;
 
   // THE SPACE MARKET, ON THE LABOUR MARKET IT HAS BEEN LIVING THROUGH.
   // Vacancy lags employment by a year or two — tenants give space back at
   // their lease ends, not at the layoff — so it reads three years of national
-  // unemployment, as a multiple of each class's own natural rate so a glut is
+  // unemployment, as a multiple of each class's long-run US average (an
+  // initial condition, OPENING_VAC — never a yardstick afterwards) so a glut is
   // a glut everywhere. CALIBRATED, not tuned: the line runs through the five
   // historical openings this file used to draw from (unemployment / vacancy
-  // as a multiple of natural): 1950s-60s 4.8% / 0.84, 1970s 6.7% / 1.00,
+  // as a multiple of the long-run average): 1950s-60s 4.8% / 0.84, 1970s 6.7% / 1.00,
   // 1982 9.2% / 1.50, 1990s 6.0% / 1.23, 2010 8.4% / 1.40 — about fifteen
   // points of vacancy multiple per point of unemployment. The 1990s sit
   // furthest off it (vacancy left over from the overbuilt eighties), which is
   // a stock story the map supplies from month one.
-  const vacMult = Math.max(0.65, Math.min(1.8, 0.835 + 15 * (uTrail - 0.0475)));
+  const vacMult = vacMultOf(uTrail);
   for (const cls of Object.keys(econ.cityVac) as (keyof typeof econ.cityVac)[]) {
     const jitter = d(0.88, 1.12);
-    econ.cityVac[cls] = Math.max(0.02, Math.min(0.40, (natural[cls] ?? 0.11) * vacMult * jitter));
+    econ.cityVac[cls] = Math.max(0.02, Math.min(0.40, (longRun[cls] ?? 0.11) * vacMult * jitter));
   }
   // Rents follow the vacancy — the same five openings: a long expansion at
-  // 0.84x natural vacancy ran rents ~9% over the long-run base, 1982 at 1.5x
+  // 0.84x the long-run average vacancy ran rents ~9% over the long-run base, 1982 at 1.5x
   // ran them ~28% under, about 0.55 of rent per unit of vacancy multiple.
-  const rentMult = 1.09 - 0.55 * (vacMult - 0.835);
+  const rentMult = rentMultOf(vacMult);
   for (const cls of Object.keys(econ.rentIdx) as (keyof typeof econ.rentIdx)[]) {
     econ.rentIdx[cls] = +(econ.rentIdx[cls] * rentMult * d(0.95, 1.05)).toFixed(2);
   }
   econ.effRentIdx = { ...econ.rentIdx };
 
-  // Cap rates open AT the target the monthly walk chases (capTargetOf) — the
-  // same rates, credit window and vacancy the player is shown — so the first
-  // year of cap moves is news, not a correction. The allocation term reads
-  // the caps themselves at the opening (capFlowsOf), so the target is a fixed
-  // point, found by iterating; it settles inside a handful of passes because
-  // the term's slope is under one. Without it office opened 0.7-0.8 points
-  // over where its own walk took it inside a year (measured over 60 openings,
-  // the era table included). Two-tenths of noise per class on top, the spread
-  // a month of transactions shows.
-  const capIndex = econ.indexRate - inflationOverBumpPct(econ);
-  const classes = Object.keys(econ.capRate) as (keyof typeof econ.capRate)[];
-  const base = Object.fromEntries(classes.map((c) => [c, capTargetOf(econ, c, capIndex)])) as typeof econ.capRate;
-  let caps = { ...base };
-  for (let it = 0; it < 12; it++) {
-    caps = Object.fromEntries(classes.map((c) => [c, base[c] + capFlowsOf(caps, c)])) as typeof econ.capRate;
-  }
-  for (const cls of classes) {
-    econ.capRate[cls] = +(caps[cls] + d(-0.2, 0.2)).toFixed(2);
-  }
+  // CAP RATES ARE NOT SET HERE. They open where the street's own bidders say
+  // (propmarket.ts openingCapSurvey, run at newGame once the firms exist);
+  // until then the appraiser holds the class's long-run average (CAP_BASE),
+  // which only the opening books the firms bring with them are marked at.
+  // The per-class draw that used to put noise on the opening caps is kept so
+  // this generator's sequence does not change.
+  for (const _cls of Object.keys(econ.capRate)) void d(-0.2, 0.2);
   return { months, uTrail };
 }
 

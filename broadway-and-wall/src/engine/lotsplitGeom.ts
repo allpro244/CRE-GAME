@@ -59,7 +59,7 @@ export interface PieceGeo {
 }
 
 const FT = 0.3048;
-const M2_SF = 10.763910417;
+const M2_SF = 10.763910417;  // [M] square feet in a square metre, 1 / 0.3048^2
 const STREET_MIN_W = 7;      // m: a centreline narrower than this is an alley or a path
 const STREET_TOL = 2;        // m: drawing tolerance on the street line
 const PARALLEL = 0.85;       // |cos| between lot edge and centreline: within ~32 degrees

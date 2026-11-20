@@ -21,6 +21,7 @@ import type { Disclosure } from "./value";
 import { initialCondition, noiAfterTaxYr, holdingNOIYr, asIfOwned, disclosureFor, landPsfNow, landRead, resolveRec, assetValue } from "./value";
 import { industryStress } from "./market";
 import { recordPropertyEvent } from "./history";
+import { printTrade, printLandTrade } from "./propmarket";
 
 export interface Comp {
   m: number;            // month it closed
@@ -125,6 +126,10 @@ export function recordComp(
   // Rolling sheet vs century volume. The buffer stays short for the UI; the
   // counters keep every print that ever closed so a long-horizon report is not
   // capped at MAX_COMPS (a fake ceiling on street activity — CLAUDE.md).
+  // ...AND IT IS THE MARKET'S CAP RATE: every building that closes is a
+  // print on the cap tape the class read is taken from (propmarket.ts).
+  if (built) printTrade(s, rec, price, buyer, seller, cond, distress, offMarket);
+  else printLandTrade(s, rec, price, buyer, distress, offMarket);
   s.compsTotal = (s.compsTotal ?? 0) + 1;
   s.compsVolume = (s.compsVolume ?? 0) + px;
   if (s.comps.length > MAX_COMPS) s.comps.splice(0, s.comps.length - MAX_COMPS);
@@ -462,6 +467,14 @@ function holderCapitulation(s: GameState, parcels: Record<string, ParcelRecord>)
     const gap = 1 - read.builder / read.psf;
     if (!(gap > 0)) continue;
     const cur = s.landAdj![bbl] ?? 1;
-    s.landAdj![bbl] = +Math.max(0.25, cur * (1 - CAPITULATION * gap)).toFixed(4);
+    // NO FLOOR (2026-11-06). The texture is rec.landPsf x landAdj, so each
+    // step moves the ask a share of the way to the builder's bid and can never
+    // pass it: cur x (1 - CAPITULATION x gap) >= cur x builder/psf. A floor at
+    // a quarter of the texture stopped the owner short of the only bid there
+    // was — at its bound in 36.7% of calls (rail audit #19), every one a lot
+    // whose ask stayed over four times what any builder could pay.
+    // Six significant figures, not four decimals: a small adjustment rounded to
+    // 0 would read as no adjustment at all (resolveBase) and snap back to 1.
+    s.landAdj![bbl] = +(cur * (1 - CAPITULATION * gap)).toPrecision(6);
   }
 }

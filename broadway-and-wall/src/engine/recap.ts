@@ -30,7 +30,7 @@ import type { GameState } from "./types";
 import { cloneState, logBooks } from "./types";
 import { ownedHoldingValue } from "./value";
 import { fundableNow, fundCashNeed } from "./credit";
-import { TRANSFER_TAX } from "./actions";
+import { transferTaxRate } from "./citygov";
 import { cloneWaterfall, distribute, lpCapShare, settlePeriod } from "./waterfall";
 import { closeSyndication, settleSyndications } from "./syndicate";
 import { playerTerms, type Band } from "./reputation";
@@ -63,14 +63,14 @@ export function recapQuote(s: GameState, parcels: ParcelTable, bbl: string): Rec
   const rate = RECAP_PREMIUM[playerTerms(s).band];
   const premium = Math.round(investorsTake * rate);
   const price = investorsTake + premium;
-  const transferTax = lpCapShare(w) > 0.5 ? Math.round(appraisal * lpCapShare(w) * TRANSFER_TAX) : 0;
+  const transferTax = lpCapShare(w) > 0.5 ? Math.round(appraisal * lpCapShare(w) * transferTaxRate(s)) : 0;
   return { ok: true, appraisal, equity, investorsTake, premium, transferTax, price, total: price + transferTax };
 }
 
 export function recapBuyout(s: GameState, parcels: ParcelTable, bbl: string): { s: GameState; err?: string; msg?: string } {
   const q = recapQuote(s, parcels, bbl);
   if (!q.ok) return { s, err: q.why };
-  if (fundableNow(s, parcels) < q.total) return { s, err: `Buying them out costs ${money(q.total)} today — more than your cash and line.` };
+  if (fundableNow(s, parcels) < q.total) return { s, err: `Investor buyout costs ${money(q.total)}; exceeds cash and line.` };
   const next = cloneState(s);
   // Settle the open period at the real books first (a distribution or a call).
   settleSyndications(next, parcels, false, bbl);
@@ -87,5 +87,5 @@ export function recapBuyout(s: GameState, parcels: ParcelTable, bbl: string): { 
   h.costBasis = Math.round(h.costBasis * (1 - capShare) + q.price);
   (next.recaps ??= []).push({ bbl, m: next.month, value: q.appraisal });
   closeSyndication(next, parcels, w, true);
-  return { s: next, msg: `Bought your investors out for ${money(q.price)}${q.transferTax ? ` plus ${money(q.transferTax)} transfer tax` : ""}. It is all yours.` };
+  return { s: next, msg: `Bought your investors out for ${money(q.price)}${q.transferTax ? ` plus ${money(q.transferTax)} transfer tax` : ""}. 100% owned.` };
 }

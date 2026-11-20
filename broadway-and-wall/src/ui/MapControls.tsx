@@ -1,3 +1,4 @@
+import { UNREAL_HOST } from "@/state/unrealHost";
 import { useStore, type Lens, type MapFilter } from "@/state/store";
 
 /**
@@ -35,7 +36,6 @@ export default function MapControls() {
   const mapOnly = useStore((s) => s.mapOnly);
   const mapFirm = useStore((s) => s.mapFirm);
   const firmName = useStore((s) => (s.mapFirm ? s.game?.rivals.find((r) => r.id === s.mapFirm)?.name : undefined));
-  const setPage = useStore((s) => s.setPage);
   // With a building selected its card takes the right-hand column; the strip
   // centres on the map that is left rather than running under the card.
   const carded = useStore((s) => !!s.selectedBBL);
@@ -45,6 +45,9 @@ export default function MapControls() {
   if (page !== "none" && !mapOnly) return null;
   return (
     <div className={"map-controls" + (carded ? " map-controls-carded" : "")} role="toolbar" aria-label="Map view">
+      {/* City / Book / Cranes dim the browser map; Unreal does not read the
+          filter yet, so inside Unreal they would be three dead buttons. */}
+      {!UNREAL_HOST && <>
       <div className="map-controls-group" role="group" aria-label="Emphasis">
         {FILTERS.map((f) => (
           <button
@@ -61,13 +64,14 @@ export default function MapControls() {
         {mapFilter === "firm" && mapFirm && (
           <>
             <button type="button" className="map-controls-btn on" title="Back to their page"
-              onClick={() => setPage("players")}>{firmName ?? "Firm"}</button>
+              onClick={() => useStore.getState().openFirm(mapFirm)}>{firmName ?? "Firm"}</button>
             <button type="button" className="map-controls-btn" title="Show the whole city again"
               onClick={() => setMapFilter("all")}>✕</button>
           </>
         )}
       </div>
       <span className="map-controls-sep" aria-hidden="true" />
+      </>}
       <div className="map-controls-group" role="group" aria-label="Lens">
         {LENSES.map((l) => (
           <button

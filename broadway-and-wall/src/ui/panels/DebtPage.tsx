@@ -6,7 +6,7 @@ import { useStore } from "@/state/store";
 import { CLASS_LABEL } from "@/data/types";
 import { monthLabel } from "@/engine/types";
 import { ownedHoldingValue, resolveRec, ownedContractNoiYr } from "@/engine/value";
-import { PRODUCTS, productById, payOffDue, rateCapCost, capStrikeFor, loanLender } from "@/engine/debt";
+import { PRODUCTS, productById, payOffDue, rateCapCost, capStrikeFor, loanLender, dscr as loanDscr, ltv as loanLtv, statedLtv } from "@/engine/debt";
 import { fundableNow, locRate, spendable } from "@/engine/credit";
 import type { FacilityQuote } from "@/engine/facility";
 import { facilityQuotes, facilityMetrics, facilityStatus, facilityDrawTerms, pledgeable, pledged, releaseCost, allocatedAmount, FACILITY_MIN_ASSETS, RELEASE_PREMIUM } from "@/engine/facility";
@@ -16,15 +16,8 @@ import { Big, Row } from "@/ui/panels/shared";
 import { CreditLine } from "@/ui/panels/CreditLineDesk";
 import { MaturityWall } from "@/ui/rollups/MaturityWall";
 import { tabCounts } from "@/ui/desks";
+import "@/ui/cleanup-capital.css";
 
-export { TheBanks } from "@/ui/panels/BanksDesk";
-export { SponsorRecord } from "@/ui/panels/SponsorRecord";
-export { CompsSheet } from "@/ui/panels/CompsSheet";
-export { TheStreet, rivalEquity, STYLE_MAX, CONDITION_WORD, STYLE_WORD } from "@/ui/panels/StreetDesk";
-export { FundDesk } from "@/ui/panels/FundDesk";
-export { CreditLine } from "@/ui/panels/CreditLineDesk";
-export { HousePolicy } from "@/ui/panels/HousePolicyDesk";
-export { Owners, OwnerStatement } from "@/ui/panels/OwnersDesk";
 
 /**
  * The saves page. The slot manager used to live at the bottom of the Books
@@ -89,20 +82,20 @@ function DrawTerms({ qt, draw }: { qt: FacilityQuote; draw: number }) {
     <>
       <Row
         k="Pool NOI today"
-        v={`${usd(Math.round(qt.quality.noi))}/yr — ${usd(Math.round(qt.quality.noi - t.annualDs))} after debt service`}
+        v={`${usd(Math.round(qt.quality.noi))}/yr · ${usd(Math.round(qt.quality.noi - t.annualDs))} after debt service`}
         bad={qt.quality.noi - t.annualDs < 0}
-        title="Today's rent roll, not a stabilised pro forma. This is the number the covenant is struck on."
+        title="In-place NOI (covenant basis), not stabilised."
       />
       <Row k="Debt service" v={`${usd(t.monthlyPmt)}/mo · ${usd(t.annualDs)}/yr`} strong />
       <Row
-        k="Coverage at this draw"
-        v={`${t.dscr.toFixed(2)}x against a ${qt.minDSCR.toFixed(2)}x covenant`}
+        k="DSCR"
+        v={`${t.dscr.toFixed(2)}x · min ${qt.minDSCR.toFixed(2)}x`}
         bad={t.dscr < qt.minDSCR}
         strong
       />
       <Row
-        k="Leverage at this draw"
-        v={`${(t.ltv * 100).toFixed(0)}% against a ${(qt.advance * 100).toFixed(0)}% covenant`}
+        k="LTV"
+        v={`${(t.ltv * 100).toFixed(0)}% · max ${(qt.advance * 100).toFixed(0)}%`}
         bad={t.ltv > qt.advance}
       />
     </>
@@ -113,11 +106,9 @@ function DrawTerms({ qt, draw }: { qt: FacilityQuote; draw: number }) {
 function drawHint(qt: FacilityQuote, draw: number): string {
   const t = facilityDrawTerms(draw, qt.ratePct, qt.ioM, qt.amortYears, qt.quality.noi, qt.quality.value);
   if (t.dscr < qt.minDSCR) {
-    return `At this draw the pool covers ${t.dscr.toFixed(2)}x against a ${qt.minDSCR.toFixed(2)}x covenant — `
-      + `it would open in breach, with every building's cash flow swept into principal. Draw less.`;
+    return `DSCR ${t.dscr.toFixed(2)}x below ${qt.minDSCR.toFixed(2)}x min: opens in breach, cash swept. Reduce draw.`;
   }
-  return `${usd(t.monthlyPmt)} a month, ${t.dscr.toFixed(2)}x covered. `
-    + "Drawing less than the base is the room you will have when the market turns — the covenant is tested against what you drew.";
+  return `${usd(t.monthlyPmt)}/mo · DSCR ${t.dscr.toFixed(2)}x. Headroom = base minus draw.`;
 }
 
 export function DebtPage() {
@@ -242,11 +233,11 @@ export function DebtPage() {
   // tiles and the stack, with the reason four sections down.
   const counts = tabCounts(game);
   const warnLine = counts.debtWarn === "swept"
-    ? "The facility is in covenant breach — its cash flow is being swept to the lender."
+    ? "Facility in covenant breach · cash flow swept."
     : counts.debtWarn === "wall"
       ? (game.privateBorrowQuotes?.length
-        ? "A private lender has quoted you — the banks would not refinance on their terms."
-        : `${Math.round(((counts.debtWall ?? 0) / Math.max(1, counts.debtBal ?? 1)) * 100)}% of what you owe matures inside three years.`)
+        ? "Private lender quote available · banks declined refinance."
+        : `${Math.round(((counts.debtWall ?? 0) / Math.max(1, counts.debtBal ?? 1)) * 100)}% of debt matures within 3 yrs.`)
       : null;
   return (
     <div>
@@ -254,8 +245,8 @@ export function DebtPage() {
         <div className="desk-alarm" role="status">
           <span className="desk-alarm-mark" aria-hidden="true">!</span>
           <span>{warnLine}</span>
-          <button type="button" className="btn btn-sm" onClick={() => useStore.setState({ pageJump: counts.debtWarn === "wall" ? "The maturity wall" : "Where the risk is" })}>
-            Show me ↓
+          <button type="button" className="btn btn-sm" onClick={() => useStore.setState({ pageJump: counts.debtWarn === "wall" ? "The maturity wall" : "Risk" })}>
+            Show ↓
           </button>
         </div>
       )}
@@ -263,14 +254,184 @@ export function DebtPage() {
         <Big label="Total debt" value={usd(agg.total)} />
         <Big label="Weighted coupon" value={agg.rate > 0 ? agg.rate.toFixed(2) + "%" : "—"} />
         <Big label="Portfolio LTV" value={(agg.ltv * 100).toFixed(0) + "%"} bad={agg.ltv > 0.75} />
-        <Big label="Coverage" title="Debt service coverage (DSCR): the book's NOI divided by its annual debt service. Lenders want 1.25x or better." value={agg.dscr !== null ? agg.dscr.toFixed(2) + "x" : "—"} bad={agg.dscr !== null && agg.dscr < 1.25} />
-        <Big label="Debt yield" title="NOI divided by the loan balance — what a lender would earn if it took the buildings back tomorrow. Under 8% worries a desk." value={agg.dy !== null ? (agg.dy * 100).toFixed(1) + "%" : "—"} bad={agg.dy !== null && agg.dy < 0.08} />
-        <Big label="WAM" title="Weighted average maturity — years until the average dollar of debt falls due, weighted by balance." value={agg.wam > 0 ? agg.wam.toFixed(1) + " yrs" : "—"} bad={agg.wam > 0 && agg.wam < 3} />
+        <Big label="Coverage" title="DSCR: NOI / annual debt service. Lenders want ≥ 1.25x." value={agg.dscr !== null ? agg.dscr.toFixed(2) + "x" : "—"} bad={agg.dscr !== null && agg.dscr < 1.25} />
+        <Big label="Debt yield" title="NOI / loan balance. Lenders want ≥ 8%." value={agg.dy !== null ? (agg.dy * 100).toFixed(1) + "%" : "—"} bad={agg.dy !== null && agg.dy < 0.08} />
+        <Big label="WAM" title="Weighted average maturity (years, by balance)." value={agg.wam > 0 ? agg.wam.toFixed(1) + " yrs" : "—"} bad={agg.wam > 0 && agg.wam < 3} />
       </div>
+
+      {/* ---- every loan, one row each ---------------------------------- */}
+      {/* FIRST, because it is the page: each loan against its own covenants
+          (the engine's `dscr` / `ltv`, the same reads the quarterly test
+          makes), when it comes due, whether it is swept, and what leaving
+          early costs today (`payOffDue`). Soonest maturity first. */}
+      <div className="page-section">Loan by loan</div>
+        <table className="tbl debt-loans">
+          <thead>
+            <tr>
+              <th>Building</th><th>Lender</th><th className="num">Balance</th><th className="num">Rate</th>
+              <th className="num has-gloss" title="Coverage today / the loan's covenant minimum. Tested quarterly; below the minimum the loan is swept.">DSCR / min</th>
+              <th className="num has-gloss" title="Loan-to-value today / the loan's covenant maximum.">LTV / max</th>
+              <th>Matures</th><th className="num has-gloss" title="Months to the balloon.">Left</th>
+              <th className="has-gloss" title="Covenant breach: cash flow trapped to principal until cured.">Sweep</th>
+              <th className="has-gloss" title="Prepayment terms, and what paying off today costs on top of the balance.">Prepay</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.filter((r) => r.h.loan).sort((a, b) => (a.h.loan!.maturityM) - (b.h.loan!.maturityM)).map(({ h, rec }) => {
+              const l = h.loan!;
+              const p = productById(l.product);
+              const d = rec ? loanDscr(rec, game, h) : null;
+              const lv = rec ? loanLtv(rec, game, h) : null;
+              const left = l.maturityM - game.month;
+              const near = left <= 24;
+              const due = payOffDue(l, game.month, game.econ);
+              const jvBlock = consentFor(game, h, "debt");
+              const canPay = !pledged(game, h.bbl) && !jvBlock && fundableNow(game, parcels) >= due.due;
+              const crumb = due.balance > 0 && due.balance < 25_000;
+              const pk = l.prepay ?? "open";
+              const pkWord = pk === "yieldmaint" ? "YM" : pk === "stepdown" ? "Step-down" : "Open";
+              const pkLive = pk !== "open" && (l.prepayUntilM ?? 0) > game.month;
+              const flags = [game.month < l.ioUntilM ? "interest-only" : null, p.recourse ? "recourse" : "non-recourse",
+                (l.floating ?? l.product === "float") ? "floating" : "fixed"].filter(Boolean).join(" · ");
+              return (
+                <Fragment key={h.bbl}>
+                <tr>
+                  <td>
+                    <a className="lnk" onClick={() => useStore.getState().focus(h.bbl, true)}>{rec!.address}</a>
+                    {pledged(game, h.bbl) ? <span className="dim"> · pledged</span> : null}
+                  </td>
+                  <td className="dim" title={flags}><BankLink name={loanLender(l)} /></td>
+                  <td className="num" title={`Payment ${usd(l.monthlyPmt)}/mo`}>{usd(l.balance)}</td>
+                  <td className="num">{l.ratePct.toFixed(2)}%{(l.floating ?? l.product === "float") ? " fl" : ""}</td>
+                  <td className="num">
+                    <span className={d !== null && l.minDSCR > 0 && d < l.minDSCR ? "neg" : ""}>{d !== null ? d.toFixed(2) : "—"}</span>
+                    <span className="dim"> / {l.minDSCR > 0 ? l.minDSCR.toFixed(2) : "—"}</span>
+                  </td>
+                  <td className="num">
+                    <span className={lv !== null && lv > l.maxLTV ? "neg" : ""}>{lv !== null ? (lv * 100).toFixed(0) + "%" : "—"}</span>
+                    <span className="dim"> / {(l.maxLTV * 100).toFixed(0)}%</span>
+                  </td>
+                  <td className={near ? "neg" : ""}>{monthLabel(l.maturityM)}</td>
+                  <td className={"num" + (left <= 12 ? " neg" : "")}>{Math.max(0, left)}</td>
+                  <td className={l.sweep ? "neg" : "dim"}>{l.sweep ? "swept" : "—"}</td>
+                  <td className={pkLive ? "" : "dim"}
+                    title={pkLive ? `${pkWord} until ${monthLabel(l.prepayUntilM!)} · payoff today ${usd(due.due)}` : "No prepayment penalty"}>
+                    {pkLive ? `${pkWord} · ${usd(due.penalty)}` : "Open"}
+                  </td>
+                  <td>
+                    <div className="btn-row" style={{ gap: 4, margin: 0, justifyContent: "flex-end", flexWrap: "nowrap" }}>
+                      <button
+                        className={"btn btn-sm" + (crumb ? " btn-buy" : "")}
+                        disabled={!canPay}
+                        title={jvBlock ? jvBlock : pledged(game, h.bbl)
+                          ? "Pledged to credit facility; release first."
+                          : !canPay
+                            ? `Payoff ${usd(due.due)}${due.penalty > 0 ? ` incl. ${usd(due.penalty)} prepayment` : ""} · short ${usd(due.due - fundableNow(game, parcels))}`
+                            : due.penalty > 0
+                              ? `Payoff ${usd(due.balance)} + ${usd(due.penalty)} prepayment penalty`
+                              : `Payoff ${usd(due.due)}`}
+                        onClick={() => useStore.getState().payOffLoan(h.bbl)}
+                      >
+                        Pay off{crumb ? ` · ${usd(due.due)}` : ""}
+                      </button>
+                      {(l.floating ?? l.product === "float") && !l.cap && (
+                        <button
+                          className="btn btn-sm"
+                          title={`Index cap ${capStrikeFor(game, l).toFixed(2)}% · 3 yrs`}
+                          onClick={() => useStore.getState().rateCap(h.bbl)}
+                        >
+                          Cap · {usd(rateCapCost(l))}
+                        </button>
+                      )}
+                      <button
+                        className={"btn btn-sm" + (refiRow === h.bbl ? " btn-on" : "")}
+                        title={near
+                          ? "Matures within 2 yrs."
+                          : "Current refinance quotes"}
+                        onClick={() => setRefiRow(refiRow === h.bbl ? null : h.bbl)}
+                      >
+                        Refi
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                {refiRow === h.bbl && (
+                  <tr>
+                    <td colSpan={11} style={{ background: "rgba(43,37,26,0.035)" }}>
+                      <RefiSection bbl={h.bbl} />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
+              );
+            })}
+            {Object.values(game.developments).map((dv) => {
+              const rec = parcels[dv.bbl];
+              const intMo = (dv.loanBalance * dv.ratePct) / 100 / 12;
+              const lv = dv.costTotal > 0 ? dv.loanBalance / dv.costTotal : null;
+              return (
+                <tr key={`cons:${dv.bbl}`}>
+                  <td>
+                    <a className="lnk" onClick={() => useStore.getState().focus(dv.bbl, true)}>{rec?.address ?? dv.bbl}</a>
+                    <span className="dim"> · construction</span>
+                  </td>
+                  <td className="dim" title={[dv.use, dv.contract === "gmp" ? "GMP" : "cost-plus", "interest-only", dv.repudiatedM !== undefined ? "repudiated" : null].filter(Boolean).join(" · ")}>
+                    {dv.lender ? <BankLink name={dv.lender} /> : "construction"}
+                  </td>
+                  <td className="num" title={`${usd(dv.drawn)} drawn of ${usd(dv.commitment)} committed · accrued interest ${usd(intMo)}/mo (capitalised)`}>
+                    {usd(dv.loanBalance)}
+                  </td>
+                  <td className="num">{dv.ratePct.toFixed(2)}%</td>
+                  <td className="num dim">—</td>
+                  <td className="num" title="Loan to cost">{lv !== null ? (lv * 100).toFixed(0) + "%" : "—"}</td>
+                  <td>{monthLabel(dv.deliverM)}</td>
+                  <td className="num">{Math.max(0, dv.deliverM - game.month)}</td>
+                  <td className="dim">—</td>
+                  <td className="dim">—</td>
+                  <td className="dim">delivers</td>
+                </tr>
+              );
+            })}
+            {fac && (
+              <tr>
+                <td><strong>Facility</strong> <span className="dim">· {fac.bbls.length} deeds</span></td>
+                <td className="dim" title={[game.month < fac.ioUntilM ? "interest-only" : null, "recourse", "cross-collateralised"].filter(Boolean).join(" · ")}>
+                  <BankLink name={fac.lender} />
+                </td>
+                <td className="num" title={`Payment ${usd(fac.monthlyPmt)}/mo`}>{usd(fac.balance)}</td>
+                <td className="num">{fac.ratePct.toFixed(2)}%{fac.floating ? " fl" : ""}</td>
+                <td className="num">
+                  <span className={facM.dscr !== null && facM.dscr < fac.minDSCR ? "neg" : ""}>{facM.dscr !== null ? facM.dscr.toFixed(2) : "—"}</span>
+                  <span className="dim"> / {fac.minDSCR.toFixed(2)}</span>
+                </td>
+                <td className="num">
+                  <span className={facM.ltv !== null && facM.ltv > fac.maxLTV ? "neg" : ""}>{facM.ltv !== null ? (facM.ltv * 100).toFixed(0) + "%" : "—"}</span>
+                  <span className="dim"> / {(fac.maxLTV * 100).toFixed(0)}%</span>
+                </td>
+                <td className={fac.maturityM - game.month <= 24 ? "neg" : ""}>{monthLabel(fac.maturityM)}</td>
+                <td className={"num" + (fac.maturityM - game.month <= 12 ? " neg" : "")}>{Math.max(0, fac.maturityM - game.month)}</td>
+                <td className={fac.sweep ? "neg" : "dim"}>{fac.sweep ? "swept" : "—"}</td>
+                <td className="dim">—</td>
+                <td className="dim">—</td>
+              </tr>
+            )}
+            {!rows.some((r) => r.h.loan) && !fac && Object.keys(game.developments).length === 0 && (
+              <tr><td colSpan={11} className="dim">None</td></tr>
+            )}
+          </tbody>
+        </table>
+
+      {/* ONE WALL, ONE HOME. The ladder that sat here and the wall on
+          Portfolio drew the same balloons twice; the wall is the richer of the
+          two (each segment wears its building's coverage) and now carries the
+          construction loans the ladder used to add, so it is the only one. */}
+      {agg.bal > 0 || Object.values(game.developments ?? {}).some((d) => d.loanBalance > 0)
+        ? <MaturityWall />
+        : <><div className="page-section">The maturity wall</div><div className="dim">None</div></>}
 
       {/* WHAT IT IS MADE OF. Three different instruments with three different
           ways of hurting you, and the book showed one number for all of them. */}
-      <div className="page-section">The stack</div>
+      <div className="page-section">Debt stack</div>
       <div className="grid">
         <Row k="Mortgages" v={`${usd(agg.bal - (fac?.balance ?? 0))} across ${rows.filter((r) => r.h.loan).length} buildings`} />
         {fac && <Row k="Portfolio facility" v={`${usd(fac.balance)} across ${fac.bbls.length} deeds · ${fac.lender}`} strong />}
@@ -281,8 +442,17 @@ export function DebtPage() {
           : "none"} />
         <Row k="Line of credit" v={agg.loc > 0 ? `${usd(agg.loc)} at ${locRate(game).toFixed(2)}%` : "undrawn"} bad={agg.loc > 0} />
         <Row k="Annual debt service" v={usd(Math.round(agg.ds))} />
-        <Row k="NOI against it" v={`${usd(Math.round(agg.noi))} — ${usd(Math.round(agg.noi - agg.ds))} after debt service`} bad={agg.noi - agg.ds < 0} />
+        <Row k="NOI" v={`${usd(Math.round(agg.noi))} · ${usd(Math.round(agg.noi - agg.ds))} after debt service`} bad={agg.noi - agg.ds < 0} />
       </div>
+      {/* THE CURE IS YOURS TO CHOOSE (owner playthrough, Nov 2026: cash was taken with no choice) */}
+      {agg.bal > 0 && <div className="hint">
+        Covenant cures{" "}
+        <button type="button" className={"btn btn-mini" + (!game.noAutoCure ? " btn-on" : "")} aria-pressed={!game.noAutoCure}
+          title={!game.noAutoCure
+            ? "When a loan's covenant breaks, the firm pays the loan down out of cash by itself. Click to decide each one yourself."
+            : "A broken covenant stays broken until you pay the loan down. The lender traps that building's cash flow; after two years the file goes to the workout desk. Click to let the firm cure by itself."}
+          onClick={() => useStore.getState().setAutoCure(!!game.noAutoCure)}>{!game.noAutoCure ? "Automatic" : "I decide"}</button>
+      </div>}
 
       {/* THE REVOLVER BELONGS WITH THE REST OF THE DEBT, not under the ledger.
           Books still shows the drawn balance as a liability; draw and repay live
@@ -291,11 +461,7 @@ export function DebtPage() {
 
       {(game.privateBorrowQuotes?.length ?? 0) > 0 && (
         <>
-          <div className="page-section">Private borrow offers</div>
-          <div className="hint" style={{ marginBottom: 8 }}>
-            When the banks refuse or hold-cap a takeout, a rival with powder may quote a short bridge.
-            Accept on the property refinance desk, or here. Expensive, finite, enforceable.
-          </div>
+          <div className="page-section has-gloss" title="Short-term bridge quotes from rival firms when banks decline or cap a refinance. High cost.">Private borrow offers</div>
           {(game.privateBorrowQuotes ?? []).map((q) => {
             const h = game.holdings[q.bbl];
             const payoff = (h?.loan?.balance ?? 0) + (h?.mezz?.balance ?? 0);
@@ -333,45 +499,41 @@ export function DebtPage() {
       {/* THE THREE THINGS THAT ACTUALLY END FIRMS, and none of them is the
           coupon: how much of the book reprices, how much of it is due soon,
           and how much of it you signed for personally. */}
-      <div className="page-section">Where the risk is</div>
+      <div className="page-section">Risk</div>
       <div className="grid">
-        <Row k="Floating" v={`${(agg.floShare * 100).toFixed(0)}% of the mortgage book`} bad={agg.floShare > 0.4} />
-        <Row k="Interest-only today" v={`${(agg.ioShare * 100).toFixed(0)}% — amortisation starts later and the payment steps up`} bad={agg.ioShare > 0.6} />
-        <Row k="Recourse" v={`${(agg.recourseShare * 100).toFixed(0)}% you signed personally`} bad={agg.recourseShare > 0.5} />
-        <Row k="Maturing inside 3 years" v={`${usd(agg.wall36)} · ${agg.bal > 0 ? ((agg.wall36 / agg.bal) * 100).toFixed(0) : 0}% of the book`} bad={agg.bal > 0 && agg.wall36 / agg.bal > 0.35} />
+        <Row k="Floating" v={`${(agg.floShare * 100).toFixed(0)}% of mortgages`} bad={agg.floShare > 0.4} />
+        <Row k="Interest-only today" v={`${(agg.ioShare * 100).toFixed(0)}% · payment steps up at amortisation`} bad={agg.ioShare > 0.6} />
+        <Row k="Recourse" v={`${(agg.recourseShare * 100).toFixed(0)}%`} bad={agg.recourseShare > 0.5} />
+        <Row k="Maturing within 3 yrs" v={`${usd(agg.wall36)} · ${agg.bal > 0 ? ((agg.wall36 / agg.bal) * 100).toFixed(0) : 0}% of debt`} bad={agg.bal > 0 && agg.wall36 / agg.bal > 0.35} />
       </div>
 
-      {/* ONE WALL, ONE HOME. The ladder that sat here and the wall on
-          Portfolio drew the same balloons twice; the wall is the richer of the
-          two (each segment wears its building's coverage) and now carries the
-          construction loans the ladder used to add, so it is the only one. */}
-      {agg.bal > 0 || Object.values(game.developments ?? {}).some((d) => d.loanBalance > 0)
-        ? <MaturityWall />
-        : <><div className="page-section">The maturity wall</div><div className="hint">Nothing borrowed yet.</div></>}
 
       {/* THE STANDING INSTRUCTION. A balloon any desk will renew rolls on its
           own at maturity; this is the one condition a treasurer attaches. */}
-      <div className="hint">
-        <b>At maturity:</b> a loan any desk will renew rolls on its own with the cheapest desk that clears it
-        (fee, points and a cap on floating paper, as a refinance you choose would pay). The clock stops only
-        when no desk will renew the whole balance{" "}
-        {(() => {
-          const cur = game.debtPolicy?.rollMaxJumpBp;
-          const opts: (number | undefined)[] = [undefined, 50, 100, 200];
-          return (
-            <>
-              — or when the new coupon jumps by more than{" "}
+      <div className="grid">
+        <div className="k has-gloss"
+          title="At maturity: auto-refinance with the cheapest lender that covers the balance (normal fees, points, rate cap on floating). Stops if no lender quotes or the coupon rises more than this.">
+          Auto-refi: max rate rise
+        </div>
+        <div className="v">
+          {(() => {
+            const cur = game.debtPolicy?.rollMaxJumpBp;
+            const opts: (number | undefined)[] = [undefined, 50, 100, 200];
+            return (
               <select value={cur === undefined ? "" : String(cur)}
                 onChange={(e) => useStore.getState().setDebtPolicy({ rollMaxJumpBp: e.target.value === "" ? undefined : Number(e.target.value) })}>
-                {opts.map((o) => <option key={String(o)} value={o === undefined ? "" : String(o)}>{o === undefined ? "any amount (never stop)" : `${o}bp`}</option>)}
-              </select>.
-            </>
-          );
-        })()}
+                {opts.map((o) => <option key={String(o)} value={o === undefined ? "" : String(o)}>{o === undefined ? "no limit" : `${o}bp`}</option>)}
+              </select>
+            );
+          })()}
+        </div>
       </div>
 
       {/* ---- the facility ---------------------------------------------- */}
-      <div className="page-section">Borrowing against the whole book</div>
+      <div className="page-section has-gloss"
+        title={`One loan on a pool of buildings: higher LTV, lower coupon than single-asset loans. Cross-collateralised and recourse: a breach sweeps all deeds. Release price = allocated share + ${Math.round((RELEASE_PREMIUM - 1) * 100)}%.`}>
+        Portfolio facility
+      </div>
       {fac && !building ? (
         <>
           <div className="grid">
@@ -379,10 +541,10 @@ export function DebtPage() {
             <Row k="Lender" v={`${fac.lender} · ${fac.ratePct.toFixed(2)}%${fac.floating ? " floating" : ""}${fac.recourse ? "" : " · non-recourse"}`} />
             <Row k="Balance" v={`${usd(fac.balance)} of ${usd(fac.drawn)} drawn`} />
             <Row k="Pool" v={`${fac.bbls.length} buildings · ${usd(Math.round(facM.value))} of value`} />
-            <Row k="Pool coverage" v={facM.dscr !== null ? `${facM.dscr.toFixed(2)}x against a ${fac.minDSCR.toFixed(2)}x covenant` : "—"} bad={facM.dscr !== null && facM.dscr < fac.minDSCR} />
-            <Row k="Pool leverage" v={facM.ltv !== null ? `${(facM.ltv * 100).toFixed(0)}% against a ${(fac.maxLTV * 100).toFixed(0)}% covenant` : "—"} bad={facM.ltv !== null && facM.ltv > fac.maxLTV} />
+            <Row k="Pool DSCR" v={facM.dscr !== null ? `${facM.dscr.toFixed(2)}x · min ${fac.minDSCR.toFixed(2)}x` : "—"} bad={facM.dscr !== null && facM.dscr < fac.minDSCR} />
+            <Row k="Pool LTV" v={facM.ltv !== null ? `${(facM.ltv * 100).toFixed(0)}% · max ${(fac.maxLTV * 100).toFixed(0)}%` : "—"} bad={facM.ltv !== null && facM.ltv > fac.maxLTV} />
             <Row k="Payment" v={`${usd(fac.monthlyPmt)}/mo · matures ${monthLabel(fac.maturityM)}`} />
-            <Row k="Recourse" v={fac.recourse ? "yes — you signed personally" : "non-recourse"} bad={fac.recourse} />
+            <Row k="Recourse" v={fac.recourse ? "Yes · personal guarantee" : "Non-recourse"} bad={fac.recourse} />
           </div>
           <div className="btn-row">
             {(() => {
@@ -400,11 +562,11 @@ export function DebtPage() {
                 return Math.min(fac.balance, Math.ceil(fac.balance - Math.max(0, target)));
               })();
               const amt = Math.min(fac.balance, Math.max(0, payAmt));
-              const short = (need: number) => need > room.total ? `You can raise ${usd(room.total)} — ${usd(room.cash)} cash and ${usd(room.line)} on the line` : undefined;
+              const short = (need: number) => need > room.total ? `Available ${usd(room.total)} · ${usd(room.cash)} cash + ${usd(room.line)} line` : undefined;
               return (
                 <>
                   {cureNeed > 0 && (
-                    <button className="btn btn-buy" disabled={cureNeed > room.total} title={short(cureNeed) ?? (cureNeed > room.cash ? `Draws ${usd(cureNeed - room.cash)} on the line` : undefined)}
+                    <button className="btn btn-buy" disabled={cureNeed > room.total} title={short(cureNeed) ?? (cureNeed > room.cash ? `Line draw ${usd(cureNeed - room.cash)}` : undefined)}
                       onClick={() => payFac(cureNeed, true)}>
                       Cure the covenant · {usd(cureNeed)}
                     </button>
@@ -413,13 +575,13 @@ export function DebtPage() {
                     <>
                       <input className="input" type="number" min={0} step={10000} style={{ width: 120 }} value={payAmt || ""} placeholder="amount"
                         onChange={(e) => setPayAmt(Math.max(0, Math.floor(+e.target.value || 0)))} />
-                      <button className="btn" disabled={amt <= 0 || amt > room.total} title={amt > 0 ? short(amt) ?? (amt > room.cash ? `Draws ${usd(amt - room.cash)} on the line` : undefined) : "Enter an amount"}
+                      <button className="btn" disabled={amt <= 0 || amt > room.total} title={amt > 0 ? short(amt) ?? (amt > room.cash ? `Line draw ${usd(amt - room.cash)}` : undefined) : "Enter an amount"}
                         onClick={() => payFac(amt, true)}>
                         Pay down{amt > 0 ? ` ${usd(amt)}` : ""}
                       </button>
                     </>
                   )}
-                  <button className="btn" disabled={fac.balance > room.total} title={short(fac.balance) ?? (fac.balance > room.cash ? `Draws ${usd(fac.balance - room.cash)} on the line` : undefined)}
+                  <button className="btn" disabled={fac.balance > room.total} title={short(fac.balance) ?? (fac.balance > room.cash ? `Line draw ${usd(fac.balance - room.cash)}` : undefined)}
                     onClick={() => payFac(fac.balance, true)}>
                     Repay in full · {usd(fac.balance)}
                   </button>
@@ -427,12 +589,12 @@ export function DebtPage() {
               );
             })()}
             <button className={"btn" + (refiFac ? " btn-on" : "")}
-              title={fac.accelM !== undefined ? "Another desk can take out the accelerated balance before the receiver sells." : undefined}
+              title={fac.accelM !== undefined ? "Refinance accelerated balance before receiver sale." : undefined}
               onClick={() => setRefiFac(!refiFac)}>
               Refinance the pool
             </button>
             <button className="btn"
-              title="Keep the crossed deeds, add free-and-clear or separately mortgaged ones, and replace the paper in one closing."
+              title="Keep pledged deeds, add others, refinance in one closing."
               onClick={() => {
                 setBuilding(true);
                 setPool([...new Set([...fac.bbls, ...candidates.map((c) => c.bbl)])]);
@@ -449,7 +611,7 @@ export function DebtPage() {
           {refiFac && (
             <>
               {facQuotes.length === 0 ? (
-                <div className="hint">Nobody will re-quote this pool today.</div>
+                <div className="hint">No lender quotes.</div>
               ) : (
                 <>
                   <div className="btn-row">
@@ -478,8 +640,8 @@ export function DebtPage() {
                           <Row k="New coupon" v={`${rqt.ratePct.toFixed(2)}% ${rqt.floating ? "floating (resets monthly)" : "fixed"} · ${Math.round(rqt.termM / 12)}-yr term${rqt.ioM ? `, ${Math.round(rqt.ioM / 12)}-yr IO` : ""} · ${rqt.recourse ? "recourse" : "non-recourse"}`}
                             bad={rqt.ratePct > fac.ratePct} />
                           <DrawTerms qt={rqt} draw={draw} />
-                          <Row k="Closing costs" v={`${usd(fees)} of fee and points${paydown > 0 ? ` plus a ${usd(paydown)} paydown` : ""}`} bad={paydown > 0} />
-                          <Row k="Cash out" v={out > 0 ? `${usd(out)} to the operating account` : "none — the same balance rolls"} />
+                          <Row k="Closing costs" v={`${usd(fees)} fees + points${paydown > 0 ? ` + ${usd(paydown)} paydown` : ""}`} bad={paydown > 0} />
+                          <Row k="Cash out" v={out > 0 ? usd(out) : "None"} />
                         </div>
                         {/* WHAT YOU PAY NOW AGAINST WHAT YOU WOULD PAY. The single-asset
                             desk pairs every number with today's; the pool desk quoted
@@ -539,14 +701,10 @@ export function DebtPage() {
                         />
                         <div className="btn-row">
                           <button className="btn btn-buy" disabled={!rqt.available}
-                            title={!refiFacility ? "The refinancing desk is not wired up in this build." : undefined}
+                            title={!refiFacility ? "Not available in this build." : "Pool stays cross-collateralised and recourse. Draw below balance = paydown at closing; above = cash out."}
                             onClick={() => { refiFacility?.(rqt.productId, refiLev); setRefiFac(false); }}>
                             Refinance · {usd(draw)} at {rqt.ratePct.toFixed(2)}%
                           </button>
-                        </div>
-                        <div className="hint">
-                          The pool stays crossed and the guarantee stays signed — this replaces the paper, not the structure.
-                          A draw below the balance is a paydown you fund at the closing; above it, the difference is cash out.
                         </div>
                       </>
                     );
@@ -578,8 +736,8 @@ export function DebtPage() {
                             would grey out a release the firm can actually make. */}
                         <button className="btn btn-sm" disabled={fundableNow(game, parcels) < rel}
                           title={fundableNow(game, parcels) < rel
-                            ? `The release price is ${usd(rel)} and you can raise ${usd(fundableNow(game, parcels))} from cash and the line.`
-                            : `${usd(rel)} — the allocated share plus ${Math.round((RELEASE_PREMIUM - 1) * 100)}%. The balance comes down by what you pay.`}
+                            ? `Release ${usd(rel)} · available ${usd(fundableNow(game, parcels))}`
+                            : `${usd(rel)} = allocated + ${Math.round((RELEASE_PREMIUM - 1) * 100)}%. Reduces balance.`}
                           onClick={() => releaseFacility(b)}>
                           Release
                         </button>
@@ -589,27 +747,15 @@ export function DebtPage() {
                 })}
               </tbody>
             </table>
-          <div className="hint">
-            The pool is crossed: every deed stands behind the whole balance, a covenant breach sweeps all of them
-            at once, and selling one costs its allocated share plus {Math.round((RELEASE_PREMIUM - 1) * 100)}%.
-            That premium is what you pay for having borrowed against the book instead of the buildings.
-          </div>
         </>
       ) : !building ? (
         <>
-          <div className="hint">
-            Past a handful of buildings an owner stops financing buildings and starts financing a balance sheet.
-            Pledge a pool, and one lender advances against all of it: a few points more leverage and a tighter coupon
-            than the same buildings borrow one at a time, because a diversified pool cannot all go dark at once.
-            What you give up is separability — the pool is cross-defaulted, it is recourse, and taking a building
-            back out costs a premium over its share.
-          </div>
           <div className="btn-row">
             <button className="btn btn-buy" disabled={candidates.length < FACILITY_MIN_ASSETS}
               onClick={() => { setBuilding(true); setPool(candidates.slice(0, Math.min(8, candidates.length)).map((c) => c.bbl)); }}>
               {candidates.length < FACILITY_MIN_ASSETS
-                ? `You need ${FACILITY_MIN_ASSETS} eligible buildings — you have ${candidates.length}`
-                : "Put a pool together"}
+                ? `Requires ${FACILITY_MIN_ASSETS} eligible buildings (${candidates.length})`
+                : "Build pool"}
             </button>
           </div>
         </>
@@ -651,16 +797,16 @@ export function DebtPage() {
               </div>
               <PoolRefusal quotes={quotes} />
               <div className="grid">
-                <Row k="The pool" v={`${pool.length} buildings · ${usd(Math.round(qt.quality.value))} · ${qt.quality.why}`} />
-                <Row k="Diversification" v={`${(qt.quality.score * 100).toFixed(0)} of 100 — worth ${((qt.advance - PRODUCTS.find((p) => p.id === qt.productId)!.ltv) * 100).toFixed(1)} points of advance and ${(qt.spreadCut * 100).toFixed(0)}bp of coupon`} />
+                <Row k="Pool" v={`${pool.length} buildings · ${usd(Math.round(qt.quality.value))} · ${qt.quality.why}`} />
+                <Row k="Diversification" v={`${(qt.quality.score * 100).toFixed(0)}/100 · +${((qt.advance - statedLtv(game, PRODUCTS.find((p) => p.id === qt.productId)!).ltv) * 100).toFixed(1)} pts advance · −${(qt.spreadCut * 100).toFixed(0)}bp coupon`} />
                 <Row k="Borrowing base" v={`${usd(qt.base)} · ${(qt.advance * 100).toFixed(0)}% advance · capped by ${qt.binding}`} strong />
-                <Row k="Mortgages repaid" v={qt.payoff > 0 ? `${usd(qt.payoff)}${qt.penalties > 0 ? ` + ${usd(qt.penalties)} to break them` : ""}` : "none — the pool is unencumbered"} bad={qt.penalties > 0} />
+                <Row k="Mortgages repaid" v={qt.payoff > 0 ? `${usd(qt.payoff)}${qt.penalties > 0 ? ` + ${usd(qt.penalties)} prepayment` : ""}` : "None"} bad={qt.penalties > 0} />
                 {(() => {
                   const draw = Math.floor(qt.base * lev);
                   const fees = Math.round(draw * 0.01) + Math.round(draw * qt.points);
                   return <Row k="Fees" v={usd(fees)} />;
                 })()}
-                <Row k="Covenants" v={`${qt.minDSCR.toFixed(2)}x coverage, ${(qt.advance * 100).toFixed(0)}% leverage — tested on the POOL`} />
+                <Row k="Covenants" v={`${qt.minDSCR.toFixed(2)}x DSCR · ${(qt.advance * 100).toFixed(0)}% LTV · pool-level`} />
                 <Row k="Structure" v={`${qt.ioM ? `${Math.round(qt.ioM / 12)}-yr IO, ` : ""}${qt.amortYears}-yr amort, ${Math.round(qt.termM / 12)}-yr term, recourse`} />
                 {/* THE PAYMENT AND THE COVERAGE, AT THE DRAW ON THE SLIDER. */}
                 <DrawTerms qt={qt} draw={Math.floor(qt.base * lev)} />
@@ -674,13 +820,17 @@ export function DebtPage() {
                 onChange={setLev}
                 format={() => `${usd(Math.floor(qt.base * lev))} · ${((qt.base * lev) / Math.max(1, qt.quality.value) * 100).toFixed(0)}% of the pool`}
                 marks={[{ at: 0.5, label: "half" }, { at: 1, label: "the base" }]}
-                hint={`Net to you ${usd(Math.floor(qt.base * lev) - qt.payoff - qt.penalties - Math.round(Math.floor(qt.base * lev) * (0.01 + qt.points)))} after the payoffs and fees. `
-                  + drawHint(qt, Math.floor(qt.base * lev))}
+                hint={drawHint(qt, Math.floor(qt.base * lev))}
               />
+              {/* WHAT THE CLOSING PUTS IN YOUR ACCOUNT: the draw less the mortgages it repays, their prepayment and the fees. */}
+              <div style={{ fontSize: 17, fontWeight: 700, margin: "8px 0 2px" }}>
+                Net to you {usd(Math.floor(qt.base * lev) - qt.payoff - qt.penalties - Math.round(Math.floor(qt.base * lev) * (0.01 + qt.points)))}
+                <span className="dim" style={{ fontSize: 12, fontWeight: 400 }}> after payoffs and fees</span>
+              </div>
               <div className="btn-row">
                 <button className="btn btn-buy" disabled={!qt.available || pool.length < FACILITY_MIN_ASSETS}
                   onClick={() => { useStore.getState().openFacility(pool, qt.productId, lev); setBuilding(false); }}>
-                  {fac ? "Replace the facility" : "Sign it"} · {usd(Math.floor(qt.base * lev))}
+                  {fac ? "Replace facility" : "Close facility"} · {usd(Math.floor(qt.base * lev))}
                 </button>
                 <button className="btn" onClick={() => setBuilding(false)}>Cancel</button>
               </div>
@@ -690,148 +840,6 @@ export function DebtPage() {
         </>
       )}
 
-      {/* ---- every loan, one row each ---------------------------------- */}
-      <div className="page-section">Loan by loan</div>
-        <table className="tbl">
-          <thead>
-            <tr>
-              <th>Building</th><th>Desk</th><th className="num">Balance</th><th className="num">Rate</th>
-              <th className="num">LTV</th><th className="num">DSCR</th><th className="num">Payment</th>
-              <th>Matures</th><th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.filter((r) => r.h.loan).sort((a, b) => (b.h.loan!.balance) - (a.h.loan!.balance)).map(({ h, rec, v, noi }) => {
-              const l = h.loan!;
-              const p = productById(l.product);
-              const ds = l.monthlyPmt * 12;
-              const d = ds > 0 ? noi / ds : null;
-              const lv = v > 0 ? l.balance / v : null;
-              const near = l.maturityM - game.month <= 24;
-              const due = payOffDue(l, game.month, game.econ);
-              const jvBlock = consentFor(game, h, "debt");
-              const canPay = !pledged(game, h.bbl) && !jvBlock && fundableNow(game, parcels) >= due.due;
-              const crumb = due.balance > 0 && due.balance < 25_000;
-              return (
-                <Fragment key={h.bbl}>
-                <tr>
-                  <td>
-                    <a className="lnk" onClick={() => useStore.getState().focus(h.bbl, true)}>{rec!.address}</a>
-                    {pledged(game, h.bbl) ? <span className="dim"> · pledged</span> : null}
-                  </td>
-                  <td className="dim">
-                    <BankLink name={loanLender(l)} />
-                    <div style={{ fontSize: 11 }}>
-                      {[l.sweep ? "swept" : null, game.month < l.ioUntilM ? "IO" : null, p.recourse ? "recourse" : null,
-                        l.prepay === "yieldmaint" ? "YM" : null].filter(Boolean).join(" · ")}
-                    </div>
-                  </td>
-                  <td className="num">{usd(l.balance)}</td>
-                  <td className="num">{l.ratePct.toFixed(2)}%{(l.floating ?? l.product === "float") ? " fl" : ""}</td>
-                  <td className={"num" + (lv !== null && lv > l.maxLTV ? " neg" : "")}>{lv !== null ? (lv * 100).toFixed(0) + "%" : "—"}</td>
-                  <td className={"num" + (d !== null && d < l.minDSCR ? " neg" : "")}>{d !== null ? d.toFixed(2) : "—"}</td>
-                  <td className="num">{usd(l.monthlyPmt)}</td>
-                  <td className={near ? "neg" : ""}>{monthLabel(l.maturityM)}</td>
-                  <td>
-                    <div className="btn-row" style={{ gap: 4, margin: 0, justifyContent: "flex-end" }}>
-                      <button
-                        className={"btn btn-sm" + (crumb ? " btn-buy" : "")}
-                        disabled={!canPay}
-                        title={jvBlock ? jvBlock : pledged(game, h.bbl)
-                          ? "Pledged to the facility — release it there first."
-                          : !canPay
-                            ? `Need ${usd(due.due)}${due.penalty > 0 ? ` incl. ${usd(due.penalty)} break fee` : ""} — short ${usd(due.due - fundableNow(game, parcels))}.`
-                            : due.penalty > 0
-                              ? `Retire the note: ${usd(due.balance)} + ${usd(due.penalty)} to break the paper. Deed free and clear.`
-                              : `Retire the note for ${usd(due.due)}. Deed free and clear — required before a ground lease.`}
-                        onClick={() => useStore.getState().payOffLoan(h.bbl)}
-                      >
-                        Pay off{crumb ? ` · ${usd(due.due)}` : ""}
-                      </button>
-                      {(l.floating ?? l.product === "float") && !l.cap && (
-                        <button
-                          className="btn btn-sm"
-                          title={`Index capped at ${capStrikeFor(game, l).toFixed(2)}% for three years.`}
-                          onClick={() => useStore.getState().rateCap(h.bbl)}
-                        >
-                          Cap · {usd(rateCapCost(l))}
-                        </button>
-                      )}
-                      <button
-                        className={"btn btn-sm" + (refiRow === h.bbl ? " btn-on" : "")}
-                        title={near
-                          ? "This one matures inside two years. Refinance it while somebody is still lending."
-                          : "What the desks would write against this building today."}
-                        onClick={() => setRefiRow(refiRow === h.bbl ? null : h.bbl)}
-                      >
-                        Refi
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                {refiRow === h.bbl && (
-                  <tr>
-                    <td colSpan={9} style={{ background: "rgba(43,37,26,0.035)" }}>
-                      <RefiSection bbl={h.bbl} />
-                    </td>
-                  </tr>
-                )}
-                </Fragment>
-              );
-            })}
-            {Object.values(game.developments).map((dv) => {
-              const rec = parcels[dv.bbl];
-              const intMo = (dv.loanBalance * dv.ratePct) / 100 / 12;
-              const lv = dv.costTotal > 0 ? dv.loanBalance / dv.costTotal : null;
-              return (
-                <tr key={`cons:${dv.bbl}`}>
-                  <td>
-                    <a className="lnk" onClick={() => useStore.getState().focus(dv.bbl, true)}>{rec?.address ?? dv.bbl}</a>
-                    <div className="dim" style={{ fontSize: 11 }}>construction · {dv.use}</div>
-                  </td>
-                  <td className="dim">
-                    {dv.lender ? <BankLink name={dv.lender} /> : "construction"}
-                    <div style={{ fontSize: 11 }}>
-                      {[dv.contract === "gmp" ? "GMP" : "cost-plus", "IO", dv.repudiatedM !== undefined ? "repudiated" : null]
-                        .filter(Boolean).join(" · ")}
-                    </div>
-                  </td>
-                  <td className="num" title={`${usd(dv.drawn)} drawn of ${usd(dv.commitment)} committed`}>
-                    {usd(dv.loanBalance)}
-                    <div className="dim" style={{ fontSize: 11 }}>of {usd(dv.commitment)}</div>
-                  </td>
-                  <td className="num">{dv.ratePct.toFixed(2)}%</td>
-                  <td className="num">{lv !== null ? (lv * 100).toFixed(0) + "%" : "—"}</td>
-                  <td className="num dim">—</td>
-                  <td className="num" title="Interest accruing into the loan, not paid in cash">{usd(intMo)}</td>
-                  <td>{monthLabel(dv.deliverM)}</td>
-                  <td className="dim">delivers</td>
-                </tr>
-              );
-            })}
-            {fac && (
-              <tr>
-                <td><strong>The facility</strong> <span className="dim">· {fac.bbls.length} deeds crossed</span></td>
-                <td className="dim">
-                  <BankLink name={fac.lender} />
-                  <div style={{ fontSize: 11 }}>
-                    {[fac.sweep ? "swept" : null, game.month < fac.ioUntilM ? "IO" : null, "recourse", "crossed"].filter(Boolean).join(" · ")}
-                  </div>
-                </td>
-                <td className="num">{usd(fac.balance)}</td>
-                <td className="num">{fac.ratePct.toFixed(2)}%</td>
-                <td className={"num" + (facM.ltv !== null && facM.ltv > fac.maxLTV ? " neg" : "")}>{facM.ltv !== null ? (facM.ltv * 100).toFixed(0) + "%" : "—"}</td>
-                <td className={"num" + (facM.dscr !== null && facM.dscr < fac.minDSCR ? " neg" : "")}>{facM.dscr !== null ? facM.dscr.toFixed(2) : "—"}</td>
-                <td className="num">{usd(fac.monthlyPmt)}</td>
-                <td className={fac.maturityM - game.month <= 24 ? "neg" : ""}>{monthLabel(fac.maturityM)}</td>
-                <td className="dim">—</td>
-              </tr>
-            )}
-            {!rows.some((r) => r.h.loan) && !fac && Object.keys(game.developments).length === 0 && (
-              <tr><td colSpan={9} className="dim">No debt. Every building here is owned outright.</td></tr>
-            )}
-          </tbody>
-        </table>
     </div>
   );
 }
@@ -849,8 +857,8 @@ function PoolRefusal({ quotes, refi = false }: { quotes: { available: boolean; w
   const whys = [...new Set(quotes.map((q) => q.why).filter(Boolean))] as string[];
   return (
     <div className="hint neg" style={{ margin: "6px 0" }}>
-      <strong>No desk will write this pool today.</strong> {whys.slice(0, 3).join(" ")}
-      {refi && " To get out: repay the balance from cash and the line, or release buildings one at a time below and refinance each on its own."}
+      <strong>No lender quotes this pool.</strong> {whys.slice(0, 3).join(" ")}
+      {refi && " Exit: repay from cash and line, or release and refinance buildings individually."}
     </div>
   );
 }

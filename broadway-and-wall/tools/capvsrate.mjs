@@ -39,7 +39,7 @@ for (let i = 0; i < N; i++) {
     const capIndex = e.indexRate - E.inflationOverBumpPct(e);
     const comp = {};
     for (const k of K) {
-      const vacGap = (e.cityVac?.[k] ?? E.NATURAL_VAC[k]) - E.NATURAL_VAC[k];
+      const vacGap = (e.cityVac?.[k] ?? E.OPENING_VAC[k]) - E.OPENING_VAC[k];
       comp[k] = {
         base: E.CAP_BASE[k],
         rate: 0.55 * ((capIndex - 5.4) + 2 * (Math.exp(-capIndex / 2) - Math.exp(-5.4 / 2))),   // market.ts capTargetOf

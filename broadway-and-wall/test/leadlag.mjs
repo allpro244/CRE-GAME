@@ -182,8 +182,9 @@ for (let i = 0; i < N; i++) {
     if (g.gameOver) g = { ...g, gameOver: null, cash: 6e6 };
     g = E.advanceQuarter(g, parcels, bbls, adjacency);
     const e = g.econ, cpi = e.cpi || 1;
-    // ORDERS: square feet the market asked for this month, before a site is picked.
-    s.orders.push(e.starts?.[K] ?? 0);
+    // ORDERS: square feet the developers committed to this month, before the hole is dug.
+    // (since FORMULA_LEDGER #27 the orders are the developers' own commitments; `starts` is ground broken)
+    s.orders.push(e.decided?.[K] ?? 0);
     // BREAKS / DELIVERIES off the authoritative deliveryQueue — player and
     // city jobs share one clock. Measuring cityJobs alone hid player supply
     // and disagreed with settleSupplyDeliveries (HANDOFF #1).

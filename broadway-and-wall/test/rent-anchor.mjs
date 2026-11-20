@@ -19,8 +19,7 @@ const { loadCity } = await import(join(HERE, "city.mjs"));
 
 const SEEDS = (process.env.SEEDS ?? "550991,12007,73303,11,22,7").split(",").map(Number);
 const HZ = Number(process.env.HZ ?? 1200);
-const fr = E.frictionFloor("office");
-const nat = E.NATURAL_VAC.office;
+const nat = E.OPENING_VAC.office;
 
 let bad = 0;
 const check = (ok, msg) => {
@@ -57,9 +56,10 @@ for (const seed of SEEDS) {
       + (g.econ.sublet?.office ?? 0) / Math.max(1, g.econ.stock?.office ?? 1);
     const gap = avail - nat;
     const vac = g.econ.cityVac.office ?? 0;
+    const fr = E.residenceVac(g.econ, "office");
     const pinned = vac <= fr + 1e-6;
     const railBound = vac <= fr + 0.012;
-    const te = g.econ.tightEma ?? 0;
+    const te = 0;   // tightEma retired 2026-11-07
     sumTE += te;
     maxTE = Math.max(maxTE, te);
     const dNom = Math.log(g.econ.rentIdx.office / Math.max(1e-9, rBefore));
@@ -127,10 +127,7 @@ const medCostReal = med(rows.map((r) => r.costRealC));
 // compounding nominally near CPI.
 // Before on-rail scarcity mute: pin-month real ~+1.2%/yr from st×level.
 // Before firm-near mute: vac∈(friction, friction+2pp) printed +4–5%/yr real.
-check(medTEpin <= medTE + 0.02,
-  `tightEma while pinned ${medTEpin.toFixed(3)} vs overall avg ${medTE.toFixed(3)} (need pinned <= avg + 0.02 — a market resting on its frictional floor must not MINT scarcity from being unable to get tighter)`);
-check(medMaxTE <= 0.35,
-  `median max tightEma ${medMaxTE.toFixed(3)} (need ≤ 0.35 — was saturating near 0.55 on the rail)`);
+// (check 3, tightEma, retired 2026-11-07 with the field: it read a "normal" vacancy and nothing in the engine used it)
 check(medRti <= 1.15,
   `median rent-to-income ${medRti.toFixed(2)}x (need ≤ 1.15)`);
 check(medRti >= 0.45,

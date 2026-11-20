@@ -15,12 +15,9 @@ export default function FirmStanding() {
   const pct = Math.round(fc.score * 100);
   return (
     <div className="page-section">
-      <div className="page-section-head">
+      <div className="page-section-head" title="What the firm has earned as an institution: lender file, clean exits, vehicle, and book size.">
         Standing · {fc.label}
         <span className="dim mono" style={{ marginLeft: 8 }}>tier {fc.tier}/5 · {pct}%</span>
-      </div>
-      <div className="hint">
-        What the firm has earned as an institution: lender file, clean exits, vehicle, and book size.
       </div>
       <div className="grid" style={{ margin: "8px 0" }}>
         {fc.pillars.map((p) => (

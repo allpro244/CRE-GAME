@@ -101,7 +101,10 @@ for (const f of readdirSync(OUT)) if (f.endsWith(".png")) try { unlinkSync(join(
 const CHROME = process.env.BW_CHROME ?? [
   "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
   "C:/Program Files/Google/Chrome/Application/chrome.exe",
-  "/opt/pw-browsers/chromium-1194/chrome-linux/chrome",
+  "/usr/bin/google-chrome", "/usr/bin/chromium",
+  // the cloud box's Playwright Chromium, whatever build it is today
+  ...(existsSync("/opt/pw-browsers") ? readdirSync("/opt/pw-browsers").filter((d) => /^chromium-\d+$/.test(d))
+    .flatMap((d) => ["chrome-linux64", "chrome-linux"].map((x) => join("/opt/pw-browsers", d, x, "chrome"))) : []),
 ].find((p) => existsSync(p));
 if (!CHROME) bail(2, "no Edge or Chrome found; set BW_CHROME");
 const dport = 9300 + Math.floor(Math.random() * 600);
@@ -263,7 +266,8 @@ function report() {
 
 // ---------------------------------------------------------------- the game
 const st = (expr) => js(`const s = window.__store.getState(), g = s.game; return (${expr});`);
-async function load(q = "?ui=next") {
+// `maps=all`: the region map is hidden from players (state/city.ts regionShown); its land flows are played here
+async function load(q = "?ui=next&maps=all") {
   pageErrors = [];
   await send("Page.navigate", { url: url + q });
   for (let i = 0; i < 120; i++) {
@@ -380,7 +384,7 @@ async function mouseClick(x, y, what = "a click on the plat") {
   timed(what, Date.now() - t);
 }
 // the building file is the drawer that is not a place's
-const fileDrawer = `[...document.querySelectorAll(".nx-drawer")].find((d) => !["Inbox", "Holdings", "Pipeline", "Buy", "Leasing", "Markets", "Capital", "City", "Saves", "Settings"].includes(d.getAttribute("aria-label")))`;
+const fileDrawer = `[...document.querySelectorAll(".nx-drawer")].find((d) => !["Inbox", "Holdings", "Pipeline", "Marketplace", "Leasing", "Markets", "Capital", "City", "Saves", "Settings"].includes(d.getAttribute("aria-label")))`;
 const drawer = (title) => title ? `[...document.querySelectorAll(".nx-drawer")].find((d) => (d.getAttribute("aria-label") || "").startsWith(${S(title)}))` : `document.querySelector(".nx-drawer")`;
 /** Click a button by its words inside the open drawer(s) (or the page). Returns its text or null. */
 const tap = async (re, scope = "") => {
@@ -466,7 +470,8 @@ await flow("land", async () => {
   if (!regionUp) { await newGame("Region (6 km)", SEED, REGION_CASH_M); regionUp = true; }
   // NEAR-TOWN TRACTS THAT ARE MOSTLY DRY LAND, nearest first; the file's Overview says whether a plat pencils
   const cands = await st(`Object.entries(s.parcels).filter(([b, r]) => r.ag && r.tract && !g.holdings[b] && (r.buildableSf ?? r.lotArea) / r.lotArea > 0.6)
-    .sort((a, b) => a[1].tract.edgeM - b[1].tract.edgeM).slice(0, 10).map(([b]) => b)`);
+    .sort((a, b) => a[1].tract.edgeM - b[1].tract.edgeM).slice(0, 25)
+    .sort((a, b) => (b[1].buildableSf ?? b[1].lotArea) - (a[1].buildableSf ?? a[1].lotArea)).map(([b]) => b)`);   // plan 17's suburbs take the nearest farms' edges: the 25 nearest, biggest first
   check(cands.length > 0, "the region has dry farm tracts by town");
   let bbl = null;
   let tries = 0;
@@ -737,12 +742,12 @@ await flow("island", async () => {
   note(`island started in ${(ms / 1000).toFixed(1)} s · ${await st(`Object.keys(s.parcels).length`)} lots`);
   await screen("playing");
   // BUY A BUILDING AT ASK: Market, Pay ask on the row, Confirm
-  await js(`return __pt.click(/Buy$/, document.querySelector(".nx-rail"));`); await sleep(600);
-  await tap(`/^For sale$/`, drawer("Buy")); await sleep(500);
+  await js(`return __pt.click(/Marketplace$/, document.querySelector(".nx-rail"));`); await sleep(600);
+  await tap(`/^For sale$/`, drawer("Marketplace")); await sleep(500);
   await screen("market");
   const cash = await st(`g.cash`);
   // the first row the firm can carry: the table is sorted by yield; take one priced under the cash
-  const row = await js(`const d = ${drawer("Buy")}; if (!d) return null;
+  const row = await js(`const d = ${drawer("Marketplace")}; if (!d) return null;
     const btns = [...d.querySelectorAll("button")].filter((b) => __pt.norm(b.textContent) === "Pay ask");
     const ok = btns.find((b) => { const m = /\\$([\\d.]+)([KM])/.exec(b.title || ""); if (!m) return false; const v = Number(m[1]) * (m[2] === "M" ? 1e6 : 1e3); return v < ${cash} * 2.5; });
     if (!ok) return null; ok.scrollIntoView({ block: "center" }); ok.click(); return ok.title;`);

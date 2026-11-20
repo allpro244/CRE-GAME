@@ -26,7 +26,8 @@ import { cloneState, logBooks } from "./types";
 import { bareLandRec, groundYieldPct, landValue, leaseholdGroundPv, ownedHoldingValueFromRec, resolveRec } from "./value";
 import { stackPayoff } from "./debt";
 import { fundCashNeed, fundableNow } from "./credit";
-import { CAP_GAINS_RATE, TRANSFER_TAX } from "./actions";
+import { CAP_GAINS_RATE } from "./actions";
+import { transferTaxRate } from "./citygov";
 import { consentFor } from "./vehicles";
 
 /** Ninety-nine years: the ordinary term for a ground lease a lender will finance under. */
@@ -34,6 +35,9 @@ export const LEASEHOLD_TERM_M = 99 * 12;
 /**
  * Fixed annual steps. Modern ground leases run either CPI or fixed bumps of
  * about 2% a year; fixed is the common institutional form and needs no index.
+ * [S~: fixed steps of 2% a year, or 10% every five years, are the usual form
+ * in ground-lease practice guides; Safehold's 10-K (2021) pairs contractual
+ * increases with CPI lookbacks capped at 3.0-3.5%.]
  */
 export const LEASEHOLD_STEP = 0.02;
 /** Counsel, title and the ground buyer's advisers on a fee sale — about a point, a fact of the trade. */
@@ -56,7 +60,7 @@ export interface LeaseholdQuote {
 
 function blocker(s: GameState, h: Holding | undefined, rec: ReturnType<typeof resolveRec>): string | null {
   if (!h || !rec) return "You don't own that.";
-  if (rec.class === "land" || !rec.bldgArea) return "There is no building to keep — this is dirt. Sell it, or ground-lease it out.";
+  if (rec.class === "land" || !rec.bldgArea) return "No building here; vacant land. Sell it or ground-lease it.";
   if (h.groundLeased || s.groundLeases?.[h.bbl]) return "You are the ground lessor here already.";
   if (h.groundRentOut) return "The land under it is already sold.";
   if (h.jv || h.fundOwned) return consentFor(s, h, "groundLease");
@@ -78,7 +82,7 @@ export function leaseholdQuote(s: GameState, parcels: ParcelTable, bbl: string):
   const price = Math.round(landValue(bare, s.econ));
   const yieldPct = groundYieldPct(s.econ);
   const rentYr = Math.round(price * yieldPct / 100);
-  const costs = Math.round(price * (TRANSFER_TAX + LEASEHOLD_DEAL_COST));
+  const costs = Math.round(price * (transferTaxRate(s) + LEASEHOLD_DEAL_COST));
   const stack = stackPayoff(h, s.month, s.econ);
   const payoff = stack.balance + stack.penalty;
   const valueBefore = ownedHoldingValueFromRec(s, rec, h);
@@ -138,7 +142,7 @@ export function sellLandLeaseBack(
 /** What the fee costs to buy back today: the ground rent at the ground yield, plus the transfer. */
 export function landBuybackCost(s: GameState, h: Holding): number {
   const pv = leaseholdGroundPv(h, s.econ);
-  return Math.round(pv * (1 + TRANSFER_TAX + LEASEHOLD_DEAL_COST));
+  return Math.round(pv * (1 + transferTaxRate(s) + LEASEHOLD_DEAL_COST));
 }
 
 /** Buy the land back and own the building freehold again. */
@@ -148,7 +152,7 @@ export function buyLandBack(
   const h0 = s.holdings[bbl];
   if (!h0?.groundRentOut) return { s, err: "You own the land here." };
   const cost = landBuybackCost(s, h0);
-  if (fundableNow(s, parcels) < cost) return { s, err: `The fee costs $${cost.toLocaleString()} today — you cannot raise it.` };
+  if (fundableNow(s, parcels) < cost) return { s, err: `Land buyback costs $${cost.toLocaleString()}; not enough cash or line.` };
   const next = cloneState(s);
   const paid = fundCashNeed(next, parcels, cost);
   if (paid < cost) return { s, err: `Could not raise the $${cost.toLocaleString()}.` };

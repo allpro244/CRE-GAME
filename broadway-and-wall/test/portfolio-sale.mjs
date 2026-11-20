@@ -17,10 +17,7 @@ const check = (ok, msg) => {
 console.log("\nPORTFOLIO SALE — buyer depth and empty-room silence\n");
 
 check(typeof E.portfolioBuyerDepth === "function", "portfolioBuyerDepth is exported");
-check(E.portfolioBuyerDepth(1_500_000) === 0, "under $2M — no buyer can fund a portfolio");
-check(E.portfolioBuyerDepth(2_500_000) >= 1, "above Riverside's floor — at least one private desk");
-check(E.portfolioBuyerDepth(7_000_000) >= 2, "above Bellwether — more than one desk");
-check(E.portfolioBuyerDepth(50_000_000) >= 4, "institutional cheque — deep room");
+check(typeof E.portfolioBuyers === "function", "portfolioBuyers is exported — the roster firms that can close a book");
 
 // Quote must not invent a buyer when the pool is empty.
 {
@@ -46,12 +43,13 @@ check(E.portfolioBuyerDepth(50_000_000) >= 4, "institutional cheque — deep roo
     }
     const bundle = Object.keys(g.holdings);
     const q = E.portfolioQuote(g, parcels, bundle);
-    check(q.depth === E.portfolioBuyerDepth(q.sumOfParts), "quote depth matches portfolioBuyerDepth");
+    check(q.depth <= E.livingRivals(g).length, "quote depth counts firms on the street, never more");
+    check(E.portfolioBuyerDepth(g, parcels, bundle, 1e13) === 0, "a cheque bigger than the street has no buyer");
     check(Number.isFinite(q.depth) && q.depth >= 0, "depth is never invented above the real pool");
-    // If the book is under $2M, listing must refuse rather than burn nine months.
-    if (q.sumOfParts < 2_000_000) {
+    // With nobody able to fund it, listing must refuse rather than burn nine months.
+    if (q.depth <= 0) {
       const listed = E.listPortfolio(g, parcels, bundle, q.indicative);
-      check(!!listed.err && !listed.s.portfolioSale, "sub-$2M book cannot go to market as a portfolio");
+      check(!!listed.err && !listed.s.portfolioSale, "a book nobody in town can fund cannot go to market as a portfolio");
     } else {
       const listed = E.listPortfolio(g, parcels, bundle, Math.round(q.indicative * 0.95));
       check(!listed.err && !!listed.s.portfolioSale, "fundable book lists");

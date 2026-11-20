@@ -41,6 +41,9 @@ function scanNaN(v, path, out, depth = 0) {
   }
   for (const [k, x] of Object.entries(v)) {
     if (k === "rng" || k === "streams" || k === "news" || k === "hist") continue;
+    // A household's taste is NaN until it is drawn — the sentinel is the design
+    // (households.ts FIELD_DEFAULT), not a fault.
+    if (k === "taste" && path === "g.households.a") continue;
     scanNaN(x, path ? `${path}.${k}` : k, out, depth + 1);
   }
 }

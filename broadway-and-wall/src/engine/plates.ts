@@ -377,7 +377,11 @@ export function drawTenantSf(
   // `scale`: the building's pull on bigger firms (`sizeScale`).
   const raw = Math.exp(d.mu + d.sigma * gaussLeasing(s)) * Math.max(0.2, scale);
   let sf = Math.min(cap, Math.max(d.floor, raw));
-  if (use === "industrial" && cap <= plateSf * 1.05 && rng(s, "leasing") < 0.45) {
+  // WHOLE-BAY PRODUCT: a shed is taken whole when cutting off this firm's
+  // requirement would leave the landlord a sliver no other firm will lease
+  // (remnantSf), so the firm takes the bay rather than the landlord demising
+  // it. It was a die at 45% whatever was left (2026-11-11).
+  if (use === "industrial" && cap <= plateSf * 1.05 && sf < cap && remnantSf(cap - sf, plateSf, use)) {
     sf = cap;
   }
   if (sf > plateSf && sf < plateSf * 1.15) sf = plateSf;

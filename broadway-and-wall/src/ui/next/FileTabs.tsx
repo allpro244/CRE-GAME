@@ -6,6 +6,7 @@
  * not carry (leasing policy, rate caps, mezz, stakes, ground leases) is one
  * click away under "Desk", the classic desk hosted unchanged.
  */
+import { AskNudge } from "@/ui/panels/AskNudge";
 import { useMemo, useState } from "react";
 import { useStore } from "@/state/store";
 import type { GameState, Holding, Tenant } from "@/engine/types";
@@ -18,10 +19,12 @@ import { loiMarketPsf } from "@/ui/panels/LoiNegotiate";
 import { ParcelPanel } from "@/ui/panels/ParcelDesk";
 import { derive } from "@/ui/derive";
 import { usd } from "@/ui/format";
-import { DataTable, Stat, StatStrip, type Col } from "./DataTable";
+import { DataTable, Stat, StatStrip, type Col, rollTone } from "./DataTable";
 import { Figure, fmtFig } from "./Figure";
 import { VerbButton } from "./Drawer";
 import { CapitalDesk } from "./CapitalDesk";
+import { BizLink } from "@/ui/BizSheet";
+import { RentExposure } from "@/ui/panels/IndustriesView";
 
 /** "Desk": the classic tab, hosted, for everything the table does not carry. */
 function Desk({ tabs, force }: { tabs: ("leasing" | "ops" | "money")[]; force?: boolean }) {
@@ -54,12 +57,12 @@ export function RentRollTab({ game, parcels, bbl, h }: { game: GameState; parcel
   const countering = focus !== null && lois.some((l) => l.id === focus);
   const args = { bbl };
   const cols: Col<LeaseRow>[] = [
-    { id: "name", label: "Tenant", get: (r) => r.t.name },
+    { id: "name", label: "Tenant", get: (r) => r.t.name, cell: (r) => <BizLink t={r.t} /> },
     { id: "use", label: "Use", get: (r) => r.t.use ?? rec.class },
     { id: "sector", label: "Sector", get: (r) => r.t.sector, hidden: true },
     { id: "sf", label: "sf", get: (r) => r.t.sf, fmt: "n" },
     { id: "rent", label: "$/sf", get: (r) => r.t.rentPsf, fmt: "psf" },
-    { id: "vs", label: "vs mkt", get: (r) => (mkt > 0 ? r.t.rentPsf / mkt - 1 : null), fmt: "pct", tone: (r) => (r.t.rentPsf < mkt ? "neg" : "pos") },
+    { id: "vs", label: "vs mkt", get: (r) => (mkt > 0 ? r.t.rentPsf / mkt - 1 : null), fmt: "pct", tone: (r) => rollTone(mkt > 0 ? r.t.rentPsf / mkt - 1 : null) },
     { id: "yr", label: "Rent / yr", get: (r) => r.t.rentPsf * r.t.sf, fmt: "usd" },
     { id: "start", label: "Start", get: (r) => r.t.startM, cell: (r) => <span className="mono">{monthLabel(r.t.startM)}</span>, hidden: true },
     { id: "end", label: "Ends", get: (r) => r.t.endM, cell: (r) => <span className="mono">{monthLabel(r.t.endM)}</span>, tone: (r) => (r.t.endM - game.month <= 12 ? "neg" : undefined) },
@@ -89,7 +92,7 @@ export function RentRollTab({ game, parcels, bbl, h }: { game: GameState; parcel
               const m = loiMarketPsf(game, parcels, l);
               return (
                 <tr key={l.id}>
-                  <td><span className="nx-strong-cell">{l.name}</span> <span className="nx-dim">{l.kind}</span></td>
+                  <td><span className="nx-strong-cell"><BizLink t={l} /></span> <span className="nx-dim">{l.kind}</span></td>
                   <td className="num mono">{Math.round(l.sf).toLocaleString()}</td>
                   <td className="num mono">{l.rentPsf.toFixed(2)}</td>
                   <td className={"num mono" + (m > 0 && l.rentPsf < m ? " nx-neg" : " nx-pos")}>{m > 0 ? fmtFig(l.rentPsf / m - 1, "pct") : "—"}</td>
@@ -109,6 +112,7 @@ export function RentRollTab({ game, parcels, bbl, h }: { game: GameState; parcel
           </tbody>
         </table>
       )}
+      <RentExposure holding={h} />
       <DataTable id="file-roll" cols={cols} rows={rows} rowKey={(r) => String(r.i) + r.t.name} initialSort={{ col: "sf", dir: -1 }} empty="No leases" />
       <Desk tabs={["leasing", "ops"]} force={countering} />
     </div>
@@ -136,11 +140,10 @@ export function LeasingPlan({ h, bbl }: { h: Holding; bbl: string }) {
   return (
     <div className="nx-box nx-lp">
       <div className="nx-box-head nx-sec">Leasing plan</div>
-      {seg("Asking", h.stance ?? 0, [
-        { v: 1 as const, label: "Push +8%", tip: "Higher asking rents, fewer letters, slower lease-up" },
-        { v: 0 as const, label: "Market", tip: "Ask the market rent" },
-        { v: -1 as const, label: "Fill −8%", tip: "Lower asking rents, faster lease-up" },
-      ], (v) => st.stance(bbl, v))}
+      <div className="nx-lp-row">
+        <span className="nx-lp-k">Asking</span>
+        <AskNudge label="Asking" stance={h.stance ?? 0} set={(v) => st.stance(bbl, v)} />
+      </div>
       {seg("Letters", h.autoLease ? "auto" : h.principalSigns ? "me" : "desk", [
         { v: "me", label: "I sign", tip: "Every letter of intent pops up for you to sign, counter or decline" },
         { v: "desk", label: "Leasing desk", tip: "Your leasing desk or agent answers what it covers; the rest come to you" },
@@ -194,7 +197,7 @@ export function RefiTable({ game, parcels, bbl, max = 8 }: { game: GameState; pa
   return (
     <>
     <div className="nx-refi-ctl">
-      <label>Borrow <b className="mono">{Math.round(lev * 100)}%</b> of each desk's max
+      <label>Borrow <b className="mono">{Math.round(lev * 100)}%</b> of desk max
         <input type="range" min={0.25} max={1} step={0.05} value={lev} onChange={(e) => setLev(+e.target.value)} />
       </label>
       <span className="seg" role="group" aria-label="Rate type">

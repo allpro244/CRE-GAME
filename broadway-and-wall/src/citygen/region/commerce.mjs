@@ -249,14 +249,16 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
   for (const c of shuffle(corners.filter((q) => edge(q.p) > 30 && edge(q.p) < 700)).concat(shuffle(front.filter((q) => edge(q.p) > 30 && edge(q.p) < 900)))) {
     if (placed.filter((s) => s.type === "neighbourhood").length >= nNbhd) break;
     if (anyNear(c.p, 450) || near(c.p, "neighbourhood", 1900) || near(c.p, "community", 800)) continue;
-    const grocery = R(35000, 60000), inline = R(15000, 50000);
+    const grocery = R(35000, 60000), inline = M.planV >= 17 ? R(10000, 30000) : R(15000, 50000);   // the shops beside the grocery, kept short (owner, plan 17)
     const site = retail({ boxes: [grocery], roles: ["grocery"], inline, pads: PAD().slice(0, I(0, 2)), year: Math.round(R(1960, 1995)), name: nameOf("Shopping Center (neighbourhood centre)") });
     put(c.p, c.u, site.parcels, { type: "neighbourhood" }, [site.W / 2 + 22, -(site.W / 2 + 22)]);
   }
 
   // ---- 3. strip and convenience centres, and gas stations, through the inner ring and along the roads out
   const nStrip = I(4, 8);
-  for (const c of shuffle(corners.filter((q) => edge(q.p) < 1800).concat(front.filter((q) => q.old && edge(q.p) < 1800)))) {
+  // (plan 17: within 900 m of the town, where the houses are — 1.8 km out they stood alone in the corn, owner)
+  const stripReach = M.planV >= 17 ? 900 : 1800;
+  for (const c of shuffle(corners.filter((q) => edge(q.p) < stripReach).concat(front.filter((q) => q.old && edge(q.p) < stripReach)))) {
     if (placed.filter((s) => s.type === "strip" || s.type === "gas").length >= nStrip) break;
     if (anyNear(c.p, 350)) continue;
     if (rng() < 0.35) {
@@ -264,14 +266,19 @@ export function placeCommerce(M, lots, { okPt, stampRect, rng }) {
       const rects = [{ a: 0, o: 0, w: 60, d: 55, kind: "lot" }, { a: -12, o: 4, w: 30, d: 22, kind: "pave" }, { a: 14, o: 55 - bd - 4, w: bw, d: bd, kind: "bldg", z: 520, cls: "retail", floors: 1, role: "gas", sf: Math.round(sf) }];
       put(c.p, c.u, [{ rects, sf, name: `${["Casey's", "Shell", "Marathon", "BP", "Phillips 66"][I(0, 4)]} gas and convenience`, cls: "retail", bldgclass: "K1", year: Math.round(R(1970, 2015)) }], { type: "gas" }, [55, -55]);
     } else {
-      const site = retail({ inline: R(9000, 28000), pads: rng() < 0.4 ? PAD().slice(0, 1) : [], year: Math.round(R(1965, 2010)), name: nameOf("Square (strip centre)"), bldgclass: "K1" });
+      // MOST STRIPS ARE SMALL (owner: the long ones "look really weird"): the typical strip by the road is
+      // 3-6 shops, 4-9k sf on a lot of about an acre [S, ICSC convenience centres run 10-30k but the
+      // unanchored strips most towns are full of are smaller]; one in four is a longer 9-16k row
+      const plan17 = M.planV >= 17;
+      const inline = plan17 ? (rng() < 0.75 ? R(4000, 9000) : R(9000, 16000)) : R(9000, 28000);
+      const site = retail({ inline, pads: (!plan17 || inline > 9000) && rng() < 0.4 ? PAD().slice(0, 1) : [], year: Math.round(R(1965, 2010)), name: nameOf("Square (strip centre)"), bldgclass: "K1" });
       put(c.p, c.u, site.parcels, { type: "strip" }, [site.W / 2 + 20, -(site.W / 2 + 20)]);
     }
   }
 
   // ---- industrial 2: light industrial and flex on the arterials at the town's edge
   const nFlex = I(5, 8);
-  for (const f of shuffle(front.filter((q) => edge(q.p) > 150 && edge(q.p) < 1600))) {
+  for (const f of shuffle(front.filter((q) => edge(q.p) > 150 && edge(q.p) < (M.planV >= 17 ? 1000 : 1600)))) {   // plan 17: on the town's edge, not out in the fields
     if (placed.filter((s) => s.type === "flex").length >= nFlex) break;
     if (anyNear(f.p, 250) || placed.some((s) => s.type !== "flex" && dist(s.at, f.p) < 450)) continue;
     const sf = R(10000, 40000), acres = Math.min(5, Math.max(1, (sf * FT2) / R(0.3, 0.45) / ACRE)), m2 = acres * ACRE;

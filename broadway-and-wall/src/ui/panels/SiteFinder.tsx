@@ -109,28 +109,29 @@ export function SiteFinder() {
   const off = allOff ? offMarket : offMarket.slice(0, SHOW);
   return (
     <div className="page-section" style={{ marginTop: 14 }}>
-      <div className="page-section-head">
-        Sites · {pencilAtMarket} of {vacant} vacant lots pencil at today's land price
-      </div>
-      <div className="hint" style={{ marginBottom: 6 }}>
-        A lot pencils when a builder can pay more for the dirt than it costs and still earn the developer margin.
-        Click a lot to open its card. The Sites map lens shows the same thing for every lot in town.
+      <div className="page-section-head"
+        title="A lot pencils when a builder can pay more for the dirt than it costs and still earn the developer margin. Click a lot to open its card. The Sites map lens shows the same thing for every lot in town.">
+        Sites · {pencilAtMarket} of {vacant} vacant lots pencil
       </div>
 
       <div className="page-section" style={{ marginTop: 6 }}>On the market</div>
       {useful.length
         ? table(useful.slice(0, SHOW), "Ask", false)
         : (
-          <div className="dim">
-            {listed.length
+          <div className="dim"
+            title={listed.length
               ? `${listed.length} vacant lot${listed.length === 1 ? " is" : "s are"} on the tape and no builder can pay for any of them at today's rents — call an owner below.`
-              : "No vacant land on the tape this month."}
+              : "No vacant land on the tape this month."}>
+            None
           </div>
         )}
 
-      <div className="page-section" style={{ marginTop: 10 }}>Off-market · worth a call to the owner</div>
+      <div className="page-section" style={{ marginTop: 10 }}
+        title="Unlisted lots that pencil for a builder. Priced where a builder's residual sets it, so at that number a scheme clears its hurdle with the margin and no more. The owner names their own number when you call — most want more.">
+        Off-market
+      </div>
       {offMarket.length === 0
-        ? <div className="hint dim">No unlisted lot in town pencils for a builder at today's rents. That is most of the cycle, and it is when the next shortage starts.</div>
+        ? <div className="dim" title="No unlisted lot in town pencils for a builder at today's rents. That is most of the cycle, and it is when the next shortage starts.">None</div>
         : (
           <>
             {table(off, "Trades at", true)}
@@ -139,7 +140,6 @@ export function SiteFinder() {
                 {allOff ? "Show fewer" : `Show all ${offMarket.length}`}
               </button>
             )}
-            <div className="hint">Priced where a builder's residual sets it, so at that number a scheme clears its hurdle with the margin and no more. The owner names their own number when you call — most want more.</div>
           </>
         )}
     </div>

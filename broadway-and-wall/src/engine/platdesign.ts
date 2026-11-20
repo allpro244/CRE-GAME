@@ -465,14 +465,14 @@ export function startDesignedPlat(
   const p = plattable(s, parcels, bbl);
   if ("err" in p) return { s, err: p.err };
   const rz = s.rezoned?.[bbl];
-  if (!rz) return { s, err: "It is still zoned for farming. File the rezoning with this plat first." };
+  if (!rz) return { s, err: "Still zoned agricultural. File the rezoning with this plat first." };
   if (s.plats?.[bbl]) return { s, err: "The streets are already going in." };
   if (h.loan) return { s, err: "Pay off the loan on the tract first: the A&D lender takes the first lien." };
-  if (h.sale) return { s, err: "It is listed for sale. Take it off the market before you build streets on it." };
+  if (h.sale) return { s, err: "It is listed for sale. Withdraw the listing first." };
   const n = geo.lots.length;
   // THE BOARD APPROVED A NUMBER. A final plat must conform to the preliminary one: fewer lots, or a
   // different mix, is a minor change staff signs off; more lots than were approved goes back to the board.
-  if (rz.lots !== undefined && n > rz.lots) return { s, err: `The board approved ${rz.lots} lots; this plat has ${n}. More lots is a new application.` };
+  if (rz.lots !== undefined && n > rz.lots) return { s, err: `Approved for ${rz.lots} lots; this plat has ${n}. More lots needs a new application.` };
   const area = geo.lots.reduce((t, l) => t + l.a, 0);
   if (n < 2 || !(area > 0) || area > p.rec.lotArea * 1.001) return { s, err: "That plat does not fit the tract." };
   const pnl = designPnl(s, parcels, bbl, design, geo);
@@ -483,13 +483,13 @@ export function startDesignedPlat(
   const points = ad && ad.loan > 0 ? ad.points + ad.cap : 0;   // origination and the rate cap, both at the table
   const room = spendable(s, parcels);
   const need = dev - loanFunded + points;
-  if (room.total < need) return { s, err: `The streets, pipes, impact fees and amenities run ${money(dev)}${loanFunded ? `, ${money(loanFunded)} of it lent` : ""}; you can raise ${money(room.total)} of the ${money(need)} that is yours.` };
+  if (room.total < need) return { s, err: `The streets, pipes, impact fees and amenities run ${money(dev)}${loanFunded ? `, ${money(loanFunded)} of it lent` : ""}; available ${money(room.total)} of the ${money(need)} equity needed.` };
   const next = cloneState(s);
   const H = next.holdings[bbl];
   if (ad && ad.loan > 0) {
     const prod = productById(AD_PRODUCT);
     const base = originate(next, prod, pnl.cost, 0, 1, undefined, "land");
-    if (!base) return { s, err: "Tidewater will not write the note today." };
+    if (!base) return { s, err: "Tidewater declined the loan." };
     const doneM = next.month + pnl.infraM;
     const loan: Loan = {
       ...base,

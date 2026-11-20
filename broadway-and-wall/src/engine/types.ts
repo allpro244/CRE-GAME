@@ -38,6 +38,10 @@ export interface SupplyProject {
   deliverM: number;
   sfByUse: Partial<Record<BuiltClass, number>>;
   status: "active" | "stalled" | "cancelled";
+  /** Counted in this month's starts (econ.brokeMonth) and not yet read out (supply.ts cancelSupplyProject). */
+  broke?: true;
+  /** Known to the market but not yet in the ground: counted as a start in its startM (supply.ts breakDueStarts). */
+  awaiting?: true;
 }
 export const BUILT_CLASSES: BuiltClass[] = ["office", "retail", "multifamily", "industrial"];
 
@@ -73,6 +77,51 @@ export type Credit = 0 | 1 | 2; // C, B, A
 export const CREDIT_LABEL = ["C", "B", "A"];
 
 /** One trade's accounts, real terms, opening month's sales = 1. */
+/** The money loop's month, as the engine reads it (Econ.eco; economy.ts `economyToEngine`). */
+export interface EcoDrive {
+  m: number;
+  /** The register: earners in work, the labour force, the jobless rate, people, households, the age mix, renter households (island and region). */
+  jobs: number; lf: number; unemp: number; persons: number; households: number;
+  ages: { kids: number; work: number; old: number };
+  renters: number;
+  /** Households arrived for work and left out of work this month (weighted); renter households that bought, as a share a year. */
+  arrived: number; left: number; buyRate?: number;
+  /**
+   * HOUSEHOLDS STAGE 2: the renter households that want an island flat at the
+   * going rents (the flats' demand, market.ts); the island renters' move-out
+   * rate a year and the share of ending island leases that end in a move (the
+   * player's flats and the street's renewals); the last twelve months' home
+   * buyers, their pay a year and weight (the builders' sales, homeprice.ts).
+   */
+  islandWant?: number; flatMoveOut?: number; flatLeaseMove?: number;
+  buyers?: { m: number; inc: number; w: number }[];
+  /** The firms' heads (labour demand); 0 before the books open. */
+  heads: number;
+  /** Floor the firms' heads take, by class (sf): on the floor, not at home, not in a building of their own. */
+  floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>;
+  /** The floor each class's industries' employment needs (sf; employment, not heads: what their sales pay for), and each industry's employment on a rented floor. */
+  workSf?: Partial<Record<"office" | "retail" | "industrial", number>>;
+  floorHeads?: number[];
+  /** Each industry's employment now and a month ago, and the heads the island's named firms are formed toward (its share at the opening). */
+  emp?: number[]; empPrev?: number[]; target?: number[];
+  /** Each trade's employment and real sales against the opening: its industries', by the heads it had in each. */
+  trade?: Partial<Record<Sector, { sales: number; emp: number; margin: number }>>;
+  /**
+   * THE CITY ITSELF, not its commuting region (citygov.ts reads it): the
+   * people and children in the island's flats (the register's island
+   * renters) and the jobs of the firms on the map (the named firms' heads).
+   */
+  island?: { persons: number; kids: number; households: number; jobs: number };
+  /**
+   * What the town's firms posted this month (economy.ts `postPayAndPrices`): their pay, heads-weighted
+   * (the town's wage index, read a month on), each industry's, their prices against the nation's at the
+   * household basket's local weights, and the share of that basket bought in town.
+   */
+  wage?: number; payIdx?: number[]; priceRel?: number; localShare?: number;
+  /** Named links won and lost this month (economy.ts `tickLinks`): each firm id's move in its fortune, log — its tenant books take it next month. */
+  linkDz?: Record<string, number>;
+}
+
 export interface FirmBook {
   sales: number; emp: number; cash: number; debt: number;
   /** last year's sales, smoothed — what the cost base was built for */
@@ -86,18 +135,38 @@ export interface FirmBook {
 }
 
 export interface Tenant {
+  /**
+   * Its taste for the suite it signed (a standard Gumbel draw, streetRolls.ts
+   * `value`), kept for the life of the match: what made it choose this
+   * suite over the others it was shown does not vanish at the renewal.
+   */
+  tasteU?: number;
   name: string;
   /**
    * THE FIRM BEHIND THE LEASE (streetRolls.ts). A firm keeps its id, name and
    * books when it moves between buildings — the street's, or the player's.
    */
   fid?: number;
-  /** Space the firm wanted at signing, at reference rents, per unit of `staffSign` — its headcount in feet. */
+  /**
+   * The industry a firm was formed in (index into industries.ts INDUSTRY_IDS):
+   * the street forms firms for the work its industries add (streetRolls.ts),
+   * and the city's books put it there (economy.ts). Unset: drawn from its trade.
+   */
+  ind?: number;
+  /** Space the firm's people needed at signing, per unit of `staffSign` — its heads times its industry's feet a worker (tenantMarket.ts `tenantHeads`). */
   hcRef?: number;
+  /** Feet a worker it signed for against its industry's norm, from the real rent at its last lease event (streetRolls.ts SPACE_RENT_ELAST). Unset: 1. */
+  spw?: number;
+  /** Its heads when its class's demand was last written down (streetRolls.ts, why.ts). */
+  hdNote?: number;
   /** Headcount (`staff`) when it last signed — the space it took was sized for these people. */
   staffSign?: number;
   /** Its trade's payroll index last month — headcount moves with the trade. */
   empRef?: number;
+  /** Its industry's employment when it last staffed (economy.ts `staff`; streetRolls.ts), in heads. */
+  empInd?: number;
+  /** A shop's walking catchment's share of the town's people when it last staffed (streetRolls.ts CATCHMENT). */
+  catch?: number;
   /** The quality the tenant shopped for, 1-100 (TENANT_TIERS_PLAN.md). */
   quality?: number;
   // Which part of the building they are in. A shop under a block of flats is
@@ -116,6 +185,8 @@ export interface Tenant {
   net: boolean;        // legacy flag; `recovery` is the real answer
   recovery?: "nnn" | "base" | "gross";
   baseStopPsf?: number;   // base-year expense stop, $/sf — frozen at signing
+  /** What the tenant expects to pay toward the building's bills on top of its rent, $/sf a year over the term (leasing.ts tenantExpensePsfYr): its occupancy cost is rent plus this. */
+  expPsf?: number;
   startM: number;
   endM: number;        // lease expiration
   freeUntilM?: number; // free-rent concession
@@ -477,6 +548,15 @@ export interface Loan {
 }
 
 export interface Holding {
+  /**
+   * THE LENDER'S APPRAISAL (debt.ts lenderValue): re-struck once a year, and
+   * smoothed the way appraisals are — Geltner (1993). Covenant LTV tests read
+   * it, not the month's mark. Unset: the mark (old saves, unlevered deeds).
+   */
+  apprV?: number; apprM?: number;
+  /** Accrued expected tours by use (leasing.ts): a party comes through each time it passes 1. */
+  /** Months a firm toured this building because its broker put it first (leasing.ts), the last two years. */
+  tourLog?: number[];
   /** this building is part of a package you have taken to market as one ticket */
   inPackage?: boolean;
   /**
@@ -590,7 +670,15 @@ export interface Holding {
   // tickGroundLeases, at odds set by the corner's live demand and the same
   // development climate that governs the city's own starts. Optional, with
   // fallbacks everywhere it is read, so old saves load untouched.
-  groundOffer?: { years: number; sinceM: number; review?: GroundReview };
+  /** Unsolicited callers owed on this deed, accumulated from the monthly rate while one may ring (a call at 1). */
+  unsolAcc?: number;
+  /** Assemblers that have already made their holdout offer on this deed; one you turned down builds around you. */
+  holdoutRung?: string[];
+  groundOffer?: {
+    years: number; sinceM: number; review?: GroundReview;
+    /** Lessees owed a look, accumulated from the monthly arrival rate (one takes at 1). */
+    takeAcc?: number;
+  };
   /**
    * Shopping the site for a build-to-suit occupier — a listing, not a signed
    * commitment. Anchors arrive through tickBuildToSuit the way ground lessees
@@ -603,6 +691,8 @@ export interface Holding {
     termY?: number;
     /** The last occupier that looked and passed: the rent the shell needed against what they would pay. */
     lastWalk?: { m: number; name: string; needPsf: number; ceilingPsf: number };
+    /** Occupiers of this size owed a look, accumulated from the arrival rate (an anchor comes at 1). */
+    lookAcc?: number;
   };
   // Designated. No demolition, no bigger building, a rent premium forever.
   landmarked?: boolean;
@@ -630,7 +720,9 @@ export interface Holding {
    * market (a vessel written today, an old save).
    */
   resRentPsf?: number;
-  stance?: -1 | 0 | 1; // rent posture: push / market / fill
+  /** A tax abatement the building was delivered under (citygov.ts: 421-a / ICAP): the share forgiven, until when. */
+  taxAbate?: { pct: number; untilM: number };
+  stance?: number; // the ask against the market, in units of 8% (value.ts ASK_STEP): +1 the old Push, −1 the old Fill, any number between or beyond
   /**
    * AUTO-LEASE: every letter at this building — new tenants, renewals,
    * expansions, and tenants' relief or give-back requests — is answered for
@@ -671,6 +763,17 @@ export interface Holding {
    * and it lets cheap, for the whole of a ten-year term.
    */
   darkMs?: number;
+  /**
+   * THE LANDLORD'S BOOK ON EACH KIND OF COMMERCIAL SPACE (tenantMarket.ts
+   * LandlordAsk) — the same book every street owner keeps, reviewed by the same
+   * month-dark trade (streetRolls.ts, the landlords' pass). The player's asking
+   * rent and package are read from it (absorption.ts currentAskPsfYr).
+   */
+  ask?: Partial<Record<"office" | "retail" | "industrial", { a: number; c: number; t: number; m: number }>>;
+  /** Month each kind of space went on the market (its average age, as street rolls keep it). */
+  askVac?: Partial<Record<"office" | "retail" | "industrial", number>>;
+  /** Feet of each kind on offer last month, for the age bookkeeping. */
+  askVsf?: Partial<Record<"office" | "retail" | "industrial", number>>;
   /**
    * "I SIGN HERE." Letters on this building come to the principal whoever
    * holds the pen on the rest of the book — the trophy tower, the building
@@ -722,6 +825,8 @@ export interface Holding {
    */
   sale?: {
     ask: number; listedM: number; unsolicited?: boolean;
+    /** Leased fee only: callers owed, accumulated from the monthly arrival rate (an offer comes at 1). */
+    arriveAcc?: number;
     mode?: "quiet" | "marketed";
     callM?: number;                    // when offers are due
     bids?: Bid[];                      // the list, once they are in
@@ -733,7 +838,20 @@ export interface Holding {
      * account short, in which case it is `held` for your signature. You can
      * still close early, or elect a 1031, from the card.
      */
-    offer?: { price: number; expiresM: number; countered?: boolean; from?: string; retrade?: string; held?: boolean; contract?: boolean };
+    /** `firmId`: the street firm behind `from` — every buyer is one. `pkg`: one deed of a package close; the package books the buyer. */
+    /**
+     * `max`: the bidder's own walk-away on this offer — the lower of what the
+     * building is worth to it (propmarket.ts maxPrice) and what it can fund
+     * (affordable). Set when the offer came out of the bid round; a counter
+     * is read against it. `cover`: the next-best bid in the room that month.
+     */
+    offer?: { price: number; expiresM: number; countered?: boolean; from?: string; firmId?: string; retrade?: string; held?: boolean; contract?: boolean; pkg?: boolean; max?: number; cover?: { from: string; price: number } };
+    /**
+     * FIRMS WHOSE NUMBER YOU ALREADY SAW AND LET GO, and that number: a buyer
+     * whose offer you declined or let lapse does not ring back with the same
+     * figure, only with a better one.
+     */
+    passed?: Record<string, number>;
     /**
      * STANDING INSTRUCTIONS TO THE BROKER. A seller does not take every call
      * personally — they tell the broker "anything at or over this, take it;
@@ -909,6 +1027,8 @@ export interface Development {
   takeout?: { kind: "cap"; strike: number; expiresM: number } | { kind: "fixed"; ratePct: number };
   /** what it is being built to, 0..1 with 0.5 as market standard */
   spec?: number;
+  /** The tax abatement in force when ground broke (citygov.ts) — eligibility is fixed at commencement, as 421-a's was. */
+  taxAbate?: { pct: number; years: number };
   /** the look the developer chose (see BuildingDesign); looks only */
   design?: BuildingDesign;
   use: DevUse;
@@ -921,6 +1041,8 @@ export interface Development {
   coverage?: number;
   /** How you chose to demise it, sf per space per use. Carried to delivery. */
   suites?: Partial<Record<BuiltClass, number>>;
+  /** The general contractor that won the job (contractors.ts), and its bid's markup over direct cost. */
+  gc?: number; gcBid?: number;
   costTotal: number;      // the budget as it stands today, escalation included
   hardCost: number;       // the part exposed to escalation under cost-plus
   contract: Contract;
@@ -1018,6 +1140,8 @@ export interface Development {
   // building that lets well on the way up opens covering its mini-perm, and
   // the one that lets nothing opens empty.
   signed?: { sf: number; use: string; discount: number; name: string }[];
+  /** Pre-let interest earned, sf: the frame's fair share of the class's lettings, accumulated until a tenant's worth signs. */
+  preletAcc?: number;
   /** Named tenant committed before groundbreak; absent means ordinary spec. */
   bts?: BtsCommitment;
   mode?: "ground" | "reuse";
@@ -1081,12 +1205,14 @@ export interface Listing {
   askFactor?: number;
   distress?: boolean;  // motivated seller — priced under appraisal, goes fast
   /** Why ordinary product reached the tape; makes turnover legible. */
-  reason?: "fund-life" | "merchant" | "estate" | "voluntary" | "receiver" | "non-core";
+  reason?: "fund-life" | "merchant" | "estate" | "voluntary" | "receiver" | "non-core" | "deleverage";
   // A SITE WITH A FRAME ON IT. The sponsor could not finish, the receiver is
   // clearing it, and whoever buys inherits the steel that is already up and
   // the bill for the rest. Buying one starts a development at that progress
   // rather than at a hole in the ground.
   halfBuilt?: { use: string; sf: number; floors: number; progress: number; costToComplete: number };
+  /** The month the player last put a number to this seller (actions.ts buyListing): one offer a month, as the round. */
+  offeredM?: number;
   /**
    * THE RENT ROLL, DISCLOSED BEFORE YOU BID — which is what due diligence IS.
    *
@@ -1134,6 +1260,17 @@ export interface Listing {
   loanBasis?: number;
   /** A bank-owned listing: what the deed was marked at when the desk took it, so the page can say how far under it the ask is. */
   mark?: number;
+  /** A bank-owned listing: what the desk booked the building at when it charged off the rest (its ask that day), the loss it charged, and its share of the note — the sale is trued up against them (lenders.ts settleReoSale). */
+  reoBook?: number; reoLoss?: number; reoShare?: number;
+  /**
+   * THE SELLER'S RESERVATION where the seller is a named firm (propmarket.ts
+   * sellerTerms): the least it takes, from its own situation — the loan it
+   * must clear, the tax a sale crystallises, what the building is worth to it
+   * to keep. Never shown; a bid under it does not close.
+   */
+  reserve?: number;
+  /** The cause-ledger event that put it on the market (why.ts). */
+  whyId?: number;
 }
 
 /**
@@ -1148,6 +1285,8 @@ export interface Listing {
 export interface PortfolioListing {
   id: string;
   bbls: string[];
+  /** the least the seller takes for the whole book (a named firm's own floor: the loans it must clear); absent, 92% of the ask (a lender's 88%) */
+  reserve?: number;
   /** the number being asked for the whole book, today */
   ask: number;
   /** what the buildings appraise at individually — the ask is read against this */
@@ -1408,6 +1547,8 @@ export interface HomesState {
   pl?: Record<string, PlatPL>;
   /** the town's population, the last thirteen months */
   popHist?: number[];
+  /** single-family-rental investors' share of closings owed and not yet taken, in houses (homes.ts sfrShare) */
+  sfrAcc?: number;
 }
 
 export interface VarianceApplication {
@@ -1441,6 +1582,8 @@ export interface PortfolioSale {
   sumOfParts: number;
   bids: {
     name: string; price: number; expiresM: number; countered?: boolean;
+    /** The street firm making the indication — it pays and takes the deeds. */
+    firmId?: string;
     /**
      * HOW FAR PAST THEIR NUMBER THIS PARTICULAR BUYER WILL GO, as a multiple of
      * their bid. Drawn per bidder rather than shared, because a single figure
@@ -1456,10 +1599,14 @@ export interface PortfolioSale {
 
 export interface Bid {
   name: string;
+  /** The street firm bidding — every bidder is one, and it pays from its own book. */
+  firmId?: string;
   price: number;
   credibility: number;   // 0-1
   note: string;
   dropped?: boolean;     // walked at best and final
+  /** the bidder's walk-away: the lower of its own value (maxPrice) and what it can fund — set when the bid came from the bid round */
+  max?: number;
   countered?: boolean;   // you have already been back to this one privately
 }
 
@@ -1618,6 +1765,8 @@ export interface BankFailure {
   delinq: number;
   /** What the desk was lending the player when it went. */
   yours: number;
+  /** The cause-ledger event (why.ts) that says what took it down. */
+  why?: number;
   reopenedM?: number;
   /** Loans the receiver put on the block, their face, and the summed ask (cents on the dollar × face). */
   sold?: number;
@@ -1645,6 +1794,8 @@ export interface NewsItem {
   text: string;
   /** A story about a place can put the camera on the place. */
   bbl?: string;
+  /** The event in the cause ledger (why.ts) behind this line: its "Why?" chain. */
+  why?: number;
 }
 
 export type PropertyEventKind =
@@ -1701,7 +1852,7 @@ export interface Builder {
   /** Habits, fixed for life — the same traits the anonymous draw produced (dev.ts DeveloperProfile). */
   prof: {
     bar: number; minDemand: number; spec: number; maxFloors: number; ltc: number; uses: DevUse[];
-    floor?: number; outlook: number; momentum: number; vacTol: number; maxShare: number;
+    floor?: number; outlook: number; momentum: number; maxShare: number;
   };
   /** The firm's own money, and how much of it is in schemes still building. */
   capital: number;
@@ -1715,6 +1866,8 @@ export interface Builder {
   /** Profit booked to the firm over its life. */
   profit: number;
   lastStartM?: number;
+  /** Month one of its looks last found a scheme clearing its bar, funded or not. */
+  lastPencilM?: number;
   /** Its best and worst openings: value against cost. */
   best?: number;
   worst?: number;
@@ -1726,8 +1879,13 @@ export interface MerchantBook {
   basis: number; loan: number; lender?: string;
   /** The underwriting the start was decided on: stabilised NOI, exit yield (decimal), lease-up budget. */
   noi: number; yld: number; leaseUp: number;
-  /** The market it was decided in: blended effective rent and cap rate, lease-up multiplier at forecast vacancy. */
-  rent0: number; cap0: number; lum0: number;
+  /**
+   * The market it was decided in: blended effective rent and cap rate, and the
+   * lease-up clock at forecast delivery vacancy, months (proforma.ts
+   * `leaseUpMonths`). `lum0` is a save's old multiplier against a "natural"
+   * vacancy, read by nothing (a book without `lu0` settles at the clock it opens to).
+   */
+  rent0: number; cap0: number; lu0?: number; lum0?: number;
   mix: UseMix;
 }
 
@@ -1741,6 +1899,8 @@ export interface Alert {
   detail?: string;
   /** The building it is about, when it is about one — the card can take you there. */
   bbl?: string;
+  /** The event in the cause ledger (why.ts) behind it; the news line carries it too. */
+  why?: number;
   /** Something the firm already has is at stake (your ground tenant, your lender): it stops Year / Skip like a docket item. */
   stops?: boolean;
 }
@@ -1775,7 +1935,7 @@ export function raiseAlert(s: GameState, a: Omit<Alert, "id" | "q">) {
   // exactly what silencing the others costs: the interruption, and nothing
   // else.
   if (!s.news) s.news = [];
-  s.news.unshift({ q: s.month, kind: a.tone === "bad" ? "warn" : "event", text: `${a.title} — ${a.body}` });
+  s.news.unshift({ q: s.month, kind: a.tone === "bad" ? "warn" : "event", text: `${a.title} — ${a.body}`, ...(a.why ? { why: a.why } : {}) });
   // A queue the UI never drained would otherwise grow for a century. Eight is
   // more than anything realistic can raise between two renders.
   if (s.alerts.length > 8) s.alerts.splice(0, s.alerts.length - 8);
@@ -1980,11 +2140,6 @@ export interface Econ {
    * street prints.
    */
   districtHeat?: Record<string, number>;
-  /** Damped affordability multiplier (half-life ~6y). A three-year rent swing
-   *  cannot conjure or destroy a fifth of the tenant base. */
-  affordEff?: Record<BuiltClass, number>;
-  /** Damped income argument of space demand, per class. See INCOME_ELAST in market.ts. */
-  incomeEff?: Record<BuiltClass, number>;
   /** Opening REAL income per worker, frozen at newGame, so the income argument is 1.0 at t=0. */
   wage0?: number;
   /** Opening cost of living against the nation (1 = national), same weights as the local CPI. Display only. */
@@ -2002,35 +2157,27 @@ export interface Econ {
    * Absent on old saves and read as 1.
    */
   constructionAppetite?: number;
+  /**
+   * Every desk's live pricing (lenders.ts deskPricing; pricing.ts liveSpread):
+   * funding, expected loss, capital, running cost, rationing and the
+   * competitive adjustment, published so the pro forma prices construction
+   * off the same numbers as the quote desk. Absent on old saves (the sheet stands).
+   */
+  deskPx?: Record<string, import("./pricing").DeskPx>;
   /** Concession dial 0..1 — how much of the maximum giveaway (free rent +
    *  funded TI) the market currently hands tenants. Moves in months. */
   concIdx?: Record<BuiltClass, number>;
-  /** Months vacancy has sat >1.5pp over natural — the capitulation clock.
-   *  Asking rents do not fall until the landlord has stared at the empty
-   *  floor for half a year. */
-  vacOverM?: Record<BuiltClass, number>;
-  /** EMA of vacTerm+scarcity that feeds the rent index — lease-quote lag.
-   *  Market pressure forms instantly; landlords adjust asking rents only after
-   *  trailing vacancy and unmet demand have sat on the quote sheet for months. */
-  rentPress?: Record<BuiltClass, number>;
+  /** The capitulation clock (market.ts tickCapitulation): months the signed
+   *  package (1 − effective / asking) has sat at the deepest it has reached
+   *  this episode. Read by the demolition valves (dev.ts). */
+  pkgDeepM?: Record<BuiltClass, number>;
   /**
-   * LAST MONTH'S RENT PATH, per class — vacTerm, EMA, clamp, drift pieces.
-   * Instrumentation for the vacancy-response harness. Not a price; not saved
-   * as a decision. A test that cannot see the rail cannot say whether the
-   * rail is load-bearing.
+   * LAST MONTH'S RENT MOVE, per class: the log-free month-on-month change in
+   * the asking index (`nomCh`, = `drift` now that the index is read off the
+   * leases and the blocks' asks) and the flats' escalation. Instrumentation;
+   * not a price.
    */
-  rentPath?: Record<BuiltClass, {
-    gap: number;
-    vacTerm: number;
-    instant: number;
-    pressEma: number;
-    pressClamped: number;
-    clampBound: boolean;
-    escalation: number;
-    anchor: number;
-    drift: number;
-    nomCh: number;
-  }>;
+  rentPath?: Record<BuiltClass, { escalation: number; drift: number; nomCh: number }>;
   /** EFFECTIVE rent = asking x (1 - 0.14 x concIdx). Everything that PRICES a
    *  deal or VALUES an asset reads this; everything that reports the market
    *  headline reads rentIdx. */
@@ -2069,7 +2216,7 @@ export interface Econ {
     tfpG?: number; kSeen?: number;
     /** the technology level, log points since the opening */
     techLn?: number;
-    dem?: { C: number; K: number; I: number; Ih: number; N: number; Yp: number; Ye: number; Se: number; f: number; Y: number; sup: number; uH: number[]; rr?: number; ws?: number; cc?: number; kc?: number; wr?: number; q?: number };
+    dem?: { C: number; K: number; I: number; Ih: number; N: number; Yp: number; Ye: number; Se: number; f: number; Y: number; sup: number; uH: number[]; rr?: number; ws?: number; cc?: number; kc?: number; cMood?: number; wr?: number; q?: number; unmet?: number };
     /** national inflation, annualised */
     infl: number;
     /** what the nation EXPECTS — the anchor, and what a credible bank defends */
@@ -2149,6 +2296,8 @@ export interface Econ {
     yTrough?: number;
     /** what the bank THINKS trend inflation is: smoothed, and it looks through shocks */
     inflSm?: number;
+    /** the supply shock on the same clock as inflSm, which the bank looks through */
+    shockSm?: number;
     /** how much easier than neutral money has been, smoothed — the 1970s in one number */
     easeEma?: number;
     /** months of elevated supply-shock hazard: shocks cluster, 1973 and 1979 did */
@@ -2185,12 +2334,16 @@ export interface Econ {
      * path, the way a real one reads the dot plot and the data.
      */
     ruleRate?: number;
+    /** Where the committee would be had nothing outside it held the rate (only while a hold is on; `expectedPolicyAvg` prices the gap). */
+    ruleShadow?: number;
     /**
      * Where the bank BELIEVES full employment is. Wrong, drifting, and the
      * single largest source of policy error in the historical record — the Fed
      * of the 1970s thought the natural rate was 4% when it was nearly 6%.
      */
     uStarBelief?: number;
+    /** The natural rate this economy actually reverts to: the opening year's CBO estimate (opening.ts). */
+    uStar?: number;
     /**
      * Months the bank is not free to act. Both of the century's real
      * inflations happened to a central bank under political and fiscal
@@ -2231,7 +2384,10 @@ export interface Econ {
    * that plateaus for a long time rather than pay that ratchets — without
    * changing where the trend ends up.
    */
-  wageDebt?: number;
+  /** The town's firms' prices against the nation's last month (market.ts CPI, economy.ts `postPayAndPrices`). */
+  priceRelPrev?: number;
+  /** What the region's renters pay for shelter, its change over the last year (households.ts `shelterRead`): the CPI's shelter (market.ts). */
+  shelter12?: number;
   /** Labour-force participation, moving with how easy work is to find. */
   participation?: number;
   /** The nation's unemployment last month, for its monthly employment swing. */
@@ -2250,7 +2406,7 @@ export interface Econ {
   /** Share of the street's let space whose tenants failed beyond the background this month, by class. */
   streetFailShare?: Record<string, number>;
   /** The street's recent move-outs, newest last, capped: tenants that went dark, and tenants that left at lease end. */
-  streetFailed?: { m: number; bbl: string; name: string; sf: number; use: BuiltClass; why?: "dark" | "left"; to?: string; credit?: Credit }[];
+  streetFailed?: { m: number; bbl: string; name: string; fid?: number; sf: number; use: BuiltClass; why?: "dark" | "left"; /** a shed tenant that relocated off the map into the region (streetRolls.ts) */ reloc?: boolean; to?: string; credit?: Credit; /** its event in the cause ledger (why.ts) */ whyId?: number }[];
   /** The player's rolls last month, so a building sold carries its tenants to the street. */
   heldTenants?: Record<string, Tenant[]>;
   /**
@@ -2259,29 +2415,94 @@ export interface Econ {
    * pool, toured by the street's buildings and the player's alike.
    */
   seekers?: import("./streetRolls").Seeker[];
+  /** Firms whose broker's best option this month is one of the player's buildings: the party the player's desk tours (streetRolls.ts shop → leasing.ts). */
+  playerTours?: { fid: number; bbl: string; use: BuiltClass; want: number; m: number; done?: boolean }[];
+  /** The region's share of the relocating shed tenants, accrued: one leaves the map each time a whole one has built up (streetRolls.ts). */
+  shedOffAcc?: number;
   nextFid?: number;
   /**
-   * THE COMPS (market.ts recordDeal): every lease signed in the last six
-   * months, by class — its rent against the building's market rent (`c`, net
-   * of the market's slack it signed in) and that slack (`p`).
+   * THE FLATS' COMPS (market.ts recordDeal): every flat let or renewed in
+   * the last six months — its rent against the block's market rent (`c`,
+   * log), and whether it was a renewal (`r`).
    */
-  deals?: Partial<Record<BuiltClass, { m: number; c: number; p: number; sf: number; r?: number }[]>>;
-  /** What investors require of each class (the cap-rate equation's target) — what bidders price at (market.ts). */
-  capTarget?: Partial<Record<BuiltClass, number>>;
-  /** The market's slack each new deal reads (the rent equation's monthly pressure). */
-  dealPress?: Partial<Record<BuiltClass, number>>;
+  /** each letting: month, log of signed rent over its block's market rent then, feet, renewal, and the asking index then (`i`, to restate it against today's) */
+  deals?: Partial<Record<BuiltClass, { m: number; c: number; sf: number; r?: number; i?: number; n?: number }[]>>;
+  /**
+   * THE COMMERCIAL COMPS (tenantMarket.ts recordLease, ONE ECONOMY step 4):
+   * every office, shop and shed lease signed in the last six months — face
+   * and effective rent in index dollars, its quality band — that the rent
+   * indices are read off.
+   */
+  comps?: Partial<Record<BuiltClass, import("./tenantMarket").Comp[]>>;
+  /** The rent read's uncertainty (log variance) by class — tenantMarket.ts filteredReadOut. */
+  rentFilt?: Partial<Record<BuiltClass, { P: number }>>;
+  /** The concession package on offer, by class: every landlord's book (street and player) weighted by its feet to let (streetRolls.ts). */
+  postedPkg?: Partial<Record<BuiltClass, number>>;
+  /**
+   * THE CAP-RATE READ-OUT (propmarket.ts tickCapRead) — what each class's
+   * closed deals say, and how much evidence there is behind it.
+   */
+  capRead?: Partial<Record<BuiltClass, CapRead>>;
+  /** the feet the street's firms lost to closures and departures a month, a twelve-month running mean, by floor: new firms form at that rate (streetRolls.ts) */
+  exitAvg?: Partial<Record<"office" | "retail" | "industrial", number>>;
+  /** The share of each industry's island target its firms' floors held the first month the target was read (streetRolls.ts): the opening's condition, which the gap new firms form into is measured from. */
+  islandHeld0?: number[];
+  /** The land texture level's read-out (propmarket.ts tickLandRead): evidence, window (0 = stale), median age. */
+  landReadOut?: { n: number; win: number; ageM: number; why?: number; raw?: number };
+  /** The land survey's last twelve months: [month, lots tried, lots that drew a bid] (propmarket.ts tickLandSurvey). */
+  landSurveyTally?: [number, number, number][];
+  /**
+   * THE APPRAISER'S ADJUSTMENT GRID, learned from the prints (propmarket.ts):
+   * log-cap per unit of location (0-1), condition index (0-1) and build spec
+   * (0-1), against the reference building the class read is quoted for.
+   */
+  capFit?: Partial<Record<BuiltClass, [number, number, number]>>;
+  /**
+   * THE APPRAISERS' INDICES (propmarket.ts): per class, and for dirt, the
+   * hedonic grid's running sums and the appraisers' own estimate of the level
+   * at the reference building (log), with its variance. See `ApprIndex`.
+   */
+  capIdx?: Partial<Record<BuiltClass, ApprIndex>>;
+  landIx?: ApprIndex;
+  /**
+   * WHAT BUYERS HAVE SEEN OF EACH SUBMARKET (propmarket.ts tickLocBeliefs):
+   * per class and quality band (`bands` — address and building blended), the
+   * band's income (rent swing x occupancy) last month in logs (`li`), and a
+   * ten-year memory of how its income has moved against the class's: the
+   * mean monthly change (`g`) and its mean square (`v`). `lc` is the class's
+   * own log income last month; `n` months watched.
+   */
+  locSeen?: Partial<Record<BuiltClass, { li: (number | null)[]; lc: number; g: number[]; v: number[]; n: number }>>;
   /** Every street block of flats and the flats let in it (streetRolls.ts). */
   flatRolls?: Record<string, import("./streetRolls").FlatRoll>;
   /** The street's flats by quality band, measured off the blocks each month (streetRolls.ts; bands.ts reads it). */
-  flatBands?: { stock: number[]; occ: number[] };
+  flatBands?: { stock: number[]; occ: number[]; /** each band's blocks' mean log ask over market (streetRolls.ts measureFlatBands) */ px?: number[] };
   /** The player's flats' occupancy last month, so a block sold carries its households. */
   heldFlats?: Record<string, number>;
-  /** What the town's firms want of each class at reference rents, and the rent response now (market.ts). */
-  demandAt?: Partial<Record<BuiltClass, { ref: number; eff: number; raw: number; lvl?: number }>>;
-  /** The space per worker's structural level at the opening, by class — what `lvl` is read against. */
-  demandLvl0?: Partial<Record<BuiltClass, number>>;
+  /** The space a worker takes, by class: its structural level after a swan (remote work; market.ts, swans.ts), and that level at the opening. Every firm's need moves with their ratio. */
+  spaceLvl?: Partial<Record<BuiltClass, number>>;
+  spaceLvl0?: Partial<Record<BuiltClass, number>>;
+  /** Real effective rent by class at the opening: the rent the feet a worker (SF_PER_JOB) are read at (streetRolls.ts SPACE_RENT_ELAST). */
+  spwRent0?: Partial<Record<BuiltClass, number>>;
+  /** The off-map firms' floor (FORMULA_LEDGER #10): the occupied sf off the map at the opening, and what they want now (that, moved by the class's heads × feet a worker), by class (market.ts). */
+  offRef?: Partial<Record<BuiltClass, number>>;
+  offWant?: Partial<Record<BuiltClass, number>>;
+  /** Where each class's demand stood when its last move was written (why.ts): the feet, and the heads by industry (streetRolls.ts). */
+  demandNote?: Partial<Record<BuiltClass, { m: number; sf: number; ind: number[] }>>;
   /** The town's firms' jobs (streetRolls.ts), at the first count, and the employment index then. */
   firmJobs?: number; firmJobs0?: number; firmEmp0?: number;
+  /**
+   * WHAT THE MONEY LOOP TELLS THE ENGINE (economy.ts `economyToEngine`, ONE
+   * ECONOMY step 2), written once a month after the household register has
+   * filled the firms' heads and read by the engine the month after.
+   */
+  eco?: EcoDrive;
+  /** Each industry's heads in the island's named firms over the heads they are formed toward (streetRolls.ts): over 1, its firms shed the excess. */
+  islandFill?: number[];
+  /** The first month's drivers, which the space market's indices are read against. */
+  eco0?: { floorSf?: Partial<Record<"office" | "retail" | "industrial", number>>; workSf?: Partial<Record<"office" | "retail" | "industrial", number>>; renters?: number; jobs?: number; islandWant?: number;
+    /** a save reopened on step 2b's industries: each class's driver as it stood (economy.ts `migrateEconomy`) */
+    mig?: Partial<Record<"office" | "retail" | "industrial", number>> };
   /** Each trade's payroll last month, for the firms' month-on-month change. */
   tradeEmpPrev?: Partial<Record<string, number>>;
   /** each trade's mean firm-specific sales change last month (streetRolls) */
@@ -2296,16 +2517,25 @@ export interface Econ {
   migRate?: number; jobsPrevYr?: number;
   /** the share of let space handed back in a year, measured on the street, by class */
   turnMeas?: Partial<Record<string, number>>;
-  /** the street firms' rent as a share of what they pay for space and staff, by class (streetRolls) */
-  spaceShare?: Partial<Record<string, number>>;
-  /** each market's normal availability, learned from its own history (market.ts rent gap) */
-  natVac?: Record<BuiltClass, number>;
   /** the opening's rent per foot by class and price level: what sales per head are measured from (tenantBooks) */
-  revAnchor?: { cpi: number; rent: Partial<Record<string, number>> };
+  revAnchor?: { cpi: number; rent: Partial<Record<string, number>>; eff?: Partial<Record<string, number>>; prod?: Partial<Record<string, number>> };
   /** The street's let space, rentable space and unhoused seekers' wants by class, this month (streetRolls.ts). */
-  streetSpace?: Partial<Record<BuiltClass, { let: number; cap: number; seek: number; ratio?: number; byBand?: { stock: number[]; occ: number[] } }>>;
-  /** The region's sheds off the map, occupied, on the city aggregate (market.ts). */
+  streetSpace?: Partial<Record<BuiltClass, { let: number; cap: number; seek: number; ratio?: number; byBand?: { stock: number[]; occ: number[] };
+    /** the feet the town's firms hold beyond what their heads need (FORMULA_LEDGER #10: the sublet market's source) */
+    excess?: number;
+    /** proposals the street's landlords turned away this month for want of room (streetRolls.ts, the search) */
+    turned?: number }>>;
+  /** The street's flats as its households hold them (households.ts, stage 2): feet let, feet on the street, and the feet the households across the water who want a flat here are looking for. */
+  flatSpace?: { let: number; cap: number; seek: number };
+  /** Saves from before 2026-11-10: the class's occupied feet on the city aggregate, from which the sheds' off-map half (`offMap`) opens (market.ts). */
   aggOcc?: Partial<Record<BuiltClass, number>>;
+  /**
+   * THE FLOOR OFF THE MAP, AS ITS TENANTS HOLD IT (market.ts): the feet the
+   * off-map tenants occupy (`occ`), the feet their heads need (`need`), and
+   * the level of their trades last month (`idx`: work x space a worker, or
+   * the flats' renters), by class. It moves only by what those tenants do.
+   */
+  offMap?: Partial<Record<BuiltClass, { occ: number; need: number; idx: number; /** sheds: the street's region movers still looking (fid -> sf) */ pend?: Record<number, number> }>>;
   /** Household spending on goods against the opening, from the cost of consumer credit. */
   hhCredit?: number;
   hhCreditRef?: number;
@@ -2325,26 +2555,52 @@ export interface Econ {
   cycPeak?: number;
   phaseAge?: number;
   exportIdx?: number;
-  /** This town's own persistent growth over the nation's, per year — the region it sits in. See `regionalPull`. */
-  regionTrend?: number;
-  /** Business rent against the nation's at this town's opening — the parity `regionalPull` measures cost against. */
+  /** Business rent against the nation's at this town's opening — the parity `locationCost` measures cost against. */
   regionRent0?: number;
   /** Black swans that have landed (blackswans.ts), for the paper and probes. */
-  blackSwans?: { m: number; kind: "fire" | "surge" | "wave" | "panic" | "fiscal" | "campus" | "embargo" | "arrivals"; size: number; sf: number;
+  blackSwans?: { m: number; kind: "fire" | "surge" | "wave" | "panic" | "fiscal" | "campus" | "embargo" | "arrivals" | "anchor" | "pandemic" | "war" | "foreign" | "techboom" | "tradewar"; size: number; sf: number;
     /** What the paper calls it, and for a fire the lots it took (stories.ts). */
     title?: string; bbls?: string[] }[];
   /** A bank panic in progress (blackswans.ts): months of full force left, then its fade. */
   panic?: { leftM: number; force: number };
-  /** The property-tax rate as a multiple of the statutory one (fiscal crisis). */
+  /** The property-tax rate as a multiple of the statutory one — what City Hall levies (citygov.ts). */
   taxMult?: number;
-  /** A city that cannot pay its bills (blackswans.ts): the job loss still landing. */
-  fiscal?: { leftM: number; pullM: number };
-  /** An anchor employer's campus (blackswans.ts): the hiring still landing, and whether it walks. */
+  /** City Hall: its budget, its bonds, its policies, its mayor (citygov.ts). */
+  gov?: import("./citygov").CityGov;
+  /** Bumped whenever a city policy the land memo reads changes (citygov.ts). */
+  govStamp?: number;
+  /** An anchor employer's campus (blackswans.ts): the hiring still landing, and whether it walks. Old saves; replaced by `anchors`. */
   campus?: { pole: number; leftM: number; pullM: number; jump: number; walkM?: number; name: string };
+  /** Anchor employers that chose this city on its costs, and may leave on them (blackswans.ts). */
+  anchors?: import("./blackswans").Anchor[];
+  anchorSeq?: number;
+  /** The national swans in progress (blackswans.ts): a pandemic, a war, a foreign crisis, a tech boom, a trade war. */
+  natSwans?: import("./blackswans").NatSwan[];
+  /** What they do this month to the nation's spending, the world, the dollar, spreads, inflation and oil (read by tickNation next month). */
+  natSw?: import("./blackswans").NatSwanHooks;
+  /** Their orders for each trade this month (growth, read by tickIndustryCycle). */
+  swanSec?: Partial<Record<Sector, number>>;
+  /** Space a national swan has emptied for a while, per class, as a multiple of what is wanted (1 = none). */
+  swanSpace?: Partial<Record<BuiltClass, number>>;
+  /**
+   * What a building's operating costs are made of (inputs.ts tickOpexInputs):
+   * site labour at the town's wage, energy at the nation's prices and its oil,
+   * each a level in the cost index's units (equal to it on the day this began);
+   * and the property-insurance market — its premium rate against normal (log)
+   * and its capital against normal (log). Repairs read the cost index itself.
+   */
+  opexIdx?: { labour: number; energy: number; ins: number; insCap: number };
+  opexPrev?: { wage: number; energy: number };
+  /** The ten-year at the opening of the insurance cycle: investment income is read against it. */
+  opexRate0?: number;
+  /** The nation's oil (inputs.ts): real log price from the supply shocks, the swans' premium on top, and $ a barrel. */
+  oilBaseLn?: number; oilLn?: number; oil?: number; oilCpi0?: number;
   /** Monthly job pull from the black swans, read beside swanJobDrift in tickEcon. */
   bsJobPull?: number;
   /** A capital wave in progress and its cap-rate effect, points (negative while money floods in). */
-  capWave?: { phase: "in" | "hold" | "out" | "fade"; leftM: number; len: number; from: number; to: number };
+  capWave?: { phase: "in" | "hold" | "out" | "fade"; leftM: number; len: number; from: number; to: number;
+    /** the share of the street's book the foreign money brings (the swan's draw), the dollars that is, what has been raised, and whether it has been called home */
+    share?: number; money?: number; raised?: number; home?: boolean };
   capitalWave?: number;
   /** The yield premium buyers demand for anything a storm surge can reach, after one has, and how far from the shore the worst one reached (m). */
   /** The embargo (blackswans.ts): the materials premium still landing. */
@@ -2355,6 +2611,10 @@ export interface Econ {
   arrivals?: { leftM: number; monthly: number };
   /** Monthly in-migration from the arrivals, read beside migration in tickEcon. */
   bsMigPull?: number;
+  /** What the city's services and payroll tax are worth to a household against the opening's, as a ratio of its pay (citygov.ts SERVICE_WTP; households.ts `hereRel`). */
+  fiscalRel?: number;
+  /** The arrivals swan's part of `bsMigPull` this month, and the share of its households that want an island flat (households.ts, the wave). */
+  bsArrivals?: { monthly: number; island: number };
   /** Anonymous merchants' schemes settled at delivery, cumulative (see `settleMerchant` in dev.ts). Display and probes only. */
   merchantTotals?: { delivered: number; underBasis: number; handedBack: number; lossToLenders: number; equityLost: number };
   /** The street's last hundred deliveries: value the day it opened over all-in basis (dev.ts settleMerchant). */
@@ -2416,16 +2676,9 @@ export interface Econ {
    * cannot go stale.
    */
   crewUtil?: number;
-  /**
-   * THE WORST THIS GLUT HAS BEEN, per class, while it lasts.
-   *
-   * A capitulation is renewed when the market deteriorates materially past
-   * anything it has already repriced for. Without this the clock only knew how
-   * LONG a glut had run, and gluts build slowly — measured, the deepest gap
-   * arrives 43 to 117 months in, by which time the repricing window has closed
-   * and the market takes its worst quarter with no reaction at all. Cleared
-   * with `vacOverM` when the class comes back inside its threshold.
-   */
+  /** The deepest signed package this episode, per class (market.ts tickCapitulation). */
+  pkgDeepest?: Record<BuiltClass, number>;
+  /** Old saves: the retired worst gap over a "natural" vacancy. Never read. */
   vacWorst?: Record<BuiltClass, number>;
   /**
    * The size of the town's construction workforce against what a place this
@@ -2434,16 +2687,21 @@ export interface Econ {
    * reason the crew count is a market rather than a wall.
    */
   crewIdx?: number;
-  /** Last month's price level and wage index, read by the construction cost drift. */
-  costInputsPrev?: { cpi: number; wage: number };
+  /** Last month's materials price (the nation's prices and its oil), price level and wage index, read by the construction cost drift. */
+  costInputsPrev?: { cpi: number; wage: number; mat?: number };
+  /** The construction workforce, its repair and fit-out load and the queued orders, in crew-loads (dev.ts tickCrews; read by the contractors). */
+  crewWorkforce?: number; crewSteady?: number; crewOwed?: number;
+  /** The town's named general contractors and the index of their winning bids (contractors.ts). */
+  gcs?: import("./contractors").ContractorBook;
   /**
    * What a building's inputs cost (materials and site labour) before the
-   * contractor's margin; `costIdx` is this times `1 + bidPremium`.
+   * contractor's markup; `costIdx` is this times one plus the average winning
+   * bid's markup (contractors.ts).
    */
   costInputIdx?: number;
   /**
-   * The contractors' margin over a normal one, set by how booked the trades
-   * are: negative in a lull (bids under cost to keep crews), steep in a boom.
+   * Old saves only: the contractors' margin as an equation of how booked the
+   * trades were. Replaced by the named contractors' winning bids (`gcs`).
    */
   bidPremium?: number;
   /**
@@ -2460,7 +2718,6 @@ export interface Econ {
    * higher sustainable rent-to-income ratio — this is the Manhattan premium,
    * and it has to be EARNED rather than assumed.
    */
-  tightEma?: number;
   /** Per class: a decade's memory of how short of space the city has been (-0.3 glut .. 1 fully short). */
   scarcity?: Record<BuiltClass, number>;
   /**
@@ -2469,6 +2726,8 @@ export interface Econ {
    * which is what actually causes overbuilding in every real cycle.
    */
   rentExp?: Record<BuiltClass, number>;
+  /** The price level `rentExp` was last stated at (market.ts: the belief is formed on real rent). */
+  rentExpCpi?: number;
   /**
    * THE EXIT CAP A DEVELOPER UNDERWRITES — a slow memory of the spot cap rate,
    * on about a four-year clock because that is the horizon a land buyer is
@@ -2477,6 +2736,10 @@ export interface Econ {
    * difference of two large numbers.
    */
   capExp?: Record<BuiltClass, number>;
+  /** The market's construction advance on a standard scheme this month, the memory of it sponsors are used to, and the month it was read (dev.ts equityStretch). */
+  ltcNow?: number;
+  ltcUsual?: number;
+  ltcUsualM?: number;
   /**
    * THE REDEVELOPMENT QUEUE, per use (value.ts `refreshLandQueue`). A land
    * residual is what the lot is worth if its building could be delivered and
@@ -2502,6 +2765,16 @@ export interface Econ {
   /** The previous year's queue measurement, and how far the current one has glided in (value.ts queueFactor). */
   landQueuePrev?: Partial<Record<BuiltClass, { psf: number[]; ahead: number[]; total: number; absYr: number; r: number }>>;
   landQueueW?: number;
+  /**
+   * THE TOWN'S OWN MEASURED PROPERTY VOLATILITY, by class: the standard
+   * deviation of the twelve-month change in log value (effective rent over
+   * the cap rate) across the trailing ten years of the tape. Measured once a
+   * year (market.ts measurePropertyVol); the land option (value.ts) reads it as
+   * sigma. Absent until the town has two years of its own record.
+   */
+  landSigma?: Record<BuiltClass, number>;
+  /** The same tape's mean twelve-month log change by class: the measured drift of property values (market.ts measurePropertyVol). */
+  landDrift?: Record<BuiltClass, number>;
   /** sf-weighted mean vintage factor, same job for the quality tilt. */
   vintageMean?: number;
   costIdx: number; // construction & operating cost inflation
@@ -2549,6 +2822,8 @@ export interface Econ {
   // to five law firms and one let to five startups are different assets, and
   // this is the difference.
   industryMom?: Record<Sector, number>;
+  /** Each trade's monthly employment growth rolled over five years: what its momentum is read against (market.ts tickIndustryCycle). */
+  indTrend?: Partial<Record<Sector, number>>;
   industryPhase?: Record<Sector, "boom" | "steady" | "bust">;
   industryPhaseM?: Record<Sector, number>;
   // ---------------------------------------------------------------------
@@ -2594,8 +2869,19 @@ export interface Econ {
    * and then frozen. Everything downstream runs on INDEXES against these, so
    * the dynamics are unchanged and only the levels now describe the town.
    */
+  /** The year of the US record this town opened in, and its natural rate of unemployment (opening.ts). */
+  openYear?: number;
+  uStar?: number;
   jobs0?: number;
   pop0?: number;
+  /**
+   * THE TOWN'S MIX OF TRADED INDUSTRIES (city plan 19): each industry's
+   * location quotient against the nation, by INDUSTRY_IDS index (1 for the
+   * local-serving ones and for towns cut before plan 19). Firms' industries,
+   * new firms and the off-map sample are drawn on it (economy.ts `assign`,
+   * streetRolls.ts `indOfTrade`, `openingOffMap`).
+   */
+  townLQ?: number[];
   /**
    * INDUSTRIAL SHARE OF EMPLOYMENT, indexed to 1.0 at game start.
    *
@@ -2661,10 +2947,6 @@ export interface Econ {
   siteHurdle?: Partial<Record<BuiltClass, number>>;
   /** Loan index at the opening, the reference for tenure choice (market.ts). */
   tenureRef?: number;
-  /** Log owning-over-renting cost at the opening, the reference for tenure choice (market.ts). */
-  tenureOwnRef?: number;
-  /** Renter share of households against the opening, rolled (market.ts). */
-  tenureIdx?: number;
   // THE PIPELINE AS A QUEUE, not a number. Every start is a cohort with a
   // month it will deliver in, so the game can answer the question every
   // developer actually asks — "what is coming, and when" — instead of only
@@ -2724,6 +3006,18 @@ export interface Econ {
    * `cohorts`, one stage earlier in the pipeline.
    */
   entitling?: Record<BuiltClass, { m: number; sf: number }[]>;
+  /**
+   * GROUND BROKEN SINCE THE LAST MONTHLY TICK, by class: every start, whoever
+   * decided it, added the day its hole is dug (supply.ts queueSupplyProject).
+   * `starts` is this, read and zeroed once a month (market.ts). The
+   * `entitling` queue above is no longer written: nothing orders space from
+   * the top any more (FORMULA_LEDGER #27).
+   */
+  brokeMonth?: Record<BuiltClass, number>;
+  /** Square feet the town's developers committed to since the last tick (dev.ts developerLook). */
+  decidedMonth?: Record<BuiltClass, number>;
+  /** Last month's committed square feet by class — the order series a report reads. */
+  decided?: Record<BuiltClass, number>;
   completions12?: Record<BuiltClass, number>;   // trailing 12-month deliveries
   // THE MONETARY ERA. The loan index used to mean-revert at 0.03/month toward
   // a phase target between 5.0 and 7.0, clamped to 4.2-9.2 — so over a whole
@@ -2741,6 +3035,8 @@ export interface Econ {
   // that opened last year from one that opened in 1928.
   m?: number;
   creditIdx: number;
+  /** The credit index averaged over the trailing decade (market.ts, monthly EMA): what lenders read as an ordinary year (debt.ts underwritingStandards). */
+  creditIdxMean?: number;
   // The demand driver behind leasing velocity.
   employIdx: number;
   // THE SPACE MARKET, class by class. Stock is every square foot standing;
@@ -2755,15 +3051,6 @@ export interface Econ {
   baseStock?: Record<BuiltClass, number>;
   /** The regional stock beyond the island's mapped buildings, by class (rentable sf). */
   offMapSf?: Record<BuiltClass, number>;
-  // ...and the same thing FROZEN, because baseStock is not frozen: the
-  // sector-exit ratchet in market.ts writes it down as tenants are priced out
-  // and never return. The difference between the two IS how much of a sector
-  // has left the city, and the city's zoning has to be able to read it — land
-  // zoned for an industry that is half gone does not stay zoned for it.
-  // Optional so a save written before this existed still loads; absent, no
-  // sector has left as far as the zoning is concerned, which is the old
-  // behaviour exactly.
-  baseStock0?: Record<BuiltClass, number>;
   occupied: Record<BuiltClass, number>;
   /** The player's own occupied sf by class, as last reconciled into `occupied` — see playerSpace in sim.ts. */
   playerOcc?: Record<BuiltClass, number>;
@@ -2791,6 +3078,15 @@ export interface Econ {
    */
   darkSf?: Record<BuiltClass, number>;
   cityVac: Record<BuiltClass, number>;
+  /**
+   * The pre-history's space market, month by month (regime.ts vacMultOf):
+   * vacancy as a multiple of natural on each month's trailing three years of
+   * unemployment, oldest first, the last entry month -1. Read once, by the
+   * opening pipeline (dev.ts seedOpeningPipeline), so a frame already
+   * standing was decided on the market of the month it was decided in; then
+   * dropped.
+   */
+  preVacMult?: number[];
   /**
    * Month the "vacancy up 2pp YoY" broker tell last fired. Debounces the news
    * line so a long soft market does not spam the paper every month.
@@ -3060,6 +3356,8 @@ export interface Rival {
    * saves: the book then marks to market until its first January.
    */
   marks?: Record<string, { v: number; m: number; k: string }>;
+  /** When a mandate sale on each deed first fell due and was put off for a dislocated market (rivals.ts sellerCanWait). */
+  mandateDueM?: Record<string, number>;
   /**
    * THE FIRM'S SHEET — COMPETITORS_PLAN.md §2. Absent on the legacy roster and
    * on saves written before it: those firms act on their style row exactly as
@@ -3090,6 +3388,15 @@ export interface Rival {
    * vehicle, which is what the old model assumed for everybody.
    */
   uncalled?: number;
+  /** Commitments of the firm's latest fund (its first close, or its last successor fund). */
+  fundSize?: number;
+  /** Month the latest successor fund closed; its investment period runs from here (else bornM). */
+  fundM?: number;
+  /** How many funds the firm has raised on this street (1 when unset). */
+  funds?: number;
+  /** Raised abroad in a capital wave (blackswans.ts); `homeBy` is when its investors called it home and its book goes to the tape. */
+  wave?: boolean;
+  homeBy?: number;
   /**
    * When each deed arrived, by BBL. The hold clock: a private-equity fund on
    * an IRR mandate and a family office holding for a generation both own
@@ -3152,13 +3459,25 @@ export interface Rival {
    * firm-months were held up by one of them.
    */
   extendedTo?: Record<string, number>;
+  /** Buildings listed to pay a balloon off (rivals.ts maturity ladder, rung 5): the month the sale holdover began. */
+  balloonSale?: Record<string, number>;
   id: string;
   name: string;
   style: RivalStyle;
   /** Month this firm last broke ground on a city job — builders get hungry when idle (firmMargin). */
   lastBuildM?: number;
+  /** Month one of this builder's own looks last found a scheme clearing its bar, whether or not it could fund it (dev.ts). */
+  lastPencilM?: number;
   /** Off-market calls this firm made: a building it will not ring again before the month given. */
   doors?: Record<string, number>;
+  /**
+   * The off-market desk's call clock (offmarket.ts): each month it adds the
+   * desk's call rate (appetite × credit × reach × deploy pressure) and makes a
+   * call each time it passes one. Unset: starts at a phase hashed off the id.
+   */
+  callAcc?: number;
+  /** Month this fund rang the player unprompted for a slice of their book (portfolio.ts); it rings once. */
+  rangPlayerM?: number;
   /** Private holders who will not take this firm's call before the month given — a lowball they remember. */
   coldHolders?: Record<string, number>;
   cash: number;
@@ -3653,6 +3972,12 @@ export interface GameState {
    * which is every town cut before the option existed.
    */
   cityParks?: "low" | "medium" | "high";
+  /**
+   * Which street generator cut the town (citygen STREET_PLANS): absent is
+   * "classic", which is every town cut before the option existed, so an old
+   * save rebuilds the streets it was played on.
+   */
+  cityStreets?: "classic" | "natural";
   rng: number;
   /**
    * Named RNG streams so a change in how often leasing rolls the dice does not
@@ -3661,6 +3986,10 @@ export interface GameState {
    * from market.ts (`econ` | `leasing` | `rivals` | `sales` | `dev` | …).
    */
   streams?: Partial<Record<string, number>>;
+  /** THE HOUSEHOLD REGISTER (households.ts): every island renter household and a sample of the region's. Stage 1 is a shadow — nothing reads it. */
+  households?: import("./households").HouseholdRegister;
+  /** THE CITY'S FIRM BOOKS AND LEDGER (economy.ts, sfc.ts): every named firm and a sample of the off-map ones, by industry. Step 1 is a shadow — nothing reads it. */
+  economy?: import("./economy").EconomyState;
   month: number;
   cash: number;
   econ: Econ;
@@ -3746,6 +4075,13 @@ export interface GameState {
   builderFirms?: boolean;
   /** Months a rival's first close was slowed by a thin investor pool (rivals.ts; measured, display only). */
   poolBindMs?: number;
+  /**
+   * THE STREET'S FIRST CLOSE IN PROGRESS (rivals.ts maybeNewFirm): the
+   * expected progress of the sponsors pitching the town's LPs, accrued each
+   * open month at the entry hazard (pitch x slots / RAISE_M x pool). A fund
+   * closes when it reaches one; a window that shuts loses it.
+   */
+  entryProgress?: number;
   /** Deal-by-deal raises in progress, keyed by the lot (raise.ts). */
   raises?: Record<string, import("./investors").Raise>;
   /**
@@ -3828,7 +4164,7 @@ export interface GameState {
    * building in those saves is already doing. Widening it is free; defaulting
    * it to anything else would silently reprice somebody's whole book on load.
    */
-  opsPolicy?: { service: -1 | 0 | 1; plan: 0 | 1 | 2; stance?: -1 | 0 | 1 };
+  opsPolicy?: { service: -1 | 0 | 1; plan: 0 | 1 | 2; stance?: number };
   /**
    * The house minimum new lease, sf (leasing.ts setMinLeaseSfAll): written to
    * every deed when set, and the floor a building bought or delivered later
@@ -3914,8 +4250,18 @@ export interface GameState {
   /** The street's named developers, living and gone (dev.ts). */
   builders?: Builder[];
   nextBuilderId?: number;
+  /**
+   * WORK NOBODY ON THE STREET COULD CARRY (dev.ts developerLook): schemes a
+   * developer's look found clearing its own bar, on terms a construction desk
+   * would lend on, that the looking shop could not put its own cheque into —
+   * or that nobody looked at because no builder was left. What a new shop
+   * sets up for; read and cleared by the roster tick.
+   */
+  builderOpenings?: { bbl: string; basis: number; ltc: number; m: number }[];
   cityPlans?: {
     bbl: string; use: string; floors: number; plate: number; spec: number; ltc: number; decidedM: number; breakM: number;
+    /** The scheme's lead class and its square feet in that class, as decided (the order book counts them). */
+    lead?: BuiltClass; sf?: number;
     /** The named developer who committed to it (see Builder). */
     builderId?: string;
     /** ...or the builder firm, when the town's builders are firms (GameState.builderFirms). */
@@ -3971,6 +4317,8 @@ export interface GameState {
     repudiatedM?: number;
     replaceM?: number;
     orphaned?: boolean;   // the sponsor died and the frame is standing there
+    /** The general contractor building it (contractors.ts), and its bid's markup over direct cost. */
+    gc?: number; gcBid?: number;
     listedM?: number;     // when the receiver put the frame on the tape
   }[];
   // Named starts owed back against the city's calibrated build rate — see
@@ -4080,8 +4428,12 @@ export interface GameState {
   blockA?: Record<string, number>;
   /** the emergent drift since 2000: what has been built, who is hiring, what opened. */
   blockE?: Record<string, number>;
+  /** the people within a walk of each block, working or living there (demand.ts) — a shop's catchment (streetRolls.ts) */
+  blockFoot?: Record<string, number>;
   /** a block's employment advantage in demand points — its trades against the city's */
   blockJ?: Record<string, number>;
+  /** a block's drive-time access to the households added since the first count, in demand points (towngrowth.ts tickRooftops; region only) */
+  blockR?: Record<string, number>;
   /**
    * Civic works. A station, a park, a bridge — rumoured first, argued over,
    * funded, opened; the ground reprices at each step, and buying on the rumour
@@ -4134,10 +4486,31 @@ export interface GameState {
    * desk sells out of it and the bank statement on Research is a view of it.
    */
   cityLoans?: Record<string, CityLoan>;
+  /**
+   * THE PRIVATE OWNERS' MORTGAGES (streetLoans.ts), keyed by BBL — the paper
+   * the desks wrote to the named families, partnerships and institutions in
+   * the deed register. They used to be an anonymous book in lenders.ts.
+   */
+  streetLoans?: Record<string, StreetLoan>;
+  /** Each private holder's working cash, by holder id — what carries a building that does not carry itself. */
+  holderCash?: Record<string, number>;
+  /** Each private holder's cash flow before debt service, a year, at the last quarterly read. */
+  holderCfads?: Record<string, { cfads: number; cap: number }>;
+  /** Who held each private deed at the last read, so a change of hands is seen. */
+  streetDeedHolder?: Record<string, string>;
+  /** Each private deed's appraisal at the last annual read (streetLoans.ts). */
+  streetDeedValue?: Record<string, number>;
+  /**
+   * New term loans each desk wrote, by month, trailing twelve — the share of
+   * the town's new lending it is winning (lenders.ts, the competitive part).
+   */
+  loanTape?: { m: number; by: Record<string, number> }[];
   /** What each competitor did, in order (firmLog.ts). Display only. */
   firmLog?: import("./firmLog").FirmLogEntry[];
   /** Book-weighted appetite of the live desks — the banking system in one number. */
   bankApp?: number;
+  /** The credit window as last written to the cause ledger (lenders.ts). */
+  creditNoted?: number;
   /**
    * THE SIZE OF A LOAN IN THIS TOWN. Every desk's minimum cheque was a number
    * written for a city of $4M buildings; in a city whose median building is
@@ -4315,7 +4688,8 @@ export interface GameState {
    * the team signs carries a face rent under the space's market rent
    * (`autoMarketRentPsf`). Lowballs are countered up to it; a tenant who will
    * not pay it is passed. The owner's instruction, not a market rule — what it
-   * costs is the tenants who walk. Absent reads as off.
+   * costs is the tenants who walk. Absent reads as off; the app deals a new
+   * campaign with it on (state/townWorker.ts).
    */
   autoRentFloor?: boolean;
   /**
@@ -4325,6 +4699,17 @@ export interface GameState {
    * (`autoLeaseOnClose`). Built buildings already open on auto at delivery.
    */
   autoLeaseNew?: boolean;
+  /** NO UNSOLICITED OFFERS: rivals do not ring to buy your buildings (Deals page). */
+  noUnsolicited?: boolean;
+  /**
+   * NO AUTOMATIC EQUITY CURE: when a loan's covenant breaks, the firm does not
+   * write the cure cheque by itself (debt.ts tickLoan). The breach stands, the
+   * lender traps the building's cash flow, and after two years the file goes
+   * to the workout desk; the owner can pay the loan down by hand at any time
+   * (paydownLoan). A cure is the sponsor's right, not its obligation. Absent
+   * reads as off: the firm cures out of cash, as it always has.
+   */
+  noAutoCure?: boolean;
   /**
    * WHAT AUTO-LEASE DID, last twelve months — the team's scorecard on the
    * Leasing page. One row per letter it settled; trimmed as it is written.
@@ -4393,6 +4778,13 @@ export interface GameState {
    */
   brokerRel?: Record<string, { name: string; fees: number; lastFeeM: number; ignores: number }>;
   /**
+   * WHAT EACH FIRM BELIEVES (beliefs.ts, ONE_ECONOMY_PLAN.md §6c-C): its own
+   * forecast of rent growth, vacancy, demand and cap rates per class, formed
+   * from what it has seen — its broker's comps, its own buildings and the
+   * lagged survey. Keyed by rival id, plus "street" for the anonymous trade.
+   */
+  beliefs?: Record<string, AgentBelief>;
+  /**
    * The player does not want the July docket thrown in their face. The auction
    * still happens, on the same day, with the same lots — this only stops the
    * card. The docket is on Marketplace either way, and so is the switch.
@@ -4422,6 +4814,8 @@ export interface GameState {
      * it, not one per month — see sim.ts.
      */
     payingNotes?: boolean;
+    /** Net worth at the bank's last annual review, and when (credit.ts locLimit). */
+    reviewNw?: number; reviewM?: number;
   };
   books: BooksYear[];                        // the ledger, one entry per year
   /** Monthly flow buckets for the income statement's month view. Optional for old saves. */
@@ -4448,6 +4842,19 @@ export interface GameState {
   // an appraisal is an opinion and a closed sale is a fact.
   comps?: Comp[];
   /**
+   * THE CAP PRINTS (propmarket.ts): every building that closed, and the best
+   * bid on every round that did not, as the cap rate it implies on the
+   * appraiser's own income. Cap rates are statistics of this tape.
+   */
+  capTape?: CapPrint[];
+  /**
+   * THE LAND PRINTS (propmarket.ts): every lot whose appraisal rested on the
+   * map's texture (no builder or holder bid above it) that sold, was bid on,
+   * or was surveyed, as the texture level it implies (`L`, in units of
+   * econ.landIdx). The texture level is a statistic of this tape.
+   */
+  landTape?: { m: number; L: number; w: number; kind: "t" | "b" | "s"; x?: [number, number] }[];
+  /**
    * Lifetime closed-print count. The rolling `comps` buffer is capped for the
    * sheet UI; this counter is not, so a century report can tell cumulative
    * trade volume from the last 240 stamps.
@@ -4456,6 +4863,8 @@ export interface GameState {
   /** Lifetime closed consideration (nominal $). Same reason as `compsTotal`. */
   compsVolume?: number;
   news: NewsItem[];
+  /** THE CAUSE LEDGER (why.ts): what happened and why, for the player's "Why?" chains. Records only; nothing reads it to decide. */
+  why?: import("./why").WhyLedger;
   /** Buildings the player has starred to follow (UI only — nothing in the economy reads it). */
   watch?: string[];
   /**
@@ -4585,6 +4994,7 @@ export function pnlAdd(s: GameState, key: keyof Omit<PnlYear, "yr" | "deprFinal"
  * to the owner is positive; cash the owner puts in is negative. `taxes` is
  * absent on purpose — the deed ledger is PRE-TAX — and `ga` and `interest` are
  * firm-level by definition and never belong to one building.
+ * [M: accounting signs, not quantities.]
  */
 const DEED_SIGN: Partial<Record<keyof Omit<BooksYear, "yr">, 1 | -1>> = {
   noi: 1, sold: 1, borrowed: 1, lpCalled: 1,
@@ -4912,8 +5322,8 @@ export function cloneState<T>(s: T): T {
     // the tick pays once a month on the whole state. It keeps
     // structuredClone's result on plain data exactly: shared references stay
     // shared, array holes stay holes, undefined-valued keys are kept, key
-    // order is kept. Anything that is not plain data (a Map, a Date, a typed
-    // array, a class instance, a function) sends the whole clone back to
+    // order is kept. Anything that is not plain data (a Map, a Date, a class
+    // instance, a function) sends the whole clone back to
     // structuredClone.
     try {
       return plainClone(s);
@@ -4935,6 +5345,13 @@ function plainClone<T>(root: T): T {
   const copy = (x: object): unknown => {
     const hit = seen.get(x);
     if (hit !== undefined) return hit;
+    // A typed array (the household register's columns, households.ts) is
+    // plain data too: copied whole, as structuredClone would.
+    if (ArrayBuffer.isView(x) && !(x instanceof DataView)) {
+      const out = (x as unknown as Uint8Array).slice();
+      seen.set(x, out);
+      return out;
+    }
     if (Array.isArray(x)) {
       if (Object.getPrototypeOf(x) !== Array.prototype) throw NOT_PLAIN;
       const n = x.length;
@@ -5041,6 +5458,9 @@ export interface Talks {
  * still finite capital rather than a sandbox. An idle firm with $6M went
  * insolvent in year fifteen on overhead alone — at $1M it has closer to five,
  * which is why this is a starting choice and not a slider.
+ *
+ * [K: judgement, no source found — the player's opening bankroll is a game
+ * setup choice, not a fact about the world.]
  */
 export const START_CASH_CHOICES = [
   1_000_000,
@@ -5050,6 +5470,7 @@ export const START_CASH_CHOICES = [
   20_000_000,
 ] as const;
 export type StartCash = (typeof START_CASH_CHOICES)[number];
+/** [K: judgement, no source found — the default of the game setup choice above.] */
 export const DEFAULT_START_CASH: StartCash = 2_500_000;
 /** @deprecated the opening bankroll is chosen — see START_CASH_CHOICES. */
 export const START_CASH = DEFAULT_START_CASH;
@@ -5122,6 +5543,12 @@ export function sweepApy(econ: { nat?: { policy?: number } } | undefined): numbe
  * It is deliberately NOT enough on its own to hold an old building level. It
  * buys you time; the programmes in dev.ts buy you a grade. That is the whole
  * shape of the decision — the plan is the floor, the programme is the choice.
+ *
+ * [S≠: source disagrees — Fannie Mae Multifamily Selling & Servicing Guide,
+ * Part III §105.01: minimum replacement reserve $250 per unit per year,
+ * which is 0.125% of a $200,000 apartment, against 0.34% here. That is a
+ * floor for apartments only; no all-class reserve rate as a share of value
+ * was found.]
  */
 export const CAP_PLAN_RATE = 0.0034;
 
@@ -5138,6 +5565,9 @@ export const CAP_PLAN_RATE = 0.0034;
  * into whether tenants renew. A landlord who takes a point of NOI back off the
  * cleaning contract and loses a floor to it has made the oldest mistake in
  * this business, and until now the game could not represent it.
+ *
+ * [K: judgement, no source found — the opex multipliers and the service aims
+ * are set by eye; Market at 1.00 is the definition of the sheet.]
  */
 export const OPS_SERVICE = [
   { key: -1 as const, label: "Lean", opex: 0.90, aim: 0.22,
@@ -5164,6 +5594,8 @@ export function serviceSpec(v?: -1 | 0 | 1) { return OPS_SERVICE[(v ?? 0) + 1]; 
  * building you are emptying for demolition, for a month when the bank is on
  * you. It is ruinous over a twenty-year hold. That is the entire decision, and
  * it is the first time hold period has been a strategic variable.
+ *
+ * [K: judgement, no source found — spend multiples and lifts set by eye.]
  */
 export const OPS_PLAN = [
   { key: 0 as const, label: "Defer", mult: 0, lift: 0,
@@ -5175,8 +5607,9 @@ export const OPS_PLAN = [
 ];
 export function planSpec(v?: 0 | 1 | 2) { return OPS_PLAN[v ?? 1]; }
 
-/** How fast tenants notice a change of service. 0.022/month is a 31-month half-life. */
+/** How fast tenants notice a change of service. 0.022/month is a 31-month half-life. [K: judgement, no source found for the half-life.] */
 export const SVC_SPEED = 0.022;
+/** Where a building's service index starts: OPS_SERVICE's Market aim. [K: judgement — equal to that aim, itself a judgement.] */
 export const SVC_START = 0.55;
 // The century is a MILESTONE, not a wall. A hundred years used to end the run
 // on the spot, which turned the back half of a good campaign into a countdown
@@ -5376,6 +5809,47 @@ export interface CityLoan {
    */
   spread?: number;
   cap?: { strike: number; expiresM: number };
+  /** The cause-ledger event of its most recent default (why.ts). */
+  whyId?: number;
+  /**
+   * THE SHARE THE NAMED DESK HOLDS. A loan bigger than any desk in town can
+   * carry is syndicated: the lead keeps what its capital and single-name room
+   * allow and sells the rest to banks out of town, which take their share of
+   * any loss. Absent = all of it.
+   */
+  share?: number;
+}
+
+/** A private owner's mortgage (streetLoans.ts). */
+export interface StreetLoan {
+  bbl: string;
+  lender: string;
+  /** The register's holder id, and the name the Banks page prints. */
+  holderId: string;
+  holder: string;
+  balance: number;
+  ratePct: number;
+  /** Floating paper: the margin over the short index. */
+  spread?: number;
+  product: string;
+  originM: number;
+  maturityM: number;
+  klass: string;
+  status: "current" | "watch" | "default";
+  /** Consecutive months the payment was not made. */
+  arrearsMs: number;
+  /** The building's net operating income after tax at the last read, a year. */
+  noiYr: number;
+  /** Its appraisal at the last read. */
+  value: number;
+  /** Times the desk has extended the balloon rather than file. */
+  extensions?: number;
+  /** The month the balloon fell due and was not repaid — a maturity default, until refinanced. */
+  balloonM?: number;
+  /** The cause-ledger event of its default (why.ts). */
+  whyId?: number;
+  /** The share the named desk holds; the rest is participated out of town (see CityLoan.share). */
+  share?: number;
 }
 
 export interface Workout {
@@ -5496,4 +5970,94 @@ export interface BankForeclosure {
 export function autoLeaseOnClose(s: GameState): boolean {
   if (s.autoLeaseNew !== undefined) return s.autoLeaseNew;
   return Object.values(s.holdings ?? {}).some((h) => !!h.autoLease && !h.groundLeased);
+}
+
+/** One print on the cap tape (propmarket.ts). */
+/** One class as one firm sees it (beliefs.ts). */
+export interface ClassBelief {
+  /** real effective rent as the firm has seen it, one point a quarter, oldest first (ten years) */
+  seen: number[];
+  /** the real rent growth it expects, a share a year (extrapolated from `seen`) */
+  g: number;
+  /** today's rent as it sees it against its own ten-year memory */
+  dev: number;
+  /** the vacancy it believes the class runs at */
+  vac: number;
+  /** the growth in occupied space it believes, a share a month */
+  dg: number;
+  /** the cap rate its broker quotes, % (the class read as of the shop's last trade) */
+  cap: number;
+  /** what this quarter's read was built from: leases its broker showed it, its own feet, the survey's age in months */
+  nC: number; ownSf: number; lagM: number;
+}
+export interface AgentBelief {
+  /** month of the last update */
+  m: number;
+  /** its brokerage (broker.ts house shops: "b0".."b2") */
+  shop: string;
+  c: Record<BuiltClass, ClassBelief>;
+}
+
+export interface CapPrint {
+  m: number;
+  k: BuiltClass;
+  bbl: string;
+  /** "t" a closed trade; "b" a round that did not close (bid-ask midpoint); "s" a broker's survey indication */
+  kind: "t" | "b" | "s";
+  /** the cap rate the price (or bid) implies on the appraiser's own income, % */
+  c: number;
+  /** the same at the ask, where there was one, % */
+  ca?: number;
+  /** location 0-1, condition index 0-1, build spec 0-1 */
+  x: [number, number, number];
+  /** evidence weight: 1 marketed; 0.5 distress, never exposed, or a bid that did not close */
+  w: number;
+  /** the winning bidder's debt rate, %, where a named bidder priced it */
+  rd?: number;
+  /** named bidders in the round */
+  nb?: number;
+  /** the trade's cause-ledger event */
+  why?: number;
+  /** the seller was under compulsion: a fund at the end of its life, a merchant builder's exit, a non-core trim, an estate, a receiver, a book over its covenant (Listing.reason) */
+  f?: 1;
+}
+
+/**
+ * A TIME-DUMMY HEDONIC GRID AND THE APPRAISER WHO READS IT (propmarket.ts).
+ * `S*` are the within-calendar-year (demeaned) weighted cross-products of
+ * the closed years — the sufficient statistics of a regression with a free
+ * level every year; `cur` is the open year's raw sums; `yrs` each closed
+ * year's totals (its mean, for the market's own volatility). `x`/`P` are the
+ * appraiser's current log level at the reference and its variance; `s0`/`n0`
+ * the opening survey's dispersion, a prior on the residual variance.
+ */
+export interface ApprIndex {
+  nYr: number; W: number; Szz: number[]; Szy: number[]; Syy: number;
+  cur?: { yr: number; W: number; sz: number[]; sy: number; szz: number[]; szy: number[]; syy: number };
+  yrs: { yr: number; W: number; sz: number[]; sy: number }[];
+  x: number; P: number; s0: number; n0: number;
+  /** the land index's reference evidence: "s", the broker's panel (propmarket.ts zLand); absent on a grid kept before it */
+  ref?: "s";
+}
+
+/** A class's cap read-out (propmarket.ts tickCapRead). */
+export interface CapRead {
+  /** weighted prints in the window, and the window in months (0 = none in three years: the read is stale) */
+  n: number; win: number;
+  /** the appraisers' read at the reference building (the index), and the window's quartiles restated to it, % */
+  med: number; p25: number; p75: number;
+  /** the window's own weighted median restated to the reference — what the deals alone say, before the appraisers weigh it against what they knew; and the index's standard error, % */
+  raw?: number; se?: number;
+  /** the grid the read restated its window through: location, condition, spec, and an unclosed bid, a broker's indication, a distress sale, a compelled seller (log cap per unit) */
+  adj?: number[];
+  /** median age of the evidence, months */
+  ageM: number;
+  /** median best-bid cap less ask cap on rounds bid on, points (wide = a thin market) */
+  bidAsk?: number;
+  /** buyers' median debt rate on the prints, %, and its move on the year before */
+  debt?: number; dDebt?: number;
+  /** rounds that drew no qualified bid; closed trades in the window */
+  noBid: number; trades: number;
+  /** the cause-ledger event for this read */
+  why?: number;
 }

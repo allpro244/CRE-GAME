@@ -20,12 +20,13 @@ const write = (k: string, v: string) => { try { localStorage.setItem(k, v); } ca
 
 function initialShell(): UiShell {
   try {
-    const q = new URLSearchParams(location.search).get("ui");
-    if (q === "next" || q === "classic") return q;
+    // ?ui=next survives a reload in this tab only (a new game reloads without the query)
+    const q = new URLSearchParams(location.search).get("ui") ?? sessionStorage.getItem("bw:ui");
+    if (q === "next" || q === "classic") { sessionStorage.setItem("bw:ui", q); return q; }
   } catch { /* no location */ }
-  // THE NEW SHELL IS THE DEFAULT (PLAN §5 step 8). Classic stays a setting,
-  // and a browser that chose it keeps it.
-  return read("bw:ui-shell") === "classic" ? "classic" : "next";
+  // CLASSIC ONLY (owner, 2026-10-23: "wipe the new UI ... save it in a hidden way").
+  // The new shell's code is kept; it opens only with ?ui=next in the address.
+  return "classic";
 }
 
 function initialPreset(): BuyPreset {
@@ -65,7 +66,8 @@ interface NextState {
 
 export const useNext = create<NextState>((set) => ({
   uiShell: initialShell(),
-  setUiShell: (v) => { write("bw:ui-shell", v); set({ uiShell: v }); },
+  // session only, like ?ui= (nothing ever read a stored choice back)
+  setUiShell: (v) => { try { sessionStorage.setItem("bw:ui", v); } catch { /* no storage */ } set({ uiShell: v }); },
   placeTab: {},
   setPlaceTab: (p, tab) => set((s) => ({ placeTab: { ...s.placeTab, [p]: tab } })),
   inboxDone: [],

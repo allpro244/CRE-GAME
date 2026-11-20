@@ -545,9 +545,9 @@ int32 ACityLife::DensityLevel = 2;
 void ACityLife::SetDensity(int32 Level)
 {
 	DensityLevel = Level;
-	// walkers: off, near (150 m), or the full 300-380 m; cars: off, 600 m, everywhere
+	// walkers: off, near (150 m), the full 300-380 m, or far (600-760 m, Max); cars: off, 600 m, everywhere
 	for (UInstancedStaticMeshComponent* C : PersonMeshes)
-		if (C) { C->SetVisibility(Level > 0); C->SetCullDistances(Level >= 2 ? 30000 : 12000, Level >= 2 ? 38000 : 15000); }
+		if (C) { C->SetVisibility(Level > 0); C->SetCullDistances(Level >= 3 ? 60000 : Level >= 2 ? 30000 : 12000, Level >= 3 ? 76000 : Level >= 2 ? 38000 : 15000); }
 	for (UInstancedStaticMeshComponent* C : CarMeshes)
 		if (C) { C->SetVisibility(Level > 0); C->SetCullDistances(0, Level >= 2 ? 0 : 60000); }
 	for (UInstancedStaticMeshComponent* C : ParkedMeshes)

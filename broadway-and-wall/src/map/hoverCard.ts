@@ -6,9 +6,10 @@
 // card alone. Occupancy is labelled the way the panel labels it: "in place"
 // only when the owner has shown a rent roll (or it is yours), otherwise the
 // market's estimate — a glance must not leak what a buyer cannot know.
-import type { GameState } from "@/engine/types";
+import { monthLabel, type GameState } from "@/engine/types";
 import type { ParcelRecord } from "@/data/types";
 import { initialCondition, marketAppraisal, resolveRec } from "@/engine/value";
+import { demandNow } from "@/engine/demand";
 import { goingIn, occRead } from "@/ui/panels/shared";
 import { usd } from "@/ui/format";
 
@@ -35,18 +36,48 @@ export function hoverBasics(g: GameState, parcels: Record<string, ParcelRecord>,
     if (own) occ = occRead(rec, own).lettableOcc;
     else { const ip = goingIn(g, bbl, appraised); occ = ip.h ? occRead(rec, ip.h).lettableOcc : ip.occ; }
   }
-  return { address: rec.address, appraised, occ, bldgSf: building ? Math.round(rec.bldgArea) : 0, acres: rec.lotArea / 43560 };
+  // the demand score the property desk prints (owner, Oct 2026: "when you hover over a parcel, it should show its demand score")
+  const demand = Math.round(demandNow(g, rec));
+  // UNDER CONSTRUCTION (owner, Oct 2026): when it delivers, how big, what it is —
+  // the city's one delivery queue, whoever is building it
+  const proj = (g.econ.deliveryQueue ?? []).find((p) => p.bbl === bbl && p.status !== "cancelled" && p.deliverM > g.month);
+  const uc = proj ? {
+    deliverM: proj.deliverM,
+    sf: Math.round(Object.values(proj.sfByUse).reduce((a, v) => a + (v ?? 0), 0)),
+    uses: Object.entries(proj.sfByUse).filter(([, v]) => (v ?? 0) > 0).sort((a, b2) => (b2[1] ?? 0) - (a[1] ?? 0)).map(([k]) => USE_WORD[k] ?? k),
+    stalled: proj.status === "stalled",
+  } : null;
+  return { address: rec.address, appraised, occ, demand, uc, bldgSf: building ? Math.round(rec.bldgArea) : 0, acres: rec.lotArea / 43560 };
 }
 
+const USE_WORD: Record<string, string> = { office: "Office", retail: "Retail", multifamily: "Apartments", industrial: "Industrial" };
+
 export const acresText = (ac: number) => (ac >= 10 ? ac.toFixed(0) : ac >= 1 ? ac.toFixed(1) : ac.toFixed(2)) + " ac";
+
+/**
+ * A REGION FACILITY'S CARD (region step 2c): what it is and that it is background. Numbers first, plain
+ * words: its size, its industry, and that the region's plants, yards and farms are not on the market.
+ */
+export function facilityTipHtml(f: { name: string; industryName: string; acres: number }): string {
+  return [
+    `<div class="ht-addr">${esc(f.name)}</div>`,
+    row(f.industryName, acresText(f.acres)),
+    `<div class="ht-sub">Region · not for sale</div>`,
+  ].join("");
+}
 
 export function tipHtml(g: GameState, parcels: Record<string, ParcelRecord>, rec0: ParcelRecord): string {
   const b = hoverBasics(g, parcels, rec0);
   return [
     `<div class="ht-addr">${esc(b.address)}</div>`,
     row("Appraised", usd(b.appraised)),
+    row("Demand", `${b.demand} / 100`),
+    ...(b.uc ? [
+      row("Building", `${b.uc.uses.join(" + ")} · ${b.uc.sf.toLocaleString()} sf`),
+      row(b.uc.stalled ? "Stalled · due" : "Delivers", monthLabel(b.uc.deliverM), b.uc.stalled ? "bad" : ""),
+    ] : []),
     row("Occupancy", b.occ == null ? "—" : `${Math.round(b.occ * 100)}%`, b.occ != null && b.occ < 0.75 ? "bad" : ""),
-    row("Building", b.bldgSf ? `${b.bldgSf.toLocaleString()} sf` : "—"),
+    ...(b.uc ? [] : [row("Building", b.bldgSf ? `${b.bldgSf.toLocaleString()} sf` : "—")]),
     row("Land", acresText(b.acres)),
   ].join("");
 }

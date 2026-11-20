@@ -25,6 +25,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { GameState, VarianceApplication } from "./types";
 import { monthLabel, cloneState} from "./types";
+import { hash01 } from "./competitorTraits";
 import { rng } from "./market";
 import { resolveRec, landValue, demandLinear } from "./value";
 import { recordPropertyEvent } from "./history";
@@ -129,9 +130,9 @@ export function varianceQuote(
 export function fileVariance(
   s: GameState, parcels: ParcelTable, bbl: string, targetFar?: number,
 ): { s: GameState; err?: string; msg?: string } {
-  if (!s.holdings[bbl]) return { s, err: "You have to own it to ask for anything." };
-  if (pendingVariances(s)[bbl]) return { s, err: "This site already has an application in front of the board." };
-  if (s.landmarks?.[bbl] !== undefined) return { s, err: "It is landmarked. The envelope is the envelope." };
+  if (!s.holdings[bbl]) return { s, err: "You must own it to apply." };
+  if (pendingVariances(s)[bbl]) return { s, err: "Application already pending for this site." };
+  if (s.landmarks?.[bbl] !== undefined) return { s, err: "Landmarked; the envelope cannot change." };
   const q = varianceQuote(s, parcels, bbl, targetFar);
   if (!q) {
     // "NOTHING TO APPLY FOR HERE" WAS SEVERAL ANSWERS WEARING ONE SENTENCE.
@@ -161,9 +162,9 @@ export function fileVariance(
   if (room.total < q.cost) {
     return {
       s,
-      err: `The application runs ${money(q.cost)} in fees and you can raise `
-        + `${money(room.total)} — ${money(room.cash)} of cash and `
-        + `${money(room.line)} on the line.`,
+      err: `Application fees ${money(q.cost)}; available `
+        + `${money(room.total)} (${money(room.cash)} cash, `
+        + `${money(room.line)} on the line).`,
     };
   }
   const next: GameState = cloneState(s);
@@ -215,12 +216,12 @@ function decideVariance(s: GameState, parcels: ParcelTable) {
       s.news.unshift({
         q: s.month, kind: "deal",
         text: `The board approved the variance at ${rec?.address ?? app.bbl}. `
-          + `${app.grant.toFixed(1)} FAR of extra envelope, and the dirt underneath it just repriced.`,
+          + `+${app.grant.toFixed(1)} FAR; land value reprices.`,
       });
     } else {
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `The board refused the variance at ${rec?.address ?? app.bbl}. The fees are spent and the envelope is what it always was.`,
+        text: `The board refused the variance at ${rec?.address ?? app.bbl}. Fees lost; envelope unchanged.`,
       });
     }
   }
@@ -237,8 +238,16 @@ function decideVariance(s: GameState, parcels: ParcelTable) {
  * that trade is good depends entirely on whether the site was worth more than
  * the building, which is the same question every preservation fight is about.
  */
+/**
+ * How often the commission designates: about one building in fourteen years
+ * here [K: judgement — the old monthly 0.6%]. Designations are a flow, so the
+ * commission sits on that schedule (each seed at its own hashed phase in the
+ * count) rather than on a die each month (2026-11-11).
+ */
+const LANDMARK_RATE = 0.006;
 function tickLandmarks(s: GameState, parcels: ParcelTable, bbls: string[]) {
-  if (rng(s) > 0.006) return;
+  const x = s.month * LANDMARK_RATE + hash01(`${s.seed}:landmark`);
+  if (Math.floor(x + LANDMARK_RATE) === Math.floor(x)) return;
   // old, characterful, and somewhere that has become worth caring about
   const cands = bbls.filter((b) => {
     if (s.landmarks?.[b] !== undefined || s.developments[b]) return false;
@@ -247,7 +256,10 @@ function tickLandmarks(s: GameState, parcels: ParcelTable, bbls: string[]) {
       && rec.yearBuilt > 0 && rec.yearBuilt < 1940 && demandLinear(rec.demandScore) > 45;
   });
   if (!cands.length) return;
-  const bbl = cands[Math.floor(rng(s) * cands.length)];
+  // the case the preservationists make first: the oldest, then the most cared-about street
+  const age = (b: string) => resolveRec(parcels, s, b)!;
+  const bbl = cands.slice().sort((a, b) => age(a).yearBuilt - age(b).yearBuilt
+    || demandLinear(age(b).demandScore) - demandLinear(age(a).demandScore) || a.localeCompare(b))[0];
   const rec = resolveRec(parcels, s, bbl)!;
   if (!s.landmarks) s.landmarks = {};
   s.landmarks[bbl] = s.month;
@@ -256,8 +268,8 @@ function tickLandmarks(s: GameState, parcels: ParcelTable, bbls: string[]) {
   s.news.unshift({
     q: s.month, kind: mine ? "warn" : "info",
     text: `${rec.address} has been landmarked${mine ? " — one of yours" : ""}. `
-      + `Nobody knocks it down now, and nobody builds anything bigger there. `
-      + `It will let a little better than the market for the rest of its life, which is the whole of what you get for the site.`,
+      + `No demolition or enlargement allowed. `
+      + `Leases slightly above market from now on.`,
   });
 }
 

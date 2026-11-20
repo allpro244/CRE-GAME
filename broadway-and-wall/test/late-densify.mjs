@@ -11,7 +11,6 @@ const E = await import(join(HERE, ".engine.mjs"));
 const { loadCity } = await import(join(HERE, "city.mjs"));
 
 const keepAlive = (g) => (g.gameOver ? { ...g, gameOver: null, cash: 6e6 } : g);
-const fr = E.frictionFloor("office");
 const SEEDS = [11, 42, 12007];
 
 function run(seed) {
@@ -25,7 +24,7 @@ function run(seed) {
     g = keepAlive(E.advanceMonth(g, parcels, bbls, adjacency));
     if (m === 599) dem50 = g.demolished ?? 0;
     if (m >= 600) {
-      if ((g.econ.cityVac?.office ?? 1) <= fr + 0.005) pinLate++;
+      if ((g.econ.cityVac?.office ?? 1) <= E.residenceVac(g.econ, "office") + 0.005) pinLate++;
       if ((g.econ.pipeline?.office ?? 0) > 5_000
         || (g.cityJobs ?? []).some((j) => !j.orphaned && (j.mix?.office ?? (j.use === "office" ? 1 : 0)) > 0)) {
         pipeMonths++;

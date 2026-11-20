@@ -77,8 +77,9 @@ check(E.condGrade(h.condIdx ?? 0) === "good", `the index grades as the word says
 const rentNew = E.marketRentPsfYr(built, g.econ, h.condition, h.condIdx);
 const rentStd = E.marketRentPsfYr(built, g.econ, "standard", 0.58);
 check(rentNew > rentStd * 1.05, `new bones rent over the old clamp ($${rentNew.toFixed(2)} vs $${rentStd.toFixed(2)} at 0.58)`);
-const arrival = E.leaseFactors(g, built, h, "office").find((f) => f.label === "Condition");
-check(!!arrival && arrival.mult > 1, `the leasing desk sees a good building (Condition ×${arrival?.mult})`);
+// what a looking firm's broker scores the building at (streetRolls.ts shop reads overallScore)
+const scNew = E.overallScore(built, g.econ, "office", h.condIdx), scStd = E.overallScore(built, g.econ, "office", 0.58);
+check(scNew > scStd, `a looking firm sees a good building (score ${scNew.toFixed(1)} vs ${scStd.toFixed(1)} at 0.58)`);
 const v = E.checkInvariants(g, parcels);
 check(!v.some((x) => x.code === "delivered"), `no "delivered" invariant fires on the fresh building (${v.filter((x) => x.code === "delivered").map((x) => x.detail).join("; ") || "clean"})`);
 // a year on, the ceiling still holds it near the top (wear is slow on new bones)

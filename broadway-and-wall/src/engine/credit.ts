@@ -9,9 +9,11 @@ import { logBooks, cloneState} from "./types";
 import { netWorth, ownedHoldingNoiYr, ownedHoldingValue, resolveRec } from "./value";
 import { sponsorStanding } from "./sponsor";
 import { money } from "./money";
-import { deskRatePct, appetiteAdvance } from "./pricing";
+import { appetiteAdvance, bankRatePct, liveSpread } from "./pricing";
 import { shortIndexOf } from "./market";
 import type { Lender } from "./lenders";
+import { deskPxOf } from "./lenders";
+import { productById } from "./debt";
 import { purseOf } from "./vehicles";
 
 /**
@@ -28,7 +30,6 @@ import { purseOf } from "./vehicles";
 export const LOC_LTV = 0.60;      // against net worth
 export const LOC_SPREAD = 4.0;    // prime + 400bps
 /** The line's floor over the LOAN index: a commercial bank's five-year fixed mortgage spread (debt.ts product sheet, 1.55). */
-export const LOC_FLOOR_SPREAD = 1.55;
 /**
  * Operating float left on hand when idle cash pays the revolver.
  * Everything above this goes to the most expensive money first.
@@ -132,11 +133,10 @@ export function lineLender(s: GameState): Lender | undefined {
  */
 export function locRate(s: GameState): number {
   const bank = lineLender(s);
-  const terms = {
-    ci: s.econ.creditIdx ?? 1,
-    app: bank ? (bank.failedM !== undefined ? 0 : bank.appetite) : 1,
-    standingAdd: sponsorStanding(s).spreadAdd,
-  };
+  // The bank's own price for money (pricing.ts liveSpread): its funding, its
+  // losses, its rationing and its pitch — on both legs of the floor.
+  const px = bank ? s.econ.deskPx?.[bank.name] : undefined;
+  const terms = { standingAdd: sponsorStanding(s).spreadAdd };
   // NEVER UNDER THE BANK'S OWN MORTGAGE. A revolver is the riskier paper —
   // undrawn until you are short, recourse to the firm rather than one
   // building — so no bank lends it cheaper than it lends against a building.
@@ -144,11 +144,17 @@ export function locRate(s: GameState): number {
   // to the floor, the loan index still near four) index + 400 fell under the
   // loan index itself, 0.4 points under at worst over a thirty-year run, and
   // the line read as cheaper than the market's own mortgage rate. The floor
-  // is the bank's five-year fixed sheet (LOC_FLOOR_SPREAD), priced through the
-  // same law so it widens in a crunch the way the line does.
+  // is the same spread over the loan index, so it widens in a crunch the way
+  // the line does.
+  //
+  // PRICED OFF THE BANK'S COSTS (2026-11-11), on the junior loss class: the
+  // line is recourse to the firm and secured by no building, so it ranks
+  // behind every mortgage the firm has — its expected loss and the capital
+  // held against it are a subordinate loan's, not a first lien's.
+  const spr = liveSpread(px ?? deskPxOf(s, bank?.name ?? productById("harbor").lender), "junior");
   return Math.max(
-    deskRatePct(shortIndexOf(s.econ), LOC_SPREAD, terms),
-    deskRatePct(s.econ.indexRate, LOC_FLOOR_SPREAD, terms),
+    bankRatePct(shortIndexOf(s.econ), spr, terms),
+    bankRatePct(s.econ.indexRate, spr, terms),
   );
 }
 
@@ -211,7 +217,14 @@ export function locLimit(s: GameState, parcels: ParcelTable, nwPre?: number): nu
   // and again for the Net-worth readout on every render (including every nav
   // click and every FPS tick), which is what made ordinary UI clicks feel
   // heavy once the book grew.
-  const nw = nwPre ?? netWorth(s, parcels);
+  // THE LINE IS SIZED AT ITS ANNUAL REVIEW (2026-11-11). A bank re-underwrites
+  // a corporate revolver's borrowing base once a year off the financials it is
+  // given, not off this month's marks — so one bad quarter does not call a
+  // borrower's line in the middle of a slump (the fire-sale loop: marks fall,
+  // lines shrink, owners sell, marks fall). The review's net worth is set in
+  // tickLoc; sponsor standing and the bank's own appetite still cut at once.
+  const nwNow = nwPre ?? netWorth(s, parcels);
+  const nw = s.loc?.reviewNw !== undefined ? s.loc.reviewNw : nwNow;
   const ci = s.econ.creditIdx ?? 1;
   // The revolver is the most relationship-dependent money on the balance
   // sheet, so it is the first thing a bank pulls when your name goes bad —
@@ -235,16 +248,29 @@ export function locLimit(s: GameState, parcels: ParcelTable, nwPre?: number): nu
   // coverage. Income after the mortgages must cover the line's interest
   // 1.25 times, and the dirt gets the land desk's borrowing base — a third of
   // its value — because land carries debt on value, not on income.
+  //
+  // THE BUILDINGS' OWN VALUE IS A FLOOR UNDER THE COVERAGE TEST (owner, Oct
+  // 2026: "the line of credit should be giving you more"). A young firm with
+  // millions in unlevered buildings that have not let yet had a line of a
+  // third of its dirt and nothing else: coverage reads income, and there was
+  // none. A bank lends against the equity in its borrower's real estate as
+  // well as against its rent — the same third the land desk advances on dirt,
+  // on the equity above each building's own mortgage and mezz. Deeds pledged
+  // to the facility are the facility's collateral and do not count twice.
+  // Cash is deliberately not in the base: the line is drawn to cover cash
+  // shortfalls, so a base that fell as cash was spent would call the line at
+  // the moment it was being used.
   const rate = Math.max(1, (s.econ.indexRate ?? 5) + LOC_SPREAD) / 100;
-  let free = 0, land = 0;
+  let free = 0, land = 0, equity = 0;
   for (const h of Object.values(s.holdings)) {
     if (purseOf(s, h) === "fund") continue;
     const rec = resolveRec(parcels, s, h.bbl);
     if (rec && (rec.class === "land" || !rec.bldgArea) && !h.groundLeased) { land += ownedHoldingValue(s, parcels, h); continue; }
     const ds = (h.loan?.monthlyPmt ?? 0) * 12 + (h.mezz?.monthlyPmt ?? 0) * 12;
     free += ownedHoldingNoiYr(s, parcels, h) - ds;
+    if (!s.facility?.bbls.includes(h.bbl)) equity += Math.max(0, ownedHoldingValue(s, parcels, h) - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0));
   }
-  const serviceable = Math.max(0, free) / (1.25 * rate) + land / 3;
+  const serviceable = Math.max(Math.max(0, free) / (1.25 * rate), equity / 3) + land / 3;
   return Math.max(0, Math.round(Math.min(nw * advance, serviceable * appFac)));
 }
 
@@ -489,6 +515,8 @@ export function repayLoc(s: GameState, amount: number): { s: GameState; err?: st
 // shortfall automatically rather than letting the run die with credit unused.
 export function tickLoc(s: GameState, parcels: ParcelTable) {
   if (!s.loc) s.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
+  // the annual review re-sizes the borrowing base (see locLimit)
+  if (s.loc.reviewM === undefined || s.month - s.loc.reviewM >= 12) { s.loc.reviewNw = netWorth(s, parcels); s.loc.reviewM = s.month; _locAvailCache = null; }
   // Pin the line to its bank while it is drawn; release it once it is clear.
   if (s.loc.balance > 0 && !s.loc.lender) s.loc.lender = lineLender(s)?.name;
   else if (s.loc.balance <= 0 && s.loc.lender) delete s.loc.lender;

@@ -9,8 +9,17 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const E = await import(join(HERE, ".engine.mjs"));
 const { loadCity } = await import(join(HERE, "city.mjs"));
 
-const { parcels } = loadCity(0, E.normalizeParcels);
-const g = E.newGame(44101, parcels, 80_000_000);
+const { parcels, bbls } = loadCity(0, E.normalizeParcels);
+// A LINE IS SIZED ON THE FIRM'S REAL ESTATE (credit.ts locLimit): a firm that
+// owns nothing has no revolver to draw, which is what a bank does. So the firm
+// buys one building outright first; then its account is set to 400k.
+let g = E.firstListings(E.newGame(44101, parcels, 80_000_000), parcels, bbls);
+for (const li of g.listings ?? []) {
+  const r = E.resolveRec(parcels, g, li.bbl);
+  if (!r || r.class === "land" || !(r.bldgArea > 0) || li.ask > 20_000_000) continue;
+  const b = E.buyListing(g, parcels, li.bbl, "cash");
+  if (!b.err) { g = b.s; break; }
+}
 g.cash = 400_000;
 g.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
 

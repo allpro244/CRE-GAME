@@ -2,11 +2,20 @@
 // runs (test/region-longrun.mjs) exercise the same ledger paths conserve does.
 // Moved verbatim out of test/conserve.mjs; the comments are conserve's, and
 // they explain why each threshold is what it is. `bot.built` and
-// `bot.syndicated` are the two pieces of state the loop used to keep in
+// `bot.funded` are the two pieces of state the loop used to keep in
 // closure; they live on the bot so a reloaded run can carry them across.
 export function makeConserveBot(E, { seed, START }) {
-  const bot = { built: false, syndicated: 0 };
+  const bot = { built: false, funded: 0 };
   bot.step = (g, parcels, m) => {
+  // ON ODD SEEDS, A FUND (fund.ts): raised the first month the street will
+  // back one, so the LPs' calls, the management fee and the distributions run
+  // through this identity for the vehicle's life. Its purchases and the job
+  // on a site it owns are paid from the vehicle. Outside money comes in only
+  // this way since deal-by-deal raising was removed (2026-11-12).
+  if (seed % 2 === 1 && !g.fund && E.fundRaiseQuote(g).ok) {
+    const r = E.raiseFund(g);
+    if (!r.err) { g = r.s; bot.funded++; }
+  }
   // A PLAYER WHO ACTUALLY DOES THINGS. An idle run exercises almost none of
   // the cash paths: no purchases, no debt, no leasing, no capex, no balloon.
   // Leasing at market and buying on a clock walks most of the ledger.
@@ -147,17 +156,8 @@ export function makeConserveBot(E, { seed, START }) {
       if (g.developments[dirt] || g.holdings[dirt].sale) continue;
       const pick = scheme(dirt);
       if (!pick) continue;
-      // ON ODD SEEDS, WITH FRIENDS AND FAMILY IN THE DEAL (syndicate.ts):
-      // half of what they could put in, so the investors' calls and
-      // distributions run through this identity every month the deal lives.
-      let custom;
-      if (seed % 2 === 1) {
-        const land = E.ownedHoldingValue(g, parcels, g.holdings[dirt]);
-        const outside = Math.floor(E.maxOutside(g, E.devFundingNeed(pick.p).whole, land) * 0.5);
-        if (outside > 0) custom = { syndicate: { outside } };
-      }
-      const d = E.startDevelopment(g, parcels, dirt, pick.use, pick.fl, 0.6, "gmp", undefined, custom);
-      if (!d.err) { g = d.s; bot.built = true; if (custom) bot.syndicated++; break; }
+      const d = E.startDevelopment(g, parcels, dirt, pick.use, pick.fl, 0.6, "gmp", undefined);
+      if (!d.err) { g = d.s; bot.built = true; break; }
     }
   }
 

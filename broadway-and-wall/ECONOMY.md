@@ -3503,3 +3503,65 @@ quarter as they fall a point under it.
 
 Recessions (1.7 a decade, median 12 months) and curve inversion (14% of
 months) are unchanged.
+
+# THE TENANT MARKET (ONE ECONOMY step 4) — rents are the leases
+
+Office, shop and shed rents no longer follow the city's vacancy against a
+"natural" rate. `tenantMarket.ts` holds the two sides:
+
+- **Landlords post a face rent and a package** from their own leasing. Space
+  that sits past the landlord's patience (about a year for office, ten
+  months for shops, six for sheds) gets a sweeter package, then a lower face;
+  space that lets at once, or a sitting tenant with nowhere else to go,
+  takes the package back, then raises the face. Full buildings pass their
+  costs through; empty ones follow the comps down. Owners whose mortgage is
+  behind move faster and take less.
+- **Firms shop.** A firm looking for space, or at the end of its lease, gets
+  a broker's shortlist and weighs each building on its market rent, its fit
+  with the quality the firm shops for, distance to its named partners and its
+  island staff, a shop's walk-ins net of what the address already charges, the
+  posted rent and the cost of moving. It takes the best; a close runner-up at
+  a hungrier landlord buys it a concession.
+- **The indices are read-outs**: asking and effective rent, the package
+  between them and the quality bands' swing are the last six months' new
+  leases, normalised to an ordinary building.
+
+Measured on seed 550991 (`test/tenantmarket.mjs`, 10-15 years): renewals at
+lease end 56-68% of office, 57-67% of shop and 53-57% of shed space, against
+the lease-expiry studies' 55 / 65 / 75%; office packages run 15-25% of face
+at 13-15% vacancy and vanish below 8%. Known: rents in a tight office market
+rise more slowly than the old rule had them (its shortage slope was steeper),
+and the shop market splits into good corners that raise and structural
+vacancy that does not let — the town's shop vacancy runs about twice the old
+figure.
+
+**Follow-up (tenant market 2).** Measured, the two known faults had four causes,
+none of them a slope:
+
+- *A renewal could not reach a landlord's ask.* A sitting tenant was offered the
+  face no higher than the comps, so a full building's ask — passing costs
+  through, raised when a tenant had nowhere else to go — never reached a
+  renewal. It is now offered the ask; its options (runner-up, cost of moving)
+  are what discipline it.
+- *Space letting as expected held flat in dollars* and followed the comps down —
+  and the comps are the cheap end of what was on offer, since firms sign where
+  the deal is best. It now passes costs through and follows the comps up only;
+  down needs its own evidence, space sitting past patience.
+- *"Fast" was invisible.* A landlord raised only on a letting that filled the
+  building, against a patience learned from the same lettings, and its clock
+  ran from the building's last full month, so a tower letting a suite a month
+  was "dark for years". It now raises on any letting faster than the longer of
+  its patience and the class's ordinary months on market, by the share let,
+  and the clock is the age of the space on the market.
+- *Most of the extra shop vacancy was not on the market at all*: 6-8% of shop
+  space (8.4% at the opening) sat in remnants under the suite floor, carved by
+  generated rolls and by renewals that shrank or grew a few hundred feet.
+  Premises now never leave such a piece (the tenant keeps it or takes it, as
+  the player's renewals already did). What remains of shop vacancy is churn:
+  make-ready and space under six months on the market, from moves and failures
+  running ~13% of let space a year.
+
+Seed 550991, ten years: office index / CPI 0.86 -> 0.95 at ~10% vacancy;
+shop remnant 6.5% -> ~1% of stock. The player's renewal read (`renewalIntent`)
+now uses the same street comparison in expectation (`stayOdds`) and draws
+nothing.

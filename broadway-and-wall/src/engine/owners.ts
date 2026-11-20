@@ -53,6 +53,7 @@
  * set, and the small stock on a tail — which produces the concentration
  * without anyone having to sort the city.
  */
+import { ownerFirm } from "./firms";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Rival, SellerKind } from "./types";
 import { START_YEAR } from "./types";
@@ -386,7 +387,7 @@ function landTierOf(rec: ParcelRecord, r: number): HolderTier {
 export function holderOf(s: GameState, parcels: ParcelTable, bbl: string): Holder | null {
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return null;
-  if (s.holdings[bbl] || ownerOf(s, bbl)) return null;
+  if (ownerFirm(s, bbl) !== null) return null;
   if (isCivicLand(s, bbl)) return null;
   // A deed pinned to a retired firm's family stays theirs until it next trades.
   const pin = s.deedHolder?.[bbl];
@@ -824,10 +825,10 @@ export function tickHolders(
     s.news.unshift({
       q: s.month, kind: "event",
       text: h.kind === "estate"
-        ? `${h.name} is settled and nothing is coming to market: the heirs are keeping the book as ${firm.name} — `
-          + `${book.length} building${book.length === 1 ? "" : "s"} — and taking an office. The market has a new landlord with an old name.`
+        ? `${h.name} estate settled; no sales. Heirs keep ${book.length} building${book.length === 1 ? "" : "s"} `
+          + `as ${firm.name}, a new competitor.`
         : `${h.name} split, and one side bought the other out: ${firm.name} keeps all ${book.length} building${book.length === 1 ? "" : "s"} `
-          + `and is said to be looking for more. A holder has become a competitor.`,
+          + `and is looking to buy more. New competitor.`,
     });
     return { bbls: [], distress: false, kind: h.kind };
   }
@@ -844,24 +845,26 @@ export function tickHolders(
   const bbls = book.slice(0, take);
   if (!s.holderExit) s.holderExit = {};
   s.holderExit[h.id] = s.month;
-  // THE RUMOR RUNS AHEAD OF THE FILING, about half the time. Probate takes
+  // THE RUMOR RUNS AHEAD OF THE FILING, for some exits. Probate takes
   // months and the street hears about a death long before the executors
-  // instruct agents; a fund's exit is decided in a committee whose minutes
-  // leak. A player who reads the tape learns which book is coming and can
-  // make the first call — which is the actual edge street talk confers in
-  // this business. The other half of exits arrive the way they used to:
+  // instruct agents. A player who reads the tape learns which book is
+  // coming and can make the first call — the actual edge street talk confers in
+  // this business. The rest arrive the way they used to:
   // everyone reads the same headline on the same morning.
-  if (rng(s) < 0.5) {
+  //
+  // WHICH EXITS THE STREET HEARS FIRST (2026-11-10). This was a coin, half of
+  // all exits. It is now the kind of exit: an estate goes through probate and
+  // a split partnership through a dissolution suit, and both are filed in
+  // court — public record months before the executors or the receiver
+  // instruct agents. A fund's committee and a developer's recycling are
+  // decided in private and reach the street as a headline.
+  if (h.kind === "estate" || h.kind === "partnership") {
     if (!s.holderPend) s.holderPend = [];
     s.holderPend.push({ id: h.id, m: s.month + 3 + Math.floor(rng(s) * 4), bbls, distress: h.kind === "estate" || h.kind === "partnership", kind: h.kind });
     const whisper = h.kind === "estate"
       ? `Word at the courthouse: the ${h.name} probate is moving, and the heirs are not keeping anything. `
         + `${bbls.length} building${bbls.length === 1 ? "" : "s"} will reach the tape when the executors finish arguing.`
-      : h.kind === "institution"
-        ? `${h.name}'s local book is said to be under review — the committee met twice this quarter and nobody is renewing the management contracts. Watch the tape.`
-        : h.kind === "partnership"
-          ? `${h.name} are lawyered up against each other, and the only way that ends is with the buildings on the market.`
-          : `${h.name} is quietly shopping the book before it shops itself. The brokers already know; now so do you.`;
+      : `${h.name} are lawyered up against each other, and the only way that ends is with the buildings on the market.`;
     s.news.unshift({ q: s.month, kind: "info", text: whisper });
     return { bbls: [], distress: false, kind: h.kind };
   }
@@ -871,7 +874,7 @@ export function tickHolders(
   // and a developer recycling do not have to take a discount and will not.
   return {
     bbls,
-    distress: h.kind === "estate" || h.kind === "partnership",
+    distress: false,     // the estates and split partnerships went the courthouse way, above
     kind: h.kind,
   };
 }

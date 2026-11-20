@@ -35,6 +35,7 @@
  * The owner's draws come from the "owners" stream and the firm's from
  * "rivals"; the player's own approaches keep the "sales" stream they had.
  */
+import { ownerFirm } from "./firms";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Rival, RivalStyle } from "./types";
 import { rng, rrange } from "./market";
@@ -42,9 +43,11 @@ import { assetValue, initialCondition, resolveRec } from "./value";
 import { isCivicLand } from "./demand";
 import { holderOf } from "./owners";
 import { ownerAnswersCall } from "./actions";
-import { livingRivals, ownerOf, rivalBuys, firmMaxPrice, styleHunt, fitOf, deployPressure } from "./rivals";
+import { livingRivals, rivalBuys, firmMaxPrice, styleHunt, fitOf, deployPressure } from "./rivals";
 import { money } from "./money";
 import { tableVersion } from "./tableVersion";
+import { hash01 } from "./competitorTraits";
+import { loneBid } from "./propmarket";
 
 /**
  * Calls a month for a firm of appetite 1 in an ordinary credit market. A
@@ -87,18 +90,26 @@ export function tickOffMarketCalls(s: GameState, parcels: ParcelTable): void {
     const st = styleHunt(r);
     const cyc = Math.max(0.05, 1 + st.procyclical * (ci - 1) + st.contra * (1 - ci));
     const reach = (r.sheet?.reach ?? 50) / 100;
-    if (rng(s, "rivals") >= Math.min(0.9, CALLS_MO * st.appetite * cyc * (0.4 + 1.2 * reach) * deployPressure(s, r))) continue;
+    // THE DESK'S CADENCE. No die: the desk works the phones at its rate —
+    // how hard its style hunts, the credit window, its network and how much
+    // undeployed capital is pressing on it — and makes a call each time that
+    // work adds up to one. The phase is hashed off the id so desks stagger.
+    const rate = Math.min(0.9, CALLS_MO * st.appetite * cyc * (0.4 + 1.2 * reach) * deployPressure(s, r));
+    r.callAcc = (r.callAcc ?? hash01(`${s.seed}:call:${r.id}`)) + rate;
+    if (r.callAcc < 1) continue;
+    r.callAcc -= 1;
     let best: { rec: ParcelRecord; max: number; fit: number; held: NonNullable<ReturnType<typeof holderOf>> } | null = null;
     const doors = Math.max(2, Math.round(SAMPLE * (0.5 + reach)));
     // A HOME-TURF FIRM KNOWS ITS OWN STREETS: that share of its calls goes to
     // owners in its home district (Home turf 80 → four calls in five).
     const homeKeys = r.home && r.sheet ? lotIndex(parcels).byDistrict.get(r.home) : undefined;
     const homeShare = homeKeys?.length ? (r.sheet!.homeTurf / 100) : 0;
+    const homeDoors = Math.round(doors * homeShare);
     for (let i = 0; i < doors; i++) {
-      const pool = homeShare > 0 && rng(s, "rivals") < homeShare ? homeKeys! : keys;
+      const pool = i < homeDoors ? homeKeys! : keys;
       const bbl = pool[Math.floor(rng(s, "rivals") * pool.length)];
       if ((r.doors?.[bbl] ?? 0) > s.month) continue;
-      if (s.holdings[bbl] || ownerOf(s, bbl) || isCivicLand(s, bbl)) continue;
+      if (ownerFirm(s, bbl) !== null || isCivicLand(s, bbl)) continue;
       if (s.listings.some((l) => l.bbl === bbl)) continue;
       if (s.developments[bbl] || (s.cityJobs ?? []).some((j) => j.bbl === bbl)) continue;
       if (s.month - (s.lastTradeM?.[bbl] ?? -999) < 24) continue;
@@ -137,7 +148,8 @@ function callOwner(
   } else {
     // "Make me an offer": open under the limit; an owner whose number is
     // within reach names it, and the firm meets it if it can.
-    const bid = Math.round(max * rrange(s, 0.88, 0.96, "rivals") / 1000) * 1000;
+    // Nobody else is on the phone, so it shades as a lone bidder (propmarket.ts).
+    const bid = Math.round(loneBid(max) / 1000) * 1000;
     if (bid >= ans.reserve) price = bid;
     else if (bid >= ans.reserve * 0.9 && ans.reserve <= max) price = ans.reserve;
   }
@@ -163,13 +175,22 @@ function callOwner(
     });
     s.news.unshift({
       q: s.month, kind: "deal",
-      text: `${r.name} bought ${rec.address} from ${held.name} for ${money(price)} while you were still talking to them. `
-        + `It never listed. Your conversation is over.`,
+      text: `${r.name} bought ${rec.address} from ${held.name} for ${money(price)} during your negotiation. `
+        + `Never listed. Your negotiation is closed.`,
     });
-  } else if (rng(s, "rivals") < 0.3) {
+  } else if (nearYou(s, parcels, rec.district)) {
+    // WHO HEARS ABOUT IT: an unlisted sale is news to the player only on
+    // streets where they own something — the neighbours and the super talk.
     s.news.unshift({
       q: s.month, kind: "deal",
       text: `${r.name} bought ${rec.address} off-market from ${held.name} for ${money(price)}. Nobody else saw it.`,
     });
   }
+}
+
+/** Does the player own a building in this district? */
+function nearYou(s: GameState, parcels: ParcelTable, district: string | undefined): boolean {
+  if (!district) return false;
+  for (const b of Object.keys(s.holdings)) if (resolveRec(parcels, s, b)?.district === district) return true;
+  return false;
 }

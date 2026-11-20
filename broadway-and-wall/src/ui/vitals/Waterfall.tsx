@@ -204,9 +204,8 @@ function WfRow({ label, note, amount, max }: {
   const w = max > 0 ? Math.max(2, Math.round((Math.abs(amount) / max) * 100)) : 0;
   return (
     <div className="wf-row">
-      <span className="wf-row-label" title={note ? `${label} · ${note}` : label}>
+      <span className={"wf-row-label" + (note ? " has-gloss" : "")} title={note ? `${label} · ${note}` : label}>
         {label}
-        {note && <span className="wf-note"> · {note}</span>}
       </span>
       <span className="wf-track" aria-hidden="true">
         <span
@@ -305,10 +304,7 @@ export default function Waterfall({ compact }: { compact?: boolean }) {
 
           <div className="wf-kicker">Value · the marks</div>
           {!model.hasPrev ? (
-            <div className="hint">
-              Per-building revaluation compares this month&apos;s marks with the month before, and the prior
-              month&apos;s marks left with the last session. Advance a month and this section fills in.
-            </div>
+            <div className="dim" title="Per-building revaluation compares this month's marks with the month before, and the prior month's marks left with the last session. Advance a month and this section fills in.">None yet</div>
           ) : shownValue.length || valueRestN > 0 ? (
             <div className="wf-rows">
               {shownValue.map((r) => (
@@ -320,24 +316,20 @@ export default function Waterfall({ compact }: { compact?: boolean }) {
               <WfTotal label="Value, net" amount={model.valueNet} />
             </div>
           ) : (
-            <div className="hint">The marks sat still — no deed repriced, arrived or left this window.</div>
+            <div className="dim" title="No deed repriced, arrived or left this window.">None</div>
           )}
         </>
       )}
 
       {model.dNw !== null && (
         <div className="wf-foot">
-          <div className="wf-dnw">
+          <div className="wf-dnw"
+            title={model.resid !== null && Math.abs(model.resid) >= 10_000
+              ? `${signed(model.resid)} of that sits below these lines: loan amortisation and payoffs at sale, construction basis, note marks, and the liability side of the credit line and deposits. The ledger still reconciles to the dollar; this card names the loud movements.`
+              : undefined}>
             <span>Net worth · {model.windowLabel}</span>
             <span className={"mono" + (model.dNw < 0 ? " wf-amt-neg" : "")}>{signed(model.dNw)}</span>
           </div>
-          {model.resid !== null && Math.abs(model.resid) >= 10_000 && (
-            <div className="hint">
-              {signed(model.resid)} of that sits below these lines — loan amortisation and payoffs at sale,
-              construction basis, note marks, and the liability side of the credit line and deposits.
-              The ledger still reconciles to the dollar; this card names the loud movements.
-            </div>
-          )}
         </div>
       )}
     </>
@@ -356,10 +348,9 @@ export default function Waterfall({ compact }: { compact?: boolean }) {
   }
   return (
     <section className="page-section wf">
-      <div className="page-section-head">The month, attributed · {model.windowLabel}</div>
-      <div className="hint">
-        Two ledgers, one move. The cash is the statement&apos;s own buckets for the window; the marks are the
-        same appraisal the top bar, the lender and the balance sheet read — nothing here is a second opinion.
+      <div className="page-section-head has-gloss"
+        title="Two ledgers, one move. The cash is the statement's own buckets for the window; the marks are the same appraisal the top bar, the lender and the balance sheet read; nothing here is a second opinion.">
+        The month, attributed · {model.windowLabel}
       </div>
       {body}
     </section>

@@ -73,7 +73,7 @@ const depositsHeld = (g) => {
 const liquidity = (g) => g.cash + (g.fund?.cash ?? 0);
 
 const rows = [];
-let totalBreaks = 0, months = 0, syndicated = 0;
+let totalBreaks = 0, months = 0, funded = 0;
 // WHAT THE RUN ACTUALLY TOUCHED. An identity is only worth what it is asked
 // about: `Dcash == books + Dloc + Ddeposits` holds trivially for a player who
 // does nothing, and this file spent a stretch proving exactly that. Every
@@ -128,7 +128,7 @@ for (const seed of SEEDS) {
     if (g.gameOver) break;
   }
   totalBreaks += breaks.length;
-  syndicated += bot.syndicated;
+  funded += bot.funded;
   for (const k of [...IN, ...OUT]) coverage[k] += Math.abs(bookTotals(g)[k] ?? 0);
   // HASH=1: the end state's fingerprint, for proving a refactor changed nothing.
   if (process.env.HASH) {
@@ -163,9 +163,9 @@ console.log(`\n${"=".repeat(64)}`);
 const REQUIRED = ["noi", "interest", "borrowed", "debtSvc", "leasing", "capex", "taxes", "bought", "dev", "ga", "lpCalled", "lpDistributed"];
 const dead = REQUIRED.filter((k) => coverage[k] === 0);
 console.log(`ledger exercised: ${[...IN, ...OUT].map((k) => `${k} ${coverage[k] ? "yes" : "NO"}`).join("  ")}`);
-console.log(`syndicated jobs: ${syndicated} (friends and family in the deal, settled through this identity)`);
-if (!syndicated && SEEDS.some((x) => x % 2 === 1)) {
-  console.log(`\nFAIL  no odd seed broke ground with outside equity — the syndicate's flows went untested.`);
+console.log(`funds raised: ${funded} (LP calls, fees and distributions settled through this identity)`);
+if (!funded && SEEDS.some((x) => x % 2 === 1)) {
+  console.log(`\nFAIL  no odd seed raised a fund — the vehicle's flows went untested.`);
   process.exit(1);
 }
 if (dead.length) {

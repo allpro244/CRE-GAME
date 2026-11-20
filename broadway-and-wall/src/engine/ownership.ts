@@ -63,6 +63,8 @@ import { gradeOf, markRival, ownerOf, paramsOf } from "./rivals";
 import { isCivicLand } from "./demand";
 import type { Holder } from "./owners";
 import { holderOf, isCold, relOf, standingWith } from "./owners";
+import type { Bidder } from "./propmarket";
+import { EQUITY_PREMIUM } from "./propmarket";
 
 /** Deterministic 0..1 from a string. Never touches the RNG stream. */
 function hash01(str: string): number {
@@ -190,9 +192,9 @@ const HOLDER_ADVANCE: Record<SellerKind, { ltv: number; clear: number }> = {
   lender: { ltv: 0, clear: 1 },
 };
 
-/** Commercial amortisation, in months. Twenty-five years is the convention. */
+/** Commercial amortisation, in months. Twenty-five years is the convention. [S~: CMBS 25-30 years, life companies 25 (lender term sheets).] */
 const AMORT_M = 300;
-/** How long a note runs before it rolls. Five to ten years is the market. */
+/** How long a note runs before it rolls. Five to ten years is the market. [S~: CMBS terms 5, 7 or 10 years; life companies 10 and up (lender term sheets).] */
 const TERM_M = 96;
 
 /**
@@ -208,9 +210,41 @@ function deedNote(
   s: GameState, h: Holder, bbl: string, value: number, dirt: boolean,
 ): { balance: number; ratePct: number; amortYr: number } {
   const none = { balance: 0, ratePct: 0, amortYr: 0 };
-  if (value <= 0) return none;
+  // THE NOTE IS ON THE RECORD NOW (streetLoans.ts, 2026-10-28). The desks
+  // hold these mortgages loan by loan — seeded from the same hashed facts
+  // below, then amortised, refinanced, missed and foreclosed month by month —
+  // so the statement reads the loan rather than re-deriving it.
+  if (s.streetLoans) {
+    const x = s.streetLoans[bbl];
+    if (!x || x.holderId !== h.id) return none;
+    return { balance: x.balance, ratePct: x.ratePct, amortYr: x.balance / Math.max(1, AMORT_M / 12) };
+  }
+  const t = holderNoteTerms(s, h, bbl, dirt);
+  if (!t || value <= 0) return none;
+  const { ltv, into } = t;
+  const ratePct = +(s.econ.indexRate + 1.6 + 1.6 * hash01(bbl + ":cpn")).toFixed(2);
+  const i = ratePct / 100 / 12;
+  const principal = value * ltv;
+  const bal = (k: number) => {
+    if (i <= 0) return principal * Math.max(0, 1 - k / AMORT_M);
+    const g = Math.pow(1 + i, AMORT_M);
+    return principal * (g - Math.pow(1 + i, k)) / (g - 1);
+  };
+  const balance = Math.max(0, bal(into));
+  return { balance, ratePct, amortYr: Math.max(0, balance - Math.max(0, bal(into + 12))) };
+}
+
+/**
+ * THE HASHED FACTS BEHIND A PRIVATE DEED'S MORTGAGE: whether it carries one,
+ * the advance it was written at, and how far into its term it is. `salt` is a
+ * change of hands (a new owner finances a purchase: no tenure, a fresh note).
+ * Null when the deed is owned free and clear.
+ */
+export function holderNoteTerms(
+  s: GameState, h: Holder, bbl: string, dirt: boolean, salt?: string,
+): { ltv: number; into: number } | null {
   let adv = HOLDER_ADVANCE[h.kind] ?? HOLDER_ADVANCE.local;
-  if (adv.ltv <= 0) return none;
+  if (adv.ltv <= 0) return null;
   // A LENDER DOES NOT ADVANCE AGAINST A VACANT LOT ON AN INCOME TEST — the
   // same sentence `markRival` carries about a developer's land bank, and it
   // has to be true here for the same reason. Financing dirt at an income
@@ -243,22 +277,62 @@ function deedNote(
   // this city and is a decision about the credit system, not about a register;
   // `pnpm ownership` prints both figures every run so that whoever takes that
   // decision takes it on purpose.
-  const clearOdds = Math.min(0.82, adv.clear + Math.min(0.22, held * 0.0055));
-  if (hash01(bbl + ":clr") < clearOdds) return none;
-  const ltv = adv.ltv * (0.86 + 0.28 * hash01(bbl + ":adv"));
-  const ratePct = +(s.econ.indexRate + 1.6 + 1.6 * hash01(bbl + ":cpn")).toFixed(2);
-  const i = ratePct / 100 / 12;
+  // A buyer finances the purchase at the advance its kind writes: tenure has
+  // not paid anything down yet, and the note is new.
+  const key = salt ? `${bbl}:${salt}` : bbl;
+  const clearOdds = salt ? adv.clear : Math.min(0.82, adv.clear + Math.min(0.22, held * 0.0055));
+  if (hash01(key + ":clr") < clearOdds) return null;
+  const ltv = adv.ltv * (0.86 + 0.28 * hash01(key + ":adv"));
   // Where this note sits in its own term. Uniform across the roll cycle, which
   // is what "the town's paper is spread across its cycle" means arithmetically.
-  const into = Math.round(TERM_M * hash01(bbl + ":vin"));
-  const principal = value * ltv;
-  const bal = (k: number) => {
-    if (i <= 0) return principal * Math.max(0, 1 - k / AMORT_M);
-    const g = Math.pow(1 + i, AMORT_M);
-    return principal * (g - Math.pow(1 + i, k)) / (g - 1);
-  };
-  const balance = Math.max(0, bal(into));
-  return { balance, ratePct, amortYr: Math.max(0, balance - Math.max(0, bal(into + 12))) };
+  const into = salt ? 0 : Math.round(TERM_M * hash01(bbl + ":vin"));
+  return { ltv, into };
+}
+
+/**
+ * THE ADVANCE A HOLDER RE-LEVERS TO AT ITS BALLOON (2026-11-06), as a share of
+ * the building's value; 0 for a holder that only rolls what it owes.
+ *
+ * The private book's refinancing used to carry the old balance forward and
+ * nothing else: a note only ever amortised, and nobody borrowed again until
+ * the deed changed hands. With values growing with the price level the book
+ * drifted to a median 16% of value by year twenty (seed 11; 13-25% on the
+ * notes being rolled), which no market's paper looks like, and lenders could
+ * not lose money in a 47% fall. An owner that levers re-levers at maturity:
+ * the cash-out refinancing is the ordinary way a partnership or a fund takes
+ * its gains out of a building without selling it (and the 2005-07 vintage of
+ * them is what went under water in 2009). The advance is the one its kind
+ * writes at a purchase (HOLDER_ADVANCE). Old family money pays its mortgages
+ * off and does not take new ones; an estate cannot refinance while probate
+ * runs. Those two roll the balance, as before.
+ */
+const RELEVERS: Partial<Record<SellerKind, true>> = { institution: true, partnership: true, developer: true };
+export function holderRefiAdvance(h: Holder, bbl: string, dirt: boolean, salt: string): number {
+  if (!RELEVERS[h.kind]) return 0;
+  const adv = HOLDER_ADVANCE[h.kind];
+  const ltv = dirt ? Math.min(adv.ltv, 0.35) : adv.ltv;
+  return ltv * (0.86 + 0.28 * hash01(`${bbl}:${salt}:adv`));
+}
+
+/** Commercial amortisation, in months — the convention the private notes run on. */
+export const HOLDER_AMORT_M = AMORT_M;
+
+/**
+ * WHAT A PRIVATE HOLDER'S BUILDINGS PAY BEFORE THE MORTGAGE, a year: NOI less
+ * the leasing, the capital plan and the overhead — the statement below, with
+ * the debt lines left off, because the debt is what this is measured against.
+ * streetLoans.ts reads it to decide whether the payment gets made.
+ */
+export function holderCfads(
+  s: GameState, h: Holder, deeds: { v: number; noi: number; dirt: boolean }[],
+): { cfads: number; noi: number; cashCap: number } {
+  let assets = 0, noi = 0, land = 0;
+  for (const d of deeds) { assets += d.v; noi += d.noi; if (d.dirt) land += d.v; }
+  const care = HOLDER_CARE[h.kind] ?? HOLDER_CARE.local;
+  const ga = care.admin * Math.pow(Math.max(1, deeds.length), 0.7) * s.econ.costIdx + 0.0028 * assets;
+  const st = statement(assets, noi, { interest: 0, amort: 0 }, care, ga, land);
+  const months = CASH_MONTHS[h.kind] ?? 6;
+  return { cfads: st.net, noi, cashCap: Math.max(0, (st.net > 0 ? st.net : Math.max(0, noi) * 0.1) * months / 12) };
 }
 
 // ---------------------------------------------------------------- the accounts
@@ -329,6 +403,33 @@ function statement(
  * not a war chest and it is not meant to be read as one — a private holder is
  * not bidding on anything, which is what `operator: false` says on the view.
  */
+/**
+ * A PRIVATE HOLDER AS ITS OWN BIDDER: the terms on which it values its own
+ * building in use, read by the same law the street's bidders price with
+ * (propmarket.ts valueTo), so "is it worth more to me than the street would
+ * pay" is one quantity on both sides. Its equity target is the street style
+ * its kind invests like [K]: a pension or insurer is core money, an old family
+ * or an estate is family money, a private partnership targets value-add
+ * returns (pe), a builder is a developer. It borrows at the advance its kind
+ * writes (HOLDER_ADVANCE), leases with its own effort (HOLDER_CARE), reads no
+ * forecast of its own (lean 0) and makes no committee error on a building it
+ * has owned for years (misPp 0); a builder can always tear down.
+ */
+const HOLDER_STYLE: Record<SellerKind, RivalStyle> = {
+  institution: "core", local: "family", estate: "family", partnership: "pe", developer: "developer", lender: "core",
+};
+export function holderBidder(h: Holder): Bidder {
+  const style = HOLDER_STYLE[h.kind] ?? "family";
+  return {
+    id: h.id, style, lean: 0, misPp: 0,
+    lease: (HOLDER_CARE[h.kind] ?? HOLDER_CARE.local).lease,
+    ltvCap: (HOLDER_ADVANCE[h.kind] ?? HOLDER_ADVANCE.local).ltv,
+    eqPrem: EQUITY_PREMIUM[style] ?? 8,
+    fileSpread: 0,
+    builds: h.kind === "developer",
+  };
+}
+
 const CASH_MONTHS: Record<SellerKind, number> = {
   estate: 14, local: 9, institution: 7, partnership: 6, developer: 3, lender: 2,
 };
@@ -378,7 +479,11 @@ export function holderAccounts(
   // Working capital cannot be negative and cannot be a war chest: a book that
   // loses money runs on an overdraft, which is a story the register does not
   // tell, so the floor is a month of the property tax rather than a hole.
-  const cash = Math.max(0, Math.round((income.net > 0 ? income.net : Math.max(0, income.noi) * 0.1) * months / 12));
+  // ...and once the private mortgages are on the record, the cash is the
+  // holder's own account (streetLoans.ts), which is what pays them.
+  const kept = s.holderCash?.[h.id];
+  const cash = kept !== undefined ? Math.max(0, Math.round(kept))
+    : Math.max(0, Math.round((income.net > 0 ? income.net : Math.max(0, income.noi) * 0.1) * months / 12));
   return {
     sheet: {
       assets: Math.round(assets), debt: Math.round(debt), cash,

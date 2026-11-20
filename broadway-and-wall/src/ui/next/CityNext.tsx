@@ -13,12 +13,13 @@
  */
 import { useMemo, useState } from "react";
 import { useStore } from "@/state/store";
+import { FirmPage } from "@/ui/panels/CompetitorCards";
 import type { BuiltClass, EconHistoryPoint, GameState, NewsItem } from "@/engine/types";
 import { monthLabel, START_YEAR } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import { cityValueToReplacement } from "@/engine/dev";
 import { standardsWord, underwritingStandards } from "@/engine/debt";
-import { CITY_STOCK, NATURAL_VAC, SECTOR_LABEL, shortIndexOf } from "@/engine/market";
+import { CITY_STOCK, openingVac, SECTOR_LABEL, shortIndexOf } from "@/engine/market";
 import { availability, deliverySchedule, legDemand, legRent, legVacancy, marketBalance, monthsOfSupply, submarkets } from "@/engine/space";
 import { resolveRec, portfolioMark } from "@/engine/value";
 import { markRival, marketAppetite, rivalCondition } from "@/engine/rivals";
@@ -37,6 +38,7 @@ import { derive, nwOf, standingOf } from "@/ui/derive";
 import { realRentYoy } from "@/ui/panels/EconomyPage";
 import { boardClimate, pendingHearings, tradeRows } from "@/ui/panels/CityStances";
 import { real, STYLE_WORD } from "@/ui/panels/shared";
+import { CityHallBox } from "@/ui/panels/CityHall";
 import { Chips, DataTable, Stat, StatStrip, type Col } from "./DataTable";
 import { Figure, Spark, fmtFig, type FigFmt } from "./Figure";
 import { BarChart, Gauge, LineChart } from "@/ui/Chart";
@@ -51,7 +53,7 @@ const head = (t: string) => <div className="nx-box-head nx-sec">{t}</div>;
 // ==================================================================== MARKETS
 
 interface ClassRow {
-  k: BuiltClass; label: string; avail: number; nat: number; direct: number; state: string; gap: number;
+  k: BuiltClass; label: string; avail: number; ago: number; direct: number; state: string; soft: boolean;
   rent: number; eff: number; realYoy: number; cap: number; stock: number; occ: number; pipe: number; pipePct: number;
   sched: number[]; abs12: number; comp12: number; dmd: number; mos: number | null; conc: number; phase: string;
   vacYr: number | null; availS: number[]; rentS: number[]; capS: number[];
@@ -67,16 +69,16 @@ function classRows(g: GameState): ClassRow[] {
       const avail = availability(e, k);
       const bal = marketBalance(e, k);
       const stock = e.stock?.[k] ?? CITY_STOCK[k];
-      const direct = e.cityVac?.[k] ?? NATURAL_VAC[k];
+      const direct = e.cityVac?.[k] ?? openingVac(k);
       const pipe = e.pipeline?.[k] ?? 0;
       const abs12 = e.absorb12?.[k] ?? 0;
       const then = hist.length > 12 ? (hist[hist.length - 13]?.avail?.[k] ?? hist[hist.length - 13]?.vac?.[k]) : undefined;
       return {
-        k, label: SECTOR_LABEL[k], avail, nat: NATURAL_VAC[k], direct, state: bal.state, gap: bal.gap,
+        k, label: SECTOR_LABEL[k], avail, ago: avail - bal.availCh, direct, state: bal.state, soft: bal.soft,
         rent: e.rentIdx[k], eff: e.effRentIdx?.[k] ?? e.rentIdx[k], realYoy: realRentYoy(e, k), cap: e.capRate[k],
         stock, occ: e.occupied?.[k] ?? stock * (1 - direct), pipe, pipePct: stock > 0 ? pipe / stock : 0,
         sched: sched[k], abs12, comp12: e.completions12?.[k] ?? 0, dmd: stock > 0 ? abs12 / stock : 0,
-        mos: monthsOfSupply(e, k), conc: (e.concIdx?.[k] ?? 0) * 0.14, phase: e.sectorPhase?.[k] ?? "steady",
+        mos: monthsOfSupply(e, k), conc: bal.pkg, phase: e.sectorPhase?.[k] ?? "steady",
         vacYr: then === undefined ? null : (avail - then) * 1e4,
         availS: tail.map((h) => (h.avail?.[k] ?? h.vac?.[k] ?? NaN)),
         rentS: tail.map((h) => h.rent?.[k] ?? NaN),
@@ -88,17 +90,19 @@ function classRows(g: GameState): ClassRow[] {
 
 const classCols: Col<ClassRow>[] = [
   { id: "label", label: "Market", get: (r) => r.label, cell: (r) => <span className="nx-strong-cell">{r.label}</span> },
-  { id: "avail", label: "Avail", get: (r) => r.avail, fmt: "pct", tone: (r) => (r.gap > 0.018 ? "neg" : undefined) },
+  { id: "avail", label: "Avail", get: (r) => r.avail, fmt: "pct", tone: (r) => (r.soft ? "neg" : undefined) },
   { id: "availS", label: "Avail 20y", get: (r) => r.avail, num: false, cell: (r) => sparkCell(r.availS) },
-  { id: "nat", label: "Natural", get: (r) => r.nat, fmt: "pct", hidden: true },
   { id: "direct", label: "Direct", get: (r) => r.direct, fmt: "pct", hidden: true },
   { id: "vacYr", label: "Δ 12m", get: (r) => r.vacYr, fmt: "bp", tone: (r) => ((r.vacYr ?? 0) >= 200 ? "neg" : undefined) },
-  { id: "state", label: "Balance", get: (r) => r.state, tone: (r) => (r.gap > 0.018 ? "neg" : undefined) },
-  { id: "rent", label: "Rent", get: (r) => r.rent, fmt: "psf" },
+  { id: "state", label: "Balance", get: (r) => r.state, tone: (r) => (r.soft ? "neg" : undefined) },
+  // ASKING AND EFFECTIVE, SIDE BY SIDE (owner, office glut): the asking index
+  // is the face of signed leases and moves last — in a glut the concessions
+  // take the fall first, and effective is where it shows.
+  { id: "rent", label: "Asking", get: (r) => r.rent, fmt: "psf" },
   { id: "rentS", label: "Rent 20y", get: (r) => r.rent, num: false, cell: (r) => sparkCell(r.rentS) },
-  { id: "eff", label: "Effective", get: (r) => r.eff, fmt: "psf", hidden: true },
+  { id: "eff", label: "Effective", get: (r) => r.eff, fmt: "psf" },
   { id: "realYoy", label: "Real 12m", get: (r) => r.realYoy, fmt: "pct", tone: (r) => (r.realYoy < -0.025 ? "neg" : r.realYoy > 0.025 ? "pos" : undefined) },
-  { id: "conc", label: "Concession", get: (r) => r.conc, fmt: "pct", tone: (r) => (r.conc > 0.098 ? "neg" : undefined), hidden: true },
+  { id: "conc", label: "Concession", get: (r) => r.conc, fmt: "pct", tone: (r) => (r.conc > 0.12 ? "neg" : undefined) },
   { id: "cap", label: "Cap", get: (r) => r.cap, fmt: "pctv" },
   { id: "capS", label: "Cap 20y", get: (r) => r.cap, num: false, cell: (r) => sparkCell(r.capS) },
   { id: "stock", label: "Stock", get: (r) => r.stock, fmt: "sf", hidden: true },
@@ -165,7 +169,7 @@ const seriesCols: Col<SeriesRow>[] = [
   { id: "pts", label: "20y", get: (r) => r.now, cell: (r) => sparkCell(r.pts) },
 ];
 
-interface SubRow { key: string; district: string; name: string; k: BuiltClass; use: string; sf: number; vac: number; vs: number; rent: number; demand: number; lots: number; vacantLots: number; nat: number }
+interface SubRow { key: string; district: string; name: string; k: BuiltClass; use: string; sf: number; vac: number; vs: number; rent: number; demand: number; lots: number; vacantLots: number }
 
 function subRows(g: GameState, p: ParcelTable, bbls: string[]): SubRow[] {
   return derive(g, "next.city.subs", () => {
@@ -178,7 +182,7 @@ function subRows(g: GameState, p: ParcelTable, bbls: string[]): SubRow[] {
         const v = legVacancy(leg);
         out.push({
           key: `${m.district}:${k}`, district: m.district, name: m.name, k, use: SECTOR_LABEL[k], sf: leg.sf, vac: v,
-          vs: (v - availability(e, k)) * 1e4, rent: legRent(leg), demand: legDemand(leg), lots: leg.lots, vacantLots: m.vacantLots, nat: NATURAL_VAC[k],
+          vs: (v - availability(e, k)) * 1e4, rent: legRent(leg), demand: legDemand(leg), lots: leg.lots, vacantLots: m.vacantLots,
         });
       }
     }
@@ -191,7 +195,7 @@ const subCols: Col<SubRow>[] = [
   { id: "use", label: "Use", get: (r) => r.use },
   { id: "sf", label: "Inventory", get: (r) => r.sf, fmt: "sf" },
   { id: "lots", label: "Lots", get: (r) => r.lots, fmt: "n", hidden: true },
-  { id: "vac", label: "Vacancy", get: (r) => r.vac, fmt: "pct", tone: (r) => (r.vac > r.nat + 0.03 ? "neg" : r.vac < r.nat - 0.02 ? "pos" : undefined) },
+  { id: "vac", label: "Vacancy", get: (r) => r.vac, fmt: "pct", tone: (r) => (r.vs > 300 ? "neg" : r.vs < -200 ? "pos" : undefined) },
   { id: "vs", label: "vs city", get: (r) => r.vs, fmt: "bp" },
   { id: "rent", label: "Avg rent", get: (r) => r.rent, fmt: "psf" },
   { id: "demand", label: "Demand", get: (r) => r.demand, fmt: "n" },
@@ -336,7 +340,7 @@ export function MarketsOverview() {
   const classes = useMemo(() => classRows(game), [game]);
   const e = game.econ;
   const tail = (e.history ?? []).slice(-SPAN_M);
-  if (tail.length < 2) return <div className="nx-place"><div className="hint">Not enough history yet — play a few months.</div></div>;
+  if (tail.length < 2) return <div className="nx-place"><div className="hint">History: few months</div></div>;
   const x: [string, string] = [monthLabel(tail[0].q), monthLabel(tail[tail.length - 1].q)];
   const xAt = (i: number) => monthLabel(tail[i]?.q ?? 0);
   const pct = (v: number) => `${v.toFixed(1)}%`;
@@ -347,6 +351,11 @@ export function MarketsOverview() {
     const base = r.rentS.find((v) => Number.isFinite(v) && v > 0) ?? 1;
     return { label: r.label, color: CLASS_COLOR[r.k], pts: r.rentS.map((v) => (v / base) * 100) };
   });
+  const hist = e.history ?? [];
+  const yrAgo = hist.length > 12 ? hist[hist.length - 13]?.costIdx : undefined;
+  const costYoy = yrAgo ? e.costIdx / yrAgo - 1 : null;
+  // both lines at 100 on the chart's first month, so they read against each other
+  const rebase = (v: number[]) => { const b0 = v.find((x) => Number.isFinite(x) && x > 0) ?? 1; return v.map((x) => (x / b0) * 100); };
   const years = ["Next 12m", "Year 2", "Year 3", "Year 4"];
   const supply = years.map((label, i) => ({ label, bars: classes.map((r) => ({ v: (r.sched[i] ?? 0) / 1000, color: CLASS_COLOR[r.k] })) }));
   return (
@@ -359,11 +368,12 @@ export function MarketsOverview() {
               <div className="mk-card-head"><b>{r.label}</b><span className={`mk-state ${BAL_TONE[bal.state] ?? ""}`}>{bal.state}</span></div>
               <div className="mk-figs">
                 <div><small>Available</small><Figure value={r.avail} fmt="pct" /></div>
-                <div><small>Rent</small><Figure value={r.rent} fmt="psf" /></div>
+                <div><small>Asking</small><Figure value={r.rent} fmt="psf" /></div>
+                <div><small>Effective</small><Figure value={r.eff} fmt="psf" tone={r.eff < r.rent * 0.85 ? "neg" : undefined} /></div>
                 <div><small>Real 12m</small><Figure value={r.realYoy} fmt="pct" tone={r.realYoy < 0 ? "neg" : "pos"} /></div>
                 <div><small>Cap</small><Figure value={r.cap} fmt="pctv" /></div>
               </div>
-              <Gauge value={r.avail} natural={r.nat} lo={0} hi={Math.max(0.3, r.avail * 1.2)} fmt={(v) => `${(v * 100).toFixed(1)}%`} />
+              <Gauge value={r.avail} mark={r.ago} markLabel="a year ago" lo={0} hi={Math.max(0.3, r.avail * 1.2)} fmt={(v) => `${(v * 100).toFixed(1)}%`} />
               <div className="mk-note">{bal.note}</div>
             </div>
           );
@@ -372,7 +382,7 @@ export function MarketsOverview() {
       <div className="mk-legend">{classes.map((r) => <span key={r.k}><i style={{ background: CLASS_COLOR[r.k] }} />{r.label}</span>)}</div>
       <div className="chart-grid">
         <div className="chart-cell">
-          <div className="chart-title">Availability — share of space empty or offered</div>
+          <div className="chart-title">Availability · % of space</div>
           <LineChart series={ser((r) => r.availS, 100)} yFmt={pct} xLabels={x} xAt={xAt} zeroBase />
         </div>
         <div className="chart-cell">
@@ -384,7 +394,7 @@ export function MarketsOverview() {
           <LineChart series={ser((r) => r.capS)} yFmt={(v) => `${v.toFixed(2)}%`} xLabels={x} xAt={xAt} />
         </div>
         <div className="chart-cell">
-          <div className="chart-title">New supply delivering — thousand sf</div>
+          <div className="chart-title">Deliveries · k sf</div>
           <BarChart groups={supply} />
         </div>
         <div className="chart-cell">
@@ -394,11 +404,21 @@ export function MarketsOverview() {
             { label: "Policy", color: "#a8402e", pts: tail.map((h) => h.policy ?? NaN), dashed: true },
           ]} yFmt={(v) => `${v.toFixed(1)}%`} xLabels={x} xAt={xAt} />
         </div>
+        {/* THE CONSTRUCTION COST INDEX (owner, Oct 2026: "needs to be in the markets page"),
+            against the price level, so a real rise in building costs reads as a gap */}
+        <div className="chart-cell">
+          <div className="chart-title">Construction costs · index {(e.costIdx * 100).toFixed(0)}{costYoy !== null ? ` · ${costYoy >= 0 ? "+" : ""}${(costYoy * 100).toFixed(1)}% 12m` : ""}</div>
+          <LineChart series={[
+            { label: "Build costs", color: "#b07f1e", pts: rebase(tail.map((h) => h.costIdx ?? NaN)) },
+            { label: "Price level", color: "#665e4d", pts: rebase(tail.map((h) => h.cpi ?? NaN)), dashed: true },
+          ]} yFmt={(v) => v.toFixed(0)} xLabels={x} xAt={xAt} />
+        </div>
         <div className="chart-cell">
           <div className="chart-title">Jobs — thousands</div>
           <LineChart series={[{ label: "Jobs", color: "#3a7d46", pts: tail.map((h) => (h.jobs ?? 0) / 1000) }]} yFmt={(v) => `${v.toFixed(0)}k`} xLabels={x} xAt={xAt} />
         </div>
       </div>
+      <CityHallBox />
     </div>
   );
 }
@@ -579,6 +599,23 @@ type OwnerRow = { o: ReturnType<typeof allOwners>[number]; sf: number; likely: b
 type PV = "firms" | "private" | "all";
 
 export function CityPlayers() {
+  const focus = useStore((s) => s.firmFocus);
+  const focused = useStore((s) => (focus ? s.game?.rivals.find((r) => r.id === focus) : undefined));
+  // A RIVAL'S OWN PAGE (owner, Oct 2026: a firm's name should open that firm,
+  // not the list): the profile the classic street desk shows, with a way back.
+  if (focused) {
+    return (
+      <div className="nx-place">
+        <button type="button" className="nx-btn nx-sm" onClick={() => useStore.getState().openFirm(null)}>← All firms</button>
+        <h3 style={{ margin: "8px 0" }}>{focused.name}</h3>
+        <FirmPage r={focused} />
+      </div>
+    );
+  }
+  return <CityPlayersList />;
+}
+
+function CityPlayersList() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const [view, setView] = useState<PV>("firms");
@@ -645,7 +682,8 @@ export function CityPlayers() {
         set={(v) => { const nx = v.find((x) => x !== view); if (nx) setView(nx); }}
       />
       {view === "firms" ? <>
-        <DataTable id="city-firms" cols={firmCols} rows={firms} rowKey={(r) => r.id} selected="__you" initialSort={{ col: "eq", dir: -1 }} />
+        <DataTable id="city-firms" cols={firmCols} rows={firms} rowKey={(r) => r.id} selected="__you" initialSort={{ col: "eq", dir: -1 }}
+          onRow={(r) => { if (!r.you) useStore.getState().openFirm(r.id); }} />
         {head("Street moves")}
         <DataTable id="city-moves" cols={moveCols} rows={moves} rowKey={(r) => `${r.m}:${r.firmId}:${r.kind}:${r.bbl ?? r.text}`}
           initialSort={{ col: "m", dir: -1 }} onRow={(r) => sel(r.bbl)} />

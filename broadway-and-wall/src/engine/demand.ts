@@ -53,20 +53,25 @@ import { isHomeOffMarket } from "./homes";
 import { isHoaBbl } from "./landdev";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, GameState } from "./types";
-import { liveDemand, useOccupancy } from "./value";
+import { liveDemand, useOccupancy, resolveRec } from "./value";
 import { START_YEAR } from "./types";
 import { mixOf, type UseMix } from "./mix";
 import { SECTORS, INDUSTRY_LABEL } from "./market";
 import { BUILT_CLASSES, type Sector } from "./types";
 import { voidContract } from "./acquire";
 import { tableVersion } from "./tableVersion";
+import { cityFundsWork } from "./citygov";
 
 /** What the neighbourhood panel can recommend: a use, or a mixed-use stack. */
 export type WantsKey = BuiltClass | "mixed";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
-/** How far a neighbourhood reaches, in metres. About two blocks. */
+/**
+ * How far a neighbourhood reaches, in metres. About two blocks.
+ * [K: judgement, no source found — a shape parameter; the planner's usual walk
+ * radius is a quarter mile (~400 m), and this is set tighter by eye.]
+ */
 const REACH_M = 270;
 /**
  * THE FUEL TANK WAS EMPTY, AND THIS IS WHY.
@@ -85,24 +90,35 @@ const REACH_M = 270;
  * worth the same number of points whether the corner started dead or busy.
  * `RESPONSE` is points per log unit — 52 makes a doubled neighbourhood worth
  * about 12 points, which is a corner going from ordinary to good.
+ * SET TO THE MEASURED ELASTICITY (2026-11-11). At 52 a doubled neighbourhood
+ * (+12 points) put about 34% on office rent at the median block — a rent
+ * elasticity to density of ~0.4. The synthesis of the literature recommends
+ * 0.21 for rents (Ahlfeldt & Pietrostefani 2019, J. Urban Econ., Table 5,
+ * from Combes, Duranton & Gobillon 2016) [S]; 26 points a log unit gives that
+ * at the median block through locationRentMult's office curve [D].
  */
-const RESPONSE = 52;
-/** A neighbourhood can at most double, or halve, what it is made of. */
+const RESPONSE = 26;
+/**
+ * A neighbourhood can at most double, or halve, what it is made of.
+ * [K: judgement, no source found — a guard rail; e^0.62 ≈ 1.86, so "double"
+ * is approximate.]
+ */
 const LOG_CAP = 0.62;
-/** A leg that is missing entirely is thin, not infinite. */
+/** A leg that is missing entirely is thin, not infinite. [K: judgement, no source found — a floor on a log, set by eye.] */
 const LEG_FLOOR = 0.06;
-/** How fast a block's desirability moves toward its target each month. */
+/** How fast a block's desirability moves toward its target each month. [K: judgement, no source found — a ~10-month half-life, set by eye.] */
 const MOMENTUM = 0.07;
-/** Active construction nearby — a fraction of eventual occupied pull, ramping with progress. */
+/** Active construction nearby — a fraction of eventual occupied pull, ramping with progress. [K: judgement, no source found — game demand points, set by eye.] */
 const CONSTRUCTION_PTS_PER_100K = 3.2;
-/** A neighbourhood can remake itself, but it cannot become somewhere else. */
+/** A neighbourhood can remake itself, but it cannot become somewhere else. [K: judgement, no source found — a rail in game demand points.] */
 const DRIFT_CAP = 34;
-/** Anchor plus drift, kept inside what the invariant sweep will allow. */
+/** Anchor plus drift, kept inside what the invariant sweep will allow. [K: judgement, no source found — a rail matched to the invariant sweep, not to the world.] */
 const TOTAL_CAP = 36;
 /**
  * The economy at mid-cycle, for the zero point only. `useOccupancy` reads
  * cityVac and vintageMean and tolerates both being absent, which is what mid-
  * cycle means: no boom, no slump, no flight to quality.
+ * [M: a definition — mid-cycle is zero deviation from trend.]
  */
 const MID_CYCLE = { cycleDev: 0 } as unknown as Econ;
 
@@ -129,11 +145,11 @@ const MID_CYCLE = { cycleDev: 0 } as unknown as Econ;
 // anything through: take the local maxima of the generator's own anchor, keep
 // them apart, and those are the town's centres by construction.
 
-/** How many centres a town has. Real towns of this size have three or four. */
+/** How many centres a town has. Real towns of this size have three or four. [K: judgement, no source found for the count.] */
 const POLE_MAX = 4;
-/** Two centres closer than this are one centre. */
+/** Two centres closer than this are one centre. [K: judgement, no source found — set by eye on the generator's maps.] */
 const POLE_SPACING_M = 420;
-/** How far a centre's fortune reaches. Matches the generator's own core radii. */
+/** How far a centre's fortune reaches. Matches the generator's own core radii. [K: judgement, no source found — mirrors citygen's core radii, themselves design choices.] */
 const POLE_RADIUS_M = 340;
 /**
  * The hidden long-run trajectory, in demand points per month. Drawn once. Over
@@ -141,6 +157,8 @@ const POLE_RADIUS_M = 340;
  * difference between neighbourhoods, and the same order as the drift the
  * density feedback produces, so a centre's luck never swamps what the player
  * actually does with it.
+ * [K: judgement, no source found — a design choice about when the winner
+ * becomes legible, in game demand points.]
  */
 const POLE_DRIFT_SD = 0.016;
 /**
@@ -159,9 +177,11 @@ const POLE_DRIFT_SD = 0.016;
  * At 0.26 the crossover is month 264 — year twenty-two. The first decade is
  * genuinely close to noise, the second is where reading the tape early pays,
  * and by the fourth everybody can see it and the ground is long gone.
+ * [K: judgement, no source found — chosen for the crossover month it gives,
+ * a design target rather than a measured volatility.]
  */
 const POLE_NOISE_SD = 0.26;
-/** Nothing runs away: a centre's fortune is bounded either side. */
+/** Nothing runs away: a centre's fortune is bounded either side. [K: judgement, no source found — a rail in game demand points.] */
 const POLE_CAP = 16;
 
 /**
@@ -278,12 +298,13 @@ function poleLift(s: GameState, b: BlockGeom): number {
 // firms follow it, rents rise to meet it, and in ten years the corner is
 // expensive rather than cheap. Nothing here asks the player for anything. It
 // is a number on the neighbourhood panel and a line in the news.
-/** Points of demand per unit of a block's trades out-hiring the city. */
+/** Points of demand per unit of a block's trades out-hiring the city. [K: judgement, no source found — a gain in game demand points.] */
 const EMP_RESPONSE = 70;
-/** …and how fast that advantage is competed away. Ten-year half-life. */
+/** …and how fast that advantage is competed away. Ten-year half-life (ln 2 / 0.006 = 116 months). [K: judgement, no source found for the half-life.] */
 const EMP_DECAY = 0.006;
+/** The most that advantage can be worth. [K: judgement, no source found — a rail in game demand points.] */
 const EMP_CAP = 16;
-/** How specialised a block's trade mix is. 1 would be the city average. */
+/** How specialised a block's trade mix is. 1 would be the city average. [K: judgement, no source found — not fitted to a location quotient.] */
 const EMP_CONC = 2.2;
 
 // -------------------------------------------------------------- THE NEW LINE
@@ -293,9 +314,20 @@ const EMP_CONC = 2.2;
 // around the head-house reprices on the announcement, again when the hoarding
 // goes up, and again on the day it runs. Nobody has to click anything: it is
 // news, a lens on the map, and a number on the panel.
-/** Odds of a civic work being rumoured in any given year. */
-const LINE_ODDS = 1 / 14;
-/** How far a station's pull reaches, in metres. */
+/**
+ * How often a civic work is rumoured: about one a fourteen years [K: judgement].
+ * Plans arrive as a flow, so the city's count of them runs at that rate from a
+ * hashed phase per campaign and a plan circulates in the year a whole one is
+ * owed (2026-11-11; it was a hashed die each year).
+ */
+const LINE_RATE = 1 / 14;
+/**
+ * How far a station's pull reaches, in metres. [S~: Debrezion, Pels &
+ * Rietveld 2007, "The Impact of Railway Stations on Residential and
+ * Commercial Property Value: A Meta-analysis", J. Real Estate Finance &
+ * Economics 35:161-180 — the commercial station premium sits within 1/4 mile
+ * (~400 m) of the station. The Gaussian fall-off is the engine's shape.]
+ */
 const LINE_SIGMA = 380;
 /** What the market prices before it opens: on the news, and once it is dug. */
 const LINE_EARLY = 0.18, LINE_DIGGING = 0.45;
@@ -304,14 +336,14 @@ const LINE_EARLY = 0.18, LINE_DIGGING = 0.45;
  * and the market prices almost none of it — LINE_RUMOR is the smart-money
  * leak, not a consensus. That gap between what the paper says and what the
  * tape says is the trade: anybody reading the news can buy ahead of the
- * announcement, and the price they pay for the option is SHELVE_ODDS — a
- * quarter of these plans die at the hearing and the ground gives the leak
- * back. An early trade with no way to lose is not an early trade, it is a
- * coupon.
+ * announcement, and the price they pay for the option is the hearing: a plan
+ * that reaches it while City Hall is running a deficit dies there, and the
+ * ground gives the leak back. An early trade with no way to lose is not an
+ * early trade, it is a coupon.
  */
 const RUMOR_M = 24;
+/** [K: judgement, no source found — the share of a station's value priced on a rumour.] */
 const LINE_RUMOR = 0.06;
-const SHELVE_ODDS = 0.25;
 /**
  * What each kind of work is worth and how far it reaches. Stations reach the
  * five-minute walk and carry the most; a park is loved closer in; a bridge
@@ -369,6 +401,8 @@ export interface DemandModel {
 /**
  * Which trades live in which kind of building. Not a claim that a warehouse
  * cannot hold a law firm — a claim about where the mass of each trade sits.
+ * [K: judgement, no source found — relative weights set by eye, not read off
+ * an employment-by-building-type table.]
  */
 const TRADE_AFFINITY: Record<BuiltClass, Partial<Record<Sector, number>>> = {
   office:      { finance: 3, law: 3, tech: 2.4, media: 1.6, insurance: 2, design: 1.2, medical: 1, food: 0.4, apparel: 0.5, logistics: 0.2 },
@@ -402,6 +436,12 @@ function hash01(str: string): number {
 const CACHE = new WeakMap<ParcelTable, DemandModel>();
 const CACHE_V = new WeakMap<ParcelTable, number>();
 
+/**
+ * Metres in a degree of latitude. [M: 2π × 6,378,137 m (the WGS-84 equatorial
+ * radius) / 360 = 111,319.5 m. Strictly that is a degree of longitude at the
+ * equator; a degree of latitude runs 110,574 m at the equator to 111,694 m at
+ * the pole — 0.2% either way, immaterial across one town.]
+ */
 const M_PER_DEG_LAT = 111_320;
 
 /**
@@ -487,7 +527,7 @@ function flatOccupancy(
   return { start, codes, vals, nb: ix.nb };
 }
 
-/** A canonical mixed-use stack, for the "what should I build here" probe. */
+/** A canonical mixed-use stack, for the "what should I build here" probe. [K: judgement, no source found — an illustrative stack, not a surveyed one.] */
 const MIXED_PROBE: UseMix = { retail: 0.15, office: 0.45, multifamily: 0.40 };
 
 export function demandModel(parcels: ParcelTable): DemandModel {
@@ -759,7 +799,32 @@ function tradesOf(id: string, sf: Partial<Record<BuiltClass, number>>): Partial<
  * `s.blockD` never re-enters. Do not swap in a resolved record: the whole
  * feedback structure of this file depends on that being the static number.
  */
-function occupiedStock(s: GameState, parcels: ParcelTable, model: DemandModel): Map<string, Partial<Record<BuiltClass, number>>> {
+/**
+ * THE PEOPLE WITHIN A WALK OF EACH BLOCK, working or living there, from what
+ * the buildings around it actually hold this month — each street building's
+ * own roll, the player's tenants — at the same ratios as the neighbourhood's
+ * emergence (`contribution`). What a shop on the block sells to
+ * (streetRolls.ts CATCHMENT, ONE ECONOMY step 2): a factory that empties
+ * takes its workers out of the catchment of every shop around it. (The
+ * emergence above reads each building's stabilised occupancy, which a single
+ * closure does not move.)
+ */
+function catchments(s: GameState, parcels: ParcelTable, model: DemandModel): Record<string, number> {
+  const occ = occupiedStock(s, parcels, model, false);
+  const out: Record<string, number> = {};
+  for (const b of model.blocks.values()) {
+    let p = 0;
+    for (const n of b.neighbours) {
+      const st = occ.get(n.id);
+      if (!st) continue;
+      for (const k of Object.keys(st) as BuiltClass[]) { const c = contribution(k, (st[k] ?? 0) * n.w); p += c.j + c.r; }
+    }
+    out[b.id] = p;
+  }
+  return out;
+}
+
+function occupiedStock(s: GameState, parcels: ParcelTable, model: DemandModel, stabilised = true): Map<string, Partial<Record<BuiltClass, number>>> {
   const out = new Map<string, Partial<Record<BuiltClass, number>>>();
   const bump = (id: string | undefined, cls: BuiltClass, sf: number) => {
     if (!id) return;
@@ -789,7 +854,7 @@ function occupiedStock(s: GameState, parcels: ParcelTable, model: DemandModel): 
         ? (cls === "multifamily"
           ? (h.occ ?? useOccupancy(rec as ParcelRecord, s.econ, cls, true))
           : Math.min(1, h.tenants.filter((tn) => (tn.use ?? cls) === cls).reduce((n, tn) => n + tn.sf, 0) / compSf))
-        : useOccupancy(rec as ParcelRecord, s.econ, cls, true);
+        : useOccupancy(rec as ParcelRecord, s.econ, cls, stabilised);
       bump(id, cls, compSf * occ);
     }
   }
@@ -917,22 +982,22 @@ function tickEmployment(s: GameState, model: DemandModel) {
 /** The copy for each stage of each kind. `name` is the street the work sits on. */
 const WORK_COPY: Record<WorkKind, { rumor: (n: string, yrs: number) => string; funded: (n: string, yrs: number) => string; shelved: (n: string) => string; opened: (n: string, since: number) => string }> = {
   station: {
-    rumor: (n, y) => `City Hall is circulating plans for a new station near ${n}. Alignments are being argued over and nothing is funded — a decision is ${y} years out, and the ground has not moved yet. It will.`,
-    funded: (n, y) => `The transit authority has funded the new station at ${n}. First trains in ${y} years. Everything within a five-minute walk of that head-house is about to be worth more than it is today — and the people who own it already know.`,
-    shelved: (n) => `The station plan at ${n} died in committee this morning. Whoever bought the rumour owns ordinary dirt again.`,
-    opened: (n, y) => `The ${n} station opened this morning. Years of hoardings, and the ground around it is not the ground it was in ${y}.`,
+    rumor: (n, y) => `City Hall is circulating plans for a new station near ${n}. Unfunded; decision ${y} years out.`,
+    funded: (n, y) => `The transit authority funded the new station at ${n}. Service in ${y} years; values within a five-minute walk should rise.`,
+    shelved: (n) => `The station plan at ${n} died in committee this morning. Speculative land values reset.`,
+    opened: (n, y) => `The ${n} station opened this morning (first proposed ${y}).`,
   },
   park: {
-    rumor: (n, y) => `The parks department is sketching a new park at ${n}. It is a drawing, not a budget — the vote is ${y} years out — but the blocks that would face it are worth watching.`,
-    funded: (n, y) => `The city has funded the new park at ${n}. Ground broken this year, gates open in ${y}. A front-row address on a park is a different kind of address.`,
-    shelved: (n) => `The park at ${n} was cut from the budget. The drawing goes in a drawer, and the frontage goes back to being frontage.`,
-    opened: (n, y) => `The park at ${n} opened its gates this morning. The blocks that face it have not been ordinary since ${y}, and now everybody can see why.`,
+    rumor: (n, y) => `The parks department is sketching a new park at ${n}. Unfunded; vote ${y} years out.`,
+    funded: (n, y) => `The city funded the new park at ${n}. Construction this year; opens in ${y}. Park frontage should reprice.`,
+    shelved: (n) => `The park at ${n} was cut from the budget.`,
+    opened: (n, y) => `The park at ${n} opened this morning (first proposed ${y}).`,
   },
   bridge: {
-    rumor: (n, y) => `Engineers have been seen surveying at ${n} — the bridge is back on the table. Nothing is funded and the argument is ${y} years from a vote, but a crossing changes what a whole quarter is attached to.`,
-    funded: (n, y) => `The bridge at ${n} is funded. ${y} years of falsework, and then a quarter that used to be the far side of the water stops being far.`,
-    shelved: (n) => `The bridge at ${n} was voted down. The far bank stays the far bank, and the rumour money goes home.`,
-    opened: (n, y) => `The ${n} bridge carried its first traffic this morning. The far side has been repricing since ${y}; today it finished.`,
+    rumor: (n, y) => `Engineers surveying at ${n} for a bridge. Unfunded; vote ${y} years out.`,
+    funded: (n, y) => `The bridge at ${n} is funded; opens in ${y} years.`,
+    shelved: (n) => `The bridge at ${n} was voted down.`,
+    opened: (n, y) => `The ${n} bridge opened this morning (first proposed ${y}).`,
   },
 };
 
@@ -956,8 +1021,12 @@ function claimCivicLot(
   const host = model.blocks.get(line.id);
   const pool: string[] = [];
   const consider = (bbl: string) => {
-    const rec = parcels[bbl];
-    if (!rec || rec.class !== "land" || !(rec.lotArea > minArea)) return;
+    // THE LOT AS IT STANDS, not as the map was drawn: the base parcel stays
+    // "land" after someone builds on it (`s.built`), and the city "bought the
+    // vacant lot" for a station on a lot with a building on it, which a
+    // builder then took for a teardown (deepplay seed 7919, months 204-206).
+    const rec = resolveRec(parcels, s, bbl);
+    if (!rec || rec.class !== "land" || (rec.bldgArea ?? 0) > 0 || !(rec.lotArea > minArea)) return;
     if (deedTaken(s, bbl)) return;
     pool.push(bbl);
   };
@@ -1024,9 +1093,16 @@ function tickTransit(s: GameState, model: DemandModel, parcels: ParcelTable) {
   for (const l of [...(s.lines ?? [])]) {
     if (l.rumorM === undefined || s.month !== l.annM) continue;
     const kind: WorkKind = l.kind ?? "station";
-    if (hash01(`${s.seed}:shelve:${l.id}:${l.annM}`) < SHELVE_ODDS) {
+    // The politics first: a council whose operating budget runs a deficit
+    // does not vote a new capital commitment (its debt service is one more
+    // recurring line the budget cannot meet); then the money — a work the
+    // city cannot bond for is cut from the capital budget (citygov.ts
+    // cityFundsWork). The politics was a hashed die at 25% (2026-11-11).
+    const killed = (s.econ.gov?.defShare ?? 0) > 0;
+    if (killed || !cityFundsWork(s, kind, l.id, l.openM - s.month)) {
       s.lines = (s.lines ?? []).filter((x) => x !== l);
-      s.news.unshift({ q: s.month, kind: "warn", text: WORK_COPY[kind].shelved(l.name), bbl: l.bbl });
+      s.news.unshift({ q: s.month, kind: "warn", text: killed ? WORK_COPY[kind].shelved(l.name)
+        : `City Hall cannot fund the ${kind} at ${l.name}: ${s.econ.gov?.control ? "the control board has frozen new capital spending" : "the city cannot borrow for it"}. The plan is shelved.`, bbl: l.bbl });
     } else {
       s.news.unshift({ q: s.month, kind: "event",
         text: WORK_COPY[kind].funded(l.name, Math.round((l.openM - s.month) / 12)), bbl: l.bbl });
@@ -1037,14 +1113,12 @@ function tickTransit(s: GameState, model: DemandModel, parcels: ParcelTable) {
   // Hashed off the campaign seed rather than drawn from `s.rng`, deliberately.
   // Drawing here would shift the RNG stream for everything downstream of this
   // tick — every rival decision, every tenant, every listing — which turns a
-  // change about geography into a change about all of it, and makes every
-  // seed-pinned number anybody else has measured stop reproducing. It also
-  // means a save-scummer cannot reroll the line. Same hash keys as the old
-  // announcement-only mechanic, so every seed keeps the corridor and the year
-  // it always had — what changed is that the year now starts a rumour rather
-  // than a funded work.
+  // change about geography into a change about all of it. It also means a
+  // save-scummer cannot reroll the line. The year comes off the schedule
+  // (LINE_RATE); the corridor, the kind and the size keep their hash keys.
   const yr = Math.floor(s.month / 12);
-  if (hash01(`${s.seed}:line:${yr}`) >= LINE_ODDS) return;
+  const x = yr * LINE_RATE + hash01(`${s.seed}:line`);
+  if (Math.floor(x + LINE_RATE) === Math.floor(x)) return;
   const cand = [...model.blocks.values()].filter((b) =>
     b.baseD < 55 && !(s.lines ?? []).some((l) => Math.hypot(l.cx - b.cx, l.cy - b.cy) < 900));
   if (!cand.length) return;
@@ -1094,7 +1168,13 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
 
   tickEmployment(s, model);
   tickTransit(s, model, parcels);
-  tickPoles(s, model);
+  // THE CENTRES' HIDDEN FORTUNES ARE GONE (2026-11-11). Each centre walked on a
+  // secret drift and a noise level tuned so the winner showed itself around
+  // year 22 — "the entire design" by its own account: a design dial, not an
+  // economy. A centre now rises or falls on what is built, let and hiring
+  // around it (the emergence above), which is agglomeration doing the work.
+  // tickPoles is kept (unused) so an old save's pole levels read as before.
+  void tickPoles;
 
   // Blocks you have money in. A district turning is the slowest and most
   // valuable thing in this business and it happens a tenth of a point at a
@@ -1202,6 +1282,7 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
     raw.set(b.id, RESPONSE * lr + (s.blockJ?.[b.id] ?? 0) + poleLift(s, b) + constructionLift(s, model, b) + spill(b));
     civic.set(b.id, transitLift(s, b));
   }
+  s.blockFoot = catchments(s, parcels, model);
 
   // ---- DEMAND IS REDISTRIBUTIVE, NOT ADDITIVE -----------------------------
   //
@@ -1260,7 +1341,11 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
 
     const anchor = s.blockA?.[b.id] ?? 0;
     const now = s.blockD[b.id] ?? 0;
-    const next = +clamp(anchor + e, -TOTAL_CAP, TOTAL_CAP).toFixed(2);
+    // ...and the households that moved within reach since the first count
+    // (towngrowth.ts tickRooftops): access is anchor-like, not relative to
+    // the neighbours, so it sits beside the centred drift rather than in it.
+    const roof = s.blockR?.[b.id] ?? 0;
+    const next = +clamp(anchor + e + roof, -TOTAL_CAP, TOTAL_CAP).toFixed(2);
     if (next === 0) delete s.blockD[b.id];
     else s.blockD[b.id] = next;
 
@@ -1270,8 +1355,8 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
     if (addr && Math.abs(next) > Math.abs(now) && Math.floor(Math.abs(next) / 10) > Math.floor(Math.abs(now) / 10)) {
       const step = Math.floor(Math.abs(next) / 10) * 10;
       s.news.unshift(next > 0
-        ? { q: s.month, kind: "deal", text: `The blocks around ${addr} have gained ${step} points of demand since you came in — rents, tenant quality and land are all repricing off it.` }
-        : { q: s.month, kind: "warn", text: `The blocks around ${addr} have lost ${step} points of demand — space is emptying out around you, and the appraisal follows.` });
+        ? { q: s.month, kind: "deal", text: `Demand up ${step} points around ${addr} since you entered; rents, tenant quality and land values rising.` }
+        : { q: s.month, kind: "warn", text: `Demand down ${step} points around ${addr}; vacancy rising and values falling.` });
     }
   }
 

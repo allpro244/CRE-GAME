@@ -134,10 +134,10 @@ const q = v0.quote;
 console.log(`  the house: ${q.sf.toLocaleString()} sf at ${K(q.price)}; vertical ${K(q.vertical)}, overhead ${K(q.overhead)}, selling ${K(q.selling)}, carry ${K(q.carry)}, margin ${K(q.margin)} -> lot ${K(q.residual)} (${(q.residual / q.price * 100).toFixed(1)}% of price; NAHB 13.7%)`);
 console.log(`  bids: takedown $${v0.bids.takedownPsf.toFixed(2)}/sf at ~${v0.bids.pace.toFixed(1)}/mo (${Math.ceil(v0.bids.months)} months for ${v0.free}); whole plat $${v0.bids.bulkPsf.toFixed(2)}/sf`);
 {
-  // THE PACE, decomposed: households, growth, affordability
-  const hh = e.population / E.HH_SIZE, g12 = g.econ.homesG12 ?? E.HH_GROWTH_NAT;
-  const aff = E.affordShare(q.price / v0.loc, E.mortgageRate(g.econ), E.medianIncome(g.econ)) / E.AFFORD_REF;
-  console.log(`  pace = ${Math.round(hh).toLocaleString()} households x ${(E.NEW_HOME_RATE * 100).toFixed(2)}%/yr / 12 x growth ${(0.4 + 0.6 * Math.max(0, Math.min(4, g12 / E.HH_GROWTH_NAT))).toFixed(2)} (pop ${(g12 * 100).toFixed(2)}%/yr) x afford ${aff.toFixed(2)} = ${v0.bids.pace.toFixed(1)}/mo`);
+  // THE PACE, decomposed: the region's buyers over the last year, new houses' share, the share who can carry this house
+  const b = g.econ.eco?.buyers ?? [];
+  const bw = b.reduce((t, x) => t + x.w, 0);
+  console.log(`  pace = ${Math.round(bw).toLocaleString()} buyers in the register's year x new share ${(E.NEW_SHARE * 100).toFixed(1)}% / 12, of whom the share who can carry this house = ${v0.bids.pace.toFixed(1)}/mo`);
 }
 
 const stock0 = g.econ.stock.multifamily;

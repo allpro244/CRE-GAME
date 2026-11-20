@@ -59,10 +59,17 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   if (listed.err) throw new Error(listed.err);
   g = listed.s;
   // Price at a round cash-in that covers the drawn line after friction/tax.
+  // The buyer is a living firm that can fund the close — acceptSaleOffer
+  // refuses an anonymous "Test Buyer" since the firms'-books rewrite.
+  const price = Math.max(Math.round(v * 0.9), 1_200_000);
+  const rec = E.resolveRec(parcels, g, bbl);
+  const firm = E.livingRivals(g).find((r) => !r.stressMs && E.rivalCanClose(g, parcels, { ...r, cash: r.cash + 1e8 }, rec, price));
+  if (firm) firm.cash += 1e8;
   g.holdings[bbl].sale.offer = {
-    price: Math.max(Math.round(v * 0.9), 1_200_000),
+    price,
     expiresM: g.month + 2,
-    from: "Test Buyer",
+    from: firm?.name ?? "Test Buyer",
+    firmId: firm?.id,
   };
   const locBefore = g.loc.balance;
   const closed = E.acceptSaleOffer(g, parcels, bbl, false);
@@ -79,8 +86,15 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
 // --- 3. Debt service first, then the line ----------------------------------
 {
   // a firm with a free-and-clear building, so the line has room to redraw
-  let g0 = E.firstListings(E.newGame(44, parcels, 40_000_000), parcels, bbls);
-  const li = g0.listings.find((l) => { const r = E.resolveRec(parcels, g0, l.bbl); return r && r.class !== "land" && r.bldgArea > 0 && l.ask > 4_000_000 && l.ask < 30_000_000; });
+  // the first seed from 44 whose opening tape carries a $4-30M building (seed
+  // 44's no longer does after the economy rewrite); the test is
+  // about the sweep, not about one opening's tape
+  let g0, li;
+  for (let seed = 44; seed < 64 && !li; seed++) {
+    g0 = E.firstListings(E.newGame(seed, parcels, 40_000_000), parcels, bbls);
+    li = g0.listings.find((l) => { const r = E.resolveRec(parcels, g0, l.bbl); return r && r.class !== "land" && r.bldgArea > 0 && l.ask > 4_000_000 && l.ask < 30_000_000; });
+  }
+  if (!li) throw new Error("no $4-30M building on twenty opening tapes");
   const b = E.executePurchase(g0, parcels, li.bbl, li.ask, "cash", false, 1);
   if (b.err) throw new Error(b.err);
   const g = b.s;

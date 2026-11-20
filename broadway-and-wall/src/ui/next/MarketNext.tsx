@@ -4,6 +4,7 @@
  * `inPlace` and `marketAppraisal` the building file prints. Click a row for
  * its file; Pay ask on the row.
  */
+import { demandNow } from "@/engine/demand";
 import { useMemo, useState } from "react";
 import { useStore } from "@/state/store";
 import type { GameState } from "@/engine/types";
@@ -19,7 +20,7 @@ import { dealAct } from "./deal";
 export interface ListingRow {
   bbl: string; addr: string; cls: string; sf: number; lot: number; ask: number; psf: number | null;
   noi: number | null; yld: number | null; value: number; vsValue: number; occ: number | null;
-  listedM: number; tag: string; land: boolean; disclosed: boolean;
+  listedM: number; tag: string; land: boolean; disclosed: boolean; demand: number;
 }
 
 export function listingRows(g: GameState, p: ParcelTable): ListingRow[] {
@@ -38,7 +39,7 @@ export function listingRows(g: GameState, p: ParcelTable): ListingRow[] {
         psf: !land && rec.bldgArea ? l.ask / rec.bldgArea : null,
         noi: land ? null : ip.noi, yld: land || l.ask <= 0 ? null : ip.noi / l.ask,
         value, vsValue: l.ask > 0 ? value / l.ask - 1 : 0, occ: land ? null : ip.occ,
-        listedM: l.listedM, tag, land, disclosed: ip.disclosed,
+        listedM: l.listedM, tag, land, disclosed: ip.disclosed, demand: Math.round(demandNow(g, rec)),
       });
     }
     return out;
@@ -74,7 +75,8 @@ export function MarketForSale() {
     { id: "noi", label: "NOI", get: (r) => r.noi, fmt: "usd", tone: (r) => ((r.noi ?? 0) < 0 ? "neg" : undefined) },
     { id: "yld", label: "Yield", get: (r) => r.yld, fmt: "pct", tone: (r) => ((r.yld ?? 0) >= 0.08 ? "pos" : (r.yld ?? 0) < 0 ? "neg" : undefined) },
     { id: "value", label: "Value", get: (r) => r.value, fmt: "usd" },
-    { id: "vs", label: "vs ask", get: (r) => r.vsValue, fmt: "pct", tone: (r) => (r.vsValue >= 0 ? "pos" : "neg") },
+    // the lot's demand score, the same figure the file's Asset box prints (owner)
+    { id: "demand", label: "Demand", get: (r) => r.demand, fmt: "n" },
     { id: "occ", label: "Occ", get: (r) => r.occ, fmt: "pct" },
     { id: "roll", label: "Roll", get: (r) => (r.land ? "" : r.disclosed ? "disclosed" : "est."), hidden: true },
     { id: "listed", label: "Listed", get: (r) => r.listedM, cell: (r) => <span className="mono">{monthLabel(r.listedM)}</span> },

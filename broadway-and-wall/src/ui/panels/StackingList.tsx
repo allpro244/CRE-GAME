@@ -1,14 +1,17 @@
 // FLOORPLATE STACKING — a list, not a diagram. Tenant / vacant block per floor.
 import { monthLabel } from "@/engine/types";
-import type { GameState, Holding } from "@/engine/types";
+import type { GameState, Holding, Tenant } from "@/engine/types";
+import { BizLink } from "@/ui/BizSheet";
 import type { ParcelRecord } from "@/data/types";
 import { assignTenantFloors, blocksOf, stacksOf } from "@/engine/plates";
 import { sf } from "@/ui/format";
 import { useStore } from "@/state/store";
 
 export function StackingList({
-  rec, holding, game, canHold,
+  rec, holding, game, canHold, vacantOnly,
 }: {
+  /** Only the empty floors: the rent roll below carries each tenant's floors. */
+  vacantOnly?: boolean;
   rec: ParcelRecord;
   holding: Holding;
   game: GameState;
@@ -26,16 +29,18 @@ export function StackingList({
     who: string;
     meta: string;
     vacant?: boolean;
+    t?: Tenant;
     floorLo: number;
     floorHi: number;
   }[] = [];
-  for (const t of holding.tenants) {
+  for (const t of vacantOnly ? [] : holding.tenants) {
     if (t.use === "multifamily") continue;
     if (t.floorLo == null || t.floorHi == null) continue;
     rows.push({
       key: `t:${t.name}:${t.startM}`,
       floors: t.floorLo === t.floorHi ? `Fl ${t.floorLo}` : `Fl ${t.floorLo}–${t.floorHi}`,
       who: t.name,
+      t,
       meta: `${sf(t.sf)} · $${t.rentPsf.toFixed(0)}/sf · exp ${monthLabel(t.endM)}`,
       floorLo: t.floorLo,
       floorHi: t.floorHi,
@@ -56,9 +61,10 @@ export function StackingList({
     });
   }
   rows.sort((a, b) => a.floorLo - b.floorLo || a.floorHi - b.floorHi);
+  if (vacantOnly && !rows.length) return null;
   return (
     <div className="page-section">
-      <div className="page-section-head">Stacking · plates, not suites</div>
+      <div className="page-section-head">{vacantOnly ? "Vacant floors" : "Stacking · plates, not suites"}</div>
       <table className="tbl">
         <thead>
           <tr>
@@ -70,7 +76,7 @@ export function StackingList({
           {rows.map((r) => (
             <tr key={r.key} className={r.vacant ? "dim" : ""}>
               <td className="mono">{r.floors}</td>
-              <td>{r.who}</td>
+              <td>{r.t ? <BizLink t={r.t} /> : r.who}</td>
               <td className="num">{r.meta}</td>
               {canHold && (
                 <td>
@@ -100,10 +106,6 @@ export function StackingList({
           )}
         </tbody>
       </table>
-      <div className="hint">
-        A list of who sits on which floors and what is still vacant. Hold keeps a
-        contiguous block off the desk for a future full-floor user.
-      </div>
     </div>
   );
 }

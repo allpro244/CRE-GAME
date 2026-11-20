@@ -67,7 +67,7 @@ function cureAllowsLoc(_cause: Workout["cause"]): boolean {
  * building" rather than one for you and an invented one for them.
  */
 export const NOTICE_M = 6;        // the cure period
-export const FORECLOSE_M = 8;     // once they have filed
+export const FORECLOSE_M = 14;    // once they have filed: 6 + 14 = 20 months from the missed payment to the deed [S] Trepp: CMBS delinquency to REO averaged 19.5 months from 2010 on (reconciled 2026-11-11; was 8, i.e. 14 months); judicial foreclosure alone 12-18+ months (Goulston & Storrs, Alston & Bird)
 
 /**
  * HOW MUCH TIME AN EXTENSION ACTUALLY BUYS, in months.
@@ -111,9 +111,18 @@ export function extensionMonths(s: GameState): number {
  * so an extension is usually available and is not available in exactly the
  * years everybody needs one. That is the shape a refinancing cliff needs.
  */
-export function deskWillExtend(s: GameState, lenderName: string, rel = 20): boolean {
+export function deskWillExtend(s: GameState, lenderName: string, rel = 20, perf?: { noi: number; interest: number }): boolean {
   const l = lenderByName(s, lenderName);
   if (!l || l.failedM !== undefined) return false;   // a receiver liquidates; it does not extend
+  // A LOAN THAT DOES NOT PAY ITS COUPON IS NOT EXTENDED (2026-11-06). The
+  // extensions of 2009-12 ("extend and pretend") were for loans whose
+  // buildings still carried their interest; the ones that did not went to
+  // the workout desk and foreclosure, and that is where the charge-offs came
+  // from. A special servicer modifies when that beats foreclosing, which a
+  // building short of its coupon does not. This asked only about the desk and
+  // the relationship, never about the loan, so every maturity the desk could
+  // afford was extended and a credit crunch produced no defaults at all.
+  if (perf && !(perf.noi >= perf.interest)) return false;
   const { healthy, stretched } = deskCondition(l);
   // WHO IS ACROSS THE TABLE DECIDES WHAT THE FILE IS WORTH. A bank or a life
   // company with capital extends; a stretched one does it for a borrower it
@@ -217,36 +226,43 @@ export function workoutMood(s: GameState, lenderName: string, bbl?: string): {
   if (bought) {
     return {
       willExtend: false, feePct: 0, bumpPct: 0, paydownPct: 0,
-      why: `${lenderName} bought this loan; they did not write it. They paid a discount for the right to own the `
-        + `building and an extension is the one thing that costs them money. They are not going to help you.`,
+      why: `${lenderName} bought this loan at a discount (loan-to-own). `
+        + `No extension.`,
     };
   }
   if (!l || l.failedM !== undefined) {
     return {
       willExtend: false, feePct: 0, bumpPct: 0, paydownPct: 0,
-      why: "The lender is in receivership. A receiver does not grant extensions — they liquidate.",
+      why: "Lender in receivership; receivers liquidate, not extend.",
     };
   }
   const { healthy, stretched } = deskCondition(l);
   // A bank with capital would far rather extend than own a building. One that
   // is impaired has a regulator reading the same balance sheet you are. The
   // test itself is `deskWillExtend` above — one answer, two borrowers.
-  const willExtend = deskWillExtend(s, lenderName, rel);
+  // The same test every borrower faces: does the building carry its coupon?
+  const h = bbl ? s.holdings[bbl] : undefined;
+  const lastHist = h?.hist?.[h.hist.length - 1];
+  const perf = h?.loan && lastHist ? { noi: lastHist[3], interest: h.loan.balance * h.loan.ratePct / 100 } : undefined;
+  const willExtend = deskWillExtend(s, lenderName, rel, perf);
   const terms = extTerms(l);
-  const why = l.kind === "conduit"
+  const shortCoupon = !!perf && !(perf.noi >= perf.interest);
+  const why = shortCoupon
+    ? `The building's income (${Math.round(perf!.noi / 1000).toLocaleString()}k a year) does not cover the interest on the loan (${Math.round(perf!.interest / 1000).toLocaleString()}k). A lender extends a loan that pays its coupon; this one goes to the workout desk.`
+    : l.kind === "conduit"
     ? (willExtend
-      ? `The loan is in a CMBS trust and the special servicer runs it now. The trust can afford to wait, so they will modify — for fees and a paydown to the bondholders. Your history with them counts for nothing.`
-      : `The special servicer answers to bondholders, and a trust this stretched wants the asset resolved, not extended. Your record does not enter into it.`)
+      ? `CMBS special servicer will modify for fees and a paydown. Relationship history does not count.`
+      : `CMBS special servicer wants resolution, not extension. Relationship history does not count.`)
     : l.kind === "fund"
       ? (willExtend
-        ? `${lenderName} sells time like anything else: no paydown, a fund's fee and a fund's coupon.`
-        : `${lenderName} is short of committed capital and is not carrying anything it does not have to.`)
+        ? `${lenderName} will extend: no paydown, fund-level fee and rate.`
+        : `${lenderName} is short of committed capital; no extension.`)
       : healthy
-        ? `${lenderName} has the capital to be patient. They would rather have a performing loan than your building.`
+        ? `${lenderName} is well capitalized and prefers a performing loan.`
         : stretched
-          ? `${lenderName} is stretched — ${(l.delinquent * 100).toFixed(1)}% of their book is not paying. `
-            + (rel > 45 ? "Your record with them is the only reason this is a conversation." : "They have no reason to carry you.")
-          : `${lenderName} is undercapitalised. They cannot carry a non-performing loan; the regulators are counting.`;
+          ? `${lenderName} is stretched — ${(l.delinquent * 100).toFixed(1)}% of their book delinquent. `
+            + (rel > 45 ? "Your relationship keeps the door open." : "No relationship credit.")
+          : `${lenderName} is undercapitalized; cannot carry a non-performing loan.`;
   return {
     willExtend,
     why,
@@ -291,7 +307,7 @@ export function serviceWorkout(s: GameState, bbl: string, on: boolean, parcels?:
   const h = s.holdings[bbl];
   if (!w || !h?.loan) return { s, err: "There is nothing in default there." };
   if (on && w.stage === "foreclosure") {
-    return { s, err: "They have filed. A payment is not a cure any more — it takes the arrears in full, a deed in lieu, or the auction." };
+    return { s, err: "Foreclosure filed. Options: pay arrears in full, deed in lieu, or auction." };
   }
   const next = clone(s);
   const nw = next.workouts![bbl];
@@ -301,9 +317,9 @@ export function serviceWorkout(s: GameState, bbl: string, on: boolean, parcels?:
   next.news.unshift({
     q: next.month, kind: on ? "deal" : "warn",
     text: on
-      ? `You will keep ${where} current out of the rest of the book — ${money(Math.round(h.loan.monthlyPmt * 1.15))} a month `
-        + `at the default rate. The clock stops while the cheques clear.`
-      : `You have stopped paying on ${where}. ${w.lender}'s clock is running again.`,
+      ? `Paying ${where} from portfolio cash — ${money(Math.round(h.loan.monthlyPmt * 1.15))}/month `
+        + `at the default rate. Foreclosure clock paused.`
+      : `Stopped paying ${where}. ${w.lender}'s foreclosure clock resumes.`,
   });
   return { s: next, msg: on ? "The lender will wait while you pay." : "Stopped." };
 }
@@ -344,7 +360,7 @@ function applyCurePayment(
   s.news.unshift({
     q: s.month, kind: "deal",
     text: `Cured the default at ${recAddress} — ${money(paid)} to ${w.lender}. `
-      + `A funded sponsor does not lose a building to a calendar.`,
+      + `Loan current.`,
   });
 }
 
@@ -419,7 +435,7 @@ export function cureWorkout(s: GameState, parcels: ParcelTable, bbl: string): { 
   if (have < nw.cure) {
     return {
       s,
-      err: `Curing it takes ${money(nw.cure)} — ${allowLoc ? "liquidity" : "cash"} is short ${money(nw.cure - have)}.`,
+      err: `Cure costs ${money(nw.cure)}; ${allowLoc ? "liquidity" : "cash"} short ${money(nw.cure - have)}.`,
     };
   }
   const paid = fundCashNeed(next, parcels, nw.cure, { allowLoc });
@@ -500,9 +516,8 @@ export function reinstateFundedForeclosures(s: GameState, parcels: ParcelTable):
     h.loan.arrearsMs = 0;
     s.news.unshift({
       q: s.month, kind: "info",
-      text: `${w.lender} pulled ${rec.address} off the foreclosure docket — the coupon is fundable `
-        + `(cash and the line). The file stays open until you reinstate in full, but the hammer does not fall `
-        + `on a note that is being paid.`,
+      text: `${w.lender} pulled ${rec.address} from the foreclosure auction; debt service is fundable `
+        + `(cash and line). Default file stays open until reinstated in full.`,
     });
   }
 }
@@ -514,8 +529,8 @@ export function requestForbearance(
   const w = s.workouts?.[bbl];
   const h = s.holdings[bbl];
   if (!w || !h?.loan) return { s, err: "There is nothing in default there." };
-  if (w.stage === "foreclosure") return { s, err: "They have filed. That conversation is over." };
-  if (w.asks >= 1 || (h.loan.extensions ?? 0) >= 1) return { s, err: "You have already been to them once on this building. Nobody extends twice." };
+  if (w.stage === "foreclosure") return { s, err: "Foreclosure filed; no extension possible." };
+  if (w.asks >= 1 || (h.loan.extensions ?? 0) >= 1) return { s, err: "Already extended once; no second extension." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const mood = workoutMood(s, w.lender, bbl);
@@ -525,7 +540,7 @@ export function requestForbearance(
 
   if (!mood.willExtend) {
     next.news.unshift({ q: next.month, kind: "warn", text: `${w.lender} refused to extend at ${rec.address}. ${mood.why}` });
-    return { s: next, msg: "They said no." };
+    return { s: next, msg: "Lender said no to an extension." };
   }
   const bal = h.loan.balance;
   const fee = Math.round(bal * mood.feePct);
@@ -545,7 +560,7 @@ export function requestForbearance(
     return {
       s,
       err: `${w.lender} will extend — for a ${(mood.feePct * 100).toFixed(0)}% fee and a `
-        + `${(mood.paydownPct * 100).toFixed(0)}% paydown, ${money(due)} in total. You do not have it.`,
+        + `${(mood.paydownPct * 100).toFixed(0)}% paydown, ${money(due)} total. Not enough cash.`,
     };
   }
   fundAndBook(next, parcels, due, "debtSvc", { bbl });
@@ -566,8 +581,7 @@ export function requestForbearance(
   next.news.unshift({
     q: next.month, kind: "info",
     text: `${w.lender} extended at ${rec.address} to ${monthLabel(nh.loan!.maturityM)}: ${money(fee)} of fees, `
-      + `${money(paydown)} paid down, and the coupon goes to ${nh.loan!.ratePct.toFixed(2)}% with cash flow swept. `
-      + `You bought time and it was not cheap.`,
+      + `${money(paydown)} paid down, rate to ${nh.loan!.ratePct.toFixed(2)}%, cash flow swept.`,
   });
   return { s: next, msg: "Extended." };
 }
@@ -595,10 +609,10 @@ export function deedInLieu(
   const seniorLoss = Math.min(loss, Math.max(0, seniorBal - value * 0.88));
   const mezzLoss = loss - seniorLoss;
   if (seniorLoss > 0 && h.loan) {
-    chargeLenderLoss(next, w.lender, seniorLoss);
+    chargeLenderLoss(next, w.lender, seniorLoss, { borrower: "You", id: "player", bbl: w.bbl, cls: "income", how: "deed in lieu" });
   }
   if (mezzLoss > 0) {
-    chargeLenderLoss(next, h.mezz?.holder ?? "Cordage Debt Partners", mezzLoss);
+    chargeLenderLoss(next, h.mezz?.holder ?? "Cordage Debt Partners", mezzLoss, { borrower: "You", id: "player", bbl: w.bbl, cls: "junior", how: "deed in lieu" });
   }
   if (loss === 0) chargeLenderLoss(next, w.lender, 0);
   bumpLenderRel(next, w.lender, -12);
@@ -628,10 +642,10 @@ export function deedInLieu(
   markSponsor(next, "forced", rec.address, 0);
   next.news.unshift({
     q: next.month, kind: "warn",
-    text: `Handed ${rec.address} back to ${w.lender} — deed in lieu. The debt is settled in full, there is no deficiency `
-      + `and no auction, and it still goes on your record. ${loss > 0 ? `They took a ${money(loss)} loss on it.` : "They came out whole."}`,
+    text: `Handed ${rec.address} back to ${w.lender} — deed in lieu. Debt settled, no deficiency, `
+      + `no auction; recorded on your credit history. ${loss > 0 ? `Lender loss ${money(loss)}.` : "Lender made whole."}`,
   });
-  return { s: next, msg: "Keys handed over." };
+  return { s: next, msg: "Deed in lieu completed." };
 }
 
 /** One month of every file that is open. */
@@ -678,10 +692,10 @@ function holdoverDecision(s: GameState, parcels: ParcelTable, w: Workout, addres
     w.servicing = false;   // current again — see requestForbearance
     s.news.unshift({
       q: s.month, kind: "info",
-      text: `${w.lender} documented an extension at ${address} to ${monthLabel(l.maturityM)}: a year of holdover on a `
-        + `matured note and no takeout in sight, so they re-papered it themselves — ${money(fee)} of fee`
+      text: `${w.lender} extended ${address} to ${monthLabel(l.maturityM)} after a year of holdover `
+        + `with no takeout — ${money(fee)} fee`
         + `${paid < fee ? " added to the note" : ""}, the coupon to ${l.ratePct.toFixed(2)}%, cash flow swept. `
-        + `That is the one extension this paper gets.`,
+        + `One extension only.`,
     });
     return;
   }
@@ -691,9 +705,9 @@ function holdoverDecision(s: GameState, parcels: ParcelTable, w: Workout, addres
   bumpLenderRel(s, w.lender, -10);
   s.news.unshift({
     q: s.month, kind: "warn",
-    text: `${w.lender} has filed to foreclose on ${address}: a year of holdover on a matured note and no takeout. `
-      + `${already ? "They extended once already, and nobody extends twice." : mood.why} `
-      + `It is down for the ${monthLabel(w.saleM)} auction — cure it, refinance it, or hand back the keys before the hammer.`,
+    text: `${w.lender} filed to foreclose on ${address}: a year past maturity with no takeout. `
+      + `${already ? "Already extended once." : mood.why} `
+      + `Auction ${monthLabel(w.saleM)}. Cure, refinance, or hand back the keys before then.`,
   });
 }
 
@@ -722,14 +736,14 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
       refreshCureAmount(s, parcels, w);
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `The note at ${rec.address} has matured with ${w.lender}'s file still open. `
-          + `The file is now about the balloon: ${money(w.cure)} takes it out, and the coupon buys a year of patience, not more.`,
+        text: `Loan at ${rec.address} matured with ${w.lender}'s default file open. `
+          + `Balloon ${money(w.cure)} due; paying interest buys at most a year.`,
       });
     }
 
     if (w.cause === "covenant" && !L.sweep) {
       delete s.workouts[w.bbl];
-      s.news.unshift({ q: s.month, kind: "info", text: `${rec.address} is performing again — ${w.lender} has closed the file.` });
+      s.news.unshift({ q: s.month, kind: "info", text: `${rec.address} performing again; ${w.lender} closed the default file.` });
       continue;
     }
 
@@ -765,8 +779,8 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
           bumpLenderRel(s, w.lender, 6);
           s.news.unshift({
             q: s.month, kind: "deal",
-            text: `${w.lender} has closed the file on ${rec.address}. A year of payments arriving on time is `
-              + `the only argument that ever worked on a credit committee.`,
+            text: `${w.lender} closed the default file on ${rec.address} after `
+              + `a year of on-time payments.`,
           });
         } else if (w.cause === "balloon" && s.month - L.maturityM >= 12) {
           // Holdover is months PAST MATURITY, not months serviced: an
@@ -778,8 +792,8 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
       w.servicing = false;
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `The payment on ${rec.address} did not go out — ${money(due)} and you did not have it. `
-          + `${w.lender} is no longer waiting.`,
+        text: `Missed payment · ${rec.address} · ${money(due)} unfunded. `
+          + `${w.lender} resumes foreclosure.`,
       });
     }
 
@@ -840,13 +854,13 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
           s.news.unshift({
             q: s.month, kind: "warn",
             text: `${w.lender} is still waiting on the equity cure at ${rec.address} (${money(w.cure)}). `
-              + `The note is current, so they have not filed — but the sweep stays on until the covenant clears.`,
+              + `Loan current, so no filing; cash sweep stays until the covenant clears.`,
           });
         } else if (w.cause === "balloon" && (s.month - w.startM) % 6 === 0) {
           s.news.unshift({
             q: s.month, kind: "warn",
             text: `${w.lender} is still waiting on a takeout at ${rec.address}. `
-              + `The coupon is clearing, so they have not filed — find a refinancing, sell it, or retire the note.`,
+              + `Interest current, so no filing. Refinance, sell or repay.`,
           });
         }
         continue;
@@ -860,9 +874,9 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
       bumpLenderRel(s, w.lender, -10);
       s.news.unshift({
         q: s.month, kind: "warn",
-        text: `${w.lender} has filed to foreclose on ${rec.address}. It is down for the ${monthLabel(w.saleM)} auction — `
-          + `you can still cure it or hand back the keys until the hammer falls, and a deed in lieu is worth `
-          + `far more to you than the steps are.`,
+        text: `${w.lender} filed to foreclose on ${rec.address}. Auction ${monthLabel(w.saleM)}. `
+          + `Until then: cure, or hand back the keys (deed in lieu costs you less `
+          + `than a foreclosure sale).`,
       });
       continue;
     }
@@ -880,8 +894,8 @@ export function tickWorkouts(s: GameState, parcels: ParcelTable) {
       L.arrearsMs = 0;
       s.news.unshift({
         q: s.month, kind: "info",
-        text: `${w.lender} pulled ${rec.address} back from foreclosure — the monthly debt service is fundable. `
-          + `Cure the file when you can; they will not take a building that is current.`,
+        text: `${w.lender} paused foreclosure on ${rec.address}; monthly debt service is fundable. `
+          + `Cure the default to close the file.`,
       });
     }
   }

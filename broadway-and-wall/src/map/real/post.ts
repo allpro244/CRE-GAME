@@ -31,6 +31,8 @@ uniform float uFocus;      // the sharp band's centre, 0 (bottom) .. 1 (top)
 uniform float uBand;       // the sharp band's half-height, in uv
 uniform float uBloom;      // bloom strength (0: none)
 uniform float uGrade;      // grade strength (0: none)
+uniform float uToy;        // the diorama look (0: classic, 1: toy city)
+uniform float uClarity;    // local contrast (0: none)
 uniform sampler2D tDist;   // distance to the eye, packed (aoPass); none when uAO is 0
 uniform vec2 uDistTexel;
 uniform float uAO;         // ambient-occlusion strength (0: none)
@@ -97,13 +99,22 @@ void main() {
     c = acc / w;
   }
 
-  // bloom: the bright part of a wide neighbourhood, added back softly
+  // bloom: the bright part of a wide neighbourhood, added back softly;
+  // CLARITY from the same taps: the local mean is the wall's flat tone, and
+  // what a pixel differs from it by is its detail (mullions, sills, joints),
+  // given back a little so it survives the tone curve and the screen's
+  // downsampling. Kept out of the blurred bands and off the far haze.
   if (uBloom > 0.0) {
-    vec3 b = vec3(0.0);
+    vec3 b = vec3(0.0), m = vec3(0.0);
     for (int i = 0; i < 12; i++) {
       vec3 s = tap(vUv + disc(i) * 7.0 * uTexel);
       b += max(s - vec3(0.9), 0.0);
+      m += s;
     }
+    m /= 12.0;
+    float sharp = 1.0 - smoothstep(0.35, 1.5, r);
+    vec3 dtl = clamp(c - m, -0.12, 0.12);
+    c += dtl * uClarity * sharp;
     c += b / 12.0 * uBloom;
   }
 
@@ -111,18 +122,22 @@ void main() {
     vec3 g = c;
     float l = dot(g, vec3(0.2126, 0.7152, 0.0722));
     // saturation
-    g = mix(vec3(l), g, 1.0 + 0.22 * uGrade);
-    // warm highlights, a little blue in the shadows
-    vec3 warm = vec3(1.025, 1.0, 0.965), cool = vec3(0.96, 0.99, 1.04);
+    g = mix(vec3(l), g, 1.0 + (0.22 + 0.26 * uToy) * uGrade);
+    // warm highlights, a little blue in the shadows (the diorama: more of both)
+    vec3 warm = mix(vec3(1.035, 1.0, 0.95), vec3(1.05, 1.0, 0.93), uToy);
+    vec3 cool = mix(vec3(0.95, 0.99, 1.06), vec3(0.9, 0.97, 1.12), uToy);
     g *= mix(cool, warm, smoothstep(0.15, 0.75, l));
-    // a gentle S-curve about the middle grey
-    g = mix(g, g * g * (3.0 - 2.0 * g), 0.34 * uGrade);
+    // THE DIORAMA'S SOFT SHADOW: the dark end lifted toward a sky blue, as a
+    // model under a big soft lamp — no shadow goes muddy
+    g += uToy * (1.0 - smoothstep(0.0, 0.55, l)) * vec3(0.035, 0.05, 0.085);
+    // a gentle S-curve about the middle grey (softer for the toy city)
+    g = mix(g, g * g * (3.0 - 2.0 * g), (0.34 - 0.16 * uToy) * uGrade);
     c = mix(c, g, uGrade);
   }
 
   // vignette
   vec2 q = vUv - 0.5;
-  c *= 1.0 - 0.16 * uGrade * smoothstep(0.4, 1.0, dot(q, q) * 2.2);
+  c *= 1.0 - (0.16 + 0.06 * uToy) * uGrade * smoothstep(0.4, 1.0, dot(q, q) * 2.2);
 
   gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }`;
@@ -150,11 +165,19 @@ export class PostFX {
   // the ground is MapLibre's, not ours: the distance pass stands its own
   // street-level plane under the city, or nothing would meet the pavement
   private readonly ground = (() => { const m = new THREE.Mesh(new THREE.PlaneGeometry(60000, 60000), this.distMat); m.frustumCulled = false; return m; })();
-  private size = new THREE.Vector2();
   private readonly scene = new THREE.Scene();
   private readonly cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
   private readonly mat: THREE.ShaderMaterial;
   level: PostLevel = "full";
+  /** Ask the map for another frame (RealCity sets it): the settle and fade of the occlusion need one. */
+  repaint: (() => void) | null = null;
+  /** Max: the occlusion is redrawn every frame, moving or not. */
+  liveAO = false;
+  private movedAt = 0;
+  private shownAt = 0;
+  private distStale = true;
+  /** The diorama look (owner, Oct 2026: a toy city, not a photograph): 1 on, 0 the classic grade. */
+  toy = 1;
   /** ?post=off in the address turns the pass off whatever the setting (before/after review shots) */
   private readonly aoView = typeof location !== "undefined" && new URLSearchParams(location.search).get("post") === "aoview";
   private readonly forcedOff = typeof location !== "undefined" && new URLSearchParams(location.search).get("post") === "off";
@@ -164,7 +187,7 @@ export class PostFX {
       uniforms: {
         tFrame: { value: null }, uTexel: { value: new THREE.Vector2() },
         uTilt: { value: 0 }, uFocus: { value: 0.45 }, uBand: { value: 0.12 },
-        uBloom: { value: 0 }, uGrade: { value: 1 },
+        uBloom: { value: 0 }, uGrade: { value: 1 }, uToy: { value: 1 }, uClarity: { value: 0 },
         tDist: { value: null }, uDistTexel: { value: new THREE.Vector2() }, uAO: { value: 0 }, uAOView: { value: 0 },
       },
       vertexShader: "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }",
@@ -188,19 +211,31 @@ export class PostFX {
     // repainting at ~30 fps) the last distance pass still stands, so it is
     // only redrawn when the view changes — or every half second, for the
     // cars and the odd rebuilt deed
+    // WHILE THE CAMERA MOVES, NO DISTANCE PASS. It is a second render of the
+    // whole city, and every frame of a pan or a zoom redrew it: a moving view
+    // cost twice a still one. Now the occlusion steps aside while the view
+    // changes and fades back in a quarter-second after it settles (Max keeps
+    // it live: that is what Max is for).
+    let aoK = 0;
     if (ao) {
       const e = (camera as THREE.Camera).projectionMatrix.elements;
       let same = !!this.distRT && this.lastProj.length === 16;
       for (let i = 0; same && i < 16; i++) if (Math.abs(e[i] - this.lastProj[i]) > 1e-9) same = false;
       const now = performance.now();
-      if (!same || now - this.lastDist > 500) {
+      if (!same) { this.lastProj = Array.from(e); this.movedAt = now; this.distStale = true; }
+      const settled = this.liveAO || now - this.movedAt > 120;
+      if (settled && (this.distStale || now - this.lastDist > 500)) {
         this.distPass(renderer, scene!, camera!, hide);
-        this.lastProj = Array.from(e);
         this.lastDist = now;
+        if (this.distStale) { this.distStale = false; this.shownAt = now; }
       }
+      if (!this.distStale) aoK = this.liveAO ? 1 : Math.min(1, (now - this.shownAt) / 250);
+      // keep painting until the settle and the fade are done
+      if (this.repaint && (this.distStale || aoK < 1)) setTimeout(this.repaint, this.distStale ? 130 : 16);
     }
-    renderer.getDrawingBufferSize(this.size);
-    const w = Math.floor(this.size.x), h = Math.floor(this.size.y);
+    // the canvas as it is now, not the size the renderer was made at (it shares MapLibre's canvas)
+    const gl = renderer.getContext();
+    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
     if (w < 2 || h < 2) return;
     if (!this.tex || this.tex.image.width !== w || this.tex.image.height !== h) {
       this.tex?.dispose();
@@ -217,12 +252,18 @@ export class PostFX {
     const u = this.mat.uniforms;
     // a gentle model look: the band covers the middle third, and only the
     // top of the frame (the far city) and the very bottom soften
-    u.uTilt.value = full ? 4.5 * (h / 1000) * steep * close : 0;
+    // the diorama's miniature blur is stronger, a narrower sharp band, and
+    // reaches out to the district view instead of stopping at the street
+    const toy = this.toy;
+    u.uTilt.value = full ? (4.5 + 2.5 * toy) * (h / 1000) * steep * Math.max(close, 0.6 * toy) : 0;
     u.uFocus.value = 0.44 + 0.06 * (1 - steep);
-    u.uBand.value = 0.2 + 0.08 * (1 - close);
+    u.uBand.value = (0.2 + 0.08 * (1 - close)) * (1 - 0.25 * toy);
+    u.uToy.value = toy;
     u.uBloom.value = full ? 0.35 : 0;
+    // the diorama keeps its soft model look; the classic look a crisper print
+    u.uClarity.value = full ? 0.55 - 0.2 * toy : 0;
     u.uGrade.value = 1;
-    u.uAO.value = ao ? 0.65 : 0;
+    u.uAO.value = ao ? (0.65 + 0.2 * toy) * aoK : 0;
     u.uAOView.value = this.aoView ? 1 : 0;
     const auto = renderer.autoClear;
     renderer.autoClear = false;
@@ -238,8 +279,8 @@ export class PostFX {
    * drew a blocky ring round each tree crown and building edge.
    */
   private distPass(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera, hide: (THREE.Object3D | null)[]) {
-    renderer.getDrawingBufferSize(this.size);
-    const w = Math.max(2, Math.floor(this.size.x)), h = Math.max(2, Math.floor(this.size.y));
+    const gl = renderer.getContext();
+    const w = Math.max(2, gl.drawingBufferWidth), h = Math.max(2, gl.drawingBufferHeight);
     if (!this.distRT || this.distRT.width !== w || this.distRT.height !== h) {
       this.distRT?.dispose();
       this.distRT = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: true });

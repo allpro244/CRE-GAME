@@ -55,19 +55,35 @@
 // Everything below is the desk's pro forma, moved here so that value.ts can
 // solve it for land. There is no second copy. After: 1,095 lots on the same
 // probe, every one at hurdle 1.000; `test/residual-recon.mjs` holds it.
-import { deskRatePct } from "./pricing";
+import { bankRatePct, liveSpread } from "./pricing";
 import type { ParcelRecord } from "@/data/types";
 import type { BtsCommitment, BuiltClass, Contract, DevUse, Econ, UseMix } from "./types";
 import { BUILT_CLASSES, CONSTRUCTION_LENDER } from "./types";
 import { productOf, layoutProduct, productHardCostBase, productBuildMonths, anchorShare, type ProductKey, type ProductSite } from "./products";
-import { NATURAL_VAC, CITY_STOCK, BUILD_MONTHS, LEASE_TERM_M, forwardVacancy, concessionTarget, CONC_DEPTH, rentDriftAt } from "./market";
+import { openingVac, CITY_STOCK, BUILD_MONTHS, forwardVacancy, turnoverYr, reletMonths, betweenTenantsSf } from "./market";
 import {
   HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
   rentableRatio, marketRentPsfYr, opexPsf, locOpexMult, RECOVERY_RATE, MGMT_FEE, noiYr, capRateFor,
-  taxRate, taxBorneShare, physicalMaxFloors,
+  taxRate, taxBorneShare, physicalMaxFloors, scoreVacOf, overallScore,
 } from "./value";
 
 const clampP = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+
+/**
+ * THE LENDER'S MINIMUM UNDERWRITING VACANCY [S], flats. A multifamily loan
+ * is sized on the greatest of a floor, the property's actual vacancy, the
+ * appraiser's and the submarket's: "physical vacancy should generally be
+ * underwritten to the greatest of: 5%; the subject's current actual physical
+ * vacancy; the physical vacancy as determined by the appraiser; REIS vacancy
+ * (submarket or vintage support)" (Freddie Mac Multifamily, SBL Update, send
+ * date 28 June 2024, "Underwritten Vacancy Rates"; read 2026-11-08). An
+ * institutional convention of the desk, not a market's norm: it sizes a loan
+ * (the advance's value test in `developmentProForma`) and nothing else — no
+ * rent, concession, appraisal, land bid or decision to build reads it. The
+ * cited rule is the agencies' multifamily one, so only the flats' share of a
+ * scheme is sized on it; no commercial floor is applied (none verified).
+ */
+export const LENDER_MIN_UW_VACANCY = 0.05;
 
 /**
  * A PROGRAMME, not a class. You do not build "mixed use" — you build shops at
@@ -188,21 +204,77 @@ export function dominantOf(mix: UseMix): BuiltClass {
 }
 /** Weighted average of a per-use number across a programme. */
 /**
- * HOW LONG A NEW BUILDING TAKES TO FILL, against an ordinary market (1.0):
- * availability — the vacancy it opens into, `vacOf`, plus sublet space —
- * against natural, shortened by structural unmet demand (the looking book is
- * already there). Logistic to ~[0.35, 2]; the old clamp pinned its floor half
- * the time. The pro forma reads it at forecast delivery vacancy; a merchant's
- * settlement reads it at the vacancy the building actually opened into
- * (`settleMerchant` in dev.ts) — one curve, two readers.
+ * WHAT THE MARKET LETS IN A MONTH, sf: every foot a tenant moved into, new
+ * leases only. By the flow identity, move-ins = move-outs + net absorption:
+ * the occupied stock times the share its tenants actually handed back over
+ * the last two years (`turnoverYr`, streetRolls `turnMeas`), plus the
+ * trailing year's net take-up (`absorb12`), a twelfth of each. Both are what
+ * the market did, not what it usually does. (Why not the comp books: for
+ * offices and shops they agree — seed 11, years 1-8, office new-lease comps
+ * 50-71k sf a month against 36-69k by the identity, shops 14-28k against
+ * 16-25k — but the flats' book keeps only its last 400 lettings, which binds
+ * every year (28k sf a month recorded against ~90k moving in), and the sheds'
+ * comps miss the off-map half of the class that lets too.)
  */
-export function leaseUpMarketAt(econ: Econ, mix: UseMix, vacOf: (u: BuiltClass) => number): number {
-  const availability = overMix(mix, (u) =>
-    vacOf(u) + (econ.sublet?.[u] ?? 0) / Math.max(1, econ.stock?.[u] ?? CITY_STOCK[u]));
-  const naturalAvailability = overMix(mix, (u) => NATURAL_VAC[u]);
-  const struct = overMix(mix, (u) => econ.structTight?.[u] ?? 0);
-  const leaseRaw = availability / Math.max(0.001, naturalAvailability) - struct * 2.2;
-  return 0.35 + 1.65 / (1 + Math.exp(-(leaseRaw - 1) / 0.4));
+export function grossLettingsMo(e: Econ, u: BuiltClass): number {
+  const stk = e.stock?.[u] ?? CITY_STOCK[u];
+  const occ = e.occupied?.[u] ?? stk * (1 - (e.cityVac?.[u] ?? openingVac(u)));
+  return Math.max(0, (occ * turnoverYr(e, u) + (e.absorb12?.[u] ?? 0)) / 12);
+}
+
+/**
+ * HOW LONG A NEW BUILDING TAKES TO LET, months, read off the market's own
+ * lettings (no "ordinary" market to scale from). A tenant shopping picks among
+ * the space on offer, so a building wins lettings in proportion to its share
+ * of it — fair share, capture 1 — and its empty feet fall as
+ * dV/dt = -L V / A: they decay with time constant A / L, which is also the
+ * months of full rent the lease-up loses (the integral of the decay).
+ *   A — the space on offer when it opens: `vacOf(u)` (the vacancy it opens
+ *       into) over the stock then — with `ahead`, the pipeline and this
+ *       building's own feet, which `forwardVacancy` already counts as vacant,
+ *       less the share of them pre-let; without (a building already standing
+ *       in the stock) the stock as it is; for a building ahead, plus space
+ *       offered for sublet (no street firm takes a sublet, so a standing
+ *       building's clock leaves it out).
+ *   L — gross lettings a month (`grossLettingsMo`).
+ * Never shorter than one turn of a suite (`reletMonths`: make-ready and a
+ * tenant's search): the physical minimum.
+ */
+export function leaseUpMonthsOf(
+  e: Econ, u: BuiltClass, ownSf: number, preLet: number, vac: number, ahead = true,
+): number {
+  const stk = Math.max(1, e.stock?.[u] ?? CITY_STOCK[u]);
+  const own = Math.max(0, ownSf);
+  const base = ahead ? stk + Math.max(0, e.pipeline?.[u] ?? 0) + own : stk;
+  // Sublet space is on offer to a building being underwritten (the city's
+  // demand nets off it first, market.ts `unmet`), but not to a standing
+  // building's clock: no street firm leases a sublet, so counting it made the
+  // market's months to let 3-6 months too long at office (2026-11-10).
+  const avail = Math.max(0, vac * base + (ahead ? Math.max(0, e.sublet?.[u] ?? 0) - own * clamp01(preLet) : 0));
+  const L = grossLettingsMo(e, u);
+  const floor = reletMonths(u);
+  // (240: a guard — twenty years of empty floors is a building nobody
+  // underwrites; it also stands for a market with space and no lettings.)
+  if (!(L > 0)) return avail > 0 ? 240 : floor;
+  return Math.max(floor, Math.min(240, avail / L));
+}
+/** The same clock across a programme: each use lets in its own market (`ownSf` is the whole building's rentable feet). */
+export function leaseUpMonths(
+  e: Econ, mix: UseMix, ownSf: number, preLet: number, vacOf: (u: BuiltClass) => number, ahead = true,
+): number {
+  return overMix(mix, (u) => leaseUpMonthsOf(e, u, ownSf * (mix[u] ?? 0), preLet, vacOf(u), ahead));
+}
+
+/**
+ * THE SHARE OF A STABILISED BUILDING THAT IS BETWEEN TENANTS: its own movers
+ * times how long a turned suite sits dark (market.ts `betweenTenantsSf`, per
+ * occupied foot). A building at fair share runs at its market's vacancy, and
+ * never fuller than its own turnover allows — `forwardVacancy` is floored at
+ * zero, a queue's arithmetic, not a building.
+ */
+export function stabilisedVacancy(e: Econ, u: BuiltClass, fwd: number): number {
+  const f = betweenTenantsSf(1, u, e);
+  return Math.max(fwd, f / (1 + f));
 }
 
 export function overMix(mix: UseMix, f: (u: BuiltClass) => number): number {
@@ -220,7 +292,7 @@ export function overMix(mix: UseMix, f: (u: BuiltClass) => number): number {
 export function specShare(mix: UseMix): number {
   return (mix.office ?? 0) + (mix.retail ?? 0) + (mix.industrial ?? 0);
 }
-const CONSTR_SPREAD = 2.4;     // over the index, interest-only
+const CONSTR_SPREAD = 2.4;     // over the index, interest-only. Trepp: construction loan spreads peaked near 310 bp late 2024, 237.5 bp by Q3 2025 (CRE Daily) [S]
 
 /**
  * THE CONTRACT.
@@ -234,6 +306,9 @@ const CONSTR_SPREAD = 2.4;     // over the index, interest-only
  * In a boom, when costs are running, the GMP premium is the cheapest money on
  * the board. In a flat market it is four points of nothing. Reading which one
  * you are in is the job.
+ * [S~] What the GMP buys is chiefly the contractor's contingency, typically 3-5%
+ * of contract value (Custom Builder, "Is a GMP contract right for you"; Rabbet,
+ * "Cost-plus vs GMP").
  */
 export const CONTRACT_PREMIUM: Record<Contract, number> = { gmp: 0.04, costplus: 0 };
 
@@ -258,7 +333,7 @@ export const CONTRACT_PREMIUM: Record<Contract, number> = { gmp: 0.04, costplus:
 //
 // Credit tightens the ceiling in a downturn, and industrial and housing carry
 // more than offices and shops, because they always have.
-export function constructionLtc(mix: UseMix, phase: string, creditIdx: number, appetite = 1, spaceTight = 1): number {
+export function constructionLtc(mix: UseMix, phase: string, creditIdx: number, appetite = 1): number {
   const spec = specShare(mix);
   // flats and sheds are the financeable end of the market
   const safeLtc = 0.70;
@@ -274,9 +349,13 @@ export function constructionLtc(mix: UseMix, phase: string, creditIdx: number, a
   // and a bank that has stopped lending stops financing buildings first,
   // because a half-built tower is the worst collateral there is.
   const app = 0.5 + 0.5 * appetite;
-  // Space-market tightness (vacancy below natural / unmet structural demand)
-  // is why banks fund into a shortage — same signal classAppetite already
-  // reads. Caps keep this from becoming free leverage in a boom label alone.
+  // NO SPACE-MARKET BOOST (2026-11-07). The advance used to rise up to 12%
+  // when a class's vacancy ran under its "natural" rate — a norm, and a
+  // second count of the space market: the bank already reads it through the
+  // appraisal it lends against (75% of stabilised value, `developmentProForma`)
+  // and through any pre-let the scheme carries. A lender funds more into a
+  // shortage because the building is worth more and lets sooner, not because
+  // vacancy is under a number.
   // THE LEGAL CEILING, NOT A HOUSE ONE (2026-10-13). This stacked four caps
   // (appetite 1.05, space 0.9-1.12, window 0.55-1.12, and 0.72 on the lot)
   // and the 0.72 bound 41% of the time: construction leverage could not
@@ -286,26 +365,7 @@ export function constructionLtc(mix: UseMix, phase: string, creditIdx: number, a
   // Guidelines for Real Estate Lending Policies, 12 CFR 365 App. A) — so
   // that is the ceiling, and the desk's balance sheet, the space market and
   // the credit window move the advance freely underneath it.
-  return Math.max(0, Math.min(0.80, base * tight * app * spaceTight * creditIdx));
-}
-
-/** Mix-weighted construction advance boost from class vacancy / structural tightness. */
-export function constructionSpaceTight(e: Econ, mix: UseMix): number {
-  let w = 0, t = 0;
-  for (const u of BUILT_CLASSES) {
-    const share = mix[u] ?? 0;
-    if (share <= 0) continue;
-    const vac = e.cityVac?.[u] ?? NATURAL_VAC[u];
-    const gap = vac - NATURAL_VAC[u]; // negative = tight
-    const struct = e.structTight?.[u] ?? 0;
-    // Up to ~12% more advance when the class is short space; asymptotic cap
-    // replaces a hard rail that bound 73% of calls at 1.12 (pnpm rails).
-    const tightSignal = -gap * 6 + struct * 1.4;
-    const boost = Math.max(0.9, 1 + 0.12 * Math.tanh(tightSignal / 0.22));
-    t += share * boost;
-    w += share;
-  }
-  return w > 0 ? t / w : 1;
+  return Math.max(0, Math.min(0.80, base * tight * app * creditIdx));
 }
 
 /**
@@ -489,12 +549,19 @@ export function withStreetRetail(mix: UseMix, floors: number, demand: number, ec
   // against an 8.5% natural rate, and real retail rents bled −2.6%/yr for
   // fifty years while the by-product kept arriving. A developer facing a
   // glutted street programmes a lobby, amenity space, or a bigger residential
-  // ground floor — not another vacant shopfront. The share fades linearly
-  // with retail slack and is gone 8pp over natural (shape parameter: the
-  // depth at which ground-floor retail visibly stops being programmed —
-  // post-2008 and post-2020 corridors — not a fitted number).
-  const natR = NATURAL_VAC.retail;
-  const slack = Math.max(0, (econ?.cityVac?.retail ?? natR) - natR);
+  // ground floor — not another vacant shopfront. The share follows how fast a
+  // shop at grade would let (`leaseUpMonthsOf`, the retail market's own
+  // lettings against the shop space on offer when it opens): whole where a
+  // shop lets within one turn of a suite (`reletMonths`, the physical
+  // minimum), and in proportion to that speed beyond it — a shop that would
+  // sit three turns empty is programmed a third as often. (This faded with
+  // retail vacancy over a "natural" rate, gone 8pp over; there is no natural
+  // rate, only how long the space on offer takes to let.)
+  // (A shopfront is a sliver of the town's shop space; its own feet are left
+  // out of the space on offer.)
+  const slow = econ && econ.stock?.retail
+    ? reletMonths("retail") / leaseUpMonthsOf(econ, "retail", 0, 0, forwardVacancy(econ, "retail"))
+    : 1;
   // ...AND WHETHER A SHOP PAYS (2026-10-14). Slack alone let towers keep
   // stapling shopfronts onto a street whose rents had fallen far behind the
   // floors above — retail stock outgrew retail demand and real retail rent
@@ -505,7 +572,7 @@ export function withStreetRetail(mix: UseMix, floors: number, demand: number, ec
   const rOf = (k: BuiltClass) => (econ?.effRentIdx?.[k] ?? econ?.rentIdx?.[k] ?? 1);
   const aOf = (k: BuiltClass) => (econ?.effAnchor?.[k] ?? econ?.rentAnchor?.[k] ?? 1);
   const rel = econ ? (rOf("retail") / Math.max(1e-6, rOf(lead))) / Math.max(1e-6, aOf("retail") / Math.max(1e-6, aOf(lead))) : 1;
-  const street = Math.max(0, 1 - slack / 0.08) * Math.max(0, Math.min(1, rel));
+  const street = Math.max(0, Math.min(1, slow)) * Math.max(0, Math.min(1, rel));
   const share = Math.min(maxRetailShare(floors), 1.25 / floors) * street;
   if (share <= 0.01) return mix;
   const out: UseMix = { retail: +share.toFixed(4) };
@@ -605,7 +672,7 @@ export function asBuiltRec(rec: unknown, use: DevUse, sf: number, floors: number
  * the bank's appetite is the one tickLenders publishes on econ, and the
  * relationship discount — which is yours, not the market's — is held at zero.
  * The credit cycle reaches it through `phase` and `creditIdx`, the space
- * market through `constructionSpaceTight`, and the rate through the index.
+ * market through the appraisal it lends against, and the rate through the index.
  */
 export function marketConstructionQuote(econ: Econ, mix: UseMix, costTotal = 0): ConstructionQuote {
   const d = constructionDesks().find((x) => x.name === CONSTRUCTION_LENDER)!;
@@ -617,16 +684,41 @@ export function marketConstructionQuote(econ: Econ, mix: UseMix, costTotal = 0):
  * relationship and hold off the GameState and asks this; the market quote
  * above asks it with those held at neutral. One formula, two callers.
  */
+/**
+ * ONE PRICE FOR A CONSTRUCTION LOAN, %/yr: the desk's own live spread on
+ * construction paper over the loan index (pricing.ts liveSpread — its
+ * funding, its loss experience on construction loans, its rationing and its
+ * pitch, published on econ.deskPx), the same law the player's quotes are
+ * priced on (`deskQuote`). A named desk, or the regional volume desk. Every
+ * construction coupon in the engine is this: rival takeovers of a stalled job
+ * (rivals.ts), home builders' lines (homes.ts) and the builder's residual
+ * (homeprice.ts) and land developers' A&D loans (growth.ts, on the desk's
+ * land-loan loss class) each carried a private flat spread (2.4, or 2.6 + 0.6).
+ */
+export function constructionRatePct(e: Pick<Econ, "indexRate"> & Partial<Pick<Econ, "deskPx">>, lender?: string, rel = 0, cls: "construction" | "land" = "construction"): number {
+  const desks = constructionDesks();
+  const d = desks.find((x) => x.name === lender) ?? desks.find((x) => x.name === CONSTRUCTION_LENDER) ?? desks[0];
+  // A desk that has published no price (an econ carried without the desks'
+  // prices) quotes its sheet: a guard for harness states, not an anchor.
+  const px = e.deskPx?.[d.name];
+  return bankRatePct(e.indexRate ?? 5.4, px ? liveSpread(px, cls) : d.spread, { rel });
+}
+
 export function deskQuote(
   e: Econ, d: ConstructionDesk, mix: UseMix, costTotal: number, app: number, rel: number, maxCommit?: number,
 ): ConstructionQuote & { held: boolean } {
   const tight = Math.max(0, 1 - (e.creditIdx ?? 1));
-  const space = constructionSpaceTight(e, mix);
-  // The fund prices the cycle instead of leaving it: its advance rate reads
-  // through a recession the way its perm sheet does, at its coupon.
-  const base = d.fund
-    ? constructionLtc(mix, "expansion", Math.max(0.85, e.creditIdx ?? 1), Math.max(0.5, app), space)
-    : constructionLtc(mix, e.phase, e.creditIdx ?? 1, app, space);
+  // THE FUND IS FUNDED BY BANKS TOO (2026-11-06). Its advance read a
+  // recession as an expansion, the credit window at no worse than 0.85 and
+  // its own appetite at no less than half — floors at their bound in 56-69%
+  // of 1.6M calls, so a crunch barely reached construction (the plan's 4.6:
+  // halving construction loans moved three-year starts inside the noise).
+  // A debt fund lends its LPs' equity levered on back-leverage — repo and
+  // warehouse lines from the banks — and the window cuts those first: the
+  // banks pulled them in 2008-09, and the margin calls of March 2020 hit the
+  // mortgage REITs and credit funds before anyone. So it reads the window and
+  // its own book like any desk; what sets it apart is its price (liveSpread).
+  const base = constructionLtc(mix, e.phase, e.creditIdx ?? 1, app);
   const uncapped = Math.min(d.cap, base * d.scale);
   // The 1.1 approximates the interest-reserve gross-up, so the solved
   // commitment lands at the hold size rather than a tenth over it.
@@ -637,8 +729,14 @@ export function deskQuote(
   // developer calls them in a crunch — and charges its own thin appetite like
   // anybody else. This desk used to run a private version of the law with a
   // smaller window term and a third of the appetite charge for the fund.
+  //
+  // AND NOW THE DESK'S OWN COSTS (pricing.ts liveSpread, 2026-10-28): its
+  // funding, its loss experience on construction paper, its rationing and its
+  // pitch against the other desks, published by tickLenders on econ.deskPx so
+  // this file never imports the banks. The fund's ease is its own now: it
+  // prices off its own book like every other desk.
   void tight;
-  const ratePct = deskRatePct(e.indexRate, d.spread, { ci: e.creditIdx ?? 1, app, ease: d.fund ? 0 : 1, rel });
+  const ratePct = constructionRatePct(e, d.name, rel);
   const open = app >= 0.12 && ltcMax > 0.02;
   return {
     lender: d.name, ratePct, ltcMax: +Math.max(0, ltcMax).toFixed(3), points: d.points, open,
@@ -666,8 +764,6 @@ export function deskQuote(
  * The bounds are guards on a ratio of two indices that track each other; they
  * are not meant to bind. `rentMult` is the holder's peak scenario (value.ts).
  */
-/** Months from a groundbreak to the middle of its lease-up — the horizon of a delivery forecast. */
-const DELIVERY_FORECAST_M = 30;
 export function underwritingEcon(econ: Econ, rentMult = 1): Econ {
   // An overlay, not a copy: the three indices are replaced and every other
   // field reads through to the live econ. Spreading the whole econ object
@@ -678,23 +774,31 @@ export function underwritingEcon(econ: Econ, rentMult = 1): Econ {
   for (const u of BUILT_CLASSES) {
     const belief = econ.rentExp?.[u] && econ.rentIdx?.[u]
       ? clampP(econ.rentExp[u] / econ.rentIdx[u], 0.55, 1.75) : 1;
-    // ...and the concessions the market will be giving when it lets: the
-    // package at delivery vacancy against today's (2026-10-12), the ratio
-    // `devPencils` prices. Nothing in the pipeline, nothing changes.
-    const nat = NATURAL_VAC[u];
-    const vNow = econ.cityVac?.[u] ?? nat;
-    const vAt = econ.stock?.[u] ? forwardVacancy(econ, u) : vNow;
-    const conc = (1 - CONC_DEPTH * concessionTarget(vAt - nat))
-      / Math.max(0.05, 1 - CONC_DEPTH * concessionTarget(vNow - nat));
-    // ...and the rent itself at delivery: the market's own rent rule
-    // (`rentDriftAt`) run at the delivery vacancy over the build and the
-    // first half of the lease-up, ~30 months. A pipeline that will glut the
-    // market is forecast to cut the rent it delivers into; a shortage nobody
-    // is building into is forecast to raise it (2026-10-12).
-    const drift = econ.stock?.[u] ? Math.exp(rentDriftAt(u, vAt - nat) * DELIVERY_FORECAST_M) : 1;
+    // NO PACKAGE FORECAST (2026-11-07). The effective index is what the comps
+    // signed at — today's package — and it is underwritten as it stands, like
+    // the rent. This multiplied in the package a "natural" vacancy schedule
+    // gave at delivery vacancy over the one it gave today; what the pipeline
+    // and the scheme's own floors do to it is in the lease-up clock
+    // (`leaseUpMonths`): a landlord's free months buy down the time its space
+    // would sit, and the reserve carries that time at full rent.
+    // THE RENT IS TODAY'S MARKET RENT, UNTRENDED (2026-11-07). The rent
+    // belief above (rentExp) is the market's own adaptive expectation, and
+    // the lease-up clock carries the supply side forward. A
+    // developer's yield on cost is quoted untrended — at today's rent, not at
+    // a rent projected from last year's move — which is how a scheme is
+    // judged in practice. This used to multiply in the last twelve months'
+    // effective-rent change carried half the 30 months to mid-lease-up and
+    // clamped at +/-25%, a market study's extrapolation [K: half]. In this
+    // town rents revert: the trailing twelve months' change predicts the next
+    // fifteen with correlation -0.29 to -0.54 (office -0.39, retail -0.54,
+    // industrial -0.29, flats -0.45; the shock suite's control and placebo
+    // twins, three seeds, 180 months), so the extrapolation doubled the noise
+    // in every builder's residual (flats' underwritten rent sd 0.235 against
+    // the market's 0.108; the drift sat on its clamp 6 months in 37) and was
+    // most of the land panel's quarterly swing (58% in the diagnosis probe).
     const k = belief * rentMult;
     if (rentIdx[u] !== undefined) rentIdx[u] = rentIdx[u] * k;
-    if (effRentIdx && effRentIdx[u] !== undefined) effRentIdx[u] = effRentIdx[u] * k * conc * drift;
+    if (effRentIdx && effRentIdx[u] !== undefined) effRentIdx[u] = effRentIdx[u] * k;
     const capBelief = econ.capExp?.[u] && econ.capRate?.[u]
       ? clampP(econ.capExp[u] / econ.capRate[u], 0.6, 1.7) : 1;
     if (capRate[u] !== undefined) capRate[u] = capRate[u] * capBelief;
@@ -711,11 +815,10 @@ export function underwritingEcon(econ: Econ, rentMult = 1): Econ {
  * land residual keeps its own). The overlay prototypes the econ it was built
  * on, so it is reused only for that same object, and only while every field
  * the overlay copies or reads — the three indices it rewrites, whole and in
- * key order, and each class's expectation, vacancy, stock, pipeline, unmet
- * demand and trend — is identical to what it was built from.
+ * key order, and each class's rent and cap expectations — is identical to what it was built from.
  */
 const UW_COPIED = ["rentIdx", "effRentIdx", "capRate"] as const;
-const UW_READ = ["rentExp", "capExp", "cityVac", "stock", "pipeline", "structTight", "classDrvTrend"] as const;
+const UW_READ = ["rentExp", "capExp"] as const;
 let UW_MEMO: { econ: Econ; rentMult: number; snap: unknown[]; uw: Econ } | null = null;
 function underwritingSnap(econ: Econ): unknown[] {
   const e = econ as unknown as Record<string, Record<string, unknown> | undefined>;
@@ -783,6 +886,8 @@ export function landCarryFactor(months: number): number {
 
 /** The market's absorption shape, 0.2 + 0.8·(t/N)^0.75, memoised by span — pure. */
 const CURVES = new Map<number, Float64Array>();
+/** The absorption curve's mean occupancy over its span, a share of stabilised: the mean of 0.2 + 0.8 t^0.75 on [0, 1] = 0.2 + 0.8 / 1.75. */
+const CURVE_MEAN_OCC = 0.2 + 0.8 / 1.75;
 function absorptionCurve(n: number): Float64Array {
   let c = CURVES.get(n);
   if (!c) {
@@ -831,6 +936,8 @@ export interface ProFormaInput {
    * inside both, so the desk draws the same building from it.
    */
   envelopeFar?: number;
+  /** The tax abatement to price (citygov.ts); omitted = the council's current one, null = none. */
+  abate?: { pct: number; years: number } | null;
   /** The construction desk's quote, sized on the pre-reserve cost. */
   quote: (mix: UseMix, preReserve: number) => ConstructionQuote;
   ltcWanted?: number;
@@ -859,18 +966,25 @@ export interface ProForma {
   months: number;
   ltc: number;
   ltcMax: number;
+  /** Which of the desk's tests set `ltcMax` (see LtcSizedBy). */
+  ltcSizedBy: LtcSizedBy;
   ratePct: number;
   lender: string;
   points: number;
   commitment: number;
   interestReserve: number;
   pointsCost: number;
+  /** Income not earned while the building lets, beyond what `leaseUp` already carries: in the denominator of the yield and the land's residual, not in the budget. */
+  leaseUpForgone: number;
   /** Everything in the basis except the dirt: build, reserves, points. */
   nonLandBasis: number;
   stabNoi: number;
   /** Bare exit cap, % — and the tax-loaded yield the mark and the hurdle use. */
   exitCap: number;
   exitYieldPct: number;
+  /** The landlord's tax in the first stabilised year after any abatement, and the abatement priced (citygov.ts). */
+  taxYr1: number;
+  abate: { pct: number; years: number } | null;
   /** Land carry to completion, as a share of the land basis. */
   landCarryRate: number;
   bts?: BtsCommitment;
@@ -879,6 +993,39 @@ export interface ProForma {
   product?: { key: ProductKey; site: ProductSite; anchors: BtsCommitment[]; draw?: number };
 }
 
+/**
+ * WHICH TEST SET THE MOST A CONSTRUCTION DESK WILL ADVANCE: its loan-to-cost
+ * for the market and the borrower ("cost"), 75% of its appraisal of the
+ * finished building at today's rents ("value", with that appraisal), what the
+ * rent roll will cover when the loan has to be taken out ("takeout": the
+ * share it expects let `afterM` months after delivery on the market's
+ * lease-up clock `leaseUpM`, at `dscr`), or a signed lease it lends against
+ * ("lease"). Nothing is computed from it; it is what the desk tells you.
+ */
+export type LtcSizedBy =
+  | { test: "cost" } | { test: "lease" }
+  | { test: "value"; value: number }
+  | { test: "takeout"; letShare: number; leaseUpM: number; afterM: number; dscr: number };
+/**
+ * MONTHS A NEW BUILDING HAS TO LET BEFORE ITS CONSTRUCTION LOAN MUST BE TAKEN
+ * OUT. A construction loan's initial term runs 24-36 months against an
+ * 18-24-month build, which leaves about a year; and it carries extension
+ * options, six months or a year each and commonly 12-24 months in all, given
+ * on a coverage or debt-yield test (lender programme sheets and term-sheet
+ * guides, 2025-26: e.g. initial terms of 12-36 months with 6- or 12-month
+ * extensions; "often by 12 to 24 months after the initial term") [S~]. So
+ * the roll has about two years from delivery, not one: the year the initial
+ * term leaves and one extension. It read 12 (2026-11-18), the initial term
+ * alone, which at an ordinary 18-month office lease-up clock expects 49% let
+ * and lent 20% of cost; at 24 it expects 74%. Measured with the developer's
+ * own cost of the wait in the pro forma (leaseUpForgone), three towns x 25
+ * years: office stock at year 25 +18% / +21% / +32% at 24 months against
+ * +12% / +26% / +36% at 12 — no more building for it, inside what a re-roll
+ * moves.
+ */
+const TAKEOUT_LEASE_M = 24;
+/** The coverage a mini-perm converts on, on income in place (1.20-1.30x on construction and mini-perm term sheets) [S~]. */
+const DSCR_TAKEOUT = 1.25;
 export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaInput): ProForma | null {
   if (!rec || !rec.lotArea) return null;
   const spec = o.spec ?? 0.5;
@@ -1012,70 +1159,67 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   const lcPsf = prod
     ? rentPsf0 * prod.lease.termY * prod.lcPct
     : overMix(mix, (u) => (u === "multifamily" ? 0 : 1)) * rentPsf0 * 6 * 0.045;
-  // LEASE-UP DURATION IS A MARKET NUMBER. The old reserve assumed 19 months
-  // for every apartment project and 38 for every commercial project, whether
-  // vacancy was 2% or 20%. Scale that observed base duration by availability
-  // against natural vacancy: tight markets fill faster; gluts take longer.
-  // (A product carries its own observed base [ABS]: a box lets whole, a strip
-  // a shop at a time.)
-  const baseCarryMonths = prod ? Math.max(1, prod.leaseUpM) : overMix(mix, (u) => (u === "multifamily" ? 19 : 38));
-  // ...AT DELIVERY, AND WITH THIS BUILDING IN IT (2026-10-12): the vacancy
-  // the scheme will open into — the pipeline already in the ground and the
-  // scheme's own floor area (`forwardVacancy`). A tower the size of half the
-  // town's office stock prices the glut it would create; nothing else needs
-  // to cap it.
-  const leaseUpMarket = leaseUpMarketAt(econ, mix, (u) => forwardVacancy(econ, u, rentable * (mix[u] ?? 0)));
-  // A BIG SCHEME FILLS AT THE MARKET'S PACE, NOT AT ITS OWN. Tenants arrive at
-  // the market's absorption rate; a floor of them a quarter is a strong
-  // programme for a big building (which is why Manhattan towers pre-lease for
-  // years), so lease-up TIME grows with the scheme, sub-linearly because
-  // bigger jobs run bigger leasing programmes. One-sided above the city's
-  // typical ~45k sf scheme, so ordinary jobs keep their carry to the digit.
-  // The 3x bracket is a guard. (This lived only in the land residual; the desk
-  // underwrote a 500k sf tower as if the market would swallow it in one gulp.)
-  // (A product's base duration is already for its own size [ABS] — a bulk box
-  // lets whole, in one deal — so it takes no size factor; the market's own
-  // absorption below still bounds it.)
-  const sizeFactor = !prod && gsf > 45_000 ? Math.min(3, Math.pow(gsf / 45_000, 0.7)) : 1;
-  // ...AND NEVER FASTER THAN THE WHOLE MARKET TAKES UP SPACE (2026-10-11).
-  // The size factor above is measured against a typical scheme, not against
-  // the town, and its 3x bracket was binding exactly where it mattered: at an
-  // office peak on map 3003 the land residual priced a 90-floor, 1.5M sf tower
-  // on one downtown lot — half again the size of the town's whole 3.2M sf
-  // office stock — as filling in 114 months, and valued the lot at $4.1B. A
-  // building cannot lease faster than the market absorbs space, and that rate
-  // is measured (`econ.landQueue[use].absYr`, the class's net take-up plus the
-  // stock it replaces, over five years). Assuming the scheme captures ALL of
-  // it is the generous case; even so a tower the market cannot swallow now
-  // carries the years of empty floors it would really carry, and the
-  // operating-deficit reserve sizes the scheme to the town — with no cap on
-  // floors anywhere.
+  // LEASE-UP DURATION IS WHAT THE MARKET LETS (2026-11-07). A new building
+  // lets from every tenant shopping — growth and every tenant whose lease is
+  // up (flight to quality) — and wins them in proportion to its share of the
+  // space on offer (`leaseUpMonths`): the vacancy it opens into, with the
+  // pipeline already in the ground and its own floors in it (`forwardVacancy`),
+  // over the market's gross lettings a month. A tower the size of half the
+  // town's office stock is half the space on offer and waits for the market
+  // to let it, years of empty floors; a shed on a big lot barely moves it.
+  // This replaces four pieces that each needed a yardstick: an observed base
+  // (19 months for flats, 38 for commercial, a product's own) scaled by
+  // availability against "natural" vacancy, a size factor against a typical
+  // 45k sf scheme, a floor at the whole market's take-up, and the concession
+  // package at delivery against a natural schedule (`ownConc`).
   //
-  // ...AND THE MARKET THAT FILLS IT IS EVERY TENANT SHOPPING, NOT ONLY THE NEW
-  // ONES (2026-10-12). The rate above was net absorption — growth — and a new
-  // building does not lease from growth alone: it leases from every tenant
-  // whose lease is up, which is how it fills in a flat market (flight to
-  // quality; the occupied stock re-lets once a lease term, LEASE_TERM_M).
-  // Net take-up alone made the bound a cliff — at a 5-year net of nearly zero
-  // every project carried decades of empty floors and nothing pencilled, at
-  // exactly zero the bound vanished — and read monthly it shut construction
-  // for whole busts (six-town bench: population at year 100 down 15%).
-  // Capturing all of the town's gross leasing is still the generous case.
-  const fillMonths = overMix(mix, (u) => {
-    const net = econ.landQueue?.[u]?.absYr;
-    if (net === undefined) return 0;
-    const occ = (econ.stock?.[u] ?? 0) * (1 - (econ.cityVac?.[u] ?? NATURAL_VAC[u]));
-    const a = Math.max(0, net) + occ / (LEASE_TERM_M[u] / 12);
-    return a > 0 ? (rentable * (1 - preLet) * (u === "multifamily" ? 0.95 : 0.9)) / (a / 12) : 0;
-  });
-  const carryMonths = Math.round(Math.max(baseCarryMonths * leaseUpMarket * sizeFactor, fillMonths));
+  // The clock is the time constant of the building's empty feet, and so the
+  // months of full rent the lease-up loses; the reserve below runs the
+  // market's absorption curve (0.2 + 0.8 t^0.75), whose mean occupancy is
+  // 0.657 of stabilised, over the span that loses the same rent:
+  // carry = clock x the unlet share / (1 - 0.657). (A product's anchors sign
+  // before the slab: their share loses nothing.)
+  // THE MARKET IT OPENS INTO IS ITS OWN TIER (2026-11-19). The appraiser
+  // reads a building's occupancy off the vacancy of its own quality tier
+  // (value.ts useOccupancy, `scoreVacOf`: a Class C building reads the C
+  // market), and this read the whole class's. A new building lets against
+  // the new buildings: measured, seed 12007, the top two office tiers went
+  // 22% and 1% vacant to 32% and 29% in five years of starts while the class
+  // read 13-22%, and the developers kept underwriting the class's vacancy
+  // and building into their own glut — one quantity with two answers. So the
+  // scheme's study starts from its tier's vacancy today (at the score the
+  // finished building will carry) and moves it by what the class study says
+  // the pipeline and its own feet do between now and delivery.
+  const tierVacOf = (u: BuiltClass) => {
+    if (!econ.bands?.[u]) return undefined;
+    return scoreVacOf(econ, u, overallScore(asBuilt, econ, u));
+  };
+  const fwdMemo: Partial<Record<BuiltClass, number>> = {};
+  const fwdOf = (u: BuiltClass) => (fwdMemo[u] ??= fwdOfRaw(u));
+  const fwdOfRaw = (u: BuiltClass) => {
+    const fwd = forwardVacancy(econ, u, rentable * (mix[u] ?? 0));
+    const tier = tierVacOf(u);
+    if (tier === undefined) return fwd;
+    const now = econ.cityVac?.[u] ?? openingVac(u);
+    return Math.max(0, Math.min(1, 1 - (1 - tier) * (1 - fwd) / Math.max(1e-6, 1 - now)));
+  };
+  const leaseUpClock = leaseUpMonths(econ, mix, rentable, preLet, fwdOf);
+  const carryMonths = Math.max(1, Math.round(leaseUpClock * (1 - preLet) / (1 - CURVE_MEAN_OCC)));
   const opex0 = overMix(mix, (u) => opexPsf(u, econ, false) * locOpexMult(rec, econ, u));
   const recovery0 = overMix(mix, (u) => RECOVERY_RATE[u]);
-  const stabOcc0 = overMix(mix, (u) => (u === "multifamily" ? 0.95 : 0.9));
+  // STABILISED AT FAIR SHARE: the vacancy of the market it opens into, its
+  // own floors in it — never fuller than its own turnover allows. The reserve
+  // used 0.90 (0.95 for flats) whatever the market was doing, and the NOI the
+  // appraisal's stabilised occupancy (value.ts `useOccupancy`: a pull toward a
+  // "natural" vacancy, plus a location premium) — so a prime retail lot
+  // underwrote 94% let in a market 15% empty. The scheme's own forecast is
+  // the developer's question: what its market will let, its own feet in it.
+  const stabOccOf = (u: BuiltClass) => 1 - stabilisedVacancy(econ, u, fwdOf(u));
+  const stabOcc0 = overMix(mix, stabOccOf);
   // Mean occupancy across the absorption curve the market actually runs
   // (0.2 + 0.8·t^0.75 over the span) is 0.657 of stabilised. Useful for the
   // opex carry, which is a total; useless for the deficit, which is not.
-  const fillOcc = stabOcc0 * 0.657;
+  const fillOcc = stabOcc0 * CURVE_MEAN_OCC;
   // Debt service during lease-up is interest-only on the takeout, which is
   // sized off construction cost — a circular reference resolved the honest
   // way, by estimating it off the cost known so far rather than pretending it
@@ -1096,20 +1240,10 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // with (`noiYr(..., true)`), and the exit yield is the same tax-loaded
   // capitalisation `assetValue` uses — read at the underwritten market (see
   // underwritingEcon). BTS overlays the committed share on top of that read.
-  // ...LESS WHAT THIS BUILDING DOES TO ITS OWN RENT (2026-10-12). A scheme
-  // that adds a fifth of the town's office stock lets into the glut it
-  // creates: the concession package at delivery vacancy WITH it against the
-  // package without it, taken off its stabilised rent. A shed on a big lot
-  // barely moves it; a tower the size of the market prices its own glut.
-  const ownConc = overMix(mix, (u) => {
-    const nat = NATURAL_VAC[u];
-    const vAt = forwardVacancy(econ, u);
-    const vOwn = forwardVacancy(econ, u, rentable * (mix[u] ?? 0));
-    return (1 - CONC_DEPTH * concessionTarget(vOwn - nat))
-      / Math.max(0.05, 1 - CONC_DEPTH * concessionTarget(vAt - nat));
-  });
-  const marketStabNoi = noiYr(asBuilt, uw, "good", true)
-    - rentPsf0 * rentable * stabOcc0 * Math.max(0, 1 - ownConc);
+  // (What this building does to its own market — a fifth of the town's
+  // office stock lets into the glut it creates — is its feet in the space on
+  // offer: the lease-up clock and the stabilised occupancy above.)
+  const marketStabNoi = noiYr(asBuilt, uw, "good", true, undefined, stabOccOf);
   let stabNoi = marketStabNoi;
   if (btsShare > 0 && bts) {
     const opex = overMix(mix, (u) => opexPsf(u, econ, false) * locOpexMult(asBuilt, econ, u));
@@ -1168,10 +1302,32 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
     stabNoi = marketStabNoi * inlineShare + aNoi;
   }
   const exitCap = capRateFor(asBuilt, uw, "good");
-  const exitYieldPct = exitCap + taxRate(uw) * 100 * taxBorneShare(asBuilt);
+  const taxLoad = taxRate(uw) * taxBorneShare(asBuilt);
+  const fullYieldPct = exitCap + taxLoad * 100;
+  // AN ABATEMENT IS WORTH WHAT IT FORGIVES (citygov.ts: 421-a / ICAP). The
+  // building is assessed at full value and billed `1 - pct` of the tax for
+  // `years`; a buyer pays the full-tax value plus the present value of the
+  // tax not charged, discounted at the building's own all-in yield:
+  //   V' = V (1 + t·pct·a(years, y))  =>  y' = y / (1 + t·pct·a)
+  // so every reader of the exit yield — the desk's hurdle, the lender's 75%
+  // of value, the land residual — sees the same abated value. A job carries
+  // the abatement in force when it was planned (`o.abate`, else the
+  // council's current one).
+  const abate = o.abate !== undefined ? o.abate : econ.gov?.policy.abate ?? null;
+  let exitYieldPct = fullYieldPct;
+  if (abate && abate.pct > 0 && abate.years > 0 && taxLoad > 0) {
+    const y = fullYieldPct / 100;
+    const ann = y > 0 ? (1 - Math.pow(1 + y, -abate.years)) / y : abate.years;
+    exitYieldPct = fullYieldPct / (1 + taxLoad * abate.pct * ann);
+  }
+  // The tax the finished building pays in its first stabilised year, after any abatement.
+  const taxYr1 = fullYieldPct > 0 ? (stabNoi / (fullYieldPct / 100)) * taxLoad * (1 - (abate?.pct ?? 0)) : 0;
 
   const cq = o.quote(mix, preReserve);
   let ltcMax = cq.open ? cq.ltcMax : 0;
+  // WHICH TEST SIZED THE ADVANCE, said to the borrower (the build desk prints
+  // it): the desk's loan-to-cost, the appraisal, or the takeout.
+  let ltcSizedBy: LtcSizedBy = { test: "cost" };
   // THE BANK APPRAISES THE BUILDING, NOT THE DEVELOPER'S HOPES (2026-10-14).
   // The supervisory ceiling cited in constructionLtc is a loan-to-VALUE limit
   // on the as-completed appraisal (80% for commercial construction, Interagency
@@ -1183,9 +1339,49 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // the day they broke ground, and half opened under water. The advance is
   // now the lesser of the cost test and 75% of the stabilised value.
   // On the cost the advance is quoted on (before the reserves, as above).
+  // ...ON THE LENDER'S OWN VACANCY FLOOR. A desk sizes the loan on the
+  // greater of the vacancy the building is underwritten at and its own
+  // minimum (LENDER_MIN_UW_VACANCY, flats): the spec space's occupancy above that
+  // floor is taken out of the NOI the advance is sized on — never out of the
+  // rent, the value, the land or the decision to build.
+  const contracted = Math.max(btsShare > 0 && bts ? btsShare : 0, anchorSf / Math.max(1, rentable));
+  // ...AT TODAY'S RENTS, NOT THE DEVELOPER'S FORECAST (2026-11-18). `uw` is the
+  // developer's read of the market at delivery — today's rents moved by the
+  // market's own adaptive expectation (underwritingEcon: up to 1.75x) — and
+  // the loan was sized on it, so in a run-up the bank lent on the boom the
+  // developers were extrapolating. An appraisal for a construction loan
+  // values the building at the market's rents as they are (the as-stabilised
+  // value on current market rent; a forecast is the sponsor's equity risk).
+  // A contracted lease (the build-to-suit overlay, stabNoi over the market's)
+  // is income the bank does lend on.
+  const lenderOcc = (u: BuiltClass) => u === "multifamily" ? Math.min(stabOccOf(u), 1 - LENDER_MIN_UW_VACANCY) : stabOccOf(u);
+  const bankMarketNoi = noiYr(asBuilt, econ, "good", true, undefined, stabOccOf);
+  const bankSpecNoi = noiYr(asBuilt, econ, "good", true, undefined, lenderOcc);
+  const loanNoi = (stabNoi - marketStabNoi) + bankMarketNoi - (bankMarketNoi - bankSpecNoi) * (1 - contracted);
   if (preReserve > 0 && exitYieldPct > 0) {
-    const ltvCap = 0.75 * (stabNoi / (exitYieldPct / 100)) / preReserve;
+    const ltvCap = 0.75 * (loanNoi / (exitYieldPct / 100)) / preReserve;
+    if (ltvCap < ltcMax) ltcSizedBy = { test: "value", value: loanNoi / (exitYieldPct / 100) };
     ltcMax = Math.max(0, Math.min(ltcMax, ltvCap));
+  }
+  // ...AND ON WHAT WILL PAY IT OFF (2026-11-18). A construction loan is repaid
+  // by its takeout, and the takeout lends on income in place, not on the
+  // building as if full: a mini-perm converts on the coverage the rent roll
+  // actually throws off when the construction term runs out. Construction
+  // loans run 24-36 months against an 18-24-month build, so the building has
+  // about a year to let before it must carry its permanent debt
+  // (TAKEOUT_LEASE_M; DSCR_TAKEOUT, the common mini-perm conversion test) [S~:
+  // construction and mini-perm term sheets]. What it has let by then is the
+  // market's own lease-up clock (above: the time constant of its empty feet,
+  // its own floors and the pipeline in the space on offer), from the share
+  // contracted at the slab. Sized on the stabilised value alone, the desk lent
+  // into any glut — measured, the town's developers started 92-225k sf of
+  // office a year while its vacancy climbed 9% to 22%, and office lost 30-60%
+  // of its real rent in the decade that followed.
+  if (preReserve > 0 && cq.ratePct > 0) {
+    const letAtTakeout = contracted + (1 - contracted) * (1 - Math.exp(-TAKEOUT_LEASE_M / Math.max(1, leaseUpClock)));
+    const takeoutCap = (loanNoi * letAtTakeout) / (DSCR_TAKEOUT * cq.ratePct / 100) / preReserve;
+    if (takeoutCap < ltcMax) ltcSizedBy = { test: "takeout", letShare: letAtTakeout, leaseUpM: leaseUpClock, afterM: TAKEOUT_LEASE_M, dscr: DSCR_TAKEOUT };
+    ltcMax = Math.max(0, Math.min(ltcMax, takeoutCap));
   }
   // A bankable lease turns speculative construction into contracted credit.
   // The boost is bounded by anchor share and covenant; it cannot exceed an
@@ -1197,6 +1393,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // less than the same building bare.
   if (bts && bts.credit >= 1) {
     const btsAdvance = (bts.credit === 2 ? 0.68 : 0.58) * btsShare + ltcMax * (1 - btsShare);
+    if (btsAdvance > ltcMax) ltcSizedBy = { test: "lease" };
     ltcMax = Math.max(ltcMax, btsAdvance);
   }
   // ...and so does a product's signed anchor paper, share by share.
@@ -1204,6 +1401,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   if (anchorSf > 0) {
     let adv = 0;
     for (const x of anchors) adv += (x.credit === 2 ? 0.68 : 0.58) * (x.sf / Math.max(1, rentable));
+    if (adv + ltcMax * (1 - anchorLet) > ltcMax) ltcSizedBy = { test: "lease" };
     ltcMax = Math.max(ltcMax, adv + ltcMax * (1 - anchorLet));
   }
   // Math.min(x, undefined) is NaN, and a NaN here does not throw — it becomes
@@ -1232,7 +1430,8 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // has to cover is the SHORTFALL WHILE THERE IS ONE: sum the months the
   // building cannot pay its own coupon, and ignore the months it can, because
   // by then the money has already been spent.
-  const dsMonthly = (preReserve * ltc * ((econ.indexRate + 2.1) / 100)) / 12;
+  // at the loan's own coupon (`ratePct`, the desk's quote above); it read the index + 2.1, a private price
+  const dsMonthly = (preReserve * ltc * (ratePct / 100)) / 12;
   let deficit = 0;
   if (dsMonthly > 0) {
     const curve = absorptionCurve(carryMonths);
@@ -1247,6 +1446,40 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   }
   deficit = Math.round(deficit);
   const carry = Math.round(openSf * opex0 * (1 - fillOcc) * (carryMonths / 12));
+  // WHAT THE BUILDING DOES NOT EARN WHILE IT LETS (2026-11-20). The yield on
+  // cost divides the STABILISED income by the cost, as if the income began
+  // the day the building opened. The lease-up above charged the months to
+  // let only two ways: the running costs of the empty floors (`carry`) and
+  // the coupon the rent roll cannot yet pay (`deficit`) — on the loan taken.
+  // So money in an empty building cost something only if it was borrowed:
+  // an equity builder's five-year lease-up cost it nothing, and since a desk
+  // cuts its advance when space lets slowly (the takeout test below), the
+  // slower the market the SMALLER the charge. Measured, seed 4000, years 1-3
+  // (main after #828): twenty firms each started one ~24k sf office at
+  // 10-12% vacancy and falling rents, the pipeline at 15% of the stock, on
+  // pro formas whose lease-up line was 1.8 years of income against a clock
+  // reading 48-60 months; the town went to 25% vacant.
+  //
+  // What the wait costs is the income not earned over it, whoever's money is
+  // in the building: each month of the lease-up, the stabilised income less
+  // what the roll pays at that month's occupancy. Summed over the market's
+  // absorption curve that is the clock's months of full income (the integral
+  // of the building's empty feet, `leaseUpMonths`). It is the appraiser's
+  // deduction for a building in lease-up (value.ts leaseUpMark `forgone`),
+  // read by the developer before it builds instead of by the valuer after.
+  // It goes in the denominator the yield and the land are struck on, not in
+  // the budget: nobody writes a cheque for income they did not receive. The
+  // running costs and the unpaid coupon above are part of the same
+  // shortfall, so only what they do not already cover is added.
+  let forgoneNoi = 0;
+  {
+    const curve = absorptionCurve(carryMonths);
+    const stabM = (openSf * (rentPsf0 * stabOcc0 - opex0 * (1 - recovery0 * stabOcc0))) / 12;
+    for (let t = 0; t < carryMonths; t++) {
+      const occT = stabOcc0 * curve[t];
+      forgoneNoi += Math.max(0, stabM - (openSf * (rentPsf0 * occT - opex0 * (1 - recovery0 * occT))) / 12);
+    }
+  }
   // TI tracks construction cost. Lease commissions are already a fraction of
   // today's rent (months × rate) — multiplying them by costIdx double-counts
   // a century of rent inflation and made lease-up reserves larger than hard
@@ -1270,6 +1503,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
       ? Math.round(anchorFree + anchors.reduce((t, x) => t + x.sf * x.tiPsf * econ.costIdx + x.rentPsf * x.sf * anchorYears(x.termM) * 0.02, 0))
       : 0;
   const leaseUp = Math.round(specLeaseUp * (1 - btsShare));
+  const leaseUpForgone = Math.round(Math.max(0, forgoneNoi - carry - deficit) * (1 - btsShare));
   const costTotal = hardCost + softCost + demo + contingency + leaseUp + anchorCost;
 
   // Foundations, core, facade and fit-out: use the same class schedule the
@@ -1311,9 +1545,10 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   return {
     asBuilt, mix, floors: fl, coverage: cov, gsf, rentable,
     hardCost, softCost, demo, contingency, leaseUp, anchorCost, costTotal, months,
-    ltc, ltcMax, ratePct, lender: cq.lender, points: cq.points, commitment, interestReserve, pointsCost,
+    ltc, ltcMax, ltcSizedBy, ratePct, lender: cq.lender, points: cq.points, commitment, interestReserve, pointsCost,
+    leaseUpForgone,
     nonLandBasis: costTotal + interestReserve + pointsCost,
-    stabNoi, exitCap, exitYieldPct,
+    stabNoi, exitCap, exitYieldPct, taxYr1, abate,
     landCarryRate: landCarryFactor(months),
     bts, btsShare,
     ...(prod && site ? { product: { key: prod.key, site, anchors, ...(draw !== undefined ? { draw } : {}) } } : {}),

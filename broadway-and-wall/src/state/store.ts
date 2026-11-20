@@ -1,8 +1,9 @@
+import { useNext } from "@/ui/next/nextStore";
 import { startTransition } from "react";
 import { loadGfx, saveGfx, type GfxOptions } from "./graphics";
 import { recapBuyout } from "@/engine/recap";
-import { launchRaise, raiseAndBuild, cancelRaise, closeRaiseNow, type RaiseJob } from "@/engine/raise";
-import { create } from "zustand";
+import { cancelRaise, closeRaiseNow } from "@/engine/raise";
+import { create, type StateCreator } from "zustand";
 import type { Adjacency, DataManifest, ParcelTable } from "@/data/types";
 import type { GameState, Contract, DevUse, UseMix, BuiltClass, BtsCommitment, DevDraft, SaleInstructions, BuildingDesign } from "@/engine/types";
 import { attentionItems, portfolioMonthlyCF, hangUpOnCall, monthCashBit, MILESTONES, restoreCuts } from "@/engine/sim";
@@ -37,7 +38,6 @@ import { openFacility, refinanceFacility, repayFacility, releaseFromFacility } f
 import { raiseFund, callFundCapital, distributeFund } from "@/engine/fund";
 import { clearBuildToSuit, proposeBuildToSuit, startAdaptiveReuse, startDevelopment, startProgram, setStance, setOps, setOpsPolicy, demolish } from "@/engine/dev";
 import { netWorth, resolveRec, ownedHoldingValue } from "@/engine/value";
-import { leasingOdds } from "@/engine/absorption";
 import { usd as usdShort, usdSigned } from "@/ui/format";
 import { periodRecap, firmTier, yearReview } from "@/engine/standing";
 import { generateFirmName } from "@/engine/firm";
@@ -50,8 +50,7 @@ import { designRecipe, designAt, tractYield, fileDesignedRezoning as fileDesigne
 import type { PlatDesign } from "@/engine/types";
 import { lotBbl, fileEntitlement, startPlat, isIndustrialLot } from "@/engine/landdev";
 import { roadFeatures } from "@/engine/roads";
-import { fileSplit, type SplitPlan } from "@/engine/lotsplit";
-import { siteGeometry, applySplitFeatures, type SiteGeo } from "@/engine/lotsplitGeom";
+import { siteGeometry, applySplitFeatures } from "@/engine/lotsplitGeom";
 import { acceptLotOffer, declineLotOffer, listLotsToBuilders, delistLots as delistPlatLots } from "@/engine/homes";
 import { cutTownOffThread } from "@/state/townClient";
 import type { TownRequest } from "@/state/townWorker";
@@ -61,7 +60,7 @@ export type DesignCamOp = "left" | "right" | "up" | "down" | "in" | "out" | "res
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "vacancy" | "pencils" | "listings";
 /** Map emphasis filter — dims non-matching massing; never hides the city. */
 export type MapFilter = "all" | "owned" | "construction" | "firm";
-export type GraphicsQuality = "low" | "medium" | "high";
+export type GraphicsQuality = "low" | "medium" | "high" | "max" | "extreme";
 /** A scheme being designed: drawn finished, on its lot, in the 3D city. */
 export interface DesignPreview {
   bbl: string; use: DevUse; floors: number; cov: number; design: BuildingDesign;
@@ -71,7 +70,7 @@ export interface DesignPreview {
 /** The desks on a property's full page. Mirrors ui/panels/shared PropTab. */
 export type PropertyTab = "summary" | "leasing" | "money" | "ops" | "deal" | "build" | "history";
 
-export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "pulse" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "investors" | "property" | "saves" | "notes" | "settings" | "primer" | "firm" | "rankings" | "banks";
+export type Page = "none" | "portfolio" | "deals" | "market" | "buildings" | "players" | "economy" | "books" | "news" | "leasing" | "debt" | "investors" | "property" | "saves" | "notes" | "settings" | "primer" | "firm" | "rankings" | "banks" | "industries" | "land" | "brokers";
 
 /**
  * WHERE THE APP IS, and the reason this type exists at all.
@@ -173,7 +172,8 @@ interface AppState {
   /** The town being generated right now, so the screen can say what it is doing. */
   building: string | null;
   setData: (d: { parcels: ParcelTable; adjacency: Adjacency; manifest: DataManifest; city?: GeneratedCity }) => void;
-  select: (bbl: string | null) => void;
+  /** Select it; from anywhere but the map itself the camera goes there too (owner). */
+  select: (bbl: string | null, fromMap?: boolean) => void;
   hover: (bbl: string | null) => void;
   /** Select it AND take the camera there. */
   focus: (bbl: string, closePanel?: boolean) => void;
@@ -238,6 +238,11 @@ interface AppState {
   advanceUntil: () => void;
   /** True while Year / Skip is ticking months — advance buttons disable. */
   advancing: boolean;
+  /**
+   * True while any month (one, a year, a skip) is out in the sim worker.
+   * Until it lands, nothing may change the campaign: see holdWhileTicking.
+   */
+  ticking: boolean;
   counterOff: (bbl: string, px?: number) => void;
   buy: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
   buyOff: (bbl: string, product: BuyProduct, lev?: number, bid?: number) => void;
@@ -261,6 +266,15 @@ interface AppState {
   /** The hover card on the map (a building's numbers under the pointer). A browser preference, on by default. */
   hoverCard: boolean;
   setHoverCard: (v: boolean) => void;
+  /**
+   * The region map's edge (Settings -> Display). Off (the default) the map is the window it always was, the
+   * sea at its edge. On, the country round it is drawn: farms, quarries, the airport, the yards. Looks only.
+   */
+  regionCountry: boolean;
+  setRegionCountry: (v: boolean) => void;
+  /** The city's look (Settings -> Display): a toy diorama or the classic grade. Looks only. */
+  diorama: boolean;
+  setDiorama: (v: boolean) => void;
   /**
    * SILENCE EVERYTHING, INCLUDING THE FAILURES.
    *
@@ -329,6 +343,15 @@ interface AppState {
   mapFirm?: string;
   /** Close the desk and show one competitor's buildings on the map, everything else dimmed. */
   showFirmOnMap: (id: string) => void;
+  /** The rival whose own page the Players view is showing (null: the list). */
+  firmFocus: string | null;
+  openFirm: (id: string | null) => void;
+  /** The business (a tenant's firm id, economy.ts) whose books sheet is open over the page; null: closed. */
+  bizFocus: number | null;
+  openBiz: (fid: number | null) => void;
+  /** The industry the Markets → Industries view is showing its supply chain for. */
+  industryFocus: string | null;
+  openIndustry: (id: string | null) => void;
   /**
    * MARK THE OLDEST INTERRUPTION READ.
    *
@@ -358,9 +381,6 @@ interface AppState {
   sellStake: (bbl: string, share: number) => void;
   buyOutPartner: (bbl: string) => void;
   buyLandBack: (bbl: string) => void;
-  launchRaise: (bbl: string, job: RaiseJob, target: number) => void;
-  /** Raise the outside equity and break ground in one step (raise.ts raiseAndBuild). */
-  raiseAndBuild: (bbl: string, job: RaiseJob, target: number) => void;
   recapBuyout: (bbl: string) => void;
   cancelRaise: (bbl: string) => void;
   closeRaiseNow: (bbl: string) => void;
@@ -393,22 +413,21 @@ interface AppState {
   walkAway: (bbl: string) => void;
   raze: (bbl: string) => void;
   program: (bbl: string, id: string) => void;
-  stance: (bbl: string, v: -1 | 0 | 1) => void;
+  stance: (bbl: string, v: number) => void;
   ops: (bbl: string, v: { service?: -1 | 0 | 1; plan?: 0 | 1 | 2 }) => void;
-  opsPolicy: (v: { service: -1 | 0 | 1; plan: 0 | 1 | 2; stance?: -1 | 0 | 1 }) => void;
+  opsPolicy: (v: { service: -1 | 0 | 1; plan: 0 | 1 | 2; stance?: number }) => void;
   brokerAll: (on: boolean) => void;
   listSale: (bbl: string, ask: number, mode?: "quiet" | "marketed", instructions?: SaleInstructions) => void;
   /** Standing instructions to the listing broker; null withdraws them. */
   setSaleInstructions: (bbl: string, instructions: SaleInstructions | null) => void;
   runBestAndFinal: (bbl: string) => void;
-  takeBid: (bbl: string, index: number) => void;
+  /** `name`: the bidder the screen showed — taken even if the list re-ranked under the click. */
+  takeBid: (bbl: string, index: number, name?: string) => void;
   applyVariance: (bbl: string, targetFar?: number) => void;
   /** Region map: ask the board to rezone a farm tract you own for lots of `lotSf` (engine/landdev.ts). */
   fileRezoning: (bbl: string, lotSf: number) => void;
   /** Region map: build the streets on a rezoned tract and cut it into lots. */
   buildPlat: (bbl: string) => void;
-  /** Any deed you own: file a lot split cut by `plan` (engine/lotsplit.ts), measured on the city as drawn now. */
-  fileLotSplit: (bbl: string, plan: SplitPlan) => void;
   /** Region map, the design desk (engine/platdesign.ts): file the rezoning with a drawn plat; build its streets, with `lev` of the A&D loan the desk offers. */
   fileDesignedRezoning: (bbl: string, design: PlatDesign) => void;
   buildDesignedPlat: (bbl: string, design: PlatDesign, lev: number) => void;
@@ -459,6 +478,9 @@ interface AppState {
   autoRentFloor: (on: boolean) => void;
   /** Buildings you buy from here close on auto-lease (on) or off it. */
   autoLeaseNew: (on: boolean) => void;
+  setNoUnsolicited: (on: boolean) => void;
+  /** Covenant cures: true = the firm pays a broken covenant down out of cash by itself (the default); false = it asks nothing and pays nothing, you decide. */
+  setAutoCure: (on: boolean) => void;
   /** The smallest new tenancy you will sign at this deed; 0 clears it. */
   minLease: (bbl: string, sf: number) => void;
   /** The same minimum new lease on every building, and the house default for new ones. */
@@ -612,13 +634,12 @@ function queueDeliveryCeremony(
   const h = next.holdings[bbl];
   // The same marks every other desk reads: ownedHoldingValue is the
   // Portfolio's value, costBasis is the all-in the holding now carries (land
-  // plus the job), leasingOdds is the leasing desk's own pace.
+  // plus the job).
   let value: number | undefined, basis: number | undefined, monthsToLet: number | null | undefined, letPct: number | undefined;
   if (mine && h && parcels && rec) {
     value = ownedHoldingValue(next, parcels, h);
     basis = h.costBasis;
-    const use = (built?.class ?? rec.class) as BuiltClass;
-    monthsToLet = leasingOdds(next, parcels, rec, h, use)?.monthsToLet;
+    // No lease-up forecast: tenants come when firms choose the building (streetRolls.ts shop).
     const let_ = h.tenants.reduce((a, t) => a + t.sf, 0);
     letPct = rec.bldgArea > 0 ? Math.min(1, let_ / rec.bldgArea) : undefined;
   }
@@ -669,9 +690,10 @@ let monthAgain: { quiet?: boolean } | null = null;
 
 /**
  * ONE MONTH: the tick in the sim worker, then the cards and the toast here.
- * If the player acted while the month was out (a click lands in the 50-200ms
- * the tick takes), the month is closed again from what they did, never from
- * the state they had already moved past.
+ * While the month is out the store holds every change to the campaign
+ * (holdWhileTicking), so the state it lands on is the state it was sent. The
+ * loop below is the net under that: if the desk did move anyway, the month is
+ * closed again from what is there, never from a state already moved past.
  */
 async function advanceOne(opts?: { quiet?: boolean }): Promise<void> {
   const st = useStore.getState();
@@ -680,7 +702,12 @@ async function advanceOne(opts?: { quiet?: boolean }): Promise<void> {
   if (!game || !parcels || game.gameOver) return;
   let ticked: GameState;
   for (;;) {
-    ticked = await monthOffThread(game, parcels, bbls, adjacency);
+    tickStart();
+    try {
+      ticked = await monthOffThread(game, parcels, bbls, adjacency);
+    } finally {
+      tickEnd();
+    }
     const now = useStore.getState().game;
     if (now === game) break;
     // the desk moved underneath the tick: a new campaign, a load, or a decision
@@ -779,8 +806,8 @@ function painted(): Promise<void> {
  * dealt there too when `deal` asks for it: on a big map the two together held
  * the page for tens of seconds.
  */
-async function buildTown(island: string, seed: number, size: string, dev: string, plan?: number, deal?: TownRequest["deal"], parks?: string) {
-  const { built, game } = await cutTownOffThread({ island, seed, size, dev, plan, deal, parks: parks === "medium" ? undefined : parks });
+async function buildTown(island: string, seed: number, size: string, dev: string, plan?: number, deal?: TownRequest["deal"], parks?: string, streets?: string) {
+  const { built, game } = await cutTownOffThread({ island, seed, size, dev, plan, deal, parks: parks === "medium" ? undefined : parks, streets: streets === "natural" ? streets : undefined });
   // normalised in the worker, in place: the table is built.parcels
   return { built, parcels: built.parcels as ParcelTable, game };
 }
@@ -873,7 +900,85 @@ if (typeof window !== "undefined") {
   });
 }
 
-export const useStore = create<AppState>((set, get) => ({
+// ---- THE DESK WAITS FOR THE MONTH ------------------------------------------
+//
+// A month closes in the sim worker (state/simClient.ts) and takes about half a
+// second on a grown City, a year five or six. The map keeps drawing and the
+// player can look at anything meanwhile. What they cannot do is CHANGE the
+// campaign: the worker is closing the month from the state it was sent, and a
+// decision taken on the page during that time is a decision on a state that
+// is about to be replaced. (The old answer re-ran the month from the decision,
+// or for a year threw the whole year away.)
+//
+// So the store refuses any write of `game` while a month is out, except the
+// month's own landing, which happens after the count drops. The rule is
+// applied at the store, not button by button, so a new action is covered
+// without anyone remembering to. An action that tries is stopped where it
+// writes — before its toast and its save — and the player is told why; if
+// Play is running, the clock pauses so the next click lands.
+let ticks = 0;
+let actionDepth = 0;
+const HELD = { held: true };
+const HOLD_MSG = "The month is still closing. Try again when it lands.";
+/** What a held action returns, for the few actions that return something. */
+const HELD_RETURN: Partial<Record<keyof AppState, unknown>> = { respondLoi: { ok: false, msg: HOLD_MSG } };
+
+/** True while a month, a year or a skip is out in the sim worker. */
+export const simBusy = () => ticks > 0;
+function tickStart() {
+  if (++ticks === 1) useStore.setState({ ticking: true });
+}
+function tickEnd() {
+  ticks = Math.max(0, ticks - 1);
+  if (ticks === 0) useStore.setState({ ticking: false });
+}
+
+function holdWhileTicking(config: StateCreator<AppState>): StateCreator<AppState> {
+  return (set, get, api) => {
+    const raw = set as (p: unknown, replace?: boolean) => void;
+    const notice = () => {
+      const playing = !!get().autoplay;
+      raw({
+        ...(playing ? { autoplay: 0 } : {}),
+        toast: { text: playing ? `Clock paused. ${HOLD_MSG}` : HOLD_MSG, kind: "err", at: Date.now() },
+      });
+    };
+    const guarded = ((partial: unknown, replace?: boolean) => {
+      const next = typeof partial === "function" ? (partial as (s: AppState) => Partial<AppState>)(get()) : partial as Partial<AppState>;
+      if (ticks > 0 && next && typeof next === "object" && "game" in next && next.game !== get().game) {
+        // inside an action: stop it here, before whatever it does next
+        if (actionDepth > 0) throw HELD;
+        notice();
+        return;
+      }
+      raw(next, replace);
+    }) as typeof set;
+    api.setState = guarded;
+    const state = config(guarded, get, api);
+    const held = (k: keyof AppState) => { notice(); return HELD_RETURN[k]; };
+    for (const k of Object.keys(state) as (keyof AppState)[]) {
+      const fn = state[k];
+      if (typeof fn !== "function") continue;
+      (state as unknown as Record<string, unknown>)[k] = (...args: unknown[]) => {
+        let r: unknown;
+        actionDepth++;
+        try {
+          r = (fn as (...a: unknown[]) => unknown)(...args);
+        } catch (e) {
+          // only the outermost action answers; one called from another stops it too
+          if (e !== HELD || actionDepth > 1) throw e;
+          r = held(k);
+        } finally {
+          actionDepth--;
+        }
+        return r instanceof Promise ? r.catch((e: unknown) => { if (e !== HELD) throw e; return held(k); }) : r;
+      };
+    }
+    return state;
+  };
+}
+
+export const useStore = create<AppState>(holdWhileTicking((set, get) => ({
   parcels: null,
   bbls: [],
   adjacency: null,
@@ -894,12 +999,16 @@ export const useStore = create<AppState>((set, get) => ({
   docketSnooze: {},
   cardSeen: [],
   advancing: false,
+  ticking: false,
   prevForDigest: null,
   deliveryCeremony: null,
   auctionOpen: false,
   loiFocusId: null,
-  popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups") === "off",
+  // popups2: a fresh key, so a pop-up switch turned off in an older build starts on again (owner: on by default)
+  popupsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:popups2") === "off",
   hoverCard: (() => { try { return localStorage.getItem("bw:hovercard") !== "off"; } catch { return true; } })(),
+  regionCountry: (() => { try { return localStorage.getItem("bw:region-country") === "on"; } catch { return false; } })(),
+  diorama: (() => { try { return localStorage.getItem("bw:look") !== "classic"; } catch { return true; } })(),
   alertsOff: typeof localStorage !== "undefined" && localStorage.getItem("bw:alerts") === "off",
   mutedAlerts: (() => { try { const v = JSON.parse(localStorage.getItem("bw:alerts-muted") ?? "[]"); return Array.isArray(v) ? v.filter((x) => typeof x === "string" && x !== "swan" && x !== "fed") : []; } catch { return []; } })(),
   fpsOn: typeof localStorage !== "undefined" && localStorage.getItem("bw:fps") === "on",
@@ -907,7 +1016,7 @@ export const useStore = create<AppState>((set, get) => ({
   graphics: (() => {
     try {
       const g = localStorage.getItem("bw:graphics");
-      if (g === "low" || g === "medium" || g === "high") return g;
+      if (g === "low" || g === "medium" || g === "high" || g === "max" || g === "extreme") return g;
       // In Unreal, medium is DLSS Quality: 50 fps at 1080p on an RTX 2080
       // against 37 at native (UE58_PLAN.md), so a first run starts there
       if (new URLSearchParams(location.search).get("host") === "unreal") return "medium";
@@ -917,10 +1026,10 @@ export const useStore = create<AppState>((set, get) => ({
   preferFps: (() => {
     try {
       const g = localStorage.getItem("bw:graphics");
-      return g ? g !== "high" : localStorage.getItem("bw:prefer-fps") === "on";
+      return g ? g === "low" || g === "medium" : localStorage.getItem("bw:prefer-fps") === "on";
     } catch { return false; }
   })(),
-  gfx: loadGfx((() => { try { const g = localStorage.getItem("bw:graphics"); return g === "low" || g === "high" ? g : "medium"; } catch { return "medium"; } })()),
+  gfx: loadGfx((() => { try { const g = localStorage.getItem("bw:graphics"); return g === "extreme" ? "max" : g === "low" || g === "high" || g === "max" ? g : "medium"; } catch { return "medium"; } })()),
   designPreview: null,
   designSigFits: null,
   setDesignPreview: (p) => set(p ? { designPreview: p } : { designPreview: p, designSigFits: null }),
@@ -942,7 +1051,7 @@ export const useStore = create<AppState>((set, get) => ({
   building: null,
   slots: [],
   setData: (d) => set({ ...d, bbls: Object.keys(d.parcels) }),
-  select: (bbl0) => {
+  select: (bbl0, fromMap = false) => {
     // Keep the map click snappy: close overlays immediately, paint the heavy
     // parcel desk as a transition so React can yield to the pointer first.
     const st = get();
@@ -952,10 +1061,13 @@ export const useStore = create<AppState>((set, get) => ({
     const bbl = bbl0 ? (st.game?.merged?.[bbl0] ?? bbl0) : bbl0;
     const page = bbl && st.page !== "property" ? "none" as const : st.page;
     const nav = pushNav(st, page, bbl);
+    // a click on a building in any list puts the camera on it; a click on the map already is there
+    // (the new shell only: the classic interface keeps its own behaviour — owner)
+    const fly = bbl && !fromMap && useNext.getState().uiShell === "next" ? { flyTo: { bbl, n: (st.flyTo?.n ?? 0) + 1 } } : {};
     if (bbl !== st.selectedBBL) {
-      startTransition(() => set({ selectedBBL: bbl, page, ...(nav ?? {}) }));
+      startTransition(() => set({ selectedBBL: bbl, page, ...fly, ...(nav ?? {}) }));
     } else {
-      set({ selectedBBL: bbl, page, ...(nav ?? {}) });
+      set({ selectedBBL: bbl, page, ...fly, ...(nav ?? {}) });
     }
   },
   hover: (bbl) => {
@@ -1020,6 +1132,7 @@ export const useStore = create<AppState>((set, get) => ({
     const st = get();
     const nav = pushNav(st, page, st.selectedBBL);
     const pageJump = page !== "none" && jump ? jump : null;
+    if (st.firmFocus) set({ firmFocus: null });
     if (page !== "none" && st.mapOnly) {
       try { localStorage.setItem("bw:map-only", "off"); } catch { /* */ }
       startTransition(() => set({ page, pageJump, mapOnly: false, ...(nav ?? {}) }));
@@ -1118,11 +1231,19 @@ export const useStore = create<AppState>((set, get) => ({
   // to freeze the UI for the whole run once the street's book got large).
   advanceYear: () => {
     void (async () => {
+      // a single month already out lands first; the span starts from it
+      if (monthInFlight && !get().advancing) await monthInFlight;
       const { game, parcels, bbls, adjacency, advancing } = get();
       if (!game || !parcels || game.gameOver || advancing) return;
       set({ advancing: true });
+      tickStart();
       try {
-        const r = await spanOffThread(game, parcels, bbls, adjacency, 12, get().cardSeen);
+        let r: Awaited<ReturnType<typeof spanOffThread>>;
+        try {
+          r = await spanOffThread(game, parcels, bbls, adjacency, 12, get().cardSeen);
+        } finally {
+          tickEnd();
+        }
         // The async tick yields between months. If the player acted while it
         // was yielding, the store now holds a different state descended from
         // the same starting snapshot. Never overwrite that real action with
@@ -1146,11 +1267,19 @@ export const useStore = create<AppState>((set, get) => ({
   // Skip ahead until the game needs a decision (up to 3 years).
   advanceUntil: () => {
     void (async () => {
+      // a single month already out lands first; the span starts from it
+      if (monthInFlight && !get().advancing) await monthInFlight;
       const { game, parcels, bbls, adjacency, advancing } = get();
       if (!game || !parcels || game.gameOver || advancing) return;
       set({ advancing: true });
+      tickStart();
       try {
-        const r = await spanOffThread(game, parcels, bbls, adjacency, 36, get().cardSeen);
+        let r: Awaited<ReturnType<typeof spanOffThread>>;
+        try {
+          r = await spanOffThread(game, parcels, bbls, adjacency, 36, get().cardSeen);
+        } finally {
+          tickEnd();
+        }
         if (get().game !== game) {
           toast("Skip stopped because you made another decision.");
           return;
@@ -1270,8 +1399,16 @@ export const useStore = create<AppState>((set, get) => ({
     try { localStorage.setItem("bw:hovercard", v ? "on" : "off"); } catch { /* private mode */ }
     set({ hoverCard: v });
   },
+  setRegionCountry: (v) => {
+    try { localStorage.setItem("bw:region-country", v ? "on" : "off"); } catch { /* private mode */ }
+    set({ regionCountry: v });
+  },
+  setDiorama: (v) => {
+    try { localStorage.setItem("bw:look", v ? "diorama" : "classic"); } catch { /* private mode */ }
+    set({ diorama: v });
+  },
   setPopupsOff: (v) => {
-    try { localStorage.setItem("bw:popups", v ? "off" : "on"); } catch { /* private mode */ }
+    try { localStorage.setItem("bw:popups2", v ? "off" : "on"); } catch { /* private mode */ }
     set({ popupsOff: v });
   },
 
@@ -1297,7 +1434,7 @@ export const useStore = create<AppState>((set, get) => ({
   },
   setGraphics: (q) => {
     try { localStorage.setItem("bw:graphics", q); } catch { /* private mode */ }
-    set({ graphics: q, preferFps: q !== "high" });
+    set({ graphics: q, preferFps: q === "low" || q === "medium" });
   },
   setGfx: (o) => {
     saveGfx(o);
@@ -1319,6 +1456,20 @@ export const useStore = create<AppState>((set, get) => ({
 
   setMapFilter: (f) => set({ mapFilter: f }),
 
+  bizFocus: null,
+  openBiz: (fid) => set({ bizFocus: fid }),
+  industryFocus: null,
+  openIndustry: (id) => {
+    set({ industryFocus: id, bizFocus: null });
+    if (id) get().setPage("industries");
+  },
+
+  firmFocus: null,
+  openFirm: (id) => {
+    // any other road to Players opens the list (setPage clears the focus)
+    if (id) get().setPage("players");
+    set({ firmFocus: id });
+  },
   showFirmOnMap: (id) => {
     const st = get();
     set({
@@ -1452,24 +1603,6 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  launchRaise: (bbl, job, target) => {
-    const { game, parcels } = get();
-    if (!game || !parcels) return;
-    const r = launchRaise(game, parcels, bbl, job, target);
-    if (r.err) { toast(r.err, "err"); return; }
-    set({ game: r.s });
-    toast(r.msg ?? "Raise launched.");
-    void persist(r.s);
-  },
-  raiseAndBuild: (bbl, job, target) => {
-    const { game, parcels } = get();
-    if (!game || !parcels) return;
-    const r = raiseAndBuild(game, parcels, bbl, job, target);
-    if (r.err) { toast(r.err, "err"); return; }
-    set({ game: r.s });
-    toast(r.msg ?? "Raised — ground broken.");
-    void persist(r.s);
-  },
   recapBuyout: (bbl) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
@@ -1708,10 +1841,10 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(r.s);
   },
 
-  takeBid: (bbl, index) => {
+  takeBid: (bbl, index, name) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
-    const r = acceptBid(game, parcels, bbl, index);
+    const r = acceptBid(game, parcels, bbl, index, name);
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Under contract.", r.msg === "They retraded you." ? "err" : undefined);
@@ -1985,6 +2118,25 @@ export const useStore = create<AppState>((set, get) => ({
     void persist(next);
   },
 
+  setNoUnsolicited: (on) => {
+    const { game } = get();
+    if (!game || !!game.noUnsolicited === on) return;
+    const next: GameState = { ...game, noUnsolicited: on };
+    set({ game: next });
+    void persist(next);
+  },
+
+  setAutoCure: (on) => {
+    const { game } = get();
+    if (!game || !game.noAutoCure === on) return;
+    const next: GameState = { ...game, noAutoCure: !on };
+    set({ game: next });
+    toast(on
+      ? "Covenant cures on: when a loan's covenant breaks, the firm pays it down out of cash by itself."
+      : "Covenant cures off: a broken covenant stays broken until you pay the loan down. The lender traps that building's cash flow; after two years the file goes to the workout desk.");
+    void persist(next);
+  },
+
   autoRentFloor: (on) => {
     const { game, parcels } = get();
     if (!game || !parcels) return;
@@ -2069,18 +2221,6 @@ export const useStore = create<AppState>((set, get) => ({
     if (r.err) { toast(r.err, "err"); return; }
     set({ game: r.s });
     toast(r.msg ?? "Under way.");
-    void persist(r.s);
-  },
-
-  fileLotSplit: (bbl, plan) => {
-    const { game, parcels, city } = get();
-    if (!game || !parcels || !city) return;
-    const geo = splitSite(city, bbl);
-    if (!geo) { toast("This lot has no outline on the map to cut.", "err"); return; }
-    const r = fileSplit(game, parcels, bbl, geo, plan);
-    if (r.err) { toast(r.err, "err"); return; }
-    set({ game: r.s });
-    toast(r.msg ?? "Filed.");
     void persist(r.s);
   },
 
@@ -2520,6 +2660,9 @@ export const useStore = create<AppState>((set, get) => ({
   saveTo: async (slot) => {
     const { game } = get();
     if (!game) return;
+    // a save taken while the month is out would be the month before; and its
+    // stamp is a write the hold would refuse after the file was already written
+    if (simBusy()) { toast(HOLD_MSG, "err"); return; }
     // Stamp the island so Continue / a later load can rebuild the right coast.
     const stamped: GameState = {
       ...game,
@@ -2539,6 +2682,7 @@ export const useStore = create<AppState>((set, get) => ({
       || Object.values(g.plats ?? {}).some((p) => p.done) || (g.splits ?? []).some((sp) => sp.done)
       || Object.keys(g.growth?.unpacked ?? {}).length > 0);
     const { parcels } = get();
+    if (simBusy()) { toast(HOLD_MSG, "err"); return; }
     const raw = await loadGame(slot);
     if (!raw || !parcels) { toast("That save wouldn't open.", "err"); return; }
     const prepared = prepareSaveForResume(raw);
@@ -2560,6 +2704,8 @@ export const useStore = create<AppState>((set, get) => ({
       || (saved.cityPlan ?? 1) !== (get().game?.cityPlan ?? 1)
       // and so is the same seed with more or fewer parks
       || (saved.cityParks ?? "medium") !== (get().game?.cityParks ?? "medium")
+      // and the same seed under the other street generator
+      || (saved.cityStreets ?? "classic") !== (get().game?.cityStreets ?? "classic")
       // and the live table holds this game's cut lots (plats, splits, unpacked houses):
       // loaded over it, a save from earlier in the run would walk lots its plats have not
       // cut yet, and in another order. A rebuilt town has exactly the save's.
@@ -2692,7 +2838,9 @@ export const useStore = create<AppState>((set, get) => ({
       const runSeed = (crypto.getRandomValues(new Uint32Array(1))[0] || 1) >>> 0;
       // the town and its opening market, dealt together off the page's thread
       const parks = setupIn?.parks && setupIn.parks !== "medium" ? setupIn.parks : undefined;
-      const { built, parcels, game: dealt } = await buildTown(island, seed, size, dev, undefined, { runSeed, money, setup }, parks);
+      // every new town is Natural (owner, 2026-11-12); a written or fixed island ignores it
+      const streets = setupIn?.streets === "classic" ? undefined : "natural" as const;
+      const { built, parcels, game: dealt } = await buildTown(island, seed, size, dev, undefined, { runSeed, money, setup }, parks, streets);
       get().setData({
         parcels,
         adjacency: built.adjacency as Adjacency,
@@ -2706,6 +2854,7 @@ export const useStore = create<AppState>((set, get) => ({
       g.cityDev = dev;
       g.cityPlan = CITY_PLAN;
       if (parks) g.cityParks = parks;
+      if (streets) g.cityStreets = streets;
       // HOW BIG THIS MARKET IS, counted rather than declared. A generated island
       // announces its scale through the size preset it was cut at; a
       // written-down city has no preset to read, so the economy sizes rivals
@@ -2758,7 +2907,7 @@ export const useStore = create<AppState>((set, get) => ({
       setSize(r.size, r.island);
       setDev(r.dev);
       // an old save is a plan-1 town: rebuild the streets it was played on
-      const { built, parcels } = await buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1, undefined, saved.cityParks);
+      const { built, parcels } = await buildTown(r.island, r.seed, r.size, r.dev, saved.cityPlan ?? 1, undefined, saved.cityParks, saved.cityStreets);
       // THE CUT LOTS FIRST (engine/sim.ts restoreCuts): a region save holds plat lots, split
       // lots and unpacked houses that the generator does not cut, and its listings and deeds
       // name them. Asked before they were put back, the gate below refused every region
@@ -2789,7 +2938,7 @@ export const useStore = create<AppState>((set, get) => ({
       get().setLoadError(`The city would not build (${(e as Error).message}). This is a bug — please report it.`);
     }
   },
-}));
+})));
 
 // handle for automated playtests and screenshots, same as window.__map
 (window as unknown as { __store?: typeof useStore }).__store = useStore;
@@ -2981,12 +3130,6 @@ useStore.subscribe((st) => {
     bbls: [...st.bbls],
   });
 });
-
-/** The site a lot split is measured on: the deed as the map draws it now (a lot cut before is cut from its own ring). */
-export function splitSite(city: GeneratedCity, bbl: string): SiteGeo | null {
-  type FC = Parameters<typeof siteGeometry>[0];
-  return siteGeometry(city.parcelFeatures as FC, city.buildingFeatures as FC, city.context as FC, bbl);
-}
 
 // LOTS SPLIT MID-GAME (engine/lotsplit.ts). A recorded split's lots go into the page's parcel table and
 // BBL list (the worker's own table did this at the top of the month), its rings replace the parent's

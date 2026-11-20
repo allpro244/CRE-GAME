@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { InterfaceSwitch, BuyingPreset } from "@/ui/next/InterfaceSwitch";
+import "@/ui/cleanup-leasing.css";
+import { BuyingPreset } from "@/ui/next/InterfaceSwitch";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
 import type { GameState } from "@/engine/types";
@@ -145,8 +146,11 @@ function PrimerGlossary() {
  * switch sat above its label on some rows and beside it on others.
  */
 function Toggle({ on, set, label, detail, more }: { on: boolean; set: (v: boolean) => void; label: string; detail: string; more?: string }) {
+  // LABEL AND SWITCH; what it does is on the hover of the row (owner's UI
+  // rule). The fine print that sat under a "More" fold joins the same hover.
+  const tip = more ? `${detail}\n\n${more}` : detail;
   return (
-    <div className="deal setting-row">
+    <div className="deal setting-row st-compact" title={tip}>
       {/* A SWITCH, NOT A BUTTON THAT SAYS A WORD. "Off" on a button reads
           as either the state or the action, and the two mean opposite things. */}
       <button type="button" role="switch" className={"switch" + (on ? " on" : "")} aria-checked={on} aria-label={label} onClick={() => set(!on)}>
@@ -154,17 +158,7 @@ function Toggle({ on, set, label, detail, more }: { on: boolean; set: (v: boolea
         <span className="switch-word">{on ? "On" : "Off"}</span>
       </button>
       <div className="setting-text">
-        <div style={{ fontWeight: 600 }}>{label}</div>
-        <div className="hint" style={{ margin: 0 }}>{detail}</div>
-        {/* A ONE-LINE ANSWER, THEN THE FINE PRINT. Two of these ran to ninety
-            words each; the switch should say what it does before it says
-            everything it touches. */}
-        {more && (
-          <details className="setting-more">
-            <summary>More</summary>
-            <div className="hint" style={{ margin: "4px 0 0" }}>{more}</div>
-          </details>
-        )}
+        <span className="has-gloss" style={{ fontWeight: 600 }}>{label}</span>
       </div>
     </div>
   );
@@ -175,9 +169,8 @@ function ThemePicker() {
   const opts: [ThemePref, string][] = [["light", "Light"], ["dark", "Dark"], ["system", "Match system"]];
   return (
     <div className="setting-row">
-      <div className="setting-text">
-        <div style={{ fontWeight: 600 }}>Appearance</div>
-        <div className="hint" style={{ padding: 0 }}>The desks and cards; the city keeps its own light.</div>
+      <div className="setting-text" title="The desks and cards; the city keeps its own light.">
+        <span className="has-gloss" style={{ fontWeight: 600 }}>Appearance</span>
       </div>
       <div className="seg" role="radiogroup" aria-label="Appearance">
         {opts.map(([v, label]) => (
@@ -209,8 +202,12 @@ export function SettingsPage() {
   const muteAlertKind = useStore((s) => s.muteAlertKind);
   const setAlertsOff = useStore((s) => s.setAlertsOff);
   const fpsOn = useStore((s) => s.fpsOn);
+  const regionCountry = useStore((s) => s.regionCountry);
+  const setRegionCountry = useStore((s) => s.setRegionCountry);
   const setFpsOn = useStore((s) => s.setFpsOn);
   const graphics = useStore((s) => s.graphics);
+  const diorama = useStore((s) => s.diorama);
+  const setDiorama = useStore((s) => s.setDiorama);
   const setGraphics = useStore((s) => s.setGraphics);
   const flip = (patch: Partial<GameState>) => {
     const st = useStore.getState();
@@ -220,7 +217,7 @@ export function SettingsPage() {
   const clockMode = !game.clockStops || game.clockStops === "money" ? "decisions" : game.clockStops;
   return (
     <div>
-      <InterfaceSwitch />
+      {/* the new shell is shelved (owner): no switch in Settings; ?ui=next still opens it */}
       <BuyingPreset />
       <ThemePicker />
       <Toggle
@@ -233,9 +230,8 @@ export function SettingsPage() {
       {/* THE CLOCK, as chosen on the setup page — editable here for the life
           of the campaign. See stopRule in engine/sim.ts. */}
       <div className="setting-row">
-        <div className="setting-text">
-          <div style={{ fontWeight: 600 }}>What stops Yr / Skip / Play</div>
-          <div className="hint" style={{ padding: 0 }}>{CLOCK_OPTIONS.find((c) => c.id === clockMode)?.note}</div>
+        <div className="setting-text" title={"What stops Yr / Skip / Play. " + (CLOCK_OPTIONS.find((c) => c.id === clockMode)?.note ?? "")}>
+          <span className="has-gloss" style={{ fontWeight: 600 }}>Clock stops for</span>
         </div>
         <div className="seg" role="radiogroup" aria-label="What stops the clock">
           {CLOCK_OPTIONS.map((c) => {
@@ -277,11 +273,11 @@ export function SettingsPage() {
           + "and a quiet offer lapses in two months, a bid list in fourteen, a portfolio indication in three, if you never open the desk."}
       />
       {mutedAlerts.length > 0 && (
-        <div className="hint" style={{ margin: "4px 0 10px" }}>
-          Not stopping you for: {mutedAlerts.map((k, i) => (
+        <div className="dim" style={{ margin: "4px 0 10px" }} title="Not stopping you for these. Black swans and the central bank's big moves always stop the game.">
+          Muted: {mutedAlerts.map((k, i) => (
             <span key={k}>{i > 0 ? " · " : ""}{({ bank: "bank failures", portfolio: "books and portfolio offers", ground: "ground-lease defaults", sale: "bid lists on your sales", fed: "central-bank news", delivered: "deliveries" } as Record<string, string>)[k] ?? k}{" "}
-              <button type="button" className="linkish" onClick={() => muteAlertKind(k, false)}>(stop me again)</button></span>
-          ))}. Black swans and the central bank's big moves always stop the game.
+              <button type="button" className="linkish" title="Stop me again for these" onClick={() => muteAlertKind(k, false)}>(unmute)</button></span>
+          ))}
         </div>
       )}
       <Toggle
@@ -304,16 +300,38 @@ export function SettingsPage() {
         label="Hover card"
         detail="Point at a building on the map to see its owner, occupancy, rent, value and asking price. Off, the map stays clean and a click still opens the building. Also on the map's bottom strip as Stats."
       />
+      <div className="setting-row">
+        <div className="setting-text" title={"Extended: the country past the edge is drawn — farms, quarries, the airport, the rail yard. Background only, never for sale.\n\n"
+          + "Original: the region map as it has always been, water to the edge. The island maps are the same either way."}>
+          <span className="has-gloss" style={{ fontWeight: 600 }}>Region map edge</span>
+        </div>
+        <div className="seg" role="radiogroup" aria-label="Region map edge">
+          {([[false, "Original"], [true, "Extended"]] as const).map(([v, label]) => (
+            <button key={label} type="button" role="radio" aria-checked={regionCountry === v}
+              className={"seg-btn" + (regionCountry === v ? " on" : "")}
+              onClick={() => setRegionCountry(v)}>{label}</button>
+          ))}
+        </div>
+      </div>
       <Toggle
         on={fpsOn}
         set={setFpsOn}
         label="Frame counter"
         detail="A frames-per-second readout in the top bar. It is an instrument for looking at the renderer, not part of the game, and it is off unless you want it."
       />
+      {!UNREAL_HOST && (<>
+      <div className="page-section" style={{ marginTop: 10 }}>Look</div>
+      <div className="btn-row">
+        <button type="button" className={"btn" + (diorama ? " btn-on" : "")} title="A toy city: bright colours, soft blue shadows, a miniature blur." onClick={() => setDiorama(true)}>Diorama</button>
+        <button type="button" className={"btn" + (!diorama ? " btn-on" : "")} title="The earlier, plainer grade." onClick={() => setDiorama(false)}>Classic</button>
+      </div>
+      </>)}
       {UNREAL_HOST ? <UnrealGraphics /> : (<>
-      <div className="page-section" style={{ marginTop: 10 }}>Graphics</div>
+      <div className="page-section" style={{ marginTop: 10 }} title="Looks only — the city, its numbers and your save are the same at every setting. If the map stutters, step down one.">Graphics</div>
       <div className="btn-row">
         {([
+          ["extreme", "Extreme", "For an RTX 4070 / 5070 Ti class card: everything on Max, drawn at 2x your screen's pixels, 16x texture filtering, sharper reflections, the city drawn further out. Step down to Max if the map stutters."],
+          ["max", "Max", "For a strong graphics card: drawn at 1.5x your screen's pixels and scaled down, the sharpest sun shadows, props drawn twice as far."],
           ["high", "High", "The full picture: sharp shadows, native pixel density, every prop and passer-by."],
           ["medium", "Medium", "Softer shadows, capped pixel density, fewer people and cars; small props drop out sooner as you zoom out."],
           ["low", "Low", "For laptops without a graphics card: no shadows, standard pixel density, a light crowd, small props only up close, no falling rain or snow."],
@@ -321,28 +339,22 @@ export function SettingsPage() {
           <button key={q} type="button" className={"btn" + (graphics === q ? " btn-on" : "")} title={tip} onClick={() => setGraphics(q)}>{label}</button>
         ))}
       </div>
-      <div className="hint">
-        Looks only — the city, its numbers and your save are the same at every setting. If the map stutters, step down one.
-      </div>
       </>)}
-      <div className="hint">
-        Pop-up cards is a preference of this browser and applies to every campaign. The broker and auction
-        switches are decisions of this firm and travel with the save.
+      <div className="page-section" style={{ marginTop: 18 }}
+        title={"Time shortcuts are disabled while a blocking decision card is on screen; answer or dismiss the card first.\n\n"
+          + "Pop-up cards is a preference of this browser and applies to every campaign. The broker and auction switches are decisions of this firm and travel with the save."}>
+        Keyboard
       </div>
-      <div className="page-section" style={{ marginTop: 18 }}>Keyboard</div>
       <div className="grid">
-        <Row k="Space / G" v="Play / pause — the clock runs a month a second and pauses when something needs you" />
-        <Row k="Y" v="Advance up to one year, stopping when a decision arrives" />
-        <Row k="N" v="Skip to the next decision, up to three years" />
-        <Row k="M" v="Map only — hide firm pages, keep the skyline" />
-        <Row k="P" v="Photo frame — hide all chrome for a clean skyline still" />
-        <Row k="Escape" v="Put off the card in front of you (its Not now), else close the open page, else deselect" />
-        <Row k="1 – 9" v="Open a desk: Portfolio, Market, Deals, Capital, City, Firm" />
-        <Row k="⌘K / Ctrl K" v="Search every building, desk and firm" />
-        <Row k="?" v="Every key on one card, from anywhere" />
-      </div>
-      <div className="hint">
-        Time shortcuts are disabled while a blocking decision card is on screen; answer or dismiss the card first.
+        <Row k="Space / G" v="Play / pause" title="Play / pause — the clock runs a month a second and pauses when something needs you" />
+        <Row k="Y" v="Advance a year" title="Advance up to one year, stopping when a decision arrives" />
+        <Row k="N" v="Next decision" title="Skip to the next decision, up to three years" />
+        <Row k="M" v="Map only" title="Map only — hide firm pages, keep the skyline" />
+        <Row k="P" v="Photo frame" title="Photo frame — hide all chrome for a clean skyline still" />
+        <Row k="Escape" v="Not now / close" title="Put off the card in front of you (its Not now), else close the open page, else deselect" />
+        <Row k="1 – 9" v="Open a desk" title="Open a desk: Portfolio, Market, Deals, Capital, City, Firm" />
+        <Row k="⌘K / Ctrl K" v="Search" title="Search every building, desk and firm" />
+        <Row k="?" v="All keys" title="Every key on one card, from anywhere" />
       </div>
     </div>
   );
@@ -355,15 +367,11 @@ export function SavesPage() {
     <div>
       <SaveSlots />
       <div className="page-section" style={{ marginTop: 22 }}>
-        <div className="page-section-head">Testing</div>
-        <div className="hint">
-          Not part of the game. It books nothing and proves nothing — it just puts money on the
-          table so you can try things without playing your way to them first.
-        </div>
+        <div className="page-section-head" title="Not part of the game. It books nothing and proves nothing — it just puts money on the table so you can try things without playing your way to them first.">Testing</div>
         <div className="btn-row" style={{ marginTop: 8 }}>
           {/* a test lever, not the page's primary action */}
           <button className="btn btn-sm" onClick={devGrant}>+ $100M testing capital</button>
-          {game && <span className="hint" style={{ margin: "auto 0" }}>cash today: {usd(game.cash)}</span>}
+          {game && <span className="dim mono" style={{ margin: "auto 0" }}>cash {usd(game.cash)}</span>}
         </div>
       </div>
     </div>
@@ -383,17 +391,13 @@ export function SaveSlots() {
   useEffect(() => { void refreshSlots(); }, [refreshSlots]);
   return (
     <div className="page-section">
-      <div className="page-section-head">Named saves</div>
+      <div className="page-section-head" title="Your live campaign autosaves after changes and Continue opens the newest state. Name a slot when you want a permanent snapshot you can return to without overwriting it.">Named saves</div>
       {thisRun?.setup && (
-        <div className="hint" style={{ marginBottom: 6 }}>
+        <div className="dim" style={{ marginBottom: 6 }}>
           This campaign: {thisRun.setup.sandbox ? <span className="badge badge-warn">SANDBOX</span> : null}{" "}
           {describeSetup(thisRun.setup) || "the standard world"} · seed <span className="mono">{thisRun.citySeed ?? thisRun.seed}</span>
         </div>
       )}
-      <div className="hint">
-        Your live campaign autosaves after changes and Continue opens the newest state. Name a slot when you want
-        a permanent snapshot you can return to without overwriting it.
-      </div>
       <div className="btn-row" style={{ marginTop: 8 }}>
         <input
           className="ask-input mono"
@@ -422,7 +426,7 @@ export function SaveSlots() {
             </div>
           </div>
         ))}
-        {!slots.length && <div className="hint">No named saves yet.</div>}
+        {!slots.length && <div className="dim">None</div>}
         {(() => {
           const doomed = killSlot === null ? undefined : slots.find((s2) => s2.slot === killSlot);
           if (!doomed) return null;
@@ -465,7 +469,7 @@ function UnrealGraphics() {
   const LEVELS = ["Low", "Medium", "High", "Epic", "Cinematic"];
   const Opt = ({ label, hint, children }: { label: string; hint: string; children: React.ReactNode }) => (
     <div style={{ display: "grid", gridTemplateColumns: "150px 1fr", gap: 8, alignItems: "start", margin: "6px 0" }}>
-      <div><div>{label}</div><div className="hint" style={{ margin: 0 }}>{hint}</div></div>
+      <div title={hint}><span className="has-gloss">{label}</span></div>
       <div className="btn-row" style={{ flexWrap: "wrap" }}>{children}</div>
     </div>
   );
@@ -480,19 +484,18 @@ function UnrealGraphics() {
     ["medium", "Medium", "Two-thirds resolution upscaled with DLSS or TSR, full lighting at a lower quality. The best balance on most cards."],
     ["high", "High", "Native resolution, full lighting, shadows and clouds. For strong cards (RTX 3070 and up at 1080p)."],
     ["ultra", "Ultra", "Cinematic lighting, shadows and draw distance. For the strongest cards, and screenshots."],
+    ["max", "Max", "Everything at Cinematic, including textures, effects and post-processing, with walkers drawn twice as far. For RTX 4070 / 5070 Ti class cards and up."],
   ];
   return (
     <>
-      <div className="page-section" style={{ marginTop: 10 }}>Graphics</div>
+      <div className="page-section" style={{ marginTop: 10 }}
+        title={"Measured on an RTX 2080 at 1080p: Low about 68 fps, Medium 63, High 36, Ultra 17. A newer card runs each about twice as fast. Max is not measured yet; it costs more than Ultra.\n\n"
+          + "Looks only: the city, its numbers and your save are the same at every setting."}>Graphics</div>
       <div className="btn-row" style={{ flexWrap: "wrap" }}>
         {PRESETS.map(([q, label, tip]) => (
           <button key={q} type="button" className={"btn" + (preset === q ? " btn-on" : "")} title={tip} onClick={() => setGfx({ ...GFX_PRESETS[q] })}>{label}</button>
         ))}
         {!preset && <span className="hint" style={{ alignSelf: "center" }}>Custom</span>}
-      </div>
-      <div className="hint">
-        Measured on an RTX 2080 at 1080p: Low about 68 fps, Medium 63, High 36, Ultra 17. A newer card runs each about twice as fast.
-        Looks only: the city, its numbers and your save are the same at every setting.
       </div>
       <button type="button" className="btn btn-sm" onClick={() => setOpen(!open)} style={{ margin: "6px 0" }}>{open ? "Hide advanced" : "Advanced settings"}</button>
       {open && (
@@ -525,11 +528,11 @@ function UnrealGraphics() {
             <button type="button" className={chip(gfx.clouds === 2)} onClick={() => set({ clouds: 2 })}>Full, with shadows</button>
           </Opt>
           <Opt label="View distance" hint="How far small things (props, trees) are drawn."><Level k="view" /></Opt>
-          <Opt label="Textures" hint="Texture detail; lower it on a card with little memory."><Level k="textures" max={3} /></Opt>
-          <Opt label="Effects" hint="Rain, snow, haze and material detail."><Level k="effects" max={3} /></Opt>
-          <Opt label="Post-processing" hint="Exposure, bloom and colour grade quality."><Level k="post" max={3} /></Opt>
-          <Opt label="City life" hint="Walkers and moving traffic. Light draws them only near the camera.">
-            {(["Off", "Light", "Full"] as const).map((n, i) => (
+          <Opt label="Textures" hint="Texture detail; lower it on a card with little memory."><Level k="textures" /></Opt>
+          <Opt label="Effects" hint="Rain, snow, haze and material detail."><Level k="effects" /></Opt>
+          <Opt label="Post-processing" hint="Exposure, bloom and colour grade quality."><Level k="post" /></Opt>
+          <Opt label="City life" hint="Walkers and moving traffic. Light draws them only near the camera; Far draws walkers twice as far.">
+            {(["Off", "Light", "Full", "Far"] as const).map((n, i) => (
               <button key={n} type="button" className={chip(gfx.life === i)} onClick={() => set({ life: i })}>{n}</button>
             ))}
           </Opt>

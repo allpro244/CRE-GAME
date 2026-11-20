@@ -74,10 +74,16 @@ const pc = (x) => `${(x * 100).toFixed(0)}%`;
   const qa = E.quote(a, sv, 10_000_000, 700_000, "office", false, undefined, "standard");
   const qb = E.quote(b, sv, 10_000_000, 700_000, "office", false, undefined, "standard");
   const sa = E.underwritingStandards(a), sb = E.underwritingStandards(b);
-  // the looser state underwrites to LESS coverage, so its leg is the larger one
-  const uw = (st) => 1.25 + 0.15 * Math.max(0, -st) - 0.07 * Math.max(0, st);
-  const expDscr = uw(sb) / uw(sa);
-  ok(near(qa.ratePct, qb.ratePct, 0.011) && near(qa.byDscr / qb.byDscr, expDscr, 0.004), `coverage moves on standards (${sb.toFixed(2)} → ${sa.toFixed(2)}): DSCR leg ${(qa.byDscr / qb.byDscr).toFixed(3)}x (expected ${expDscr.toFixed(3)}x), same coupon`);
+  // the looser state underwrites to LESS coverage (debt.ts requiredDscr), so
+  // its coverage leg is the larger one: income over the loan's constant times
+  // the requirement, each at its own coupon. (It asserted "same coupon": since
+  // the coupon is priced at the loan's own size — a smaller loan is cheaper
+  // paper, 2026-11-18 — the two states' coupons differ by ~0.1pp, and the
+  // ratio of the legs is the ratio of requirement x constant, not of the
+  // requirements alone.)
+  const kOf = (q) => sv.termM <= sv.ioM ? q.ratePct / 100 : 12 * E.monthlyPayment(1, q.ratePct, sv.amortYears);
+  const expDscr = (E.requiredDscr(b, sv, "standard") * kOf(qb)) / (E.requiredDscr(a, sv, "standard") * kOf(qa));
+  ok(E.requiredDscr(a, sv, "standard") < E.requiredDscr(b, sv, "standard") && qa.byCover > qb.byCover && near(qa.byCover / qb.byCover, expDscr, 0.004), `coverage moves on standards (${sb.toFixed(2)} → ${sa.toFixed(2)}): coverage leg ${(qa.byCover / qb.byCover).toFixed(3)}x (expected ${expDscr.toFixed(3)}x at coupons ${qa.ratePct}% / ${qb.ratePct}%)`);
   void qm;
   // apartments: a lower debt-yield floor
   const qo = E.quote(mid, h, 4_000_000, 300_000, "office", false, undefined, "standard");

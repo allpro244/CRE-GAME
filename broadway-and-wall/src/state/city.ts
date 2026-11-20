@@ -26,13 +26,27 @@ const SEED_KEY = "bw:seed:";
 // The one island a new run can be cut on. An old save carries its own.
 const DEFAULT_CITY = PROCEDURAL;
 
-/** The island a NEW game's setup opens on: the last one this browser started, else the region (owner, 2026-10-22). */
-export function setupCity(): string {
+/**
+ * THE REGION MAP IS HIDDEN (owner, 2026-10-31: "completely hide the (6km)
+ * region, I just want it to be the island"). A new game is cut on the island;
+ * the region stays in the generator, its saves still load, and a developer
+ * reaches it with `?maps=all` on the URL (tools/playtest.mjs does, for the land
+ * flows that only exist there).
+ */
+export function regionShown(): boolean {
   try {
-    return localStorage.getItem(KEY) ?? REGION;
+    return new URLSearchParams(location.search).get("maps") === "all";
   } catch {
-    return REGION;
+    return false;
   }
+}
+
+/** The island a NEW game's setup opens on: the last one this browser started, else the island — never the region while it is hidden. */
+export function setupCity(): string {
+  let last: string | null = null;
+  try { last = localStorage.getItem(KEY); } catch { /* private mode */ }
+  if (!last || (last === REGION && !regionShown())) return DEFAULT_CITY;
+  return last;
 }
 
 export function currentCity(): string {

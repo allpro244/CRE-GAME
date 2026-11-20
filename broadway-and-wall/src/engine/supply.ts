@@ -114,8 +114,30 @@ export function queueSupplyProject(
     status: "active",
   };
   if (existing) Object.assign(existing, row);
-  else q.push(row);
+  else {
+    q.push(row);
+    // A START: whoever decided it, this is the month its hole is dug. The
+    // town's construction starts are the sum of these (market.ts).
+    // A project known now and breaking ground later (casualty.ts: a
+    // restoration waiting on its adjuster and permit) is counted then.
+    if (startM > s.month) row.awaiting = true;
+    else {
+      const b = (s.econ.brokeMonth ??= emptyByClass(() => 0));
+      for (const k of CLASSES) b[k] += Math.max(0, input.sfByUse[k] ?? 0);
+      row.broke = true;
+    }
+  }
   syncSupplyViews(s.econ);
+}
+
+/** Projects queued ahead of their groundbreak are counted as starts the month it comes (market.ts tickEcon). */
+export function breakDueStarts(s: GameState): void {
+  for (const p of ensureQueue(s.econ)) {
+    if (!p.awaiting || p.startM > s.month || p.status !== "active") continue;
+    const b = (s.econ.brokeMonth ??= emptyByClass(() => 0));
+    for (const k of CLASSES) b[k] += Math.max(0, p.sfByUse[k] ?? 0);
+    delete p.awaiting;
+  }
 }
 
 export function rescheduleSupplyProject(s: GameState, bbl: string, deliverM: number): void {
@@ -134,6 +156,15 @@ export function stallSupplyProject(s: GameState, bbl: string): void {
 }
 
 export function cancelSupplyProject(s: GameState, bbl: string): void {
+  // A START UNWOUND BEFORE THE MONTH IS READ NEVER HAPPENED. dev.ts
+  // breakCityGround queues the start before any firm claims it, and unwinds
+  // it when none can carry it; the square feet stayed in the month's starts,
+  // so a credit crunch that stopped a claim still read as a start.
+  const b = s.econ.brokeMonth;
+  for (const p of ensureQueue(s.econ)) {
+    if (p.bbl !== bbl || !p.broke || !b) continue;
+    for (const k of CLASSES) b[k] = Math.max(0, b[k] - Math.max(0, p.sfByUse[k] ?? 0));
+  }
   s.econ.deliveryQueue = ensureQueue(s.econ).filter((p) => p.bbl !== bbl);
   syncSupplyViews(s.econ);
 }

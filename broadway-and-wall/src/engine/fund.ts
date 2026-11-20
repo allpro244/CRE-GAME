@@ -15,29 +15,37 @@ import type { GameState } from "./types";
 import { cloneState, logBooks, monthLabel, moveFundCash, pnlAdd } from "./types";
 import { markSponsor } from "./sponsor";
 import { money } from "./money";
-import { bandIdx, playerTerms } from "./reputation";
-import { INVESTOR_TYPES, poolLeft, investorPool } from "./investors";
+import { playerTerms } from "./reputation";
+import { poolLeft, investorPool, commitLocal, openSources, raiseLegalCost, payRaiseLegal, SOURCE_LABEL } from "./investors";
+import { ffAvailable, ffNetwork } from "./syndicate";
+// Circular (rivals -> ... -> fund); called only at runtime, after both modules load.
+import { firmEntryPitch } from "./rivals";
 
 /**
  * THE MANAGEMENT FEE (CAPITAL_RAISING_PLAN.md §5.3): 1–1.5% a year of
  * commitments through the investment period, then of the capital still
- * invested. Industry convention; 1.25% here. It is how a fund sponsor
+ * invested. Industry convention; 1.25% here [S: Preqin, real estate funds'
+ * mean management fee 1.31% in 2024 (1.54% for 2022/23 vintages, 2023)].
+ * It is how a fund sponsor
  * survives the J-curve before the promote ever pays — GP income, taxed.
  */
 export const FUND_MGMT_FEE = 0.0125;
-/** The smallest fund the market will close: below it nobody pays for a blind pool's overhead. Today's dollars. */
-export const FUND_MIN_SIZE = 5_000_000;
 
-/** Preferred return — annual, accrued on contributed capital. Industry constant. */
+/**
+ * Preferred return — annual, accrued on contributed capital. [S~: 8% is the
+ * modal hurdle in closed-end private funds (Goodwin, fund-terms survey 2024:
+ * ~80% of PE funds at 8%, but only 29% of real estate funds); real estate
+ * strategies run ~6.5% (debt) to ~8.7% (opportunistic) (AFIRE 2026).]
+ */
 export const FUND_PREF = 0.08;
 
-/** Promote over pref — GP catch-up share of profits. Industry constant. */
+/** Promote over pref — GP catch-up share of profits. [S: 20% is the industry-standard carried interest (Preqin Private Capital Fund Terms Advisor 2017: 6% of funds above it, 12% below; Altus Group, real estate fund structures).] */
 export const FUND_PROMOTE = 0.20;
 
 /** Investment period (months). Shape: typical closed-end CRE. */
 export const FUND_INVEST_M = 60;
 
-/** Fund life (months). Shape: ten-year closed-end. */
+/** Fund life (months). [S~: closed-end real estate funds usually run about ten years (Altus Group, "How are real estate funds structured"); IREI sponsor report 2026 puts wind-down at 5-12 years.] */
 export const FUND_LIFE_M = 120;
 
 /** GP co-invest as share of commitments. Shape: 2–5% practice; mid. */
@@ -67,6 +75,8 @@ export interface PlayerFund {
   pref: number;
   promote: number;
   gpCommit: number;
+  /** The friends-and-family share of LP commitments: tied up in the vehicle until it settles (syndicate.ts ffAvailable). */
+  ffCommit?: number;
   /** Life settled — remaining cash distributed, outcome recorded. */
   settled?: boolean;
   /** True when LPs did not get their capital back. Blocks the next raise. */
@@ -160,31 +170,32 @@ export function fundRaiseQuote(s: GameState): {
   if (s.fund && !s.fund.settled) {
     return { ok: false, size: 0, reason: s.month < s.fund.lifeEndM ? "You already have a live fund." : "Finish winding down the last fund first — its LPs still own buildings in it." };
   }
-  // A BLIND POOL IS BACKED ON A RECORD (§3.4): pensions and endowments take
-  // the meeting from Institutional up. A failed fund is on that record — it
-  // replaced the old "nobody will back you again", which was too blunt: a
-  // sponsor whose fund lost money with everyone else's did raise again.
+  // ONE RULEBOOK (PARITY_PLAN.md): the street takes a fund sponsor's meeting
+  // on the same test it applies to a competitor's raise (rivals.ts
+  // maybeNewFirm) — there is product to buy, and either levered money pencils
+  // or the window belongs to distress capital. No credit-index threshold: the
+  // pitch already reads the coupon against the return.
+  const street = firmEntryPitch(s);
+  if (!(street.product > 0 && street.pitch > 0)) {
+    return { ok: false, size: 0, reason: street.product > 0
+      ? "Nobody is raising real estate funds here right now: the coupon is over what buildings return, and distress money is not yet in. Competitors cannot raise either."
+      : "Nothing has traded here in the last year to put a fund's money into. Competitors cannot raise either." };
+  }
+  // WHO TAKES THE MEETING IS WHO THE BAND OPENS (investors.ts openSources):
+  // friends and family first — the first fund of most emerging managers — then
+  // each investor type the record opens. Size is what they have left to put
+  // to work, the sponsor's own co-invest on top. A failed fund is on the
+  // record (reputation.ts) and the network shrinks by what it lost (settleFund).
   const band = playerTerms(s).band;
-  if (bandIdx(band) < bandIdx("Institutional")) {
-    return { ok: false, size: 0, reason: `Pensions and endowments back a blind pool on a record. They read you as ${band}; a fund needs Institutional — a score of 40 from three good deals worth eight of experience, one of them with outside investors or six of your own, and a place in the street's top 13% by record or by size.` };
-  }
-  // LPs commit when the credit window is open — the denominator effect and
-  // the debt they lever their own commitments with — not when a label says so.
-  const ciFund = s.econ.creditIdx ?? 1;
-  if (ciFund < 0.7) {
-    return { ok: false, size: 0, reason: "Nobody raised a real estate fund in a crunch. Wait for the thaw." };
-  }
-  // SIZE FROM DEMAND, NOT A FORMULA (§5.6): what the investor types the band
-  // opens still have to put to work in this city this year (investors.ts) —
-  // the raise draws it down, so a fund raised in a year the rivals have
-  // already raised in is smaller. A successor fund's sponsor ranks higher on
-  // the record its last fund left, which is how it raises more.
+  const sources = openSources(s, band, ffAvailable(s));
   let open = 0;
-  for (const t of INVESTOR_TYPES) if (bandIdx(band) >= bandIdx(t.band)) open += poolLeft(s, t.id);
-  const size = Math.round(open / 100_000) * 100_000;
-  const floor = FUND_MIN_SIZE * (s.econ.priceLevel ?? 1) * (s.econ.cpi ?? 1);
-  if (size < floor) {
-    return { ok: false, size, reason: `The investors who back funds have ${money(open)} left to put to work here this year — not a fund's worth (${money(floor)}). Next year's money opens in January.` };
+  for (const src of sources) open += src.left;
+  // Rounded down: the LPs cannot commit more than the sources hold.
+  const size = Math.floor(open / (1 - FUND_GP_COINVEST) / 100_000) * 100_000;
+  if (!(size > 0)) {
+    return { ok: false, size: 0, reason: sources.length === 0
+      ? `Nobody backs a blind pool from a sponsor the street reads as ${band}.`
+      : `The investors who would back you (${sources.map((x) => SOURCE_LABEL[x.id].toLowerCase()).join(", ")}) have nothing left to put to work this year. Next year's money opens in January.` };
   }
   const prev = s.fund?.settled && !s.fund.failed ? s.fund : undefined;
   const prevDpi = prev && prev.called > 0 ? prev.distributed / prev.called : 0;
@@ -194,14 +205,15 @@ export function fundRaiseQuote(s: GameState): {
   // the quote used to say yes regardless — the button lit, the raise failed
   // (81–274 times a run for one bot). Say it here, with the number.
   const gpNeed = Math.round(size * FUND_GP_COINVEST);
-  if (s.cash < gpNeed) {
-    return { ok: false, size, reason: `LPs would back a $${(size / 1e6).toFixed(0)}M fund, but the GP co-invest is ${money(gpNeed)} in cash — the line cannot fund a ten-year commitment — and you hold ${money(Math.max(0, s.cash))}.` };
+  const legal = raiseLegalCost(s, size);
+  if (s.cash < gpNeed + legal) {
+    return { ok: false, size, reason: `LPs would back a ${money(size)} fund, but the GP co-invest is ${money(gpNeed)} and fund counsel ${money(legal)}, in cash — the line cannot fund a ten-year commitment — and you hold ${money(Math.max(0, s.cash))}.` };
   }
   return {
     ok: true, size,
     reason: prev
-      ? `Fund ${nth}: your last vehicle returned ${prevDpi.toFixed(2)}x, and a ${monthLabel(s.month)} vintage of $${(size / 1e6).toFixed(0)}M will clear.`
-      : `A ${monthLabel(s.month)} vintage of $${(size / 1e6).toFixed(0)}M will clear.`,
+      ? `Fund ${nth}: your last vehicle returned ${prevDpi.toFixed(2)}x, and a ${monthLabel(s.month)} vintage of ${money(size)} will clear (counsel ${money(legal)}).`
+      : `A ${monthLabel(s.month)} vintage of ${money(size)} will clear (counsel ${money(legal)}).`,
   };
 }
 
@@ -223,7 +235,7 @@ export function raiseFund(s: GameState): { s: GameState; err?: string } {
   // likewise fenced to `fund.cash` in `executePurchase`, for the same reason
   // from the other side.
   if (next.cash < gpCommit) {
-    return { s, err: `GP co-invest is ${money(gpCommit)} and you do not have it.` };
+    return { s, err: `GP co-invest is ${money(gpCommit)}; not enough cash.` };
   }
   // First close: call GP co-invest + ~40% of LP immediately into the vehicle;
   // rest sits uncalled. Shape: 30–50% reserve practice (rivals.ts).
@@ -264,18 +276,30 @@ export function raiseFund(s: GameState): { s: GameState; err?: string } {
     gpCommit,
   };
   next.fundsRaised = (s.fundsRaised ?? (s.fund?.settled ? 1 : 0)) + 1;
-  // The LPs' commitments come out of the year's pool (investors.ts), type by
-  // type in the band's order — the money is not there for anyone else.
+  // Fund counsel (the LPA, the offering memorandum): booked as G&A.
+  payRaiseLegal(next, raiseLegalCost(s, q.size));
+  // The LPs' commitments come from the sources the band opens, in its order:
+  // the network first, then each type's pool. A big sponsor's reach beyond the
+  // city (openSources, scaleMult) is national money; only the city's own share
+  // is drawn from this year's pool.
   {
     const pool = investorPool(next);
     const band = playerTerms(next).band;
     let rest = lpCommit;
-    for (const t of INVESTOR_TYPES) {
-      if (bandIdx(band) < bandIdx(t.band) || rest <= 0) continue;
-      const take = Math.min(rest, poolLeft(next, t.id));
-      pool.used[t.id] = (pool.used[t.id] ?? 0) + take;
+    let ff = 0;
+    for (const src of openSources(next, band, ffAvailable(next))) {
+      if (rest <= 0) break;
+      const take = Math.min(rest, Math.floor(src.left));
+      if (take <= 0) continue;
+      if (src.id === "ff") ff = take;
+      else {
+        const city = Math.min(take, poolLeft(next, src.id));
+        pool.used[src.id] = (pool.used[src.id] ?? 0) + city;
+        if (src.id === "local") commitLocal(next, city);
+      }
       rest -= take;
     }
+    next.fund.ffCommit = ff;
   }
   next.fundPay = true; // new vintage buys from the vehicle by default
   next.news.unshift({
@@ -583,7 +607,7 @@ export function tickFund(s: GameState): void {
     s.news.unshift({
       q: s.month, kind: "warn",
       text: `Your fund's life ends ${monthLabel(f.lifeEndM)} with ${deeds} building${deeds === 1 ? "" : "s"} still in the vehicle. `
-        + `The LPs are paid from sales; what is unsold at the end of any extension you buy in at NAV.`,
+        + `LPs are paid from sales; anything unsold after any extension you buy at NAV.`,
     });
   }
   if (s.month === f.lifeEndM) {
@@ -592,7 +616,7 @@ export function tickFund(s: GameState): void {
       text: `Your fund has reached the end of its life. Remaining vehicle cash is ${money(f.cash)}; `
         + (deeds > 0
           ? `${deeds} building${deeds === 1 ? "" : "s"} still to sell — the LPs grant a ${FUND_EXTENSION_M}-month extension, and anything unsold by ${monthLabel(f.lifeEndM + FUND_EXTENSION_M)} is bought in by you at NAV.`
-          : `LPs expect distributions. A sponsor who cannot finish does not raise the next one.`),
+          : `LPs expect distributions.`),
     });
   }
 
@@ -620,6 +644,15 @@ export function settleFund(s: GameState): void {
   // ON THE RECORD (reputation.ts): a realised fund is investor evidence, and
   // Blue-chip needs one.
   (s.fundHistory ??= []).push({ raisedM: f.raisedM, closedM: s.month, size: f.size, called: f.called, distributed: f.distributed, gpCommit: f.gpCommit });
+  // The friends and family in the fund keep what it made, and most of those
+  // who lost leave (the same rule as syndicate.ts closeSyndication).
+  if (f.ffCommit && f.ffCommit > 0) {
+    const ffShare = f.ffCommit / Math.max(1, f.size - f.gpCommit);
+    const lpCalled = Math.max(0, f.called - f.gpCommit);
+    const net = ffNetwork(s);
+    if (f.distributed >= lpCalled) net.cap += Math.round(ffShare * (f.distributed - lpCalled));
+    else net.cap = Math.max(0, net.cap - Math.round(0.7 * ffShare * lpCalled));
+  }
   if (dpi < 1.0) {
     f.failed = true;
     s.fundFailedM = s.month;
@@ -627,7 +660,7 @@ export function settleFund(s: GameState): void {
     s.news.unshift({
       q: s.month, kind: "warn",
       text: `The fund returned ${money(f.distributed)} against ${money(f.called)} called `
-        + `(${(dpi * 100).toFixed(0)}¢ on the dollar). It goes on your record with every investor, and they will read it for a decade.`,
+        + `(${(dpi * 100).toFixed(0)}¢ on the dollar). Recorded on your investor track record.`,
     });
   } else {
     s.news.unshift({

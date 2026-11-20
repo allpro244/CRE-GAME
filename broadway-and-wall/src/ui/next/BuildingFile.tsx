@@ -32,9 +32,10 @@ import { Figure, Spark, fmtFig } from "./Figure";
 import { NegotiationFooter, NegotiationPanel } from "./Negotiation";
 import { dealView } from "./deal";
 import { MoneyTab, RefiTable, RentRollTab } from "./FileTabs";
-import { SplitTab } from "./SplitTab";
+import { BizLink } from "@/ui/BizSheet";
+import { RentExposure } from "@/ui/panels/IndustriesView";
 
-type FileTab = "overview" | "leasing" | "money" | "build" | "split" | "deal" | "history";
+type FileTab = "overview" | "leasing" | "money" | "build" | "deal" | "history";
 const FROM_PROP: Partial<Record<PropertyTab, FileTab>> = {
   summary: "overview", leasing: "leasing", ops: "leasing", money: "money", build: "build", deal: "deal", history: "history",
 };
@@ -113,9 +114,7 @@ function FileFor({ bbl }: { bbl: string }) {
     ...(h && built ? [{ id: "leasing" as const, label: "Rent roll" }] : []),
     ...(h ? [{ id: "money" as const, label: "Money" }] : []),
     ...(h && !h.groundLeased ? [{ id: "build" as const, label: "Build" }] : []),
-    // any deed you own, downtown or not, can be cut into lots (engine/lotsplit.ts); a farm tract is platted instead
-    ...(h && !parcels[bbl]?.tract ? [{ id: "split" as const, label: "Split" }] : []),
-    { id: "deal", label: h ? "Sell" : "Deal" },
+    { id: "deal", label: h ? "Sell" : "Offer" },
     ...(timeline.length ? [{ id: "history" as const, label: "History" }] : []),
   ];
   const active = tabs.some((t) => t.id === tab) ? tab : "overview";
@@ -133,7 +132,7 @@ function FileFor({ bbl }: { bbl: string }) {
   if (game.workouts?.[bbl]) chips.push({ label: "Workout", tone: "red" });
   return (
     <Drawer
-      width={active === "leasing" || active === "money" || active === "build" || active === "split" || active === "deal" ? "wide" : "std"}
+      width={active === "leasing" || active === "money" || active === "build" || active === "deal" ? "wide" : "std"}
       crumbs={h ? ["Holdings"] : listing ? ["Market"] : undefined}
       title={rec.address || bbl}
       meta={meta}
@@ -150,7 +149,6 @@ function FileFor({ bbl }: { bbl: string }) {
       {active === "leasing" && h && <RentRollTab game={game} parcels={parcels} bbl={bbl} h={h} />}
       {active === "money" && h && <MoneyTab game={game} parcels={parcels} bbl={bbl} h={h} />}
       {active === "build" && <BuildTab game={game} parcels={parcels} bbl={bbl} />}
-      {active === "split" && <SplitTab game={game} parcels={parcels} bbl={bbl} />}
       {/* A PLAT'S LOT: the builders' bids, their offers, and listing the plat to them. The classic
           card lives on the summary tab, which this file does not host, so the new UI had no way to
           list lots at all (tools/playtest.mjs, 2026-10-22). */}
@@ -272,13 +270,14 @@ function Overview({ game, parcels, bbl, h }: { game: GameState; parcels: ParcelT
           </div>
         )}
       </div>
+      {ip.h && ip.h.tenants.length > 0 && <RentExposure holding={ip.h} />}
       {ip.h && ip.h.tenants.length > 0 && (
         <table className="nx-table">
           <thead><tr><th>Tenant</th><th className="num">sf</th><th className="num">$/sf</th><th className="num">vs mkt</th><th className="num">Ends</th></tr></thead>
           <tbody>
             {ip.h.tenants.slice().sort((a, b) => b.sf - a.sf).slice(0, 10).map((t, i) => (
               <tr key={t.name + i}>
-                <td>{t.name}</td>
+                <td><BizLink t={t} /></td>
                 <td className="num mono">{Math.round(t.sf).toLocaleString()}</td>
                 <td className="num mono">{t.rentPsf.toFixed(2)}</td>
                 <td className={"num mono" + (mkt > 0 && t.rentPsf < mkt ? " nx-neg" : " nx-pos")}>{mkt > 0 ? fmtFig(t.rentPsf / mkt - 1, "pct") : "—"}</td>
@@ -400,7 +399,7 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
       const bids = (h.sale.bids ?? []).filter((b) => !b.dropped);
       verbs.push({ label: "Delist", run: () => st.delistSale(bbl) });
       verbs.push({ label: "Reprice", primary: !bids.length, run: () => { st.reprice(bbl, n(h.sale!.ask)); setAmt(null); } });
-      if (bids.length) verbs.push({ label: `Take ${usd(bids[0].price)}`, primary: true, run: () => st.takeBid(bbl, 0) });
+      if (bids.length) verbs.push({ label: `Take ${usd(bids[0].price)}`, primary: true, run: () => st.takeBid(bbl, 0, bids[0].name) });
       return <ActionFooter input={amount(h.sale.ask)} inputAt={verbs.length - (bids.length ? 2 : 1)} verbs={verbs} />;
     }
     verbs.push({ label: "Renovate", run: () => st.renovate(bbl) });
@@ -410,5 +409,5 @@ function FileFooter({ game, parcels, bbl, h, tab, setTab }: {
   }
 
   // ---- buying: the negotiation's one move (Negotiation.tsx)
-  return <NegotiationFooter game={game} parcels={parcels} bbl={bbl} onDeal={() => setTab("deal")} />;
+  return <NegotiationFooter game={game} parcels={parcels} bbl={bbl} onDeal={() => setTab("deal")} onOfferTab={tab === "deal"} />;
 }

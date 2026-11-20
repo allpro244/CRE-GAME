@@ -8,7 +8,7 @@
 // faster): Low 68 fps, Medium 63, High 36, Ultra 17. The render resolution,
 // the lighting quality and the cloud shadows are the big levers.
 
-export type GfxPreset = "low" | "medium" | "high" | "ultra";
+export type GfxPreset = "low" | "medium" | "high" | "ultra" | "max";
 
 export interface GfxOptions {
   /** render resolution, % of the screen, upscaled back to it */
@@ -29,7 +29,7 @@ export interface GfxOptions {
   post: number;
   /** clouds: 1 drawn without their shadows on the city, 2 full */
   clouds: number;
-  /** the street's life: 0 off, 1 light (near the camera), 2 full */
+  /** the street's life: 0 off, 1 light (near the camera), 2 full, 3 walkers drawn twice as far */
   life: number;
   /** frame cap, 0 = none */
   fps: number;
@@ -42,6 +42,8 @@ export const GFX_PRESETS: Record<GfxPreset, GfxOptions> = {
   medium: { res: 67, up: "auto", gi: "lumen", giq: 2, reflections: "lumen", shadow: 2, view: 2, textures: 3, effects: 2, post: 2, clouds: 1, life: 2, fps: 0, vsync: false, blur: false },
   high: { res: 100, up: "auto", gi: "lumen", giq: 3, reflections: "lumen", shadow: 3, view: 3, textures: 3, effects: 3, post: 3, clouds: 2, life: 2, fps: 0, vsync: false, blur: false },
   ultra: { res: 100, up: "auto", gi: "lumen", giq: 4, reflections: "lumen", shadow: 4, view: 4, textures: 3, effects: 3, post: 3, clouds: 2, life: 2, fps: 0, vsync: false, blur: false },
+  // every group at Cinematic, and the far crowd (owner, Oct 2026: an RTX 5070 Ti)
+  max: { res: 100, up: "auto", gi: "lumen", giq: 4, reflections: "lumen", shadow: 4, view: 4, textures: 4, effects: 4, post: 4, clouds: 2, life: 3, fps: 0, vsync: false, blur: false },
 };
 
 /** The option string Unreal reads ("res=67;gi=lumen;..."). */

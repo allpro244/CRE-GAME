@@ -21,6 +21,7 @@
 // low, is one where houses pencil; a cheap-money-dear-rates town is one where
 // they do not. Nobody chose which kind this seed is.
 import type { Econ } from "./types";
+import { constructionRatePct } from "./proforma";
 
 // ---------------------------------------------------------------- the facts [S]
 /** US median household income, 2023 (Census, Income in the United States P60-282: $80,610). wageIdx 1.0 is this. */
@@ -34,12 +35,21 @@ export const INCOME_SIGMA = 0.92;
 export const DTI = 0.28;
 /** Down payment: 10%, about the median for all buyers (NAR Profile of Home Buyers and Sellers 2024: 9% first-time, 23% repeat). */
 export const DOWN = 0.10;
-/** Property tax (~1.0% effective, US median) and homeowner's insurance (~0.5%), a year, as a share of the price. */
-export const TAX_INS = 0.015;
-/** The 30-year mortgage over the loan index — the same 1.7 points the households' block uses (market.ts tickHouseholds). */
+/**
+ * Property tax and homeowner's insurance, a year, as a share of the price.
+ * [S: ATTOM 2024 average effective property-tax rate 0.86% (NAHB, 2024 ACS:
+ * 0.89%); Freddie Mac 2023 average insurance premium $4.90 per $1,000 of home
+ * value, 0.49% — together ~1.4%. Was 0.015 (an assumed 1.0% + 0.5%), lowered
+ * to the sources.]
+ */
+export const TAX_INS = 0.014;
+/**
+ * The 30-year mortgage over the loan index (a ten-year yield) — the same 1.7
+ * points the households' block uses (market.ts tickHouseholds). [S: Freddie Mac
+ * PMMS over the 10-year Treasury averaged 1.72 points 2005-2019, and ~1.7 since
+ * the end of the Great Recession (First American analysis).]
+ */
 export const MORTGAGE_SPREAD = 0.017;
-/** The engine's construction desk: the loan index plus 2.4 points, interest only (proforma.ts CONSTR_SPREAD). */
-const CONSTRUCTION_SPREAD = 0.024;
 /**
  * THE REFERENCE NEW HOUSE, 2024: Census New Residential Sales median sales
  * price of a new single-family house $420,000; median floor area of new
@@ -71,17 +81,13 @@ export const BUILD_M = 7;
 export const SELL_M = 3;
 /** Average household size, 2024 (Census CPS): 2.51. Households = population / this. */
 export const HH_SIZE = 2.51;
-/** New single-family houses sold a year per household: 683,000 sold in 2024 (Census New Residential Sales) over 131.4M households (ACS). */
-export const NEW_HOME_RATE = 683_000 / 131_400_000;
-/** National household growth, a year: about 1.0M a year on 131M households, 2023-24 (Census HVS) = 0.77%. */
-export const HH_GROWTH_NAT = 0.0077;
 /**
- * The share of new-house demand that comes from household GROWTH rather than
- * replacement, move-up and second homes. Net household formation (~1.0M a
- * year) against all housing completions (~1.6M, 2024) puts it near 0.6 — a
- * shape parameter [K] read off those two numbers, not fitted to anything here.
+ * NEW HOUSES' SHARE OF THE HOMES BOUGHT: 683,000 new single-family houses sold
+ * in 2024 (Census New Residential Sales) against 4.06M existing homes (NAR) —
+ * 14.4% of purchases. Applied to the region's own buyers (households.ts:
+ * first-time buyers and owners moving to another home they buy). [S]
  */
-const GROWTH_SHARE = 0.6;
+export const NEW_SHARE = 683_000 / (4_060_000 + 683_000);
 /**
  * HOW SHARPLY A COMMUNITY'S SALES ANSWER ITS PRICE AGAINST THE NEIGHBOURS'.
  * New communities in one town are close substitutes; builder incentives of
@@ -191,14 +197,15 @@ export type HomeQuote = {
  * costs and margin, less the construction interest, then discounted for the
  * months the lot is carried (build + sell) at the construction rate.
  */
-export function homeQuote(e: Pick<Econ, "costIdx" | "indexRate">, lotSf: number, psf: number, far = 0.6, adj = 0): HomeQuote {
+export function homeQuote(e: Pick<Econ, "costIdx" | "indexRate"> & Partial<Pick<Econ, "deskPx">>, lotSf: number, psf: number, far = 0.6, adj = 0): HomeQuote {
   const sf = homeSfFor(lotSf, far);
   const price = Math.round(psf * sf * (1 + adj));
   const vertical = Math.round(VERTICAL_PSF * sf * (e.costIdx ?? 1));
   const overhead = Math.round(NAHB.overhead * price);
   const selling = Math.round((NAHB.commission + NAHB.marketing) * price);
   const margin = Math.round(NAHB.profit * price);
-  const r = (e.indexRate ?? 5.4) / 100 + CONSTRUCTION_SPREAD;
+  // the volume construction desk's live coupon, interest only (proforma.ts constructionRatePct)
+  const r = constructionRatePct(e) / 100;
   // the draws go in evenly, so on average half the vertical is out for the build
   const carry = Math.round((vertical + overhead) * 0.5 * (BUILD_M / 12) * r);
   const pre = price - vertical - overhead - selling - margin - carry;
@@ -216,13 +223,13 @@ export function homeQuote(e: Pick<Econ, "costIdx" | "indexRate">, lotSf: number,
  * no better than the market's). An estimate, not a promise: the board, the
  * cycle and the rates will move it.
  */
-export function forwardHomeEcon(e: Econ, months: number): { psf: number; costIdx: number; indexRate: number } {
+export function forwardHomeEcon(e: Econ, months: number): { psf: number; costIdx: number; indexRate: number; deskPx?: Econ["deskPx"] } {
   const m = Math.max(0, months);
   const infl = Math.pow(1 + ((e as { inflExp?: number }).inflExp ?? e.nat?.inflExp ?? 0.02), m / 12);
   const fund = fundamentalHomePsf(e) * infl;
   const now = e.homes?.psf ?? fundamentalHomePsf(e);
   const psf = fund + (now - fundamentalHomePsf(e)) * Math.pow(1 - 1 / 30, m);
-  return { psf, costIdx: (e.costIdx ?? 1) * infl, indexRate: e.indexRate };
+  return { psf, costIdx: (e.costIdx ?? 1) * infl, indexRate: e.indexRate, deskPx: e.deskPx };
 }
 
 /** A plat's market, as homes.ts writes it each month. */
@@ -304,22 +311,37 @@ export function selloutDiscount(left: number, pace: number): number {
 }
 
 /**
- * HOMES A MONTH, for one builder selling in this town: the households who buy
- * a new house here this month (households x the national new-house rate,
- * scaled by how fast the town is adding households), the share of them who
- * can carry this house at today's rate against the share who could carry the
- * median new house nationally, split among the builders with houses to sell,
- * and answering this builder's price against the going one.
+ * HOMES A MONTH, for one builder selling in this town: THE REGION'S OWN
+ * BUYERS (households stage 2, 2026-10-29). The households that bought a home
+ * over the last year (households.ts `buyers`: renters who could make the down
+ * payment and the payment and chose to own, owners moving to another home),
+ * a month, times new houses' share of purchases (NEW_SHARE), times the share
+ * of those buyers whose pay carries THIS house at today's rate against the
+ * share whose pay carries the standard new house at the going price — split
+ * among the builders with houses to sell, and answering this builder's price
+ * against the going one. It was the households times the national new-house
+ * rate, scaled by the town's growth and by affordability over the nation's
+ * (FORMULA_LEDGER #13): a rate applied to everyone, not buyers who bought.
  *
  * `qualityAdjPrice` is the price with location taken out (price / loc): a
  * buyer pays more for a better street or a shorter drive and is no poorer for
  * it, so affordability is read on the standard house, not the location.
  */
 export function salesPace(e: Econ, qualityAdjPrice: number, adj: number, sellers: number): number {
-  const pop = e.population ?? 0;
-  const g = e.homesG12 ?? HH_GROWTH_NAT;
-  const growth = Math.max(0, Math.min(4, g / HH_GROWTH_NAT));
-  const base = (pop / HH_SIZE) * (NEW_HOME_RATE / 12) * ((1 - GROWTH_SHARE) + GROWTH_SHARE * growth);
-  const afford = affordShare(qualityAdjPrice, mortgageRate(e), medianIncome(e)) / AFFORD_REF;
-  return (base * afford / Math.max(1, sellers)) * Math.pow(1 + adj, -PRICE_ELAST);
+  const b = e.eco?.buyers;
+  if (!b?.length) return 0;
+  const rate = mortgageRate(e);
+  const going = (e.homes?.psf ?? fundamentalHomePsf(e)) * REF_HOME.sf;
+  const need = (price: number) => incomeToBuy(price, rate);
+  const nHere = need(qualityAdjPrice), nGoing = need(going);
+  let all = 0, here = 0, std = 0, first = Infinity;
+  for (const x of b) {
+    all += x.w; first = Math.min(first, x.m);
+    if (x.inc >= nHere) here += x.w;
+    if (x.inc >= nGoing) std += x.w;
+  }
+  // the buyers' window: twelve months, or the months the register has kept them
+  const months = Math.max(1, Math.min(12, (e.eco?.m ?? first) - first + 1));
+  const share = std > 0 ? here / std : here > 0 ? 1 : 0;
+  return ((all / months) * NEW_SHARE * share / Math.max(1, sellers)) * Math.pow(1 + adj, -PRICE_ELAST);
 }

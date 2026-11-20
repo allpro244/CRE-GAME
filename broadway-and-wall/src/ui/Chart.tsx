@@ -319,21 +319,22 @@ export function BarChart({ groups, height = 120, yFmt = fmtNum }: { groups: BarG
 }
 
 /**
- * Where a number sits against its normal range, as a bar with a marker. The
- * fastest way to answer "is this high or low" without reading an axis.
+ * Where a number sits against where it stood, as a bar with a marker at the
+ * earlier reading (a year ago, say). The fastest way to answer "which way is
+ * this moving" without reading an axis. Green when it is below the mark.
  */
-export function Gauge({ value, natural, lo, hi, fmt }: { value: number; natural: number; lo: number; hi: number; fmt: (v: number) => string }) {
+export function Gauge({ value, mark, markLabel, lo, hi, fmt }: { value: number; mark: number; markLabel: string; lo: number; hi: number; fmt: (v: number) => string }) {
   const at = (v: number) => `${Math.max(0, Math.min(100, ((v - lo) / (hi - lo)) * 100)).toFixed(1)}%`;
-  const tight = value < natural;
+  const tight = value < mark;
   return (
     <div className="gauge">
       <div className="gauge-track">
         <div className="gauge-fill" style={{ width: at(value), background: tight ? "linear-gradient(90deg,#4a7d5a,#6ea87c)" : "linear-gradient(90deg,#b58a3a,#b8563a)" }} />
-        <div className="gauge-natural" style={{ left: at(natural) }} title={`natural rate ${fmt(natural)}`} />
+        <div className="gauge-mark" style={{ left: at(mark) }} title={`${markLabel} ${fmt(mark)}`} />
       </div>
       <div className="gauge-legend">
         <span className="mono">{fmt(value)}</span>
-        <span className="dim">natural {fmt(natural)}</span>
+        <span className="dim">{markLabel} {fmt(mark)}</span>
       </div>
     </div>
   );

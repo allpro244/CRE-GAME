@@ -5293,7 +5293,15 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     if (r.cash > reserve && !r.stressMs && !building && !swept && !investing) {
       const closedEnd = r.uncalled !== undefined;
       const idle = r.cash - reserve;
-      const out = Math.round(Math.min(idle, closedEnd && !hoarding ? Infinity : (hoarding ? 0 : Math.max(0, fcfMo)) + idle / (DEPLOY_YR * 12)));
+      // A BUILDER'S PURSE IS ITS EQUITY FOR THE NEXT SCHEME, not idle capital:
+      // a merchant builder or developer holds it until a site pencils, and the
+      // shop closes and returns it when its looks stop finding work (dev.ts
+      // builderDone). Returning it over DEPLOY_YR starved the register —
+      // measured (seed 12007, no player): 121 builder firms founded on
+      // schemes the existing shops could no longer fund, and wound up having
+      // never built.
+      const keepsPurse = !!r.builderProf || paramsOf(r).build >= 0.9;
+      const out = Math.round(Math.min(idle, closedEnd && !hoarding ? Infinity : (hoarding ? 0 : Math.max(0, fcfMo)) + (keepsPurse ? 0 : idle / (DEPLOY_YR * 12))));
       if (out > 0) {
         r.cash -= out;
         r.distributed = (r.distributed ?? 0) + out;
@@ -5770,10 +5778,15 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       //    hat — see marketAssetToRaise for what the old random pick cost. The
       //    parent is short on its OWN obligations now (its buildings carry
       //    their own mortgages), so what it raises is the equity in its book:
-      //    one more building whenever none of its duress listings is still on
-      //    the tape. It was every other month, by calendar.
-      if (r.cash < 0 && r.bbls.length && !s.listings.some((l) => l.sellerId === r.id && l.distress)) {
-        marketAssetToRaise(s, parcels, r, need);
+      //    one more building a month while what its listings on the tape would
+      //    net does not cover what it owes. It was one listing every other
+      //    month, by calendar — measured, a 70-building developer short $0.8M
+      //    on a tax bill sold three lots in twenty months and was wound up
+      //    $3K short (Wexler, seed 12007, month 237).
+      if (r.cash < 0 && r.bbls.length) {
+        let pending = 0;
+        for (const l of s.listings) if (l.sellerId === r.id && l.distress && r.bbls.includes(l.bbl)) pending += Math.max(0, disposalNet(s, r, l.bbl, l.ask));
+        if (pending < need) marketAssetToRaise(s, parcels, r, need - pending);
       }
       // 3. Handing a building back no longer cures anything here: a building
       //    the parent stopped supporting is already its own lender's case (the

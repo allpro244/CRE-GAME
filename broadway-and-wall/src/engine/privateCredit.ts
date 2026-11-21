@@ -339,7 +339,8 @@ export function fundPrivateAsk(
   logBooks(next, "interest", pointsCost);
 
   rival.cash += netToBorrower;
-  if ((rival.stressMs ?? 0) > 0) rival.stressMs = Math.max(0, (rival.stressMs ?? 0) - 2);
+  // The cash lands in the account; whether it cured the arrears is the next
+  // month's payment test (tickRivals), not two months knocked off by assertion.
 
   if (!next.cityLoans) next.cityLoans = {};
   loanBookTouched();

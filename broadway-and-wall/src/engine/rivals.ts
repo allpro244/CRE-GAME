@@ -62,7 +62,7 @@ import { LAND_SHARE_TYPICAL } from "./tax";
 const CLASS_NOUN: Record<string, string> = { office: "office", multifamily: "apartments", retail: "retail", industrial: "industrial", land: "a site" };
 import { assembledBlock, reviewThesis, thesisFit, thesisLabel } from "./strategy";
 import { SURNAMES as OWNER_SURNAMES } from "./owners";
-import { deskRoom, deskWithRoom, lineBankOf, loanBookTouched, renewRow, streetLoanCost, addToLine, amortizeRows, drawLine as lineDraw, dropDeed, markPayments, monthlyService, originateRow, payDown, rowOn, rowsOf, saleRelief, settleSale, fileSpreadAdj as fileSpread, syncDebt } from "./rivalDebt";
+import { deskRoom, deskWithRoom, lineBankOf, lineRatePct, loanBookTouched, renewRow, streetLoanCost, addToLine, amortizeRows, drawLine as lineDraw, dropDeed, markPayments, monthlyService, originateRow, payDown, rowOn, rowsOf, saleRelief, settleSale, fileSpreadAdj as fileSpread, syncDebt } from "./rivalDebt";
 import {
   paramsFrom, siteFit, dealsPerYear, misreadPp, drawSheet, profilesForStyle, hash01, GRADE_NUM,
   PROFILE_OF, PROFILES, inv as invTrait, LEVERAGE_RANGE, sheetFromStyle, classTrait, nearestProfile,
@@ -1690,14 +1690,42 @@ export function initRivals(s: GameState, parcels: ParcelTable, bbls: string[]): 
     // its own covenant would breach on the first mark.
     r.sheet!.leverage = Math.max(r.sheet!.leverage, invTrait(Math.min(0.95, f.ltv + 0.06), LEVERAGE_RANGE[0], LEVERAGE_RANGE[1]));
     const builder = paramsOf(r).build >= 0.9;
-    // Builders keep serious dry powder. A land bank without cash cannot break
-    // ground — measured after the first land-bank pass: firms held 7–14 lots
-    // and $1–4M, and still almost never started.
-    const reserveShare = builder
-      ? rrange(s, 0.34, 0.48, "rivals")
-      : rrange(s, 0.06, 0.16, "rivals");
-    r.cash = Math.round(f.equity * reserveShare);
-    let spend = f.equity - r.cash;
+    // THE OPENING BALANCE SHEET HOLDS WHAT A FIRM OF ITS KIND HOLDS
+    // (2026-11-20). This was `equity × rrange(0.06, 0.16)` (0.34-0.48 for
+    // builders) — a die, read off nothing — and no firm on the opening roster
+    // had a commitment it could call, so the stress ladder's capital call did
+    // nothing for an incumbent until it had distributed for years.
+    //
+    // An income firm holds the reserve its obligations call for, by the same
+    // rule it keeps all game (reserveFor): twelve months of the parent's own
+    // uses. On day one there is no line drawn, no recourse paper and no job,
+    // so that is the overhead on the book its equity buys at its target
+    // leverage — the same overhead formula tickRivals charges.
+    //
+    // A closed-end fund (opportunistic, private equity, vulture money) opens
+    // as what the roster says it is, an established sponsor's CURRENT fund,
+    // mid-way through its investment period: part of its commitment is still
+    // uncalled. A fund closes holding back SUCCESSOR_RESERVE of its
+    // commitment (the 30-50% practice [S]) and its sponsor raises the next one
+    // when dry powder falls under SUCCESSOR_DRY_SHARE [S: ILPA Principles 3.0
+    // (2019)]; the opening fund is half-way between the two, with half its
+    // investment period left.
+    //
+    // Builders keep the equity for the jobs they open with land for. A land
+    // bank without cash cannot break ground — measured after the first
+    // land-bank pass: firms held 7–14 lots and $1–4M, and still almost never
+    // started. [K] The 0.41 is the midpoint of the band the old draw used and
+    // is not yet derived from the land bank's own build costs.
+    const closedEnd = r.style === "opportunistic" || r.style === "pe" || r.style === "vulture";
+    if (closedEnd && !builder) {
+      r.uncalled = Math.round(f.equity * (SUCCESSOR_DRY_SHARE + SUCCESSOR_RESERVE) / 2);
+      r.fundSize = f.equity;
+      r.fundM = -Math.round(FUND_INVEST_M / 2);
+    }
+    const deployable = f.equity - (r.uncalled ?? 0);
+    const bookEst = deployable / Math.max(0.05, 1 - f.ltv);
+    r.cash = Math.round(builder ? deployable * 0.41 : Math.min(deployable, 60_000 * s.econ.costIdx + 0.0028 * bookEst));
+    let spend = deployable - r.cash;
 
     // LAND BANK FIRST for shops that build — a few sites, not the whole fund.
     // Cap lots so dirt does not immobilise the equity needed to verticalize.
@@ -4880,6 +4908,39 @@ function appraiseBooks(s: GameState, parcels: ParcelTable) {
   }
 }
 
+/**
+ * THE RESERVE A FIRM HOLDS AGAINST WHAT IT OWES (see the distribution test in
+ * tickRivals for the sources). Twelve months of the parent's own uses — gross
+ * of its buildings' income, which sits in their SPEs — plus committed equity,
+ * plus the gap on balloons inside 24 months on buildings worth keeping. Used
+ * for the opening balance sheet as well (initRivals), so the cash a firm opens
+ * with and the cash it keeps are one rule.
+ */
+export function reserveFor(
+  s: GameState, r: Rival,
+  o: { overheadMo: number; lineIntMo: number; svcByRow: Record<string, number>; byBbl: Record<string, { v: number; noi: number }>; supported?: Set<string>; noiYr: number; interestMo: number },
+): number {
+  let uses = o.overheadMo + o.lineIntMo;
+  let gaps = 0;
+  const st = paramsOf(r);
+  for (const x of rowsOf(s, r)) {
+    const owe = o.svcByRow[x.bbl] ?? 0;
+    const m = o.byBbl[x.bbl];
+    if (x.klass === "land") uses += owe;
+    else if (o.supported?.has(x.bbl)) uses += Math.max(0, owe - (m?.noi ?? 0) / 12);
+    // THE BALLOON GAP on a building worth more than its loan: what today's
+    // desks would not refinance of it. One with no equity is its lender's.
+    if (m && m.v > x.balance && x.maturityM - s.month <= 24) {
+      const refi = streetRefiProceeds(s, m.v, Math.max(0, m.noi), st.maxLtv).principal;
+      gaps += Math.max(0, x.balance - refi);
+    }
+  }
+  // The year's tax at the rate tickRivals charges, on the same estimate.
+  const depr = (r.basis ?? 0) * 0.7 / 33;
+  const tax = Math.max(0, (o.noiYr - o.interestMo * 12 - depr) * 0.25);
+  return Math.round(12 * uses + tax + gaps + committedEquity(s, r) + contractedEquity(s, r));
+}
+
 export function tickRivals(s: GameState, parcels: ParcelTable) {
   if (!s.rivals?.length) return;
   const ci = Math.max(0.4, Math.min(1.25, s.econ.creditIdx ?? 1));
@@ -5003,14 +5064,38 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // job (fundJobs) and is not charged here a second time.
     const svc = monthlyService(s, r, AMORT_SHARE[r.style]);
     const interest = svc.interest;
-    const amort = svc.amort;
     // Their dry powder sits in the same bank yours does, at the same sweep
     // rate off the same policy rate — one deposit desk for the whole street,
     // so a rate era the player can ride is an era the street rides too.
     const onDeposit = r.cash > 0 ? (r.cash * sweepApy(s.econ)) / 12 : 0;
-    r.cash += Math.round(noiYr / 12 - interest - amort + onDeposit);
-    amortizeRows(s, r, AMORT_SHARE[r.style]);
-
+    // EACH BUILDING IS ITS OWN BORROWER (2026-11-20). A commercial mortgage is
+    // made to a single-purpose entity that owns one building, secured on that
+    // building and non-recourse to the sponsor beyond the standard carve-outs
+    // (the "bad boy" guaranty) — that is what a lender's SPE/separateness
+    // covenants require [S: S&P, "U.S. CMBS Legal and Structured Finance
+    // Criteria" (SPE criteria); the CRE Finance Council's standard loan
+    // documents]. So the month runs building by building: a building pays its
+    // own service out of its own income and sends what is left up to the
+    // parent. One that cannot cover its own service is the parent's choice to
+    // support: it does so when the building is worth more than its loan (the
+    // equity it would lose) and the parent has the money — its cash, or room on
+    // its line. Otherwise that loan alone goes unpaid, the building's income
+    // goes to its lender against the coupon, and that lender works it out
+    // (auction.ts: modify, or file; sim.ts: its own distress sale) — the rest
+    // of the book is not touched.
+    //
+    // This replaced one pooled account: every building's income and every
+    // building's service landed in `r.cash`, a firm-wide arrears clock ran on
+    // the balance, and when it ran out EVERY building went to the lenders,
+    // current loans included. Measured on main (50-year frontier plays, three
+    // seeds): 67-98 firms failed, one run's field fell 56 to 17, and the
+    // survivors took the receivers' tape (one family firm ended with 347
+    // buildings).
+    //
+    // What stays with the parent: its overhead, the line, recourse paper (a
+    // land loan carries a repayment guaranty; chargeSponsorFailure treats it
+    // the same way), its taxes, and the equity it has committed to jobs.
+    const lineIntMo = (r.lineBal ?? 0) > 0 ? (r.lineBal! * lineRatePct(s, r)) / 100 / 12 : 0;
     // THE SAME OVERHEAD THE PLAYER CARRIES. Asset management, accounting,
     // audit, legal, somebody to answer the phone. It is not billable to a
     // building and it never goes away, and the street was not paying it —
@@ -5018,9 +5103,47 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // Identical formula to the player's: a small fixed base plus ~28bps of
     // gross asset value a year, sub-linear because the tenth building is
     // cheaper to run than the first.
-    if (r.bbls.length > 0) {
-      r.cash -= Math.round((60_000 * s.econ.costIdx + 0.0028 * aum) / 12);
+    const overheadMo = r.bbls.length > 0 ? (60_000 * s.econ.costIdx + 0.0028 * aum) / 12 : 0;
+    const amortShare = AMORT_SHARE[r.style];
+    const loanRows = rowsOf(s, r);
+    const financed = new Set(loanRows.map((x) => x.bbl));
+    let parentMo = onDeposit - lineIntMo - overheadMo;
+    for (const b of r.bbls) if (!financed.has(b)) parentMo += (byBbl[b]?.noi ?? 0) / 12;
+    const spePaid = new Set<string>();
+    const missed = new Set<string>();
+    const deficits: { x: (typeof loanRows)[number]; gap: number; eq: number }[] = [];
+    for (const x of loanRows) {
+      const noiMo = (byBbl[x.bbl]?.noi ?? 0) / 12;
+      const owe = svc.byRow[x.bbl] ?? 0;
+      // Recourse paper is the parent's own debt; a building that covers its
+      // own service pays it and sends the rest up.
+      if (x.klass === "land" || noiMo >= owe) { parentMo += noiMo - owe; continue; }
+      deficits.push({ x, gap: owe - noiMo, eq: (byBbl[x.bbl]?.v ?? 0) - x.balance });
     }
+    // The parent covers the buildings it has most to lose in first.
+    deficits.sort((a, b) => b.eq - a.eq);
+    let room: number | undefined;
+    for (const d of deficits) {
+      // Reinstating a loan already behind pays what is owed on it, too.
+      const cure = d.gap + (d.x.arrearsAmt ?? 0);
+      if (d.eq > 0) {
+        const have = r.cash + parentMo;
+        if (have < cure && room === undefined) room = Math.max(0, lineRoom(s, r, aum, noiYr, landV));
+        const fromLine = Math.max(0, cure - Math.max(0, have));
+        if (fromLine <= (room ?? 0)) {
+          parentMo -= cure;
+          if (room !== undefined) room -= fromLine;
+          spePaid.add(d.x.bbl);
+          continue;
+        }
+      }
+      missed.add(d.x.bbl);
+    }
+    r.cash += Math.round(parentMo);
+    amortizeRows(s, r, amortShare, missed);
+    // The month's free cash flow at the parent, before tax and the balloons:
+    // what the distribution test below may pay out.
+    const fcfMo = parentMo;
 
     // AND THE SAME TAX. Once a year, on income after interest and
     // depreciation, at the rate the player pays. Depreciation is estimated off
@@ -5093,63 +5216,67 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
 
     // DISTRIBUTIONS. Every firm here answers to somebody — partners, a family,
     // a pension board — and none of them let a hundred years of free cash flow
-    // sit in a bank account. A shop holds a working reserve and sends the rest
-    // out the door, and that is why dry powder is a real constraint on a real
-    // firm rather than an ever-growing number. Without it these balance sheets
-    // compounded into tens of billions of idle cash, which made every firm
-    // unkillable and every bidding war a foregone conclusion.
-    // A DEVELOPER HOLDS POWDER, because a developer's product is a hole in the
-    // ground that eats money for three years. Distributing down to a core
-    // fund's working reserve is how a builder ends up unable to break ground
-    // on anything — which is exactly what the street was doing.
-    // Powder is held for the next job or two, not as a share of a book that
-    // compounds forever — an unbounded ratio on a billion-dollar balance sheet
-    // is a war chest nobody can outbid, which is not dry powder, it is a bug.
-    // A CONTRARIAN KEEPS ITS POWDER DRY WHEN MONEY IS EASY (Cycle under 40):
-    // it distributes less in a boom so it is the cheque in the room when the
-    // window shuts — up to three times the ordinary reserve at Cycle 0.
-    const contrarianHold = r.sheet && r.sheet.cycle < 40 && (s.econ.creditIdx ?? 1) >= 0.95
-      ? 1 + (40 - r.sheet.cycle) / 20 : 1;
-    const reserve = contrarianHold * Math.min(
-      // The ceiling on dry powder is a real amount, carried at inflation.
-      (r.style === "developer" ? 45_000_000 : 30_000_000) * (s.econ.cpi ?? 1),
-      Math.max(2_000_000 * dollarLevel(s.econ), aum * (
-        r.style === "developer" ? 0.16 : r.style === "family" ? 0.09 : r.style === "core" ? 0.06 : 0.045)),
-    );
+    // sit in a bank account. A shop holds a reserve against what it owes and
+    // sends its free cash flow out the door.
+    //
+    // THE RESERVE IS THE FIRM'S OWN OBLIGATIONS (2026-11-20), not a share of
+    // its book: twelve months of what the parent must pay whatever its
+    // buildings earn — overhead, the line's interest, recourse service, the
+    // shortfalls it is carrying on buildings it supports, the tax on the
+    // year's income — plus the equity it has committed to jobs and closings,
+    // plus the gap on every mortgage of a building worth keeping that matures
+    // inside two years and would not refinance in full at today's sizing.
+    // Twelve months of uses is the horizon a liquidity assessment reads
+    // [S: S&P Global Ratings, "Methodology And Assumptions: Liquidity
+    // Descriptors For Global Corporate Issuers" (2019): sources over uses for
+    // the next 12 months], gross of the buildings' income because each sits in
+    // its own SPE and its lender can trap that cash (the cash-management
+    // springing on a DSCR trigger, standard in CMBS loan documents). The
+    // balloon horizon is the 24 months a REIT's liquidity is measured against
+    // [S: Moody's, "REITs and Other Commercial Real Estate Firms" methodology
+    // (2022), the liquidity coverage of 2-year debt maturities].
+    //
+    // It replaced a share of the book read out of a table (4.5-16% of AUM by
+    // style, floored at $2M and capped at $30-45M), which read none of this.
+    const reserve = reserveFor(s, r, {
+      overheadMo, lineIntMo, svcByRow: svc.byRow, byBbl, supported: spePaid, noiYr, interestMo: interest,
+    });
     const building = (s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned);
     // EXTENDED PAPER IS SWEPT PAPER, and it is swept here. The player's own
     // forbearance sets `loan.sweep = true` and the phrase in that news line is
     // the same phrase: a desk that re-papers a maturity it was not repaid takes
     // the cash flow with it, and the borrower stops paying his partners until
-    // the file is closed. Without it an extension was time for nothing — the
-    // firm went on distributing 35% of its surplus every month it was in
-    // forbearance, which is not something a workout desk has ever allowed.
+    // the file is closed.
     const swept = sweptNow(r);
     // A FUND IN ITS INVESTMENT PERIOD RECYCLES; IT DOES NOT HAND THE MONEY
     // BACK. Same LPA the player's own vehicle runs on (fund.ts,
     // FUND_INVEST_M and scheduledDistribution): capital called for deals
-    // stays in the vehicle until the investment period closes. This used to
-    // send 35% of a new fund's called capital above the $2M floor back to its
-    // LPs every month from the month it closed — the first close was gone
-    // before the fund had seen a listing, and because a distribution counted
-    // as "deployed", the empty-book clock below wound it up two years later.
-    // Measured, 6 seeds x 100 years: 72 of the 106 entrants wound up as husks
-    // had never held a deed, and 105 of the 106 had "distributed". Only
-    // vehicles raised on this street carry `uncalled`; the opening roster are
-    // established operators whose current fund is already mid-life.
+    // stays in the vehicle until the investment period closes.
     const investing = r.uncalled !== undefined && s.month - (r.fundM ?? r.bornM ?? 0) < FUND_INVEST_M;
+    // A CONTRARIAN KEEPS ITS POWDER DRY WHEN MONEY IS EASY (Cycle under 40):
+    // it retains its cash flow in a boom so it is the cheque in the room when
+    // the window shuts (strategy.ts). Its plan, not a multiple on a reserve.
+    const hoarding = !!r.sheet && r.sheet.cycle < 40 && (s.econ.creditIdx ?? 1) >= 0.95;
     if (r.distRecent) r.distRecent = Math.round(r.distRecent * Math.exp(-1 / 24));
-    // A TENTH OF THE SURPLUS A MONTH, about 70% of it a year (2026-10-14).
-    // This paid 35% a month — 99% of everything above the reserve inside a
-    // year — so a small firm could never accumulate the next equity cheque
-    // and the lower half of the street shrank 2-6% a year in real terms
-    // while the incumbents compounded. Operating partnerships and REITs pay
-    // out most, not all, of their free cash and keep the rest to grow.
-    if (r.cash > reserve && !r.stressMs && !building && !swept && !investing) {
-      const out = Math.round((r.cash - reserve) * 0.10);
-      r.cash -= out;
-      r.distributed = (r.distributed ?? 0) + out;
-      r.distRecent = (r.distRecent ?? 0) + out;
+    // WHAT GOES OUT IS THE FREE CASH FLOW, not a slice of the balance. An
+    // operating partnership or a REIT distributes what its properties earn
+    // after the parent's own obligations (a REIT must pay out 90% of taxable
+    // income, IRC §857(a); free cash flow is taxable income plus the
+    // depreciation shield, so paying the free cash flow meets it), and keeps
+    // its capital — what it raised, what its sales realised — to redeploy.
+    // A closed-end fund past its investment period may not recycle: what it
+    // realises above its reserve goes back to the partners [S: ILPA
+    // Principles 3.0 (2019); standard closed-end real estate LPA terms]. This
+    // replaced 10% a month of everything above the old reserve, a rate turned
+    // until the lower half of the street stopped shrinking.
+    if (r.cash > reserve && !r.stressMs && !building && !swept && !investing && !hoarding) {
+      const closedEnd = r.uncalled !== undefined;
+      const out = Math.round(Math.min(r.cash - reserve, closedEnd ? Infinity : Math.max(0, fcfMo)));
+      if (out > 0) {
+        r.cash -= out;
+        r.distributed = (r.distributed ?? 0) + out;
+        r.distRecent = (r.distRecent ?? 0) + out;
+      }
     }
 
     // --- the overreach ---------------------------------------------------
@@ -5534,11 +5661,42 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       const draw = Math.min(Math.max(0, room), Math.round(-r.cash + aum * 0.004));
       if (draw > 0) drawLine(s, r, draw);
     }
-    // WHICH LOANS WENT UNPAID (rivalDebt.markPayments): what the account is
-    // short after the line falls on the buildings that carry themselves least.
+    // WHICH LOANS WENT UNPAID (rivalDebt.markPayments): the buildings the
+    // parent did not support (above), and — when the parent itself is short
+    // after its line — its own recourse paper, worst-covered first, until the
+    // unpaid service covers the shortfall.
     r.yrStressMax = Math.max(r.yrStressMax ?? 0, r.stressMs ?? 0);
-    markPayments(s, r, Math.max(0, -r.cash), svc.byRow,
-      (b) => byBbl[b]?.noi ?? 0, (b) => extendedTo(r, b) !== undefined);
+    if (r.cash < 0) {
+      let left = -r.cash;
+      for (const x of rowsOf(s, r).filter((x) => x.klass === "land" && !missed.has(x.bbl))) {
+        if (left <= 0) break;
+        missed.add(x.bbl);
+        left -= svc.byRow[x.bbl] ?? 0;
+      }
+    }
+    markPayments(s, r, missed, svc.byRow,
+      (b) => byBbl[b]?.noi ?? 0, (b) => extendedTo(r, b) !== undefined,
+      (b) => {
+        const x = rowOn(s, r, b);
+        const owe = svc.byRow[b] ?? 0;
+        const principal = x ? (x.balance * amortShare) / (30 * 12) : 0;
+        return owe - principal - (byBbl[b]?.noi ?? 0) / 12;
+      },
+      Math.max(0, -r.cash));
+    // A BUILDING WITH EQUITY IN IT IS SOLD, NOT LOST. A sponsor that cannot
+    // carry a building worth more than its loan sells it before its lender
+    // forecloses — at a foreclosure the surplus is his, but a courthouse sale
+    // as-is rarely leaves one, and a marketed sale does (the sale holdover is
+    // the commonest workout there is; see tickMaturities rung 5). One worth
+    // less than its loan is left to its lender: that is what non-recourse buys.
+    for (const b of missed) {
+      if (!r.bbls.includes(b) || s.holdings[b] || s.listings.some((l) => l.bbl === b)) continue;
+      const rec = resolveRec(parcels, s, b);
+      if (!rec || rec.class === "land") continue;
+      if (disposalNet(s, r, b, forcedSalePrice(s, parcels, rec, b, markAsset(s, r, rec, true).v)) > 0) {
+        listUnderDuress(s, parcels, r, b, rec);
+      }
+    }
     // A NEGATIVE BALANCE AFTER THE LINE IS A MISSED PAYMENT. Not a mark, not a
     // covenant — money that was owed this month and did not go out. That is
     // the only thing that starts a clock in this business.
@@ -5587,24 +5745,21 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         });
       }
       // 2. SELL SOMETHING. The one that covers the hole, not one drawn out of a
-      //    hat — see marketAssetToRaise for what the old random pick cost.
-      if (r.cash < 0 && r.stressMs % 2 === 0 && r.bbls.length) {
+      //    hat — see marketAssetToRaise for what the old random pick cost. The
+      //    parent is short on its OWN obligations now (its buildings carry
+      //    their own mortgages), so what it raises is the equity in its book:
+      //    one more building whenever none of its duress listings is still on
+      //    the tape. It was every other month, by calendar.
+      if (r.cash < 0 && r.bbls.length && !s.listings.some((l) => l.sellerId === r.id && l.distress)) {
         marketAssetToRaise(s, parcels, r, need);
       }
-      // 3. HAND ONE BACK once the desks have filed. This is the move that stops
-      //    the spiral: a forced sale at seventy-eight cents retires debt at par
-      //    against a book marked at a hundred, so every one of them RAISED
-      //    leverage and cut the income that was servicing it — the firm could
-      //    only ever accelerate. Giving the keys back removes the asset AND the
-      //    loan AND the interest on it in one move, and on non-recourse paper
-      //    the shortfall stops being the borrower's problem at the door.
-      //    Each note in default is its own lender's case, so after notice one
-      //    goes every quarter, not just twice (2026-10-14).
-      if (r.stressMs >= NOTICE_M && (r.stressMs - NOTICE_M) % 3 === 0 && r.bbls.length) {
-        deedInLieu(s, parcels, r, `They have missed ${r.stressMs} months of debt service and could not cure.`);
-      }
-      // 4. AND WHEN THE CALENDAR RUNS OUT, the desks stop taking assets one at
-      //    a time and take the relationship. Same clock as the player's.
+      // 3. Handing a building back no longer cures anything here: a building
+      //    the parent stopped supporting is already its own lender's case (the
+      //    SPE block above), and the parent's own debts — the line, recourse
+      //    land paper, overhead — are not released by a deed. The firm-wide
+      //    hand-back every quarter after notice is gone with the pooled account.
+      // 4. AND WHEN THE CALENDAR RUNS OUT, the parent's creditors take the
+      //    estate. Same clock as the player's: NOTICE_M to cure, FORECLOSE_M.
       if (r.stressMs > NOTICE_M + FORECLOSE_M) {
         r.failedM = s.month;
         r.endReason = "failed";

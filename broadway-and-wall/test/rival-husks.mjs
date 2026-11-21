@@ -52,7 +52,11 @@ console.log("\nRIVAL HUSKS — an empty book is paid off and wound up, not carri
   const c1 = E.advanceMonth(ctl, parcels, bbls, adjacency).rivals.find((x) => x.id === id);
   g = E.advanceMonth(g, parcels, bbls, adjacency);
   const r1 = g.rivals.find((x) => x.id === id);
-  check(r1.debt === 0, `the $48k crumb is called and repaid (debt now $${r1.debt.toLocaleString()})`);
+  // The LINE is what was called. The firm's total debt is not the test: with a
+  // reserve sized from its own obligations (rivals.ts reserveFor) a firm with
+  // $2M in the bank and nothing to service is not on a reserve floor, and may
+  // buy a mortgaged building the same month.
+  check((r1.lineBal ?? 0) === 0, `the $48k crumb is called and repaid (line now $${(r1.lineBal ?? 0).toLocaleString()})`);
   check(c1.cash - r1.cash > 40_000, `out of the account ($${(r1.cash / 1e6).toFixed(3)}M left, $${Math.round((c1.cash - r1.cash) / 1000)}K under the debt-free control)`);
   check((r1.emptyMs ?? 0) >= 1, `and the wind-up clock has started (emptyMs ${r1.emptyMs ?? 0})`);
 

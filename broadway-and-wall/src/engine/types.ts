@@ -5796,6 +5796,8 @@ export interface CityLoan {
   product?: string;
   /** Consecutive months this loan's payment was not made (rivalDebt.markPayments). */
   arrearsMs?: number;
+  /** Interest the building's income did not cover over those months, owed on the note (rivalDebt.markPayments). */
+  arrearsAmt?: number;
   /**
    * WHO HOLDS THE PAPER WHEN IT IS NO LONGER A DESK'S: "player" when you bought
    * the note, or the id of the firm that did. The borrower still owes it, so the

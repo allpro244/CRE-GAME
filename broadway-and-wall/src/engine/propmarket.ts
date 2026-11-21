@@ -1944,14 +1944,18 @@ function impliedLandLevel(s: GameState, rec: ParcelRecord, price: number): numbe
 
 /**
  * A lot closed (comps.ts recordComp). `w` is its weight as evidence, by the
- * comps desk's own rule (comps.ts landEvidenceWeight): 0 for a compelled sale
- * — a distress sale, or a seller against a deadline (measured with them in:
- * lots sold at 1-13% of appraisal to a builder bidding its thin residual, and
- * the level fell 1.22 -> 0.04 in three years, seed 1) — and less than 1 for a
- * deed never exposed to the market. They used to be dropped here outright
- * (when only land bankers printed, off-market prints at half weight took the
- * level down 87% in 25 years); they now carry the weight the comps desk gives
- * them, so the index and the comps read one tape.
+ * comps desk's own rule (comps.ts landEvidenceWeight): 0 for a distress sale,
+ * less than 1 for a deed never exposed to the market, 1 for a marketed sale —
+ * so the index and the comps desk read one tape at one set of weights.
+ *
+ * Two exclusions this used to make on its own are gone with the split: an
+ * off-market deed was dropped outright (when only land bankers printed, at
+ * half weight they took the level down 87% in 25 years), and so was a seller
+ * against a deadline (a fund's exit, an estate: lots at 1-13% of appraisal
+ * to a thin builder residual took the level 1.22 -> 0.04 in three years,
+ * seed 1). Both measurements were made while this level set the floor under
+ * every lot; it now sets nothing but the opening seed (value.ts readLand), so
+ * the comps desk's rule, which already counts them, is the one rule.
  */
 export function printLandTrade(s: GameState, rec: ParcelRecord, price: number, _buyer: string, w: number): void {
   if (!(w > 0)) return;

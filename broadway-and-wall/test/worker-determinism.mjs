@@ -77,7 +77,6 @@ let tWorker = 0;
   }
 }
 const spanW = await ask({ type: "span", town: 1, s: g0, cap: 12, seen: [] });
-await w.terminate();
 
 // --- CLOSED AHEAD (state/simClient.ts): two workers, months alternating, and a
 // guess thrown away between them. Every even month is closed by a second
@@ -107,6 +106,7 @@ const viaAhead = [];
   }
 }
 await w2.terminate();
+await w.terminate();
 ok(hash(g0) === g0Hash, "posting the state to the worker leaves the page's copy untouched");
 
 // --- the same months on one thread -------------------------------------------

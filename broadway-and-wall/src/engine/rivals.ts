@@ -5269,9 +5269,19 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // Principles 3.0 (2019); standard closed-end real estate LPA terms]. This
     // replaced 10% a month of everything above the old reserve, a rate turned
     // until the lower half of the street stopped shrinking.
-    if (r.cash > reserve && !r.stressMs && !building && !swept && !investing && !hoarding) {
+    //
+    // AND CAPITAL THAT IS NOT PLACED GOES BACK. Permanent capital keeps what
+    // its sales realise to redeploy — but over the horizon a shop takes to
+    // place its product (DEPLOY_YR, the street's own deployment figure), not
+    // forever: the first cut of this rule let a family office sell down to one
+    // building and sit on $700M of cash for decades (seed 12007, year 50),
+    // which no partner, heir or board leaves idle. So the balance above the
+    // reserve is returned straight-line over that horizon if it is not used.
+    // A contrarian in a boom retains its cash flow (above) but not forever.
+    if (r.cash > reserve && !r.stressMs && !building && !swept && !investing) {
       const closedEnd = r.uncalled !== undefined;
-      const out = Math.round(Math.min(r.cash - reserve, closedEnd ? Infinity : Math.max(0, fcfMo)));
+      const idle = r.cash - reserve;
+      const out = Math.round(Math.min(idle, closedEnd && !hoarding ? Infinity : (hoarding ? 0 : Math.max(0, fcfMo)) + idle / (DEPLOY_YR * 12)));
       if (out > 0) {
         r.cash -= out;
         r.distributed = (r.distributed ?? 0) + out;

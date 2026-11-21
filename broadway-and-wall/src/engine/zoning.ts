@@ -212,7 +212,10 @@ function decideVariance(s: GameState, parcels: ParcelTable) {
     if (granted) {
       if (!s.variance) s.variance = {};
       s.variance[app.bbl] = +((s.variance[app.bbl] ?? 0) + app.grant).toFixed(2);
-      s.landAdj[app.bbl] = Math.min(4, (s.landAdj[app.bbl] ?? 1) * 1.22);
+      // (No land multiplier. This multiplied the lot's land by 1.22, capped at
+      // x4, on top of the bigger envelope — which `resolveBase` already hands
+      // the residual and the comps desk prices per foot of: the same grant
+      // counted twice. The residual on the larger envelope is the value.)
       s.news.unshift({
         q: s.month, kind: "deal",
         text: `The board approved the variance at ${rec?.address ?? app.bbl}. `

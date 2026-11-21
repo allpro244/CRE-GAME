@@ -75,7 +75,15 @@ Status: **STILL** = the same item is in the code (new file:line given); **CHANGE
 | value.ts:410-414 | clamp | siteQualityMult [0.82, 1.22] | (dead) | Still no callers. Delete. | — | — | STILL |
 | dev.ts:4331-4335, 5718 | roll | teardownRoll, the old in-kind roll, shareJitter, formerBuildRoll, formerDemoRoll, formerDurationRoll: drawn then discarded | (dead) | Kept to hold the stream. Remove in a stream-breaking commit. | — | — | STILL |
 
-## How land value is set (now)
+## How land value is set (after the "Land:" PR, 2026-11-20)
+
+1. `readLand`: **income** = the builder's residual if the option is ripe and the residual is positive; otherwise the **holder** = the development option (beta now carries the idle-land tax and insurance, `optionBeta(…, tau)`) plus the interim car park's income until exercise, `interim/(r+tau) × (1 − reach)`.
+2. **sales** = the district's recency-weighted median price per foot of zoned envelope (`econ.landComps`, comps.ts, quarterly; half-life 12 months, dropped at 60; distress excluded; off-market at 0.75/0.35) × this lot's envelope, restated by CPI.
+3. **seed** = the old texture (stamp × landIdx × level × envelope × cpi × priceLevel × 0.30), weight `econ.landSeedW` = 3 prints halving yearly from the opening, gone at 60 months.
+4. price = (w_sales·sales + w_seed·seed + 3·income) / (w_sales + w_seed + 3). No floor, no max. `winner` = the largest term.
+5. Removed: the floor (value.ts 1762/1818), softDiscount and its [−25%, 0] clamp, `districtHeat`, the `landAdj` district pull and its [0.25, 4] clamp, `holderCapitulation`, the variance ×1.22. `queueFactor`'s take-up adds the stock wearing out (occupied/55 yr) where demolition runs slower.
+
+## How land value was set (before the "Land:" PR)
 
 1. `landValue(rec, econ)` (value.ts:1858) = `lotArea × landPsfNow`, a memo over `readLand` (value.ts:1675-1855).
 2. `readLand` reads `residualCore`: **builder** = the best scheme's residual (after `queueFactor`, which still returns 0 with no five-year tape, value.ts:1099). **Option** = a real development option (value.ts:578-622; beta from the town's measured `landSigma`). The old "holder" (residual at a certain +25% peak × 0.567) is gone.

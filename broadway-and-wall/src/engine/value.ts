@@ -1388,10 +1388,17 @@ export function devPencils(
    * reads it so, and the lease-up does not move an opening rent.
    */
   leaseUp = true,
+  /**
+   * Where the pro forma stands. "dev" (default): the ninth decile of the
+   * buildable lots, where a city's supply decision is taken. "ordinary": the
+   * class's own mean address (location multiplier 1), the building the class
+   * rent index describes — what the opening's q solve reads (market.ts).
+   */
+  at: "dev" | "ordinary" = "dev",
 ): number {
   const pivot = e.locIdxMeanBy?.[k] ?? e.locIdxMean ?? 0.62;
   const shape = LOC_SPREAD[k] ?? LOC_SPREAD.office;
-  const where = e.locIdxDevP90 ?? e.locIdxMean ?? 0.62;
+  const where = at === "ordinary" ? pivot : e.locIdxDevP90 ?? e.locIdxMean ?? 0.62;
   const locMult = Math.min(shape.max, Math.max(shape.min, Math.pow(where / Math.max(0.01, pivot), shape.exp)));
 
   // Developers chase the trend; the residual does not. developerOptimism
@@ -1448,7 +1455,18 @@ export function devPencils(
   const costPsf = HARD_COST_PSF[k] * constructionTypeMult(k, 3) * e.costIdx * (1 + SOFT_COST) * (1 + CONTINGENCY)
     + lostRent * ownSf / 45_000;
   const yoc = noiPsf * ownSf / 45_000 / Math.max(1, costPsf);
-  const hurdle = developmentHurdle(yoc, (e.capRate?.[k] ?? CAP_BASE[k]) / 100);
+  // AGAINST THE TAX-LOADED EXIT, as the site pro forma (proforma.ts
+  // `fullYieldPct`) and the appraiser read it (2026-11-21). The cap rate is
+  // quoted on NOI after the owner's property tax (propmarket.ts impliedCap),
+  // and this NOI is before it, so a class whose owner pays the tax (flats,
+  // gross; office, full-service, all but the 8% its stops recover) has to
+  // clear the cap PLUS the tax rate. Without it the class pencil read flats
+  // and offices about 1.7-1.8 points of yield richer than any site plan of
+  // the same building, and the opening's q solve priced both classes' rents
+  // that much under what they need. Shops and sheds are triple-net: the
+  // tenants pay the tax.
+  const taxLoad = taxRate(e) * (1 - (k === "multifamily" ? 0 : RECOVERY_RATE[k] ?? 0));
+  const hurdle = developmentHurdle(yoc, (e.capRate?.[k] ?? CAP_BASE[k]) / 100 + taxLoad);
   // THE RESPONSE CURVE WAS CALIBRATED FOR INPUTS THIS FUNCTION NO LONGER HAS.
   //
   // It returned `clamp((yoc / required - 1) * 3.2 + 0.55, 0, 2.2)`, and that

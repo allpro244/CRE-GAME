@@ -206,10 +206,20 @@ export function simulateHistory(econ: Econ, seed: number, longRun: Record<string
   // points of vacancy multiple per point of unemployment. The 1990s sit
   // furthest off it (vacancy left over from the overbuilt eighties), which is
   // a stock story the map supplies from month one.
+  //
+  // NO JITTER AND NO PIN (2026-11-20). Each class's vacancy was this times
+  // d(0.88, 1.12), then pinned to 2-40%: a die beside the output this file
+  // says is never drawn beside it (CLAUDE.md fake six names it). The opening
+  // vacancy is now exactly what the history's unemployment trail leaves. The
+  // pin could not bind with or without the die: vacMultOf lies in 0.65-1.8
+  // and the long-run averages (OPENING_VAC) in 4.5-11.5%, so the opening runs
+  // 2.9% (flats after the longest boom) to 20.7% (office after a depression).
+  // The draw is still taken and discarded so this generator's sequence — the
+  // rent and cap draws below — does not change.
   const vacMult = vacMultOf(uTrail);
   for (const cls of Object.keys(econ.cityVac) as (keyof typeof econ.cityVac)[]) {
-    const jitter = d(0.88, 1.12);
-    econ.cityVac[cls] = Math.max(0.02, Math.min(0.40, (longRun[cls] ?? 0.11) * vacMult * jitter));
+    void d(0.88, 1.12);
+    econ.cityVac[cls] = (longRun[cls] ?? 0.11) * vacMult;
   }
   // Rents follow the vacancy — the same five openings: a long expansion at
   // 0.84x the long-run average vacancy ran rents ~9% over the long-run base, 1982 at 1.5x

@@ -125,91 +125,18 @@ const MID_CYCLE = { cycleDev: 0 } as unknown as Econ;
 // ------------------------------------------------- THE FORTUNES OF A CENTRE
 //
 // A polycentric town starts with three or four centres of roughly equal
-// standing and does not end that way. One becomes THE address and the others
-// become somewhere you used to be able to buy — and which one it was going to
-// be was not knowable at the start, only guessable, and then only by somebody
-// paying attention early. That is the whole texture of holding land in a town
-// that is still deciding what it is.
-//
-// The mechanic is a random walk with a hidden drift, which is the honest shape
-// of this because it has the right INFORMATION structure. Each centre draws a
-// long-run trajectory once, at the start of the campaign, and is never told
-// what it is. Then it walks. Early on the monthly noise is several times the
-// monthly drift, so a centre that is up in year five tells you very little.
-// By year twenty-five the drift has accumulated linearly and the noise only as
-// the square root of time, so the answer is plain to everybody — and being
-// plain to everybody is exactly when it is too late to buy it.
-//
-// The centres are found from the surface itself rather than read off the city
-// config, so this works on any map anybody ever adds without threading
-// anything through: take the local maxima of the generator's own anchor, keep
-// them apart, and those are the town's centres by construction.
-
-/** How many centres a town has. Real towns of this size have three or four. [K: judgement, no source found for the count.] */
-const POLE_MAX = 4;
-/** Two centres closer than this are one centre. [K: judgement, no source found — set by eye on the generator's maps.] */
-const POLE_SPACING_M = 420;
-/** How far a centre's fortune reaches. Matches the generator's own core radii. [K: judgement, no source found — mirrors citygen's core radii, themselves design choices.] */
-const POLE_RADIUS_M = 340;
-/**
- * The hidden long-run trajectory, in demand points per month. Drawn once. Over
- * a fifty-year campaign this compounds to about 10 points — a real, legible
- * difference between neighbourhoods, and the same order as the drift the
- * density feedback produces, so a centre's luck never swamps what the player
- * actually does with it.
- * [K: judgement, no source found — a design choice about when the winner
- * becomes legible, in game demand points.]
- */
-const POLE_DRIFT_SD = 0.016;
-/**
- * The monthly noise, and THE most important number in this mechanic — because
- * it is what decides WHEN the answer becomes knowable, which is the entire
- * design.
- *
- * Drift accumulates linearly in t and noise only as its square root, so the
- * date the signal overtakes the noise is fixed by the ratio of the two:
- * drift*t = noise*sqrt(t) crosses at t = (noise/drift)^2. At the first values
- * I tried — drift 0.019, noise 0.115 — that crossover was month THIRTY-SEVEN,
- * and measured over ten campaigns the leader at year five was already the
- * eventual winner 80% of the time against a 25% chance rate. The answer was
- * being handed over in year three, which is not a judgement, it is a table.
- *
- * At 0.26 the crossover is month 264 — year twenty-two. The first decade is
- * genuinely close to noise, the second is where reading the tape early pays,
- * and by the fourth everybody can see it and the ground is long gone.
- * [K: judgement, no source found — chosen for the crossover month it gives,
- * a design target rather than a measured volatility.]
- */
-const POLE_NOISE_SD = 0.26;
-/** Nothing runs away: a centre's fortune is bounded either side. [K: judgement, no source found — a rail in game demand points.] */
-const POLE_CAP = 16;
-
-/**
- * Find the town's centres, once, from the generator's own demand anchor. Local
- * maxima kept POLE_SPACING_M apart, strongest first.
- */
-function findPoles(s: GameState, model: DemandModel): NonNullable<GameState["poles"]> {
-  const rows = [...model.blocks.values()].sort((a, b) => b.baseD - a.baseD);
-  const out: NonNullable<GameState["poles"]> = [];
-  for (const b of rows) {
-    if (out.length >= POLE_MAX) break;
-    if (out.some((p) => Math.hypot(p.cx - b.cx, p.cy - b.cy) < POLE_SPACING_M)) continue;
-    // A centre is drawn from the CAMPAIGN seed, not the city's, so the same
-    // town plays out differently every time you start over on it.
-    const u1 = hash01(`pole:${s.seed}:${out.length}:a`);
-    const u2 = hash01(`pole:${s.seed}:${out.length}:b`);
-    // Box-Muller, so the drift is normal rather than uniform: most centres do
-    // roughly nothing and the interesting ones are in the tails.
-    const g = Math.sqrt(-2 * Math.log(Math.max(1e-9, u1))) * Math.cos(2 * Math.PI * u2);
-    out.push({
-      cx: b.cx, cy: b.cy, r: POLE_RADIUS_M,
-      drift: +(g * POLE_DRIFT_SD).toFixed(5),
-      level: 0,
-      name: b.id,
-    });
-  }
-  return out;
-}
+// standing and does not end that way. Each centre used to walk on a hidden
+// drift drawn once (sd 0.016 points a month) plus monthly noise (sd 0.26),
+// both chosen for the month the winner became legible (year twenty-two) and
+// bounded at +/-16 points — a design dial, not an economy. That walk was
+// switched off on 2026-11-11 (tickDemand: a centre now rises or falls on what
+// is built, let and hiring around it — the density feedback, employment in
+// place, construction lift and the new lines, which is agglomeration doing
+// the work) and its code, the draws and the cap were deleted on 2026-11-20.
+// `poleLift` still reads an old save's stored levels. Nothing has created
+// `s.poles` in a new game since 2026-11-11 (only the walk did), so the
+// anchor-campus swan (blackswans.ts considerAnchor), which needs two centres,
+// has not fired in a new game since then either; that is a separate fix.
 
 /** One-time bump when a tower tops out — the street feels it before lease-up. */
 export function nudgeBlockDemand(s: GameState, block: string, pts: number) {
@@ -248,28 +175,6 @@ function constructionLift(s: GameState, model: DemandModel, b: BlockGeom): numbe
     add(j.bbl, j.sf, j.startM, j.deliverM);
   }
   return lift;
-}
-
-/** Walk every centre one month. Called from tickDemand before the targets. */
-function tickPoles(s: GameState, model: DemandModel) {
-  if (!s.poles?.length) s.poles = findPoles(s, model);
-  for (let i = 0; i < s.poles.length; i++) {
-    const p = s.poles[i];
-    const u1 = hash01(`pw:${s.seed}:${i}:${s.month}:a`);
-    const u2 = hash01(`pw:${s.seed}:${i}:${s.month}:b`);
-    const g = Math.sqrt(-2 * Math.log(Math.max(1e-9, u1))) * Math.cos(2 * Math.PI * u2);
-    p.level = +clamp(p.level + p.drift + g * POLE_NOISE_SD, -POLE_CAP, POLE_CAP).toFixed(3);
-  }
-  // THE CENTRES COMPETE FOR ONE TOWN'S STANDING (2026-10-13). Walked on their
-  // own, the levels drifted up together — measured, their mean sat at +3 to
-  // +5 points by year 20-50 — so a winning centre lifted the best ground in
-  // town without anybody else's losing it, and the top of the demand scale
-  // inflated with the clock. One centre becoming THE address is exactly
-  // another becoming somewhere you used to be able to buy, so the levels are
-  // re-centred on their mean each month: fortunes move between centres, and
-  // the town's total standing is not theirs to set.
-  const mean = s.poles.reduce((a, p) => a + p.level, 0) / s.poles.length;
-  for (const p of s.poles) p.level = +clamp(p.level - mean, -POLE_CAP, POLE_CAP).toFixed(3);
 }
 
 /** What the town's centres are doing to this particular block, this month. */
@@ -1173,8 +1078,8 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
   // year 22 — "the entire design" by its own account: a design dial, not an
   // economy. A centre now rises or falls on what is built, let and hiring
   // around it (the emergence above), which is agglomeration doing the work.
-  // tickPoles is kept (unused) so an old save's pole levels read as before.
-  void tickPoles;
+  // (Its code was deleted on 2026-11-20; an old save's pole levels still read
+  // through poleLift as before.)
 
   // Blocks you have money in. A district turning is the slowest and most
   // valuable thing in this business and it happens a tenth of a point at a

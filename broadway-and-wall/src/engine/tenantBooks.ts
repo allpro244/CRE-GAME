@@ -24,7 +24,7 @@
  * migration read these books (leasing.ts).
  */
 import type { Credit, Econ, Tenant } from "./types";
-import { FIRM_PROFILE, LENDER_COVER, SF_PER_JOB } from "./market";
+import { FIRM_PROFILE, LENDER_COVER, SF_PER_JOB, appetiteOfWindow, lenderDebtCap } from "./market";
 import { hashNormal } from "./value";
 import { INDUSTRIES, INDUSTRY_IDS, TRADE_TO_INDUSTRY, type IndustryId } from "./industries";
 
@@ -295,11 +295,17 @@ export function tickTenantFin(e: Econ, t: Tenant, rentDueYr: number, creditOpen:
   f.cash += (ebitda - interest - tax) / 12;
   void infl;
   const costsM = (other + rentDueYr + interest) / 12;
-  // Draw on the bank when cash is short and leverage allows; a shut window
-  // means no new money. Repay when flush; pay surplus out to the owners.
-  const cap = Math.min(f.lev * 1.5, 1.5 / (Math.max(0.01, rate) * LENDER_COVER)) * Math.max(0, ebitda);
+  // Draw on the bank when cash is short and leverage allows. Repay when
+  // flush; pay surplus out to the owners. THE WINDOW TIGHTENS THE LINE, IT
+  // DOES NOT SHUT IT (2026-11-20): the draw was multiplied by
+  // clamp((window - 0.5)/0.5, 0, 1), so below 0.5 no tenant could draw a
+  // dollar however strong its books. The line's size now moves with the
+  // lenders' appetite (market.ts lenderDebtCap), so a tenant with headroom
+  // under its own earnings can still draw in a crunch.
+  const app = appetiteOfWindow(creditOpen);
+  const cap = lenderDebtCap(f.lev * 1.5, rate / 1.5, ebitda, app);
   if (f.cash < costsM && f.debt < cap) {
-    const draw = Math.min(cap - f.debt, costsM * 1.5) * Math.max(0, Math.min(1, (creditOpen - 0.5) / 0.5));
+    const draw = Math.min(cap - f.debt, costsM * 1.5);
     f.debt += draw; f.cash += draw;
   } else if (f.cash > CASH_KEEP_M * costsM) {
     // LEAN, AS SMALL BUSINESSES RUN: the median US small business holds about
@@ -314,9 +320,8 @@ export function tickTenantFin(e: Econ, t: Tenant, rentDueYr: number, creditOpen:
   // the recapitalisation every levered small business does. Toward what a
   // lender would write today, over three years, while the window is open.
   {
-    const levNow = Math.min(f.lev, 1 / (Math.max(0.01, rate) * LENDER_COVER));
-    const target = levNow * Math.max(0, ebitda);
-    if (f.debt < target) f.debt += (target - f.debt) / 36 * Math.max(0, Math.min(1, (creditOpen - 0.5) / 0.5));
+    const target = lenderDebtCap(f.lev, rate, ebitda, app);
+    if (f.debt < target) f.debt += (target - f.debt) / 36;
   }
   f.cover = interest > 0 ? ebitda / interest : (ebitda > 0 ? 99 : -1);
   f.liqM = f.cash / Math.max(1e-9, costsM);

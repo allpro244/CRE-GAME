@@ -1773,11 +1773,26 @@ export function stepCredit(s: GameState) {
   // loan officer survey. Calibrated to the endpoints the old table carried,
   // which were measured: a typical recession (national unemployment up 2.5
   // points, local payrolls down 1.5%) lands at ~0.55, the old recession row;
-  // a deep one (6 points, -4%) reaches the 0.4 floor, as recession plus the
-  // deep-national event did. A first cut at 6 per point of unemployment left
-  // the 10th-percentile window at 0.90 — credit crunches had disappeared.
-  // Lender capital (lenders.ts) still drags it as before.
-  const g12 = clamp(payrollGrowth12(e), -0.08, 0.04);
+  // a deep one (6 points, -4%) reaches CREDIT_SHUT, nobody lending, as
+  // recession plus the deep-national event did. A first cut at 6 per point of
+  // unemployment left the 10th-percentile window at 0.90 — credit crunches
+  // had disappeared.
+  //
+  // NO DIE, AND NO RAILS BUT THE ZERO OF LENDING (2026-11-20). The window took
+  // a +/-1.2-point uniform die every month, standing in for nothing the model
+  // lacks (the live window is the desks' own books, lenders.ts), and was
+  // clamped to 0.4..1.25 with its payroll input clamped to -8%..+4%. Measured
+  // on the national block alone (40 histories x 100 years, the pre-history
+  // this equation writes): the window never touched 0.4 or 1.25 (lowest
+  // 0.44, highest 1.21), and the line under it went below 0.4 in 0.09% of
+  // months. The lower bound is now what it always meant: appetite cannot be
+  // negative, so the window cannot go under CREDIT_SHUT —
+  // a definition, from which the window reopens as the payroll and
+  // unemployment signals turn. The ceiling never bound and the payroll clamp
+  // bound in 0.08% of months (a guard); both are gone, and with the die gone
+  // the window's recession path is unchanged (typical trough 0.78, deep 0.66,
+  // reopened by month 36 in both, as before).
+  const g12 = payrollGrowth12(e);
   // ...and the bank's own margin (2026-10-13): lenders fund at the short rate
   // and lend at the long one, so a flat or inverted curve is a thin margin
   // on every new loan and loan officers tighten before the economy turns
@@ -1787,9 +1802,30 @@ export function stepCredit(s: GameState) {
   // A PANIC (blackswans.ts) shuts the window whatever the cycle says: 2008's
   // SLOOS reading arrived months before the payrolls that would justify it.
   const panic = 0.7 * (e.panic?.force ?? 0);
-  const creditTarget = clamp(1.0 + 6 * g12 - 14 * Math.max(0, natUnempRise12(e)) + curve - panic, 0.4, 1.25);
+  const creditTarget = Math.max(CREDIT_SHUT, 1.0 + 6 * g12 - 14 * Math.max(0, natUnempRise12(e)) + curve - panic);
   const creditSpeed = creditTarget < e.creditIdx ? 0.16 : 0.055;   // slams shut, reopens slowly
-  e.creditIdx = clamp(e.creditIdx + creditSpeed * (creditTarget - e.creditIdx) + rrange(s, -0.012, 0.012), 0.4, 1.25);
+  e.creditIdx = e.creditIdx + creditSpeed * (creditTarget - e.creditIdx);
+}
+
+/**
+ * THE CREDIT WINDOW'S SCALE. Every reader of `creditIdx` (terms, spreads,
+ * rivals, the city's munis) reads it on one scale: 1 an ordinary year, and
+ * CREDIT_SHUT the window when no desk is lending at all — the bottom of
+ * 2008-09. Since 2026-10-28 the live window is the desks' capital-weighted
+ * appetite on that scale (lenders.ts tickLenders), and the pre-history's
+ * (stepCredit) is a loan-officer line on the signals the desks would read.
+ * So CREDIT_SHUT is the zero of lending, a definition, not a rail: appetite
+ * cannot be negative. (Measured 2026-11-20: neither window has sat on it in
+ * 40 national histories x 100 years.)
+ */
+export const CREDIT_SHUT = 0.4;
+/** The window for a lending appetite (0 nobody lending, 1 an ordinary year). */
+export function windowOfAppetite(app: number): number {
+  return CREDIT_SHUT + (1 - CREDIT_SHUT) * Math.max(0, app);
+}
+/** ...and the appetite a window stands for: the share of an ordinary year's lending on offer (never below zero). */
+export function appetiteOfWindow(creditIdx: number): number {
+  return Math.max(0, (creditIdx - CREDIT_SHUT) / (1 - CREDIT_SHUT));
 }
 
 /** The committee's calendar, month-of-year 0-indexed: Jan, Mar, Apr, Jun,
@@ -3125,10 +3161,15 @@ export function tickNation(s: GameState) {
     // (Adrian-Estrella-Shin 2019; the SLOOS), so this is that value restored,
     // not a new calibration (national calibration, 2026-11-07: the doubled
     // term alone added 0.36 recessions a decade, 40 seeds x 110 years).
+    // The 0.4..1.25 clamps (2026-11-20): measured on 40 national histories x
+    // 100 years, the window never came near either (0.72 at the 1st
+    // percentile, 1.10 at the top) and its line never went under 0.4. The
+    // lower bound is kept as the zero of lending (CREDIT_SHUT), a
+    // definition; the ceiling and the clamp on the window itself are gone.
     const curveN = 0.04 * (((e.indexRate ?? 5.4) - n.policy) - 1.2);
-    const tgt = clamp(1.0 - 14 * Math.max(0, natUnempRise12(e)) + curveN - 0.7 * (e.panic?.force ?? 0), 0.4, 1.25);
+    const tgt = Math.max(CREDIT_SHUT, 1.0 - 14 * Math.max(0, natUnempRise12(e)) + curveN - 0.7 * (e.panic?.force ?? 0));
     const cn = n.creditNat ?? 1;
-    n.creditNat = clamp(cn + (tgt < cn ? 0.16 : 0.055) * (tgt - cn), 0.4, 1.25);
+    n.creditNat = cn + (tgt < cn ? 0.16 : 0.055) * (tgt - cn);
   }
   const premBase = termPremBase(n.credibility, n.creditNat ?? 1, n.inflExp, n.inflTarget ?? 0.02);
   if (n.termPrem === undefined) n.termPrem = premBase;
@@ -3251,6 +3292,21 @@ export const FIRM_PROFILE: Record<Sector, FirmProfile> = {
  *  "In blockbuster year for M&A, leverage ratios match record high", January
  *  2022) [S~: 3x is the 2019 level, the low end of 3-4x]. */
 export const LENDER_COVER = 3;
+/**
+ * THE MOST A LENDER WILL WRITE A FIRM TODAY: its trade's normal leverage on
+ * its earnings, held to the interest cover lenders underwrite to — with both
+ * terms tightened by the lenders' appetite (`appetiteOfWindow`: 1 an ordinary
+ * year). Tightening is what the Fed's loan-officer survey says it is: lower
+ * maximum size and stricter covenants on every loan, not a door that shuts
+ * (SLOOS, terms on C&I loans). Applied to both terms, the cap moves in
+ * proportion to the appetite [shape stated, not fitted], so a firm far under
+ * its own limit — strong cover, light debt — still borrows in a crunch, and
+ * one at its limit does not.
+ */
+export function lenderDebtCap(lev: number, rate: number, ebitdaYr: number, appetite: number): number {
+  const a = Math.max(0, appetite);
+  return Math.min(lev * a, a / (Math.max(0.01, rate) * LENDER_COVER)) * Math.max(0, ebitdaYr);
+}
 /**
  * A TOWN'S SHARE OF EACH NATIONAL TRADE WANDERS, FOR DECADES (2026-10-15).
  * Every town grew each trade at the nation's own trend, so sixty-year job

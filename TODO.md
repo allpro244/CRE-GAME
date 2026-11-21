@@ -63,6 +63,7 @@ Done: #823 space given back at renewal counts in the office clock; #824 build de
 - [ ] The opening still books shed occupancy about 2% of stock over the street's own count (reported vacancy 4.7% -> 6.2% in month 1; it was 9.1% before the mid-lease fix).
 
 ## Next
+- [ ] **Renewal decision is still a roll** (RANDOMNESS_AUDIT queue 4): `renewalIntent` multiplies the street comparison (`stayOdds`) by asserted factors (service, plant, trade, fit, covenant, tenure) clamped 0.10-0.96 and rolls at the expiry; `fFull`/`fStrain` are computed and never applied. Make it the street's comparison: the firm's stay reservation (`offerForPlayer` sitting, one taste draw) against the landlord's re-let alternative, with the building's service level priced into the firm's worth of the space so ops spending still matters.
 - [ ] Offer system revamp (waiting on owner OK): price plus terms (deposit, due diligence, financing, closing speed), a seller read, back-and-forth as a thread, live numbers.
 - [ ] Bring the new shell's features into Classic where they're worth it:
   - Markets charts

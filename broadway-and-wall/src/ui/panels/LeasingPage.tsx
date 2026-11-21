@@ -405,8 +405,8 @@ function Policy({ rows, go }: { rows: BookRow[]; go: (bbl: string) => void }) {
             </span>
           </Opt>
           <Opt label="Rent floor" title={game.autoRentFloor
-            ? "No leases, renewals or relief below market rent. Click to disable."
-            : "Floor face rent at market: counter up or pass. Slower lease-up."}>
+            ? "No leases, renewals or relief below each building's asking rent at the market stance — letters under it are countered up or passed, so empty space can sit. Click to disable."
+            : "Floor face rent at each building's asking rent at the market stance: counter up or pass. Slower lease-up."}>
             <button type="button" className={"btn btn-sm" + (game.autoRentFloor ? " btn-on" : "")} aria-pressed={!!game.autoRentFloor}
               onClick={() => useStore.getState().autoRentFloor(!game.autoRentFloor)}>{game.autoRentFloor ? "Market" : "Off"}</button>
           </Opt>

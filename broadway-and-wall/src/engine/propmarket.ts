@@ -57,7 +57,8 @@ import {
   livingRivals, paramsOf, fitOf, ownerOf, firmOutlook, deployDiscountPp, contractedEquity, lineRoom, dealCallable,
   minTicket, boughtLastYear, gainsTaxOn, streetSaleCost, spreadAdj, firmMaxPrice, firmMargin, capForSpread, landBanker,
 } from "./rivals";
-import { dealsPerYear, misreadPp } from "./competitorTraits";
+import { dealsPerYear, misreadShare, VALUATION_SD } from "./competitorTraits";
+export { VALUATION_SD };
 import { rowOn, deskWithRoom, withLoanIndex } from "./rivalDebt";
 import { why, whyGet, whyNation } from "./why";
 import { beliefSignals, whyBelief, hearsOfListing } from "./beliefs";
@@ -110,12 +111,17 @@ const LOAN_POINTS = 0.01;
  */
 const GROWTH_DECAY = -Math.log(0.6);
 /**
- * FIRST-PRICE SHADING. A sealed bid lands under the bidder's own number by
- * less the more bidders the broker says are in the room: winning bids in
- * marketed US sales land within a few per cent of the cover bid, and a lone
- * bidder lowballs by about a tenth. A shape parameter, stated as such.
+ * FIRST-PRICE SHADING, FROM THE AUCTION ITSELF. In a sealed first-price sale
+ * with independent private values spread evenly (uniform, standard deviation
+ * VALUATION_SD of value, so a half-width of sqrt(3) x that), the equilibrium
+ * bid is v - (v - v_low) / n (Vickrey 1961; Krishna, Auction Theory, ch. 2):
+ * a bidder at the middle of the spread shades by sqrt(3) x VALUATION_SD / n.
+ * So a lone bidder bids about a tenth under its own number and a room of five
+ * about 2% — which is what marketed sales show (winning bids within a few per
+ * cent of the cover bid). It was 0.10 asserted as "a shape parameter"; the
+ * derivation lands at 0.104 from a sourced dispersion.
  */
-const SHADE = 0.10;
+const SHADE = Math.sqrt(3) * VALUATION_SD;
 /** A bid with nobody else in the room: a private approach to an owner who has not listed. */
 export const loneBid = (max: number) => max * (1 - SHADE);
 
@@ -280,8 +286,8 @@ export interface Bidder {
   id: string; style: RivalStyle;
   /** -1 contrarian .. +1 extrapolator (firmOutlook) */
   lean: number;
-  /** the committee's own error on this building this month, points of yield (Underwriting trait) */
-  misPp: number;
+  /** the committee's own error on this building this month, a share of value (Underwriting trait; misreadShare) */
+  misShare: number;
   /** leasing effort, 1 = market (CARE.lease) */
   lease: number;
   /** the most of the price it will borrow (its own covenant) */
@@ -305,7 +311,7 @@ export function bidderOf(s: GameState, r: Rival, rec: ParcelRecord): Bidder {
   return {
     id: r.id, style: r.style,
     lean: firmOutlook(r),
-    misPp: r.sheet ? misreadPp(r.sheet, `${r.id}:${rec.bbl}:${s.month}`) * local : 0,
+    misShare: r.sheet ? misreadShare(r.sheet, `${r.id}:${rec.bbl}:${s.month}`) * local : 0,
     lease: st.care?.lease ?? 1,
     ltvCap: Math.max(0, Math.min(r.targetLtv ?? st.maxLtv, st.maxLtv)),
     eqPrem,
@@ -367,7 +373,7 @@ export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<ty
   const siteH = e.siteHurdle?.[v.k];
   if (gr > 0 && siteH !== undefined && siteH > 0) gr = Math.min(gr, y0 * (1 - Math.exp(-Math.max(0, -Math.log(siteH)))));
   const g = gBase + gr;
-  const load = v.tau + v.cx + v.prod / 100 + v.locPrem / 100 - b.misPp / 100;
+  const load = v.tau + v.cx + v.prod / 100 + v.locPrem / 100;
   const X = v.stabPre - v.leaseCap;
   // a guard on the denominator, not a price: a required yield under one per
   // cent would be a cost of capital this engine cannot produce
@@ -399,6 +405,9 @@ export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<ty
   const vac = v.vacGap !== undefined && v.toLetY !== undefined ? Math.min(v.vacGap, Math.max(0, v.stabPre - v.noiPre)) : 0;
   V += (v.noiPre - v.stabPre + vac) * dur - vac * (v.toLetY ?? 0) / Math.max(0.25, b.lease);
   V -= v.catchUp;
+  // ...and its committee reads the whole of it a little wrong (misreadShare:
+  // a share of value, sized from measured valuation dispersion)
+  V *= 1 + b.misShare;
   if (b.builds) V = Math.max(V, v.land);
   return { V: Math.max(0, V), r, rE, rd, w, g };
 }

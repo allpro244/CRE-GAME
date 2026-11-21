@@ -570,7 +570,14 @@ export function dropDeed(s: GameState, r: Rival | undefined, bbl: string): numbe
  */
 export function saleRelief(s: GameState, r: Rival, bbl: string, price: number): number {
   const row = rowOn(s, r, bbl)?.balance ?? 0;
-  const afterRow = Math.max(0, price - row);
+  // WHAT IS OVERDUE IS PAID BEFORE THE REVOLVER IS PREPAID (2026-11-21). A
+  // seller behind on its own bills settles them out of the proceeds first; a
+  // revolver paid down is availability restored, not a payment that was due.
+  // This swept the whole net into the line, so a parent short $217K with $3M
+  // of equity in its book (seed 12007, Mulberry Street, month 109) could
+  // raise nothing by selling — marketAssetToRaise refused every sale as
+  // netting zero — and died on the arrears calendar solvent.
+  const afterRow = Math.max(0, price - row - Math.max(0, -r.cash));
   return Math.min(price, row) + Math.min(afterRow, r.lineBal ?? 0);
 }
 

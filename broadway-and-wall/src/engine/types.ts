@@ -4453,23 +4453,16 @@ export interface GameState {
    */
   civicLand?: Record<string, { kind: "park" | "station"; fromM: number }>;
   /**
-   * THE FORTUNES OF THE NEIGHBOURHOODS.
+   * THE TOWN'S CENTRES.
    *
-   * A polycentric town starts with three or four centres of roughly equal
-   * standing and does not end that way. One of them becomes the address and
-   * the others become somewhere you used to be able to buy — and which one it
-   * is was not knowable at the start, only guessable, and then only by
-   * somebody paying attention early.
-   *
-   * `drift` is that centre's hidden long-run trajectory, drawn once at the
-   * start of the campaign and never shown. `level` is where it has actually
-   * got to, which is drift plus everything that has happened since. Early on
-   * the noise is larger than the drift, so a centre that is up in year five
-   * tells you very little; by year twenty-five the drift has accumulated and
-   * the noise has not, and the answer is obvious to everybody — which is far
-   * too late to buy it.
+   * Three or four centres, found once from the map's demand anchor (demand.ts
+   * findPoles): where an anchor employer's campus lands and where its lift is
+   * felt. `level` is in demand points at the centre and is derived, every
+   * month, from the anchors standing on it (blackswans.ts settlePoles).
+   * `drift` is only on saves from before 2026-11-21, when each centre walked
+   * on a hidden seeded drift; nothing reads it.
    */
-  poles?: { cx: number; cy: number; r: number; drift: number; level: number; name: string }[];
+  poles?: { cx: number; cy: number; r: number; drift?: number; level: number; name: string }[];
   // What the lending market remembers about you. A sponsor who hands back keys
   // does not get to walk into the next credit committee unrecognised.
   sponsor: { events: SponsorEvent[] };

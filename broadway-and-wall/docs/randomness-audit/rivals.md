@@ -101,7 +101,8 @@ Status: **STILL** (as before, at the current line), **CHANGED** (the mechanism m
 | rivals.ts:2608, 4885, 5689 (ci clamp 0.4-1.25) | Duplicates the pull clamp; check that it never binds | STILL |
 | `max(1e-6, …)`, `Math.max(1, …)` denominators | Divide-by-zero | STILL |
 | swans.ts LEVEL 0.25-4 | Level sanity | STILL |
-| blackswans.ts credGap clamp, pole level ≤ 16 | Extremes | STILL |
+| blackswans.ts credGap clamp | Extremes | STILL |
+| blackswans.ts pole level clamps ±16 | — | REMOVED 2026-11-21: level derived from live anchors (settlePoles) |
 | lenders.ts init book floor, deposit-rate smoothing | Init / smoothing | STILL |
 | credit.ts reserve floor; rate ≥ 1% | — | STILL |
 | privateCredit.ts:96-114 | Player's own sleeve policy | STILL |

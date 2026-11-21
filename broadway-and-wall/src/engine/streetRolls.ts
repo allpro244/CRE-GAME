@@ -465,8 +465,19 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
     blds.set(bbl, b);
     return b;
   };
-  const letOf = (roll: StreetRoll, k: Comm) => roll.t.reduce((a, t) => a + (useOf(t) === k ? t.sf : 0), 0);
-  const notReady = (roll: StreetRoll, k: Comm) => (roll.ready ?? []).reduce((a, r) => a + (r.use === k && r.readyM > m ? r.sf : 0), 0);
+  // (indexed loops, the same sums in the same order — pure performance; changes no number)
+  const letOf = (roll: StreetRoll, k: Comm) => {
+    const ts = roll.t;
+    let a = 0;
+    for (let i = 0; i < ts.length; i++) { const t = ts[i]; a = a + (useOf(t) === k ? t.sf : 0); }
+    return a;
+  };
+  const notReady = (roll: StreetRoll, k: Comm) => {
+    const rs = roll.ready;
+    let a = 0;
+    if (rs) for (let i = 0; i < rs.length; i++) { const r = rs[i]; a = a + (r.use === k && r.readyM > m ? r.sf : 0); }
+    return a;
+  };
   // whole feet: a leg's area is a float and a lease is not, and 1,999.7 free feet against a 2,000-foot floor is a suite
   const availOf = (b: Bld, roll: StreetRoll, k: Comm) => Math.max(0, Math.round((b.cap[k] ?? 0) - letOf(roll, k) - notReady(roll, k)));
   // each street building's block and its catchment's share of the town's people now
@@ -601,20 +612,84 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
   // month a roll changes only by a lease pushed on, a tenant filtered off
   // (a new array) or a suite put to make-ready (pushed), or a tenant's feet
   // changed at a renewal (which `noteRoll` forgets), never otherwise in place.
-  type AvailMemo = { t: Tenant[]; tl: number; r: StreetRoll["ready"]; rl: number; v: Partial<Record<Comm, number>> };
+  type AvailMemo = { t: Tenant[]; tl: number; r: StreetRoll["ready"]; rl: number; v: Partial<Record<Comm, number>>; dead: boolean };
   const availMemo = new Map<StreetRoll, AvailMemo>();
-  const availIn = (b: Bld, roll: StreetRoll, k: Comm) => {
-    const rl = roll.ready ? roll.ready.length : -1;
+  /** The roll's live memo: the one on file if it still holds, else a fresh one (the old one marked dead). */
+  const memoFor = (roll: StreetRoll, rl: number): AvailMemo => {
     let am = availMemo.get(roll);
     if (!am || am.t !== roll.t || am.tl !== roll.t.length || am.r !== roll.ready || am.rl !== rl) {
-      am = { t: roll.t, tl: roll.t.length, r: roll.ready, rl, v: {} };
+      if (am) am.dead = true;
+      am = { t: roll.t, tl: roll.t.length, r: roll.ready, rl, v: {}, dead: false };
       availMemo.set(roll, am);
     }
+    return am;
+  };
+  const availIn = (b: Bld, roll: StreetRoll, k: Comm) => {
+    const am = memoFor(roll, roll.ready ? roll.ready.length : -1);
     let v = am.v[k];
     if (v === undefined) { v = availOf(b, roll, k); am.v[k] = v; }
     return v;
   };
-  const noteRoll = (roll: StreetRoll) => availMemo.delete(roll);
+  const noteRoll = (roll: StreetRoll) => {
+    const am = availMemo.get(roll);
+    if (am) am.dead = true;
+    availMemo.delete(roll);
+  };
+  // THE STREET'S BUILDINGS WITH A LEG OF EACH KIND, listed once per view —
+  // pure performance; changes no number. A broker's search walked all of
+  // `rollList` for every firm, looking each building up by bbl and reading
+  // its legs out of per-use dictionaries, only to drop the two thirds without
+  // the kind of space it wants. A building's legs (`cap`, `sc`, `mkt`) are
+  // fixed for the month and no roll is added or replaced, so each kind's list
+  // keeps `rollList`'s order, drops only those, and carries the leg's numbers
+  // on one flat record; a lot that did not resolve (`b` null) stays on the
+  // list and is asked again, as before. Its free feet are `availIn`'s, held
+  // on the record against the same memo (`availC`).
+  type StreetCand = {
+    bbl: string; roll: StreetRoll; b: Bld | null;
+    cap: number; sc: number; mkt: number; floor: number; am: AvailMemo | null; av: number;
+  };
+  const fillCand = (c: StreetCand, b: Bld, k: Comm) => {
+    c.b = b; c.cap = b.cap[k]!; c.sc = b.sc[k] ?? 50; c.mkt = b.mkt[k] ?? 0;
+  };
+  const byUse: Partial<Record<Comm, StreetCand[]>> = {};
+  const streetOf = (k: Comm): StreetCand[] => {
+    let list = byUse[k];
+    if (!list) {
+      list = [];
+      for (const [bbl, roll] of rollList) {
+        const b = blds.get(bbl) ?? bld(bbl);
+        if (b && !b.cap[k]) continue;
+        const c: StreetCand = { bbl, roll, b: null, cap: 0, sc: 50, mkt: 0, floor: -1, am: null, av: 0 };
+        if (b) fillCand(c, b, k);
+        list.push(c);
+      }
+      byUse[k] = list;
+    }
+    return list;
+  };
+  /** The candidate's building with a `k` leg, resolving a lot that had none yet; null to skip it. */
+  const candBld = (c: StreetCand, k: Comm): Bld | null => {
+    if (c.b) return c.b;
+    const b = bld(c.bbl);
+    if (!b || !b.cap[k]) return null;
+    fillCand(c, b, k);
+    return b;
+  };
+  /** `minSfOf(b, k)`, held on the candidate. */
+  const candFloor = (c: StreetCand, b: Bld, k: Comm): number => (c.floor >= 0 ? c.floor : (c.floor = minSfOf(b, k)));
+  /** `availIn(b, c.roll, k)`, held on the candidate while the roll's memo holds. */
+  const availC = (c: StreetCand, b: Bld, k: Comm): number => {
+    const roll = c.roll;
+    const rl = roll.ready ? roll.ready.length : -1;
+    const am0 = c.am;
+    if (am0 && !am0.dead && am0.t === roll.t && am0.tl === roll.t.length && am0.r === roll.ready && am0.rl === rl) return c.av;
+    const am = memoFor(roll, rl);
+    let v = am.v[k];
+    if (v === undefined) { v = availOf(b, roll, k); am.v[k] = v; }
+    c.am = am; c.av = v;
+    return v;
+  };
   /**
    * THE BROKER'S SHORTLIST: up to SHORTLIST street buildings with room for
    * the firm, drawn by how close each is to the quality it shops for, how much
@@ -669,17 +744,23 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
       const w = Math.sqrt(p.avail) * Math.exp(-Math.abs(p.sc - q) / FIT_W) * keen * (0.85 + 0.15 * p.letShare);
       if (w > 0) { cands.push({ p, avail: p.avail, w }); tot += w; }
     }
-    for (const [bbl, roll] of rollList) {
+    // (the street's buildings with a `k` leg, `streetOf` — pure performance; changes no number)
+    const onStreet = streetOf(k);
+    const reqFit = want * REQ_FIT[k];
+    for (let i = 0; i < onStreet.length; i++) {
+      const c = onStreet[i];
+      const bbl = c.bbl;
       if (bbl === from) continue;
-      const b = blds.get(bbl) ?? bld(bbl);
-      if (!b || !b.cap[k]) continue;
-      const avail = availIn(b, roll, k);
-      const floor = minSfOf(b, k);
-      if (avail < Math.max(floor, Math.min(want * REQ_FIT[k], avail + 1))) continue;
-      const letShare = 1 - avail / (b.cap[k] ?? 1);
-      const mkt = b.mkt[k] ?? 0;
+      const b = candBld(c, k);
+      if (!b) continue;
+      const roll = c.roll;
+      const avail = availC(c, b, k);
+      const floor = candFloor(c, b, k);
+      if (avail < Math.max(floor, Math.min(reqFit, avail + 1))) continue;
+      const letShare = 1 - avail / c.cap;
+      const mkt = c.mkt;
       const keen = mkt > 0 && KEEN_POW[k] ? Math.min(4, Math.pow(mkt / Math.max(0.01, postedEff(bookOf(b, roll, k), e, k, mkt, false)), KEEN_POW[k])) : 1;
-      const w = Math.sqrt(avail) * Math.exp(-Math.abs((b.sc[k] ?? 50) - q) / FIT_W) * keen * b.care * (0.85 + 0.15 * letShare);
+      const w = Math.sqrt(avail) * Math.exp(-Math.abs(c.sc - q) / FIT_W) * keen * b.care * (0.85 + 0.15 * letShare);
       if (!(w > 0)) continue;
       cands.push({ b, roll, avail, w }); tot += w;
     }
@@ -731,7 +812,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
     out.sort((a, b) => b.joint - a.joint);
     return out;
   };
-  return { R, m, owners, blds, bld, letOf, notReady, availOf, catchOf, foot, ctx, recOf, footRel, vacShare, bookOf, monthsToLet, going, loadOf, typLoad, expOf, gTradeOf, termOf, value, shop, availIn, noteRoll, rollList };
+  return { R, m, owners, blds, bld, letOf, notReady, availOf, catchOf, foot, ctx, recOf, footRel, vacShare, bookOf, monthsToLet, going, loadOf, typLoad, expOf, gTradeOf, termOf, value, shop, availIn, noteRoll, rollList, streetOf, candBld, candFloor, availC };
 }
 /** The street as the player's leasing desk's prospects see it this month (one view a month). */
 const DESK_VIEW = new WeakMap<GameState, { m: number; v: ReturnType<typeof marketView> }>();
@@ -818,27 +899,33 @@ export function stayOdds(s: GameState, parcels: ParcelTable | null | undefined, 
   const move = moveCostPsfYr(e, k, termM, firm);
   const cands: { w: number; v: number; bbl: string }[] = [];
   let tot = 0;
-  for (const [bbl, roll] of V.rollList) {
+  // (the street's buildings with a `k` leg, `streetOf` — pure performance; changes no number)
+  const street = V.streetOf(k);
+  const reqFit = sf * REQ_FIT[k];
+  for (let i = 0; i < street.length; i++) {
+    const c = street[i];
+    const bbl = c.bbl;
     if (bbl === rec.bbl) continue;
-    const b = V.blds.get(bbl) ?? V.bld(bbl);
-    if (!b || !b.cap[k]) continue;
-    const avail = V.availIn(b, roll, k);
-    const floor = minSfOf(b, k);
-    if (avail < Math.max(floor, Math.min(sf * REQ_FIT[k], avail + 1))) continue;
-    const mkt = b.mkt[k] ?? 0;
+    const b = V.candBld(c, k);
+    if (!b) continue;
+    const roll = c.roll;
+    const avail = V.availC(c, b, k);
+    const floor = V.candFloor(c, b, k);
+    if (avail < Math.max(floor, Math.min(reqFit, avail + 1))) continue;
+    const mkt = c.mkt;
     if (!(mkt > 0)) continue;
     // the landlord's post, or — with no book yet — the comps, read and not opened
     const L = roll.ask?.[k];
     const post = L && L.a > 0 ? postedEff(L, e, k, mkt, false) : compsFace(e, mkt, k) * (1 - compsPackage(e, k));
     const keen = KEEN_POW[k] ? Math.min(4, Math.pow(mkt / Math.max(0.01, post), KEEN_POW[k])) : 1;
-    const letShare = 1 - avail / (b.cap[k] ?? 1);
-    const w = Math.sqrt(avail) * Math.exp(-Math.abs((b.sc[k] ?? 50) - q) / FIT_W) * keen * b.care * (0.85 + 0.15 * letShare);
+    const letShare = 1 - avail / c.cap;
+    const w = Math.sqrt(avail) * Math.exp(-Math.abs(c.sc - q) / FIT_W) * keen * b.care * (0.85 + 0.15 * letShare);
     if (!(w > 0)) continue;
     let take = Math.min(sf, avail);
     if (avail - take < floor) take = avail <= sf * 1.4 ? avail : Math.max(floor, avail - floor);
     if (take < floor) continue;
     const pc = placeCost(pts, b.pos, hour);
-    const worth = worthOf(firm, k, mkt, b.sc[k] ?? 50, take, pc.cost, k === "retail" ? V.footRel(bbl) : undefined, rentCapacity(e, firm, k));
+    const worth = worthOf(firm, k, mkt, c.sc, take, pc.cost, k === "retail" ? V.footRel(bbl) : undefined, rentCapacity(e, firm, k));
     cands.push({ w, v: worth + typ - post - V.expOf(k, V.loadOf(b, k), termM) - move, bbl });
     tot += w;
   }

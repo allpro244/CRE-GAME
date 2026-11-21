@@ -20,16 +20,17 @@ tables, with file:line, status, reason and proposed mechanism, are in
 | `leasing.md` | actions, leasing, streetRolls, notes, auction, offmarket, owners, tenantMarket | 61 | 40 rows |
 | `rivals.md` | rivals, sim, blackswans, swans, privateCredit, lenders, debt, credit, portfolio(sale), investors, competitorTraits, workout, sponsor | 31 | 18 rows |
 | `propmarket-economy.md` | propmarket, economy, households, plus draws and main bounds in 15 other files | 33 | (first pass) |
+| `finance-and-rest.md` | proforma, facility, fund, streetLoans, reputation, syndicate, raise, waterfall, rivalDebt, amortize, pricing, space, jv, leasehold, industries, industryData, peers, supply, loanbook, products, buybox, capplan, books, standing, plus every remaining engine file | 22 | (first pass, main at 07ddca62) |
 
 Counts are table rows, and one row can cover several lines. The auditors read
 code; they did not run it. "Binds" means the code's comments or arithmetic
 say so, until `tools/rails.mjs` measures it.
 
-**Not yet covered** (economically important): proforma, facility, fund,
-streetLoans, reputation, supply, industries, industryData, syndicate, raise,
-waterfall, peers, loanbook, jv, leasehold, space, pricing, products, buybox,
-capplan, books, standing. The full list, including plumbing and UI files, is
-at the end of `propmarket-economy.md`.
+**Coverage.** Every `src/engine/*.ts` file is now in at least one table's
+scope. `finance-and-rest.md` covers the finance files and the rest, and lists
+the readout, plumbing and geometry files it read and found to hold no draws and
+no load-bearing economic bounds. tenantBooks.ts's ~37 bounds (leasing.md rated
+only its draws) were not read line by line.
 
 ## Fixed in this PR
 
@@ -118,6 +119,26 @@ a control on main, and say in the commit why the standing numbers moved.
       (`privateCredit.ts` ~342);
     - the 2.50 cap on `devPencils` that the opening solve skips on
       (dense-town flats).
+
+12. **Finance and pro forma fakes** (`finance-and-rest.md`):
+    - the land carry rate is an unsourced 12% under every land residual
+      (`proforma.ts` ~880). It belongs with item 1;
+    - new-build TI and commissions are fixed sheets, and fit-out may be charged
+      twice on an already-effective rent (`proforma.ts` ~1152, 1161);
+    - a private holder's cash is capped at asserted months of CFADS, which
+      times most of the town's mortgage defaults (`ownership.ts` ~433, enforced
+      at `streetLoans.ts` ~358);
+    - the reputation machine is a hand-scored record, a forced grading curve
+      and a scale multiplier, and it sets every firm's outside equity
+      (`reputation.ts` ~61, 426-452, 518, 640);
+    - the lease-up deficit integrates an asserted power curve against an
+      exponential clock (`proforma.ts` ~887);
+    - the ground-floor retail gate (`proforma.ts` ~525, 573);
+    - a fixed rate-cap premium (`amortize.ts` ~65);
+    - the opening mortgage book is backdated at today's coupon
+      (`streetLoans.ts` ~131, `rivalDebt.ts` ~406);
+    - the balloon extension rule (`streetLoans.ts` ~428);
+    - the developer's belief clamps (`proforma.ts` ~776, 803).
 
 ## Keep (EXOGENOUS) — needs sourcing, not removal
 

@@ -77,6 +77,35 @@ let tWorker = 0;
   }
 }
 const spanW = await ask({ type: "span", town: 1, s: g0, cap: 12, seen: [] });
+
+// --- CLOSED AHEAD (state/simClient.ts): two workers, months alternating, and a
+// guess thrown away between them. Every even month is closed by a second
+// worker from the state the first returned; before each odd month the second
+// worker also closes a month from a DIFFERENT state (one dollar more cash —
+// the player acted) whose result is dropped, as the page drops a stale guess.
+// The months that are kept must be the months one thread closes.
+const w2 = new Worker(OUT);
+const waiting2 = new Map();
+w2.on("message", (r) => { const p = waiting2.get(r.id); waiting2.delete(r.id); p(r); });
+w2.on("error", (e) => { console.error("worker 2 error:", e); process.exit(1); });
+const ask2 = (msg) => new Promise((res) => { const id = ++seq; waiting2.set(id, res); w2.postMessage({ ...msg, id }); });
+w2.postMessage({ type: "town", town: { id: 1, parcels, bbls, adjacency } });
+const viaAhead = [];
+{
+  let s = g0;
+  for (let m = 0; m < MONTHS; m++) {
+    if (m % 2 === 1) {
+      const stale = { ...s, cash: s.cash + 1 };
+      const dropped = await ask2({ type: "month", town: 1, s: stale });
+      if (dropped.err) { console.error(dropped.err); process.exit(1); }
+    }
+    const r = await (m % 2 === 0 ? ask2 : ask)({ type: "month", town: 1, s });
+    if (r.err) { console.error(r.err); process.exit(1); }
+    s = r.s;
+    viaAhead.push(hash(s));
+  }
+}
+await w2.terminate();
 await w.terminate();
 ok(hash(g0) === g0Hash, "posting the state to the worker leaves the page's copy untouched");
 
@@ -102,6 +131,10 @@ const firstOff = onPage.findIndex((h, i) => h !== viaWorker[i]);
 ok(firstOff < 0, firstOff < 0
   ? `${MONTHS} months, worker vs one thread: every month byte-identical (final ${onPage.at(-1).slice(0, 16)})`
   : `${MONTHS} months, worker vs one thread: first differs at month ${firstOff + 1}`);
+const firstOffAhead = onPage.findIndex((h, i) => h !== viaAhead[i]);
+ok(firstOffAhead < 0, firstOffAhead < 0
+  ? `${MONTHS} months closed across two workers with a dropped guess between them: every month byte-identical to one thread`
+  : `${MONTHS} months across two workers with a dropped guess: first differs at month ${firstOffAhead + 1}`);
 ok(spanW.span && hash(spanW.span.s) === hash(spanP.s) && spanW.span.months === spanP.months && spanW.span.reason === spanP.reason,
   `a Year span (cap 12), worker vs one thread: same state, ${spanP.months} months, stop "${spanP.reason ?? "none"}"`);
 console.log(`      seed ${SEED}, ${bbls.length} lots · ${(tPage / MONTHS).toFixed(0)} ms/month on one thread, ${(tWorker / MONTHS).toFixed(0)} ms/month round trip through the worker`);

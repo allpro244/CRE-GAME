@@ -2193,12 +2193,6 @@ function mainRoomFor(r: HouseholdRegister, w: number): boolean {
 
 /** Census Survey of Construction 2023: months from start to completion, buildings of 5+ units, about 18 [S~]. */
 const MAIN_BUILD_M = 18;
-/**
- * The most of the stock started in a year: US housing starts peaked near 1.7%
- * of the housing stock (2.07M starts on ~124M units, 2005) and ran ~2.3% in the
- * early 1970s (Census New Residential Construction; ACS / HVS stock) [S~].
- */
-const MAX_STARTS_YR = 0.02;
 /** Renter households that move in a year: ~20% (Census CPS ASEC 2019-2022 one-year mover rate of renters) [S~]. */
 const RENTER_MOVE_YR = 0.20;
 /**
@@ -2444,10 +2438,16 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
   let piped = 0;
   for (const p of mk.pipe) piped += p.n;
   const start = mk.homes0 * Math.pow(pencil / Math.max(1e-6, mk.pencil0), HOUSING_SUPPLY_ELAST) - mk.homes - piped;
-  // ...at the pace the trades can build: no more than MAX_STARTS_YR of the
-  // stock started in a year, however far the margin runs ahead.
-  const pace = (mk.homes + (mk.homesB ?? 0)) * MAX_STARTS_YR / 12;
-  if (start > 0) mk.pipe.push({ m: m + MAIN_BUILD_M, n: Math.min(start / MAIN_BUILD_M, pace) });
+  // The gap is started over a build's length, so each month starts an
+  // eighteenth of what is still owed and the homes already in the ground
+  // count against it. (NO 2%-A-YEAR CEILING, 2026-11-20: starts were held
+  // under MAX_STARTS_YR, the NATION's peak share of its stock started in a
+  // year (Census, 2005 and the early 1970s). A nation's peak is not a
+  // region's limit — growing metros start several times that share in a
+  // boom — and once the curve went through the opening it bound in 13 of
+  // the first 20 years on seed 12007, holding up the doubled-up queue
+  // (118 -> 1,373) and the rent (+49% real) it was meant to answer.)
+  if (start > 0) mk.pipe.push({ m: m + MAIN_BUILD_M, n: start / MAIN_BUILD_M });
 }
 
 /**

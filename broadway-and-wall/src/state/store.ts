@@ -54,7 +54,7 @@ import { siteGeometry, applySplitFeatures } from "@/engine/lotsplitGeom";
 import { acceptLotOffer, declineLotOffer, listLotsToBuilders, delistLots as delistPlatLots } from "@/engine/homes";
 import { cutTownOffThread } from "@/state/townClient";
 import type { TownRequest } from "@/state/townWorker";
-import { monthOffThread, spanOffThread } from "@/state/simClient";
+import { monthOffThread, primeAhead, spanOffThread } from "@/state/simClient";
 
 export type DesignCamOp = "left" | "right" | "up" | "down" | "in" | "out" | "reset";
 export type Lens = "none" | "land" | "demand" | "owners" | "zoning" | "leases" | "vacancy" | "pencils" | "listings";
@@ -3060,6 +3060,23 @@ export async function bootMenu() {
     await useStore.getState().continueRun();
   }
 }
+
+// THE NEXT MONTH, CLOSED WHILE THE PLAYER READS (state/simClient.ts). A moment
+// after the campaign stops changing — the month landed, its cards and saves
+// settled, or the player's last decision went in — the second worker starts on
+// the month after it. Advance on that same state is then instant; any change
+// to `game` drops the guess and primes again from the new state.
+let aheadTimer: ReturnType<typeof setTimeout> | null = null;
+useStore.subscribe((st, prev) => {
+  if (st.game === prev.game && st.parcels === prev.parcels) return;
+  if (aheadTimer !== null) clearTimeout(aheadTimer);
+  aheadTimer = setTimeout(() => {
+    aheadTimer = null;
+    const now = useStore.getState();
+    if (!now.game || !now.parcels || now.game.gameOver || simBusy()) return;
+    primeAhead(now.game, now.parcels, now.bbls, now.adjacency);
+  }, 300);
+});
 
 // LOTS CUT MID-GAME (engine/landdev.ts). When a plat finishes, the engine puts its lots in the
 // worker's parcel table; this puts them in the page's, draws them and their streets on the map, and

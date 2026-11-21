@@ -534,12 +534,7 @@ export function withStreetRetail(mix: UseMix, floors: number, demand: number, ec
   // share, the street's and the market's gates skipped.
   if (force) {
     const share = Math.min(maxRetailShare(floors), 1.25 / floors);
-    const out: UseMix = { retail: +share.toFixed(4) };
-    const rest = 1 - share;
-    const others = Object.entries(mix).filter(([k]) => k !== "retail") as [BuiltClass, number][];
-    const tot = others.reduce((a, [, v]) => a + v, 0) || 1;
-    for (const [k, v] of others) out[k] = +((v / tot) * rest).toFixed(4);
-    return out;
+    return restOfMix(mix, share);
   }
   if (demand < STREET_RETAIL_DEMAND) return mix;
   // ...AND IT IS NOT EVERY MARKET. This rule read footfall and never the
@@ -575,11 +570,20 @@ export function withStreetRetail(mix: UseMix, floors: number, demand: number, ec
   const street = Math.max(0, Math.min(1, slow)) * Math.max(0, Math.min(1, rel));
   const share = Math.min(maxRetailShare(floors), 1.25 / floors) * street;
   if (share <= 0.01) return mix;
+  return restOfMix(mix, share);
+}
+/**
+ * Shops at grade take `share`; the other legs share the rest pro rata. Walks
+ * the mix in key order without building entry arrays (pure performance;
+ * changes no number: the same sums, in the same order, into the same keys).
+ */
+function restOfMix(mix: UseMix, share: number): UseMix {
   const out: UseMix = { retail: +share.toFixed(4) };
   const rest = 1 - share;
-  const others = Object.entries(mix).filter(([k]) => k !== "retail") as [BuiltClass, number][];
-  const tot = others.reduce((a, [, v]) => a + v, 0) || 1;
-  for (const [k, v] of others) out[k] = +((v / tot) * rest).toFixed(4);
+  let tot = 0;
+  for (const k in mix) if (k !== "retail") tot = tot + (mix[k as BuiltClass] as number);
+  tot = tot || 1;
+  for (const k in mix) if (k !== "retail") out[k as BuiltClass] = +(((mix[k as BuiltClass] as number) / tot) * rest).toFixed(4);
   return out;
 }
 
@@ -605,14 +609,15 @@ export function capRetail(mix: UseMix, floors: number): UseMix {
   if (share <= 0 || floors <= 0) return mix;
   const maxShare = maxRetailShare(floors);
   if (share <= maxShare) return mix;
-  const others = Object.entries(mix).filter(([k]) => k !== "retail") as [BuiltClass, number][];
-  const rest = others.reduce((a, [, v]) => a + v, 0);
+  // (key-order loops, no entry arrays — pure performance; changes no number)
+  let rest = 0;
+  for (const k in mix) if (k !== "retail") rest = rest + (mix[k as BuiltClass] as number);
   // A programme that is nothing BUT shops has nowhere to put the overflow —
   // that is a two-storey shop building, and the caller caps the floors.
   if (rest <= 0) return { retail: 1 };
   const out: UseMix = { retail: +maxShare.toFixed(4) };
   const scale = (1 - maxShare) / rest;
-  for (const [k, v] of others) out[k] = +(v * scale).toFixed(4);
+  for (const k in mix) if (k !== "retail") out[k as BuiltClass] = +((mix[k as BuiltClass] as number) * scale).toFixed(4);
   return out;
 }
 
@@ -1214,7 +1219,11 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // "natural" vacancy, plus a location premium) — so a prime retail lot
   // underwrote 94% let in a market 15% empty. The scheme's own forecast is
   // the developer's question: what its market will let, its own feet in it.
-  const stabOccOf = (u: BuiltClass) => 1 - stabilisedVacancy(econ, u, fwdOf(u));
+  // (Memoised by use for this call — pure performance; changes no number: the
+  // same pure read of the same econ, asked four or five times per use by the
+  // NOI stacks below.)
+  const stabMemo: Partial<Record<BuiltClass, number>> = {};
+  const stabOccOf = (u: BuiltClass) => (stabMemo[u] ??= 1 - stabilisedVacancy(econ, u, fwdOf(u)));
   const stabOcc0 = overMix(mix, stabOccOf);
   // Mean occupancy across the absorption curve the market actually runs
   // (0.2 + 0.8·t^0.75 over the span) is 0.657 of stabilised. Useful for the
@@ -1356,7 +1365,12 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // is income the bank does lend on.
   const lenderOcc = (u: BuiltClass) => u === "multifamily" ? Math.min(stabOccOf(u), 1 - LENDER_MIN_UW_VACANCY) : stabOccOf(u);
   const bankMarketNoi = noiYr(asBuilt, econ, "good", true, undefined, stabOccOf);
-  const bankSpecNoi = noiYr(asBuilt, econ, "good", true, undefined, lenderOcc);
+  // The lender's floor binds only on flats (`lenderOcc`). Where the building
+  // has none, or its flats already underwrite below the floor, `lenderOcc` IS
+  // `stabOccOf` and the second NOI stack is the first one again — pure
+  // performance; changes no number.
+  const lenderFloorBinds = mix.multifamily !== undefined && !(stabOccOf("multifamily") <= 1 - LENDER_MIN_UW_VACANCY);
+  const bankSpecNoi = lenderFloorBinds ? noiYr(asBuilt, econ, "good", true, undefined, lenderOcc) : bankMarketNoi;
   const loanNoi = (stabNoi - marketStabNoi) + bankMarketNoi - (bankMarketNoi - bankSpecNoi) * (1 - contracted);
   if (preReserve > 0 && exitYieldPct > 0) {
     const ltvCap = 0.75 * (loanNoi / (exitYieldPct / 100)) / preReserve;
@@ -1432,16 +1446,25 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // by then the money has already been spent.
   // at the loan's own coupon (`ratePct`, the desk's quote above); it read the index + 2.1, a private price
   const dsMonthly = (preReserve * ltc * (ratePct / 100)) / 12;
+  // ONE WALK DOWN THE CURVE (pure performance; changes no number): the
+  // reserve's shortfall below and the income the lease-up gives up
+  // (`forgoneNoi`, see WHAT THE BUILDING DOES NOT EARN WHILE IT LETS) read the
+  // same month-by-month income, so it is worked out once a month of the span
+  // and each sum runs in the same order it always did. The shortfall stops at
+  // the first month the building covers its coupon, as before.
   let deficit = 0;
-  if (dsMonthly > 0) {
+  let forgoneNoi = 0;
+  {
     const curve = absorptionCurve(carryMonths);
+    const stabM = (openSf * (rentPsf0 * stabOcc0 - opex0 * (1 - recovery0 * stabOcc0))) / 12;
+    let short = dsMonthly > 0;
     for (let t = 0; t < carryMonths; t++) {
       const occT = stabOcc0 * curve[t];
       const noiT = (openSf * (rentPsf0 * occT - opex0 * (1 - recovery0 * occT))) / 12;
       // Income only rises along the curve, so the first month the building
       // covers its coupon is the last month the reserve has to fund.
-      if (noiT >= dsMonthly) break;
-      deficit += dsMonthly - noiT;
+      if (short) { if (noiT >= dsMonthly) short = false; else deficit += dsMonthly - noiT; }
+      forgoneNoi += Math.max(0, stabM - noiT);
     }
   }
   deficit = Math.round(deficit);
@@ -1471,15 +1494,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // the budget: nobody writes a cheque for income they did not receive. The
   // running costs and the unpaid coupon above are part of the same
   // shortfall, so only what they do not already cover is added.
-  let forgoneNoi = 0;
-  {
-    const curve = absorptionCurve(carryMonths);
-    const stabM = (openSf * (rentPsf0 * stabOcc0 - opex0 * (1 - recovery0 * stabOcc0))) / 12;
-    for (let t = 0; t < carryMonths; t++) {
-      const occT = stabOcc0 * curve[t];
-      forgoneNoi += Math.max(0, stabM - (openSf * (rentPsf0 * occT - opex0 * (1 - recovery0 * occT))) / 12);
-    }
-  }
+  // (`forgoneNoi` is summed above, in the same walk down the curve as the reserve's shortfall.)
   // TI tracks construction cost. Lease commissions are already a fraction of
   // today's rent (months × rate) — multiplying them by costIdx double-counts
   // a century of rent inflation and made lease-up reserves larger than hard
@@ -1513,7 +1528,9 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // took 30–44; after unifying the hurdle that split showed up immediately as
   // a 21-month breaks→deliveries cycle.
   const scheduleClass = dominantOf(mix);
-  const [monthsLo, monthsHi] = BUILD_MONTHS[scheduleClass];
+  // (indexed, not destructured: array destructuring walks the iterator — pure performance; changes no number)
+  const buildM = BUILD_MONTHS[scheduleClass];
+  const monthsLo = buildM[0], monthsHi = buildM[1];
   const heightShare = Math.max(0, Math.min(1, (fl - 1) / 20));
   // (A product keeps its own schedule [BUILD]: a tilt-up box is not a tower.)
   const months = prod ? productBuildMonths(prod, gsf) : Math.round(monthsLo + (monthsHi - monthsLo) * heightShare);

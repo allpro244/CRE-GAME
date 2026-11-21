@@ -713,7 +713,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
   // player's desk asks, effective. It used to be a separate law —
   // absorption.ts leasingOdds, the building's capture of an aggregate
   // requirement — run beside the street's search.
-  type PCand = { bbl: string; rec: ParcelRecord; avail: number; sc: number; mkt: number; post: number; load: number; letShare: number; pos: ReturnType<typeof posOf> };
+  type PCand = { bbl: string; rec: ParcelRecord; avail: number; sc: number; mkt: number; post: number; load: number; letShare: number; pos: ReturnType<typeof posOf>; book?: LandlordAsk };
   const playerCands: Partial<Record<Comm, PCand[]>> = {};
   for (const k of COMM) {
     const list: PCand[] = [];
@@ -729,7 +729,7 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
       const mkt = useRentPsfYr(rec, e, h.condition, k, condIdx);
       const post = currentAskPsfYr(rec, e, h, k) * (1 - currentPackage(e, h, k));
       if (!(mkt > 0) || !(post > 0)) continue;
-      list.push({ bbl: h.bbl, rec, avail, sc: overallScore(rec, e, k, condIdx), mkt, post, load: expenseLoadPsf(rec, e, h.condition, k, h.assessed), letShare: 1 - avail / Math.max(1, useRentableSf(rec, k)), pos: posOf(rec) });
+      list.push({ bbl: h.bbl, rec, avail, sc: overallScore(rec, e, k, condIdx), mkt, post, load: expenseLoadPsf(rec, e, h.condition, k, h.assessed), letShare: 1 - avail / Math.max(1, useRentableSf(rec, k)), pos: posOf(rec), book: h.ask?.[k] });
     }
     playerCands[k] = list;
   }
@@ -778,8 +778,23 @@ function marketView(s: GameState, parcels: ParcelTable, memo = true) {
         const worth = worthOf(firm, k, p.mkt, p.sc, take, pc.cost, k === "retail" ? footRel(p.bbl) : undefined, rentCapacity(s.econ, firm, k));
         const move = moving ? moveCostPsfYr(e, k, termM, firm) : 0;
         const joint = worth + expOf(k, typLoad(k), termM) - p.post - expOf(k, p.load, termM) - move + TASTE[k] * goingRent(k, p.mkt, going(k)) * gumbel(rng(s, "leasing"));
-        if (joint < 0) continue;   // no lease at a loss, the same participation test (below)
-        out.push({ bbl: p.bbl, take, mkt: p.mkt, ff: footFactor(k, k === "retail" ? footRel(p.bbl) : undefined), ask: p.post, post: p.post, res: p.post, worth, move, joint, dLink: pc.dLink, dWork: pc.dWork, player: true });
+        // THE SAME PARTICIPATION TEST AS THE STREET'S (below, 2026-11-21). A
+        // firm keeps a suite on its list when it is better off there at the
+        // LANDLORD'S RESERVATION — the least the book will take, its post less
+        // the expected wait for the next tenant over the term (tenantMarket.ts
+        // reservation) — and the rent is then bargained between the two. The
+        // player's space was held to its full post instead (res = post), so a
+        // building whose post sat above what firms valued it at was dropped
+        // from every list while the street's equivalent was toured and let:
+        // measured on seed 550991 (14 buildings given to the player, 24
+        // months at the market stance), a prime 1,829 sf shop drew 0 letters —
+        // all 5 shortlistings failed at full post (worth $32.3 vs post $40.4).
+        // The player's book is the street's book (absorption.ts
+        // currentAskPsfYr), so it has the same reservation; a building whose
+        // book has not opened yet keeps its post.
+        const res = p.book && p.book.a > 0 ? reservation(p.book, k, p.post, termM, false, false, monthsToLet(k)) : p.post;
+        if (joint + p.post - res < 0) continue;   // no lease at a loss, the street's test (below)
+        out.push({ bbl: p.bbl, take, mkt: p.mkt, ff: footFactor(k, k === "retail" ? footRel(p.bbl) : undefined), ask: p.post, post: p.post, res, worth, move, joint, dLink: pc.dLink, dWork: pc.dWork, player: true });
         continue;
       }
       const b = c.b!, roll = c.roll!;

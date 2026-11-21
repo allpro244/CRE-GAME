@@ -19,7 +19,7 @@
 import type { GameState } from "./types";
 import { logBooks, BUILT_CLASSES } from "./types";
 import { PRODUCTS, underwritingStandards, windowOpen, BANK_CRE_SHARE } from "./debt";
-import { rng, rrange, RENT_BASE, OPENING_VAC, CAP_BASE, shortIndexOf } from "./market";
+import { rng, rrange, RENT_BASE, OPENING_VAC, CAP_BASE, shortIndexOf, windowOfAppetite } from "./market";
 import type { DeskPx, LossClass } from "./pricing";
 import { why } from "./why";
 import { economicCost } from "./pricing";
@@ -1597,9 +1597,12 @@ export function tickLenders(s: GameState) {
     }
     const sysApp = w > 0 ? a / w : 0;
     s.bankApp = +sysApp.toFixed(3);
-    const want = 0.4 + 0.6 * sysApp;
+    // On the window's scale (market.ts windowOfAppetite): nobody lending is
+    // CREDIT_SHUT, a definition. The old 0.4..1.25 clamp here could not bind
+    // — the window moves part-way toward `want`, which lies in 0.4..1.09.
+    const want = windowOfAppetite(sysApp);
     const ci = e.creditIdx ?? 1;
-    e.creditIdx = Math.max(0.4, Math.min(1.25, ci + (want < ci ? 0.16 : 0.055) * (want - ci)));
+    e.creditIdx = ci + (want < ci ? 0.16 : 0.055) * (want - ci);
     // THE CAUSE LEDGER (why.ts): a window that has shut by a twentieth since it
     // was last written down says which desks shut it and why — capital
     // against target, the watch list, losses, deposits. Records; decides

@@ -7,7 +7,7 @@
 // book, paired seeds, ten years:
 //
 //   desk        firm agent on, starter plan (quote 90%)
-//   principal   counters every letter to tenantIndifferenceMult; the rest walk
+//   principal   counters every letter to a rule-of-thumb indifference line; the rest walk
 //
 // Same starting 100-suite commercial book on both arms (gifted, not bought —
 // the fixture is the portfolio, not an acquisition strategy). Record signed
@@ -190,7 +190,9 @@ const patientPrincipal = (g, parcels, stats, onlyReferred = false) => {
     if (!rec || !h) continue;
     const market = E.managedRentPsfYr(rec, g.econ, h, loi.use);
     const tight = tightOf(g, loi.use);
-    const fStar = E.tenantIndifferenceMult(g, loi, loi.termM, tight);
+    // the principal's rule of thumb for where a tenant stops (the tenant's own
+    // reservation is private: leasing.ts tenantAnswer) — the old asserted line
+    const fStar = 1.06 + 0.35 * tight - 0.12 * Math.max(0, -tight) + 0.015 * loi.credit;
     const opened = {
       rentPsf: loi.rentPsf,
       tiPsf: loi.tiPsf ?? 0,
@@ -400,7 +402,7 @@ console.log("\nDESK VS PATIENT PRINCIPAL — Phase 3 re-run (player-equivalent p
 console.log(`  seeds ${SEEDS.join(", ")} · ${HZ} months · target ${TARGET_SUITES} commercial suites`);
 console.log("  desk  = agent + starter brief (92% net effective, 12 mo patience)");
 console.log("  plan  = agent + player-equivalent sheet (95% net effective, 18 mo patience)");
-console.log("  principal = counter every letter to tenantIndifferenceMult");
+console.log("  principal = counter every letter to a rule-of-thumb indifference line");
 console.log("  signed NE% is face after free months and the bump; TI is not on the tenant\n");
 
 const rows = [];

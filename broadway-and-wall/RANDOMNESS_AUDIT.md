@@ -43,6 +43,25 @@ at the end of `propmarket-economy.md`.
   The change also stops the solver reading its own rent moves as developer
   momentum against a stale `rentExp`.
 
+## Fixed: tenants answer from a stored reservation (queue items 3 and 4, in part)
+
+- **Counters, walks and counter-backs** (`leasing.ts` `tenantAnswer`). Each
+  letter stores the tenant's reservation (`LOI.resNE`), drawn once with the
+  firm from its own options (`offerForPlayer`'s `res`). A counter is taken
+  when it clears it, countered back once at the middle of the positions or
+  the reservation, and walked when the tenant has nothing left to give. The
+  logit, the walk slope and the counter-back die are gone, and with them
+  `TENANT_SWITCH`, `RENEWAL_STICK` and `tenantIndifferenceMult`.
+- **TI and free rent** (`letterTerms`, `fitOutPsf`). New, expansion and
+  renewal letters: allowance = the fit-out the space needs (the band's middle,
+  shell or refresh), free months = the rest of the package by the street's
+  `freeMonthsFor`. Expansion rent comes from the firm's own options; renewal
+  rent splits the tenant's stay surplus (Nash) instead of a credit discount,
+  a trade multiplier on rails and a 0.6 floor; the renewal bump die is gone.
+- **Still open:** whether a tenant renews (`renewalIntent`'s asserted factors
+  and the roll at the expiry). The comparison needs the building's service
+  level priced into the firm's worth of the space first; see TODO.
+
 ## Already fixed on main (found by the first pass, gone by the second)
 
 - the 45% city-vacancy cap;

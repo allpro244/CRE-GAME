@@ -9,7 +9,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { Approach, AutoConcessions, AutoLeaseEntry, BuiltClass, Condition, Credit, DeskDigest, GameState, Holding, LeasingPlan, Listing, LOI, PlanRow, Sector } from "./types";
 import { logBooks, moveDeposit, monthLabel, serviceSpec, planSpec, SVC_SPEED, SVC_START, SECTOR_CLASSES, cloneState, CREDIT_LABEL } from "./types";
 import type { Econ, Tenant } from "./types";
-import { rng, rrange, recordDeal, openingVac, CONC_DEPTH, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, payrollGrowth12, RENT_BASE, turnoverYr } from "./market";
+import { rng, rrange, recordDeal, openingVac, CONC_DEPTH, industryStress, industryPull, INDUSTRY_LABEL, noteTenantSfChange, reletMonths, reletLag, labourSlack, RENT_BASE, turnoverYr } from "./market";
 
 const clampL = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 /** Bare clamp so tools/rails.mjs can see the block-premium guards. */
@@ -50,7 +50,7 @@ import { managedRentPsfYr, useRentPsfYr, useOccupancy, resolveRec, opexPsf, locO
 import { blendBy, commercialShare, dominantUse, mixOf, uses } from "./mix";
 import type { Recovery } from "./value";
 import { overallScore, scoreRentMult, N_BANDS, askPctOfStance } from "./value";
-import { recordLease, compsPackage, creditOfSize } from "./tenantMarket";
+import { recordLease, compsPackage, creditOfSize, freeMonthsFor } from "./tenantMarket";
 import type { Comm } from "./tenantMarket";
 import { tenantQualityTerms } from "./bands";
 import { drawLoc, locAvailable, spendable, fundableNow, fundAndBook, operatingReserve, drawLineInPlace, parkedOnLine } from "./credit";
@@ -1151,11 +1151,6 @@ function useUpShell(h: Holding, use: BuiltClass, sf: number) {
   if (!Object.keys(h.shellSf).length) delete h.shellSf;
 }
 
-/** The covenant's pull on the allowance — the same multiple on every kind of letter. */
-function tiCreditMult(credit: Credit): number {
-  return credit === 2 ? 1.18 : credit === 1 ? 1.02 : 0.90;
-}
-
 /**
  * HOW HARD A TENANT CAN PUSH, from the state of the market they are in.
  *
@@ -2012,28 +2007,33 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // No die for "they get round to it" (2026-11-11): a firm that needs the
       // feet and has them next door asks; askedM keeps it from asking twice.
       t.askedM = q;
-      const market = managedRentPsfYr(rec, s.econ, h, use);
+      // WHAT IT OFFERS FOR THE FEET NEXT DOOR, FROM ITS OWN OPTIONS, as a new
+      // letter's tenant does (offerForPlayer) — sitting, so the move is not
+      // a cost of taking them — through the one net-effective rule
+      // (letterTerms). The rent was the market times a die (0.96-1.06).
+      const xTerm = Math.max(24, t.endM - q);   // coterminous with what they hold
+      const xPost = letterPost(s, rec, h, use, "expansion");
+      const xPostEff = xPost.face * (1 - xPost.pkg);
+      const xOffer = offerForPlayer(s, parcels, t, use, wantSf, rec, overallScore(rec, s.econ, use, h.condIdx),
+        useRentPsfYr(rec, s.econ, h.condition, use, h.condIdx), xPostEff, xTerm, true);
+      const xEff = xPostEff * xOffer.bid;
+      // THE SPACE NEXT DOOR IS NEW TO THEM: somebody else's old suite (or a
+      // shell), so it needs the fit-out a new tenant's would over the same
+      // coterminous term (fitOutPsf).
+      const xTerms = letterTerms(xPost.face, xEff, fitOutPsf(s, rec, h, use, xTerm, shellShare(rec, h, use, q)), xTerm);
       s.lois.push({
         id: s.nextLoiId++, arrivedM: q, bbl: h.bbl, kind: "expansion", use,
         name: t.name, sector: t.sector, credit: t.credit, sf: wantSf,
-        rentPsf: +(market * rrange(s, 0.96, 1.06, "leasing")).toFixed(2),
-        termM: Math.max(24, t.endM - q),          // coterminous with what they hold
-        // THE SPACE NEXT DOOR IS NEW TO THEM. It is somebody else's old suite
-        // (or a shell, in a building that has not finished letting), and it
-        // gets the allowance a new tenant would get for the same feet over the
-        // same term — prorated, because coterminous paper is usually short.
-        // This was a flat $1-5/sf whatever the term, the generation of the
-        // space or the cost of building anything, which made the expansion
-        // the cheapest lease in the game to sign.
-        tiPsf: Math.round(rrange(s, tiBandPsfYr(s, rec, h, use)[0], tiBandPsfYr(s, rec, h, use)[1], "leasing") * (Math.max(24, t.endM - q) / 12)
-          * tiPressure(concessionPressure(s.econ, use)) * tiCreditMult(t.credit)
-          * (1 + (FIRST_GEN_TI_MULT - 1) * shellShare(rec, h, use, q))),
-        freeM: 0,
+        rentPsf: xTerms.rentPsf,
+        termM: xTerm,
+        tiPsf: xTerms.tiPsf,
+        freeM: xTerms.freeM,
         // Coterminous paper keeps the escalator they already live under.
         bumpPct: bumpOf(t),
         net: t.net, recovery: recoveryOf(t),
         expiresM: q + 3, tenantIdx: i,
       });
+      stampReservation(s.lois[s.lois.length - 1], xEff, xOffer.res);
       s.news.unshift({
         q, kind: "deal", bbl: h.bbl,
         text: `${t.name} has grown into their space at ${rec.address} and wants the ${(wantSf / 1000).toFixed(1)}k sf next door, coterminous with the lease they are on.`,
@@ -2095,21 +2095,28 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
       // This replaced a leverage table on how far over market it was paying
       // and a discount on the class's vacancy against a "natural" rate.
       const tUse = (t.use ?? leasableUses(rec)[0] ?? "office") as BuiltClass;
-      const { bid: stayBid } = offerForPlayer(s, parcels, t, tUse, t.sf, rec, overallScore(rec, s.econ, tUse, h.condIdx),
-        useRentPsfYr(rec, s.econ, h.condition, tUse, h.condIdx), market * (1 - compsPackage(s.econ, tUse as "office")), 60, true);
-      // Credit tenants are worth keeping and they know it.
-      const creditDisc = t.credit === 2 ? 0.97 : t.credit === 1 ? 1.0 : 1.02;
-      // AND WHAT THEIR OWN TRADE IS DOING. A firm in a booming industry is
-      // growing into its lease and will pay to stay; one in a bust is cutting
-      // headcount and either wants a discount or wants out. The building's
-      // market is only half of a renewal — the other half is the tenant's.
-      const stress = industryStress(s.econ, t.sector);
-      const boom = Math.max(0, (s.econ.industryMom?.[t.sector] ?? 0)) * 6;
-      const trade = 1 - stress * 0.14 + boom;
-      const ask = market * stayBid * creditDisc * clampL(trade, 0.78, 1.18);
+      const rPost = letterPost(s, rec, h, tUse, "renewal");
+      const rPostEff = rPost.face * (1 - rPost.pkg);
+      const stay = offerForPlayer(s, parcels, t, tUse, t.sf, rec, overallScore(rec, s.econ, tUse, h.condIdx),
+        useRentPsfYr(rec, s.econ, h.condition, tUse, h.condIdx), rPostEff, 60, true);
+      // THE RENEWAL RENT SPLITS THE MOVE THE TENANT SAVES. Staying spares it
+      // the move (its options down the street all cost one; staying does
+      // not), so the most it pays to stay (`stay.res`) sits over the market's
+      // effective by about that saving, and landlord and tenant split it
+      // down the middle (a Nash bargain: neither has the other's outside
+      // option to threaten with) — or, where the street is better and it
+      // will pay less than the market, it offers its most. This replaced a
+      // credit discount (0.97/1.00/1.02), a trade multiplier on rails
+      // (0.78-1.18) that counted again what the firm's books already put in
+      // its bid, and a floor at 60% of the market.
+      const stayRes = stay.res ?? rPostEff;
+      const renewEff = stayRes >= rPostEff ? rPostEff + (stayRes - rPostEff) / 2 : stayRes;
+      void market;
       // the term the firm chooses (chosenTermM), as the street's renewals do
       // (streetRolls.ts, termOf); this was a draw of three to seven years
       const renewTermM = Math.round(chosenTermM(s.econ, t.credit, t.sector));
+      const renewTerms = letterTerms(rPost.face, renewEff,
+        fitOutPsf(s, rec, h, tUse, renewTermM) * renewalRefreshShare((q - (t.fitM ?? t.startM)) / 12), renewTermM);
       // Renewals are cheap to do: no downtime, a fraction of the TI, no free
       // rent worth the name. That gap is why renewal economics beat a new
       // lease at a higher face rent almost every time.
@@ -2149,7 +2156,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           if (need >= t.sf * 0.78) return t.sf;
           return Math.max(minLettableSf(rec, use), fitWantSf(rec, need, t.sf, use) || t.sf);
         })(),
-        rentPsf: +(Math.max(market * 0.6, ask)).toFixed(2),
+        rentPsf: renewTerms.rentPsf,
         termM: renewTermM,
         // A sitting tenant asks for less than a new one — no fit-out, no
         // moving costs to cover — but the same market decides how far they get.
@@ -2159,18 +2166,17 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // it moves with the cost index and on the flatter fit-out curve rather
         // than the free-rent one — the same two facts every other allowance in
         // this file obeys.
-        tiPsf: Math.round(rrange(s, tiBandPsfYr(s, rec, h, t.use ?? "office")[0], tiBandPsfYr(s, rec, h, t.use ?? "office")[1], "leasing") * (renewTermM / 12)
-          * renewalRefreshShare((q - (t.fitM ?? t.startM)) / 12)
-          * tiPressure(concessionPressure(s.econ, t.use ?? "office")) * tiCreditMult(t.credit)),
-        // Free rent on a renewal is what the market's softness buys the
-        // incumbent — the expected value of the old one-in-four die times a
-        // 1-3 month draw, now asked for every time (2026-11-11).
-        freeM: Math.round(0.5 * concessionPressure(s.econ, t.use ?? "office") ** 2),
-        // Renewals reopen the escalator a notch — incumbents usually ask to
-        // flatten; a soft market helps them.
+        // A REFRESH, NOT A BUILD-OUT: the share of a new fit-out the age of
+        // the one they sit in calls for (renewalRefreshShare), and free months
+        // what is left of the package — the one net-effective rule
+        // (letterTerms). Both were formulas on the concession dial, the
+        // allowance a die inside the band.
+        tiPsf: renewTerms.tiPsf,
+        freeM: renewTerms.freeM,
+        // Renewals reopen the escalator a notch: incumbents ask to flatten, a
+        // soft labour market helps them. The die on it (-0.5 to +0.25) is gone.
         bumpPct: Math.round(clampL(
-          bumpOf(t) + rrange(s, -0.5, 0.25, "leasing")
-            - Math.min(0.35, 8 * Math.max(0, labourSlack(s.econ))),
+          bumpOf(t) - Math.min(0.35, 8 * Math.max(0, labourSlack(s.econ))),
           0, 5,
         ) * 4) / 4,
         net: t.net,
@@ -2178,6 +2184,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         expiresM: t.endM,
         tenantIdx: i,
       });
+      stampReservation(s.lois[s.lois.length - 1], renewEff, stayRes);
     }
 
     // inbound demand for vacant, market-ready space
@@ -2239,9 +2246,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         if (!(legVac > 400)) { releaseSeeker(s, pk.fid); continue; }
         const spec = h.specSuites;
         const specLive = spec !== undefined && spec.use === use && s.month >= spec.readyM;
-        const [tiLo, tiHi] = tiBandPsfYr(s, rec, h, use);
         const shell = specLive ? 0 : shellShare(rec, h, use, q);
-        const concession = concessionPressure(s.econ, use);
         // Warehouses lease whole: one operator takes the building, or most of
         // it. Offices and shops carve into suites.
         // Prospects ask for spaces, not square feet. Warehouses tend to want
@@ -2359,8 +2364,14 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // 68-86% of the ask and the rest at 90-110%, whoever the tenant was.
         const postFace = currentAskPsfYr(rec, s.econ, h, use) * (specLive ? 1.05 : 1);
         const firmNow: Tenant = seeker;
-        const { bid } = offerForPlayer(s, parcels, firmNow, use, sf, rec, bScore,
-          useRentPsfYr(rec, s.econ, h.condition, use, h.condIdx), postFace * (1 - currentPackage(s.econ, h, use)), termM);
+        const postEff = postFace * (1 - currentPackage(s.econ, h, use));
+        const { bid, res } = offerForPlayer(s, parcels, firmNow, use, sf, rec, bScore,
+          useRentPsfYr(rec, s.econ, h.condition, use, h.condIdx), postEff, termM);
+        // ONE NET-EFFECTIVE RULE (letterTerms): the tenant pays `offerEff`,
+        // effective; the post is the face; the fit-out this suite needs and
+        // the free months are the gap, as on the street.
+        const offerEff = postEff * bid;
+        const terms = letterTerms(postFace, offerEff, fitOutPsf(s, rec, h, use, termM, shell, tt.ti) * (specLive ? 0.12 : 1), termM);
         s.lois.push({
           id: s.nextLoiId++,
           arrivedM: s.month,
@@ -2390,7 +2401,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // ...at the market's slack the month the tenant sits down
           // (market.ts dealSlack): in a soft market the offers come in under
           // the index before the index has moved.
-          rentPsf: +(postFace * bid).toFixed(2),
+          rentPsf: terms.rentPsf,
           // Term length is not random. A credit tenant taking a whole floor
           // signs long paper and expects to be paid for it; a small unrated
           // firm wants three years and an out. WALT is the thing a buyer
@@ -2430,21 +2441,20 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
           // demising, make-ready and spec suites already do; it did not, and
           // across a long game the allowance shrank against rents for no
           // reason but inflation.
-          tiPsf: Math.round(rrange(s, tiLo, tiHi, "leasing") * (termM / 12) * tiPressure(concession) * tt.ti
-            * tiCreditMult(credit) * (specLive ? 0.12 : 1)
-            * ((1 - shell) * clamp01((bid - 0.85) / 0.15)
-              + shell * (1 + (FIRST_GEN_TI_MULT - 1) * clamp01((bid - 0.85) / 0.15)))),
-          // Free rent scales with the LENGTH of the deal, the way it does in
-          // life — the rule of thumb is about a month a year, and it is the
-          // concession a landlord gives before cutting the face rent. A flat
-          // nought-to-six-and-a-half band handed a three-year tenant the same
-          // holiday as a twelve-year one, and handed both of them one in a
-          // market where nobody had to give anything away.
-          freeM: Math.max(0, Math.round((termM / 12) * rrange(s, 0.25, 0.85, "leasing") * concession)),
+          // ...and the allowance is the fit-out this suite needs (fitOutPsf:
+          // shell or second generation, the fit-out this tenant shops for,
+          // today's construction cost; a spec suite is already built), the
+          // free months what is left of the package (letterTerms). Both were
+          // dice inside a band, scaled by an asserted 0.85/0.15 line on the
+          // bid, while the street solved the same free months from net
+          // effective: one quantity, two answers.
+          tiPsf: terms.tiPsf,
+          freeM: terms.freeM,
           bumpPct: rollBumpPct(s, credit),
           ...((r) => ({ net: r === "nnn", recovery: r }))(rollRecovery(s, use)),   // net is the clause (see streetLease)
           expiresM: q + 3,
         });
+        stampReservation(s.lois[s.lois.length - 1], offerEff, res);
         }
         const cover = s.agent
           ? { who: "Your agent" as const }
@@ -2590,30 +2600,38 @@ export const AUTO_CONCESSIONS: { key: AutoConcessions; label: string; blurb: str
 ];
 
 /**
+ * WHAT A LETTER IS WRITTEN AGAINST: the face the landlord posts for the
+ * space and the package off it (free rent and fit-out, a share of face over
+ * the term). A new or expansion letter is written against the building's own
+ * ask and book (`currentAskPsfYr`, `currentPackage`); a renewal against the
+ * tenant's own market less the comps' package, the street's renewal offer.
+ */
+export function letterPost(s: GameState, rec: ParcelRecord, h: Holding, use: BuiltClass, kind: LOI["kind"]): { face: number; pkg: number } {
+  if (kind === "renewal") return { face: managedRentPsfYr(rec, s.econ, h, use), pkg: compsPackage(s.econ, use as "office") };
+  return { face: currentAskPsfYr(rec, s.econ, h, use), pkg: currentPackage(s.econ, h, use) };
+}
+
+/**
  * THE STREET'S PACKAGE FOR THIS LETTER: the allowance ($/sf) and free months
- * a tenant of this kind asks for here, at the middle and the top of the band
- * the letters are rolled from. The same rules as the roll in `tickLeasing`,
- * with the draws at their middle and top and the tenant bidding the ask (a
- * lowball forfeits allowance, so the ask is where the package is fullest):
+ * a market deal for this space carries — a tenant paying the post, effective
+ * (`letterPost`), through the one net-effective rule the letters are written
+ * by (`letterTerms`):
  *
- *   new        tiBandPsfYr (TI_ASK × cost index, capped by the rent) × term × fit-out market × covenant, with
- *              the first-generation premium on the part of the space that is
- *              still a shell; free rent 0.25-0.85 months a year × the
- *              concession market.
- *   expansion  the same allowance over the coterminous term; no free rent.
- *   renewal    the refresh share of the allowance for the age of the fit-out
- *              they sit in; free rent 1-3 months × the concession market.
+ *   allowance  the fit-out the space needs (`fitOutPsf`: the middle of the
+ *              market's band, per year of term, first-generation on the part
+ *              that is still shell; for a renewal the refresh share for the
+ *              age of the fit-out they sit in). The top is the band's top.
+ *   free rent  what is left of the package after the allowance; the top is
+ *              what is left after the band's bottom.
  *
  * Nothing new is asserted. It is the market's own package, read back.
  */
 export function streetPackage(
   s: GameState, rec: ParcelRecord, h: Holding, loi: LOI,
 ): { tiMid: number; tiTop: number; freeMid: number; freeTop: number } {
-  const use = loi.use ?? leasableUses(rec)[0] ?? "office";
+  const use = (loi.use ?? leasableUses(rec)[0] ?? "office") as BuiltClass;
   const [lo, hi] = tiBandPsfYr(s, rec, h, use);
-  const concession = concessionPressure(s.econ, use);
   const years = Math.max(1, loi.termM / 12);
-  const base = years * tiPressure(concession) * tiCreditMult(loi.credit);
   let gen = 1;
   if (loi.kind === "renewal") {
     const t = h.tenants.find((x) => x.name === loi.name && (x.use ?? use) === use);
@@ -2621,10 +2639,14 @@ export function streetPackage(
   } else {
     gen = 1 + (FIRST_GEN_TI_MULT - 1) * shellShare(rec, h, use, s.month);
   }
-  const free = loi.kind === "expansion" ? [0, 0]
-    : loi.kind === "renewal" ? [2 * concession, 3 * concession]
-    : [years * 0.55 * concession, years * 0.85 * concession];
-  return { tiMid: ((lo + hi) / 2) * base * gen, tiTop: hi * base * gen, freeMid: free[0], freeTop: free[1] };
+  const { face, pkg } = letterPost(s, rec, h, use, loi.kind);
+  const eff = face * (1 - pkg);
+  const tiMid = ((lo + hi) / 2) * years * gen, tiTop = hi * years * gen, tiLow = lo * years * gen;
+  return {
+    tiMid, tiTop,
+    freeMid: letterTerms(face, eff, tiMid, loi.termM).freeM,
+    freeTop: letterTerms(face, eff, tiLow, loi.termM).freeM,
+  };
 }
 
 /**
@@ -2880,15 +2902,15 @@ export function autoTiCapToday(s: GameState, h: Holding): number | undefined {
 
 /**
  * What a tenant on this use asks for today, $/sf per year of term — the TI_ASK
- * band through the concession market and the cost index, as the letters roll
- * it (before credit). With a holding, the shell premium is blended in for the
- * part of the space still a shell.
+ * band at the cost index, the fit-out the letters write (`fitOutPsf`). With a
+ * holding, the shell premium is blended in for the part of the space still a
+ * shell.
  */
 export function marketTiPsfYr(s: GameState, use: string, rec?: ParcelRecord, h?: Holding): [number, number] {
   const [lo, hi] = rec && h ? tiBandPsfYr(s, rec, h, use)
     : [(TI_ASK[use] ?? TI_ASK.office)[0] * (s.econ.costIdx ?? 1), (TI_ASK[use] ?? TI_ASK.office)[1] * (s.econ.costIdx ?? 1)];
   const shell = rec && h ? shellShare(rec, h, use, s.month) : 0;
-  const m = tiPressure(concessionPressure(s.econ, use)) * (1 + (FIRST_GEN_TI_MULT - 1) * shell);
+  const m = 1 + (FIRST_GEN_TI_MULT - 1) * shell;
   return [lo * m, hi * m];
 }
 
@@ -3479,34 +3501,11 @@ export function termIndifferenceShift(loi: LOI, askTermM: number): number {
   return -(d >= 0 ? d * TERM_PUSH_FSTAR : -d * TERM_CUT_FSTAR);
 }
 
-/**
- * Search / moving cost a new tenant will pay to avoid starting over.
- * Anchors the indifference multiple at 6% over market in a balanced cycle
- * before tightness, credit, term push or phase.
- */
-export const TENANT_SWITCH = 0.06;
-/**
- * Extra indifference on a sitting tenant — relocation, not just search.
- * Real incumbents accept some above-market paper; 10pp on top of SWITCH made
- * pushing renewals too easy to farm. Six points keeps the premium and cuts
- * the exploit. Both the player path and the desk path read this one number.
- */
-export const RENEWAL_STICK = 0.06;
-
-/**
- * The multiple of market rent at which the tenant is indifferent.
- * Same function for the principal's counter and the desk's, so one number
- * cannot drift from the other.
- */
-export function tenantIndifferenceMult(
-  s: GameState, loi: LOI, askTerm: number, tight: number,
-): number {
-  const stick = loi.kind === "renewal" ? RENEWAL_STICK : 0;
-  const softDrag = Math.max(0, -tight) * 0.12;
-  return 1 + TENANT_SWITCH + stick + tight * 0.35 - softDrag + loi.credit * 0.015
-    + termIndifferenceShift(loi, askTerm)
-    + Math.max(-0.06, Math.min(0.05, 2.5 * payrollGrowth12(s.econ)));
-}
+// TENANT_SWITCH, RENEWAL_STICK and tenantIndifferenceMult are gone
+// (2026-11-20): the tenant's indifference point is its own reservation, drawn
+// from its options when the letter is written (`resNE`, tenantAnswer), not a
+// 6% search cost, a 6% incumbent premium "cut to stop the exploit", and
+// asserted steps for tightness, credit and payroll.
 
 /**
  * THE NUMBER THE TENANT IS ACTUALLY DECIDING ON.
@@ -3530,6 +3529,92 @@ export function netEffectivePsf(
   return rentPsf * paid
     + (TI_VALUE * (openTi - tiPsf)) / years
     + bumpPremiumPsf(rentPsf, bump, loi.termM);
+}
+
+/**
+ * THE FIT-OUT A SUITE NEEDS, $/sf over the term: the middle of the market's
+ * allowance band for this use (tiBandPsfYr, per year of term, at today's
+ * construction cost), for the fit-out the tenant shops for (`qualityTi`,
+ * tenantQualityTerms), first-generation where the feet are still shell
+ * (FIRST_GEN_TI_MULT). The middle, not a draw across the band: where in the
+ * band a deal lands is what the package (below) decides, not a die. The same
+ * number the appraiser reserves for a re-let (`rolloverReserve`).
+ */
+export function fitOutPsf(s: GameState, rec: ParcelRecord, h: Holding, use: string, termM: number, shell = 0, qualityTi = 1): number {
+  const [lo, hi] = tiBandPsfYr(s, rec, h, use);
+  return ((lo + hi) / 2) * (Math.max(12, termM) / 12) * qualityTi * (1 + (FIRST_GEN_TI_MULT - 1) * clamp01(shell));
+}
+
+/**
+ * A LETTER'S TERMS FROM ONE NET-EFFECTIVE RULE — the street's (streetRolls.ts
+ * signAt). The face is what the landlord posts, or the deal's own rent where
+ * that is above it; the gap between the face and what the tenant pays,
+ * effective, is the package. The package pays for the fit-out the suite needs
+ * first — the allowance is that fit-out, and where the tenant pays more than
+ * the post leaves room for, the face carries it — and free months carry the
+ * rest (`freeMonthsFor`, as on the street). So the allowance and the free rent
+ * on a letter are one quantity, the tenant's effective rent, read the way the
+ * street reads it. They were two dice.
+ */
+export function letterTerms(postFace: number, eff: number, fitPsf: number, termM: number): { rentPsf: number; tiPsf: number; freeM: number } {
+  const yrs = Math.max(1, termM / 12);
+  const tiPsf = Math.round(Math.max(0, fitPsf));
+  const face = Math.max(postFace, eff + tiPsf / yrs);
+  const freeM = freeMonthsFor(face, eff + tiPsf / yrs, termM);
+  return { rentPsf: +face.toFixed(2), tiPsf, freeM };
+}
+
+/**
+ * THE TENANT'S RESERVATION ON A LETTER, in the letter's own net-effective
+ * terms: what it opened at, plus whatever it kept back — its reservation from
+ * its own options (`res`, streetRolls.ts offerForPlayer) less the effective
+ * rent it offered. A firm that offered less than the post offered its most
+ * (`res` is its offer), so it keeps nothing back.
+ */
+export function stampReservation(loi: LOI, offerEff: number, res: number | undefined): void {
+  const open = netEffectivePsf(loi, loi.rentPsf, loi.tiPsf, loi.freeM, bumpOf(loi));
+  loi.resNE = +(open + Math.max(0, (res ?? offerEff) - offerEff)).toFixed(4);
+}
+
+/**
+ * HOW A TENANT ANSWERS A COUNTER — a comparison, never a die.
+ *
+ *   took       the terms you asked come to no more, net effective, than its
+ *              reservation (`resNE`)
+ *   countered  they do not, and it has something left to give: it comes back
+ *              once, final, at the middle of the two positions or at its
+ *              reservation, whichever is less
+ *   walked     it has nothing left to give (it opened at its most), or you
+ *              said best-and-final and it does not clear
+ *
+ * Each answer was a fresh draw (a logit on an asserted indifference multiple,
+ * a slope for the walk, a die for the counter-back rent), so a refusal could
+ * be fished into a yes by asking again on another letter or another month.
+ * The reservation is drawn once, with the firm, when the letter is written.
+ * Returns the net effective it counters at (for `countered`).
+ */
+export function tenantAnswer(loi: LOI, neOpen: number, neAsk: number, bestFinal = false, termCost = 0): { outcome: "took" | "countered" | "walked"; target?: number } {
+  // a term pushed off the firm's own band costs it (termIndifferenceShift,
+  // $/sf a year here): its reservation on that paper is lower by that much
+  const res = (loi.resNE ?? neOpen) - Math.max(0, termCost);
+  if (neAsk <= res + 1e-6) return { outcome: "took" };
+  if (bestFinal) return { outcome: "walked" };
+  const target = Math.min((neOpen + neAsk) / 2, res);
+  // a counter-back at its own opener is no counter: it told you its most
+  if (target <= neOpen + 0.005) return { outcome: "walked" };
+  return { outcome: "countered", target };
+}
+
+/**
+ * THE RENT THAT TAKES A LETTER'S OTHER TERMS TO A NET EFFECTIVE. Net
+ * effective is linear in face rent (free months a share of it, the bump's
+ * premium proportional to it), so two reads solve it.
+ */
+export function rentForNE(loi: LOI, target: number, tiPsf: number, freeM: number, bumpPct: number): number {
+  const at0 = netEffectivePsf(loi, 0, tiPsf, freeM, bumpPct);
+  const at1 = netEffectivePsf(loi, 1, tiPsf, freeM, bumpPct);
+  const slope = at1 - at0;
+  return slope > 1e-9 ? (target - at0) / slope : NaN;
 }
 
 /** Fit-out expressed as months of the letter's face rent. */
@@ -4566,11 +4651,8 @@ function tenantCounterOutcome(
   // paper would actually run for, not the one they walked in with.
   const view: LOI = { ...loi, termM: askTerm };
   const neAsk = netEffectivePsf(view, askRent, askTi, askFree, askBump);
-  const f = neAsk / Math.max(1, market);
-  const tight = vacancyTight(s, loi.use);
-  const fStar = tenantIndifferenceMult(s, loi, askTerm, tight);
-  const W = 0.085;
-  const pAccept = Math.max(0.005, Math.min(0.95, 1 / (1 + Math.exp((f - fStar) / W))));
+  const neOpen = netEffectivePsf({ ...loi, termM: openTerm }, openedAt, openTi, openFree, openBump);
+  const ans = tenantAnswer(loi, neOpen, neAsk, false, -termIndifferenceShift(loi, askTerm) * market);
   loi.countered = true;
   loi.askedRentPsf = askRent;
   loi.askedTiPsf = askTi;
@@ -4584,9 +4666,8 @@ function tenantCounterOutcome(
   // Writing the term onto the letter IS the plumbing: signLoi reads l.termM for
   // the tenant's end month and leaseCosts reads it for the commission.
   loi.termM = askTerm;
-  if (rng(s) < pAccept) return "took";
-  const pWalk = Math.max(0.15, Math.min(0.92, 0.24 + (f - 1.0) * 2.2));
-  if (rng(s) < pWalk) {
+  if (ans.outcome === "took") return "took";
+  if (ans.outcome === "walked") {
     loi.rentPsf = openedAt;
     loi.tiPsf = openTi;
     loi.freeM = openFree;
@@ -4594,24 +4675,33 @@ function tenantCounterOutcome(
     loi.termM = openTerm;
     return "walked";
   }
+  counterBack(loi, ans.target!, { rentPsf: askRent, tiPsf: askTi, freeM: askFree, bumpPct: askBump, termM: askTerm });
+  return "countered";
+}
+
+/**
+ * THE TENANT'S ONE COUNTER-BACK, at the net effective `tenantAnswer` chose:
+ * the allowance, free months, bump and term split down the middle of the two
+ * positions (whole dollars, months, quarter points and years; the term only
+ * when it was on the table), and the face rent that brings those terms to the
+ * target (`rentForNE`) — never over what you asked (a smaller allowance than
+ * it opened with can take the rent under its opener: the same net effective).
+ * It was a die on the market rent.
+ */
+function counterBack(loi: LOI, target: number, ask: { rentPsf: number; tiPsf: number; freeM: number; bumpPct: number; termM: number }) {
+  const openTerm = loi.openTermM ?? loi.termM;
   loi.stage = "countered";
-  loi.counterRentPsf = +Math.min(
-    askRent,
-    Math.max(openedAt * 0.94, market * (0.95 + 0.04 * rng(s))),
-  ).toFixed(2);
-  loi.counterTiPsf = Math.round((askTi + openTi) / 2);
-  loi.counterFreeM = Math.round((askFree + openFree) / 2);
-  loi.counterBumpPct = Math.round(((askBump + openBump) / 2) * 4) / 4;
+  loi.counterTiPsf = Math.round((ask.tiPsf + (loi.openTiPsf ?? ask.tiPsf)) / 2);
+  loi.counterFreeM = Math.round((ask.freeM + (loi.openFreeM ?? ask.freeM)) / 2);
+  loi.counterBumpPct = Math.round(((ask.bumpPct + (loi.openBumpPct ?? ask.bumpPct)) / 2) * 4) / 4;
+  loi.termM = ask.termM !== openTerm ? 12 * Math.max(1, Math.round((ask.termM + openTerm) / 24)) : ask.termM;
+  const r = rentForNE(loi, target, loi.counterTiPsf, loi.counterFreeM, loi.counterBumpPct);
+  const open = loi.openRentPsf ?? ask.rentPsf;
+  loi.counterRentPsf = +Math.min(ask.rentPsf, Math.max(0, Number.isFinite(r) ? r : open)).toFixed(2);
   loi.rentPsf = loi.counterRentPsf;
   loi.tiPsf = loi.counterTiPsf;
   loi.freeM = loi.counterFreeM;
   loi.bumpPct = loi.counterBumpPct;
-  // The term splits the same way the other four do — deterministic midpoint, in
-  // whole years, and never a new draw on this path. Only when it was actually on
-  // the table: rounding a 47-month letter to four years on a counter-back
-  // nobody asked for would move the term by silence.
-  if (askTerm !== openTerm) loi.termM = 12 * Math.max(1, Math.round((askTerm + openTerm) / 24));
-  return "countered";
 }
 
 /** Why a letter came back untouched — the authority limit, in the player's own numbers. */
@@ -5242,35 +5332,18 @@ export function respondLOI(
     const termView: LOI = { ...loi, termM: askTerm };
     const years = Math.max(1, askTerm / 12);
     const neAsk = netEffectivePsf(termView, askRent, askTi, askFree, askBump);
-    const f = neAsk / Math.max(1, market);                   // aggression vs the market
-    const tight = vacancyTight(next, loi.use);
-    // BEST AND FINAL. Saying the number is firm is itself information: it
-    // converts some hagglers, because a credible take-it-or-leave-it within
-    // reach is easier to sign than to shop — and it hardens the rest, because
-    // you have taken away their move. There is no counter-back branch at all:
-    // one letter goes out, and the answer is a signature or an empty hallway.
+    // BEST AND FINAL. Saying the number is firm takes away the tenant's move:
+    // there is no counter-back, and the answer is a signature or an empty
+    // hallway.
     const bestFinal = counter?.bestFinal === true;
-    // WHERE THE TENANT IS INDIFFERENT, WHICH IS NOT THE MARKET RENT.
-    //
-    //   SWITCH   what a mover pays to avoid moving on
-    //   stick    an incumbent's premium on top — relocation, not just search
-    //   tight    fewer alternatives, so more tolerance
-    //   credit   better covenants are stickier here
-    //   term     how far off their own term band you dragged them
-    //
-    // In a balanced market a new prospect countered AT the market signs about
-    // 70% of the time; 20% over market is under a fifth. A sitting tenant
-    // still pays a relocation premium (`RENEWAL_STICK`) on top of SWITCH —
-    // real, but no longer a free 16% over-market farm.
-    // Vacancy softens landlords in life AND stiffens tenants less — a soft
-    // market also means the tenant has alternatives, so stickiness earns less.
-    // The old curve only shifted fStar up in tight markets; a soft market now
-    // pulls it down a notch so "push past market while half the block is empty"
-    // is the losing ask it should be.
-    const fStar = tenantIndifferenceMult(next, loi, askTerm, tight);
-    const W = 0.085;
-    const pAccept = Math.max(0.005, Math.min(0.95,
-      1 / (1 + Math.exp((f - fStar) / W)) + (bestFinal ? 0.05 : 0)));
+    // THE TENANT'S ANSWER IS A COMPARISON (tenantAnswer): the net effective
+    // you asked against its reservation, drawn once with the firm when the
+    // letter was written (`resNE`: its opener plus whatever surplus its own
+    // options left it). It was a logit on an asserted indifference multiple,
+    // re-drawn on every counter, with a die for the walk and another for the
+    // counter-back — so the same ask could be refused and then taken.
+    const neOpen = netEffectivePsf({ ...loi, termM: openTerm }, openedAt, openTi, openFree, openBump);
+    const ans = tenantAnswer(loi, neOpen, neAsk, bestFinal, -termIndifferenceShift(loi, askTerm) * market);
     loi.askedRentPsf = askRent;
     loi.askedTiPsf = askTi;
     loi.askedFreeM = askFree;
@@ -5300,7 +5373,7 @@ export function respondLOI(
       });
       next.leaseReplies = next.leaseReplies.slice(0, 8);
     };
-    if (rng(next) < pAccept) {
+    if (ans.outcome === "took") {
       const err = sign(loi);
       if (err) {
         // They said yes — a funding shortfall kills the deal. A same-month
@@ -5333,11 +5406,8 @@ export function respondLOI(
       });
       return { s: next, msg: `${loi.name} took your counter — $${askRent.toFixed(2)}/sf net effective $${neAsk.toFixed(2)}.` + drawNote() };
     }
-    // the further past market you pushed, the faster the door — and a firm
-    // number leaves nowhere else for a refusal to go, so on best-and-final
-    // everyone who does not take it walks.
-    const pWalk = bestFinal ? 1 : Math.max(0.15, Math.min(0.92, 0.24 + (f - 1.0) * 2.2));
-    if (rng(next) < pWalk) {
+    // nothing left to give, or a firm number it cannot meet: it walks
+    if (ans.outcome === "walked") {
       next.lois = next.lois.filter((l) => l.id !== id);
       loi.termM = openTerm;
       reply("walked", openedAt, openTi, openFree, openBump);
@@ -5357,42 +5427,24 @@ export function respondLOI(
       });
       return { s: next, msg: `${loi.name} walked. Asked $${neAsk.toFixed(2)}/sf net effective vs $${market.toFixed(2)} market.` };
     }
-    // they counter back once — final. Rent floor uses their OPENER, not the
-    // ask we just wrote onto loi.rentPsf (that overwrite made every counter-
-    // back floor at 94% of YOUR ask — almost no clawback).
-    loi.stage = "countered";
-    loi.counterRentPsf = +Math.min(
-      askRent,
-      Math.max(openedAt * 0.94, market * (0.95 + 0.04 * rng(next))),
-    ).toFixed(2);
-    loi.counterTiPsf = Math.round((askTi + openTi) / 2);
-    // Free months split the same way — cutting them was previously free on
-    // the counter-back branch because free rent was never part of the reply.
-    loi.counterFreeM = Math.round((askFree + openFree) / 2);
-    // Bump splits the same way: landlord pushes steeper, tenant pulls flatter.
-    loi.counterBumpPct = Math.round(((askBump + openBump) / 2) * 4) / 4;
-    loi.rentPsf = loi.counterRentPsf;
-    loi.tiPsf = loi.counterTiPsf;
-    loi.freeM = loi.counterFreeM;
-    loi.bumpPct = loi.counterBumpPct;
-    // The term splits like the rest — whole years, deterministic, and only when
-    // it was on the table at all. Their final term is `loi.termM`, which is what
-    // the sign path and the commission will read.
-    if (askTerm !== openTerm) loi.termM = 12 * Math.max(1, Math.round((askTerm + openTerm) / 24));
-    reply("countered", loi.counterRentPsf, loi.counterTiPsf, loi.counterFreeM, loi.counterBumpPct);
+    // they counter back once — final — at the middle of the two positions or
+    // their reservation, whichever is less (counterBack)
+    counterBack(loi, ans.target!, { rentPsf: askRent, tiPsf: askTi, freeM: askFree, bumpPct: askBump, termM: askTerm });
+    const counterRentPsf = loi.counterRentPsf!, counterTiPsf = loi.counterTiPsf!, counterFreeM = loi.counterFreeM!, counterBumpPct = loi.counterBumpPct!;
+    reply("countered", counterRentPsf, counterTiPsf, counterFreeM, counterBumpPct);
     next.news.unshift({
       q: next.month, kind: "info",
       text: `${loi.name} countered at ${rec.address}: you asked $${askRent.toFixed(2)}/sf`
         + (askFree > 0 || openFree > 0 ? ` / ${askFree} mo free` : "")
         + ` / ${askBump.toFixed(2)}%/yr`
         + (askTerm !== openTerm ? ` / ${(askTerm / 12).toFixed(1)} yrs` : "")
-        + `, they came back at $${loi.counterRentPsf.toFixed(2)}/sf with $${loi.counterTiPsf}/sf of TI`
-        + (loi.counterFreeM > 0 ? ` and ${loi.counterFreeM} mo free` : "")
-        + ` and ${loi.counterBumpPct.toFixed(2)}%/yr`
+        + `, they came back at $${counterRentPsf.toFixed(2)}/sf with $${counterTiPsf}/sf of TI`
+        + (counterFreeM > 0 ? ` and ${counterFreeM} mo free` : "")
+        + ` and ${counterBumpPct.toFixed(2)}%/yr`
         + (askTerm !== openTerm ? ` on ${(loi.termM / 12).toFixed(1)} years` : "")
         + `. Final; accept or lose them.`,
     });
-    return { s: next, msg: `${loi.name} came back at $${loi.counterRentPsf.toFixed(2)}/sf — final.` };
+    return { s: next, msg: `${loi.name} came back at $${counterRentPsf.toFixed(2)}/sf — final.` };
   }
 
   next.lois = next.lois.filter((l) => l.id !== id);
@@ -5553,8 +5605,9 @@ export function rolloverReserve(s: GameState, rec: ParcelRecord, h: Holding): nu
     // on the fit-out curve, at today's construction cost. This used the raw
     // band in base-year dollars at full pressure, a different number from the
     // one the letter would carry — two answers to one quantity.
-    const ti = ((lo + hi) / 2) * termYrs * t.sf
-      * tiPressure(concessionPressure(s.econ, use));
+    // (fitOutPsf: the middle of the band, as the letter now writes it; the
+    // concession market's share is in the package, not the allowance)
+    const ti = ((lo + hi) / 2) * termYrs * t.sf;
     const lc = rent * t.sf * termYrs * 0.045;
     const ramp = 0.35 + 0.65 * (1 - left / 12);
     reserve += (1 - p) * (downtime + ti + lc) * ramp;

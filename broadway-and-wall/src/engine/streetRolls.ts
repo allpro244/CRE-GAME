@@ -759,7 +759,7 @@ function deskView(s: GameState, parcels: ParcelTable) {
  * was weighed against. This replaced a coin flip: three letters in ten offered
  * 68-86% of the ask and the rest 90-110%, whoever the tenant was.
  */
-export function offerForPlayer(s: GameState, parcels: ParcelTable, firm: Tenant, use: BuiltClass, sf: number, rec: ParcelRecord, score: number, mktHere: number, postEff: number, termM: number, sitting = false): { bid: number; alt?: string } {
+export function offerForPlayer(s: GameState, parcels: ParcelTable, firm: Tenant, use: BuiltClass, sf: number, rec: ParcelRecord, score: number, mktHere: number, postEff: number, termM: number, sitting = false): { bid: number; alt?: string; res?: number } {
   if (!COMM.includes(use as Comm) || !(postEff > 0) || !(mktHere > 0)) return { bid: 1 };
   const k = use as Comm;
   const V = deskView(s, parcels);
@@ -774,7 +774,10 @@ export function offerForPlayer(s: GameState, parcels: ParcelTable, firm: Tenant,
   const hh = s.holdings[rec.bbl];
   const loadHere = expenseLoadPsf(rec, s.econ, hh?.condition ?? "standard", k, hh?.assessed);
   const rMax = worth + V.expOf(k, V.typLoad(k), termM) - V.expOf(k, loadHere, termM) - (sitting ? 0 : moveCostPsfYr(s.econ, k, termM, firm)) + taste - c.joint - (c.post - c.res);
-  return { bid: Math.max(0.4, Math.min(1, rMax / postEff)), alt: c.bbl };
+  // `res` is that most, effective $/sf a year: the firm's RESERVATION here,
+  // drawn once with its taste (the one exogenous draw: who this firm is). Its
+  // answers to a counter are comparisons against it (leasing.ts tenantAnswer).
+  return { bid: Math.max(0.4, Math.min(1, rMax / postEff)), alt: c.bbl, res: rMax };
 }
 
 /**

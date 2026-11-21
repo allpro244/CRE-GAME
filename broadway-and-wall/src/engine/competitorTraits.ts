@@ -568,6 +568,20 @@ export const GRADE_NUM: Record<string, number> = { obsolete: 0, worn: 0.25, stan
 export const dealsPerYear = (sheet: Sheet) => 1 + Math.round(sheet.capacity / 13);
 
 /**
+ * HOW FAR APART INFORMED VALUATIONS OF ONE BUILDING SIT: a standard deviation
+ * of about 6% of value. [S~] Valuation-variance studies put independent
+ * valuations of the same property at a standard deviation of roughly 5-10%
+ * (Crosby, Lavers & Murdoch 1998, "Property valuation variation and the
+ * 'margin of error' in the UK", J. Property Research 15(4); IPF/MSCI
+ * valuation-and-sale-price reports, a mean absolute gap of 6-9% between the
+ * last valuation and the price); 6% is the low half, since a committee with
+ * its broker's comps is a valuer that did its diligence. The one number the
+ * bidders' errors (`misreadShare`), their shading (SHADE) and an owner's room
+ * over its own floor (actions.ts OWNER_ROOM) are all read from.
+ */
+export const VALUATION_SD = 0.06;
+
+/**
  * THE COMMITTEE'S ERROR, in yield points, from its underwriting. A sharp
  * shop reads within a tenth of a point; a sloppy one is up to ±1.5 points
  * wrong, in a direction fixed for that firm, that building and that month —
@@ -575,6 +589,19 @@ export const dealsPerYear = (sheet: Sheet) => 1 + Math.round(sheet.capacity / 13
  */
 export const misreadPp = (sheet: Sheet, key: string) =>
   (hash01(key) * 2 - 1) * 1.5 * (1 - sheet.underwriting / 100);
+
+/**
+ * THE SAME ERROR AS A SHARE OF VALUE, sized from measured valuation
+ * dispersion rather than asserted: uniform, in a direction fixed for that
+ * firm, building and month, with a standard deviation of VALUATION_SD
+ * (~6%, the valuation-variance studies) for a committee of
+ * middling underwriting, twice that for the sloppiest and none for the
+ * sharpest. The bid desk (propmarket.ts valueTo) reads this one; ±1.5 points
+ * of yield (`misreadPp`) was about ±25% of value at a 6% yield, several times
+ * what two valuers of one building measurably disagree by.
+ */
+export const misreadShare = (sheet: Sheet, key: string) =>
+  (hash01(key) * 2 - 1) * Math.sqrt(3) * VALUATION_SD * 2 * (1 - sheet.underwriting / 100);
 
 /**
  * THE FIRM IN WORDS — its most defining traits and its rules. Used where a

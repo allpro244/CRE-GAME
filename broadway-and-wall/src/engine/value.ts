@@ -614,12 +614,13 @@ export type LandOption = {
   exercise: boolean;
   use: BuiltClass;
   /**
-   * What a dollar paid on the day the owner builds is worth today: (V/V*)^beta
-   * times the queue's wait (1 when it builds now, 0 when it never will). The
-   * interim income the lot earns until then is worth its perpetuity times
-   * (1 - reach) — see readLand.
+   * What the lot earns while it waits, capitalised, $/sf of land: the car
+   * park (`interimValuePsf`). Building gives it up, so it is part
+   * of what building costs (K in the trigger includes it), and the holder's
+   * dirt is worth it plus the option (Capozza & Helsley 1989, land in an
+   * interim use with a conversion option).
    */
-  reach: number;
+  interimPsf: number;
 };
 
 /**
@@ -906,19 +907,24 @@ function residualCore(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: Land
   // ever ripe; at the long rate it lands near 1.3K, where Quigg (1993) found it.
   const r = Math.max(0.005, (econ.indexRate ?? LAND_CARRY_RATE * 100) / 100);
   const tau = idleLandCarryRate(econ);
+  // THE LOT ALREADY EARNS SOMETHING WHILE IT WAITS (a car park), and building
+  // ends that: the income given up is a cost of building like the
+  // construction, so it sits in K (Capozza & Helsley 1989: urban land is the
+  // capitalised interim rent plus the option to convert; conversion costs
+  // the structure AND the interim rent forgone). A residual that cannot beat
+  // the car park is not a reason to build, and the trigger says so.
+  const interimPsf = interimValuePsf(rec, econ);
   const consider = (use: BuiltClass, value: number, nonLand: number, carry: number, exitYieldPct: number): void => {
     const v = value / (1 + DEV_MARGIN) / (1 + carry) / rec.lotArea;
-    const k = nonLand / (1 + carry) / rec.lotArea;
+    const k = nonLand / (1 + carry) / rec.lotArea + interimPsf;
     const sigma = econ.landSigma?.[use] ?? 0;
     const delta = exitYieldPct / 100;
     const beta = optionBeta(sigma, r, delta, tau);
     const o = optionValue(v, k, beta);
     if (!(o.f > 0)) return;
-    const qf = queueFactor(econ, use, o.f);
-    const psf = o.f * qf;
+    const psf = o.f * queueFactor(econ, use, o.f);
     if (!opt || psf > opt.psf) {
-      const reach = o.exercise ? qf : o.vStar > k ? (o.f / (o.vStar - k)) * qf : 0;
-      opt = { psf, intrinsicPsf: v - k, v, k, vStar: o.vStar, beta, sigma, delta, exercise: o.exercise, use, reach };
+      opt = { psf, intrinsicPsf: v - k, v, k, vStar: o.vStar, beta, sigma, delta, exercise: o.exercise, use, interimPsf };
     }
   };
   const all: { use: BuiltClass; psf: number }[] = [];
@@ -1763,21 +1769,16 @@ function readLand(rec: ParcelRecord, econ: Econ, whole: boolean, ctx: LandCtx | 
 
   // THE HOLDER: WHAT THE DIRT IS WORTH TO AN OWNER WHO WAITS (2026-11-20).
   //
-  // Where the owner would rather wait, the dirt is worth the option to build
-  // later (above, struck net of the tax and insurance the wait costs) PLUS
-  // what the lot earns until then: a surface car park, the commonest interim
-  // use (`interimUsePsfYr`), collected until the day it is built. A perpetual
-  // flow c stopped at the exercise date is worth c/(r+tau) x (1 - E[e^-rT]),
-  // and E[e^-rT] is the option's own `reach` ((V/V*)^beta times the queue's
-  // wait): a lot that will never be built keeps its car park forever, a lot
-  // about to be built keeps almost none of it. Both halves move with the
-  // town: a slump lowers V and the office rent the car park is priced off,
-  // and the holder's number falls with them. Nothing here is a floor.
-  const r = Math.max(0.005, (econ.indexRate ?? LAND_CARRY_RATE * 100) / 100);
-  const tau = idleLandCarryRate(econ);
-  const interim = interimUsePsfYr(rec, econ);
-  const waitIncome = interim > 0 ? (interim / (r + tau)) * (1 - clamp(option?.reach ?? 0, 0, 1)) : 0;
-  const holder = ripe ? 0 : (option?.psf ?? 0) + waitIncome;
+  // Where the owner would rather wait, the dirt is worth what it earns while
+  // it waits — a surface car park, the commonest interim use
+  // (`interimValuePsf`) — plus the option to give
+  // that up for a building later (residualCore: K includes the car park
+  // forgone, and the option is struck net of the tax and insurance the wait
+  // costs). Capozza & Helsley 1989. Both halves move with the town: a slump
+  // lowers V and the office rent and fill the car park is priced off, and
+  // the holder's number falls with them. Nothing here is a floor.
+  const interimPsf = option?.interimPsf ?? interimValuePsf(rec, econ);
+  const holder = ripe ? 0 : (option?.psf ?? 0) + interimPsf;
   void whole;
   // what the income approach says the dirt is worth: the builder's residual
   // where it would build now (the best option and the best residual can be
@@ -3783,6 +3784,22 @@ export function interimUsePsfYr(rec: ParcelRecord, econ: Econ): number {
   const fill = 1 - clamp(econ.cityVac?.office ?? openingVac("office"), 0, 1);
   const net = rateMo * 12 * fill - PARK_COST_YR * (econ.costIdx ?? 1);
   return net > 0 ? net / PARK_SF_PER_SPACE : 0;
+}
+
+/**
+ * WHAT THE CAR PARK IS WORTH, $/sf of land: its net income capitalised the
+ * way this engine capitalises any income — at the market's cap rate, with the
+ * property tax the owner pays on the value solved in (V = NOI / (cap + t),
+ * as `classValuePsf`), plus the liability policy (`idleLandCarryRate`). The
+ * cap is the office market's: the car park is priced off the same commuters'
+ * demand as the offices (interimUsePsfYr), so it carries the same risk.
+ * Through-cycle (`capExp`) where the town has one, like every residual.
+ */
+export function interimValuePsf(rec: ParcelRecord, econ: Econ): number {
+  const c = interimUsePsfYr(rec, econ);
+  if (!(c > 0)) return 0;
+  const cap = Math.max(0.5, econ.capExp?.office ?? econ.capRate?.office ?? CAP_BASE.office) / 100;
+  return c / (cap + idleLandCarryRate(econ));
 }
 
 /**

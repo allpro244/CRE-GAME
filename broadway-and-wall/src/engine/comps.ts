@@ -53,6 +53,13 @@ export interface Comp {
    */
   mark?: number;
   /**
+   * SOLD BY A SELLER AGAINST A DEADLINE — dirt only (2026-11-21): a fund at the
+   * end of its life, a merchant builder's exit, an estate, a receiver (the
+   * listing's `reason` was not "voluntary"). Under compulsion, so not market
+   * value (USPAP), and no evidence about land: see `landEvidenceWeight`.
+   */
+  forced?: boolean;
+  /**
    * WHAT THE INDEX SAID IT WAS WORTH, AND THE INDEX, on the day it closed —
    * buildings only (2026-10-16). The cap-rate index follows where the
    * market's sales actually clear (market.ts): a print under the model's
@@ -105,6 +112,9 @@ export function recordComp(
     : d ? holdingNOIYr(rec, s.econ, asIfOwned(s, rec.bbl, price, d, rec), s.month)
     : noiAfterTaxYr(rec, s.econ, cond, price);
   const px = Math.round(price);
+  // a lot sold against a deadline (the listing's reason) is a compelled sale
+  const li = built ? undefined : s.listings?.find((l) => l.bbl === rec.bbl);
+  const forced = !built && !!li?.reason && li.reason !== "voluntary";
   s.comps.push({
     m: s.month,
     bbl: rec.bbl,
@@ -117,6 +127,7 @@ export function recordComp(
     buyer, seller,
     distress: distress || undefined,
     offMarket: offMarket || undefined,
+    ...(forced ? { forced: true } : {}),
     // Stamped here because here is the only place that knows the date. Every
     // one of the twelve callers hands in a resolveRec'd record, so this is
     // bit-for-bit the number `tickLandComps` would have computed for this lot
@@ -130,7 +141,9 @@ export function recordComp(
   // ...AND IT IS THE MARKET'S CAP RATE: every building that closes is a
   // print on the cap tape the class read is taken from (propmarket.ts).
   if (built) printTrade(s, rec, price, buyer, seller, cond, distress, offMarket);
-  else printLandTrade(s, rec, price, buyer, distress, offMarket);
+  // ...AND EVERY LAND PRINT IS ON THE LAND INDEX'S TAPE, weighted by the same
+  // rule the comps desk reads it by (landEvidenceWeight): one tape, one answer.
+  else printLandTrade(s, rec, price, buyer, landEvidenceWeight(s.comps[s.comps.length - 1]));
   s.compsTotal = (s.compsTotal ?? 0) + 1;
   s.compsVolume = (s.compsVolume ?? 0) + px;
   if (s.comps.length > MAX_COMPS) s.comps.splice(0, s.comps.length - MAX_COMPS);
@@ -252,8 +265,9 @@ export function portfolioIndustries(s: GameState) {
  *     as they age and its dirt drifts to what the residual and the holder say
  *     — the old no-bid decay and the holders' capitulation were two halves of
  *     that, and neither reached a lot nobody could build on.
- *   - WHAT IS NOT A PRINT. A distress sale is the price of the compulsion
- *     (USPAP market value: neither party under compulsion). An off-market
+ *   - WHAT IS NOT A PRINT (landEvidenceWeight). A distress sale, or a
+ *     seller against a deadline, is the price of the compulsion (USPAP
+ *     market value: neither party under compulsion). An off-market
  *     deed counts at reduced weight — most of it when it paid over the
  *     appraisal (an assembler's premium leaks), a third when it paid under
  *     (a favour, an estate). A farm, a plat lot or a subdivision tract trades
@@ -291,7 +305,9 @@ export function tickLandComps(s: GameState, parcels: Record<string, ParcelRecord
   const byDist = new Map<string, { v: number; w: number }[]>();
   for (const c of s.comps ?? []) {
     const age = s.month - c.m;
-    if (c.sf !== 0 || c.distress || age < 0 || age > LAND_MAX_AGE_M || !(c.price > 0)) continue;
+    if (c.sf !== 0 || age < 0 || age > LAND_MAX_AGE_M || !(c.price > 0)) continue;
+    const kind = landEvidenceWeight(c);
+    if (!(kind > 0)) continue;
     const rec = resolveRec(parcels, s, c.bbl);
     if (!rec || !(rec.lotArea > 0) || rec.ag || rec.homeLot || rec.tract) continue;
     const env = rec.lotArea * farMaxFor(rec) * envelopeRealisation(rec);
@@ -299,9 +315,6 @@ export function tickLandComps(s: GameState, parcels: Record<string, ParcelRecord
     const then = cpiAt.get(c.m) ?? cpiNow;
     const ppb = (c.price / env) * (cpiNow / Math.max(1e-9, then));
     if (!(ppb > 0) || !Number.isFinite(ppb)) continue;
-    // an off-market deed: most of its weight over the appraisal, a third under it
-    const ratio = c.mark && c.mark > 0 ? c.psf / c.mark : 1;
-    const kind = !c.offMarket ? 1 : ratio >= 1 ? 0.75 : 0.35;
     const w = kind * Math.pow(0.5, age / LAND_HALF_LIFE_M);
     const d = rec.district ?? "—";
     let g = byDist.get(d);
@@ -315,6 +328,27 @@ export function tickLandComps(s: GameState, parcels: Record<string, ParcelRecord
     out[d] = { ppb: +weightedMedian(g).toPrecision(6), w: +w.toPrecision(4), n: g.length, cpi: cpiNow };
   }
   e.landComps = out;
+}
+
+/**
+ * HOW MUCH A LAND PRINT IS WORTH AS EVIDENCE — the one rule for the comps desk
+ * (tickLandComps, what value.ts reconciles with the residual) and the land
+ * index's tape (propmarket.ts printLandTrade), so the two read land off the
+ * same prints at the same weights.
+ *
+ *   - A compelled sale is not market value (USPAP: neither party under
+ *     compulsion): a distress sale, or a seller against a deadline (`forced`).
+ *     Weight 0.
+ *   - An off-market deed is a real price nobody tested: most of its weight
+ *     when it paid over the appraisal (an assembler's premium leaks), a third
+ *     when under (a favour, an estate). [K: stated weights, as before]
+ *   - Anything else, marketed and closed: 1.
+ */
+export function landEvidenceWeight(c: Pick<Comp, "distress" | "forced" | "offMarket" | "psf" | "mark">): number {
+  if (c.distress || c.forced) return 0;
+  if (!c.offMarket) return 1;
+  const ratio = c.mark && c.mark > 0 ? c.psf / c.mark : 1;
+  return ratio >= 1 ? 0.75 : 0.35;
 }
 
 /** The weighted median: the value at which half the weight lies on each side. */

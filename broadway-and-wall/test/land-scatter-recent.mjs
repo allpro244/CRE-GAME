@@ -27,11 +27,11 @@ const parcels = E.normalizeParcels(makeCity("somewhere", SEED, { size: "city" })
 const bbls = Object.keys(parcels);
 let g = E.firstListings(E.newGame(SEED, parcels, 2_500_000, undefined, { citySize: "city", cityLots: bbls.length }), parcels, bbls);
 for (let m = 0; m < 24; m++) g = E.advanceQuarter(g, parcels, bbls);
-// vacant, texture-priced lots: the ones a land sale prints a level from
+// vacant urban lots: every one a land sale prints a level from (propmarket.ts urbanLot)
 const lots = bbls.map((b) => E.resolveRec(parcels, g, b))
-  .filter((r) => r && r.class === "land" && r.lotArea > 0 && !r.ag && !r.homeLot && !r.tract && E.landRead(r, g.econ).winner === "texture");
-ok(lots.length >= 8, `${lots.length} texture-priced vacant lots to print on`);
-const sell = (rec, k) => E.printLandTrade(g, rec, E.landRead(rec, g.econ).texture * rec.lotArea * k, "test");
+  .filter((r) => r && r.class === "land" && r.lotArea > 0 && !r.ag && !r.homeLot && !r.tract);
+ok(lots.length >= 8, `${lots.length} vacant urban lots to print on`);
+const sell = (rec, k) => E.printLandTrade(g, rec, E.landRead(rec, g.econ).texture * rec.lotArea * k, "test", 1);
 ok(typeof E.landPrintScatter === "function", "the land index exposes the scatter it weighs a print by");
 if (typeof E.landPrintScatter === "function") {
   const sd0 = Math.sqrt(E.landPrintScatter(g));

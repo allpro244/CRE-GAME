@@ -1801,31 +1801,23 @@ export function landBidRound(s: GameState, parcels: ParcelTable, rec: ParcelReco
 }
 
 /**
- * Which lots a price is evidence about the texture level on: lots the texture
- * prices, whoever buys them — a builder's purchase counts the same as a land
- * banker's. A farm, a plat lot or a subdivision tract trades to its own buyer
- * (the farmer, the homebuilder, the land developer), and the urban texture
- * says nothing about it.
+ * Which lots a price is evidence about the land level on: every urban lot,
+ * whoever buys it and whatever priced it (2026-11-21). A farm, a plat lot or a
+ * subdivision tract trades to its own buyer (the farmer, the homebuilder, the
+ * land developer), and the urban texture says nothing about it.
  *
- * A LOT A BUILDER'S RESIDUAL PRICES IS NOT EVIDENCE ABOUT THE TEXTURE, and
- * that was measured three ways (six seeds, 25 years; the old formula held the
- * level at 0.9-1.8 and the built sample's land at 39 real $/sf):
- *  - price per unit of texture: a builder buys only where its residual clears
- *    the floor, so every builder's print sits above the level; with sellers
- *    holding their reservations the level ratcheted to 2-15x on five seeds of
- *    six (built-sample land 39 -> 86 $/sf), and with sellers giving lots away
- *    it whipsawed 0.08-5.3.
- *  - price over appraisal (a sales-ratio study): a builder-priced lot's
- *    appraisal does not carry the level, so each builder's purchase at
- *    1.4-2x appraisal (it breaks ground; the appraiser's queue wait is not
- *    its cost) compounded the level, and each one below divided it: one seed
- *    fell 0.95 -> 0.017.
- * The residual is the price on those lots already (value.ts readLand): a
- * builder's purchase there tests the residual, not the dirt nobody builds on.
+ * It used to be only the lots the texture FLOOR priced, because a builder's
+ * purchase of a lot its residual priced sat above the floor by construction
+ * and ratcheted the level (measured, six seeds: 2-15x on five). The floor is
+ * gone (value.ts readLand, #853): no lot is priced off this level any more
+ * except through the opening seed, which ages out, so a print cannot feed
+ * back into the price it is read against, and leaving the builders' prints
+ * out left the index reading only the broker survey and unclosed rounds while
+ * the comps desk (comps.ts) read every sale. One tape now: the same prints,
+ * at the same weights (comps.ts landEvidenceWeight).
  */
-function urbanLot(rec: ParcelRecord, e: Econ): boolean {
-  if (rec.ag || rec.homeLot || rec.tract) return false;
-  return landRead(rec, e).winner === "texture";
+function urbanLot(rec: ParcelRecord): boolean {
+  return !(rec.ag || rec.homeLot || rec.tract);
 }
 
 /** A lot's columns: location against mid-town, lot size against the standard lot (plottage), and what kind of evidence it is. */
@@ -1943,32 +1935,28 @@ function pushLandPrint(s: GameState, p: { m: number; L: number; w: number; kind:
  * struck at. (Which lots count, and why not the builder-priced ones: urbanLot.)
  */
 function impliedLandLevel(s: GameState, rec: ParcelRecord, price: number): number | null {
-  if (!(price > 0) || !(rec.lotArea > 0) || !urbanLot(rec, s.econ)) return null;
+  if (!(price > 0) || !(rec.lotArea > 0) || !urbanLot(rec)) return null;
   const mark = landRead(rec, s.econ).texture * rec.lotArea;
   if (!(mark > 0)) return null;
   const L = s.econ.landIdx * price / mark;
   return Number.isFinite(L) && L > 0 ? L : null;
 }
 
-/** A lot closed (comps.ts recordComp), to any arm's-length buyer. */
-export function printLandTrade(s: GameState, rec: ParcelRecord, price: number, _buyer: string, distress?: boolean, offMarket?: boolean): void {
-  // MARKET VALUE ASSUMES NEITHER PARTY UNDER COMPULSION (USPAP; the
-  // Interagency Appraisal Guidelines). A forced sale of dirt to the one bidder
-  // in the room is the price of the compulsion, not of the land; nor is a lot
-  // never exposed to the market. Measured with them in at half weight (when
-  // only land bankers printed): the level fell 87% over 25 years. Neither is
-  // a print.
-  if (distress || offMarket) return;
-  // ...AND A SELLER AGAINST A DEADLINE IS UNDER COMPULSION too: a fund at the
-  // end of its life, a merchant builder's exit, a non-core trim, an estate or a
-  // receiver (sellerTerms "forced": the reserve is only the loan, so unlevered
-  // dirt goes at any bid). Measured with them in: lots sold at 1-13% of
-  // appraisal to a builder bidding its thin residual, and the level fell
-  // 1.22 -> 0.04 in three years (seed 1).
-  const li = s.listings?.find((l) => l.bbl === rec.bbl);
-  if (li?.reason && li.reason !== "voluntary") return;
+/**
+ * A lot closed (comps.ts recordComp). `w` is its weight as evidence, by the
+ * comps desk's own rule (comps.ts landEvidenceWeight): 0 for a compelled sale
+ * — a distress sale, or a seller against a deadline (measured with them in:
+ * lots sold at 1-13% of appraisal to a builder bidding its thin residual, and
+ * the level fell 1.22 -> 0.04 in three years, seed 1) — and less than 1 for a
+ * deed never exposed to the market. They used to be dropped here outright
+ * (when only land bankers printed, off-market prints at half weight took the
+ * level down 87% in 25 years); they now carry the weight the comps desk gives
+ * them, so the index and the comps read one tape.
+ */
+export function printLandTrade(s: GameState, rec: ParcelRecord, price: number, _buyer: string, w: number): void {
+  if (!(w > 0)) return;
   const L = impliedLandLevel(s, rec, price);
-  if (L !== null) pushLandPrint(s, { m: s.month, L, w: 1, kind: "t", x: landX(rec) });
+  if (L !== null) pushLandPrint(s, { m: s.month, L, w, kind: "t", x: landX(rec) });
 }
 
 /** A land round that did not close: the best bid and the ask met halfway, at half weight — read only when sales are thin. */

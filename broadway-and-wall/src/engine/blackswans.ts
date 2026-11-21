@@ -788,14 +788,16 @@ function considerAnchor(s: GameState, parcels: ParcelTable, bbls: string[], forc
   }
   // NOT THE ADDRESS EVERYBODY ALREADY KNOWS. Anchors go where the land is
   // cheap enough to assemble a campus and the subsidy is on offer — the
-  // centre that is losing, not the one that won.
-  const order = poles.map((pl, i) => ({ i, lvl: pl.level })).sort((a, b) => a.lvl - b.lvl);
+  // centre that is losing, not the one that won. "Losing" is read off the
+  // surface: how far the centre's own block has moved from where the map
+  // started it (s.blockD, which already carries any campus on it), not a
+  // stored score.
+  const order = poles.map((pl, i) => ({ i, lvl: s.blockD?.[pl.name] ?? 0 })).sort((a, b) => a.lvl - b.lvl || a.i - b.i);
   const pick = order[Math.floor(rng(s, "shock") * Math.max(1, order.length - 1))].i;
   const pole = poles[pick];
   // About as far as a well-located station moves a neighbourhood, and more:
   // eight to fourteen points at the site, fading with distance.
   const jump = 8 + 6 * rng(s, "shock");
-  pole.level = Math.min(16, pole.level + jump);
   // The payroll: 1-2.5% of the city's jobs over four years, the anchor and
   // the suppliers, lawyers and lunch places it brings.
   const gain = 0.01 + 0.015 * rng(s, "shock");
@@ -818,6 +820,7 @@ function considerAnchor(s: GameState, parcels: ParcelTable, bbls: string[], forc
     t: `${name} chose the city for its ${kind.what} · ${(gain * 100).toFixed(1)}% more jobs · won on cost, odds ${(p * 100).toFixed(0)}%`,
   }, [costWhy]);
   (e.anchors ??= []).push(a);
+  settlePoles(s);
   (e.blackSwans ??= []).push({ m: s.month, kind: "anchor", size: Math.round(gain * 1000), sf: 0, title: `${name} picked the city` });
   raiseAlert(s, {
     kind: "swan", tone: "good", ...(best ? { bbl: best } : {}), why: a.why,
@@ -827,12 +830,42 @@ function considerAnchor(s: GameState, parcels: ParcelTable, bbls: string[], forc
   });
 }
 
+/** Months a departing anchor takes to go: two years, the length of a lease-out and wind-down. [M: the anchor's own departure schedule, the literal it always used, named so the payroll and the location lift share it.] */
+const LEAVE_M = 24;
+
+/**
+ * WHAT A CENTRE IS WORTH IS WHAT STANDS ON IT (2026-11-21). A centre's level
+ * used to be an accumulator: a campus added its jump, clamped at +16, and a
+ * walk or a departure took it back off, clamped at -16. The clamps were rails
+ * (CLAUDE.md, fake number five) and made the books asymmetric: a jump cut by
+ * the +16 rail was later removed in full, so the centre ended below where it
+ * started. And nothing ever let the jump go except the firm leaving — which
+ * is right, since the lift IS the campus, but it was a stored number rather
+ * than a reading of the campus.
+ *
+ * So the level is now derived each month from the anchors themselves: a
+ * campus that is coming is priced in full on the promise (the land reprices
+ * at the announcement), one that is here holds it for as long as it is here,
+ * and one that is leaving takes it away as its payroll goes, month by month
+ * over the same 24 months the jobs go. A walk removes it the month the deal
+ * dies. No clamp, no stored residue, nothing to decay by hand.
+ */
+function settlePoles(s: GameState) {
+  const poles = s.poles;
+  if (!poles?.length) return;
+  for (const p of poles) p.level = 0;
+  for (const a of s.econ.anchors ?? []) {
+    const p = poles[a.pole];
+    if (!p) continue;
+    p.level += a.state === "leaving" ? a.jump * Math.max(0, a.leftM) / LEAVE_M : a.jump;
+  }
+  for (const p of poles) p.level = +p.level.toFixed(3);
+}
 function tickAnchors(s: GameState) {
   const e = s.econ;
   const list = e.anchors;
-  if (!list?.length) return;
+  if (!list?.length) { settlePoles(s); return; }
   for (const a of [...list]) {
-    const pole = s.poles?.[a.pole];
     if (a.state === "coming") {
       if (s.month < (a.breakM ?? s.month)) continue;
       // THE GROUNDBREAK, OR THE WALK. The firm looks again before it commits:
@@ -845,7 +878,6 @@ function tickAnchors(s: GameState) {
       const board = !!g?.control;
       const pWalk = board ? 1 : Math.min(1, 1 / (1 + Math.exp(COST_BETA * (MOVE_HURDLE - (c - a.costAt)))) + (turned ? 0.4 : 0));
       if (rng(s, "shock") < pWalk) {
-        if (pole) pole.level = Math.max(-16, pole.level - a.jump);
         e.anchors = e.anchors!.filter((x) => x !== a);
         const id = why(s, {
           k: "anchor.walked", a: "firm", name: a.name, ...(a.bbl ? { bbl: a.bbl } : {}),
@@ -875,8 +907,8 @@ function tickAnchors(s: GameState) {
       const pLeave = 1 / (1 + Math.exp(COST_BETA * (MOVE_HURDLE - (c - a.costAt))));
       if (rng(s, "shock") < pLeave) {
         a.state = "leaving";
-        a.leftM = 24;
-        a.pullM = Math.pow(1 + a.gain, -1 / 24) - 1;
+        a.leftM = LEAVE_M;
+        a.pullM = Math.pow(1 + a.gain, -1 / LEAVE_M) - 1;
         const id = why(s, {
           k: "anchor.leaving", a: "firm", name: a.name, ...(a.bbl ? { bbl: a.bbl } : {}),
           n: { costMove: c - a.costAt, odds: pLeave, gain: a.gain },
@@ -898,11 +930,11 @@ function tickAnchors(s: GameState) {
     }
     if (a.state === "leaving") {
       if (a.leftM > 0) { e.bsJobPull = (e.bsJobPull ?? 0) + a.pullM; a.leftM -= 1; continue; }
-      if (pole) pole.level = Math.max(-16, pole.level - a.jump);
       e.anchors = e.anchors!.filter((x) => x !== a);
     }
   }
   if (!e.anchors!.length) delete e.anchors;
+  settlePoles(s);
 }
 
 /** A campus from a save made before the anchor was grown: its hiring still lands, then it is done. */

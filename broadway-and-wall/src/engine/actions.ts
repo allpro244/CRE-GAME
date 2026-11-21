@@ -14,7 +14,7 @@ import { mergedTouched, ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, rivalCanClose, rivalsWhoCanClose, gradeOf, tie, firmSells, firmMaxPrice } from "./rivals";
-import { BUY_CLOSING, bidRound, listingReserve, noteRoundFailed, noteRoundClosed, impliedCap, landBidRound, noteLandRoundFailed, dealView, bidderOf, maxPrice, affordable, landMaxPrice } from "./propmarket";
+import { VALUATION_SD, BUY_CLOSING, bidRound, listingReserve, noteRoundFailed, noteRoundClosed, impliedCap, landBidRound, noteLandRoundFailed, dealView, bidderOf, maxPrice, affordable, landMaxPrice } from "./propmarket";
 import { PREMARKET_M, beliefSignals } from "./beliefs";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
@@ -1898,6 +1898,29 @@ const HOLDER_ASK: Record<string, number> = {
  * offer". Draws come from the stream the caller names, so the player's own
  * conversations keep theirs.
  */
+/**
+ * HOW FAR OVER ITS OWN FLOOR AN OWNER OPENS. An owner who names a price does
+ * not know what you would pay; it knows the building and that buyers' values
+ * of it spread about its own. Facing a buyer whose value is spread evenly
+ * over its floor with the measured dispersion of informed valuations
+ * (VALUATION_SD, uniform, half-width sqrt(3) x that), the price that does
+ * best for it — (p - r) x P(buyer's value > p) — is half-way up the spread:
+ * r x (1 + sqrt(3) x sd). An owner whose last valuation is stale is less sure
+ * where the market is (`unadvised`, the same staleness that lets its number
+ * drift), so its spread, and its opening, are wider: up to twice as wide for
+ * a file nobody has looked at in decades. About 10-14% over the floor for the
+ * owners who quote at all, which is the room a negotiated sale shows off its
+ * ask. It replaced three dice: a slope on how far under the ask you came,
+ * soft-counter odds on rails, and a die on how much of the gap they gave.
+ */
+export const OWNER_ROOM = Math.sqrt(3) * VALUATION_SD;
+const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
+const ownerRoom = (unadvised: number) => OWNER_ROOM * (1 + clamp01(unadvised));
+/** What an owner with a quoted ask will take: its stored floor, or — an ask from an older save, or one rung in by the owner — the ask less the narrowest room. */
+export function ownerFloor(a: { ask?: number; reserve?: number }): number {
+  return a.reserve ?? (a.ask ?? 0) / (1 + OWNER_ROOM);
+}
+
 export function ownerAnswersCall(
   s: GameState, rec: ParcelRecord, held: { kind: string } | null, ch: RngChannel,
 ): { refused: true } | { refused: false; reserve: number; quotes: boolean; value: number } {
@@ -2127,16 +2150,21 @@ export function approachOwner(
     });
     return { s: next, blind: true };
   }
-  next.approaches[bbl] = stampApproach(next, rec, { q: next.month, refused: false, mode: "ask", ask: number });
+  // `number` is the figure in their head — the same one a "make me an offer"
+  // owner keeps — and what they say out loud opens over it by their room
+  // (OWNER_ROOM). The floor is stored: it is what they will take, and every
+  // answer to a bid or a counter is a comparison against it.
+  const asked = Math.round(number * (1 + ownerRoom(unadvised)) / 1000) * 1000;
+  next.approaches[bbl] = stampApproach(next, rec, { q: next.month, refused: false, mode: "ask", ask: asked, reserve: number });
   next.news.unshift({
     q: next.month, kind: "info",
-    text: `${rec.address}: ${(owner?.name ?? held?.name ?? "the owner")} asks ${money(number)}`
+    text: `${rec.address}: ${(owner?.name ?? held?.name ?? "the owner")} asks ${money(asked)}`
       + (stressed ? " (motivated seller)."
-        : number > value * 1.5 ? " (over 1.5x value)."
+        : asked > value * 1.5 ? " (over 1.5x value)."
         : ".")
       + " Good for six months.",
   });
-  return { s: next, ask: number };
+  return { s: next, ask: asked };
 }
 
 /**
@@ -2235,40 +2263,23 @@ function bidBlind(
 
   const gap = 1 - price / reserve;
   const probes = na.probes;
-  // A serious bid draws the number out; each further attempt draws it less,
-  // because by the third number you have stopped being a buyer and started
-  // being a process.
-  //
-  // The slope is where a bid stops reading as a counterparty and starts
-  // reading as a tyre-kicker, and it runs out around a third under. The first
-  // cut of this was 3.4, dead by a quarter under — and since a blind reserve
-  // runs a median 1.57x appraisal, a player bidding a fair price for the
-  // building is 36% under it by construction. Measured on 1,403 blind
-  // conversations that left the "they finally name it" branch reachable 6-10%
-  // of the time no matter what the player did, which is not a mechanic, it is
-  // a rounding error with prose attached.
-  const pName = Math.max(0, Math.min(0.80, 0.86 - gap * 2.2)) * Math.pow(0.55, probes - 1);
-  // And the door: an insulting bid closes it at once, a merely low one wears
-  // the welcome through.
-  const pWalk = Math.min(0.85, 0.05 + Math.max(0, gap - 0.20) * 1.4 + 0.18 * (probes - 1));
-  const roll = rng(next);
-  if (roll < Math.min(pName, 1 - pWalk)) {
-    // THEY NAME IT. The premium on the way out is what showing your hand
+  // THE ANSWER IS THE BID AGAINST THEIR FLOOR, NOT A DIE. Within a room of it
+  // (OWNER_ROOM, the narrowest opening an owner who quotes would make) the bid
+  // reads as a buyer, and they name their number: the opening they would have
+  // made had they quoted — the floor and the room over it. Further under, it
+  // is declined with nothing said; further than two rooms under, or on a third
+  // bid that still has not reached them, they end it — by the third number
+  // you have stopped being a buyer and started being a process. Each was a
+  // slope and a die (the naming odds 0.86 - 2.2 x gap, x0.55 a probe; the walk
+  // 0.05 + 1.4 x gap; the named figure the floor x a die of 1.01-1.05).
+  const named = gap <= OWNER_ROOM && probes < 3;
+  const ends = gap > 2 * OWNER_ROOM || probes >= 3;
+  if (named) {
+    // THEY NAME IT. Their opening over the floor is what showing your hand
     // costs — they are answering a bid, not a survey.
-    na.ask = Math.round(reserve * rrange(next, 1.01, 1.05) / 1000) * 1000;
-    delete na.reserve;
-    // A NUMBER IS A NUMBER, AND YOU MAY ANSWER IT.
-    //
-    // This set `countered`, with the note "the bid WAS the counter; there is
-    // not a second one", and that closed the negotiation the moment it finally
-    // opened: the owner names a figure in answer to your bid and the only
-    // moves left are pay it or walk. No buyer in this business takes the first
-    // number a seller finally says out loud, and nothing about having bid
-    // blind makes the figure that came back a final one.
-    //
-    // What bidding blind actually cost you is INFORMATION, and that is priced
-    // where it belongs — in counterOffMarket, off this flag. They know you
-    // want it, and the figure they named already has that in it.
+    na.ask = Math.round(reserve * (1 + OWNER_ROOM) / 1000) * 1000;
+    // A NUMBER IS A NUMBER, AND YOU MAY ANSWER IT (counterOffMarket, against
+    // the floor kept on the record).
     na.named = true;
     next.news.unshift({
       q: next.month, kind: "info",
@@ -2276,7 +2287,7 @@ function bidBlind(
     });
     return { s: next, msg: "Owner named a price." };
   }
-  if (roll < 1 - pWalk) {
+  if (!ends) {
     next.news.unshift({
       q: next.month, kind: "info",
       text: `${addr}: bid declined, no counter.`,
@@ -2324,14 +2335,17 @@ export function buyOffMarket(
   // an owner who wasn't selling in the first place has no reason to bend:
   // off-market discounts come much harder than they do on the open tape
   const disc = 1 - price / Math.max(1, a.ask);
-  const p = Math.max(0.02, Math.min(0.9, 0.92 - disc * 11.0 + 0.12 * cycleDown(next.econ)));
-  const roll = rng(next);
-  if (roll < p) {
+  // THEIR FLOOR DECIDES (ownerFloor): at or over it, done; within a room
+  // under it, they hold their ask; further, they end it. It was a slope on
+  // how far under the ask you came (0.92 - 11 x disc, on rails) and a die.
+  const floor = ownerFloor(a);
+  const under = 1 - price / Math.max(1, floor);
+  if (price >= floor) {
     const done = executePurchase(next, parcels, bbl, price, product, true, lev);
     if (done.err) return { s, err: done.err };
     return { s: done.s, msg: `Done at ${money(price)}, off-market.` };
   }
-  if (roll < p + 0.4) {
+  if (under <= OWNER_ROOM) {
     next.news.unshift({ q: next.month, kind: "info", text: `${parcels[bbl]?.address}: owner held at ${money(a.ask)}.` });
     return { s: next, msg: "Owner held the ask." };
   }
@@ -2348,28 +2362,24 @@ export function buyOffMarket(
   return { s: next, msg: "Owner ended talks." };
 }
 
-// One counter per approach, at YOUR number off the slider. The deeper you
-// cut, the worse the odds — they take it, hold firm, or hang up entirely.
 /**
- * THE CHANCE THE OWNER TAKES YOUR ONE COUNTER at `px` against their named ask.
- * counterOffMarket rolls against exactly this; the negotiation panel draws it.
+ * WHAT THE PLAYER CAN KNOW OF THE CHANCE THE OWNER TAKES A COUNTER at `px`.
+ * The owner's answer is not a roll — it takes a counter at or over its floor
+ * (counterOffMarket) — but the player does not see the floor, only the ask,
+ * and an owner opens over its floor by a room it alone knows (OWNER_ROOM, up
+ * to twice as wide for an owner whose valuation is stale). So the chance, from
+ * where the player sits, is the share of that range of rooms that puts the
+ * floor at or under `px`. A number named in answer to a bid opened by the
+ * narrowest room. The negotiation panel draws this.
  */
 export function counterTakeOdds(
-  s: GameState, adjacency: Adjacency, bbl: string, a: { ask?: number; named?: boolean }, px: number,
+  _s: GameState, _adjacency: Adjacency, _bbl: string, a: { ask?: number; named?: boolean }, px: number,
 ): number {
   if (!a.ask) return 0;
-  const cut = Math.max(0, 1 - px / a.ask);                     // how deep you went
-  const pressure = assemblagePressure(s, adjacency, bbl);
-  const named = a.named === true;
-  const ref = named ? 0.03 : 0.12;
-  return Math.max(0.05, Math.min(0.8,
-    0.48
-    - (named ? 0.10 : 0)                                       // they know you want it
-    - (cut - ref) * 2.6                                        // the reference cut
-    - 0.35 * pressure                                          // holdouts don't blink
-    + 0.18 * cycleDown(s.econ)                                 // fear is your friend
-    - 0.08 * cycleHot(s.econ),
-  ));
+  if (px >= a.ask) return 1;
+  const need = a.ask / Math.max(1, px) - 1;          // the room that puts the floor at px
+  if (a.named) return need <= OWNER_ROOM + 1e-9 ? 1 : 0;
+  return clamp01((2 * OWNER_ROOM - need) / OWNER_ROOM);
 }
 
 export function counterOffMarket(
@@ -2402,26 +2412,21 @@ export function counterOffMarket(
   // then bid. So the reference cut tightens and the whole curve comes down.
   // Cutting three per cent off a number they named under pressure is a real
   // negotiation; cutting fifteen is asking them to forget the last six months.
-  const named = a.named === true;
-  const ref = named ? 0.03 : 0.12;
-  const pTake = counterTakeOdds(next, adjacency, bbl, a, px);
-  // Split the old "hold firm" mass into a real soft counter and a true hold.
-  // Owners who will not take your number still often move a little — that is
-  // what a counter is. Binary take/hold/hang-up made every refusal read as
-  // stubbornness and hid the only information a counter is for.
-  const pSoft = Math.max(0.12, Math.min(0.40, 0.34 - (cut - ref) * 0.9 - (named ? 0.06 : 0)));
-  const pHold = Math.max(0.10, 0.45 - pSoft);
-  const roll = rng(next);
-  if (roll < pTake) {
+  // THE COUNTER AGAINST THEIR FLOOR, NOT A DIE (ownerFloor). At or over it
+  // they take it. Within a room under it they come back once, final, at the
+  // middle of your number and their ask — never under their floor. Further
+  // under, they end it. It was a take probability on rails, soft-counter and
+  // hold odds on rails, and a die on how much of the gap they gave.
+  const floor = ownerFloor(a);
+  const under = 1 - px / Math.max(1, floor);
+  void adjacency;
+  if (px >= floor) {
     na.ask = Math.round(px / 1000) * 1000;
     next.news.unshift({ q: next.month, kind: "deal", text: `${rec.address}: owner accepted your ${money(na.ask)} counter.` });
     return { s: next, msg: "Owner accepted." };
   }
-  if (roll < pTake + pSoft) {
-    // Meet partway: more of the gap on an open ask, less once they have already
-    // named a number under pressure. Never go below your offer or above ask.
-    const give = (named ? 0.22 : 0.38) * (0.55 + 0.45 * rng(next));
-    const mid = Math.round(a.ask - (a.ask - px) * give);
+  if (under <= OWNER_ROOM) {
+    const mid = Math.max(floor, (a.ask + px) / 2);
     const softened = Math.round(Math.min(a.ask - 1000, Math.max(px + 1000, mid)) / 1000) * 1000;
     if (softened < a.ask && softened > px) {
       na.ask = softened;
@@ -2431,9 +2436,6 @@ export function counterOffMarket(
       });
       return { s: next, msg: `Owner came down to ${money(softened)}.` };
     }
-    // Degenerate gap (you were already a rounding error under) — fall through to hold.
-  }
-  if (roll < pTake + pSoft + pHold) {
     next.news.unshift({ q: next.month, kind: "info", text: `${rec.address}: owner held at ${money(a.ask)}.` });
     return { s: next, msg: "Owner held firm." };
   }

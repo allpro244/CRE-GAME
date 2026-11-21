@@ -5277,6 +5277,18 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // building and sit on $700M of cash for decades (seed 12007, year 50),
     // which no partner, heir or board leaves idle. So the balance above the
     // reserve is returned straight-line over that horizon if it is not used.
+    // THE REVOLVER IS REPAID BEFORE THE PARTNERS ARE PAID. Cash above the
+    // reserve while the line is drawn pays the line down first: a dollar on
+    // deposit earns the sweep rate and a dollar on the line costs the line's
+    // spread over the short index, and a distribution funded with a drawn
+    // revolver is a restricted payment under the credit agreement. Without it
+    // a firm could buy on its line and pay its whole free cash flow out the
+    // same month — measured, Pell Street (seed 12007) drew $2.1M on its line
+    // while distributing $0.7M, and a tax bill and two sale closings later
+    // was in arrears with nothing in the account.
+    if ((r.lineBal ?? 0) > 0 && r.cash > reserve && !r.stressMs) {
+      r.cash -= payDown(s, r, Math.min(r.cash - reserve, r.lineBal!));
+    }
     // A contrarian in a boom retains its cash flow (above) but not forever.
     if (r.cash > reserve && !r.stressMs && !building && !swept && !investing) {
       const closedEnd = r.uncalled !== undefined;

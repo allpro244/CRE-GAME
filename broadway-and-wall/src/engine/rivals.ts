@@ -5241,7 +5241,12 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     const reserve = reserveFor(s, r, {
       overheadMo, lineIntMo, svcByRow: svc.byRow, byBbl, supported: spePaid, noiYr, interestMo: interest,
     });
-    const building = (s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned);
+    // A FIRM WITH A CRANE UP STILL PAYS ITS PARTNERS what is above its
+    // reserve, because the reserve already holds the equity its jobs still
+    // need (reserveFor: committedEquity). The old reserve did not, so a live
+    // job stopped every distribution outright — and a shop that always has a
+    // job in the ground never paid out at all (Harbor Point, seed 12007: $1.2B
+    // of cash at year 50).
     // EXTENDED PAPER IS SWEPT PAPER, and it is swept here. The player's own
     // forbearance sets `loan.sweep = true` and the phrase in that news line is
     // the same phrase: a desk that re-papers a maturity it was not repaid takes
@@ -5290,7 +5295,7 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       r.cash -= payDown(s, r, Math.min(r.cash - reserve, r.lineBal!));
     }
     // A contrarian in a boom retains its cash flow (above) but not forever.
-    if (r.cash > reserve && !r.stressMs && !building && !swept && !investing) {
+    if (r.cash > reserve && !r.stressMs && !swept && !investing) {
       const closedEnd = r.uncalled !== undefined;
       const idle = r.cash - reserve;
       // A BUILDER'S PURSE IS ITS EQUITY FOR THE NEXT SCHEME, not idle capital:

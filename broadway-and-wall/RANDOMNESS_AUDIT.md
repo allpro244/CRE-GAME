@@ -117,12 +117,17 @@ EXOGENOUS), then make the outcome a comparison against it.
 Each PR must re-run `pnpm conserve` and `pnpm baseline:check`, compare against
 a control on main, and say in the commit why the standing numbers moved.
 
-1. **Land price is a label.** The texture floor, built on the generator's
-   stamped price, overrides the builder's residual (`value.ts` ~1736, 1762,
-   1818; `citygen/build.mjs` ~533). Land decay only runs where a builder
-   would pay something (`comps.ts` ~466). `queueFactor` is 0 for a town with
-   no sales history (`value.ts` ~1099). A variance multiplies land by 1.22
-   (`zoning.ts` ~215). → The residual blended with land sales.
+1. ~~**Land price is a label.**~~ Fixed (the "Land:" PR, 2026-11-20). The
+   texture floor is gone: a vacant lot's price is the income approach (the
+   builder's residual where it would build now; otherwise the holder's
+   option, struck net of the tax the wait costs, plus the car park it earns
+   until then) reconciled with the district's comparable land sales per foot
+   of zoned envelope (`comps.ts` tickLandComps → `econ.landComps`), weighted
+   by credibility (`LAND_CREDIBILITY`). The generator's stamp only seeds the
+   opening as one district's worth of comps that ages out. `holderCapitulation`,
+   the district `landAdj` pull and its [0.25, 4] clamp, and the variance
+   x1.22 are removed; `queueFactor`'s take-up counts the stock wearing out
+   (occupied / 55 years), so a town with no net take-up no longer zeroes.
 2. **Rivals: one cash pot and firm-wide death.** On a 20-month arrears clock
    every building goes back to the lenders (`rivals.ts` ~5011–5022,
    5554–5612). Opening firms have no uncalled capital and 6–16% cash (~1694).

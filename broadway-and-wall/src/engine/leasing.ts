@@ -3522,8 +3522,11 @@ export function netEffectivePsf(
 ): number {
   const years = Math.max(1, loi.termM / 12);
   const free = Math.max(0, freeM ?? loi.freeM ?? 0);
-  // Cap the free-rent bite so a pathological letter cannot invert the axis.
-  const paid = 1 - Math.min(0.45, free / Math.max(1, loi.termM));
+  // Free months are a share of the term, never more than all of it (a
+  // definition). The 45% cap that stood here was an asserted rail: a letter
+  // written by the street's own rule (letterTerms, freeMonthsFor) can carry
+  // more than that, and the cap then scored it richer than it is.
+  const paid = 1 - Math.min(1, free / Math.max(1, loi.termM));
   const openTi = loi.openTiPsf ?? loi.tiPsf ?? 0;
   const bump = bumpPct ?? bumpOf(loi);
   return rentPsf * paid
@@ -3661,7 +3664,8 @@ export const LANDLORD_TI_COST = 1;
  */
 export function loiMandateScore(loi: LOI, market: number): number {
   const years = Math.max(1, loi.termM / 12);
-  const paid = 1 - Math.min(0.45, (loi.freeM ?? 0) / Math.max(1, loi.termM));
+  // (no 45% rail: see netEffectivePsf; a share of the term at most)
+  const paid = 1 - Math.min(1, (loi.freeM ?? 0) / Math.max(1, loi.termM));
   const ne = loi.rentPsf * paid
     - (LANDLORD_TI_COST * (loi.tiPsf ?? 0)) / years
     + bumpPremiumPsf(loi.rentPsf, bumpOf(loi), loi.termM);

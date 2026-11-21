@@ -120,7 +120,9 @@ for (const [ui, idleMs, shell] of [["classic", WAIT_MS, ".siderail"], ["next", M
     await sleep(250);
   }
   if (errors.length) done(1, `playable-loads: FAIL (${ui}) — after a month:\n  ${errors.join("\n  ")}`);
-  if (where !== "worker") done(1, `playable-loads: FAIL (${ui}) — the month ran on the ${where === "page" ? "page's thread (the sim worker failed)" : "page: no month closed"}`);
+  // "ahead": the month was closed in the second sim worker while the page sat
+  // (state/simClient.ts, #846) — off the page's thread all the same.
+  if (where !== "worker" && where !== "ahead") done(1, `playable-loads: FAIL (${ui}) — the month ran on the ${where === "page" ? "page's thread (the sim worker failed)" : "page: no month closed"}`);
   results.push(`${ui}: setup in ${setupS} s`);
 }
 done(0, `playable-loads: ok — ${results.join(", ")}; no exception through a new game in either interface, the month ran in the sim worker`);

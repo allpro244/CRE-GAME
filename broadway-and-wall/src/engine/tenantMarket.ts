@@ -946,10 +946,23 @@ export function filteredReadOut(e: Econ, k: Comm, m: number): { face: number; ef
   // 10% a year of office effective-rent noise against retail's 4%. The
   // signed leases still set the face; with no space on offer anywhere (the
   // package is moot) the signers' own effective stands.
-  const pk = e.postedPkg?.[k];
-  const eff = pk !== undefined && Number.isFinite(pk)
-    ? face * (1 - Math.max(0, Math.min(PKG_MAX, pk)))
-    : Math.exp(Math.log(eff0) + K * (yE - Math.log(eff0)));
+  //
+  // ...AND THEN BACK TO WHAT SIGNS (2026-11-21). The packages on offer are the posts, and the
+  // posts are not what space lets for: the bargain (`bargain`, between the
+  // landlord's reservation and its post) and the contest take the deal under
+  // them. Measured, seed 550991 (City, Frontier), years 0-4, every six
+  // months: posted packages 0.1-1.5% on all three classes, while the leases
+  // that signed in the same windows gave 24-42% of face away on office,
+  // 8-14% on shops and 9-13% on sheds. So the effective index (and through
+  // it `useRentPsfYr`, every appraisal, the class pencil and the rent the
+  // screen shows) carried the posts, 10-35% over what comparable space
+  // signs for, while each firm's own value of space (`worthOf`, anchored at
+  // the opening's signed rent) sat under it: one quantity, two answers. The
+  // effective index is what the leases signed at, filtered the way the face
+  // is: each month's signings move it by how much evidence they are (the
+  // gain K above), so a month of two office deals at deep packages moves it
+  // a little and a month of many moves it most of the way.
+  const eff = Math.exp(Math.log(eff0) + K * (yE - Math.log(eff0)));
   let sf = 0;
   for (const c of list) sf += c.sf;
   return { face, eff, conc: Math.max(0, Math.min(1, (1 - eff / Math.max(1e-9, face)) / CONC_DEPTH)), sf, n: list.length };

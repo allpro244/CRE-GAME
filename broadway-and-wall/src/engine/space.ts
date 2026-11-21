@@ -191,9 +191,12 @@ export function realEffRentYoy(e: Econ, k: BuiltClass): number {
  * package only for a glut. The bands are display words, stated in the
  * trade's units: a point of availability a year, 1% real rent a year (CBRE /
  * CoStar quarterly market reports call a move of that size a direction), 5%
- * real a year for a market running away; a glut is a heavy package (14
- * months free on a ten-year lease, 0.12; US gateway free rent ran 10-17
- * months through 2020-24) on space that is not getting scarcer.
+ * real a year for a market running away; a glut is a heavy package (0.12 of
+ * face; US gateway free rent alone ran 10-17 months on a ten-year lease
+ * through 2020-24) with space piling up AND real rents falling. A heavy
+ * package alone is not a glut: since the effective index reads what leases
+ * sign at (tenantMarket.ts filteredReadOut), an office package carries its
+ * fit-out allowance in any market.
  */
 export function marketBalance(e: Econ, k: BuiltClass): { state: Balance; soft: boolean; pkg: number; availCh: number; rentCh: number; note: string } {
   const pkg = packageOf(e, k), availCh = availYoy(e, k), rentCh = realEffRentYoy(e, k);
@@ -202,7 +205,7 @@ export function marketBalance(e: Econ, k: BuiltClass): { state: Balance; soft: b
   const up = rentCh > 0.01, down = rentCh < -0.01;
   const state: Balance =
     !year ? "balanced" :
-    pkg >= 0.12 && availCh >= 0 ? "glut" :
+    pkg >= 0.12 && looser && down ? "glut" :
     (up && !looser) || (tighter && !down) ? (rentCh > 0.05 && availCh <= 0 ? "acute shortage" : "landlord's market") :
     (down && !tighter) || (looser && !up) ? "tenant's market" :
     "balanced";

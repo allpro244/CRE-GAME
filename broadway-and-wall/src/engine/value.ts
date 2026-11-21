@@ -452,7 +452,7 @@ export function siteQualityMult(rec: { lotArea: number; farMaxComm: number; farM
  *                already right, which is exactly why it broke everything else.
  */
 export const HARD_COST_PSF: Record<BuiltClass, number> = {
-  office: 295,        // RSMeans single-storey office $313; secondary low-rise $240-350
+  office: 254,        // [S] RSMeans 2-4 storey office national average $253.63/sf (Gordian RSMeans data, Q2 2026, via Building Design+Construction 'Office building construction costs for 2026'); was 295, the single-storey $313 read as the low-rise base
   multifamily: 300,   // low-rise base under the $310 mid-rise national average
   retail: 245,        // RSMeans retail store $214, above it for two-storey urban shell
   industrial: 100,    // modern warehouse/flex $90-150 — was 125; class never cleared hurdle
@@ -474,9 +474,9 @@ export const HARD_COST_PSF: Record<BuiltClass, number> = {
  * a tower and a tower was priced like a two-storey building with a 28% tip. On
  * an honest low-rise base the premium has to do real work, and the real curve
  * is much steeper — roughly +15% at 5-8 storeys, +45-50% at 19-30, and +80-100%
- * above that, against low-rise. Checked against the source range: 295 * 1.85 =
- * $546/sf for a forty-storey tower, which lands inside RSMeans' $202-574 office
- * band at the top where a tower belongs.
+ * above that, against low-rise. Checked against the source range: 254 * 1.85 =
+ * $470/sf for a forty-storey tower, inside RSMeans' $202-574 office band
+ * (2025's 2-4 storey range runs $247-498) toward the top where a tower belongs.
  *
  * This is also what stops every lot becoming a tower. A ladder that is too flat
  * makes floor area nearly free above the eighth storey, and then the only thing

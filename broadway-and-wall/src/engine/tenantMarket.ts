@@ -456,8 +456,20 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
     // and a full building chasing them up ratchets every good corner's raise
     // onto the whole town (measured: shop rents rising 3.5% a year over 18%
     // vacancy).
+    //
+    // ...BUT ON ITS OWN EVIDENCE, NOT THE TOWN'S CLOCK (2026-11-21). A full
+    // building has no months dark to trade against: the market's clock is
+    // the other buildings' space, and pricing a full building toward the
+    // clock's optimum (`bestMonthsToLet`, 24 months for office) raised every
+    // full office's post whenever the town let faster than that, whatever its
+    // own tenants would pay. Measured on seed 550991 (City, Frontier): office
+    // face 32.8 to 70.5 in ten years (real effective +112%) with stock flat,
+    // while the leases that signed gave 14-29% of face back in packages; on
+    // main, office face rose 31% while vacancy went 7.5% to 14.7%. A full
+    // building passes its costs through (the CPI in `d`) and raises when a
+    // sitting tenant renews at its post with nowhere else to go
+    // (`noteLetting`), the evidence shops and sheds already price on.
     L.c *= 1 - pull;
-    if (!opts.holdFace) d += step;
   }
   L.c = Math.max(0, Math.min(PKG_MAX, L.c));
   L.a = +(L.a * Math.exp(Math.max(-0.2, Math.min(0.2, d)))).toFixed(2);
@@ -480,7 +492,18 @@ export function noteLetting(L: LandlordAsk, k: Comm, tom: number, share: number,
   // already reads every letting, through the clock it prices on, both ways.
   // Measured with the raise (seed 11, years 13-40): posts cut 3-7% a year by
   // the trade and real rent flat, the raise giving back what the trade took.
-  if (k === "office") return;
+  // ...EXCEPT A FULL BUILDING'S RENEWAL AT ITS POST (2026-11-21): a sitting
+  // tenant with nowhere else to go took the whole ask (`tom` 0, share 1). The
+  // trade no longer prices full buildings (`reviewAsk`), so this is the only
+  // evidence a full office has that it asks too little — the same raise
+  // shops and sheds take.
+  if (k === "office") {
+    if (tom === 0 && share >= 1 && !holdFace) {
+      if (L.c > 0) L.c = Math.max(0, L.c - PKG_TAKE);
+      else L.a = +(L.a * Math.exp(RAISE)).toFixed(2);
+    }
+    return;
+  }
   // shops and sheds: the yardstick is the longer of the landlord's patience
   // and its class's ordinary months on market, and the patience is learned
   const yard = Math.max(L.t, searchMonths(k));

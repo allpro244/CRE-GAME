@@ -82,7 +82,7 @@ import {
   cashOf, debtOf, addSlot, compactSlots, reviveF64, reviveLedger,
 } from "./sfc";
 import {
-  FIRM_PROFILE, LENDER_COVER, shortIndexOf, BUILD_MONTHS, SECTORS,
+  FIRM_PROFILE, LENDER_COVER, shortIndexOf, appetiteOfWindow, lenderDebtCap, BUILD_MONTHS, SECTORS,
   NAT_TREND_SD, NAT_TREND_TAU_M, NAT_SALES_PER_GAP, RENT_BASE,
   WAGE_CURVE, WAGE_GAP_HALF_M, U_UP_SPEED, U_DOWN_SPEED,
 } from "./market";
@@ -1461,7 +1461,15 @@ export function tickEconomy(s: GameState): void {
     wt[n] = F.hc[n] * Math.exp(F.z[n]) * (zs[g] > 0 ? zh[g] / zs[g] : 1);
     wsum[F.ind[n]] += wt[n]; nInd[F.ind[n]]++;
   }
-  const credit = Math.max(0, Math.min(1, ((e.creditIdx ?? 1) - 0.5) / 0.5));
+  // WHAT THE LENDERS WILL WRITE, NOT A SWITCH (2026-11-20). New borrowing
+  // was multiplied by clamp((window - 0.5)/0.5, 0, 1), so below 0.5 every
+  // firm's borrowing stopped, the strongest with the weakest. The window is
+  // now read as the lenders' appetite (market.ts appetiteOfWindow) and
+  // applied to each loan's terms (`lenderDebtCap`): the leverage and the
+  // interest cover a lender underwrites both tighten with it, so a firm with
+  // room under its own earnings still borrows in a crunch and one already
+  // at its limit cannot.
+  const credit = appetiteOfWindow(e.creditIdx ?? 1);
   let wagesCash = 0;
   for (let n = 0; n < nF; n++) {
     const i = F.ind[n], I = INDUSTRIES[INDUSTRY_IDS[i]];
@@ -1500,9 +1508,9 @@ export function tickEconomy(s: GameState): void {
     } else {
       // debt toward what a lender would write today (market.ts tickFirmBook), while the window is open
       const costsM = wages + inLoc + inImp + rent + prodTax + interest;
-      const target = Math.min(P0.lev, 1 / (Math.max(0.01, rate) * LENDER_COVER)) * Math.max(0, ebitda * 12);
+      const target = lenderDebtCap(P0.lev, rate, ebitda * 12, credit);
       let cash = cashOf(L, n);
-      if (debt < target) lend(L, n, (target - debt) / DEBT_ADJ_M * credit, "bank>firm:loan");
+      if (debt < target) lend(L, n, (target - debt) / DEBT_ADJ_M, "bank>firm:loan");
       else if (cash > CASH_KEEP_M * costsM) repay(L, n, Math.min((cash - CASH_KEEP_M * costsM) * 0.5, debt - target), "firm>bank:repay");
       cash = cashOf(L, n);
       if (cash > CASH_KEEP_M * costsM) { payout = (cash - CASH_KEEP_M * costsM) * PAYOUT_M; payOwners(L, n, payout); }

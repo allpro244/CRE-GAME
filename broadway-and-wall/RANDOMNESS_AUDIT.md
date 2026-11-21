@@ -44,6 +44,27 @@ only its draws) were not read line by line.
   The change also stops the solver reading its own rent moves as developer
   momentum against a stale `rentExp`.
 
+## Fixed: owners and bidders price from one valuation dispersion (queue items 5 and 10, in part)
+
+- **One sourced number.** `VALUATION_SD` (competitorTraits.ts) = 6%, the
+  measured dispersion of independent valuations of one property (Crosby,
+  Lavers & Murdoch 1998; IPF/MSCI valuation-versus-price reports).
+- **Sealed-bid shading** (`propmarket.ts` SHADE) is the first-price
+  equilibrium for that dispersion, sqrt(3) x 6% / n: 0.104 for a lone bidder,
+  where it was 0.10 asserted.
+- **A committee's valuation error** (`misreadShare`) is a share of value with
+  that standard deviation at middling underwriting, not +/-1.5 points of yield
+  (about +/-25% of value). rivals.ts (another owner) still reads `misreadPp`.
+- **Off-market owners** (`actions.ts`). An owner that quotes stores its floor
+  (`Approach.reserve`) and opens over it by OWNER_ROOM = sqrt(3) x 6% (the
+  seller's best posted price over a buyer spread by that dispersion), wider
+  for a stale valuation. A bid or counter at or over the floor is taken;
+  within a room under it the owner holds or comes back once at the middle;
+  further under, it ends talks. The blind bid draws the number within a room
+  and ends past two rooms or on the third bid. The four rolls are gone; the
+  panel's odds (`counterTakeOdds`) are now the player's own uncertainty about
+  the owner's room.
+
 ## Already fixed on main (found by the first pass, gone by the second)
 
 - the 45% city-vacancy cap;

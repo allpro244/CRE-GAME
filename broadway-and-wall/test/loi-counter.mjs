@@ -56,92 +56,86 @@ console.log("\nLOI COUNTER — what moves the needle\n");
   else ok(`flatter bump cuts NE (${atStd.toFixed(2)} → ${flatter.toFixed(2)})`);
 }
 
-// --- 3. Counter-back rent claws from the opener, not ask × 0.94 -------
+// --- 3. Real letters: the reservation is stored, re-asking cannot flip it,
+//        and a counter-back sits between their opener and your ask ---------
+// Four empty commercial buildings handed over at the open (as
+// tools/mdga/auto-lease-audit.mjs does), the city run only until letters arrive.
 {
-  const { parcels, bbls } = loadCity(1, E.normalizeParcels);
-  let found = null;
-  for (let seed = 0; seed < 24 && !found; seed++) {
-    let g = E.firstListings(E.newGame(50000 + seed, parcels), parcels, bbls);
-    // Buy one commercial building all-cash so LOIs can arrive.
-    for (let m = 0; m < 50 && Object.keys(g.holdings).length < 1; m++) {
-      g = E.advanceQuarter(g, parcels, bbls, null);
-      for (const L of g.listings ?? []) {
-        const rec = E.resolveRec(parcels, g, L.bbl);
-        if (!rec || rec.class === "land" || !rec.bldgArea) continue;
-        const r = E.executePurchase(g, parcels, L.bbl, L.ask, null, false, 0);
-        if (r?.s?.holdings[L.bbl]) { g = { ...r.s, cash: Math.max(r.s.cash, 80e6) }; break; }
-      }
-    }
-    g = { ...g, cash: Math.max(g.cash, 80e6) };
-    for (let m = 0; m < 60 && !found; m++) {
-      g = E.advanceQuarter(g, parcels, bbls, null);
-      g = { ...g, cash: Math.max(g.cash, 80e6) };
-      for (const loi of [...(g.lois ?? [])]) {
-        if (loi.kind !== "new" || loi.countered || loi.stage === "countered") continue;
-        const rec = E.resolveRec(parcels, g, loi.bbl);
-        const h = g.holdings[loi.bbl];
-        if (!rec || !h) continue;
-        const market = E.managedRentPsfYr(rec, g.econ, h, loi.use);
-        const askRent = +(Math.max(loi.rentPsf * 1.10, market * 1.12).toFixed(2));
-        const opened = loi.rentPsf;
-        const before = structuredClone(g);
-        const r = E.respondLOI(before, parcels, loi.id, "counter", true, {
-          rentPsf: askRent, tiPsf: Math.max(0, Math.round(loi.tiPsf * 0.85)), freeM: loi.freeM,
-        });
-        const w = (r.s.lois ?? []).find((l) => l.id === loi.id);
-        if (w?.stage === "countered" && w.counterRentPsf != null) {
-          found = { opened, askRent, their: w.counterRentPsf, free: w.counterFreeM, openFree: loi.freeM };
-          break;
+  const { parcels, bbls, adjacency } = loadCity(0, E.normalizeParcels);
+  let g = E.firstListings(E.newGame(550991, parcels), parcels, bbls);
+  g.cash = Math.max(g.cash, 80e6);
+  let n = 0;
+  for (const b of bbls) {
+    const rec = E.resolveRec(parcels, g, b);
+    if (!rec || !(rec.bldgArea > 20000) || !E.isCommercial(rec) || g.holdings[b] || E.isCivicLand(g, b)) continue;
+    const worth = E.assetValue(rec, g.econ, E.initialCondition(rec));
+    const grade = E.gradeOf(g, rec);
+    g.holdings[b] = {
+      bbl: b, boughtM: g.month, costBasis: worth, assessed: worth, loan: null,
+      condition: grade, condIdx: E.initialCondIdx(rec, g.month, grade),
+      service: 0, stance: 0, plan: 1, svcIdx: 0.55, tenants: [], cfHistory: [],
+    };
+    E.clearRivalClaims(g, b);
+    g.listings = (g.listings ?? []).filter((l) => l.bbl !== b);
+    if (++n >= 4) break;
+  }
+  let tried = 0, flipped = 0, notTaken = 0, counterBack = null, bad3 = 0;
+  for (let m = 0; m < 12 && tried < 4; m++) {
+    g = E.advanceMonth({ ...g, cash: Math.max(g.cash, 80e6) }, parcels, bbls, adjacency);
+    for (const loi of g.lois ?? []) {
+      if (loi.kind === "renewal" || loi.countered || loi.stage === "countered" || tried >= 4) continue;
+      if (typeof loi.resNE !== "number") { fail(`a ${loi.kind} letter carries no stored reservation (resNE)`); bad3++; continue; }
+      tried++;
+      for (const mult of [1.03, 1.08, 1.20]) {
+        const outs = new Set();
+        for (let k = 0; k < 6; k++) {
+          const st = structuredClone(g);
+          // move the random streams: the answer must not care
+          for (let d = 0; d <= k; d++) { E.rng(st); E.rng(st, "leasing"); }
+          const askRent = +(loi.rentPsf * mult).toFixed(2);
+          const r = E.respondLOI(st, parcels, loi.id, "counter", true, { rentPsf: askRent, tiPsf: loi.tiPsf, freeM: loi.freeM });
+          const w = (r.s.lois ?? []).find((l) => l.id === loi.id);
+          outs.add(w ? `${w.stage ?? "open"}:${w.counterRentPsf ?? ""}` : (r.err ? "err" : "gone"));
+          if (w?.stage === "countered" && !counterBack) counterBack = { opened: loi.rentPsf, askRent, their: w.counterRentPsf };
         }
+        if (outs.size > 1) flipped++;
+        if (![...outs].every((o) => o === "gone")) notTaken++;
       }
     }
   }
-  if (!found) {
-    console.log("  SKIP  counter-back opener — no counter-back in sample (accept/walk only)");
-  } else {
-    const oldBugFloor = +(found.askRent * 0.94).toFixed(2);
-    // Under the bug, counters clustered at ask*0.94. Under the fix they sit
-    // nearer the opener (or market band), which is materially below ask*0.94
-    // when the landlord pushed hard.
-    if (found.their >= found.askRent - 0.001) {
-      fail(`counter-back ${found.their} did not come under ask ${found.askRent}`);
-    } else if (Math.abs(found.their - oldBugFloor) < 0.02 && found.opened < found.askRent * 0.9) {
-      // Exactly ask*0.94 while opener was far below is the smoking gun of the bug.
-      fail(`counter-back ${found.their} stuck at ask×0.94 (${oldBugFloor}) — opener was ${found.opened}`);
-    } else {
-      ok(`counter-back $${found.their.toFixed(2)} between opener $${found.opened.toFixed(2)} and ask $${found.askRent.toFixed(2)}`);
-    }
-    if (found.openFree > 0 && found.free === undefined) {
-      fail("counter-back omitted free-rent reply");
-    } else if (found.openFree > 0) {
-      ok(`counter-back also replied on free rent (${found.free} mo)`);
-    }
-  }
+  if (!tried) console.log("  SKIP  real letters — none arrived in the sample");
+  else if (flipped) fail(`${flipped} counters got different answers as the random stream moved — the answer is still a die`);
+  else ok(`${tried} letters x 3 counters x 6 stream positions: one answer each — re-asking cannot flip a refusal`);
+  if (counterBack) {
+    if (!(counterBack.their < counterBack.askRent - 0.001)) fail(`counter-back ${counterBack.their} did not come under ask ${counterBack.askRent}`);
+    else ok(`counter-back $${counterBack.their.toFixed(2)} under your ask $${counterBack.askRent.toFixed(2)} (they opened $${counterBack.opened.toFixed(2)})`);
+  } else console.log("  SKIP  counter-back — none in the sample (took or walked)");
 }
 
-// --- 4. Renewal stick is real and shared, and no longer a 10pp farm -------
+
+// --- 4. The answer is a comparison against a stored reservation ---------
+// The same counter, asked from the same letter with the random stream in
+// twenty different places, gets the same answer: a refusal cannot be fished
+// into a yes by asking again. And the answer is the reservation's: an ask at
+// or under it is taken, one over it is not.
 {
-  const loiNew = {
-    id: 3, bbl: "x", kind: "new", name: "Acme", sector: "tech", credit: 1,
-    sf: 10000, rentPsf: 40, termM: 84, tiPsf: 0, freeM: 0, bumpPct: 2.5, net: true,
+  const loi = {
+    id: 4, bbl: "x", kind: "new", name: "Acme", sector: "tech", credit: 1,
+    sf: 10000, rentPsf: 40, termM: 84, tiPsf: 30, freeM: 4, bumpPct: 2.5, net: true, resNE: 41,
   };
-  const loiRen = { ...loiNew, kind: "renewal" };
-  const s = { econ: { phase: "midcycle", cityVac: { office: 0.115 } } };
-  const n = E.tenantIndifferenceMult(s, loiNew, 84, 0);
-  const r = E.tenantIndifferenceMult(s, loiRen, 84, 0);
-  if (typeof E.RENEWAL_STICK !== "number") fail("RENEWAL_STICK is exported");
-  else if (!(E.RENEWAL_STICK > 0 && E.RENEWAL_STICK < 0.10)) {
-    fail(`RENEWAL_STICK ${E.RENEWAL_STICK} should be a real premium under the old 10pp farm`);
-  } else ok(`RENEWAL_STICK is ${E.RENEWAL_STICK} — real, dampened`);
-  if (Math.abs((r - n) - E.RENEWAL_STICK) > 1e-9) {
-    fail(`renewal indifference should sit ${E.RENEWAL_STICK} above new (new ${n.toFixed(4)} / ren ${r.toFixed(4)})`);
-  } else ok(`renewal fStar is +${((r - n) * 100).toFixed(0)}pp over a new letter at the same tightness`);
-  // ...plus the payroll term: a growing town's tenants have less leverage
-  // (tenantIndifferenceMult reads payrollGrowth12, ~1%/yr on a bare econ).
-  const payroll = Math.max(-0.06, Math.min(0.05, 2.5 * E.payrollGrowth12(s.econ)));
-  if (Math.abs(n - (1 + E.TENANT_SWITCH + 0.015 + payroll)) > 1e-9) {
-    fail(`new-letter balanced fStar expected ${(1 + E.TENANT_SWITCH + 0.015 + payroll).toFixed(4)}, got ${n.toFixed(4)}`);
-  } else ok(`new-letter balanced indifference is ${(n * 100).toFixed(1)}% of market`);
+  const neOpen = E.netEffectivePsf(loi, 40, 30, 4, 2.5);
+  const under = E.tenantAnswer(loi, neOpen, loi.resNE - 0.01);
+  const over = E.tenantAnswer(loi, neOpen, loi.resNE + 3);
+  const way = E.tenantAnswer({ ...loi, resNE: neOpen }, neOpen, neOpen + 3);
+  const baf = E.tenantAnswer(loi, neOpen, loi.resNE + 0.5, true);
+  if (under.outcome !== "took") fail(`an ask under the reservation should be taken (got ${under.outcome})`);
+  else ok("an ask under the reservation is taken");
+  if (over.outcome !== "countered" || !(over.target <= loi.resNE + 1e-9)) fail(`an ask over it should be countered at no more than the reservation (got ${over.outcome} ${over.target})`);
+  else ok(`an ask over it is countered at $${over.target.toFixed(2)} (reservation $${loi.resNE})`);
+  if (way.outcome !== "walked") fail(`a tenant that opened at its most should walk on a raise (got ${way.outcome})`);
+  else ok("a tenant that opened at its most walks on a raise");
+  if (baf.outcome !== "walked") fail(`best-and-final over the reservation should walk (got ${baf.outcome})`);
+  else ok("best-and-final over the reservation walks");
 }
 
 console.log("");

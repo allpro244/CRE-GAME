@@ -413,7 +413,7 @@ function statement(
  * returns (pe), a builder is a developer. It borrows at the advance its kind
  * writes (HOLDER_ADVANCE), leases with its own effort (HOLDER_CARE), reads no
  * forecast of its own (lean 0) and makes no committee error on a building it
- * has owned for years (misPp 0); a builder can always tear down.
+ * has owned for years (misShare 0); a builder can always tear down.
  */
 const HOLDER_STYLE: Record<SellerKind, RivalStyle> = {
   institution: "core", local: "family", estate: "family", partnership: "pe", developer: "developer", lender: "core",
@@ -421,7 +421,7 @@ const HOLDER_STYLE: Record<SellerKind, RivalStyle> = {
 export function holderBidder(h: Holder): Bidder {
   const style = HOLDER_STYLE[h.kind] ?? "family";
   return {
-    id: h.id, style, lean: 0, misPp: 0,
+    id: h.id, style, lean: 0, misShare: 0,
     lease: (HOLDER_CARE[h.kind] ?? HOLDER_CARE.local).lease,
     ltvCap: (HOLDER_ADVANCE[h.kind] ?? HOLDER_ADVANCE.local).ltv,
     eqPrem: EQUITY_PREMIUM[style] ?? 8,

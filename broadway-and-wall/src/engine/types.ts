@@ -338,6 +338,16 @@ export interface LOI {
   askedFreeM?: number;
   askedBumpPct?: number;
   openRentPsf?: number;   // their original number, before any of this
+  /**
+   * THE MOST THIS TENANT WILL PAY, net effective $/sf a year on this letter's
+   * own scale (`netEffectivePsf`): its opening terms plus the surplus it kept
+   * back (its reservation from its own options, streetRolls.ts offerForPlayer,
+   * less what it opened at). Drawn once, with the firm, when the letter is
+   * written; every answer to a counter is a comparison against it, so asking
+   * the same thing twice gets the same answer. Absent on old letters: read as
+   * the opener (it offered its most).
+   */
+  resNE?: number;
   openTiPsf?: number;
   openFreeM?: number;
   openBumpPct?: number;

@@ -53,7 +53,7 @@ check(typeof E.submitBlindBid === "function", "submitBlindBid is exported");
 
 // Soft probe — well under reserve — must not require a loan product.
 {
-  const soft = Math.round(ap.reserve * 0.55 / 1000) * 1000;
+  const soft = Math.round(ap.reserve * 0.85 / 1000) * 1000;
   const cash0 = g.cash;
   const r = E.submitBlindBid(g, parcels, bbl, soft);
   check(!r.err, `soft bid returns without stack error (${r.err ?? "ok"})`);
@@ -101,6 +101,46 @@ check(typeof E.submitBlindBid === "function", "submitBlindBid is exported");
     check(!!g.holdings[bbl], "deed lands when the stack is funded");
     check(!g.talks?.[bbl]?.agreed, "contract clears after close");
   }
+}
+
+// AN OWNER ANSWERS AGAINST ITS FLOOR, NOT A DIE. The same bid or counter,
+// with the random stream moved to twenty places, gets the same answer; a bid
+// at or over the floor is taken and one a room under it is not.
+{
+  const other = bbls.find((b) => {
+    const r = E.resolveRec(parcels, g, b);
+    return b !== bbl && r && r.class !== "land" && r.bldgArea > 0 && !g.holdings[b] && !(g.listings ?? []).some((l) => l.bbl === b);
+  });
+  const floor = 4_000_000, ask = Math.round(floor * (1 + E.OWNER_ROOM) / 1000) * 1000;
+  const fixture = (extra = {}) => {
+    const st = structuredClone(g);
+    st.cash = Math.max(st.cash, 50e6);
+    st.approaches[other] = { q: st.month, refused: false, mode: "ask", ask, reserve: floor, ...extra };
+    return st;
+  };
+  const answers = (fn) => {
+    const seen = new Set();
+    for (let k = 0; k < 20; k++) {
+      const st = fixture();
+      for (let d = 0; d <= k; d++) { E.rng(st); E.rng(st, "sales"); E.rng(st, "owners"); }
+      const r = fn(st);
+      const a = r.s.approaches?.[other];
+      seen.add(r.err ? `err:${r.err}` : `${r.msg}|${a?.ask ?? "-"}`);
+    }
+    return [...seen];
+  };
+  const take = answers((st) => E.counterOffMarket(st, parcels, adjacency, other, floor));
+  check(take.length === 1 && /accepted/i.test(take[0]), `a counter at the floor is taken, every time (${take.join(" / ")})`);
+  const near = answers((st) => E.counterOffMarket(st, parcels, adjacency, other, Math.round(floor * 0.95)));
+  check(near.length === 1 && /came down|held/i.test(near[0]), `a counter 5% under the floor is countered back once, every time (${near.join(" / ")})`);
+  const far = answers((st) => E.counterOffMarket(st, parcels, adjacency, other, Math.round(floor * 0.6)));
+  check(far.length === 1 && /walked/i.test(far[0]), `a counter 40% under the floor ends it, every time (${far.join(" / ")})`);
+  const under = answers((st) => E.buyOffMarket(st, parcels, other, "cash", 1, Math.round(floor * 0.97)));
+  check(under.length === 1 && !/Done/.test(under[0]), `a bid under the floor is never a sale, however often asked (${under.join(" / ")})`);
+  const blind = answers((st) => { st.approaches[other] = { q: st.month, refused: false, mode: "offer", reserve: floor, probes: 0 }; return E.submitBlindBid(st, parcels, other, Math.round(floor * 0.93)); });
+  check(blind.length === 1 && /named/i.test(blind[0]), `a blind bid within a room of the floor draws the number, every time (${blind.join(" / ")})`);
+  const odds = E.counterTakeOdds(g, adjacency, other, { ask }, Math.round(floor * 0.95));
+  check(odds > 0 && odds < 1, `the panel's odds are the player's uncertainty about the room (${odds.toFixed(2)} at 5% under the narrowest floor)`);
 }
 
 if (bad) {

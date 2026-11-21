@@ -120,11 +120,18 @@ function closeAhead(s: GameState, parcels: ParcelTable, bbls: string[], adjacenc
  * A guess thrown away. Its month may have finished a plat or a split and cut
  * lots into the ahead worker's parcel table that no real month has cut; the
  * engine replays the state's own cuts each month (sim.ts restoreCuts) but
- * cannot un-cut extra ones. So the ahead worker is handed the page's table
- * again — which only ever holds the cuts of real months — before its next month.
+ * cannot un-cut extra ones. So the ahead worker is retired and the next guess
+ * starts a fresh one, handed the page's table — which only ever holds the
+ * cuts of real months.
  */
 function dropGuess() {
   next = null;
+  // A worker cannot be interrupted mid-month: left running, a dropped guess
+  // would hold the lane and the next guess (and the click that waits on it)
+  // queues behind a month nobody will read. So the ahead worker is retired
+  // and the next guess starts a fresh one with the page's table.
+  if (ahead.w) { ahead.w.terminate(); failAll(ahead, "guess dropped"); }
+  ahead.w = undefined;
   ahead.townSent = 0;
 }
 

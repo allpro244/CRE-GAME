@@ -2423,9 +2423,9 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
   // asked for about a tenth of the homes that stand and no builder started a
   // home. Measured on main, seed 12007, years 1-4: no start, the standard
   // homes filtering away at 1.9% a year, doubled-up households 113 -> 783,
-  // the standard rent +18% real; island apartment asks then roughly doubled
-  // real in fifty years on three seeds at 3-11% vacancy
-  // (PLAYTHROUGH_FRONTIER_2026-11-20.md). The opening is the one point on
+  // the standard rent +18% real; over fifty years (seeds 12007 / 550991)
+  // the mainland's homes +13% / +8%, doubled-up 2,120 / 2,501 and its real
+  // rent +148% / +151%. The opening is the one point on
   // the region's supply curve that is observed — the homes standing at the
   // price they stand at — so the curve goes through it: builders add homes
   // as the pencil rises over the opening's, and fewer as it falls under.

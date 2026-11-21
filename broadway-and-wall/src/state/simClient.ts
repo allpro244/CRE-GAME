@@ -24,7 +24,9 @@
  * writes nothing back into the parcel table — measured — and a month re-run
  * from the same state is byte-identical), so a month closed ahead is the
  * month that would have been closed: nothing about the game changes, only
- * when the waiting happens. `?simahead=off` turns it off.
+ * when the waiting happens. A guess that is dropped also hands the ahead
+ * worker the page's parcel table again (dropGuess), so lots a dropped month
+ * cut can never reach a real one. `?simahead=off` turns it off.
  */
 import SimWorker from "./simWorker?worker&inline";
 import { advanceMonth, advanceUntilAttention } from "@/engine/sim";
@@ -36,9 +38,11 @@ type Adj = Record<string, string[]> | null;
 type Span = ReturnType<typeof advanceUntilAttention>;
 
 let where: "worker" | "ahead" | "page" | "none" = "none";
+/** How long the page waited for the last month's state, ms (headless checks: window.__sim.waited()). */
+let waited = 0;
 /** Where the last month was closed: in the sim worker, ahead of time in the second worker, on the page, or none yet. */
 export const simWhere = () => where;
-if (typeof window !== "undefined") (window as unknown as { __sim?: { where: () => string } }).__sim = { where: simWhere };
+if (typeof window !== "undefined") (window as unknown as { __sim?: { where: () => string; waited: () => number } }).__sim = { where: simWhere, waited: () => waited };
 
 function flagOff(name: string): boolean {
   try { return new URLSearchParams(location.search).get(name) === "off"; } catch { return false; }
@@ -103,7 +107,7 @@ let next: { from: GameState; parcels: ParcelTable; p: Promise<GameState | null> 
 
 /** Start closing the month after `s` in the ahead lane, if there is one. */
 function closeAhead(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Adj) {
-  next = null;
+  if (next) dropGuess();
   if (s.gameOver) return;
   const w = getWorker(ahead);
   if (!w) return;
@@ -112,20 +116,47 @@ function closeAhead(s: GameState, parcels: ParcelTable, bbls: string[], adjacenc
   next = { from: s, parcels, p };
 }
 
+/**
+ * A guess thrown away. Its month may have finished a plat or a split and cut
+ * lots into the ahead worker's parcel table that no real month has cut; the
+ * engine replays the state's own cuts each month (sim.ts restoreCuts) but
+ * cannot un-cut extra ones. So the ahead worker is handed the page's table
+ * again — which only ever holds the cuts of real months — before its next month.
+ */
+function dropGuess() {
+  next = null;
+  ahead.townSent = 0;
+}
+
+/**
+ * Close the month after the page's settled state, ahead of the click
+ * (state/store.ts calls this a moment after `game` stops changing).
+ * Nothing if that month is already being closed.
+ */
+export function primeAhead(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Adj) {
+  if (next && next.from === s && next.parcels === parcels) return;
+  closeAhead(s, parcels, bbls, adjacency);
+}
+
 /** One month, off the page's thread where it can be. */
 export async function monthOffThread(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Adj): Promise<GameState> {
+  const t0 = performance.now();
+  try { return await monthCore(s, parcels, bbls, adjacency); } finally { waited = Math.round(performance.now() - t0); }
+}
+async function monthCore(s: GameState, parcels: ParcelTable, bbls: string[], adjacency: Adj): Promise<GameState> {
   // Already closed ahead from this very state?
   const ready = next && next.from === s && next.parcels === parcels ? next.p : null;
+  if (next && !ready) dropGuess();
   next = null;
   if (ready) {
     const r = await ready;
-    if (r) { where = "ahead"; closeAhead(r, parcels, bbls, adjacency); return r; }
+    if (r) { where = "ahead"; return r; }
   }
   const w = getWorker();
   if (w) {
     try {
       const r = await send(main, w, parcels, bbls, adjacency, (town, id) => ({ type: "month", id, town, s }));
-      if (r.s) { where = "worker"; closeAhead(r.s, parcels, bbls, adjacency); return r.s; }
+      if (r.s) { where = "worker"; return r.s; }
     } catch (e) { console.warn("Sim worker failed; this month runs on the page:", String((e as Error)?.message ?? e)); }
   }
   where = "page";
@@ -138,7 +169,7 @@ export async function spanOffThread(s: GameState, parcels: ParcelTable, bbls: st
   if (w) {
     try {
       const r = await send(main, w, parcels, bbls, adjacency, (town, id) => ({ type: "span", id, town, s, cap, seen }));
-      if (r.span) { where = "worker"; if (r.span.s) closeAhead(r.span.s, parcels, bbls, adjacency); return r.span; }
+      if (r.span) { where = "worker"; return r.span; }
     } catch { /* fall through */ }
   }
   where = "page";

@@ -3411,7 +3411,9 @@ export function islandResidents(e: Econ): { residents: number; homes: number; co
 
 /** Business rent against the nation's (offices and sheds, geometric mean), RENT_BASE at national prices. */
 function businessRentVsNation(e: Econ): number {
-  const natP = Math.max(0.1, e.natCpi ?? e.cpi ?? 1);
+  // in the town's dollars (priceLevel), as economy.ts natRentPerHead; the
+  // ratio is read against its opening value, so this changes no number
+  const natP = (e.priceLevel ?? 1) * Math.max(0.1, e.natCpi ?? e.cpi ?? 1);
   const rentOf = (k: "office" | "industrial") =>
     Math.max(0.05, (e.effRentIdx?.[k] ?? e.rentIdx[k]) / (RENT_BASE[k] * natP));
   return Math.sqrt(rentOf("office") * rentOf("industrial"));

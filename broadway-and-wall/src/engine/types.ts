@@ -2157,6 +2157,8 @@ export interface Econ {
   /** The opening seed's remaining weight, in prints (the stamp read at the opening survey's level, ageing like a print), and the month it was dated. */
   landSeedW?: number;
   landSeedM?: number;
+  /** What a deadline does to a land price, off the tape (comps.ts landForcedRead): the restatement a forced sale gets, its weight against a marketed print, and the prints of each kind it was read on. */
+  landForced?: { adj: number; w: number; nF: number; nM: number };
   /** Opening REAL income per worker, frozen at newGame, so the income argument is 1.0 at t=0. */
   wage0?: number;
   /** Opening cost of living against the nation (1 = national), same weights as the local CPI. Display only. */

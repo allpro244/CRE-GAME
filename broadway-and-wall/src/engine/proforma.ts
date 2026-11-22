@@ -770,8 +770,8 @@ export function deskQuote(
  * spec, corner — survives untouched and the NOI stack is exactly `noiYr`'s.
  * The bounds are guards on a ratio of two indices that track each other; they
  * are not meant to bind. COUNTED, NOT ASSUMED (2026-11-22): every class every
- * month, five runs (seeds 550991 and 12007 over ten years on main and on the
- * two pro forma changes, and 550991 over twenty-five years on main), 3,600
+ * month, six runs (seed 12007 over ten years on main, seeds 550991 and 12007 on
+ * each of the two pro forma changes, and 550991 over twenty-five years on main), 3,600
  * class-months — the rent belief never left 0.83-1.16 and the cap belief
  * 0.79-1.40, against bounds of 0.55-1.75 and 0.6-1.7: zero binds. Guards,
  * kept. `rentMult` is the holder's peak scenario (value.ts).

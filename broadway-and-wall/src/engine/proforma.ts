@@ -60,7 +60,9 @@ import type { ParcelRecord } from "@/data/types";
 import type { BtsCommitment, BuiltClass, Contract, DevUse, Econ, UseMix } from "./types";
 import { BUILT_CLASSES, CONSTRUCTION_LENDER } from "./types";
 import { productOf, layoutProduct, productHardCostBase, productBuildMonths, anchorShare, type ProductKey, type ProductSite } from "./products";
-import { openingVac, CITY_STOCK, BUILD_MONTHS, forwardVacancy, turnoverYr, reletMonths, betweenTenantsSf } from "./market";
+import { openingVac, CITY_STOCK, BUILD_MONTHS, forwardVacancy, turnoverYr, reletMonths, betweenTenantsSf, LEASE_TERM_M } from "./market";
+import { packageOf } from "./space";
+import { AGENT_FEE } from "./leasing";
 import {
   HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
   rentableRatio, marketRentPsfYr, opexPsf, locOpexMult, RECOVERY_RATE, MGMT_FEE, noiYr, capRateFor,
@@ -1140,17 +1142,36 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // period. It is expensive, it is financed, and it is the single biggest
   // reason a marginal deal does not pencil. That is the point.
   const openSf = rentable;
-  // apartments have no fit-out, but they do have concessions and marketing
-  const tiPsf = prod ? prod.tiPsf : overMix(mix, (u) => (u === "office" ? 32 : u === "retail" ? 22 : u === "industrial" ? 5 : 7));
+  // THE FIT-OUT IS IN THE EFFECTIVE RENT ALREADY (2026-11-22). The rent below
+  // is the market's EFFECTIVE rent (`marketRentPsfYr` reads `effRentIdx`), and
+  // the effective index is what the street's leases net after the package: a
+  // letting's allowance IS the suite's fit-out and the free months carry the
+  // rest, so what the landlord keeps is the effective rent and nothing more
+  // (leasing.ts letterTerms / streetRolls signAt; #844). A fixed sheet of TI
+  // on top — $32 office, $22 shops, $5 sheds, $7 flats, unsourced, the same in
+  // a glut and a shortage — paid the fit-out twice, once out of the rent and
+  // once out of the budget. One quantity, one answer: a new building's space
+  // lets at the market's effective rent, fit-out inside it. A product keeps
+  // its own sheet (products.ts), which is struck on its own lease terms.
+  const tiPsf = prod ? prod.tiPsf : 0;
   // Underwrite the rent tenants actually pay after market-wide concessions —
   // `marketRentPsfYr` already reads the EFFECTIVE index. This used to be
   // multiplied by effRentIdx/rentIdx a second time, so the desk's commissions
   // and its deficit were struck on a rent with the concessions taken off twice.
   const rentPsf0 = marketRentPsfYr(asBuilt, uw, "good");
   // A product's spec space pays its own commission on its own term (products.ts lcPct x termY).
+  // THE COMMISSION IS THE STREET'S (2026-11-22): a new building is let by a
+  // leasing exclusive, paid AGENT_FEE (6%, the top of the 4-6% of aggregate
+  // base rent the trade charges; leasing.ts, sourced there) on the FACE rent
+  // over the market's lease term for the use (LEASE_TERM_M, sourced in
+  // market.ts) — the same law the player's exclusive pays. The face is the
+  // effective rent grossed up by the market's package (space.ts packageOf).
+  // This was 4.5% of the effective rent over six years for every use, both
+  // numbers unsourced. Flats let on a year's lease without a broker.
   const lcPsf = prod
     ? rentPsf0 * prod.lease.termY * prod.lcPct
-    : overMix(mix, (u) => (u === "multifamily" ? 0 : 1)) * rentPsf0 * 6 * 0.045;
+    : rentPsf0 * overMix(mix, (u) => (u === "multifamily" ? 0
+      : (LEASE_TERM_M[u] / 12) * AGENT_FEE / Math.max(0.05, 1 - packageOf(econ, u))));
   // LEASE-UP DURATION IS WHAT THE MARKET LETS (2026-11-07). A new building
   // lets from every tenant shopping — growth and every tenant whose lease is
   // up (flight to quality) — and wins them in proportion to its share of the

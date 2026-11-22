@@ -64,7 +64,7 @@ import { openingVac, CITY_STOCK, BUILD_MONTHS, forwardVacancy, turnoverYr, relet
 import {
   HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
   rentableRatio, marketRentPsfYr, opexPsf, locOpexMult, RECOVERY_RATE, MGMT_FEE, noiYr, capRateFor,
-  taxRate, taxBorneShare, physicalMaxFloors, scoreVacOf, overallScore,
+  taxRate, taxBorneShare, physicalMaxFloors, scoreVacOf, overallScore, idleLandCarryRate,
 } from "./value";
 
 const clampP = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -871,22 +871,44 @@ function underwritingEconOf(econ: Econ, rentMult: number): Econ {
  *
  * Land is paid for at the start and the building it carries is worth
  * something at the end, so the site's money is tied up for the whole
- * schedule at the rate the trade applies to land — about 12%, well above
- * what a finished building is priced at, because a site earns nothing while
- * it waits. This was BUILD_DISCOUNT in the residual (1/1.12^2.5 = 0.752, a
- * fixed two and a half years for every scheme) and nothing at all on the desk,
- * which is why the desk passed lots the tape had priced as dear. Now it is the
- * scheme's own schedule on both: a shed that goes up in a year carries its
- * dirt for a year; a tower carries it for three and a half.
+ * schedule. This used to be a flat 12% "the trade applies to land" with no
+ * source, the same in 1981 and in 2021. It is now what holding the dirt
+ * actually costs the developer, a year (2026-11-22):
  *
+ *   - THE LAND LOAN on the share of the price a land desk advances: the land
+ *     desk's own coupon (`constructionRatePct(…, "land")`: the loan index plus
+ *     the desk's live spread on land paper, the same price the street's land
+ *     loans carry) on the land loan's advance (`LAND_ADVANCE`).
+ *   - THE DEVELOPER'S OWN CASH on the rest, at the loan index: what that cash
+ *     would have earned in the safe asset. The risk of the scheme is not
+ *     charged here — it is the developer's margin (DEV_MARGIN), which the
+ *     residual already takes, and charging an equity hurdle on the dirt as
+ *     well would count the same reward twice.
+ *   - THE TAX AND INSURANCE on the dirt (`idleLandCarryRate`, value.ts): the
+ *     lot is on the roll while the building goes up, as it is while it waits.
+ *
+ * So the carry moves with rates and credit, and with the council's levy.
  * It is not cash — the site is already paid for — so like the land itself it
  * sits in the basis the yield is measured on, not in the budget.
  */
-export const LAND_CARRY_RATE = 0.12;
+export function landCarryRatePa(econ: Pick<Econ, "indexRate"> & Partial<Pick<Econ, "deskPx" | "taxMult">>): number {
+  const idx = (econ.indexRate ?? 5.4) / 100;
+  const land = constructionRatePct(econ, undefined, 0, "land") / 100;
+  return LAND_ADVANCE * land + (1 - LAND_ADVANCE) * idx + idleLandCarryRate(econ);
+}
+/**
+ * THE SHARE OF A SITE'S PRICE A LAND DESK ADVANCES: half. Land loans run 50-65%
+ * of value at most, far under income property, because dirt has no cash flow
+ * to service them (the federal supervisory LTV limit for raw land is 65%,
+ * Interagency Guidelines for Real Estate Lending, 12 CFR 365 App. A; community
+ * banks quote 50% on unentitled land in practice). The town's land desk quotes
+ * "half the price" (debt.ts "land") [S].
+ */
+const LAND_ADVANCE = 0.5;
 /** A food retailer's total occupancy cost as a share of sales, median (Karabus survey: 2.43-4.88%, median 3.16%) [S]. */
 export const GROCER_OCCUPANCY = 0.0316;
-export function landCarryFactor(months: number): number {
-  return Math.pow(1 + LAND_CARRY_RATE, Math.max(0, months) / 12) - 1;
+export function landCarryFactor(months: number, econ: Parameters<typeof landCarryRatePa>[0]): number {
+  return Math.pow(1 + landCarryRatePa(econ), Math.max(0, months) / 12) - 1;
 }
 
 /** The market's absorption shape, 0.2 + 0.8·(t/N)^0.75, memoised by span — pure. */
@@ -1566,7 +1588,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
     leaseUpForgone,
     nonLandBasis: costTotal + interestReserve + pointsCost,
     stabNoi, exitCap, exitYieldPct, taxYr1, abate,
-    landCarryRate: landCarryFactor(months),
+    landCarryRate: landCarryFactor(months, econ),
     bts, btsShare,
     ...(prod && site ? { product: { key: prod.key, site, anchors, ...(draw !== undefined ? { draw } : {}) } } : {}),
   };

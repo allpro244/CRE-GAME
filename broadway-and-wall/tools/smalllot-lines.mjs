@@ -47,7 +47,7 @@ for (const seed of SEEDS) {
           const p = E.planDevelopment(g, parcels, bbl, use, fl, cov, "gmp", undefined, undefined, undefined, 0.5, 0);
           if (!p || !(p.requiredYield > 0)) continue;
           const nonLand = p.basisTotal - p.landBasis - p.landCarry;
-          const carry = E.landCarryFactor(p.months);
+          const carry = E.landCarryFactor(p.months, g.econ);
           const resid = ((p.stabNoi / (p.requiredYield / 100)) - nonLand) / (1 + carry);
           if (!best || resid > best.resid) best = { use, cov, fl, p, resid, carry };
         }

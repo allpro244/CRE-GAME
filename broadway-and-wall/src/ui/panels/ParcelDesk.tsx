@@ -601,7 +601,7 @@ function ParcelPanelInner({
         const buildReachable = rec.class !== "multifamily" || !!holding.groundLeased
           || (adjacency?.[selectedBBL] ?? []).some((n) => !!game.holdings[n]);
         const dirtLine = `land $${read.psf.toFixed(0)}/sf`
-          + (read.winner === "texture" ? " (location floor)" : ` (${read.winner === "homes" ? "homebuilder" : read.winner === "subdivider" ? "land developer" : read.winner} bid)`);
+          + (read.winner === "texture" ? " (opening comps)" : read.winner === "sales" ? " (comparable sales)" : ` (${read.winner === "homes" ? "homebuilder" : read.winner === "subdivider" ? "land developer" : read.winner} bid)`);
         const hint = dirt
           ? (pencils
             ? `Residual land value $${read.builder.toFixed(0)}/sf · ${(room * 100).toFixed(0)}% of envelope unused.`

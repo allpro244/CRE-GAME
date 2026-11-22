@@ -18,7 +18,8 @@
 import type { ParcelRecord } from "@/data/types";
 import type { Condition, GameState, Sector } from "./types";
 import type { Disclosure } from "./value";
-import { initialCondition, noiAfterTaxYr, holdingNOIYr, asIfOwned, disclosureFor, landPsfNow, landRead, resolveRec, assetValue } from "./value";
+import { initialCondition, noiAfterTaxYr, holdingNOIYr, asIfOwned, disclosureFor, landPsfNow, resolveRec, assetValue, envelopeRealisation, LAND_CREDIBILITY } from "./value";
+import { farMaxFor } from "./proforma";
 import { industryStress } from "./market";
 import { recordPropertyEvent } from "./history";
 import { printTrade, printLandTrade } from "./propmarket";
@@ -51,6 +52,14 @@ export interface Comp {
    * `tickLandComps`, which divided by it and got the sign backwards for it.
    */
   mark?: number;
+  /**
+   * SOLD BY A SELLER AGAINST A DEADLINE — dirt only (2026-11-21): the listing's
+   * reason was a fund's life, a merchant builder's exit, a non-core disposal,
+   * an estate or a deleveraging (anything but "voluntary"; a receiver's sale is
+   * `distress`). A real price under compulsion: evidence, adjusted and
+   * down-weighted by what the tape shows such sales do (landForcedRead).
+   */
+  forced?: boolean;
   /**
    * WHAT THE INDEX SAID IT WAS WORTH, AND THE INDEX, on the day it closed —
    * buildings only (2026-10-16). The cap-rate index follows where the
@@ -104,6 +113,9 @@ export function recordComp(
     : d ? holdingNOIYr(rec, s.econ, asIfOwned(s, rec.bbl, price, d, rec), s.month)
     : noiAfterTaxYr(rec, s.econ, cond, price);
   const px = Math.round(price);
+  // a lot sold against a deadline: the listing it sold out of says so
+  const li = built || distress ? undefined : s.listings?.find((l) => l.bbl === rec.bbl);
+  const forced = !!li?.reason && li.reason !== "voluntary";
   s.comps.push({
     m: s.month,
     bbl: rec.bbl,
@@ -116,6 +128,7 @@ export function recordComp(
     buyer, seller,
     distress: distress || undefined,
     offMarket: offMarket || undefined,
+    ...(forced ? { forced: true } : {}),
     // Stamped here because here is the only place that knows the date. Every
     // one of the twelve callers hands in a resolveRec'd record, so this is
     // bit-for-bit the number `tickLandComps` would have computed for this lot
@@ -129,7 +142,12 @@ export function recordComp(
   // ...AND IT IS THE MARKET'S CAP RATE: every building that closes is a
   // print on the cap tape the class read is taken from (propmarket.ts).
   if (built) printTrade(s, rec, price, buyer, seller, cond, distress, offMarket);
-  else printLandTrade(s, rec, price, buyer, distress, offMarket);
+  // ...AND EVERY LAND PRINT IS ON THE LAND INDEX'S TAPE, weighted by the same
+  // rule the comps desk reads it by (landEvidenceWeight): one tape, one answer.
+  else {
+    const c = s.comps[s.comps.length - 1];
+    printLandTrade(s, rec, price * landEvidenceAdj(c, s.econ), buyer, landEvidenceWeight(c, s.econ));
+  }
   s.compsTotal = (s.compsTotal ?? 0) + 1;
   s.compsVolume = (s.compsVolume ?? 0) + px;
   if (s.comps.length > MAX_COMPS) s.comps.splice(0, s.comps.length - MAX_COMPS);
@@ -228,253 +246,175 @@ export function portfolioIndustries(s: GameState) {
 }
 
 /**
- * WHAT THE STREET IS ACTUALLY PAYING FOR DIRT.
+ * WHAT THE STREET IS ACTUALLY PAYING FOR DIRT — the comparable land sales.
  *
- * Land value in this engine was a label rather than a price. `landPsfNow`
- * reads a static seed off the parcel record, a citywide index, a site-quality
- * multiplier and the cycle — and nothing else. `s.landAdj`, the per-parcel
- * mark that every consumer already reads through `resolveBase`, was written by
- * exactly two things: a delivery, and a rezoning. Nothing anybody BOUGHT ever
- * moved the ground under it.
+ * Dirt has no income of its own worth the name and no replacement cost; what
+ * anybody knows about a lot's price is what can be built on it (the residual,
+ * value.ts) and what the lots around it have been fetching. This is the
+ * second half: every arm's-length land print in a district, read the way an
+ * appraiser reads a land comp sheet, published for value.ts readLand to
+ * reconcile with the residual (LAND_CREDIBILITY).
  *
- * That is the wrong way round for the most fundamental price in the business.
- * Dirt has no income and no replacement cost; the only way anybody knows what
- * a lot is worth is what the lots around it have been fetching. Comparable
- * sales are not a check on the appraisal, they ARE the appraisal.
+ *   - THE UNIT IS THE ZONED ENVELOPE. Urban land is compared per square foot
+ *     of floor area the zoning lets it carry ("price per buildable foot"):
+ *     a lot that may carry 12 FAR is not a comp for one that may carry 2 at
+ *     its price per foot of dirt. The envelope is the physical one the
+ *     residual reads (farMaxFor x envelopeRealisation).
+ *   - TIME IS ADJUSTED, AND OLD PRINTS FADE. A print is restated to today's
+ *     dollars (the CPI on its closing month) and weighted by its age at a
+ *     one-year half-life: lenders' appraisal rules want comparables closed
+ *     inside twelve months and older ones explained (Fannie Mae Selling
+ *     Guide B4-1.3-08). Past five years a print carries 3% of its weight and
+ *     is dropped. So a district whose buyers have walked away loses its comps
+ *     as they age and its dirt drifts to what the residual and the holder say
+ *     — the old no-bid decay and the holders' capitulation were two halves of
+ *     that, and neither reached a lot nobody could build on.
+ *   - WHAT IS NOT A PRINT (landEvidenceWeight). A distress sale is the
+ *     price of the compulsion (USPAP market value: neither party under
+ *     compulsion). An off-market
+ *     deed counts at reduced weight — most of it when it paid over the
+ *     appraisal (an assembler's premium leaks), a third when it paid under
+ *     (a favour, an estate). A farm, a plat lot or a subdivision tract trades
+ *     to its own buyer and its own comps.
  *
- * Measured before this existed (`pnpm stress --only=B`): a buyer taking 116 to
- * 142 lots out of one district over twenty-five years moved that district's
- * land value DOWN 6.6% relative to the rest of the same town. The player's
- * demand was not an input to the land market at all, so absorbing a third of a
- * district's dirt read to the appraiser as one fewer building trading there —
- * which is the sign it moves, backwards.
+ * The median, weighted, so one assemblage premium or one wild print cannot set
+ * a district's price; no clamp on it. It draws no random numbers.
  *
- * How it works, and why it converges rather than running away: every land
- * print is compared to what this engine appraised that same lot at ON THE DAY
- * IT CLOSED, and the ratio is the market telling the appraiser it is wrong.
- * Aggregated to the district, because that is the submarket an appraiser
- * actually pulls comps from, and only when there are enough prints to be a
- * market rather than an anecdote. The mark then moves a fraction of the way
- * each quarter.
+ * THE OPENING SEED. Before any dirt has traded, the opening survey read at
+ * the map's location texture stands in as one district's worth of prints
+ * (LAND_CREDIBILITY) dated at the opening, ageing like any print
+ * (`econ.landSeedW`). It is evidence, never a floor, and it is gone in a few
+ * years.
  *
- * What stops it is the NEXT print, not this one. A raised mark raises the
- * appraisal, the appraisal is what the next seller writes their ask off, and a
- * lot that clears at the ordinary denial band over the RAISED number scores a
- * ratio of one — no further push. A district that keeps clearing stronger than
- * the town keeps getting marked up, exactly as long as it keeps doing it, and
- * the day it stops it simply stops, without a correction it never earned. The
- * older arrangement compared against a moving mark and got that braking for
- * free, at the price of the sign: see the note at the ratio.
- *
- * It draws no random numbers, so every paired run in both audits stays in step.
+ * This replaced a per-district multiplier on the generator's stamped land
+ * price (`landAdj`, clamped [0.25, 4]) under a floor at 0.30 x that stamp,
+ * which priced 59% of the vacant lots; the variance multiplier (x1.22) and
+ * the holders' capitulation wrote the same multiplier. `landAdj` is no longer
+ * written; an old save's values only scale its opening seed.
  */
-const LAND_WINDOW_M = 36;      // three years of prints — an appraiser's window
-const LAND_MIN_PRINTS = 3;     // one sale is an anecdote, two is a coincidence
-const LAND_SPEED = 0.07;       // per quarter, toward what the street is paying
-
+const LAND_HALF_LIFE_M = 12;   // Fannie Mae B4-1.3-08: comparables closed inside twelve months
+const LAND_MAX_AGE_M = 60;     // five half-lives: 3% of a print's weight
 export function tickLandComps(s: GameState, parcels: Record<string, ParcelRecord>) {
   // Appraisals are quarterly work. Nobody re-marks a book every month.
   if (s.month % 3 !== 0) return;
-  if (!s.landAdj) s.landAdj = {};
-  holderCapitulation(s, parcels);
-  const since = s.month - LAND_WINDOW_M;
-  const byDist = new Map<string, number[]>();
+  const e = s.econ;
+  // the opening seed ages from the first quarter this desk sits
+  if (e.landSeedM === undefined) e.landSeedM = s.month;
+  const seedAge = s.month - e.landSeedM;
+  e.landSeedW = seedAge > LAND_MAX_AGE_M ? 0 : +(LAND_CREDIBILITY * Math.pow(0.5, seedAge / LAND_HALF_LIFE_M)).toPrecision(6);
+
+  e.landForced = landForcedRead(s);
+  const cpiNow = e.cpi ?? 1;
+  const cpiAt = new Map<number, number>();
+  for (const p of e.history ?? []) if (p.cpi !== undefined) cpiAt.set(p.q, p.cpi);
+  const byDist = new Map<string, { v: number; w: number }[]>();
   for (const c of s.comps ?? []) {
-    // LAND PRINTS ONLY. An improved sale is mostly a price for the building;
-    // backing the dirt out of it is a residual, and a residual of two large
-    // numbers is noise at this sample size.
-    if (c.m < since || c.sf !== 0) continue;
+    const age = s.month - c.m;
+    if (c.sf !== 0 || age < 0 || age > LAND_MAX_AGE_M || !(c.price > 0)) continue;
+    const kind = landEvidenceWeight(c, e);
+    if (!(kind > 0)) continue;
     const rec = resolveRec(parcels, s, c.bbl);
-    if (!rec?.lotArea) continue;
-    // A PRICE AND ITS MARK MUST CARRY THE SAME DATE.
-    //
-    // This divided by `landPsfNow(rec, s.econ)` — TODAY'S appraisal — against
-    // prints up to three years old. Write out what that measures. A print at
-    // month t clears at roughly the mark on that date times the seller's denial
-    // band; the denominator is the mark on THIS date. So the ratio is
-    // `denial * (mark_then / mark_now)`, and the district term in it is not
-    // location, it is the district's own growth over the window, INVERTED. A
-    // district being marked up therefore read cheap, and the wire marked it
-    // back down — which is why `pnpm stress --only=B` had a whale buying out a
-    // district and moving its ground -34%. The comp sheet was measuring the
-    // clock.
-    //
-    // Stamped at the closing, the ratio is `denial` and nothing else, which is
-    // the one thing a comp is evidence about: did this lot clear over or under
-    // what the book said it was worth, on the day.
-    const appraised = c.mark ?? landPsfNow(rec, s.econ);
-    if (!(appraised > 0) || !(c.psf > 0)) continue;
+    if (!rec || !(rec.lotArea > 0) || rec.ag || rec.homeLot || rec.tract) continue;
+    const env = rec.lotArea * farMaxFor(rec) * envelopeRealisation(rec);
+    if (!(env > 0)) continue;
+    const then = cpiAt.get(c.m) ?? cpiNow;
+    const ppb = (c.price * landEvidenceAdj(c, e) / env) * (cpiNow / Math.max(1e-9, then));
+    if (!(ppb > 0) || !Number.isFinite(ppb)) continue;
+    const w = kind * Math.pow(0.5, age / LAND_HALF_LIFE_M);
     const d = rec.district ?? "—";
-    if (!byDist.has(d)) byDist.set(d, []);
-    const ratio = c.psf / appraised;
-    // AN OFF-MARKET PRINT IS EVIDENCE, NOT A CLEARING PRICE — and it is worth
-    // asking which direction it points.
-    //
-    // A marketed sale is the market's answer: exposed, competed, and if it
-    // cleared at that number then that is what the number is. A quiet deal
-    // between two people is a real deed for real money and it is NOT the same
-    // evidence, because nothing tested it — no second bidder, no proof anybody
-    // else would have gone there. Appraisal practice screens for exactly this
-    // and discounts what it cannot verify rather than discarding it.
-    //
-    // The asymmetry is the interesting part, and it is the reason to model
-    // this at all rather than just weight it down. Somebody who pays OVER the
-    // appraisal with no competition in the room wanted that specific lot, and
-    // in this business there is usually one reason — they are assembling, and
-    // the piece they still need is worth more to them than to anybody else.
-    // That leaks. It is the whole holdout dynamic: as a buyer works down a
-    // block, the neighbours read the prints and the last parcel is the dearest
-    // one. So a premium paid off-market carries most of its weight.
-    //
-    // A quiet sale UNDER the appraisal says much less. Sellers go off-market
-    // for speed, for privacy, to avoid a broker, to settle an estate — the
-    // discount is the price of not being marketed, and reading it as the
-    // market repricing downward would let anybody mark a district down by
-    // doing a favour for a friend.
-    const weight = !c.offMarket ? 1 : ratio >= 1 ? 0.75 : 0.35;
-    const g = byDist.get(d)!;
-    // Weighted by repetition, which keeps the median honest without needing a
-    // weighted-median routine: a print counted twice is a print that speaks
-    // twice, and a quarter-weight one only sometimes gets a vote at all.
-    g.push(ratio);
-    if (weight >= 0.75) g.push(ratio);
-    if (weight >= 1) g.push(ratio, ratio);
+    let g = byDist.get(d);
+    if (!g) { g = []; byDist.set(d, g); }
+    g.push({ v: ppb, w });
   }
-  if (!byDist.size) return;
-
-  // AGAINST THE REST OF TOWN, NOT AGAINST THE APPRAISAL.
-  //
-  // The first cut of this compared each print to `landPsfNow` and marked the
-  // district toward it. That is circular and it compounds. A land ask in this
-  // engine IS the appraisal times a denial factor — refreshListings prices off
-  // assetValue, and for dirt assetValue IS landValue — and dirt trades at the
-  // ask. So the ratio was pinned above one BY CONSTRUCTION, at whatever the
-  // seller's denial band happened to be, and every quarter the wire read that
-  // premium as "the market pays over appraisal" and marked the whole city up
-  // again. Compounding. Measured at the previous commit: only three of eight
-  // strategies ended in the black, a competent operator survived one world in
-  // four, and the tournament went BROKEN — because land was inflating under
-  // everybody and the tax roll was chasing it.
-  //
-  // The signal a submarket mark should carry is RELATIVE: is this district
-  // clearing stronger than the rest of the town, in the same window, under the
-  // same denial band? That difference is real information about location and
-  // it is what a comps sheet actually tells an appraiser. It also cannot drift,
-  // because the citywide median is the reference — if every district clears 4%
-  // over appraisal, no district is hot and nothing moves.
-  const all: number[] = [];
-  for (const rs of byDist.values()) all.push(...rs);
-  if (all.length < LAND_MIN_PRINTS * 2) return;
-  all.sort((a, b) => a - b);
-  const town = all[Math.floor((all.length - 1) / 2)];
-  if (!(town > 0)) return;
-
-  const pull = new Map<string, number>();
-  for (const [dist, ratios] of byDist) {
-    if (ratios.length < LAND_MIN_PRINTS) continue;
-    ratios.sort((a, b) => a - b);
-    const median = ratios[Math.floor((ratios.length - 1) / 2)];
-    // A single wild print — a distressed clear-out, an assemblage premium —
-    // is real but it is not the market. Bound what one quarter can conclude.
-    if (Number.isFinite(median)) pull.set(dist, Math.max(0.6, Math.min(1.7, median / town)));
+  const out: NonNullable<typeof e.landComps> = {};
+  for (const [d, g] of byDist) {
+    const w = g.reduce((a, x) => a + x.w, 0);
+    if (!(w > 0)) continue;
+    out[d] = { ppb: +weightedMedian(g).toPrecision(6), w: +w.toPrecision(4), n: g.length, cpi: cpiNow };
   }
-  // SILENCE IS INFORMATION TOO — the no-bid decay.
-  //
-  // Everything above only learns from SALES: three prints in the window or the
-  // district's mark does not move. Write out what that does to a district
-  // whose asks have outrun its buyers — say the envelope doubled and every
-  // residual with it: the asks jump, the buyers stop, the prints stop, and the
-  // mark FREEZES at the number nobody will pay, forever, because the only
-  // teacher this wire had was a closing. An appraiser does not work that way.
-  // Dead volume with product sitting on the market IS evidence — the
-  // listing-to-sale ratio and days-on-market are standard adjustment inputs —
-  // and what it is evidence of is that the book is marked above the market.
-  //
-  // So: a district with NO land prints in the window and at least two land
-  // listings that have each sat unsold past a marketing period (nine months —
-  // land is slow, and one stale listing is an anecdote by the same rule as
-  // LAND_MIN_PRINTS) drifts its mark down at LAND_SPEED toward a 0.90 pseudo-
-  // ratio: about 0.7% a quarter, an appraiser conceding a few points a year to
-  // a market that will not answer, not a crash. The decay stops the moment a
-  // print arrives, because a real closing is better evidence than silence —
-  // prints always take precedence (a printed district never enters here).
-  {
-    const staleByDist = new Map<string, number>();
-    for (const li of s.listings ?? []) {
-      if (s.month - li.listedM < 9) continue;
-      const rec = resolveRec(parcels, s, li.bbl);
-      if (!rec || rec.class !== "land") continue;
-      const d = rec.district ?? "—";
-      staleByDist.set(d, (staleByDist.get(d) ?? 0) + 1);
-    }
-    for (const [d, n] of staleByDist) {
-      if (n >= 2 && !pull.has(d)) pull.set(d, 0.90);
-    }
-  }
-  if (!pull.size) return;
-
-  // Publish relative district heat for the residual land auction — builder-
-  // clearing sites read this so comps discover dirt, not only the texture floor.
-  s.econ.districtHeat = Object.fromEntries([...pull.entries()].map(([d, f]) => [d, +f.toFixed(4)]));
-
-  for (const bbl of Object.keys(parcels)) {
-    const p = parcels[bbl];
-    const f = p ? pull.get(p.district ?? "—") : undefined;
-    if (f === undefined) continue;
-    const cur = s.landAdj[bbl] ?? 1;
-    const next = cur * (1 + LAND_SPEED * (f - 1));
-    s.landAdj[bbl] = +Math.max(0.25, Math.min(4, next)).toFixed(4);
-  }
+  e.landComps = out;
 }
 
 /**
- * HOLDER CAPITULATION (MDGA phase 1) — the reservation learns from the bid.
+ * WHAT A DEADLINE DOES TO A LAND PRICE, read off the town's own tape, quarterly.
  *
- * REALISM_AUDIT_2026-08 left this open as "land reservation vs transaction +
- * holder capitulation", and it turned out to be the wall in front of every
- * developer in the city, the city's own builders included. Measured on the
- * standard town: of the vacant lots where a builder could pay something for
- * the dirt (41 at the opening, 85 by year 20), about 85% were priced instead
- * at the sales-comparison texture floor, at a median 2.2x what any builder
- * could pay at the opening and 4.0x by year 20. Nobody sold, nothing was
- * built, and the floor never learned: the no-bid decay above only fires on a
- * district with two land listings stale past nine months, which a tape of
- * 0-5 vacant listings that expire at six to twelve months almost never has.
+ * Market value assumes neither party under compulsion (USPAP, Definitions;
+ * IVS 104 market value: "without compulsion"), so a sale against a deadline is
+ * not market value as it stands. Appraisers do not throw such a sale away when
+ * the market is thin: they adjust it to market terms and give it less weight
+ * in the reconciliation (The Appraisal of Real Estate, 15th ed., ch. 18-19,
+ * conditions-of-sale adjustment; Interagency Appraisal and Evaluation
+ * Guidelines 2010 on distressed comparables). Both numbers here are measured,
+ * not asserted, on the arm's-length land prints of the last five years, each
+ * as its price over the appraisal on the day it closed (`mark`):
  *
- * An owner of dirt whose asking price sits above the only real bid for it —
- * a builder's, for a building that would pay — does not hold that price for
- * fifty years. Land markets correct: residential land fell 40-70% in
- * 2007-11, over three to four years, as owners and their lenders conceded to
- * the bids that existed. So, quarterly, a vacant lot priced at the comp floor
- * while a positive builder bid stands under it moves its comp adjustment
- * toward that bid by CAPITULATION x the gap (the share of the price no builder
- * will pay): about 6% of the gap a quarter, a few years to close most of it,
- * slowing as it closes. It stops the moment the builder's bid sets the price,
- * it never touches dirt nobody can build on (no positive bid: the floor is
- * all the evidence there is), and a holder bid that wins is left alone — that
- * owner is waiting on a better rent, not refusing one that exists.
+ *   - THE ADJUSTMENT is the conditions-of-sale gap: the median marketed print's
+ *     price/appraisal over the median forced one's. A forced print is restated
+ *     by it, as an appraiser restates a comp to the subject's terms.
+ *   - THE WEIGHT is its precision against a marketed print's: the scatter of
+ *     marketed prints over the scatter of forced ones (inverse-variance
+ *     weighting; each scatter a robust one, 1.4826 x the median absolute
+ *     deviation of log price/appraisal). Bounded at 1 by definition: a sale
+ *     under compulsion cannot be better evidence of market value than a free one.
  *
- * CAPITULATION = 0.06 is a shape parameter — the speed of a correction,
- * placed from the 2007-11 episode, not tuned to any outcome here.
+ * Until the tape holds LAND_CREDIBILITY prints of each kind there is nothing
+ * to adjust a forced sale by, and it carries no weight — an appraiser does not
+ * use a distressed comp it cannot adjust. Measured on two seeds' first ten
+ * years (this change, 2026-11-21): forced land sales (merchant exits, fund lives, non-core) closed
+ * at a median 0.56-0.85 of appraisal against 1.10-1.13 for marketed ones.
  */
-const CAPITULATION = 0.06;
-function holderCapitulation(s: GameState, parcels: Record<string, ParcelRecord>) {
-  for (const bbl of Object.keys(parcels)) {
-    const rec = resolveRec(parcels, s, bbl);
-    if (!rec || rec.class !== "land" || !(rec.lotArea > 0)) continue;
-    const read = landRead(rec, s.econ);
-    if (!(read.builder > 0) || read.winner !== "texture" || !(read.psf > 0)) continue;
-    const gap = 1 - read.builder / read.psf;
-    if (!(gap > 0)) continue;
-    const cur = s.landAdj![bbl] ?? 1;
-    // NO FLOOR (2026-11-06). The texture is rec.landPsf x landAdj, so each
-    // step moves the ask a share of the way to the builder's bid and can never
-    // pass it: cur x (1 - CAPITULATION x gap) >= cur x builder/psf. A floor at
-    // a quarter of the texture stopped the owner short of the only bid there
-    // was — at its bound in 36.7% of calls (rail audit #19), every one a lot
-    // whose ask stayed over four times what any builder could pay.
-    // Six significant figures, not four decimals: a small adjustment rounded to
-    // 0 would read as no adjustment at all (resolveBase) and snap back to 1.
-    s.landAdj![bbl] = +(cur * (1 - CAPITULATION * gap)).toPrecision(6);
+function landForcedRead(s: GameState): { adj: number; w: number; nF: number; nM: number } | undefined {
+  const free: number[] = [], forced: number[] = [];
+  for (const c of s.comps ?? []) {
+    const age = s.month - c.m;
+    if (c.sf !== 0 || c.distress || c.offMarket || age < 0 || age > LAND_MAX_AGE_M) continue;
+    if (!(c.price > 0) || !(c.mark && c.mark > 0) || !(c.psf > 0)) continue;
+    (c.forced ? forced : free).push(Math.log(c.psf / c.mark));
   }
+  if (free.length < LAND_CREDIBILITY || forced.length < LAND_CREDIBILITY) return undefined;
+  const med = (a: number[]) => { const x = [...a].sort((p, q) => p - q); const n = x.length; return n % 2 ? x[(n - 1) / 2] : (x[n / 2 - 1] + x[n / 2]) / 2; };
+  const scale = (a: number[]) => { const m = med(a); return 1.4826 * med(a.map((v) => Math.abs(v - m))); };
+  const sF = scale(forced), sM = scale(free);
+  const adj = Math.exp(med(free) - med(forced));
+  const w = sF > 0 ? Math.min(1, (sM * sM) / (sF * sF)) : 1;
+  if (!Number.isFinite(adj) || !Number.isFinite(w)) return undefined;
+  return { adj: +adj.toPrecision(4), w: +w.toPrecision(4), nF: forced.length, nM: free.length };
+}
+
+/** A land print's price restated to market terms: a forced sale by the tape's conditions-of-sale gap (landForcedRead), anything else as it closed. */
+export function landEvidenceAdj(c: Pick<Comp, "forced" | "distress">, e: { landForced?: { adj: number } }): number {
+  return c.forced && !c.distress ? e.landForced?.adj ?? 1 : 1;
+}
+
+/**
+ * HOW MUCH A LAND PRINT IS WORTH AS EVIDENCE — the one rule for the comps desk
+ * (tickLandComps, what value.ts reconciles with the residual) and the land
+ * index's tape (propmarket.ts printLandTrade), so the two read land off the
+ * same prints at the same weights.
+ *
+ *   - A distress sale is the price of the compulsion, not of the land
+ *     (USPAP market value: neither party under compulsion). Weight 0.
+ *   - An off-market deed is a real price nobody tested: most of its weight
+ *     when it paid over the appraisal (an assembler's premium leaks), a third
+ *     when under (a favour, an estate). [K: stated weights, as before]
+ *   - A sale against a deadline (`forced`): the weight the tape measures for
+ *     it (landForcedRead), 0 until it can; its price is restated
+ *     (landEvidenceAdj).
+ *   - Anything else, marketed and closed: 1.
+ */
+export function landEvidenceWeight(c: Pick<Comp, "distress" | "offMarket" | "psf" | "mark" | "forced">, e: { landForced?: { w: number } }): number {
+  if (c.distress) return 0;
+  if (c.forced) return e.landForced?.w ?? 0;
+  if (!c.offMarket) return 1;
+  const ratio = c.mark && c.mark > 0 ? c.psf / c.mark : 1;
+  return ratio >= 1 ? 0.75 : 0.35;
+}
+
+/** The weighted median: the value at which half the weight lies on each side. */
+function weightedMedian(xs: { v: number; w: number }[]): number {
+  const s = [...xs].sort((a, b) => a.v - b.v);
+  const half = s.reduce((a, x) => a + x.w, 0) / 2;
+  let acc = 0;
+  for (const x of s) { acc += x.w; if (acc >= half) return x.v; }
+  return s[s.length - 1]?.v ?? NaN;
 }

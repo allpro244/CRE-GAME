@@ -66,7 +66,7 @@ import { AGENT_FEE } from "./leasing";
 import {
   HARD_COST_PSF, SOFT_COST, CONTINGENCY, RETAIL_FLOORS_MAX, INDUSTRIAL_FLOORS_MAX, heightPremium, constructionTypeMult,
   rentableRatio, marketRentPsfYr, opexPsf, locOpexMult, RECOVERY_RATE, MGMT_FEE, noiYr, capRateFor,
-  taxRate, taxBorneShare, physicalMaxFloors, scoreVacOf, overallScore,
+  taxRate, taxBorneShare, physicalMaxFloors, scoreVacOf, overallScore, locationRentMult, DEV_MARGIN,
 } from "./value";
 
 const clampP = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -520,59 +520,59 @@ export function maxRetailShare(floors: number): number {
  * plates above it, typically 18-22 feet against 11-14, so it is worth more
  * than its share of the stack.
  *
- * IT IS NOT EVERY STREET. Shops need footfall, so this reads the same demand
- * score the rest of the engine prices off. A quiet residential block gets a
- * lobby, which is what a quiet residential block has.
+ * IT IS NOT EVERY STREET, AND NOT EVERY MARKET — AND THE DEVELOPER ASKS WHICH
+ * PAYS (2026-11-22). The ground floor goes to shops where a shop is worth more
+ * there than the alternative (flats at grade, or an office tower's lobby):
+ * each valued the way the pro forma values
+ * anything — the market's effective rent at this address (`locationRentMult`:
+ * retail is the most location-sensitive rent there is, so footfall is in it),
+ * let at its stabilised occupancy, capitalised at the class's through-cycle
+ * yield (`capExp`), less the income the space gives up while it lets (its own
+ * lease-up clock, `leaseUpMonthsOf`, a sliver of its market) — and then what
+ * the foot leaves after the margin and the cost of building it: the retail
+ * residual against the flats', or against nothing for a lobby. This replaced a
+ * demand-score cut at 38 (unsourced), a share scaled by how slowly shops let
+ * against one turn of a suite, and a share scaled by the retail/lead rent ratio
+ * against the two classes' OPENING ratio — a norm, the year-one relationship
+ * standing in for what a shop pays today.
  */
-const STREET_RETAIL_DEMAND = 38;   // below this a shop at grade has no trade
-export function withStreetRetail(mix: UseMix, floors: number, demand: number, econ?: Econ, force = false): UseMix {
+export function withStreetRetail(mix: UseMix, floors: number, rec: ParcelRecord, econ: Econ, force = false): UseMix {
   const lead = dominantOf(mix);
   if (lead !== "office" && lead !== "multifamily") return mix;
   if ((mix.retail ?? 0) > 0) return mix;                 // already a mixed programme
   if (floors < 2) return mix;
+  const share = Math.min(maxRetailShare(floors), 1.25 / floors);
   // THE OWNER'S CALL. A developer can programme shops on a quiet street or
   // into a glutted retail market; the market then decides whether they let.
-  // `force` is that choice (DevDraft.groundRetail = "on"): the geometry's
-  // share, the street's and the market's gates skipped.
-  if (force) {
-    const share = Math.min(maxRetailShare(floors), 1.25 / floors);
-    return restOfMix(mix, share);
-  }
-  if (demand < STREET_RETAIL_DEMAND) return mix;
-  // ...AND IT IS NOT EVERY MARKET. This rule read footfall and never the
-  // retail market itself, so every tower stapled shops onto a street already
-  // drowning in them — measured over 80 years, retail stock grew five times
-  // faster than retail demand (+41% vs +8%), median retail vacancy ran 15.5%
-  // against an 8.5% natural rate, and real retail rents bled −2.6%/yr for
-  // fifty years while the by-product kept arriving. A developer facing a
-  // glutted street programmes a lobby, amenity space, or a bigger residential
-  // ground floor — not another vacant shopfront. The share follows how fast a
-  // shop at grade would let (`leaseUpMonthsOf`, the retail market's own
-  // lettings against the shop space on offer when it opens): whole where a
-  // shop lets within one turn of a suite (`reletMonths`, the physical
-  // minimum), and in proportion to that speed beyond it — a shop that would
-  // sit three turns empty is programmed a third as often. (This faded with
-  // retail vacancy over a "natural" rate, gone 8pp over; there is no natural
-  // rate, only how long the space on offer takes to let.)
-  // (A shopfront is a sliver of the town's shop space; its own feet are left
-  // out of the space on offer.)
-  const slow = econ && econ.stock?.retail
-    ? reletMonths("retail") / leaseUpMonthsOf(econ, "retail", 0, 0, forwardVacancy(econ, "retail"))
-    : 1;
-  // ...AND WHETHER A SHOP PAYS (2026-10-14). Slack alone let towers keep
-  // stapling shopfronts onto a street whose rents had fallen far behind the
-  // floors above — retail stock outgrew retail demand and real retail rent
-  // halved over sixty years in measured runs. A developer lets the ground
-  // floor as a shop when a shop pays at least what the lead use pays per foot,
-  // against the two classes' opening relationship; less than that, the share
-  // shrinks in proportion (lobby, amenity, more of the lead use).
-  const rOf = (k: BuiltClass) => (econ?.effRentIdx?.[k] ?? econ?.rentIdx?.[k] ?? 1);
-  const aOf = (k: BuiltClass) => (econ?.effAnchor?.[k] ?? econ?.rentAnchor?.[k] ?? 1);
-  const rel = econ ? (rOf("retail") / Math.max(1e-6, rOf(lead))) / Math.max(1e-6, aOf("retail") / Math.max(1e-6, aOf(lead))) : 1;
-  const street = Math.max(0, Math.min(1, slow)) * Math.max(0, Math.min(1, rel));
-  const share = Math.min(maxRetailShare(floors), 1.25 / floors) * street;
-  if (share <= 0.01) return mix;
+  // `force` is that choice (DevDraft.groundRetail = "on").
+  if (force) return restOfMix(mix, share);
+  // The alternative is the lead use where it lets at grade — a flat on the
+  // ground floor is an ordinary flat — and a lobby where it does not: office
+  // tenants take the floors above the street, and an office tower's ground
+  // floor is its lobby and amenity space if it is not shops [K].
+  const alt = lead === "office" ? 0 : groundFloorResidualPsf(rec, econ, lead, floors);
+  if (!(groundFloorResidualPsf(rec, econ, "retail", floors) > alt)) return mix;
   return restOfMix(mix, share);
+}
+/**
+ * What a foot of ground floor built and let as `u` leaves over: its value
+ * (below) after the developer's margin, less what the foot costs to build
+ * (the class's hard cost for the building's construction type at the town's
+ * cost index, with soft cost and
+ * contingency) — the residual, per foot, the land is priced on.
+ */
+function groundFloorResidualPsf(rec: ParcelRecord, econ: Econ, u: BuiltClass, floors: number): number {
+  const cost = HARD_COST_PSF[u] * constructionTypeMult(u, floors) * (econ.costIdx ?? 1) * (1 + SOFT_COST) * (1 + CONTINGENCY);
+  return groundFloorValuePsf(rec, econ, u) / (1 + DEV_MARGIN) - cost;
+}
+/** A foot of ground floor let as `u` here: effective rent at the address x stabilised occupancy, capitalised, less the income its lease-up gives up. */
+function groundFloorValuePsf(rec: ParcelRecord, econ: Econ, u: BuiltClass): number {
+  const rent = (econ.effRentIdx?.[u] ?? econ.rentIdx?.[u] ?? 0) * locationRentMult(rec, econ, u);
+  const fwd = forwardVacancy(econ, u);
+  const noi = rent * (1 - stabilisedVacancy(econ, u, fwd));
+  const cap = Math.max(0.5, econ.capExp?.[u] ?? econ.capRate?.[u] ?? 7) / 100;
+  const tau = econ.stock?.[u] ? leaseUpMonthsOf(econ, u, 0, 0, fwd) : 0;
+  return noi > 0 ? Math.max(0, noi * (1 / cap - tau / 12)) : 0;
 }
 /**
  * Shops at grade take `share`; the other legs share the rest pro rata. Walks
@@ -1076,7 +1076,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // lobby. Applied before the cap, so the cap still has the last word.
   // (A product is single-use by definition: nothing is stapled to its ground floor.)
   const groundRetail = custom?.groundRetail ?? "auto";
-  const mix = prod ? raw : capRetail(groundRetail === "off" ? raw : withStreetRetail(raw, fl, rec.demandScore ?? 50, econ, groundRetail === "on"), fl);
+  const mix = prod ? raw : capRetail(groundRetail === "off" ? raw : withStreetRetail(raw, fl, rec, econ, groundRetail === "on"), fl);
   const proposedBts = prod?.anchors.length ? undefined : custom?.bts;
   const bts = proposedBts
     && proposedBts.use !== "multifamily"

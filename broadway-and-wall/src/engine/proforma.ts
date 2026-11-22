@@ -889,19 +889,6 @@ export function landCarryFactor(months: number): number {
   return Math.pow(1 + LAND_CARRY_RATE, Math.max(0, months) / 12) - 1;
 }
 
-/** The market's absorption shape, 0.2 + 0.8·(t/N)^0.75, memoised by span — pure. */
-const CURVES = new Map<number, Float64Array>();
-/** The absorption curve's mean occupancy over its span, a share of stabilised: the mean of 0.2 + 0.8 t^0.75 on [0, 1] = 0.2 + 0.8 / 1.75. */
-const CURVE_MEAN_OCC = 0.2 + 0.8 / 1.75;
-function absorptionCurve(n: number): Float64Array {
-  let c = CURVES.get(n);
-  if (!c) {
-    c = new Float64Array(n);
-    for (let t = 0; t < n; t++) c[t] = Math.min(1, 0.2 + 0.8 * Math.pow(t / n, 0.75));
-    CURVES.set(n, c);
-  }
-  return c;
-}
 
 /**
  * The exterior closure's share of a building's hard cost (RSMeans square-foot
@@ -1209,7 +1196,19 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
     return Math.max(0, Math.min(1, 1 - (1 - tier) * (1 - fwd) / Math.max(1e-6, 1 - now)));
   };
   const leaseUpClock = leaseUpMonths(econ, mix, rentable, preLet, fwdOf);
-  const carryMonths = Math.max(1, Math.round(leaseUpClock * (1 - preLet) / (1 - CURVE_MEAN_OCC)));
+  // ONE SHAPE FOR ONE LEASE-UP (2026-11-22). The clock above is the market's
+  // own: a building wins lettings in proportion to its share of the space on
+  // offer, so its empty feet decay as e^(-t/tau) with tau = the clock
+  // (leaseUpMonthsOf), and the takeout test below reads the same exponential.
+  // The deficit and the forgone income used to integrate a second shape — a
+  // power curve, 0.2 + 0.8 (t/N)^0.75, opening 20% let whatever was pre-let,
+  // its constants unsourced. Now both read the clock's: the share of the
+  // building still to let at month t is (1 - preLet) e^(-t/tau), and the
+  // months of full emptiness it adds up to, summed month by month, is
+  // (1 - preLet) / (1 - e^(-1/tau)).
+  const tauM = Math.max(1e-6, leaseUpClock);
+  const decayM = Math.exp(-1 / tauM);
+  const emptyMonths = (1 - clampP(preLet, 0, 1)) / (1 - decayM);
   const opex0 = overMix(mix, (u) => opexPsf(u, econ, false) * locOpexMult(rec, econ, u));
   const recovery0 = overMix(mix, (u) => RECOVERY_RATE[u]);
   // STABILISED AT FAIR SHARE: the vacancy of the market it opens into, its
@@ -1225,10 +1224,6 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   const stabMemo: Partial<Record<BuiltClass, number>> = {};
   const stabOccOf = (u: BuiltClass) => (stabMemo[u] ??= 1 - stabilisedVacancy(econ, u, fwdOf(u)));
   const stabOcc0 = overMix(mix, stabOccOf);
-  // Mean occupancy across the absorption curve the market actually runs
-  // (0.2 + 0.8·t^0.75 over the span) is 0.657 of stabilised. Useful for the
-  // opex carry, which is a total; useless for the deficit, which is not.
-  const fillOcc = stabOcc0 * CURVE_MEAN_OCC;
   // Debt service during lease-up is interest-only on the takeout, which is
   // sized off construction cost — a circular reference resolved the honest
   // way, by estimating it off the cost known so far rather than pretending it
@@ -1446,29 +1441,33 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // by then the money has already been spent.
   // at the loan's own coupon (`ratePct`, the desk's quote above); it read the index + 2.1, a private price
   const dsMonthly = (preReserve * ltc * (ratePct / 100)) / 12;
-  // ONE WALK DOWN THE CURVE (pure performance; changes no number): the
-  // reserve's shortfall below and the income the lease-up gives up
-  // (`forgoneNoi`, see WHAT THE BUILDING DOES NOT EARN WHILE IT LETS) read the
-  // same month-by-month income, so it is worked out once a month of the span
-  // and each sum runs in the same order it always did. The shortfall stops at
-  // the first month the building covers its coupon, as before.
+  // THE SHORTFALL AND THE FORGONE INCOME, ON THE CLOCK'S EXPONENTIAL. The
+  // income the lease-up gives up is the stabilised income times the empty
+  // share, month by month: in closed form, the months of full emptiness
+  // (`emptyMonths`) times a month's income on the feet still to let. The
+  // reserve funds the months the roll cannot pay the construction coupon,
+  // walked month by month until it can — and no longer than the loan's own
+  // life after delivery (TAKEOUT_LEASE_M): past that the loan converts on the
+  // income in place, and a coupon the building still cannot pay is the
+  // takeout test's question (below), not the construction reserve's.
   let deficit = 0;
-  let forgoneNoi = 0;
-  {
-    const curve = absorptionCurve(carryMonths);
-    const stabM = (openSf * (rentPsf0 * stabOcc0 - opex0 * (1 - recovery0 * stabOcc0))) / 12;
-    let short = dsMonthly > 0;
-    for (let t = 0; t < carryMonths; t++) {
-      const occT = stabOcc0 * curve[t];
+  const lostM = (openSf * stabOcc0 * (rentPsf0 + opex0 * recovery0)) / 12;
+  const forgoneNoi = lostM * emptyMonths;
+  if (dsMonthly > 0) {
+    let emptyT = 1 - clampP(preLet, 0, 1);
+    for (let t = 0; t < TAKEOUT_LEASE_M; t++, emptyT *= decayM) {
+      const occT = stabOcc0 * (1 - emptyT);
       const noiT = (openSf * (rentPsf0 * occT - opex0 * (1 - recovery0 * occT))) / 12;
-      // Income only rises along the curve, so the first month the building
-      // covers its coupon is the last month the reserve has to fund.
-      if (short) { if (noiT >= dsMonthly) short = false; else deficit += dsMonthly - noiT; }
-      forgoneNoi += Math.max(0, stabM - noiT);
+      // income only rises with the lettings, so the first month the roll
+      // covers its coupon is the last the reserve has to fund
+      if (noiT >= dsMonthly) break;
+      deficit += dsMonthly - noiT;
     }
   }
   deficit = Math.round(deficit);
-  const carry = Math.round(openSf * opex0 * (1 - fillOcc) * (carryMonths / 12));
+  // the running cost of the floors still to let, over the same months (the
+  // turnover vacancy of a stabilised building is in its stabilised income)
+  const carry = Math.round(openSf * opex0 * stabOcc0 * (emptyMonths / 12));
   // WHAT THE BUILDING DOES NOT EARN WHILE IT LETS (2026-11-20). The yield on
   // cost divides the STABILISED income by the cost, as if the income began
   // the day the building opened. The lease-up above charged the months to
@@ -1485,8 +1484,8 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   //
   // What the wait costs is the income not earned over it, whoever's money is
   // in the building: each month of the lease-up, the stabilised income less
-  // what the roll pays at that month's occupancy. Summed over the market's
-  // absorption curve that is the clock's months of full income (the integral
+  // what the roll pays at that month's occupancy. Summed over the clock's
+  // exponential that is the clock's months of full income (the integral
   // of the building's empty feet, `leaseUpMonths`). It is the appraiser's
   // deduction for a building in lease-up (value.ts leaseUpMark `forgone`),
   // read by the developer before it builds instead of by the valuer after.
@@ -1494,7 +1493,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
   // the budget: nobody writes a cheque for income they did not receive. The
   // running costs and the unpaid coupon above are part of the same
   // shortfall, so only what they do not already cover is added.
-  // (`forgoneNoi` is summed above, in the same walk down the curve as the reserve's shortfall.)
+  // (`forgoneNoi` is summed above, on the clock's exponential.)
   // TI tracks construction cost. Lease commissions are already a fraction of
   // today's rent (months × rate) — multiplying them by costIdx double-counts
   // a century of rent inflation and made lease-up reserves larger than hard

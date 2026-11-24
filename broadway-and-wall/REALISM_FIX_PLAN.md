@@ -24,7 +24,7 @@ transmits the wrong way.
 | 1 | 25% of building sales distressed, 40-60% in some boom years | 5.5% overall; worst years 15-23% (3,545 sales, 2 towns x 20 yr) | **fixed on main**, nothing to do |
 | 2 | cap rates ignore rate moves (y/y corr ~0) | corr 0.22-0.44 by class; office cap 1.9 pp over the loan index | **fixed on main** (cap rates are now discovered from sales and broker surveys) |
 | 3 | inflation to 26%, 10-yr to 33% | worst of 4 towns: 16.1% inflation, 16.8% 10-yr. National block alone, 80 worlds: peak 11.0% | **mostly fixed**; one question left (Phase B) |
-| 4 | 26% of months labelled recession | now 30%, and the label changes 50-64 times in 30 years; recessions average 6 months | **real fault, now worse** (Phase A) |
+| 4 | 26% of months labelled recession | 30% at `53ecedb`, **43% at `1efddff`**; the label changes 16-19 times a decade | **real fault, now worse** (Phase A) |
 | 5 | participation 56% vs US 59-67% | the engine divides the labour force by *all* persons, children included; the US figure divides by people 16+ (US on the engine's definition: ~50%; game 45%) | **my measurement**; one naming fix (Phase C) |
 
 ---
@@ -100,32 +100,57 @@ Rename it to what it is (labour force share of residents), and add
 `lf / (work + old)` as participation if any screen or agent wants that rate.
 No behaviour changes; check that the baseline does not move.
 
-## Phase 0 — land the instrument (first, small)
+## Phase 0 — the instrument (done)
 
-Commit the scorecard as `tools/econprobe/realism-score.mjs`. It reads the
-series that `tools/econprobe/series.mjs` writes and prints each statistic next
-to a US reference.
-- It says in its header that the reference ranges are a smoke alarm, not
-  targets (CLAUDE.md). It reports numbers and does not print an ok/off verdict.
-- Fix its land line: `landIdx` is already a real index (value.ts multiplies by
-  CPI), so the probe must not deflate it again.
-- Include the participation definition from Phase C and the cycle-label
-  statistics from Phase A.
+`tools/econprobe/realism-score.mjs` reads the series that
+`tools/econprobe/series.mjs` writes and prints each statistic beside a US
+reference, with no verdict. Its header records the three definitions the first
+cut got wrong: land deflated twice, participation's denominator, and wage
+growth read without expected inflation.
 
 ---
 
-## Also seen on main (not among the five; worth a look later)
+## Re-measured after #850, #852, #856, #857 merged (main `1efddff`, 2026-11-24)
 
-These are outputs. They are listed because each *could* be a broken wire, and
-each needs a mechanism check before anyone calls it a fault.
+Same 4 towns x 30 years, paired against main before the merges (`53ecedb`).
 
-- **Wages no longer track labour-market slack.** The correlation of
-  unemployment with wage growth over expected inflation is −0.01 on main
-  (−0.51 on the old branch). If the wage equation still reads tightness, this
-  should show; find out why it does not.
-- **Apartment rents swing hard:** real year-on-year −22% to +25%, sd 8.2%.
-- **Retail rents barely respond to retail vacancy** (corr −0.08; other classes
-  −0.3 to −0.6).
+| | before | after |
+|---|---|---|
+| office real rent, y/y sd | 6.4% | **11.8%** (max +33%) |
+| flats real rent, y/y sd | 8.2% | **10.4%** (−30% to +36%) |
+| office: vacancy → rent growth corr | −0.57 | −0.30 |
+| Δcap ~ Δloan index (y/y): office / flats | 0.33 / 0.26 | 0.09 / −0.05 |
+| cap ~ loan index (levels): office / industrial | 0.23 / 0.32 | 0.46 / 0.55 |
+| months labelled recession | 30% | **43%** |
+| label changes per decade | 19.3 | 16.4 |
+| distressed share of sales | 5.5% | 6.8% |
+
+Four towns is a small sample and paired runs diverge, so a correlation moving
+0.2 is weak evidence. Rent volatility nearly doubling is not.
+
+## Also seen on main (worth a look; each needs a mechanism check first)
+
+These are outputs. Each *could* be a broken wire.
+
+1. **Rents got choppier with #852** (rents and caps solved per address). Office
+   real rent moves ±12% a year (sd), against 6% before. Find which term
+   carries the swing: the per-address solve, the tax-loaded pencil, or the
+   rent table.
+2. **Year-on-year cap rates no longer follow the loan index.** In levels they
+   follow it better than before. Check whether the cap read now lags (a longer
+   evidence window, thinner trades) or whether buyers' debt cost has stopped
+   reaching their bids.
+3. **About 1 sale in 10 of shops and sheds closes at more than twice the
+   model's own value** (p90 price ÷ model value: +107% retail, +116%
+   industrial; this was already so before the merges). Find who pays it and
+   for what: an assemblage, a redevelopment play, or a valuation that misses
+   the site.
+4. **Retail rents barely respond to retail vacancy** (corr −0.05; other classes
+   −0.24 to −0.37).
+5. *(closed)* Wages and slack: local pay follows a wage curve (pay relative to
+   the nation against unemployment relative to the nation; Blanchflower &
+   Oswald), a level relation set in `economy.ts` `postPayAndPrices`. A
+   growth-rate correlation is the wrong test, not a broken wire.
 
 ## How every phase lands
 

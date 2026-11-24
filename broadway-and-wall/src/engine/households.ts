@@ -929,6 +929,8 @@ export interface HouseholdRegister {
   mk?: { homes: number; homes0: number; ask0: number; cap0: number; cost0: number; occ: number; roll: FlatRoll; pipe: { m: number; n: number }[]; cards: number[]; signed: number; ask12?: number[]; turn?: number[]; idle?: number; homesB?: number; askB?: number; askB0?: number; homeValue?: number; homeCost?: number; pencil?: number;
     /** the builders' pencil the month the mainland opened: the point its supply curve passes through (`tickMainland`) */
     pencil0?: number;
+    /** the older tiers' homes the month the mainland opened: with homes0, the stock the supply curve passes through */
+    homesB0?: number;
     /** the older stock in vintage tiers, newest first (OLDER_TIERS): homes, going rent and opening rent of each */
     hB?: number[]; aB?: number[]; aB0?: number[] };
   /** Each island block of flats an agent can point at (bbl), append-only. */
@@ -2437,9 +2439,20 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
   // town's cap, tax-loaded, with land at its ask) is open in
   // REAL_ECONOMY_PLAN ("three pencils").
   mk.pencil0 ??= pencil;
+  // ...AND IT IS THE REGION'S WHOLE STOCK THAT FOLLOWS IT (2026-11-25). Saiz's
+  // elasticity is the housing stock's: d ln Q = 1.75 d ln P, Q every home in
+  // the metro. The curve was drawn through the standard tier alone (homes0,
+  // the new homes the opening held: 1,226 of ~10,000 on town 1), so a pencil
+  // 23% over the opening's asked for ~540 more homes where the region's
+  // stock asks for ~4,400. Measured (town 1, 20 years) the mainland was full
+  // in every month, every mover who would have taken an opening was turned
+  // away, and the openings rose to 19% of the town's jobs while the rent rose
+  // x2.5. The older tiers are the same stock a vintage on (they filter down
+  // from the standard one), so both count: target and standing.
+  mk.homesB0 ??= mk.homesB ?? 0;
   let piped = 0;
   for (const p of mk.pipe) piped += p.n;
-  const start = mk.homes0 * Math.pow(pencil / Math.max(1e-6, mk.pencil0), HOUSING_SUPPLY_ELAST) - mk.homes - piped;
+  const start = (mk.homes0 + mk.homesB0) * Math.pow(pencil / Math.max(1e-6, mk.pencil0), HOUSING_SUPPLY_ELAST) - mk.homes - (mk.homesB ?? 0) - piped;
   // The gap is started over a build's length, so each month starts an
   // eighteenth of what is still owed and the homes already in the ground
   // count against it. (NO 2%-A-YEAR CEILING, 2026-11-20: starts were held

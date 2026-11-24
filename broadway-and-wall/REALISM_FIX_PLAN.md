@@ -134,6 +134,22 @@ FORMULA_LEDGER #30 (mainland rent and its supply). Fix the supply side there,
 then re-measure findings 1, 5 and 6 together. Nothing in Phase D merges until
 towns stop shrinking for want of a home.
 
+**7. The supply curve covered one tier of the stock (fixed on the branch).**
+Saiz's elasticity is the whole stock's. The curve ran through the standard
+tier's opening homes (1,226 of ~10,000), so supply answered about an eighth as
+hard as the record says. Now it covers the standard and older tiers together.
+Town 1, 20 years: builders do answer (~2,400 homes in years 12–14, the rent
+falls back), but the mainland is full again from year 16 and openings reach
+7,230.
+
+**8. Why: the rent never sees the households turned away.** The mainland rent
+follows the households living there (FORMULA_LEDGER #30), not the queue at the
+door. Movers turned away for want of a home are no demand at all to the price,
+so the rent rises about as fast as costs, the pencil stays near the opening's
+(0.59–0.91), and building stays weak. The next piece is #30: landlords pricing
+on their own vacancy, counting who applied and was turned away, as the island's
+landlords already do.
+
 **Earlier next step (still open):** let every working-age adult in a household hold a job. Either a slot
 per adult, or the other adults as a counted group with their industries.
 About 70 sites in households.ts assume three slots. Then re-measure 1 and 2

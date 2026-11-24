@@ -313,8 +313,9 @@ function MainlandFigures() {
         <Row k="Rent, 12 mo" v={pctSigned(rentYr, 1)} bad={rentYr > 0.06} />
         <Row k="Under construction" v={`${n(m.building)} homes · ${n(m.due12)} due within 12 mo`} />
         {m.pencil !== undefined && (
-          <Row k="Builders' pencil" v={`${m.pencil.toFixed(2)}×${m.pencil < 1 ? " · not building" : ""}`} bad={m.pencil < 1}
-            title={`A new home is worth $${n(m.homeValue ?? 0)} (rent less running costs at the flats' cap rate), less land's share, against $${n(m.homeCost ?? 0)} to build · above 1× it pays to build`} />
+          <Row k="Builders' pencil" v={`${m.pencil.toFixed(2)}×${m.pencil0 !== undefined ? ` · opened ${m.pencil0.toFixed(2)}×` : ""}`}
+            bad={m.pencil0 !== undefined && m.pencil < m.pencil0}
+            title={`A new home is worth $${n(m.homeValue ?? 0)} (rent less running costs at the flats' cap rate), less land's share, against $${n(m.homeCost ?? 0)} to build · builders add homes as this rises over where it stood when the region opened, and fewer as it falls under`} />
         )}
       </div>
       </div>

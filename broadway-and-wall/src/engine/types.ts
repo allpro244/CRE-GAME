@@ -2571,7 +2571,15 @@ export interface Econ {
   cycIdx?: number;
   cycDrift?: number;
   cycHist?: number[];
+  /** The highest payroll since the last dated trough: the candidate peak (market.ts derivePhase). */
   cycPeak?: number;
+  /** The month `cycPeak` was set. */
+  cycPeakM?: number;
+  /** The peak the last recession fell from: a recovery ends when payrolls regain it. */
+  cycOldPeak?: number;
+  /** The lowest payroll since the recession began, and its month: the candidate trough. */
+  cycLow?: number;
+  cycLowM?: number;
   phaseAge?: number;
   exportIdx?: number;
   /** Business rent against the nation's at this town's opening — the parity `locationCost` measures cost against. */

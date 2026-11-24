@@ -118,7 +118,23 @@ The workers the firms cannot find mostly live in town already. The register
 gives them nowhere to work, and participation FALLS while a fifth of jobs
 stand open.
 
-**Next:** let every working-age adult in a household hold a job. Either a slot
+**5. Partly fixed: a blocked grown child becomes a doubled-up household** (on
+the branch). When the slot is contested and no home is free, the eldest stays
+in the same home as its own doubled-up household (Census definition), with its
+own earner slots. Town 1 at year 20: slotless adults 7,787 → 4,380, working-age
+participation 73% → 76%. Openings still pile up (4 towns × 30 yr: 21–32%).
+
+**6. THE BINDING CONSTRAINT IS THE REGION'S HOUSING.** Town 1, migration +
+doubled-up, 20 years: the mainland's homes are full in EVERY month (12 of 12,
+every year; free capacity −29 to −176, so it runs over-full). Every mover who
+would take an opening is turned away (`mainRoomFor`), so the openings stand.
+Builders do not answer: their pencil sits at 0.60–1.09, mostly under 1, while
+mainland rent rises 2,144 → 5,324 (×2.5 nominal) in twenty years. That is
+FORMULA_LEDGER #30 (mainland rent and its supply). Fix the supply side there,
+then re-measure findings 1, 5 and 6 together. Nothing in Phase D merges until
+towns stop shrinking for want of a home.
+
+**Earlier next step (still open):** let every working-age adult in a household hold a job. Either a slot
 per adult, or the other adults as a counted group with their industries.
 About 70 sites in households.ts assume three slots. Then re-measure 1 and 2
 together. Also suspect: young adults blocked from forming households by

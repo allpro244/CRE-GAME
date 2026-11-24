@@ -570,7 +570,14 @@ export function dropDeed(s: GameState, r: Rival | undefined, bbl: string): numbe
  */
 export function saleRelief(s: GameState, r: Rival, bbl: string, price: number): number {
   const row = rowOn(s, r, bbl)?.balance ?? 0;
-  const afterRow = Math.max(0, price - row);
+  // WHAT IS OVERDUE IS PAID BEFORE THE REVOLVER IS PREPAID (2026-11-21). A
+  // seller behind on its own bills settles them out of the proceeds first; a
+  // revolver paid down is availability restored, not a payment that was due.
+  // This swept the whole net into the line, so a parent short $217K with $3M
+  // of equity in its book (seed 12007, Mulberry Street, month 109) could
+  // raise nothing by selling — marketAssetToRaise refused every sale as
+  // netting zero — and died on the arrears calendar solvent.
+  const afterRow = Math.max(0, price - row - Math.max(0, -r.cash));
   return Math.min(price, row) + Math.min(afterRow, r.lineBal ?? 0);
 }
 
@@ -688,11 +695,13 @@ export function monthlyService(s: GameState, r: Rival, amortShare: number): { in
   return { interest, amort, byRow };
 }
 /** Book the scheduled principal: each row comes down by its own share. */
-export function amortizeRows(s: GameState, r: Rival, amortShare: number) {
+export function amortizeRows(s: GameState, r: Rival, amortShare: number, unpaid?: Set<string>) {
   // The rows that remain are these rows in the same order, less the ones paid
   // to zero — which add nothing — so their sum is termDebtOf's, without a rescan.
+  // A row whose payment was not made this month (`unpaid`) pays no principal.
   let term = 0;
   for (const x of rowsOf(s, r)) {
+    if (unpaid?.has(x.bbl)) { term += x.balance; continue; }
     x.balance = Math.max(0, Math.round(x.balance - (x.balance * amortShare) / (30 * 12)));
     if (x.balance <= 0) { delete s.cityLoans![x.bbl]; loanBookTouched(); }
     else term += x.balance;
@@ -701,46 +710,45 @@ export function amortizeRows(s: GameState, r: Rival, amortShare: number) {
 }
 
 /**
- * STATUS FROM PAYMENTS. A firm that cannot meet the month's service does not
- * miss every loan it has: it pays the buildings that pay for themselves and
- * stops feeding the ones that do not. The shortfall falls on the rows whose
- * own income covers least of their own service, worst first, until the
- * unpaid service covers the shortfall; those rows are in arrears and every
- * other row is paid. A missed payment is a default the month it is missed —
- * the rule the player's loans are counted under (loanbook.ts) — and a row
- * whose building no longer covers its coupon, or that is living on an
- * extension, is on watch.
+ * STATUS FROM PAYMENTS. Each building is its own borrower (a single-purpose
+ * entity) and its mortgage is secured on it alone: a building pays its own
+ * service from its own income, and the parent firm chooses whether to cover a
+ * shortfall (tickRivals, the SPE block). `missed` is the set of rows whose
+ * payment was not made this month — a building the parent would not or could
+ * not support, or a recourse loan the parent itself could not pay. A missed
+ * payment is a default the month it is missed — the rule the player's loans
+ * are counted under (loanbook.ts) — and a row whose building no longer covers
+ * its coupon, or that is living on an extension, is on watch. What the
+ * building's income did not cover of the month's interest is owed on the note
+ * (`arrearsAmt`), which is what a modification capitalises (auction.ts).
  */
 export function markPayments(
-  s: GameState, r: Rival, shortfall: number, byRow: Record<string, number>,
+  s: GameState, r: Rival, missed: Set<string>, byRow: Record<string, number>,
   noiOf: (bbl: string) => number, extended: (bbl: string) => boolean,
+  unpaidOf: (bbl: string) => number, firmShort: number,
 ) {
   const rows = rowsOf(s, r);
   const cover = (x: CityLoan) => noiOf(x.bbl) / 12 / Math.max(1, byRow[x.bbl] ?? 1);
-  const missed = new Set<string>();
-  if (shortfall > 0) {
-    let left = shortfall;
-    for (const x of [...rows].sort((a, b) => cover(a) - cover(b))) {
-      if (left <= 0) break;
-      missed.add(x.bbl);
-      left -= byRow[x.bbl] ?? 0;
-    }
-  }
   for (const x of rows) {
     // THE CAUSE LEDGER (why.ts): the month a firm first misses on a loan, and
-    // why — what the building pays against its service, and how short the
-    // firm's account came up after its line. Records only.
+    // why — what the building pays against its service, and whether the firm
+    // was short after its line or chose not to cover the building. Records only.
     if (missed.has(x.bbl) && !(x.arrearsMs ?? 0)) {
       const svc = byRow[x.bbl] ?? 0;
       x.whyId = why(s, {
         k: "loan.default", a: "rival", aid: r.id, name: r.name, bbl: x.bbl,
-        n: { owedMo: Math.round(svc), buildingNoiMo: Math.round(noiOf(x.bbl) / 12), firmShortMo: Math.round(shortfall), balance: Math.round(x.balance), lineBal: Math.round(r.lineBal ?? 0) },
+        n: { owedMo: Math.round(svc), buildingNoiMo: Math.round(noiOf(x.bbl) / 12), firmShortMo: Math.round(firmShort), balance: Math.round(x.balance), lineBal: Math.round(r.lineBal ?? 0) },
         t: `${r.name} missed its payment to ${x.lender} · the building pays $${Math.round(noiOf(x.bbl) / 12 / 1000)}k/mo against $${Math.round(svc / 1000)}k/mo owed`
-          + ` · the firm was $${Math.round(shortfall / 1000)}k short after its line`,
+          + (firmShort > 0 ? ` · the firm was $${Math.round(firmShort / 1000)}k short after its line` : ` · the firm would not cover the building's shortfall`),
       });
     }
-    if (missed.has(x.bbl)) x.arrearsMs = (x.arrearsMs ?? 0) + 1;
-    else x.arrearsMs = 0;
+    if (missed.has(x.bbl)) {
+      x.arrearsMs = (x.arrearsMs ?? 0) + 1;
+      x.arrearsAmt = Math.round((x.arrearsAmt ?? 0) + Math.max(0, unpaidOf(x.bbl)));
+    } else {
+      x.arrearsMs = 0;
+      x.arrearsAmt = undefined;
+    }
     x.status = (x.arrearsMs ?? 0) >= 1 ? "workout"
       : extended(x.bbl) || (x.klass !== "land" && cover(x) < 1) ? "watch" : "current";
   }

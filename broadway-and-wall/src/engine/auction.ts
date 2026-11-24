@@ -116,7 +116,7 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
       // Reinstating IS paying the arrears: the row is current again, or the
       // desk would file on the same missed months next tick.
       const row = s.cityLoans?.[f.bbl];
-      if (row && row.lender === f.lender && row.obligorId === r.id) row.arrearsMs = 0;
+      if (row && row.lender === f.lender && row.obligorId === r.id) { row.arrearsMs = 0; row.arrearsAmt = undefined; }
       s.news.unshift({
         q: s.month, kind: "info",
         text: `${r.name} paid $${(cure / 1000).toFixed(0)}K to reinstate at ${rec.address}; ${f.lender} has withdrawn the sale. `
@@ -166,8 +166,11 @@ export function tickBankForeclosures(s: GameState, parcels: ParcelTable) {
       const capAfter = l.book > 0 ? (l.capital - loss) / Math.max(1, l.book - row.balance) : 1;
       const lastMod = (row as { modM?: number }).modM;
       if (noi >= ioCoupon && (lastMod === undefined || s.month - lastMod >= 24)) {
-        row.balance = Math.round(row.balance + ioCoupon / 12 * (row.arrearsMs ?? 0));
+        // What is owed is the interest the building's income did not cover
+        // (rivalDebt.markPayments); the full coupon only on a row older than that record.
+        row.balance = Math.round(row.balance + (row.arrearsAmt ?? ioCoupon / 12 * (row.arrearsMs ?? 0)));
         row.arrearsMs = 0;
+        row.arrearsAmt = undefined;
         row.maturityM = Math.max(row.maturityM, s.month) + 12;
         (row as { modM?: number }).modM = s.month;
         // The arrears are owed on the note now, and the firm's debt says so

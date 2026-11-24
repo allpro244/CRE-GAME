@@ -10,7 +10,7 @@ import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, openingVac, CAP_BASE, developerOptimism, LEASE_TERM_M, forwardVacancy, RENT_BASE, underwrittenGrowthPct } from "./market";
 import { gpInterestInFund } from "./fund";
-import { developmentProForma, LAND_CARRY_RATE, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE, leaseUpMonthsOf, stabilisedVacancy, wreckCost } from "./proforma";
+import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE, leaseUpMonthsOf, stabilisedVacancy, wreckCost } from "./proforma";
 import { productOf, PRODUCT_TYPES, PRODUCT_KEYS, layoutProduct, type ProductKey } from "./products";
 import { homeLotBidPsf } from "./homeprice";
 import { GROCER_SALES } from "./grocerHook";
@@ -905,7 +905,7 @@ function residualCore(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: Land
   // risk-neutrally (McDonald & Siegel 1986), and the risk lives in sigma.
   // Struck at a 12% hurdle the trigger sat at V ~ 2K and almost no lot was
   // ever ripe; at the long rate it lands near 1.3K, where Quigg (1993) found it.
-  const r = Math.max(0.005, (econ.indexRate ?? LAND_CARRY_RATE * 100) / 100);
+  const r = Math.max(0.005, (econ.indexRate ?? 5.4) / 100);
   const tau = idleLandCarryRate(econ);
   // THE LOT ALREADY EARNS SOMETHING WHILE IT WAITS (a car park), and building
   // ends that: the income given up is a cost of building like the

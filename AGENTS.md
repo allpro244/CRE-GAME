@@ -44,7 +44,14 @@ real browser start. The Unreal project lives in `unreal/`.
   New Amsterdam / Meridian) as the active game — that is a stale branch tip.
 - Work from **`main`**. Start every new branch from the latest `origin/main`,
   merge `main` back in before you open a PR, and land work by PR into `main`.
-  Do not stack parallel feature branches off an old base. Cursor is no longer
+  Do not stack parallel feature branches off an old base. In cloud sessions
+  `.claude/hooks/session-start.sh` does this at every start: it fetches
+  `origin/main`, moves a branch with no work of its own onto it, and prints a
+  WARNING if the branch is behind with work of its own. Act on that warning
+  before measuring anything. Before any probe, check yourself:
+  `git fetch origin main && git rev-list --count HEAD..origin/main` must be 0.
+  (2026-11-24: a session cloned a stale default branch and audited code 853
+  commits old.) Cursor is no longer
   used: the `cursor/*` branches are months-old history, not working tips.
 - Before engine or economy work: `broadway-and-wall/CLAUDE.md` and
   `broadway-and-wall/HANDOFF.md`.

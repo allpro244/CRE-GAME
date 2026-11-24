@@ -2499,7 +2499,6 @@ function formFromChild(R: Rand, r: HouseholdRegister, i: number, e: Econ, pool: 
       if (couple || cheap / 2 <= SCREEN * pay) j = findMate(R, r, couple, couple ? singles : pool, gone, age);
     } else k = findHomeMate(R, r, atHome, gone, i, w, age, cheap, pay);
   }
-  if (j < 0 && k < 0 && !(cheap <= SCREEN * pay)) return false;
   // A HOME TO GO TO (2026-11-12): a grown child who would need a place of its
   // own leaves only when one is free; otherwise it stays at home and looks
   // again. Young adults' household formation falls when housing is tight
@@ -2508,7 +2507,31 @@ function formFromChild(R: Rand, r: HouseholdRegister, i: number, e: Econ, pool: 
   // mainland flat that did not exist, then pushed to doubled up by the
   // ladder: seed 31337, 3,300 doubled-up households from none in five years.
   // Moving in with a partner who has a home needs no new one.
-  if (j < 0 && !mainHasRoom(r, a, i)) return false;
+  // ...AND ONE WHO STAYS CAN STILL WORK (2026-11-25). The register keeps one
+  // earner slot for a household's other adults, so the second grown child at
+  // home had nowhere to hold a job. As housing tightened they piled up:
+  // measured (town 1, 20 years), working-age adults with no earner slot rose
+  // 1,644 -> 7,787 while the town's unfilled openings rose 1,781 -> 7,452 and
+  // working-age participation FELL 80% -> 73%. An adult child at home who is
+  // not the householder or partner is a doubled-up household member by the
+  // Census's own definition (Census, "Doubled-up households": an additional
+  // adult 18+ not in school who is not the householder, spouse or partner)
+  // [S]. So when the slot is contested and no home is free, the eldest stays
+  // in the same home as a doubled-up household of its own: no rent, its own
+  // earner slots, and it looks for a home of its own as every doubled-up
+  // household does (`readyToRent`).
+  const blocked = (j < 0 && k < 0 && !(cheap <= SCREEN * pay)) || (j < 0 && !mainHasRoom(r, a, i));
+  if (blocked) {
+    if (!(othersOf(a, i) > 1)) return false;
+    const un0 = a.un3[i], ind0 = a.ind3[i];
+    leaveHome(R, r, i, e);
+    const n = addAgent(r), b = r.a!;
+    b.wt[n] = w; b.age[n] = age; b.adults[n] = 1; b.kids[n] = 0;
+    b.emp1[n] = emp; b.wage1[n] = wage; b.un1[n] = un0; b.ind1[n] = ind0;
+    fillMoney(R, b, n, wage, false, e);
+    b.ten[n] = TEN_DOUBLED; b.rent[n] = 0; b.blk[n] = -1; b.disp[n] = 0;
+    return true;
+  }
   // as many leave as the other agent stands for (all of this one, or part): the rest of this one stay at home as they were
   a = r.a!;
   const m = j >= 0 ? Math.min(w, a.wt[j]) : k >= 0 ? Math.min(w, a.wt[k]) : w;

@@ -4981,7 +4981,7 @@ export function tickCityGrowth(
     // player's handful — so a shops-at-grade rule the city did not follow
     // would supply almost no retail at all.
     const cmix = j.mix ?? capRetail(
-      withStreetRetail(devMix(j.use as DevUse), j.floors, rec.demandScore ?? 50, s.econ), j.floors);
+      withStreetRetail(devMix(j.use as DevUse), j.floors, rec, s.econ), j.floors);
     s.built[j.bbl] = {
       class: dominantOf(cmix), mix: cmix, bldgArea: j.sf, floors: j.floors,
       yearBuilt: START_YEAR + Math.floor(s.month / 12),

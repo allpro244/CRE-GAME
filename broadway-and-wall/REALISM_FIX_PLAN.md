@@ -75,6 +75,56 @@ these towns *should* have so little job growth is a separate question:
 population grows 8–31% over the same thirty years, against payrolls of −14%
 to +6%.
 
+## Phase D — migration and the labour market (IN PROGRESS, 2026-11-25)
+
+Started as FORMULA_LEDGER #33 (migration as a quota). Four findings, in order.
+
+**1. Migration was one-sided (fixed on the branch, not merged).** A working
+household left at MOVE_M × (1 − pull), and arrivals came at MOVE_M × pull.
+At parity nobody left while 2.5% a year arrived. Measured: a town whose pay
+bought 7–14% less than the nation's for twenty years still took in ~600
+households a year and lost ~200 (population +13% on flat payrolls).
+Fix: every mover re-chooses, and this town is a sliver of the places it
+weighs, so households leave at MOVE_M whatever the pull. The pull works on
+arrivals: gross outflow rates vary least across US states (Coen-Pirani 2010,
+JME 57(7)).
+
+**2. Alone, that fix shrinks every town** (4 towns × 30 yr: population −5% to
+−24%, jobs −17% to −30%), because openings pile up and nothing fills them.
+Even BEFORE it, the job-opening rate reached 14–22% of the labour force by
+year 30 (US record: 7.4%, 2022). After it: 22–36%.
+
+**3. A growing pay premium is not the cure (tried, reverted).** V_SLOPE [K]
+sets pay at a premium of 0.5 × excess openings. Replaced with a premium that
+GROWS 0.8 a year per point of excess openings (2019–22 JOLTS and ECI [D]),
+pay ran away: wage index ×17–33 in 30 years, jobs −40%, unemployment 24–28%.
+Openings could not close, and nominal pay is never cut, so it ratcheted.
+Reverted.
+
+**4. The root: grown children at home cannot work.** A household has three
+earner slots (head, partner, ONE "other adult"). As housing tightens, grown
+children cannot form their own households and pile up at home. Every adult
+beyond the first other adult has no slot and cannot hold a job.
+Measured (town 1, migration fix, 20 years):
+
+| year | 1 | 4 | 8 | 12 | 16 | 20 |
+|---|---|---|---|---|---|---|
+| working-age adults with no earner slot | 1,644 | 1,889 | 3,014 | 4,330 | 5,352 | 7,787 |
+| households with 2+ other adults | 4.5% | 5.0% | 7.8% | 11.0% | 13.6% | 17.7% |
+| unfilled openings | 1,781 | 1,976 | 3,859 | 4,502 | 6,620 | 7,452 |
+| working-age adults in the labour force | 79.8% | 80.9% | 81.2% | 79.6% | 76.6% | 72.9% |
+
+The workers the firms cannot find mostly live in town already. The register
+gives them nowhere to work, and participation FALLS while a fifth of jobs
+stand open.
+
+**Next:** let every working-age adult in a household hold a job. Either a slot
+per adult, or the other adults as a counted group with their industries.
+About 70 sites in households.ts assume three slots. Then re-measure 1 and 2
+together. Also suspect: young adults blocked from forming households by
+housing should be able to move away. That ties to mainland rent (#30), the
+supply side of the region's housing.
+
 ## Phase B — can supply shocks stack past their own evidence? (an open question)
 
 One town reached 16.1% inflation, close to the US post-war record. That is not

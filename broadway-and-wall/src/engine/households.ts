@@ -3187,7 +3187,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // `pull` above). This was a draw at those odds on every opening, every month
   // it stayed open: an opening a month old was offered to the country again,
   // so the outside supply of workers was without limit at any real pay, the
-  // openings never stayed open long enough to raise pay (V_SLOPE, economy.ts
+  // openings never stayed open long enough to raise pay (OPEN_PAY_YR, economy.ts
   // `postPayAndPrices`), and a town whose rents had made it dear kept growing
   // at 0.8 of the nation's real pay (measured, tools/proof.mjs: jobs x6-x31 a
   // century). Now the movers are a flow: what they cannot fill stays open,

@@ -252,6 +252,8 @@ export interface EconomyState {
   linkDz?: Record<string, number>;
   /** What the town's firms posted this month (`postPayAndPrices`), and the last 13 months of the town's posted pay. */
   posted?: Posted; wageHist?: number[];
+  /** each industry's pay premium over the nation's for being short of hands, grown while its openings run over the nation's (OPEN_PAY_YR) */
+  tightPrem?: number[];
   /** Each industry's heads in town when its unit cost was first read: what agglomeration is measured against (`unitCoster`). */
   aggH0?: number[];
 }
@@ -1751,8 +1753,11 @@ export function migrateEconomy(s: GameState): void {
  *   - the town's slack: the register's unemployment against the nation's, at
  *     the wage curve's elasticity, -0.10 (Blanchflower & Oswald 1994) [S];
  *   - its industry's openings: the heads its industry staffs to that the
- *     register has not filled, V_SLOPE [K: a point of unfilled jobs adds half
- *     a point to the posted premium — firms short of hands outbid each other];
+ *     register has not filled, against the nation's rate. A shortage does not
+ *     set a premium, it GROWS one: while an industry's openings run over the
+ *     nation's, its firms outbid each other month after month, and the
+ *     premium falls back while they run under (OPEN_PAY_YR, below;
+ *     `tightPrem`);
  *   - its own ability to pay: rent sharing, RENT_SHARE of its margin over its
  *     industry's (Card, Cardoso, Heining & Kline 2018: an elasticity of pay to
  *     a firm's surplus of 0.05-0.15) [S~];
@@ -1780,7 +1785,24 @@ export function migrateEconomy(s: GameState): void {
  * household-spending-weighted average of its industries'; market.ts reads
  * them into the CPI at the share of the household basket bought in town.
  */
-const RENT_SHARE = 0.06, V_SLOPE = 0.5, PRICE_DUR_M = 9, PRICE_DEMAND = 0.1;
+const RENT_SHARE = 0.06, PRICE_DUR_M = 9, PRICE_DEMAND = 0.1;
+/**
+ * HOW FAST A SHORTAGE BIDS PAY UP: a year's growth in an industry's pay
+ * premium over the nation's per point its openings rate runs over the
+ * nation's (2026-11-25; it replaced V_SLOPE, a LEVEL of half a point of
+ * premium per point of openings, [K]). As a level, a shortage that never
+ * cleared set a premium and stopped there: measured (4 towns x 30 years, main
+ * 01f3066) openings rose to 14-22% of jobs by year 30 while pay sat 2-3% over
+ * the nation's, and once migration stopped hiding it (households.ts step 0)
+ * 22-36%. Pay growth follows tightness, not pay levels (the wage Phillips
+ * curve; Heise, Pearce & Weber 2025: vacancies and quits explain about half
+ * of wage growth). The slope is the 2019-22 record: the JOLTS openings rate
+ * rose about 3 points over its 2019 average (Chicago Fed Letter 491, 2023)
+ * while ECI compensation growth rose from about 2.7% to 5.1% a year: 0.8 a
+ * year per point, an upper bound, since 2022 carried an inflation surge too
+ * [D].
+ */
+const OPEN_PAY_YR = 0.8;
 /**
  * THE NATION'S OPENINGS RATE: JOLTS total nonfarm job openings over openings
  * plus employment, 2001-2019 mean 3.13% (FRED JTSJOR, monthly) [S]. The pay
@@ -1789,7 +1811,7 @@ const RENT_SHARE = 0.06, V_SLOPE = 0.5, PRICE_DUR_M = 9, PRICE_DEMAND = 0.1;
  * employment, so it already carries the nation's openings, and the nation's
  * pay is set at the nation's openings. With openings counted as JOLTS counts
  * them (households.ts Q_FILL), reading them against zero paid every industry a
- * permanent premium of V_SLOPE x 3.1% over the nation and cut every local
+ * permanent premium of half a point per point x 3.1% over the nation and cut every local
  * trade's capacity by its openings — custom the nation's firms never lose.
  */
 export const NAT_OPEN_RATE = 0.0313;
@@ -1809,6 +1831,9 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
     open[i] = want > 0 ? Math.max(0, want - have) / want : 0;
     openings += Math.max(0, want - have); jobs += want;
   }
+  // each industry's shortage premium grows with its openings over the nation's (OPEN_PAY_YR)
+  const tight = (E.tightPrem ??= new Array(N_IND).fill(0));
+  for (let i = 0; i < N_IND; i++) if ((emp[i] ?? 0) > 0) tight[i] += OPEN_PAY_YR / 12 * (open[i] - NAT_OPEN_RATE);
   const close = 1 - Math.exp(-Math.LN2 / WAGE_GAP_HALF_M);
   const slack = WAGE_CURVE * Math.log(Math.max(0.01, uLoc) / Math.max(0.01, uNat));
   const prevNat = E.posted?.natW ?? natW;
@@ -1820,7 +1845,7 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
     // ---- pay
     const rel = Math.log(Math.max(1e-6, F.pay[n]) / prevNat);
     const margin = F.rev[n] > 0 ? F.ebitda[n] / F.rev[n] : I.gos;
-    const target = slack + V_SLOPE * (open[i] - NAT_OPEN_RATE) + RENT_SHARE * (margin - I.gos);
+    const target = slack + tight[i] + RENT_SHARE * (margin - I.gos);
     let next = natW * Math.exp(rel + (target - rel) * close);
     if (next < F.pay[n]) { F.owe[n] += Math.log(F.pay[n] / next); next = F.pay[n]; }
     else if (F.owe[n] > 0) {

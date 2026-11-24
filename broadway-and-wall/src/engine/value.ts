@@ -10,7 +10,7 @@ import type { ConstructionQuote } from "./proforma";
 import { blend, blendBy, commercialShare, uses, useSf } from "./mix";
 import { industryStress, openingVac, CAP_BASE, developerOptimism, LEASE_TERM_M, forwardVacancy, RENT_BASE, underwrittenGrowthPct } from "./market";
 import { gpInterestInFund } from "./fund";
-import { developmentProForma, LAND_CARRY_RATE, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE, leaseUpMonthsOf, stabilisedVacancy, wreckCost } from "./proforma";
+import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEcon, MAX_COVERAGE, leaseUpMonthsOf, stabilisedVacancy, wreckCost } from "./proforma";
 import { productOf, PRODUCT_TYPES, PRODUCT_KEYS, layoutProduct, type ProductKey } from "./products";
 import { homeLotBidPsf } from "./homeprice";
 import { GROCER_SALES } from "./grocerHook";
@@ -452,7 +452,7 @@ export function siteQualityMult(rec: { lotArea: number; farMaxComm: number; farM
  *                already right, which is exactly why it broke everything else.
  */
 export const HARD_COST_PSF: Record<BuiltClass, number> = {
-  office: 295,        // RSMeans single-storey office $313; secondary low-rise $240-350
+  office: 254,        // [S] RSMeans 2-4 storey office national average $253.63/sf (Gordian RSMeans data, Q2 2026, via Building Design+Construction 'Office building construction costs for 2026'); was 295, the single-storey $313 read as the low-rise base
   multifamily: 300,   // low-rise base under the $310 mid-rise national average
   retail: 245,        // RSMeans retail store $214, above it for two-storey urban shell
   industrial: 100,    // modern warehouse/flex $90-150 — was 125; class never cleared hurdle
@@ -474,9 +474,9 @@ export const HARD_COST_PSF: Record<BuiltClass, number> = {
  * a tower and a tower was priced like a two-storey building with a 28% tip. On
  * an honest low-rise base the premium has to do real work, and the real curve
  * is much steeper — roughly +15% at 5-8 storeys, +45-50% at 19-30, and +80-100%
- * above that, against low-rise. Checked against the source range: 295 * 1.85 =
- * $546/sf for a forty-storey tower, which lands inside RSMeans' $202-574 office
- * band at the top where a tower belongs.
+ * above that, against low-rise. Checked against the source range: 254 * 1.85 =
+ * $470/sf for a forty-storey tower, inside RSMeans' $202-574 office band
+ * (2025's 2-4 storey range runs $247-498) toward the top where a tower belongs.
  *
  * This is also what stops every lot becoming a tower. A ladder that is too flat
  * makes floor area nearly free above the eighth storey, and then the only thing
@@ -905,7 +905,7 @@ function residualCore(rec: ParcelRecord, econ: Econ, rentMult: number, ctx: Land
   // risk-neutrally (McDonald & Siegel 1986), and the risk lives in sigma.
   // Struck at a 12% hurdle the trigger sat at V ~ 2K and almost no lot was
   // ever ripe; at the long rate it lands near 1.3K, where Quigg (1993) found it.
-  const r = Math.max(0.005, (econ.indexRate ?? LAND_CARRY_RATE * 100) / 100);
+  const r = Math.max(0.005, (econ.indexRate ?? 5.4) / 100);
   const tau = idleLandCarryRate(econ);
   // THE LOT ALREADY EARNS SOMETHING WHILE IT WAITS (a car park), and building
   // ends that: the income given up is a cost of building like the
@@ -1441,10 +1441,17 @@ export function devPencils(
    * reads it so, and the lease-up does not move an opening rent.
    */
   leaseUp = true,
+  /**
+   * Where the pro forma stands. "dev" (default): the ninth decile of the
+   * buildable lots, where a city's supply decision is taken. "ordinary": the
+   * class's own mean address (location multiplier 1), the building the class
+   * rent index describes — what the opening's q solve reads (market.ts).
+   */
+  at: "dev" | "ordinary" = "dev",
 ): number {
   const pivot = e.locIdxMeanBy?.[k] ?? e.locIdxMean ?? 0.62;
   const shape = LOC_SPREAD[k] ?? LOC_SPREAD.office;
-  const where = e.locIdxDevP90 ?? e.locIdxMean ?? 0.62;
+  const where = at === "ordinary" ? pivot : e.locIdxDevP90 ?? e.locIdxMean ?? 0.62;
   const locMult = Math.min(shape.max, Math.max(shape.min, Math.pow(where / Math.max(0.01, pivot), shape.exp)));
 
   // Developers chase the trend; the residual does not. developerOptimism
@@ -1501,7 +1508,18 @@ export function devPencils(
   const costPsf = HARD_COST_PSF[k] * constructionTypeMult(k, 3) * e.costIdx * (1 + SOFT_COST) * (1 + CONTINGENCY)
     + lostRent * ownSf / 45_000;
   const yoc = noiPsf * ownSf / 45_000 / Math.max(1, costPsf);
-  const hurdle = developmentHurdle(yoc, (e.capRate?.[k] ?? CAP_BASE[k]) / 100);
+  // AGAINST THE TAX-LOADED EXIT, as the site pro forma (proforma.ts
+  // `fullYieldPct`) and the appraiser read it (2026-11-21). The cap rate is
+  // quoted on NOI after the owner's property tax (propmarket.ts impliedCap),
+  // and this NOI is before it, so a class whose owner pays the tax (flats,
+  // gross; office, full-service, all but the 8% its stops recover) has to
+  // clear the cap PLUS the tax rate. Without it the class pencil read flats
+  // and offices about 1.7-1.8 points of yield richer than any site plan of
+  // the same building, and the opening's q solve priced both classes' rents
+  // that much under what they need. Shops and sheds are triple-net: the
+  // tenants pay the tax.
+  const taxLoad = taxRate(e) * (1 - (k === "multifamily" ? 0 : RECOVERY_RATE[k] ?? 0));
+  const hurdle = developmentHurdle(yoc, (e.capRate?.[k] ?? CAP_BASE[k]) / 100 + taxLoad);
   // THE RESPONSE CURVE WAS CALIBRATED FOR INPUTS THIS FUNCTION NO LONGER HAS.
   //
   // It returned `clamp((yoc / required - 1) * 3.2 + 0.55, 0, 2.2)`, and that

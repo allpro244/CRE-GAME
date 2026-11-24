@@ -642,48 +642,34 @@ export function stockFromParcels(parcels: ParcelTable): Record<BuiltClass, numbe
 }
 export const SECTOR_LABEL = { office: "Office", retail: "Retail", multifamily: "Apartments", industrial: "Industrial" } as const;
 /**
- * WHAT A SQUARE FOOT RENTS FOR AT AN ORDINARY ADDRESS, $/sf/yr. The location
- * multiplier (`locationRentMult` in value.ts) takes it from here — up to 2.20x
- * for a secondary CBD office and 3.10x for a prime retail pitch, down to 0.40x
- * and 0.34x on the fringe. Density scaling (`densityPriceScales`) then lifts
- * or lowers the whole table for how built-up the generated map is.
+ * WHAT A SQUARE FOOT RENTS FOR IN THE NATION, $/sf/yr, each class on the basis
+ * its leases are written on (value.ts LEASE_BASIS): office full-service gross,
+ * shops and sheds triple-net, flats gross. The location multiplier
+ * (`locationRentMult` in value.ts) takes a building from its class's ordinary
+ * address to its own; density (`densityPriceScales`) and the price level
+ * (`openingPriceLevel`) scale the table to a town.
  *
- * THE RULE OF THUMB IS A SECONDARY MARKET. Procedural islands are harbour
- * towns and working cities, not a primary CBD. Ordinary office follows
- * Providence Class A asks ($26.71–33.51, market avg ~$29.80 JLL/local 2024)
- * as GROSS rent on a constrained peninsula — $35.50, not a Midtown face rate.
- * Denser build-outs (Harbour / Metropolis) and prime parcels earn more through
- * morphology and location; they do not inherit a primary-city base.
+ * It is the NATIONAL reference, and is read as one: the firm books price a
+ * head's space at it (economy.ts), households compare the town's flats with
+ * it (peers.ts), business rent against the nation's (market.ts), the opening
+ * cost of living. The town's own opening rents are not this table — they are
+ * solved from what it costs to build (initEcon, the q solve) — so the table
+ * fixes no ranking between the classes.
  *
- * Was $43.65: the comment admitted that sat above the Providence band, and a
- * century of wage-tracking then minted ~$110–140/sf real citywide office on
- * mid-rung procedural maps — primary levels on secondary fabric. The level
- * belongs in the opening table; the century path belongs in supply and in
- * `cityClassFactor` (how much chronic-tightness premium a fabric can earn).
+ * [S] US averages (owner-supplied reference, 2026-11-21):
+ *   office       $28.67 full service (national average asking)
+ *   retail       $24.12 NNN (national average asking)
+ *   industrial   $8.81 NNN (national average asking)
+ *   multifamily  $18.55 gross: Apartments.com national average $1,076/month
+ *                for 696 sf (x12 / 696); RentHop listings agree ($20/sf a
+ *                one-bed, $17/sf a two-bed).
+ * Ratios to office: retail 0.84, flats 0.65, sheds 0.31.
  *
- * INDUSTRIAL WAS THE OUTLIER AND IT BROKE THE LAND MARKET. At $18.00 it earned
- * roughly what an office did in the same town, and since industrial hard cost
- * was the one number nobody had inflated, a two-floor shed was the only use in
- * the game that could pay for dirt. Measured: industrial bid positive for 100%
- * of vacant lots and was the highest and best use on 82% of them, including
- * prime downtown corners a warehouse has no business on.
- *
- * Real industrial rent is nothing like office rent. Rhode Island bulk warehouse
- * runs $5.00-6.00/sf NNN, general-purpose industrial $6.50-7.50, flex about
- * $10; the US national average was $9.90 NNN in Q3 2024. This city's industrial
- * is urban infill on a harbour, which is the dearer end of that, so $8.50 —
- * still less than half what it was, and the correction is a factor of two on
- * the one class that had never been checked.
- *
- * Retail comes down for the same kind of reason. The JLL 2024 national median
- * retail rent is $23.10/sf NNN and strip centres run $18-35; $42.91 was a prime
- * high-street pitch being charged as the city-wide ordinary rate, and then the
- * 3.10x location multiplier was applied ON TOP of it.
- *
- * Multifamily at $30.22/sf/yr is $2.52/sf/month, against Providence's ~$2.24 —
- * close enough that moving it would be tuning, not correcting.
+ * It was 35.50 / 26.00 / 30.22 / 8.50, a Providence-style secondary market
+ * for office and flats ($30.22 = $2.52/sf/month) set beside national figures
+ * for shops and sheds: office 24% and flats 63% over the national averages.
  */
-export const RENT_BASE = { office: 35.50, retail: 26.00, multifamily: 30.22, industrial: 8.50 } as const; // $/sf/yr
+export const RENT_BASE = { office: 28.67, retail: 24.12, multifamily: 18.55, industrial: 8.81 } as const; // $/sf/yr
 // The natural (frictional) vacancy per class — the rate at which neither side
 // of the table has the upper hand. Below it landlords push rents; above it
 // tenants extract concessions. Office runs structurally looser than housing.
@@ -1614,8 +1600,24 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
   // half the rent it takes to build (a 2024 post-pandemic overhang) — in a
   // game that opens in 2000, when construction cost was about 2.4x lower
   // against office rents that rose roughly with prices. So each class opens
-  // at a Tobin's q — what a new building is worth against what it costs at
-  // the sites developers actually pursue (`devPencils`, the P90 location).
+  // at a Tobin's q — what a new building is worth against what it costs.
+  //
+  // AT THE CLASS'S ORDINARY ADDRESS, NOT THE BEST VACANT LOT (2026-11-21).
+  // The q anchor is Glaeser, Gyourko & Saks's price over construction cost,
+  // and that is a ratio for the STOCK — the typical building, not the best
+  // remaining site. It used to be struck at the ninth decile of the vacant
+  // lots and the class index (the rent at the class's own mean address) was
+  // backed out through the location curve. That made the opening's class
+  // ratios a fact about where the vacant land sits against each class's
+  // stock: on a Frontier town the P90 lot reads 0.65 of an office address
+  // (offices cluster downtown, the empty lots do not), 0.89 of a shop's,
+  // 1.14 of a flat's and 0.95 of a shed's, so the office index opened 1.54x
+  // what a building at its own ordinary address needs and flats 0.88x
+  // (seeds 12007/550991: retail 0.44, flats 0.32, sheds 0.17 of office,
+  // against 0.84 / 0.65 / 0.31 in the national table, RENT_BASE). Struck at
+  // the ordinary address, the class ratios come from what a pro forma is made
+  // of — cost, opex, recoveries, cap — and the location curve still decides
+  // which sites pencil (`devPencils` reads the P90 lot for supply).
   //
   // That q is the TOWN'S, not a roll (owner, 2026-11-20: "derive dearness
   // from the town, not a roll"). It used to be exp(0.15·z) per class plus a
@@ -1639,7 +1641,7 @@ export function initEcon(s: GameState, parcels?: ParcelTable): Econ {
         // opened off the q it was solved to (2026-11-20).
         econ.rentExp = econ.rentExp ?? { ...econ.rentIdx };
         econ.rentExp[k] = econ.rentIdx[k];
-        const a = devPencils(econ, k, false);
+        const a = devPencils(econ, k, false, "ordinary");
         return a > 0 ? Math.pow(a, 1 / 1.2) : 0;
       };
       // Secant on log rent: q rises with rent but not proportionally (opex,
@@ -3409,7 +3411,9 @@ export function islandResidents(e: Econ): { residents: number; homes: number; co
 
 /** Business rent against the nation's (offices and sheds, geometric mean), RENT_BASE at national prices. */
 function businessRentVsNation(e: Econ): number {
-  const natP = Math.max(0.1, e.natCpi ?? e.cpi ?? 1);
+  // in the town's dollars (priceLevel), as economy.ts natRentPerHead; the
+  // ratio is read against its opening value, so this changes no number
+  const natP = (e.priceLevel ?? 1) * Math.max(0.1, e.natCpi ?? e.cpi ?? 1);
   const rentOf = (k: "office" | "industrial") =>
     Math.max(0.05, (e.effRentIdx?.[k] ?? e.rentIdx[k]) / (RENT_BASE[k] * natP));
   return Math.sqrt(rentOf("office") * rentOf("industrial"));

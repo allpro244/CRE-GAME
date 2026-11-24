@@ -456,8 +456,20 @@ export function reviewAsk(L: LandlordAsk, e: Econ, k: Comm, mkt: number, opts: {
     // and a full building chasing them up ratchets every good corner's raise
     // onto the whole town (measured: shop rents rising 3.5% a year over 18%
     // vacancy).
+    //
+    // ...BUT ON ITS OWN EVIDENCE, NOT THE TOWN'S CLOCK (2026-11-21). A full
+    // building has no months dark to trade against: the market's clock is
+    // the other buildings' space, and pricing a full building toward the
+    // clock's optimum (`bestMonthsToLet`, 24 months for office) raised every
+    // full office's post whenever the town let faster than that, whatever its
+    // own tenants would pay. Measured on seed 550991 (City, Frontier): office
+    // face 32.8 to 70.5 in ten years (real effective +112%) with stock flat,
+    // while the leases that signed gave 14-29% of face back in packages; on
+    // main, office face rose 31% while vacancy went 7.5% to 14.7%. A full
+    // building passes its costs through (the CPI in `d`) and raises when a
+    // sitting tenant renews at its post with nowhere else to go
+    // (`noteLetting`), the evidence shops and sheds already price on.
     L.c *= 1 - pull;
-    if (!opts.holdFace) d += step;
   }
   L.c = Math.max(0, Math.min(PKG_MAX, L.c));
   L.a = +(L.a * Math.exp(Math.max(-0.2, Math.min(0.2, d)))).toFixed(2);
@@ -480,7 +492,18 @@ export function noteLetting(L: LandlordAsk, k: Comm, tom: number, share: number,
   // already reads every letting, through the clock it prices on, both ways.
   // Measured with the raise (seed 11, years 13-40): posts cut 3-7% a year by
   // the trade and real rent flat, the raise giving back what the trade took.
-  if (k === "office") return;
+  // ...EXCEPT A FULL BUILDING'S RENEWAL AT ITS POST (2026-11-21): a sitting
+  // tenant with nowhere else to go took the whole ask (`tom` 0, share 1). The
+  // trade no longer prices full buildings (`reviewAsk`), so this is the only
+  // evidence a full office has that it asks too little — the same raise
+  // shops and sheds take.
+  if (k === "office") {
+    if (tom === 0 && share >= 1 && !holdFace) {
+      if (L.c > 0) L.c = Math.max(0, L.c - PKG_TAKE);
+      else L.a = +(L.a * Math.exp(RAISE)).toFixed(2);
+    }
+    return;
+  }
   // shops and sheds: the yardstick is the longer of the landlord's patience
   // and its class's ordinary months on market, and the patience is learned
   const yard = Math.max(L.t, searchMonths(k));
@@ -946,10 +969,23 @@ export function filteredReadOut(e: Econ, k: Comm, m: number): { face: number; ef
   // 10% a year of office effective-rent noise against retail's 4%. The
   // signed leases still set the face; with no space on offer anywhere (the
   // package is moot) the signers' own effective stands.
-  const pk = e.postedPkg?.[k];
-  const eff = pk !== undefined && Number.isFinite(pk)
-    ? face * (1 - Math.max(0, Math.min(PKG_MAX, pk)))
-    : Math.exp(Math.log(eff0) + K * (yE - Math.log(eff0)));
+  //
+  // ...AND THEN BACK TO WHAT SIGNS (2026-11-21). The packages on offer are the posts, and the
+  // posts are not what space lets for: the bargain (`bargain`, between the
+  // landlord's reservation and its post) and the contest take the deal under
+  // them. Measured, seed 550991 (City, Frontier), years 0-4, every six
+  // months: posted packages 0.1-1.5% on all three classes, while the leases
+  // that signed in the same windows gave 24-42% of face away on office,
+  // 8-14% on shops and 9-13% on sheds. So the effective index (and through
+  // it `useRentPsfYr`, every appraisal, the class pencil and the rent the
+  // screen shows) carried the posts, 10-35% over what comparable space
+  // signs for, while each firm's own value of space (`worthOf`, anchored at
+  // the opening's signed rent) sat under it: one quantity, two answers. The
+  // effective index is what the leases signed at, filtered the way the face
+  // is: each month's signings move it by how much evidence they are (the
+  // gain K above), so a month of two office deals at deep packages moves it
+  // a little and a month of many moves it most of the way.
+  const eff = Math.exp(Math.log(eff0) + K * (yE - Math.log(eff0)));
   let sf = 0;
   for (const c of list) sf += c.sf;
   return { face, eff, conc: Math.max(0, Math.min(1, (1 - eff / Math.max(1e-9, face)) / CONC_DEPTH)), sf, n: list.length };

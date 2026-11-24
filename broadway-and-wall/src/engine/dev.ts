@@ -1162,7 +1162,7 @@ export function planReuseAt(
   // The shell is held through the conversion just as dirt is held through a
   // new build — same land-rate carry, on the conversion's shorter schedule.
   const reuseMonths = Math.max(9, Math.round(base.months * 0.70));
-  const landCarry = Math.round(opportunity * landCarryFactor(reuseMonths));
+  const landCarry = Math.round(opportunity * landCarryFactor(reuseMonths, s.econ));
   const basisTotal = opportunity + landCarry + costTotal + interestReserve + pointsCost;
   const stabilizedNoi = base.stabNoi;
   const yieldOnCost = stabilizedNoi / Math.max(1, basisTotal + (base.leaseUpForgone ?? 0)) * 100;

@@ -2491,8 +2491,9 @@ function growOpeningStreet(s: GameState, parcels: ParcelTable) {
       // rent less the packages on offer (tenantMarket.ts filteredReadOut), so
       // the first month does not restate it (seed 11 office opened at half
       // its asking rent off the opening's comps, and jumped in month one).
-      const pk = e.postedPkg?.[k];
-      const eff = pk !== undefined && Number.isFinite(pk) ? ro.face * (1 - Math.max(0, Math.min(0.35, pk))) : ro.eff;
+      // (2026-11-21: what the window's leases signed at, as filteredReadOut now
+      // reads it; the posts' package left the index over what space lets for.)
+      const eff = ro.face * (1 - Math.max(0, Math.min(0.35, 1 - ro.eff / Math.max(1e-9, ro.face))));
       e.effRentIdx[k] = +eff.toFixed(4);
       e.concIdx[k] = +Math.max(0, Math.min(1, (1 - eff / Math.max(1e-9, ro.face)) / CONC_DEPTH)).toFixed(4);
       // ...AND WHAT THE FIRMS SELL IS MEASURED FROM THE SAME RENTS (2026-11-13).

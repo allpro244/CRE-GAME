@@ -163,35 +163,59 @@ export function availYoy(e: Econ, k: BuiltClass): number {
   return then === undefined ? 0 : availability(e, k) - then;
 }
 
+/** Real effective rent now against twelve months ago (0 before a year of record): the comps' net rent, deflated by the town's CPI. */
+export function realEffRentYoy(e: Econ, k: BuiltClass): number {
+  const h = e.history ?? [];
+  const then = h.length >= 13 ? h[h.length - 13] : undefined;
+  const effThen = then ? (then.effRent?.[k] ?? then.rent?.[k]) : undefined;
+  if (!then || !(effThen && effThen > 0)) return 0;
+  const now = (e.effRentIdx?.[k] ?? e.rentIdx?.[k] ?? 0) / Math.max(0.01, e.cpi ?? 1);
+  return now / (effThen / Math.max(0.01, then.cpi ?? 1)) - 1;
+}
+
 /**
  * The one-word verdict, and the sentence behind it — read off what the market
- * is doing, never off a "normal" vacancy (there is none, 2026-11-08): the
- * package the leases give away (`packageOf`) and which way availability has
- * moved over twelve months (`availYoy`). The bands are display words for a
- * package size, stated in the trade's own unit — months of free rent on a
- * ten-year lease: under ~2½ months (0.02) landlords give little away, 7
- * months (0.06) is a working package, 14 months and up (0.12) is a glut's
- * (US gateway free rent ran 10-17 months through 2020-24; CBRE / JLL
- * concession surveys). Availability moving a point either way over a year
- * tips the middle band.
+ * is DOING, never off a "normal" vacancy (there is none, 2026-11-08).
+ *
+ * WHO HAS THE WHIP HAND IS WHO IS MOVING THE PRICE (2026-11-21). The verdict
+ * read the package alone in its first band: under 2% of face given away was
+ * a landlord's market whatever availability did. Shop and shed landlords
+ * price by patience (tenantMarket.ts), and a patience learned from the
+ * landlord's own lettings stretches with the glut, so their package hardly
+ * moves: the owner's game showed shops at 10.6% vacancy, availability up
+ * over the year, read "landlord's market"; and office, whose leases carry a
+ * fit-out allowance in any market, read "tenant's market" at 8.7%. So the
+ * verdict now reads the two things a market report watches move — real
+ * effective rent over twelve months (the price, net of the package and of
+ * inflation) and availability over twelve months (the quantity) — and the
+ * package only for a glut. The bands are display words, stated in the
+ * trade's units: a point of availability a year, 1% real rent a year (CBRE /
+ * CoStar quarterly market reports call a move of that size a direction), 5%
+ * real a year for a market running away; a glut is a heavy package (0.12 of
+ * face; US gateway free rent alone ran 10-17 months on a ten-year lease
+ * through 2020-24) with space piling up AND real rents falling. A heavy
+ * package alone is not a glut: since the effective index reads what leases
+ * sign at (tenantMarket.ts filteredReadOut), an office package carries its
+ * fit-out allowance in any market.
  */
-export function marketBalance(e: Econ, k: BuiltClass): { state: Balance; soft: boolean; pkg: number; availCh: number; note: string } {
-  const pkg = packageOf(e, k), availCh = availYoy(e, k);
+export function marketBalance(e: Econ, k: BuiltClass): { state: Balance; soft: boolean; pkg: number; availCh: number; rentCh: number; note: string } {
+  const pkg = packageOf(e, k), availCh = availYoy(e, k), rentCh = realEffRentYoy(e, k);
+  const year = (e.history?.length ?? 0) >= 13;
+  const tighter = availCh < -0.01, looser = availCh > 0.01;
+  const up = rentCh > 0.01, down = rentCh < -0.01;
   const state: Balance =
-    pkg < 0.02 ? (availCh < 0 ? "acute shortage" : "landlord's market") :
-    pkg < 0.06 ? (availCh < -0.01 ? "landlord's market" : availCh > 0.01 ? "tenant's market" : "balanced") :
-    // A GLUT IS EXCESS SPACE, not a big package alone (2026-11-12): office
-    // leases carry a fit-out allowance in a balanced market, and the opening's
-    // office read "glut" at 3.3% vacancy on its package. A glut needs the heavy
-    // package and space that is not getting scarcer over a year of record.
-    pkg < 0.12 || !((e.history?.length ?? 0) >= 13 && availCh >= 0) ? "tenant's market" : "glut";
+    !year ? "balanced" :
+    pkg >= 0.12 && looser && down ? "glut" :
+    (up && !looser) || (tighter && !down) ? (rentCh > 0.05 && availCh <= 0 ? "acute shortage" : "landlord's market") :
+    (down && !tighter) || (looser && !up) ? "tenant's market" :
+    "balanced";
   const note =
-    state === "acute shortage" ? "Leases give almost nothing away and space keeps getting scarcer. Rents run and every site pencils — which is precisely when the next glut gets started."
-    : state === "landlord's market" ? "Landlords are giving little away. You can push rents and hold back on concessions; a new building here has a market waiting for it."
+    state === "acute shortage" ? "Real rents are running and space keeps getting scarcer. Every site pencils — which is precisely when the next glut gets started."
+    : state === "landlord's market" ? "Real rents are rising or space is getting scarcer. You can push rents and hold back on concessions; a new building here has a market waiting for it."
     : state === "balanced" ? "Neither side has the whip hand. Rents track inflation and a development has to earn its spread the hard way."
-    : state === "tenant's market" ? "Tenants have choices. Expect concessions, longer voids and slower lease-up; a spec building is a bet on a turn."
+    : state === "tenant's market" ? "Real rents are slipping or space is piling up. Tenants have choices: expect concessions, longer voids and slower lease-up; a spec building is a bet on a turn."
     : "Too much space chasing too few tenants. Face rents hold and then break; nothing should break ground until the excess is absorbed.";
-  return { state, soft: state === "tenant's market" || state === "glut", pkg, availCh, note };
+  return { state, soft: state === "tenant's market" || state === "glut", pkg, availCh, rentCh, note };
 }
 
 /**

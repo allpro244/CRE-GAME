@@ -603,7 +603,15 @@ function rentPerHead(s: GameState, i: number, opw: Float64Array): number {
 function natRentPerHead(s: GameState, i: number, opwNat: Float64Array): number {
   const id = INDUSTRY_IDS[i], I = INDUSTRIES[id], off = OFF_FLOOR[id], sp = I.space;
   const k: BuiltClass = sp === "retail" ? "retail" : sp.startsWith("industrial") ? "industrial" : "office";
-  const natP = Math.max(0.1, s.econ.natCpi ?? s.econ.cpi ?? 1);
+  // THE NATION IN THE TOWN'S DOLLARS (2026-11-22). RENT_BASE is the national
+  // table at reference prices; this town counts its money at `priceLevel`
+  // (market.ts openingPriceLevel), and every other side of the unit cost is
+  // in town dollars — the firm's own rent per head, and output per head at the
+  // nation's pay (`natWageIdx` opens at the town's wage, price level and all).
+  // Read at reference prices, the nation's rent stood 1/priceLevel (about 2x)
+  // over the town's for the same space, a cost edge for every firm here that
+  // no market gave it.
+  const natP = (s.econ.priceLevel ?? 1) * Math.max(0.1, s.econ.natCpi ?? s.econ.cpi ?? 1);
   return (1 - off) * I.sfPerWorker * RENT_BASE[k] * natP / 12 + off * opwNat[i] * I.rent;
 }
 

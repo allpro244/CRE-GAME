@@ -313,8 +313,9 @@ function MainlandFigures() {
         <Row k="Rent, 12 mo" v={pctSigned(rentYr, 1)} bad={rentYr > 0.06} />
         <Row k="Under construction" v={`${n(m.building)} homes · ${n(m.due12)} due within 12 mo`} />
         {m.pencil !== undefined && (
-          <Row k="Builders' pencil" v={`${m.pencil.toFixed(2)}×${m.pencil < 1 ? " · not building" : ""}`} bad={m.pencil < 1}
-            title={`A new home is worth $${n(m.homeValue ?? 0)} (rent less running costs at the flats' cap rate), less land's share, against $${n(m.homeCost ?? 0)} to build · above 1× it pays to build`} />
+          <Row k="Builders' pencil" v={`${m.pencil.toFixed(2)}×${m.pencil0 !== undefined ? ` · opened ${m.pencil0.toFixed(2)}×` : ""}`}
+            bad={m.pencil0 !== undefined && m.pencil < m.pencil0}
+            title={`A new home is worth $${n(m.homeValue ?? 0)} (rent less running costs at the flats' cap rate), less land's share, against $${n(m.homeCost ?? 0)} to build · builders add homes as this rises over where it stood when the region opened, and fewer as it falls under`} />
         )}
       </div>
       </div>
@@ -882,6 +883,28 @@ export function EconomyPage() {
                   <span className={"cl-fig-v mono" + ((e.effRentIdx?.[k] ?? e.rentIdx[k]) < 0.85 * e.rentIdx[k] ? " neg" : "")}>${(e.effRentIdx?.[k] ?? e.rentIdx[k]).toFixed(0)}</span>
                   <Spark pts={at((h) => h.effRent?.[k] ?? h.rent?.[k])} w={56} h={14} />
                 </div>
+                {/* WHAT THE LANDLORD KEEPS (2026-11-21): effective is asking less
+                    free rent and fit-out, which on a full-service office or a
+                    gross flat still carries the operating bill and the tax the
+                    landlord pays. Net takes those out, with the same expense
+                    model the engine prices with (classExpensePsf,
+                    netEquivalentRent), so the four classes read on one basis. */}
+                {(() => {
+                  const eff = e.effRentIdx?.[k] ?? e.rentIdx[k];
+                  const net = netEquivalentRent(e, k, eff);
+                  const paid = LEASE_BASIS[k].short === "NNN" ? 0 : classExpensePsf(e, k, eff).total;
+                  const tip = `Landlord's net, $/sf/yr: effective rent $${eff.toFixed(2)}`
+                    + (paid > 0
+                      ? ` less about $${paid.toFixed(2)} of operating cost and tax the landlord pays (${LEASE_BASIS[k].short} lease).`
+                      : `; the tenant pays operating cost and tax on top (${LEASE_BASIS[k].short} lease).`)
+                    + " Before the management fee and capital reserves.";
+                  return (
+                    <div className="cl-fig" title={tip}>
+                      <span className="cl-fig-k">Landlord's net</span>
+                      <span className="cl-fig-v mono">${net.toFixed(0)}</span>
+                    </div>
+                  );
+                })()}
                 <div className="cl-fig">
                   <span className="cl-fig-k">Cap</span>
                   <span className="cl-fig-v mono">{e.capRate[k].toFixed(2)}%</span>

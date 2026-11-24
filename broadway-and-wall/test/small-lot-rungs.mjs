@@ -52,7 +52,7 @@ for (const seed of SEEDS) {
           const p = E.planDevelopment(g, parcels, bbl, use, fl, cov, "gmp", undefined, { costMult: 1 }, undefined, 0.5, 0);
           if (!p || !(p.requiredYield > 0) || p.floors !== fl) continue;
           const nonLand = p.basisTotal - p.landBasis - p.landCarry;
-          const psf = (p.stabNoi / (p.requiredYield / 100) - nonLand) / (1 + E.landCarryFactor(p.months)) / rec.lotArea;
+          const psf = (p.stabNoi / (p.requiredYield / 100) - nonLand) / (1 + E.landCarryFactor(p.months, g.econ)) / rec.lotArea;
           if (psf > desk) { desk = psf; deskWhat = `${use} ${fl}fl @${(cov * 100).toFixed(0)}%`; }
         }
       }

@@ -29,49 +29,51 @@ transmits the wrong way.
 
 ---
 
-## Phase A — the cycle label flickers (the real fault)
+## Phase A — the cycle label flickers (DONE, 2026-11-24)
 
-**What is measured.** Payrolls in these towns are smooth: year-on-year job
-growth has a standard deviation of 0.9%. Yet the phase changes about twice a
-year. 69 "recessions" in 120 town-years, averaging 6 months, cover 30% of all
-months.
+**The fault.** `derivePhase` dated the cycle off six-month payroll *growth*
+against fixed cut-offs: under −0.5% annualised was a recession, over +0.2% a
+recovery. Those cut-offs suit a nation trending ~1.5% a year. These towns'
+payrolls run −14% to +6% over thirty years, so ordinary wobbles crossed both.
 
-**Why (from the code, `derivePhase` in market.ts).** The dates come from fixed
-absolute thresholds on 6-month annualised payroll growth. Below −0.5% is a
-recession and above +0.2% is a recovery, with a 3-month minimum stay. Those
-thresholds suit a national trend of about 1.5% a year. A town whose trend is
-0.3% a year sits within a fraction of a point of both of them, so ordinary
-month-to-month wiggles cross them.
+**Correction to the first draft.** Construction lenders do *not* read the
+label: `constructionLtc` ignores it (`void phase`). Nothing that prices or
+decides reads it. It drives the news, the street's rumours, status text and
+the screens. So the fault was what the game *told* the player, plus a 25%
+coin deciding whether a rumour ran (fake six).
 
-**Why it matters beyond the label.**
-- Construction lenders read the label: `proforma.ts:726`,
-  `constructionLtc(mix, e.phase, …)`. Flicker moves construction credit up and
-  down with noise.
-- The "rumoured phase" news is a coin (`rng(s) < 0.25` in `derivePhase`). That
-  is a dice roll inside the model (fake number six).
+**The fix** (`market.ts derivePhase`), in the Bry–Boschan (1971) form the
+NBER's monthly dating follows:
+- dating reads payroll levels;
+- a peak is the high since the last trough, stood 5 months;
+- a recession is a fall of 1.4% from it that has run 6 months. 1.4% is the
+  1980 recession's payroll fall (BLS, *Monthly Labor Review*, Aug 1982);
+- the trough is confirmed when the low has stood 5 months;
+- the next peak is measured from the trough;
+- the depression rule is unchanged;
+- a rumour is the turning point the data already shows and the dating has not
+  confirmed. The line it prints is chosen by the month, with no draw.
 
-**The fix: date the cycle the way the NBER does.**
-1. **Depth, duration, diffusion.** A peak or trough is a turning point in the
-   payroll *level*, confirmed after the fact. A contraction is a fall from the
-   peak deeper than the series' own month-to-month noise (measured from the
-   town's own history, not a constant), lasting a minimum number of months.
-   Where possible it is also spread across sectors: the industry books
-   already exist (`industryPhase`). These are definitions with a source
-   (NBER dating procedure; Harding & Pagan 2002, the BBQ turning-point rule),
-   not values tuned to a result.
-2. **Lenders read the economy, not the label.** `constructionLtc` takes the
-   inputs the label was summarising (the credit index, the payroll gap from
-   peak) rather than the label itself.
-3. **The rumour becomes a forecast.** The street's early read comes from the
-   same signals crossing a level, with no coin. That removes one coin from the
-   mechanism count.
+`test/economy-honesty.mjs` §1 now tests this on synthetic payroll paths. The
+old §1 drove `slackEma`, which nothing reads; it failed on main and tested
+nothing.
 
-**Measure before and after (same 4 seeds x 30 years, plus 8 more seeds):**
-phase changes per decade, recession length distribution, share of town
-recessions that overlap a national one, and construction loan-to-cost
-volatility. Done means the label stops flipping on noise, nothing else moves
-without a stated reason, and `pnpm mechanism` shows one coin fewer. There is
-no target share of recession months.
+**Measured (same 4 towns × 30 years, before → after):**
+
+| | before | after |
+|---|---|---|
+| label changes per decade | 16.4 | 7.9 |
+| months labelled recession or depression | 43% | 25% |
+| recession length, mean | 8.5 mo | 11.8 mo |
+
+Rents, vacancy, cap rates and rates: unchanged within noise. Mechanism audit:
+coins 26 → 25, draws 243 → 242, unsourced 260 → 259.
+
+The rest of the frequency is the towns' own. Payrolls with almost no trend
+fall 1.4% from a high far more often than a growing nation's do. Whether
+these towns *should* have so little job growth is a separate question:
+population grows 8–31% over the same thirty years, against payrolls of −14%
+to +6%.
 
 ## Phase B — can supply shocks stack past their own evidence? (an open question)
 
@@ -169,6 +171,6 @@ These are outputs. Each *could* be a broken wire.
   - `pnpm baseline:check`, regenerating with `pnpm baseline` only for a move
     that has been decided is correct, with the reason in the commit;
   - `pnpm gate` and `pnpm conserve` if the change touches anything that moves
-    money. Phase A does, through construction loan-to-cost.
+    money. (Phase A turned out not to: nothing prices off the label.)
 - **New constants** carry a source or an [S]/[D]/[M]/[K] tag. **New random
   draws** only for exogenous events, sized from data.

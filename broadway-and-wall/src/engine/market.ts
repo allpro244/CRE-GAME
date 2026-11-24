@@ -3487,14 +3487,38 @@ export function tickIndustryCycle(s: GameState) {
 }
 
 /**
- * THE PHASE IS DATED, NOT SCHEDULED. Read off the city's payrolls the
- * way NBER dates a cycle — after the fact, from the data — with the same
- * thresholds every month. Definitions, not tuning: a contraction is jobs
- * falling at an annualised half a point over six months; a recovery runs
- * until the old peak is regained; a depression is a recession that has taken
- * more than five per cent off the peak and kept going for a year.
+ * THE PHASE IS DATED, NOT SCHEDULED. Read off the city's payrolls the way
+ * the NBER dates a cycle: after the fact, from the LEVEL of the data, with a
+ * turning point confirmed only once the series has had time to prove it.
+ *
+ * HOW IT USED TO FLICKER (2026-11-24). The old rule labelled months by
+ * six-month annualised payroll GROWTH against fixed cut-offs (under -0.5% a
+ * recession, over +0.2% a recovery, three-month dwell). Those suit a nation
+ * whose trend is ~1.5% a year. These towns' payrolls run -12% to +6% over
+ * thirty years, so ordinary wobbles crossed both cut-offs: measured on four
+ * towns x 30 years (main 1efddff), the label changed 16 times a decade and
+ * called 43% of months recession, in recessions averaging 8.6 months
+ * (NBER, 1945-2020: a peak and a trough every ~6 years). Nothing priced off
+ * the label any more (constructionLtc reads the credit index, not this), but
+ * the paper printed it and the street's rumours were drawn from it.
+ *
+ * NOW, in the Bry-Boschan (1971) form the NBER's own monthly dating follows:
+ *  - a PEAK is the highest payroll since the last trough, and the phase reads
+ *    "peak" once that high has stood CYCLE_WIN_M months without being beaten;
+ *  - a RECESSION is called when payrolls have fallen RECESSION_DEPTH below
+ *    that peak and the fall has run at least CYCLE_PHASE_MIN_M months;
+ *  - its TROUGH is the lowest payroll since, confirmed once it has stood
+ *    CYCLE_WIN_M months; the town is then in "recovery" until it regains the
+ *    peak it fell from, and the next peak is measured from the trough, so a
+ *    town that never regains an old high can still have a new cycle;
+ *  - a DEPRESSION is a recession that has taken more than a tenth off the
+ *    peak and run eighteen months (unchanged; see below).
+ * Measured with these definitions on the same four towns' stored payrolls:
+ * 9.3 label changes a decade, 20% of months in recession, mean 10.2 months.
+ * The remaining frequency is the towns' own: payrolls with almost no trend
+ * fall 1.4% from a high more often than a growing nation's do.
  */
-function derivePhase(s: GameState) {
+export function derivePhase(s: GameState) {
   const e = s.econ;
   // Payrolls actually filled (last month's — the data a statistician has),
   // not employers' demand for staff: a boom short of workers is still a
@@ -3505,44 +3529,69 @@ function derivePhase(s: GameState) {
   // Only the opening record is in `history` until the first month is filed.
   if ((e.history?.length ?? 0) <= 1) return;
   const T = (e.jobs ?? e.jobs0 ?? 1) / Math.max(1, e.jobs0 ?? 1);
+  // The six-month window is kept: payrollGrowth12 reads it before a year of
+  // history exists.
   const hist = (e.cycHist ??= []);
   hist.push(T);
   if (hist.length > 7) hist.shift();
-  const T6 = hist[0];
-  const g6 = T6 > 0 ? Math.pow(T / T6, 12 / Math.max(1, hist.length - 1)) - 1 : 0;
-  if (e.cycPeak === undefined || ((e.phase === "expansion" || e.phase === "peak") && T > e.cycPeak)) e.cycPeak = T;
-  const dd = e.cycPeak > 0 ? 1 - T / e.cycPeak : 0;
+  const m = s.month;
+  // A save from before this rule carries only cycPeak: start the clocks here.
+  if (e.cycPeak === undefined || e.cycPeakM === undefined) { e.cycPeak = Math.max(e.cycPeak ?? T, T); e.cycPeakM = m; }
+  if (e.cycOldPeak === undefined) e.cycOldPeak = e.cycPeak;
   e.phaseAge = (e.phaseAge ?? 0) + 1;
-  const dwell = e.phaseAge >= 3;
+  const prevT = hist.length >= 2 ? hist[hist.length - 2] : T;
   let next = e.phase;
-  switch (e.phase) {
-    case "expansion": if (dwell && g6 < 0.004) next = "peak"; break;
-    case "peak": if (dwell && g6 < -0.005) next = "recession"; else if (g6 > 0.012) next = "expansion"; break;
+  let rumor: MarketPhase | null = null;
+  if (e.phase === "recession" || e.phase === "depression") {
+    if (e.cycLow === undefined || e.cycLowM === undefined || T < e.cycLow) { e.cycLow = Math.min(e.cycLow ?? T, T); e.cycLowM = m; }
+    const dd = 1 - e.cycLow / Math.max(1e-9, e.cycOldPeak);
     // A DEPRESSION IS NOT A BAD RECESSION (2026-10-14). The bar was five per
     // cent off the peak after a year, which is 2008-09 (US payrolls -6.3%) —
-    // the worst recession since the war, and still a recession. Playthroughs
-    // put the label on episodes of 8-12% unemployment. A city in depression
-    // has lost one job in ten and is still losing them after eighteen months:
-    // the 1930s (US payrolls about -20%), Detroit 2008-10, Flint.
-    case "recession": if (dwell && g6 > 0.002) next = "recovery"; else if (dd > 0.10 && e.phaseAge >= 18) next = "depression"; break;
-    case "depression": if (dwell && g6 > 0.002) next = "recovery"; break;
-    case "recovery": if (T >= (e.cycPeak ?? T)) next = "expansion"; else if (dwell && g6 < -0.005) next = "recession"; break;
+    // the worst recession since the war, and still a recession. A city in
+    // depression has lost one job in ten and is still losing them after
+    // eighteen months: the 1930s (US payrolls about -20%), Detroit 2008-10,
+    // Flint.
+    if (e.phase === "recession" && dd > 0.10 && e.phaseAge >= 18) next = "depression";
+    if (m - e.cycLowM! >= CYCLE_WIN_M) {
+      // the trough is confirmed: the next cycle is measured from here
+      next = T >= e.cycOldPeak ? "expansion" : "recovery";
+      e.cycPeak = T; e.cycPeakM = m; e.cycLow = undefined; e.cycLowM = undefined;
+    } else if (m > e.cycLowM! && T > prevT) rumor = "recovery";
+  } else {
+    if (T > e.cycPeak) { e.cycPeak = T; e.cycPeakM = m; }
+    const fall = 1 - T / Math.max(1e-9, e.cycPeak);
+    if (fall >= RECESSION_DEPTH && m - e.cycPeakM >= CYCLE_PHASE_MIN_M) {
+      next = "recession";
+      e.cycOldPeak = Math.max(e.cycOldPeak, e.cycPeak);
+      e.cycLow = T; e.cycLowM = m;
+    } else if (fall >= RECESSION_DEPTH) {
+      // the fall is deep enough; the street knows before the dating does
+      rumor = "recession";
+    } else if (e.phase === "recovery") {
+      if (T >= e.cycOldPeak) next = "expansion";
+      else if (T >= e.cycOldPeak * (1 - RECESSION_DEPTH)) rumor = "expansion";
+    } else if (e.phase === "expansion") {
+      if (m - e.cycPeakM >= CYCLE_WIN_M) next = "peak";
+      else if (m > e.cycPeakM && T < prevT) rumor = "peak";
+    } else if (e.phase === "peak") {
+      if (m === e.cycPeakM) next = "expansion";
+    }
+    if (next === "expansion" || next === "peak") e.cycOldPeak = Math.max(e.cycOldPeak, e.cycPeak);
   }
-  // The street sees a turn coming from the same numbers, a little early.
-  const near: Partial<Record<MarketPhase, boolean>> = {
-    expansion: g6 < 0.008, peak: g6 < -0.002, recession: g6 > 0, depression: g6 > 0,
-    recovery: dd < 0.01,
-  };
-  if (next === e.phase && !e.rumoredPhase && near[e.phase] && rng(s) < 0.25) {
-    const ahead: Record<MarketPhase, MarketPhase> = { expansion: "peak", peak: "recession", recession: "recovery", depression: "recovery", recovery: "expansion" };
-    e.rumoredPhase = ahead[e.phase];
-    pushNews(s, "rumor", RUMORS[e.rumoredPhase][Math.floor(rng(s) * RUMORS[e.rumoredPhase].length)]);
+  // THE STREET HEARS A TURN BEFORE IT IS DATED — from the same payrolls, not
+  // from dice (2026-11-24; this was a 25% coin, CLAUDE.md fake six). A
+  // rumour is the turning point the data already shows and the dating has not
+  // yet confirmed, heard once per phase. Which line the paper runs is the
+  // month's, not a draw.
+  if (next === e.phase && rumor && !e.rumoredPhase) {
+    e.rumoredPhase = rumor;
+    const lines = RUMORS[rumor];
+    pushNews(s, "rumor", lines[m % lines.length]);
   }
   if (next !== e.phase) {
     e.phase = next;
     e.phaseAge = 0;
     e.rumoredPhase = null;
-    if (next === "expansion") e.cycPeak = T;
     const label: Record<MarketPhase, string> = {
       expansion: "Market expansion: rents rising, capital flowing in.",
       peak: "Market peak: pricing at cycle highs.",
@@ -3555,6 +3604,16 @@ function derivePhase(s: GameState) {
     if (s.news.length > 120) s.news.length = 120;
   }
 }
+/** How long a turning point must stand before it is dated: Bry & Boschan's
+ *  (1971) monthly window, the rule the NBER's dating follows. [S] */
+const CYCLE_WIN_M = 5;
+/** The shortest a contraction can be: Bry & Boschan's (1971) minimum phase;
+ *  the NBER's 1980 recession ran exactly six months (Jan-Jul). [S] */
+const CYCLE_PHASE_MIN_M = 6;
+/** How far payrolls must fall from the peak before the fall is a recession:
+ *  the 1980 recession, short and shallow, cut US nonfarm payrolls 1.4% (BLS,
+ *  Monthly Labor Review, Aug 1982), and the NBER called it one. [S] */
+const RECESSION_DEPTH = 0.014;
 
 export function tickEcon(s: GameState) {
   // The space market needs the calendar: a building that opened last year is

@@ -30,30 +30,41 @@ const check = (ok, msg) => {
 console.log("\nECONOMY HONESTY — husks, depression, sublet, turnover, off-market, dual-val\n");
 
 // ---------------------------------------------------------------------------
-// 1. Depression is a real phase the machine can enter.
+// 1. The cycle is DATED from payroll levels (market.ts derivePhase, 2026-11-24):
+//    noise is not a recession, a real fall is, a deep long one is a depression,
+//    and the street's rumour comes from the data, not dice. This used to poke
+//    `slackEma`, which the dating stopped reading long ago: it failed on main
+//    and tested nothing.
 // ---------------------------------------------------------------------------
 {
-  check(typeof E.PHASE_CFG === "undefined" || true, "phase machine lives in market (checked via behaviour)");
   const parcels = clone();
-  let g = E.firstListings(E.newGame(44101, parcels), parcels, bbls);
-  g.econ.phase = "recovery";
-  g.econ.phaseMLeft = 0;
-  g.econ.slackEma = 0.12;
-  g.econ.rumoredPhase = null;
-  // One tick of phase rollover — advanceMonth runs tickEcon.
-  g = E.advanceMonth(g, parcels, bbls, adjacency);
-  check(g.econ.phase === "depression" || g.econ.phase === "recovery",
-    `high-slack rollover leaves glut label (got ${g.econ.phase})`);
-  // Force the exact branch: if still recovery because timer path differed,
-  // poke again with phaseMLeft spent.
-  if (g.econ.phase !== "depression") {
-    g.econ.phase = "recovery";
-    g.econ.phaseMLeft = 0;
-    g.econ.slackEma = 0.14;
-    g = E.advanceMonth(g, parcels, bbls, adjacency);
-  }
-  check(g.econ.phase === "depression",
-    `stuck glut is labelled depression, not recovery (got ${g.econ.phase})`);
+  const base = E.firstListings(E.newGame(44101, parcels), parcels, bbls);
+  // Run the dating alone over a payroll path (index 1.0 = the opening payroll).
+  const runPath = (path) => {
+    const g = structuredClone(base);
+    const e = g.econ;
+    e.jobs0 = 100_000; e.history = [{}, {}]; e.phase = "expansion"; e.phaseAge = 10; e.rumoredPhase = null;
+    for (const k of ["cycHist", "cycPeak", "cycPeakM", "cycOldPeak", "cycLow", "cycLowM"]) delete e[k];
+    g.news = [];
+    const phases = [];
+    path.forEach((T, i) => { g.month = 1000 + i; e.jobs = Math.round(T * e.jobs0); E.derivePhase(g); phases.push(e.phase); });
+    return { phases, rumours: g.news.filter((n) => n.kind === "rumor").map((n) => n.text) };
+  };
+  const flat = Array.from({ length: 120 }, (_, i) => 1 + 0.005 * Math.sin(i / 3));
+  check(!runPath(flat).phases.some((p) => p === "recession" || p === "depression"),
+    "payrolls wobbling ±0.5% around a flat line are never a recession");
+  // 12 months up, a 3% fall over 8 months, 6 flat, then back above the peak
+  const cyc = [...Array.from({ length: 12 }, (_, i) => 1 + 0.002 * i), ...Array.from({ length: 8 }, (_, i) => 1.022 - 0.004 * (i + 1)),
+    ...Array(6).fill(0.99), ...Array.from({ length: 20 }, (_, i) => 0.99 + 0.002 * (i + 1))];
+  const c = runPath(cyc).phases;
+  const firstRec = c.indexOf("recession");
+  check(firstRec >= 0 && firstRec - 11 >= 6, `a 3% fall is dated a recession, no sooner than six months after the peak (month ${firstRec - 11} after it)`);
+  check(c.includes("recovery") && c.at(-1) === "expansion", `it turns to recovery after the trough and expansion once the old peak is regained (ends ${c.at(-1)})`);
+  // a 15% fall over 30 months
+  const deep = [...Array(12).fill(1), ...Array.from({ length: 30 }, (_, i) => 1 - 0.005 * (i + 1))];
+  check(runPath(deep).phases.includes("depression"), "a fall of a tenth that keeps going past eighteen months is a depression");
+  const r1 = runPath(cyc).rumours, r2 = runPath(cyc).rumours;
+  check(r1.length > 0 && JSON.stringify(r1) === JSON.stringify(r2), `rumours come from the payrolls, identically on the same path (${r1.length} heard)`);
 }
 
 // ---------------------------------------------------------------------------

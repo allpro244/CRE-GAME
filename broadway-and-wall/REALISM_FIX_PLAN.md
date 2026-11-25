@@ -178,6 +178,31 @@ Phase D** (the one-sided inflow hid it). Next: let unserved demand move
 persistently (the town's purchase coefficient for the trade falls while it
 cannot serve, and recovers as it can), with the switching speed sourced.
 
+**12. Staffing toward served custom is a ratchet (tried, reverted).** A local
+trade's heads read its served share plus what re-tenders in a month (1/TENDER_M).
+Openings went to 2%, and so did everything else: jobs −80% to −86%,
+unemployment 42–50%. Every quit cuts capacity, so served custom, so the
+staffing target, and so on down. A month's re-tender (1/TENDER_M) cannot
+outrun ordinary separations (SEP_RATE 1.3% a month).
+
+**WHAT THIS ADDS UP TO.** Patching the labour market one link at a time does
+not converge. Six changes, two reverted disasters, and every town still
+shrinks. The engine's labour demand is "each industry staffs toward the heads
+its orders need" plus a pay premium. That rule has no notion of what a vacancy
+costs a firm, or of a firm giving up on hires it cannot make. The standard
+model that has one is search and matching (Diamond-Mortensen-Pissarides;
+Pissarides 2000, *Equilibrium Unemployment Theory*):
+- firms post vacancies while the expected value of a filled job exceeds the
+  cost of keeping the post open;
+- the job-filling rate falls as the market tightens (the matching function the
+  register already uses: MATCH_ETA, Shimer 2005);
+- so tight markets post fewer vacancies per unfilled need, pay rises through
+  bargaining, and openings settle near their natural rate by construction.
+
+That is a redesign of `staff` and `postPayAndPrices` (economy.ts) against the
+register's matching (households.ts), not a patch. It needs its own plan,
+sourced parameters (vacancy cost, bargaining weight) and an owner's decision.
+
 **Phase D status:** six changes on the branch, none merged. Every town still
 shrinks. Do not merge until finding 11 is fixed and towns no longer shrink
 for want of workers or homes.

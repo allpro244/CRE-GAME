@@ -2040,12 +2040,14 @@ function toMainland(R: Rand, r: HouseholdRegister, i: number, pool: number[], go
     const q = (theirs === mine ? 0 : 1) + (side(j) ? 0 : 2);
     if (q < rank) { best = j; rank = q; }
   }
-  if (best >= 0) {
+  // (joining a household like it across the water is renting a home there too: only if one is free, and counted)
+  if (best >= 0 && mainHasRoom(r, a, i)) {
+    if (r.mk) r.mk.signed += a.wt[i];
     a.wt[best] += a.wt[i];
     return;
   }
   // nobody across the water to join: the household itself rents there
-  gone[i] = 0; a.ten[i] = TEN_MAINLAND; a.blk[i] = -1; a.rent[i] = signMainland(r, a, i);
+  gone[i] = 0; rentOrDouble(r, a, i);
 }
 
 /**
@@ -2074,8 +2076,8 @@ function tickTenure(R: Rand, r: HouseholdRegister, e: Econ, gone: Uint8Array, H:
       const u = R.u(), mv = OWN_MOVE_YR[ageBand(a.age[i])] / 12, sellM = SELL_SHARE * mv, rebuyM = mv - sellM;
       if (u < sellM) {
         a.sav[i] += Math.max(0, a.hval[i] - a.mort[i]) * 0.94;   // less the agent's 6%
-        a.ten[i] = TEN_MAINLAND; a.mort[i] = 0; a.mortPmt[i] = 0; a.hval[i] = 0;
-        a.rent[i] = signMainland(r, a, i);
+        a.mort[i] = 0; a.mortPmt[i] = 0; a.hval[i] = 0;
+        rentOrDouble(r, a, i);
         sold += a.wt[i];
       } else if (u < sellM + rebuyM) {
         const inc = lendPay(a, i) || payOf(a, i);
@@ -2153,6 +2155,24 @@ function mainRentFor(r: HouseholdRegister, a: HouseholdArrays, i: number): numbe
 function signMainland(r: HouseholdRegister, a: HouseholdArrays, i: number): number {
   if (r.mk) r.mk.signed += a.wt[i];
   return mainRentFor(r, a, i);
+}
+/**
+ * A HOME ACROSS THE WATER IF ONE IS FREE, ELSE DOUBLED UP (2026-11-25). The
+ * mainland's homes are a stock: a household signs one only if one is free
+ * (`mainHasRoom`), as grown children (`formFromChild`) and arrivals with work
+ * (`matchJobs`) already did. Four paths signed regardless: an island
+ * household leaving for the mainland, an owner selling up, an arrival that
+ * meant to buy and did not, and the job seekers a town's pay draws. Measured
+ * (tools/econprobe/identities.mjs, town 0, 24 months) the mainland held more
+ * households than homes in 20 of 24 months, worst by 148; the next month's
+ * ladder put the surplus out to double up, after a month in homes that did
+ * not exist. Now the surplus doubles up at once, displaced: it takes the
+ * next home free (`readyToRent`).
+ */
+function rentOrDouble(r: HouseholdRegister, a: HouseholdArrays, i: number): boolean {
+  if (mainHasRoom(r, a, i)) { a.ten[i] = TEN_MAINLAND; a.blk[i] = -1; a.rent[i] = signMainland(r, a, i); return true; }
+  a.ten[i] = TEN_DOUBLED; a.rent[i] = 0; a.blk[i] = -1; a.disp[i] = 1;
+  return false;
 }
 /** Is there a flat ready to let on the mainland? */
 /**
@@ -2585,6 +2605,7 @@ function formFromChild(R: Rand, r: HouseholdRegister, i: number, e: Econ, pool: 
       const q = pool[Math.floor(R.u() * pool.length)];
       if ((q < gone.length && gone[q]) || a.ten[q] !== TEN_MAINLAND || a.adults[q] !== 1 || a.kids[q] > 0 || Math.abs(a.age[q] - age) > 5) continue;
       if (t < 16 && a.ind1[q] !== ind) continue;
+      if (r.mk) r.mk.signed += w;
       a.wt[q] += w;
       return true;
     }
@@ -2780,7 +2801,7 @@ function part(R: Rand, r: HouseholdRegister, i: number, e: Econ, pool: number[],
   b.sav[j] = sav; b.debt[j] = debt; b.debtRate[j] = a.debtRate[i]; b.credit[j] = a.credit[i]; b.clean[j] = a.clean[i];
   b.yperm[j] = (wage / 12) * (1 - taxRate(wage, e));
   b.bufM[j] = a.bufM[i];
-  b.ten[j] = TEN_MAINLAND; b.rent[j] = signMainland(r, b, j);
+  rentOrDouble(r, b, j);
 }
 
 /** One earner slot's gross pay this month: a wage, a pension, or unemployment insurance for its first UI_MONTHS. */
@@ -3297,7 +3318,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
         b.wage3[i] = 0.64 * medianIncome(e) * payShare(b, i, 2);
       }
       fillMoney(R, b, i, b.wage1[i] + b.wage2[i], false, e);
-      b.ten[i] = TEN_MAINLAND; b.rent[i] = signMainland(r, b, i);
+      rentOrDouble(r, b, i);
       r.flow.arrived = (r.flow.arrived ?? 0) + wR;
       // AN ARRIVAL MAY HAVE OWNED WHERE IT CAME FROM (households stage 2): at
       // the nation's ownership for its age (OWN_BY_AGE), it sold and brings the
@@ -3307,7 +3328,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       // in fifteen years).
       if (R.u() < OWN_BY_AGE[ageBand(b.age[i])]) b.sav[i] += EQUITY_PAY * (b.wage1[i] + b.wage2[i]);
       if (r.ownMu !== undefined) {
-        const c = buyCheck(b, i, H, b.rent[i]);
+        const c = buyCheck(b, i, H, b.ten[i] === TEN_MAINLAND ? b.rent[i] : mainRentFor(r, b, i));
         const bought = c !== null && r.ownMu + OWN_SIGMA * R.n() >= c;
         if (bought) { buyHome(r, b, i, H, s.month); r.flow.bought = (r.flow.bought ?? 0) + wR; }
         if (viaOwn) {
@@ -4093,7 +4114,7 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       if (b.emp2[i] === EMP_UNEMP) b.un2[i] = UI_MONTHS + 1;
       if (b.emp3[i] === EMP_UNEMP) b.un3[i] = UI_MONTHS + 1;
       fillMoney(R, b, i, income, false, e);
-      b.wt[i] = r.wRegion; b.ten[i] = TEN_MAINLAND; b.rent[i] = signMainland(r, b, i);
+      b.wt[i] = r.wRegion; rentOrDouble(r, b, i);
       r.flow.arrived = (r.flow.arrived ?? 0) + r.wRegion;
       // THE ARRIVALS SWAN'S NEWCOMERS GO WHERE THEIR COMMUNITY IS (blackswans.ts
       // ARRIVALS_CORE): that share of the swan's part of the wave arrives with

@@ -382,7 +382,7 @@ const UE_RATE = 0.238;
  * measured (seed 550991, 30 years), the labour force fell 0.7% per point of
  * the nation's unemployment rise and the town's own rate rose 0.12 points.
  */
-const MATCH_ETA = 0.3;
+export const MATCH_ETA = 0.3;
 /**
  * The labour market's memory of its own tightness: the monthly weight θ_ref
  * puts on this month's openings per jobless worker, a twenty-year half-life
@@ -444,7 +444,7 @@ const SEP_ETA = 0.3;
  * openings — 8.4% and growing 1.0%/yr on one anchor, 4.9% and shrinking on
  * the other (seed 11, 60 years). The elastic q waits on that.
  */
-const Q_FILL = 1.107;
+export const Q_FILL = 1.107;
 /**
  * A household whose earners are all out of work leaves the region at about 5%
  * a year: interstate migration ran about 2.5% a year through the 2000s (Census
@@ -553,6 +553,15 @@ export function hereRel(e: Econ): number {
 export function workOdds(e: Econ): number {
   const uN = Math.min(0.9, Math.max(0, e.nat?.unemp ?? 0.05)), uL = Math.min(0.9, Math.max(0, e.unemployment ?? uN));
   return (1 - uL) / (1 - uN);
+}
+/**
+ * THE NATION'S LABOUR-MARKET TIGHTNESS, V/U: JOLTS's openings rate (NAT_OPEN_RATE,
+ * of positions) restated over the unemployed at the nation's current rate.
+ * At the 2001-19 means it is about 0.5 (JTSJOL / UNEMPLOY 0.49) [S].
+ */
+export function thetaNat(e: Econ): number {
+  const uN = Math.min(0.5, Math.max(0.01, e.nat?.unemp ?? 0.0586));
+  return NAT_OPEN_RATE / (1 - NAT_OPEN_RATE) * (1 - uN) / uN;
 }
 /**
  * A month in which the city's services and taxes, not pay, tipped who came or
@@ -963,6 +972,8 @@ export interface HouseholdRegister {
   firmHc?: Record<number, number>; layoffWhy?: Record<number, number>;
   /** Each industry's openings still unfilled at the end of last month's matching: what a household may move to the region for. */
   vacLeft?: number[];
+  /** the vacancies the town's firms posted this month (search and matching, matchJobs) */
+  vacPosted?: number;
   /** The town's normal labour-market tightness (last month's month-end openings per jobless at the month's matching), learned over twenty years (MATCH_ETA). */
   thetaRef?: number;
   /** Set once `thetaRef` reads the month-end openings (JOLTS's count; matchJobs 3b): a register saved before learned it on the openings at the search. */
@@ -2975,9 +2986,34 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
     }
   }
   const V = Float64Array.from(D.heads, (h, i) => h - N[i]);
+  // SEARCH AND MATCHING (2026-11-25; REALISM_FIX_PLAN Phase D step 2). A firm
+  // posts a vacancy while a filled job is worth what keeping the post open
+  // costs (free entry, Pissarides 2000): c = q(θ)·J. With the filling rate
+  // q(θ) = Q_FILL·(θ/θ_nat)^-(1 - MATCH_ETA), on the matching function the
+  // register already uses, and c set by free entry at the nation's tightness
+  // with the opening's job value, an industry posts at tightness
+  // θ* = θ_nat·(J/J0)^(1/(1 - MATCH_ETA)) against the town's searchers (the
+  // jobless here and the month's movers), never more than its staffing gap.
+  // Before this every head the orders called for was an opening, whatever
+  // keeping it open cost: measured (4 towns x 30 years) openings ran 12-16%
+  // of the labour force, restaurants 35% staffed at year 20, and orders the
+  // town could not staff were posted as openings for ever. What a firm does
+  // not post it does not make: those orders go unserved (economy.ts `served`).
+  let searchW = r.arriveAcc ?? 0;
+  for (let i = 0; i < r.n; i++) for (let k = 0; k < 3; k++) if (EMP()[k][i] === EMP_UNEMP) searchW += a.wt[i];
+  const thN = thetaNat(e), jr = s.economy?.posted?.jr, Hsum = D.heads.reduce((t, h) => t + h, 0);
+  let vPosted = 0;
+  if (!SETTLING && Hsum > 0) for (let ind = 0; ind < N_IND; ind++) {
+    const th = thN * Math.pow(Math.max(0, jr?.[ind] ?? 1), 1 / (1 - MATCH_ETA));
+    V[ind] = Math.min(V[ind], th * searchW * D.heads[ind] / Hsum);
+  }
+  for (let ind = 0; ind < N_IND; ind++) vPosted += Math.max(0, V[ind]);
+  r.vacPosted = vPosted;
   // each industry's fills left this month (Q_FILL; set once the earners already in work are placed, step 2)
   let F: Float64Array | null = null, Fu: Float64Array | null = null;
-  const pFill = Q_FILL / (1 + Q_FILL);
+  // the filling rate falls as the town's market tightens (MATCH_ETA's mirror; Shimer 2005: -0.72)
+  const qNow = !SETTLING && searchW > 0 && thN > 0 ? Q_FILL * Math.pow(Math.max(1e-3, vPosted / searchW) / thN, -(1 - MATCH_ETA)) : Q_FILL;
+  const pFill = qNow / (1 + qNow);
   const room = (ind: number, w: number) => V[ind] >= w / 2 && (!F || F[ind] >= w * Fu![ind]);
   const take = (ind: number, w: number) => { V[ind] -= w; if (F) { F[ind] -= w; r.flow.filled = (r.flow.filled ?? 0) + w; } };
   // an industry with room for an earner of weight w, by its vacancies (one draw)
@@ -3233,7 +3269,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // `pull` above). This was a draw at those odds on every opening, every month
   // it stayed open: an opening a month old was offered to the country again,
   // so the outside supply of workers was without limit at any real pay, the
-  // openings never stayed open long enough to raise pay (V_SLOPE, economy.ts
+  // openings never stayed open long enough to raise pay (the bargained premium, economy.ts
   // `postPayAndPrices`), and a town whose rents had made it dear kept growing
   // at 0.8 of the nation's real pay (measured, tools/proof.mjs: jobs x6-x31 a
   // century). Now the movers are a flow: what they cannot fill stays open,

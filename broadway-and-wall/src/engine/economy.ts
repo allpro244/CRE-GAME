@@ -1433,27 +1433,6 @@ export function tickEconomy(s: GameState): void {
     }
     if (slow) ({ x, iters } = solve(rpc, fd, X, Array.from(x)));
   }
-  // WHAT A LOCAL TRADE STAFFS TOWARD IS THE CUSTOM IT HAS AND CAN WIN BACK
-  // (2026-11-25). Its heads read the whole of the town's demand (`demand`,
-  // above), including the buyers who went elsewhere when it could not serve
-  // them and come back only as their contracts re-tender (TENDER_M, the
-  // `servedM` memory above). So it posted openings for customers it no
-  // longer had, month after month: measured (town 0, 20 years) restaurants
-  // 35% staffed, general merchandise 44%, social assistance 53%, retail 57%,
-  // the town's local trades 17.8% unfilled. A firm hires for the custom it
-  // has and the next round of it it can win back: its served share, plus
-  // the share of the rest that re-tenders this month (1/TENDER_M).
-  let staffX = demand.x;
-  if (!opening && pr && E.servedM) {
-    const rpcT = E.rpc.slice();
-    let any = false;
-    for (let j = 0; j < N_IND; j++) {
-      const w = E.servedM[j];
-      if (INDUSTRIES[INDUSTRY_IDS[j]].where !== "local" || !(rpcT[j] > 0) || w === undefined || w >= 1) continue;
-      rpcT[j] *= w + (1 - w) / TENDER_M; any = true;
-    }
-    if (any) staffX = solve(rpcT, fd, X, Array.from(x)).x;
-  }
   const buy: number[][] = [];
   for (let j = 0; j < N_IND; j++) {
     let firms = 0, conB = 0;
@@ -1606,7 +1585,7 @@ export function tickEconomy(s: GameState): void {
   E.last = {
     m: s.month, C, G, P, X: xTot, hhWagesRegister: hm.wages, hhWagesFirms: wagesCash,
     x: Array.from(x), buy, heads: Array.from(heads), namedHeads: E.cur.named.slice(),
-    impliedHeads: Array.from(staffX, (v, i) => v / Math.max(1e-9, opw[i])), served: Array.from(served),
+    impliedHeads: Array.from(demand.x, (v, i) => v / Math.max(1e-9, opw[i])), served: Array.from(served),
     engHeads: E.cur.eng.slice(), regEarners: pr ? Array.from(pr.earners) : [], jobsEngine: e.jobs ?? 0,
     con, oil: E.oil ?? OIL_PRICE_2000, oilReal: Math.exp(E.lnOil ?? 0), health: { employers: insEmp, federal: fedHealth },
     ledgerSum: ledgerSum(L), ledgerGross: ledgerGross(L), market: cashOf(L, M), iters,

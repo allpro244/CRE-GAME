@@ -304,6 +304,40 @@ Decide which before writing the vacancy rule. (b) is simpler and keeps the
 level sourced. Under (a) the level is an output of the books, which is
 better if it passes the check.
 
+*First build attempt (2026-11-25, reverted; history on
+claude/youthful-franklin-ee5xyi).* Built: vacancies capped by free entry at
+θ* = θ_nat·(J/J0)^(1/(1−η)) × searchers, the elastic filling rate, Nash pay
+β·(c/w)·(θ − θ_nat) with β = 1 − MATCH_ETA and COST_PER_HIRE_M 0.75
+(Manning), J/J0 from EBITDA per head (route b). Measured, 4 towns × 30 years:
+
+| variant | openings | jobs (yr 30) | unemployment (yr 30) |
+|---|---|---|---|
+| step 1 (main) | 12–16% | −7% to +7% | 4.5–5.6% |
+| caps split by heads share | 3.3–4.0% | −35% to −41% | 9–14% |
+| same, job value held flat | 4.7–6.6% | −27% to −32% | 7–10% |
+| caps split by staffing gap | 3.6–6.3% | −19% to −38% | 5.7–33% (2 runs died) |
+| + start-of-month stock × (1 + q) | 3.9–10% | −21% (1 town) | 26.5% (3 runs died) |
+
+Openings do what the theory says. Jobs and unemployment do not, and runs
+die silently. An earlier variant crashed with "Invalid array length" in the
+movers' slot list (`for (let v = open[ind]; v >= wR / 2; v -= wR)
+slots.push`), so the silent deaths are most likely the same runaway
+exhausting memory.
+
+Lessons for the next attempt:
+1. **Hires are the vacancy stock × the filling rate, and they must cover the
+   month's separations, quits, retirements and deaths.** Check that identity
+   on the first month of a town before any long run. The cap units were wrong
+   once already (JOLTS's openings are a month-END stock).
+2. **EBITDA per head is too volatile for J's moves.** Rent and fixed costs
+   over fewer heads collapse it in a slump. Take J's moves from the margin per
+   unit of output, or hold J flat until a better read exists.
+3. **Guard the movers' slot loop** against a non-finite or huge `open[ind]`
+   (a definition, not a rail: a count of openings is finite).
+4. **Develop with a one-month, one-town harness**: hires vs separations by
+   industry, vacancies vs gap, the filling rate. Use 30-year runs only to
+   confirm.
+
 *Risks.* The model is known to be volatile when z is near productivity (HM).
 J here comes from the engine's own margins, so check its level before trusting
 v. The town's firms are a sample plus named firms (`staff`), so vacancies

@@ -3003,9 +3003,21 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   for (let i = 0; i < r.n; i++) for (let k = 0; k < 3; k++) if (EMP()[k][i] === EMP_UNEMP) searchW += a.wt[i];
   const thN = thetaNat(e), jr = s.economy?.posted?.jr, Hsum = D.heads.reduce((t, h) => t + h, 0);
   let vPosted = 0;
-  if (!SETTLING && Hsum > 0) for (let ind = 0; ind < N_IND; ind++) {
-    const th = thN * Math.pow(Math.max(0, jr?.[ind] ?? 1), 1 / (1 - MATCH_ETA));
-    V[ind] = Math.min(V[ind], th * searchW * D.heads[ind] / Hsum);
+  // Free entry fixes how many vacancies the town's market carries, θ*·(the
+  // searchers); they are posted where the hires are wanted, in proportion to
+  // each industry's staffing gap (weighted by its job value), never past it.
+  // (Split by each industry's share of the town's heads instead, the
+  // industries short of hands got the smallest slices and the rest went
+  // unused: measured, 4 towns x 30 years, jobs -27% to -32% at a flat job value.)
+  if (!SETTLING && Hsum > 0) {
+    let cap = 0, want = 0;
+    const g = new Float64Array(N_IND);
+    for (let ind = 0; ind < N_IND; ind++) {
+      const j = Math.max(0, jr?.[ind] ?? 1);
+      cap += thN * Math.pow(j, 1 / (1 - MATCH_ETA)) * searchW * D.heads[ind] / Hsum;
+      g[ind] = Math.max(0, V[ind]) * j; want += g[ind];
+    }
+    if (want > 0) for (let ind = 0; ind < N_IND; ind++) V[ind] = Math.min(V[ind], cap * g[ind] / want);
   }
   for (let ind = 0; ind < N_IND; ind++) vPosted += Math.max(0, V[ind]);
   r.vacPosted = vPosted;

@@ -1828,11 +1828,18 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
   const thN = thetaNat(e);
   const sur = new Float64Array(N_IND), hcI = new Float64Array(N_IND);
   for (let n = 0; n < nF; n++) { sur[F.ind[n]] += F.ebitda[n]; hcI[F.ind[n]] += F.hc[n]; }
-  const j0 = (E.jobVal0 ??= Array.from(sur, (v, i) => (hcI[i] > 0 && v > 0 ? v / hcI[i] : NaN)));
+  // ...IN REAL TERMS: surplus per head over national pay (2026-11-26). Read
+  // in dollars, the price level alone grew it year on year, so the firms'
+  // job value rose with inflation, the bargained premium with it, and pay ran
+  // away from the nation's: measured (town 0, harness TRACE) 1.02x at year 11,
+  // 2.49x at year 20, the town priced out of its orders and its jobs gone.
+  // Against national pay, a raise here lowers what a filled job is worth to
+  // the firm, and the premium closes on itself.
+  const j0 = (E.jobVal0 ??= Array.from(sur, (v, i) => (hcI[i] > 0 && v > 0 ? v / hcI[i] / natW : NaN)));
   const jrI = Array.from(sur, (v, i) => {
     if (!(hcI[i] > 0) || !(j0[i] > 0)) return 1;
-    if (!Number.isFinite(j0[i])) { j0[i] = v > 0 ? v / hcI[i] : NaN; return 1; }
-    return Math.max(0, v / hcI[i]) / j0[i];
+    if (!Number.isFinite(j0[i])) { j0[i] = v > 0 ? v / hcI[i] / natW : NaN; return 1; }
+    return Math.max(0, v / hcI[i] / natW) / j0[i];
   });
   const close = 1 - Math.exp(-Math.LN2 / WAGE_GAP_HALF_M);
   const slack = WAGE_CURVE * Math.log(Math.max(0.01, uLoc) / Math.max(0.01, uNat));

@@ -3298,7 +3298,8 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   const ownShare = hhW > 0 ? ownW / hhW : 0;
   r.arriveAcc = (r.arriveAcc ?? 0) + (SETTLING ? 0 : MOVE_M * Math.min(1, pull) * hhW);
   const slots: number[] = [];
-  if (!SETTLING) for (let ind = 0; ind < N_IND; ind++) for (let v = open[ind]; v >= wR / 2; v -= wR) slots.push(ind);
+  // (a count of openings is finite and no more than the heads the industry staffs toward: a definition, not a rail)
+  if (!SETTLING) for (let ind = 0; ind < N_IND; ind++) for (let v = Number.isFinite(open[ind]) ? Math.min(open[ind], D.heads[ind]) : 0; v >= wR / 2; v -= wR) slots.push(ind);
   const V4 = V.slice();
   for (const ind of shuffle(slots)) {
     {

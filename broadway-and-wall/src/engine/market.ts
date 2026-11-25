@@ -3730,7 +3730,10 @@ export function tickEcon(s: GameState) {
       e.adults0 ??= d.ages.work + d.ages.old;
       // the openings are what the firms POSTED (search and matching,
       // households.ts matchJobs), not every head their orders call for
-      const posted = s.households?.vacPosted;
+      // ...LEFT AT THE MONTH'S END, as JOLTS counts them (`vacLeft`): what the
+      // month's search began on (`vacPosted`) is about twice that
+      const left = s.households?.vacLeft;
+      const posted = left?.length ? left.reduce((t, v) => t + v, 0) : undefined;
       e.jobVac = d.heads > 0 ? Math.max(0, (posted !== undefined ? posted : d.heads - d.jobs) / Math.max(1, d.lf)) : 0;
       e.migRate = (d.arrived - d.left) / Math.max(1, d.households);
       e.employIdx = e.jobs / Math.max(1, e.jobsFilled0 ?? e.jobs0 ?? e.jobs);

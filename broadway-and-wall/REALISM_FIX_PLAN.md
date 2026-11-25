@@ -1,4 +1,63 @@
-# Realism fix plan — the five findings of 2026-11-24
+# Realism fix plan
+
+## THE ROADMAP: toward a fully simulated economy (2026-11-25; start here)
+
+**Target** (CLAUDE.md): every number comes from a mechanism or a sourced fact.
+Measured by `pnpm mechanism` and the ledger:
+
+| count | 2026-11-25 | goal |
+|---|---|---|
+| coins (decisions by dice) | 25 | 0 |
+| draws inside the city | 242 | 0, or moved to outside shocks |
+| unsourced constants | 259 | 0 (sourced or derived) |
+| FORMULA_LEDGER rows open | 5 (#28 #29 #30 #31 #33) | 0 |
+| load-bearing rails | ~25 (last counted 2026-08) | 0 |
+
+Outputs are not targets (`tools/econprobe/realism-score.mjs` is a smoke alarm).
+
+**Work rules learned the hard way (Phase D below):**
+- One mechanism per session. Write the plan first, then build, then a one-month
+  harness check, then 4 towns × 30 years, then merge.
+- Never judge a core change by 30-year runs alone. They say THAT it broke, not
+  WHERE.
+- Before measuring: `git rev-list --count HEAD..origin/main` must be 0, and the
+  bundle must be fresh (`pnpm engine`).
+
+### Track A: the core economy, in dependency order (one at a time)
+
+| # | piece | depends on | state |
+|---|---|---|---|
+| A0 | **One-month identity harness** (`tools/econprobe/identities.mjs`, seconds): per industry, hires = filled − separations − quits − retirements − deaths; households = homes occupied + doubled-up; arrivals − departures = net migration; vacancies posted vs staffing gap; money in = money out. Run on any town at any month. | — | **next** |
+| A1 | **Labour market: search and matching** (Phase D step 2) | A0 | planned; first attempt reverted (#865) |
+| A2 | Migration two-sided (Phase D finding 1) | A1 | built, reverted until A1 |
+| A3 | National orders won on staffed capacity (#28; finding 10) | A1 | built, reverted until A1 |
+| A4 | Housing supply by builder agents (#30's remaining formula) | A2 | to plan |
+| A5 | New-house price from closed sales (#29) | A4 | to plan |
+| A6 | Online share from household channel choice (#31) | A0 | to plan |
+| A7 | Re-count load-bearing rails (`tools/rail-audit.mjs`, ~15 min), then remove what A1–A6 leave | A1–A6 | to do |
+
+### Track B: the audit grind (parallel, small PRs, does not touch Track A's files)
+
+Lists: `node tools/mechanism-audit.mjs --list coin|draw|unsourced`. For each site:
+1. Source it (a citation, or an [S]/[D]/[M] tag with the derivation).
+2. Or replace the draw with what the model can compute (CLAUDE.md fake six: dice
+   may choose WHO, never HOW MUCH or WHETHER).
+3. Or move it to an outside shock, sized from data.
+
+Each PR lowers the baseline (`--update`) and says by how much. Order: coins
+first (25, they decide outcomes), then the largest files by draws (rivals.ts,
+actions.ts, dev.ts), then unsourced constants by file. Keep Track B sessions
+off economy.ts and households.ts while Track A is working there.
+
+### Owner decisions waiting
+- GitHub default branch → `main` (Settings → General).
+- PR #858 (non-recourse rival debt, draft, makes failures worse by its own numbers).
+- PR #851 (anchor swan): its three town-centre constants need a source or a derivation.
+- Whether to run several Track B sessions at once.
+
+---
+
+## The five findings of 2026-11-24
 
 Written 2026-11-24. Follows a realism probe (4 towns x 30 years, no player;
 2 towns x 20 years of every sale; 80 nations x 50 years of the national block).

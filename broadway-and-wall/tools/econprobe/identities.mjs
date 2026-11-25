@@ -94,7 +94,7 @@ for (let m = 0; m < HZ; m++) {
     acc.layoffs = (acc.layoffs ?? 0) + (f.layoffs ?? 0);
     if (process.env.TRACE) {
       const dE = earners.reduce((t, x) => t + x, 0) - prevEarners.reduce((t, x) => t + x, 0);
-      console.log(`  m${String(m + 1).padStart(3)} hires ${(f.filled ?? 0).toFixed(0).padStart(5)} left ${((f.filled ?? 0) - dE).toFixed(0).padStart(5)} employed ${L.employed.toFixed(0).padStart(6)} unemployed ${L.unemployed.toFixed(0).padStart(5)} (${(100 * e.unemployment).toFixed(1)}%) openings ${(100 * (e.jobVac ?? 0)).toFixed(1)}% wanted ${Ec.emp.reduce((t, x) => t + x, 0).toFixed(0)} arrived ${(f.arrived ?? 0).toFixed(0)} left-town ${(f.left ?? 0).toFixed(0)}`);
+      console.log(`  m${String(m + 1).padStart(3)} hires ${(f.filled ?? 0).toFixed(0).padStart(5)} left ${((f.filled ?? 0) - dE).toFixed(0).padStart(5)} employed ${L.employed.toFixed(0).padStart(6)} unemployed ${L.unemployed.toFixed(0).padStart(5)} (${(100 * e.unemployment).toFixed(1)}%) openings ${(100 * (e.jobVac ?? 0)).toFixed(1)}% wanted ${Ec.emp.reduce((t, x) => t + x, 0).toFixed(0)} arrived ${(f.arrived ?? 0).toFixed(0)} left-town ${(f.left ?? 0).toFixed(0)} | nat u ${(100 * (e.nat?.unemp ?? NaN)).toFixed(1)}% pay/nat ${((e.wageIdx ?? 1) / (e.natWageIdx ?? e.wageIdx ?? 1)).toFixed(3)} cpi/nat ${((e.cpi ?? 1) / (e.natCpi ?? e.cpi ?? 1)).toFixed(3)}`);
     }
   }
   prevEarners = Float64Array.from(earners); prevPersons = L.persons;

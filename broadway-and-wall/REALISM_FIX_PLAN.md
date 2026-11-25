@@ -225,13 +225,71 @@ Same 4 towns × 30 years against main `01f3066`:
 Rents, vacancy, cap rates and the cycle barely move. Openings are still above
 normal: that is step 2.
 
-**STEP 2: search and matching for the town's firms (next; needs its own plan).**
-Candidate sources, each to be VERIFIED against the paper before any constant
-uses it:
-- Shimer 2005 AER, calibration of vacancy cost and bargaining weight;
-- Hagedorn & Manovskii 2008 AER 98(4), vacancy-creation cost from data;
-- Silva & Toledo 2009, hiring and training costs per hire;
-- Pissarides 2000, the model.
+**STEP 2: SEARCH AND MATCHING FOR THE TOWN'S FIRMS (planned 2026-11-25).**
+
+*The fault.* Labour demand is one rule: each industry staffs toward the heads
+its orders need (`economy.ts staff`), and the published openings are the gap
+between wanted and staffed heads. Keeping a post open costs nothing, so a
+trade that cannot hire posts the same openings for ever (restaurants 35%
+staffed at year 20). Pay answers with a LEVEL premium, `V_SLOPE` [K]. An
+elastic job-filling rate was tried once and parked because migration did not
+answer openings (comment above `households.ts Q_FILL`). That is the same
+coupling Phase D ran into, so firms, pay and the filling rate move together.
+
+*The model* (Pissarides 2000; the calibration approach of Hagedorn &
+Manovskii 2008):
+1. **Vacancies are posted while they pay.** For each industry, the value of a
+   filled job is J = (output per head − pay) / (r + s), at the industry's own
+   margins, the loan index and SEP_RATE. A vacancy costs c a month and fills
+   at q(θ) a month. Firms post vacancies v until c = q(θ)·J (free entry), never
+   more than the heads their orders need. Orders beyond what they staff go
+   unserved, as `served` already books.
+2. **Openings are the posted vacancies.** `jobVac`, `open[i]` in
+   `postPayAndPrices`, and the openings `matchJobs` fills all read v, not the
+   staffing gap. Where openings settle is an outcome of c, q and J.
+3. **The filling rate falls as the market tightens**:
+   q(θ) = Q_FILL × (θ / θ_nat)^(−α), with α the matching elasticity and
+   θ_nat the nation's V/U (JOLTS / UNEMPLOY). This is the elastic q that was
+   parked.
+4. **Pay is bargained.** A firm's premium over national pay moves toward
+   β·(the job's surplus share) + β·c·θ, the Nash wage. It replaces
+   `V_SLOPE` [K]. The wage curve (Blanchflower & Oswald) and rent sharing
+   stay.
+5. **Then** re-land the two-sided migration (finding 1) and the capacity
+   tender (finding 10), and re-measure.
+
+*Parameters* (verified by reading the source unless marked):
+
+| | value | source |
+|---|---|---|
+| matching elasticity α | 0.5–0.7; take 0.5 | Petrongolo & Pissarides 2001 JEL 39, §2 (read); Shimer 0.72 via HKV 2005 |
+| bargaining weight β | = α (Hosios condition) | Hosios 1990; HM's 0.052 is the volatile extreme, not used |
+| filling rate | ~5% a working day, mean vacancy 20 working days | Davis, Faberman & Haltiwanger, NBER WP 16265, Table 3 (read) |
+| target check: openings | ~3.1–3.5% of the labour force | JOLTS 2001–19 3.13%; HM θ 0.634 × u 0.055 = 3.5% (ECB WP 853, Table 2, read) |
+| vacancy cost c | SOLVED so free entry holds at the opening's tightness; then checked against measured hiring costs | — |
+| check on c: cost per hire (c / q) | recruiting 3–4.5% of a quarter's pay (HM p.16, read); with training ~0.5–1 month's pay (Manning 2010 CEP DP 981, Table 2, read); Silva & Toledo 36–55% of a quarter (second-hand, via Dallas Fed WP 1102) | |
+| Shimer's c = 0.213 | UNVERIFIED (paywalled AER); not used | |
+
+c is the one parameter solved rather than read. It is solved ONCE, at the
+opening, from free entry at the nation's tightness, then held. It is checked,
+not tuned, against the measured cost per hire. If the check fails by more
+than the published range, the model is wrong somewhere, and the fix is not
+to move c.
+
+*Done when* (4 towns × 30 years, then 12 towns):
+- openings settle in a band set by the mechanism, and rise and fall with the
+  cycle (JOLTS: 2.2–7.4% over 2001–24);
+- no industry sits under 80% staffed for years;
+- pay rises with tightness and stops when openings close (no runaway: the
+  finding-3 failure);
+- with migration two-sided again, towns neither grow without jobs nor shrink
+  for want of workers;
+- `conserve` holds and the mechanism counts do not rise (`V_SLOPE` goes).
+
+*Risks.* The model is known to be volatile when z is near productivity (HM).
+J here comes from the engine's own margins, so check its level before trusting
+v. The town's firms are a sample plus named firms (`staff`), so vacancies
+must be posted per industry, not per firm.
 
 **Phase D status:** six changes on the branch, none merged. Every town still
 shrinks. Do not merge until finding 11 is fixed and towns no longer shrink

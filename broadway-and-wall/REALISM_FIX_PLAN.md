@@ -286,6 +286,24 @@ to move c.
   for want of workers;
 - `conserve` holds and the mechanism counts do not rise (`V_SLOPE` goes).
 
+*First design check, before code (2026-11-25).* Free entry sets the cost of a
+hire (c / q) equal to the value of a filled job, J. Measured, a hire costs
+about 0.5–1 month's pay including training (Manning). The engine's firm margin
+(`F.ebitda / F.rev`) is gross operating surplus: it includes the return to
+capital. Read as J = (p − w) / (r + s), at r + s ≈ 1.7% a month, it values a
+filled job at roughly 15–20 months' pay. That is an order of magnitude over
+the measured hiring cost, and wired in as is, it would fail the plan's own
+check. J must be the LABOUR surplus of the match, with capital's return
+netted out. HM split their vacancy cost the same way: 0.474 capital + 0.110
+labour (ECB WP 853, pp. 15–17). Two candidate routes:
+(a) net capital out of the margin with the BEA capital share by industry,
+which the engine has (`INDUSTRIES[].gos` and the IO accounts);
+(b) take J's LEVEL from the measured cost per hire, and let only its
+proportional movements come from the margin.
+Decide which before writing the vacancy rule. (b) is simpler and keeps the
+level sourced. Under (a) the level is an output of the books, which is
+better if it passes the check.
+
 *Risks.* The model is known to be volatile when z is near productivity (HM).
 J here comes from the engine's own margins, so check its level before trusting
 v. The town's firms are a sample plus named firms (`staff`), so vacancies

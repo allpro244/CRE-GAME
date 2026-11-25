@@ -65,8 +65,13 @@ for (let m = 0; m < HZ; m++) {
   if (Math.abs(sumE - L.employed) > Math.max(r.wRegion ?? 1, 0.01 * L.employed)) breach(m + 1, `industries' earners ${sumE.toFixed(0)} vs register employed ${L.employed.toFixed(0)}`);
   const mk = r.mk;
   if (mk) {
-    // a home being made ready between tenants (`idle`) holds nobody
-    const homes = mk.homes + (mk.homesB ?? 0) - (mk.idle ?? 0), used = mk.occ + (mk.signed ?? 0);
+    // a home being made ready between tenants (`idle`) holds nobody; the
+    // households counted are the register's actual renters across the water
+    // (the market's own tally, occ + signed, adds signings during the month
+    // but not departures, so it runs a little high by construction)
+    const homes = mk.homes + (mk.homesB ?? 0) - (mk.idle ?? 0);
+    let used = 0;
+    for (let i = 0; i < r.n; i++) if (r.a.ten[i] === E.TEN_MAINLAND) used += r.a.wt[i];
     if (!fin(homes) || homes < 0) breach(m + 1, `mainland homes = ${homes}`);
     if (used > homes + (r.wRegion ?? 1)) { overfullM++; worstOver = Math.max(worstOver, used - homes); }
   }

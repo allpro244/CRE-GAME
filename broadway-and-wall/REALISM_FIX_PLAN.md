@@ -150,6 +150,38 @@ so the rent rises about as fast as costs, the pencil stays near the opening's
 on their own vacancy, counting who applied and was turned away, as the island's
 landlords already do.
 
+**9. Turned-away applicants now bid on the rent ladder (on the branch).** The
+mainland rent is NOT a formula any more (FORMULA_LEDGER #30 is stale: the rent
+is a bid ladder). The gap was that movers turned away for want of a home never
+bid. Now they do, for a search's length, at what renters spend out of the
+offer's pay. Town 1, year 20: openings 7,230 → 5,534; the region is still full
+most months. Bids are fixed at 30% of income (a long-run cross-metro share,
+Davis & Ortalo-Magné 2011), so a shortage cannot bid the rent up past that
+share. Next on rent: a willingness to pay against the fallback (doubling up,
+leaving), not a fixed share.
+
+**10. Tenders are now won by the hands an industry has (on the branch;
+FORMULA_LEDGER #28).** It changed which towns shrink, not whether they do
+(4 towns × 30 yr: populations −12% to −25%, openings 17–26%).
+
+**11. WHERE THE OPENINGS ARE (town 0, all changes, year 20).** Local trades
+want 38,268 heads and have 17.8% unfilled. Restaurants are 35% staffed,
+general merchandise 44%, social assistance 53%, retail 57%, nursing 61%.
+`tickFirms` cuts a local trade's month's SALES to what its staff can make
+(customers buy elsewhere), but the cut is a copy (`const rpc =
+E.rpc.slice()`): next month the same customers come back, and the firm
+staffs toward its full orders again, posting the same openings for ever. Real
+customers who cannot be served switch, to other towns, online, or doing
+without. The trade then shrinks to what it can staff or bids pay up until it
+can. **This is the root of the openings pile-up, and it was there before
+Phase D** (the one-sided inflow hid it). Next: let unserved demand move
+persistently (the town's purchase coefficient for the trade falls while it
+cannot serve, and recovers as it can), with the switching speed sourced.
+
+**Phase D status:** six changes on the branch, none merged. Every town still
+shrinks. Do not merge until finding 11 is fixed and towns no longer shrink
+for want of workers or homes.
+
 **Earlier next step (still open):** let every working-age adult in a household hold a job. Either a slot
 per adult, or the other adults as a counted group with their industries.
 About 70 sites in households.ts assume three slots. Then re-measure 1 and 2

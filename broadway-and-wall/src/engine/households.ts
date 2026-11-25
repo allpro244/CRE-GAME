@@ -2993,12 +2993,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
     const g = new Float64Array(N_IND);
     for (let ind = 0; ind < N_IND; ind++) {
       const j = Math.max(0, jr?.[ind] ?? 1);
-      // θ is JOLTS's tightness: the openings LEFT at the month's end over the
-      // jobless. The month's search starts on the stock before it fills, at
-      // odds p = q/(1+q) (Q_FILL, below): the starting stock is the month-end
-      // one over (1 - p), that is x (1 + q). Capping the start at the month-end
-      // figure held hires to ~1.6% of jobs a month against JOLTS's ~3.7%.
-      cap += thN * Math.pow(j, 1 / (1 - MATCH_ETA)) * searchW * D.heads[ind] / Hsum * (1 + Q_FILL);
+      cap += thN * Math.pow(j, 1 / (1 - MATCH_ETA)) * searchW * D.heads[ind] / Hsum;
       g[ind] = Math.max(0, V[ind]) * j; want += g[ind];
     }
     if (want > 0) for (let ind = 0; ind < N_IND; ind++) V[ind] = Math.min(V[ind], cap * g[ind] / want);

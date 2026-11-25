@@ -3728,7 +3728,10 @@ export function tickEcon(s: GameState) {
       e.population = Math.round(d.persons);
       e.ages = { ...d.ages };
       e.adults0 ??= d.ages.work + d.ages.old;
-      e.jobVac = d.heads > 0 ? Math.max(0, (d.heads - d.jobs) / Math.max(1, d.lf)) : 0;
+      // the openings are what the firms POSTED (search and matching,
+      // households.ts matchJobs), not every head their orders call for
+      const posted = s.households?.vacPosted;
+      e.jobVac = d.heads > 0 ? Math.max(0, (posted !== undefined ? posted : d.heads - d.jobs) / Math.max(1, d.lf)) : 0;
       e.migRate = (d.arrived - d.left) / Math.max(1, d.households);
       e.employIdx = e.jobs / Math.max(1, e.jobsFilled0 ?? e.jobs0 ?? e.jobs);
     }

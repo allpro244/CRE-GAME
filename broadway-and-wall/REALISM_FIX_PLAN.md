@@ -75,6 +75,175 @@ these towns *should* have so little job growth is a separate question:
 population grows 8–31% over the same thirty years, against payrolls of −14%
 to +6%.
 
+## Phase D — migration and the labour market (IN PROGRESS, 2026-11-25)
+
+Started as FORMULA_LEDGER #33 (migration as a quota). Four findings, in order.
+
+**1. Migration was one-sided (fixed on the branch, not merged).** A working
+household left at MOVE_M × (1 − pull), and arrivals came at MOVE_M × pull.
+At parity nobody left while 2.5% a year arrived. Measured: a town whose pay
+bought 7–14% less than the nation's for twenty years still took in ~600
+households a year and lost ~200 (population +13% on flat payrolls).
+Fix: every mover re-chooses, and this town is a sliver of the places it
+weighs, so households leave at MOVE_M whatever the pull. The pull works on
+arrivals: gross outflow rates vary least across US states (Coen-Pirani 2010,
+JME 57(7)).
+
+**2. Alone, that fix shrinks every town** (4 towns × 30 yr: population −5% to
+−24%, jobs −17% to −30%), because openings pile up and nothing fills them.
+Even BEFORE it, the job-opening rate reached 14–22% of the labour force by
+year 30 (US record: 7.4%, 2022). After it: 22–36%.
+
+**3. A growing pay premium is not the cure (tried, reverted).** V_SLOPE [K]
+sets pay at a premium of 0.5 × excess openings. Replaced with a premium that
+GROWS 0.8 a year per point of excess openings (2019–22 JOLTS and ECI [D]),
+pay ran away: wage index ×17–33 in 30 years, jobs −40%, unemployment 24–28%.
+Openings could not close, and nominal pay is never cut, so it ratcheted.
+Reverted.
+
+**4. The root: grown children at home cannot work.** A household has three
+earner slots (head, partner, ONE "other adult"). As housing tightens, grown
+children cannot form their own households and pile up at home. Every adult
+beyond the first other adult has no slot and cannot hold a job.
+Measured (town 1, migration fix, 20 years):
+
+| year | 1 | 4 | 8 | 12 | 16 | 20 |
+|---|---|---|---|---|---|---|
+| working-age adults with no earner slot | 1,644 | 1,889 | 3,014 | 4,330 | 5,352 | 7,787 |
+| households with 2+ other adults | 4.5% | 5.0% | 7.8% | 11.0% | 13.6% | 17.7% |
+| unfilled openings | 1,781 | 1,976 | 3,859 | 4,502 | 6,620 | 7,452 |
+| working-age adults in the labour force | 79.8% | 80.9% | 81.2% | 79.6% | 76.6% | 72.9% |
+
+The workers the firms cannot find mostly live in town already. The register
+gives them nowhere to work, and participation FALLS while a fifth of jobs
+stand open.
+
+**5. Partly fixed: a blocked grown child becomes a doubled-up household** (on
+the branch). When the slot is contested and no home is free, the eldest stays
+in the same home as its own doubled-up household (Census definition), with its
+own earner slots. Town 1 at year 20: slotless adults 7,787 → 4,380, working-age
+participation 73% → 76%. Openings still pile up (4 towns × 30 yr: 21–32%).
+
+**6. THE BINDING CONSTRAINT IS THE REGION'S HOUSING.** Town 1, migration +
+doubled-up, 20 years: the mainland's homes are full in EVERY month (12 of 12,
+every year; free capacity −29 to −176, so it runs over-full). Every mover who
+would take an opening is turned away (`mainRoomFor`), so the openings stand.
+Builders do not answer: their pencil sits at 0.60–1.09, mostly under 1, while
+mainland rent rises 2,144 → 5,324 (×2.5 nominal) in twenty years. That is
+FORMULA_LEDGER #30 (mainland rent and its supply). Fix the supply side there,
+then re-measure findings 1, 5 and 6 together. Nothing in Phase D merges until
+towns stop shrinking for want of a home.
+
+**7. The supply curve covered one tier of the stock (fixed on the branch).**
+Saiz's elasticity is the whole stock's. The curve ran through the standard
+tier's opening homes (1,226 of ~10,000), so supply answered about an eighth as
+hard as the record says. Now it covers the standard and older tiers together.
+Town 1, 20 years: builders do answer (~2,400 homes in years 12–14, the rent
+falls back), but the mainland is full again from year 16 and openings reach
+7,230.
+
+**8. Why: the rent never sees the households turned away.** The mainland rent
+follows the households living there (FORMULA_LEDGER #30), not the queue at the
+door. Movers turned away for want of a home are no demand at all to the price,
+so the rent rises about as fast as costs, the pencil stays near the opening's
+(0.59–0.91), and building stays weak. The next piece is #30: landlords pricing
+on their own vacancy, counting who applied and was turned away, as the island's
+landlords already do.
+
+**9. Turned-away applicants now bid on the rent ladder (on the branch).** The
+mainland rent is NOT a formula any more (FORMULA_LEDGER #30 is stale: the rent
+is a bid ladder). The gap was that movers turned away for want of a home never
+bid. Now they do, for a search's length, at what renters spend out of the
+offer's pay. Town 1, year 20: openings 7,230 → 5,534; the region is still full
+most months. Bids are fixed at 30% of income (a long-run cross-metro share,
+Davis & Ortalo-Magné 2011), so a shortage cannot bid the rent up past that
+share. Next on rent: a willingness to pay against the fallback (doubling up,
+leaving), not a fixed share.
+
+**10. Tenders are now won by the hands an industry has (on the branch;
+FORMULA_LEDGER #28).** It changed which towns shrink, not whether they do
+(4 towns × 30 yr: populations −12% to −25%, openings 17–26%).
+
+**11. WHERE THE OPENINGS ARE (town 0, all changes, year 20).** Local trades
+want 38,268 heads and have 17.8% unfilled. Restaurants are 35% staffed,
+general merchandise 44%, social assistance 53%, retail 57%, nursing 61%.
+`tickFirms` cuts a local trade's month's SALES to what its staff can make
+(customers buy elsewhere), but the cut is a copy (`const rpc =
+E.rpc.slice()`): next month the same customers come back, and the firm
+staffs toward its full orders again, posting the same openings for ever. Real
+customers who cannot be served switch, to other towns, online, or doing
+without. The trade then shrinks to what it can staff or bids pay up until it
+can. **This is the root of the openings pile-up, and it was there before
+Phase D** (the one-sided inflow hid it). Next: let unserved demand move
+persistently (the town's purchase coefficient for the trade falls while it
+cannot serve, and recovers as it can), with the switching speed sourced.
+
+**12. Staffing toward served custom is a ratchet (tried, reverted).** A local
+trade's heads read its served share plus what re-tenders in a month (1/TENDER_M).
+Openings went to 2%, and so did everything else: jobs −80% to −86%,
+unemployment 42–50%. Every quit cuts capacity, so served custom, so the
+staffing target, and so on down. A month's re-tender (1/TENDER_M) cannot
+outrun ordinary separations (SEP_RATE 1.3% a month).
+
+**WHAT THIS ADDS UP TO.** Patching the labour market one link at a time does
+not converge. Six changes, two reverted disasters, and every town still
+shrinks. The engine's labour demand is "each industry staffs toward the heads
+its orders need" plus a pay premium. That rule has no notion of what a vacancy
+costs a firm, or of a firm giving up on hires it cannot make. The standard
+model that has one is search and matching (Diamond-Mortensen-Pissarides;
+Pissarides 2000, *Equilibrium Unemployment Theory*):
+- firms post vacancies while the expected value of a filled job exceeds the
+  cost of keeping the post open;
+- the job-filling rate falls as the market tightens (the matching function the
+  register already uses: MATCH_ETA, Shimer 2005);
+- so tight markets post fewer vacancies per unfilled need, pay rises through
+  bargaining, and openings settle near their natural rate by construction.
+
+That is a redesign of `staff` and `postPayAndPrices` (economy.ts) against the
+register's matching (households.ts), not a patch. It needs its own plan,
+sourced parameters (vacancy cost, bargaining weight) and an owner's decision.
+
+**STEP 1: THE INDEPENDENT PIECES, LANDED WITHOUT THE MIGRATION CHANGE (2026-11-25).**
+The two-sided migration (finding 1) and the capacity tender (finding 10) are
+reverted on the branch until the labour market can carry them. What lands is
+findings 5, 7 and 9:
+- grown children blocked from a home become doubled-up households with their
+  own earner slots;
+- the supply curve covers the region's whole housing stock;
+- movers turned away for want of a home bid on the rent ladder.
+
+Same 4 towns × 30 years against main `01f3066`:
+
+| | main | step 1 |
+|---|---|---|
+| jobs, year 30 vs opening | −14% to +1% | −7% to +7% |
+| population | +4% to +25% | −4% to +12% |
+| job openings, year 30 (% of labour force) | 14–22% | 12–16% |
+| labour force ÷ residents | 44.8% | 47.9% |
+| local unemployment, mean | 5.3% | 5.7% |
+
+Rents, vacancy, cap rates and the cycle barely move. Openings are still above
+normal: that is step 2.
+
+**STEP 2: search and matching for the town's firms (next; needs its own plan).**
+Candidate sources, each to be VERIFIED against the paper before any constant
+uses it:
+- Shimer 2005 AER, calibration of vacancy cost and bargaining weight;
+- Hagedorn & Manovskii 2008 AER 98(4), vacancy-creation cost from data;
+- Silva & Toledo 2009, hiring and training costs per hire;
+- Pissarides 2000, the model.
+
+**Phase D status:** six changes on the branch, none merged. Every town still
+shrinks. Do not merge until finding 11 is fixed and towns no longer shrink
+for want of workers or homes.
+
+**Earlier next step (still open):** let every working-age adult in a household hold a job. Either a slot
+per adult, or the other adults as a counted group with their industries.
+About 70 sites in households.ts assume three slots. Then re-measure 1 and 2
+together. Also suspect: young adults blocked from forming households by
+housing should be able to move away. That ties to mainland rent (#30), the
+supply side of the region's housing.
+
 ## Phase B — can supply shocks stack past their own evidence? (an open question)
 
 One town reached 16.1% inflation, close to the US post-war record. That is not

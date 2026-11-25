@@ -927,6 +927,10 @@ export interface HouseholdRegister {
   mk?: { homes: number; homes0: number; ask0: number; cap0: number; cost0: number; occ: number; roll: FlatRoll; pipe: { m: number; n: number }[]; cards: number[]; signed: number; ask12?: number[]; turn?: number[]; idle?: number; homesB?: number; askB?: number; askB0?: number; homeValue?: number; homeCost?: number; pencil?: number;
     /** the builders' pencil the month the mainland opened: the point its supply curve passes through (`tickMainland`) */
     pencil0?: number;
+    /** the older tiers' homes the month the mainland opened: with homes0, the stock the supply curve passes through */
+    homesB0?: number;
+    /** movers with a job offer turned away for want of a home, still looking: their month, weight and bid (`tickMainland` ladder) */
+    queue?: { m: number; w: number; bid: number }[];
     /** the older stock in vintage tiers, newest first (OLDER_TIERS): homes, going rent and opening rent of each */
     hB?: number[]; aB?: number[]; aB0?: number[] };
   /** Each island block of flats an agent can point at (bbl), append-only. */
@@ -2355,6 +2359,10 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
     if (w === undefined) { if (renter) bid.push({ i, w: 0, wt: a.wt[i], renter }); continue; }
     bid.push({ i, w, wt: a.wt[i], renter });
   }
+  // the applicants turned away this search (`matchJobs`): bidders who hold no home and take none here
+  mk.queue = (mk.queue ?? []).filter((q) => m - q.m <= Math.max(1, Math.ceil(MARKET_M)));
+  // (turned away after last month's ladder: they bid on this one, for a search's length)
+  for (const q of mk.queue) bid.push({ i: -1, w: q.bid, wt: q.w, renter: false });
   bid.sort((p, q) => q.w - p.w);
   let acc = 0, pA = -1;
   const pT = Array(OLDER_TIERS).fill(-1) as number[];
@@ -2435,9 +2443,20 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
   // town's cap, tax-loaded, with land at its ask) is open in
   // REAL_ECONOMY_PLAN ("three pencils").
   mk.pencil0 ??= pencil;
+  // ...AND IT IS THE REGION'S WHOLE STOCK THAT FOLLOWS IT (2026-11-25). Saiz's
+  // elasticity is the housing stock's: d ln Q = 1.75 d ln P, Q every home in
+  // the metro. The curve was drawn through the standard tier alone (homes0,
+  // the new homes the opening held: 1,226 of ~10,000 on town 1), so a pencil
+  // 23% over the opening's asked for ~540 more homes where the region's
+  // stock asks for ~4,400. Measured (town 1, 20 years) the mainland was full
+  // in every month, every mover who would have taken an opening was turned
+  // away, and the openings rose to 19% of the town's jobs while the rent rose
+  // x2.5. The older tiers are the same stock a vintage on (they filter down
+  // from the standard one), so both count: target and standing.
+  mk.homesB0 ??= mk.homesB ?? 0;
   let piped = 0;
   for (const p of mk.pipe) piped += p.n;
-  const start = mk.homes0 * Math.pow(pencil / Math.max(1e-6, mk.pencil0), HOUSING_SUPPLY_ELAST) - mk.homes - piped;
+  const start = (mk.homes0 + mk.homesB0) * Math.pow(pencil / Math.max(1e-6, mk.pencil0), HOUSING_SUPPLY_ELAST) - mk.homes - (mk.homesB ?? 0) - piped;
   // The gap is started over a build's length, so each month starts an
   // eighteenth of what is still owed and the homes already in the ground
   // count against it. (NO 2%-A-YEAR CEILING, 2026-11-20: starts were held
@@ -2497,7 +2516,6 @@ function formFromChild(R: Rand, r: HouseholdRegister, i: number, e: Econ, pool: 
       if (couple || cheap / 2 <= SCREEN * pay) j = findMate(R, r, couple, couple ? singles : pool, gone, age);
     } else k = findHomeMate(R, r, atHome, gone, i, w, age, cheap, pay);
   }
-  if (j < 0 && k < 0 && !(cheap <= SCREEN * pay)) return false;
   // A HOME TO GO TO (2026-11-12): a grown child who would need a place of its
   // own leaves only when one is free; otherwise it stays at home and looks
   // again. Young adults' household formation falls when housing is tight
@@ -2506,7 +2524,31 @@ function formFromChild(R: Rand, r: HouseholdRegister, i: number, e: Econ, pool: 
   // mainland flat that did not exist, then pushed to doubled up by the
   // ladder: seed 31337, 3,300 doubled-up households from none in five years.
   // Moving in with a partner who has a home needs no new one.
-  if (j < 0 && !mainHasRoom(r, a, i)) return false;
+  // ...AND ONE WHO STAYS CAN STILL WORK (2026-11-25). The register keeps one
+  // earner slot for a household's other adults, so the second grown child at
+  // home had nowhere to hold a job. As housing tightened they piled up:
+  // measured (town 1, 20 years), working-age adults with no earner slot rose
+  // 1,644 -> 7,787 while the town's unfilled openings rose 1,781 -> 7,452 and
+  // working-age participation FELL 80% -> 73%. An adult child at home who is
+  // not the householder or partner is a doubled-up household member by the
+  // Census's own definition (Census, "Doubled-up households": an additional
+  // adult 18+ not in school who is not the householder, spouse or partner)
+  // [S]. So when the slot is contested and no home is free, the eldest stays
+  // in the same home as a doubled-up household of its own: no rent, its own
+  // earner slots, and it looks for a home of its own as every doubled-up
+  // household does (`readyToRent`).
+  const blocked = (j < 0 && k < 0 && !(cheap <= SCREEN * pay)) || (j < 0 && !mainHasRoom(r, a, i));
+  if (blocked) {
+    if (!(othersOf(a, i) > 1)) return false;
+    const un0 = a.un3[i], ind0 = a.ind3[i];
+    leaveHome(R, r, i, e);
+    const n = addAgent(r), b = r.a!;
+    b.wt[n] = w; b.age[n] = age; b.adults[n] = 1; b.kids[n] = 0;
+    b.emp1[n] = emp; b.wage1[n] = wage; b.un1[n] = un0; b.ind1[n] = ind0;
+    fillMoney(R, b, n, wage, false, e);
+    b.ten[n] = TEN_DOUBLED; b.rent[n] = 0; b.blk[n] = -1; b.disp[n] = 0;
+    return true;
+  }
   // as many leave as the other agent stands for (all of this one, or part): the rest of this one stay at home as they were
   a = r.a!;
   const m = j >= 0 ? Math.min(w, a.wt[j]) : k >= 0 ? Math.min(w, a.wt[k]) : w;
@@ -3213,7 +3255,20 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       if (!mainRoomFor(r, wR)) {
         const buyRate = ((r.ownBuy ?? 0) + 1) / ((r.ownTry ?? 0) + 2);
         r.ownArr = (r.ownArr ?? 0) + ownShare * buyRate;
-        if (r.ownArr < 1) continue;
+        if (r.ownArr < 1) {
+          // A MOVER TURNED AWAY IS STILL AN APPLICANT (2026-11-25). It has the
+          // offer and is looking for a home: it bids on the region's ladder
+          // for as long as a search runs (MARKET_M), so a region full with a
+          // queue at the door is a landlord's market. Before this a mover with
+          // nowhere to live was no demand at all: measured (town 1, 20 years)
+          // the mainland was full in every month while its rent rose only as
+          // fast as building costs, the builders' pencil sat near the
+          // opening's, and the town's openings rose to a fifth of its jobs.
+          // Its bid is what renters spend (HH_RENT_SHARE0) out of the
+          // offer's pay alone, a lower bound: a partner's pay is not counted.
+          if (r.mk) (r.mk.queue ??= []).push({ m: s.month, w: wR, bid: (HH_RENT_SHARE0 * D.pay[ind]) / 12 });
+          continue;
+        }
         r.ownArr -= 1;
         viaOwn = true;
       }

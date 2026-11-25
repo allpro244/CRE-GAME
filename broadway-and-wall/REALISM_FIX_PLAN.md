@@ -203,6 +203,36 @@ That is a redesign of `staff` and `postPayAndPrices` (economy.ts) against the
 register's matching (households.ts), not a patch. It needs its own plan,
 sourced parameters (vacancy cost, bargaining weight) and an owner's decision.
 
+**STEP 1: THE INDEPENDENT PIECES, LANDED WITHOUT THE MIGRATION CHANGE (2026-11-25).**
+The two-sided migration (finding 1) and the capacity tender (finding 10) are
+reverted on the branch until the labour market can carry them. What lands is
+findings 5, 7 and 9:
+- grown children blocked from a home become doubled-up households with their
+  own earner slots;
+- the supply curve covers the region's whole housing stock;
+- movers turned away for want of a home bid on the rent ladder.
+
+Same 4 towns × 30 years against main `01f3066`:
+
+| | main | step 1 |
+|---|---|---|
+| jobs, year 30 vs opening | −14% to +1% | −7% to +7% |
+| population | +4% to +25% | −4% to +12% |
+| job openings, year 30 (% of labour force) | 14–22% | 12–16% |
+| labour force ÷ residents | 44.8% | 47.9% |
+| local unemployment, mean | 5.3% | 5.7% |
+
+Rents, vacancy, cap rates and the cycle barely move. Openings are still above
+normal: that is step 2.
+
+**STEP 2: search and matching for the town's firms (next; needs its own plan).**
+Candidate sources, each to be VERIFIED against the paper before any constant
+uses it:
+- Shimer 2005 AER, calibration of vacancy cost and bargaining weight;
+- Hagedorn & Manovskii 2008 AER 98(4), vacancy-creation cost from data;
+- Silva & Toledo 2009, hiring and training costs per hire;
+- Pissarides 2000, the model.
+
 **Phase D status:** six changes on the branch, none merged. Every town still
 shrinks. Do not merge until finding 11 is fixed and towns no longer shrink
 for want of workers or homes.

@@ -792,7 +792,24 @@ function tenderOrders(E: EconomyState, entryYr = ENTRY_YR): void {
   const r = 1 / TENDER_M;
   // the nation's routine re-tender, and what the town's new firms win of the
   // industry's orders; the closed firms' orders (tot - S) went to the nation
-  const pool = Float64Array.from(S, (v) => r + entryYr / 12 * v);
+  // ...WON BY WHAT THE TOWN CAN DELIVER (2026-11-25; FORMULA_LEDGER #28). A
+  // firm's capacity in a tender is the hands it has, not the hands it wants:
+  // a buyer re-tendering an order weighs whether the supplier can make it.
+  // The pool was the same 1/TENDER_M of the industry's normalised orders
+  // whatever the town could staff, and a firm's capacity was its WANTED
+  // heads (`staff`: the off-map firms are the industry's wanted employment),
+  // so an industry a fifth short of hands won what a full one did and the
+  // orders drifted back to the opening's share for ever. Measured (4 towns x
+  // 30 years, migration made two-sided): openings 25-29% of the labour
+  // force, populations -11% to -29%, every town short of hands and still
+  // staffing toward its year-one orders. Each industry now wins the tender
+  // in proportion to its staffed share of what it staffs toward, against the
+  // nation's (whose firms carry NAT_OPEN_RATE of openings as a matter of
+  // course): short of hands, it wins less, its orders fall to what it can
+  // staff, and so do its openings.
+  const fill = E.posted?.fill;
+  const can = (i: number) => (fill && Number.isFinite(fill[i]) ? Math.max(0, fill[i]) / (1 - NAT_OPEN_RATE) : 1);
+  const pool = Float64Array.from(S, (v, i) => (r + entryYr / 12 * v) * can(i));
   S.fill(0);
   for (let n = 0; n < nF; n++) {
     const i = F.ind[n];
@@ -1793,7 +1810,9 @@ const RENT_SHARE = 0.06, V_SLOPE = 0.5, PRICE_DUR_M = 9, PRICE_DEMAND = 0.1;
  * trade's capacity by its openings — custom the nation's firms never lose.
  */
 export const NAT_OPEN_RATE = 0.0313;
-export interface Posted { m: number; wage: number; payIdx: number[]; priceRel: number; localShare: number; openings: number; unemp: number; natW: number; wage12?: number }
+export interface Posted { m: number; wage: number; payIdx: number[];
+  /** each industry's staffed share of the heads it staffs toward, last month: what it can deliver of a tender (`tenderOrders`) */
+  fill?: number[]; priceRel: number; localShare: number; openings: number; unemp: number; natW: number; wage12?: number }
 function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Array; earners: Float64Array } | null, spend: Float64Array): void {
   const e = s.econ, F = E.f, nF = E.L.slot.n, m = s.month;
   const natW = Math.max(1e-6, e.natWageIdx ?? e.wageIdx ?? 1);
@@ -1853,6 +1872,7 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
   E.posted = {
     m, wage, payIdx, priceRel: ws > 0 ? wp / ws : 1, localShare: all > 0 ? ws / all : 0,
     openings, unemp: uLoc, natW, wage12: hist.length === 13 ? wage / hist[0] - 1 : undefined,
+    fill: Array.from(open, (o) => 1 - o),
   };
 }
 /**

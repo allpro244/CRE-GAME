@@ -478,13 +478,11 @@ const LEAVE_JOBLESS_M = 0.05 / 12;
  * supply elasticities of about 2-4 by skill; Moretti 2011, Handbook of Labor
  * Economics, surveys) — 3 is taken [S~]. The households that reconsider where
  * they live in a month are the interstate movers, about 2.5% a year (Census
- * CPS; Molloy, Smith & Wozniak 2011) [S]. A working household here moves
- * away at that rate whatever the town pays (every mover re-chooses, and this
- * town is a sliver of the places it weighs: matchJobs step 0, Coen-Pirani
- * 2010); an opening is taken by a household from elsewhere with odds
- * realRel^MOVE_ELAST (at most 1); and a town that pays more than its prices
- * draws that excess, realRel^MOVE_ELAST - 1, of the movers' rate in
- * households that come looking for work.
+ * CPS; Molloy, Smith & Wozniak 2011) [S]: of those, the share that would
+ * rather be elsewhere, 1 - realRel^MOVE_ELAST, leaves; an opening is taken by
+ * a household from elsewhere with odds realRel^MOVE_ELAST (at most 1); and a
+ * town that pays more than its prices draws that excess, realRel^MOVE_ELAST
+ * - 1, of the movers' rate in households that come looking for work.
  */
 const MOVE_M = 0.025 / 12, MOVE_ELAST = 3;
 /**
@@ -2877,43 +2875,28 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   const members: number[][] = Array.from({ length: N_IND }, () => []);
   // a slot is agent i's first earner (3i), second (3i+1) or other adult (3i+2)
   const EMP = () => [r.a!.emp1, r.a!.emp2, r.a!.emp3], IND = () => [r.a!.ind1, r.a!.ind2, r.a!.ind3], WAGE = () => [r.a!.wage1, r.a!.wage2, r.a!.wage3], UN = () => [r.a!.un1, r.a!.un2, r.a!.un3];
-  // 0. A WORKING HOUSEHOLD THAT MOVES AWAY leaves BEFORE the month's market,
-  // so the jobs it held are this month's openings, there for the jobless and
-  // the arrivals like any other. Deciding it after the market (as the jobless
-  // leavers in step 6 are decided: they hold no job) took earners out of an
-  // industry already filled to its heads, a regional household's weight short
-  // every time.
-  //
-  // EVERY MOVER RE-CHOOSES, SO THE OUTFLOW IS THE MOVERS' RATE (2026-11-25).
-  // A household leaving was drawn at MOVE_M x (1 - pull): at parity (pull 1)
-  // nobody left, while the arrivals below still came at MOVE_M x pull. So a
-  // town drew people at parity and kept drawing them when it was WORSE than
-  // elsewhere: measured (4 towns x 30 years, main 01f3066), a town whose pay
-  // bought 7-14% less than the nation's for twenty years (pull 0.86-0.93)
-  // took in ~600 households a year and lost ~200, its population +13% on
-  // flat payrolls. In the same choice the arrivals make, a household that
-  // moves weighs every place, and this town is a sliver of them: it leaves.
-  // So the interstate movers' rate (MOVE_M) leaves whatever the pull, and the
-  // pull works on who comes (the arrivals, `pull` below). That is the
-  // record's shape: across US states gross OUTflow rates vary least, gross
-  // inflow rates most (Coen-Pirani 2010, J. Monetary Econ. 57(7): inflow
-  // dispersion > net > outflow) [S].
+  // 0. A WORKING HOUSEHOLD THAT WOULD RATHER BE WHERE ITS PAY BUYS MORE
+  // (MOVE_ELAST) leaves BEFORE the month's market, so the jobs it held are
+  // this month's openings, there for the jobless and the arrivals like any
+  // other. Deciding it after the market (as the jobless leavers in step 6 are
+  // decided: they hold no job) took earners out of an industry already filled
+  // to its heads, a regional household's weight short every time.
   const pull = Math.pow(Math.max(0.01, hereRel(e)), MOVE_ELAST);
   const leave: number[] = [];
-  if (!SETTLING) {
+  if (pull < 1 && !SETTLING) {
     for (let i = 0; i < n0; i++) {
       if (!(isWorking(a.emp1[i]) || isWorking(a.emp2[i]) || isWorking(a.emp3[i]))) continue;
-      if (!(R.u() < MOVE_M)) continue;
+      if (!(R.u() < MOVE_M * (1 - pull))) continue;
       leave.push(i); r.flow.left = (r.flow.left ?? 0) + a.wt[i];
       for (let k = 0; k < 3; k++) if (EMP()[k][i] !== EMP_NONE) { EMP()[k][i] = EMP_NONE; IND()[k][i] = IND_NONE; WAGE()[k][i] = 0; UN()[k][i] = 0; }
       if (a.ten[i] === TEN_RENT) {
         r.flow.movedOut += a.wt[i];
         noteOut(r, i, "other", () => ({
           n: { here: +pull.toFixed(3), realPay: +realPayRel(e).toFixed(3), fiscalRel: +(e.fiscalRel ?? 1).toFixed(3) },
-          t: `A household left town for elsewhere${[
+          t: `A household left town for elsewhere: ${[
             realPayRel(e) < 1 ? `pay here buys ${((1 - realPayRel(e)) * 100).toFixed(0)}% less than in the nation` : "",
             (e.fiscalRel ?? 1) < 1 ? `the city's services and taxes are worth ${((1 - (e.fiscalRel ?? 1)) * 100).toFixed(1)}% of pay less than at the opening` : "",
-          ].filter(Boolean).map((x, j) => (j ? "; " : ": ") + x).join("") || " (the ordinary churn of interstate movers)"}`,
+          ].filter(Boolean).join("; ")}`,
         }));
       }
     }

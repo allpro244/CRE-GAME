@@ -931,6 +931,8 @@ export interface HouseholdRegister {
     pencil0?: number;
     /** the older tiers' homes the month the mainland opened: with homes0, the stock the supply curve passes through */
     homesB0?: number;
+    /** movers with a job offer turned away for want of a home, still looking: their month, weight and bid (`tickMainland` ladder) */
+    queue?: { m: number; w: number; bid: number }[];
     /** the older stock in vintage tiers, newest first (OLDER_TIERS): homes, going rent and opening rent of each */
     hB?: number[]; aB?: number[]; aB0?: number[] };
   /** Each island block of flats an agent can point at (bbl), append-only. */
@@ -2359,6 +2361,10 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
     if (w === undefined) { if (renter) bid.push({ i, w: 0, wt: a.wt[i], renter }); continue; }
     bid.push({ i, w, wt: a.wt[i], renter });
   }
+  // the applicants turned away this search (`matchJobs`): bidders who hold no home and take none here
+  mk.queue = (mk.queue ?? []).filter((q) => m - q.m <= Math.max(1, Math.ceil(MARKET_M)));
+  // (turned away after last month's ladder: they bid on this one, for a search's length)
+  for (const q of mk.queue) bid.push({ i: -1, w: q.bid, wt: q.w, renter: false });
   bid.sort((p, q) => q.w - p.w);
   let acc = 0, pA = -1;
   const pT = Array(OLDER_TIERS).fill(-1) as number[];
@@ -3266,7 +3272,20 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
       if (!mainRoomFor(r, wR)) {
         const buyRate = ((r.ownBuy ?? 0) + 1) / ((r.ownTry ?? 0) + 2);
         r.ownArr = (r.ownArr ?? 0) + ownShare * buyRate;
-        if (r.ownArr < 1) continue;
+        if (r.ownArr < 1) {
+          // A MOVER TURNED AWAY IS STILL AN APPLICANT (2026-11-25). It has the
+          // offer and is looking for a home: it bids on the region's ladder
+          // for as long as a search runs (MARKET_M), so a region full with a
+          // queue at the door is a landlord's market. Before this a mover with
+          // nowhere to live was no demand at all: measured (town 1, 20 years)
+          // the mainland was full in every month while its rent rose only as
+          // fast as building costs, the builders' pencil sat near the
+          // opening's, and the town's openings rose to a fifth of its jobs.
+          // Its bid is what renters spend (HH_RENT_SHARE0) out of the
+          // offer's pay alone, a lower bound: a partner's pay is not counted.
+          if (r.mk) (r.mk.queue ??= []).push({ m: s.month, w: wR, bid: (HH_RENT_SHARE0 * D.pay[ind]) / 12 });
+          continue;
+        }
         r.ownArr -= 1;
         viaOwn = true;
       }

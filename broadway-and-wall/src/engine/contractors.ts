@@ -56,6 +56,7 @@ import { pushNewsPublic } from "./market";
 import { why, whyNation, whyOnce } from "./why";
 
 const OHP = 0.12, BID_SLOPE = 0.35, BID_SD = 0.06;
+/** Head-office overhead (general and administrative) on what a contractor bills: CFMA's annual survey, ~3-4% of revenue [S] (not a job's general conditions, which RSMeans puts at 5-15% of cost and which sit in the bid). */
 const OVERHEAD = 0.035;
 /** Net margin on repair and service work [S: CFMA, GC net margins 2-3%]. */
 const MAINT_NET = 0.02;

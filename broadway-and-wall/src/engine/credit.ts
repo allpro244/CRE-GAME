@@ -27,7 +27,7 @@ import { purseOf } from "./vehicles";
  * net worth that the bank can call when values fall and your equity with them.
  * The over-advance path below is what makes that a decision rather than a gift.
  */
-export const LOC_LTV = 0.60;      // against net worth
+export const LOC_LTV = 0.60;      // against net worth: the 60% total-leverage covenant public REITs' credit facilities "overwhelmingly" carry (Goodwin, "Senior Credit Facilities for REIT Borrowers", 2025) [S]
 export const LOC_SPREAD = 4.0;    // prime + 400bps
 /** The line's floor over the LOAN index: a commercial bank's five-year fixed mortgage spread (debt.ts product sheet, 1.55). */
 /**

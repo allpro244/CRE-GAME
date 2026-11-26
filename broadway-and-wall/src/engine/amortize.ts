@@ -62,5 +62,10 @@ export function recastPayment(loan: Amortising, month: number): number {
  * eight places (the close, the refi, the cap desk, the purchase card and three
  * UI cells), which is how a card and a close come to disagree.
  */
+// [S~ for 2022-23 only: a 2-year cap at a 4% strike cost 0.39% of a $25M loan
+// in Feb 2022 and 2.28% in Mar 2023 (Chatham data, Commercial Observer,
+// 7 Mar 2023); 0.23% -> 1.04% on a $337.5M loan (Derivative Logic, Commercial
+// Observer, 27 Mar 2023). A cap is an option on the rate: its price moves with
+// the rate's level and volatility, which this constant does not — open.]
 export const CAP_PREMIUM_PCT = 0.0125;
 export const capPremiumOn = (notional: number): number => Math.round(notional * CAP_PREMIUM_PCT);

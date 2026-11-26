@@ -485,6 +485,7 @@ const LEAVE_JOBLESS_M = 0.05 / 12;
  * - 1, of the movers' rate in households that come looking for work.
  */
 const MOVE_M = 0.025 / 12, MOVE_ELAST = 3;
+const MOVERS_FOR_OFFERS = false;
 /**
  * THE REGION'S HOUSING SUPPLY ELASTICITY: how much more housing a metro builds
  * per point its price rises. Saiz (2010, QJE, "The Geographic Determinants of
@@ -2950,10 +2951,9 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // to its heads, a regional household's weight short every time.
   const pull = Math.pow(Math.max(0.01, hereRel(e)), MOVE_ELAST);
   const leave: number[] = [];
-  if (pull < 1 && !SETTLING) {
+  if (!SETTLING) {
     for (let i = 0; i < n0; i++) {
-      if (!(isWorking(a.emp1[i]) || isWorking(a.emp2[i]) || isWorking(a.emp3[i]))) continue;
-      if (!(R.u() < MOVE_M * (1 - pull))) continue;
+      if (!(R.u() < MOVE_M)) continue;
       leave.push(i); r.flow.left = (r.flow.left ?? 0) + a.wt[i];
       for (let k = 0; k < 3; k++) if (EMP()[k][i] !== EMP_NONE) { EMP()[k][i] = EMP_NONE; IND()[k][i] = IND_NONE; WAGE()[k][i] = 0; UN()[k][i] = 0; }
       if (a.ten[i] === TEN_RENT) {
@@ -3334,7 +3334,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   r.arriveAcc = (r.arriveAcc ?? 0) + (SETTLING ? 0 : MOVE_M * Math.min(1, pull) * hhW);
   const slots: number[] = [];
   // (a count of openings is finite and no more than the heads the industry staffs toward: a definition, not a rail)
-  if (!SETTLING) for (let ind = 0; ind < N_IND; ind++) for (let v = Number.isFinite(open[ind]) ? Math.min(open[ind], D.heads[ind]) : 0; v >= wR / 2; v -= wR) slots.push(ind);
+  if (!SETTLING && MOVERS_FOR_OFFERS) for (let ind = 0; ind < N_IND; ind++) for (let v = Number.isFinite(open[ind]) ? Math.min(open[ind], D.heads[ind]) : 0; v >= wR / 2; v -= wR) slots.push(ind);
   const V4 = V.slice();
   for (const ind of shuffle(slots)) {
     {
@@ -4174,13 +4174,15 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   // Read on pay alone, the draw ignored the town's jobless rate: after an
   // arrivals wave left a quarter of its labour force out of work (shock test
   // demand-arrivals-30) it drew job seekers on its pay as before.
-  const draw = D ? MOVE_M * Math.max(0, Math.pow(Math.max(0.01, hereRel(e) * workOdds(e)), MOVE_ELAST) - 1) : 0;
+  const draw = D && !SETTLING ? MOVE_M * Math.pow(Math.max(0.01, hereRel(e) * workOdds(e)), MOVE_ELAST) : 0;
   const wave = e.bsMigPull ?? 0;
   const bsIsland = wave > 0 && e.bsArrivals ? e.bsArrivals.island * Math.min(1, e.bsArrivals.monthly / wave) : 0;
   if ((wave > 0 || draw > 0) && D) {
     let ppl = 0;
     for (let i = 0; i < r.n; i++) ppl += r.a!.wt[i] * (r.a!.adults[i] + r.a!.kids[i]);
-    r.drawAcc = (r.drawAcc ?? 0) + (ppl * draw) / HH_SIZE / Math.max(0.01, r.wRegion);
+    let hh = 0;
+    for (let i = 0; i < r.n; i++) hh += r.a!.wt[i];
+    r.drawAcc = (r.drawAcc ?? 0) + (hh * draw) / Math.max(0.01, r.wRegion);
     const drawn = Math.floor(r.drawAcc);
     r.drawAcc -= drawn;
     if ((e.fiscalRel ?? 1) > 1) whyFiscal(s, e, drawn * r.wRegion, "came");

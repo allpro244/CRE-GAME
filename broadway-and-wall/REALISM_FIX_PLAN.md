@@ -68,6 +68,23 @@ What A4 needs:
    found and is NOT used.
 3. Then builder agents (the remaining formula in #30). Then re-land A2.
 
+### A4 first build (2026-11-26, held back; history on the branch)
+
+Built: each household's own taste for a home of its own (logit, drawn once).
+Slope from Paciorek's 0.121 (FEDS 2013-26, Table 2, read), level and slope
+solved at the opening.
+- **Used as every bid**, it priced the best tier off the top of the taste: the
+  standard rent +67% in a year, 13,000 homes started, a 15,000-home glut.
+- **Moved to the bottom of the ladder only** (the cheapest homes clear at the
+  marginal household's keep-price), it behaves. But the doubled-up queue still
+  grows (1,030 → 3,860): most doubled-up households have no verified pay or
+  deposit and are not in the market at all. Priced out, not outbid.
+- 4 towns × 30 years: jobs −4 to −6 points in three towns (unexplained),
+  unemployment slightly lower. Not landed until the job loss is understood.
+
+The lever for the queue is cheap homes (filtering, the older tiers' supply),
+not the rent at the margin.
+
 ### A6 sources (verified 2026-11-26, from the documents)
 
 The online share today is a logistic toward ONLINE_MAX 0.4. That ceiling was

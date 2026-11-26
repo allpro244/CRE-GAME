@@ -2231,12 +2231,21 @@ function mainRoomFor(r: HouseholdRegister, w: number): boolean {
   // (harness TRACE, town 0, years 9-13) 112-225 homes free while 1,100-3,200
   // movers with offers were turned away and the town shrank. The register's
   // renters across the water are counted as they stand.
+  // (counted once a month — the month's flows are a fresh object — and the
+  // signings since added on: a recount on every call cost a third of the run)
   const a = r.a;
-  let held = 0;
-  if (a) for (let i = 0; i < r.n; i++) if (a.ten[i] === TEN_MAINLAND) held += a.wt[i];
-  else held = mk.occ + mk.signed;
-  return held + w <= mk.homes + (mk.homesB ?? 0) - (mk.idle ?? 0);
+  let base = HELD.get(r.flow);
+  if (!base) {
+    let held = 0;
+    if (a) for (let i = 0; i < r.n; i++) if (a.ten[i] === TEN_MAINLAND) held += a.wt[i];
+    else held = mk.occ;
+    base = { held, signed: mk.signed };
+    HELD.set(r.flow, base);
+  }
+  return base.held + (mk.signed - base.signed) + w <= mk.homes + (mk.homesB ?? 0) - (mk.idle ?? 0);
 }
+/** The renters across the water as counted at the month's first room check, keyed by the month's flows (`mainRoomFor`). */
+const HELD = new WeakMap<object, { held: number; signed: number }>();
 
 /** Census Survey of Construction 2023: months from start to completion, buildings of 5+ units, about 18 [S~]. */
 const MAIN_BUILD_M = 18;

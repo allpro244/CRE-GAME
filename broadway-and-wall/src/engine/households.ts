@@ -478,11 +478,10 @@ const LEAVE_JOBLESS_M = 0.05 / 12;
  * supply elasticities of about 2-4 by skill; Moretti 2011, Handbook of Labor
  * Economics, surveys) — 3 is taken [S~]. The households that reconsider where
  * they live in a month are the interstate movers, about 2.5% a year (Census
- * CPS; Molloy, Smith & Wozniak 2011) [S]: of those, the share that would
- * rather be elsewhere, 1 - realRel^MOVE_ELAST, leaves; an opening is taken by
- * a household from elsewhere with odds realRel^MOVE_ELAST (at most 1); and a
- * town that pays more than its prices draws that excess, realRel^MOVE_ELAST
- * - 1, of the movers' rate in households that come looking for work.
+ * CPS; Molloy, Smith & Wozniak 2011) [S]. Every household re-chooses at that
+ * rate, and this town is a sliver of the places it weighs, so the rate is
+ * its outflow; the nation's movers choose it with odds (realRel x the odds
+ * of work)^MOVE_ELAST, so at parity as many come as go (FORMULA_LEDGER #33).
  */
 const MOVE_M = 0.025 / 12, MOVE_ELAST = 3;
 /**
@@ -986,13 +985,6 @@ export interface HouseholdRegister {
   hhRef?: number;
   /** The region's renters' shelter index, chained, the last thirteen months (`shelterRead`), and the island flats' rent index last month. */
   shelterIdx?: number[]; mfRef?: number; mainRefS?: number;
-  /** Movers from elsewhere this month still to place, short of a whole household of the region's weight (`matchJobs` step 4). */
-  arriveAcc?: number;
-  /** The would-be buyers' share of movers turned away for want of a rental, carried (matchJobs). */
-  ownArr?: number;
-  /** How the movers let in as would-be buyers decided: tried and bought, decaying counts (matchJobs). */
-  ownTry?: number;
-  ownBuy?: number;
   /** This month's move-outs from the player's blocks: the cause-ledger event per block (bbl -> why id). */
   flatWhy?: Record<string, number>;
   /** THE HOUSEHOLDS' YEAR (stage 5), rolled for the cause ledger: spending by category, net income, layoffs, the jobless rate and the wage index; the month each category's fall was last written. */
@@ -2942,18 +2934,20 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   const members: number[][] = Array.from({ length: N_IND }, () => []);
   // a slot is agent i's first earner (3i), second (3i+1) or other adult (3i+2)
   const EMP = () => [r.a!.emp1, r.a!.emp2, r.a!.emp3], IND = () => [r.a!.ind1, r.a!.ind2, r.a!.ind3], WAGE = () => [r.a!.wage1, r.a!.wage2, r.a!.wage3], UN = () => [r.a!.un1, r.a!.un2, r.a!.un3];
-  // 0. A WORKING HOUSEHOLD THAT WOULD RATHER BE WHERE ITS PAY BUYS MORE
-  // (MOVE_ELAST) leaves BEFORE the month's market, so the jobs it held are
+  // 0. EVERY HOUSEHOLD RE-CHOOSES WHERE TO LIVE at the movers' rate (MOVE_M,
+  // FORMULA_LEDGER #33): this town is a sliver of the places it weighs, so
+  // what draws movers here works on arrivals (`draw`, after the market), and
+  // gross outflow rates are the steadiest across places (Coen-Pirani 2010,
+  // JME 57(7)) [S]. It leaves BEFORE the month's market, so the jobs it held are
   // this month's openings, there for the jobless and the arrivals like any
   // other. Deciding it after the market (as the jobless leavers in step 6 are
   // decided: they hold no job) took earners out of an industry already filled
   // to its heads, a regional household's weight short every time.
   const pull = Math.pow(Math.max(0.01, hereRel(e)), MOVE_ELAST);
   const leave: number[] = [];
-  if (pull < 1 && !SETTLING) {
+  if (!SETTLING) {
     for (let i = 0; i < n0; i++) {
-      if (!(isWorking(a.emp1[i]) || isWorking(a.emp2[i]) || isWorking(a.emp3[i]))) continue;
-      if (!(R.u() < MOVE_M * (1 - pull))) continue;
+      if (!(R.u() < MOVE_M)) continue;
       leave.push(i); r.flow.left = (r.flow.left ?? 0) + a.wt[i];
       for (let k = 0; k < 3; k++) if (EMP()[k][i] !== EMP_NONE) { EMP()[k][i] = EMP_NONE; IND()[k][i] = IND_NONE; WAGE()[k][i] = 0; UN()[k][i] = 0; }
       if (a.ten[i] === TEN_RENT) {
@@ -3034,7 +3028,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // of the labour force, restaurants 35% staffed at year 20, and orders the
   // town could not staff were posted as openings for ever. What a firm does
   // not post it does not make: those orders go unserved (economy.ts `served`).
-  let searchW = r.arriveAcc ?? 0;
+  let searchW = 0;
   for (let i = 0; i < r.n; i++) for (let k = 0; k < 3; k++) if (EMP()[k][i] === EMP_UNEMP) searchW += a.wt[i];
   const thN = thetaNat(e), jr = s.economy?.posted?.jr, Hsum = D.heads.reduce((t, h) => t + h, 0);
   let vPosted = 0;
@@ -3279,156 +3273,17 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // the town's jobless still looking, in the order they searched: step 4's first claim
   const still = jobless.filter((sl) => EMP()[sl % 3][(sl / 3) | 0] === EMP_UNEMP);
   let stillAt = 0;
-  // 4. households arriving for the work the town's own people did not take
-  const wR = r.wRegion, H = homeMarket(e);
-  const ageWork = AGE_RENT.slice(0, 5), ageTot = ageWork.reduce((t, x) => t + x, 0);
-  const ageP = ageWork.map((p) => p / ageTot);
-  // ...THE OPENINGS THE TOWN'S OWN PEOPLE HAVE HAD A MONTH TO FILL (step 3):
-  // an opening is posted, the jobless here and the workers looking for a
-  // better job see it first, and a household moves to the region for it only
-  // if it is still open a month on. Filling every opening the month it opened
-  // from outside made each quit a household arriving: measured, the region
-  // grew 17% more people and 23% more jobs in 25 years with quits on than off.
-  // ...BEYOND THE OPENINGS EVERY TOWN HAS (2026-11-13). A labour market at
-  // rest carries openings — the nation's rate, 3.1% of positions (economy.ts
-  // NAT_OPEN_RATE) [S] — and so does the town a mover would leave: what
-  // draws a household across the country is the work here that is not there
-  // too. Offering the movers every month-old opening made the frictional
-  // stock itself a standing invitation, with nobody leaving a town at parity
-  // (step 0): measured with the opening's positions carrying that stock,
-  // town 101, 60-100 households a month arriving on flat jobs, the labour
-  // force +3.5% in three years and unemployment 3.9% to 8.5%. An industry's
-  // openings over the nation's rate of its positions are what the movers see.
-  const open = Float64Array.from(V, (v, i) => Math.max(0, Math.min(v, r.vacLeft?.[i] ?? v) - NAT_OPEN_RATE * D.heads[i]));
-  // ...WHO GETS AN OPENING STILL OPEN A MONTH ON (2026-10-30): whoever
-  // applies — the town's own jobless and the searchers elsewhere who would
-  // move for it, each in proportion to their numbers, so the outsiders' share
-  // of the applications is the nation's unemployment rate against the sum of
-  // the two (each pool read as a rate, the town's and the nation's). At parity
-  // the leftover openings go to the movers below as they did before this
-  // (2 uN / (uN + uL) = 1, held at most 1); where the town's jobless rate runs
-  // over the nation's, the town's own people take a growing share of them
-  // and fewer households move in. Before this, an opening the jobless here
-  // had not drawn in step 3b went to a mover whenever one was coming. The
-  // relative-unemployment pull on in-migration is the Blanchard-Katz (1992)
-  // channel; the applicant-share form is [K].
-  const uN = Math.max(1e-3, e.nat?.unemp ?? 0.05), uL = Math.max(1e-3, e.unemployment ?? uN);
-  const outsiders = Math.min(1, 2 * uN / (uN + uL));
-  // ...AND ONLY AS MANY AS ARE MOVING. The households that take a job across
-  // the country are the interstate movers (MOVE_M, 2.5% of households a year,
-  // Census CPS), and this region gets them in proportion to its households, at
-  // the odds that what its pay buys here is as good as elsewhere (MOVE_ELAST,
-  // `pull` above). This was a draw at those odds on every opening, every month
-  // it stayed open: an opening a month old was offered to the country again,
-  // so the outside supply of workers was without limit at any real pay, the
-  // openings never stayed open long enough to raise pay (the bargained premium, economy.ts
-  // `postPayAndPrices`), and a town whose rents had made it dear kept growing
-  // at 0.8 of the nation's real pay (measured, tools/proof.mjs: jobs x6-x31 a
-  // century). Now the movers are a flow: what they cannot fill stays open,
-  // the firms bid pay up for it, and a town that pays more than its prices
-  // draws more (`draw`, the job seekers, below). Movers this month who find
-  // no opening go elsewhere (the carry is under one household).
-  let hhW = 0, ownW = 0;
-  for (let i = 0; i < r.n; i++) { hhW += r.a!.wt[i]; if (r.a!.ten[i] === TEN_OWN) ownW += r.a!.wt[i]; }
-  const ownShare = hhW > 0 ? ownW / hhW : 0;
-  r.arriveAcc = (r.arriveAcc ?? 0) + (SETTLING ? 0 : MOVE_M * Math.min(1, pull) * hhW);
-  const slots: number[] = [];
-  // (a count of openings is finite and no more than the heads the industry staffs toward: a definition, not a rail)
-  if (!SETTLING) for (let ind = 0; ind < N_IND; ind++) for (let v = Number.isFinite(open[ind]) ? Math.min(open[ind], D.heads[ind]) : 0; v >= wR / 2; v -= wR) slots.push(ind);
-  const V4 = V.slice();
-  for (const ind of shuffle(slots)) {
-    {
-      // (a partner placed below may already have taken this industry's opening; or the month's fills of it are spent, Q_FILL)
-      if (!room(ind, wR)) continue;
-      if (r.arriveAcc < wR / 2) break;
-      // a local's application wins (`outsiders`, above): the opening goes to the town's own jobless
-      if (stillAt < still.length && budget >= r.a!.wt[(still[stillAt] / 3) | 0] / 2 && !(R.u() < outsiders)) {
-        const sl = still[stillAt++], i = (sl / 3) | 0, k = sl % 3, w = r.a!.wt[i];
-        if (room(ind, w)) {
-          const job = bestJob(i, k, ind);
-          if (job) { place(i, k, job); budget -= w; WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * R.n()); continue; }
-        }
-      }
-      // ...AND A MOVER WITH NOWHERE TO LIVE GOES ELSEWHERE (2026-11-12): an
-      // outsider takes the opening only if a home is free for it. It came for
-      // the work whatever the region's housing held and was signed to a flat
-      // that did not exist, then pushed to doubled up — housing supply is what
-      // limits a metro's in-migration (Glaeser & Gyourko 2005, J. Pol. Econ.
-      // 113; Saiz 2010) [S~]. The opening stays open, the firms bid pay up for
-      // it, and the rents a full region charges are what builders build on.
-      // A mover who will buy needs no rental: the region's owners' share of the
-      // movers it turns away still come (a running tally, not a draw), and
-      // decide to buy or rent as any arrival does below.
-      // ...at the rate such movers have actually gone on to buy (ownTry/ownBuy,
-      // a running record), so the ones who would only have doubled up do not come.
-      let viaOwn = false;
-      if (!mainRoomFor(r, wR)) {
-        const buyRate = ((r.ownBuy ?? 0) + 1) / ((r.ownTry ?? 0) + 2);
-        r.ownArr = (r.ownArr ?? 0) + ownShare * buyRate;
-        if (r.ownArr < 1) {
-          // A MOVER TURNED AWAY IS STILL AN APPLICANT (2026-11-25). It has the
-          // offer and is looking for a home: it bids on the region's ladder
-          // for as long as a search runs (MARKET_M), so a region full with a
-          // queue at the door is a landlord's market. Before this a mover with
-          // nowhere to live was no demand at all: measured (town 1, 20 years)
-          // the mainland was full in every month while its rent rose only as
-          // fast as building costs, the builders' pencil sat near the
-          // opening's, and the town's openings rose to a fifth of its jobs.
-          // Its bid is what renters spend (HH_RENT_SHARE0) out of the
-          // offer's pay alone, a lower bound: a partner's pay is not counted.
-          if (r.mk) (r.mk.queue ??= []).push({ m: s.month, w: wR, bid: (HH_RENT_SHARE0 * D.pay[ind]) / 12 });
-          continue;
-        }
-        r.ownArr -= 1;
-        viaOwn = true;
-      }
-      r.arriveAcc -= wR;
-      const i = addAgent(r), b = r.a!;
-      b.wt[i] = wR;
-      const band = pick(R, ageP);
-      b.age[i] = AGE_LO[band] + Math.floor(R.u() * (AGE_HI[band] - AGE_LO[band] + 1));
-      b.adults[i] = 1 + pick(R, ADULTS);
-      drawPartner(R, b, i);
-      b.kids[i] = b.age[i] >= 20 && b.age[i] < 60 ? pick(R, KIDS) : 0;
-      drawKidAges(R, b, i);
-      const f1 = Math.exp(WAGE_SIGMA * R.n() - WAGE_SIGMA * WAGE_SIGMA / 2);
-      b.emp1[i] = firmIn(ind); b.ind1[i] = ind; b.wage1[i] = firmPay(D, ind, b.emp1[i]) * f1;
-      take(ind, wR);
-      if (b.partner[i] === 1 && R.u() < 0.70) {
-        const j = pickInd(wR);
-        const f2 = Math.exp(WAGE_SIGMA * R.n() - WAGE_SIGMA * WAGE_SIGMA / 2);
-        if (j >= 0) { b.emp2[i] = firmIn(j); b.ind2[i] = j; b.wage2[i] = firmPay(D, j, b.emp2[i]) * f2; take(j, wR); }
-        // a partner who left a job to follow the household has no claim here (a voluntary quit: "AN ARRIVAL HAS NO CLAIM HERE", below)
-        else { b.emp2[i] = EMP_UNEMP; b.un2[i] = UI_MONTHS + 1; b.wage2[i] = D.pay[ind] * f2; }
-      }
-      // its other adult (a grown child, a relative) looks for work here too, at the rate for everyone over 16
-      if (othersOf(b, i) > 0 && R.u() < OTHER_LF) {
-        b.emp3[i] = EMP_UNEMP; b.un3[i] = UI_MONTHS + 1;
-        b.wage3[i] = 0.64 * medianIncome(e) * payShare(b, i, 2);
-      }
-      fillMoney(R, b, i, b.wage1[i] + b.wage2[i], false, e);
-      rentOrDouble(r, b, i);
-      r.flow.arrived = (r.flow.arrived ?? 0) + wR;
-      // AN ARRIVAL MAY HAVE OWNED WHERE IT CAME FROM (households stage 2): at
-      // the nation's ownership for its age (OWN_BY_AGE), it sold and brings the
-      // equity, and decides here as any renter does (`buyCheck`, the taste for
-      // owning). Without it every household that came for work came to rent,
-      // and a growing region's ownership fell for ever (measured, 65.6% -> 54%
-      // in fifteen years).
-      if (R.u() < OWN_BY_AGE[ageBand(b.age[i])]) b.sav[i] += EQUITY_PAY * (b.wage1[i] + b.wage2[i]);
-      if (r.ownMu !== undefined) {
-        const c = buyCheck(b, i, H, b.ten[i] === TEN_MAINLAND ? b.rent[i] : mainRentFor(r, b, i));
-        const bought = c !== null && r.ownMu + OWN_SIGMA * R.n() >= c;
-        if (bought) { buyHome(r, b, i, H, s.month); r.flow.bought = (r.flow.bought ?? 0) + wR; }
-        if (viaOwn) {
-          // a long memory of how such movers decide (each record weighs ~1/100 of the last hundred)
-          r.ownTry = 0.99 * (r.ownTry ?? 0) + 1;
-          r.ownBuy = 0.99 * (r.ownBuy ?? 0) + (bought ? 1 : 0);
-        }
-      }
-    }
-  }
-  // ...AND WHAT NO MOVER CAME FOR GOES TO THE TOWN'S OWN JOBLESS (PROOF.md
+  // 4. NO HOUSEHOLD ARRIVES HERE FOR AN OPENING (FORMULA_LEDGER #33, 2026-11-26).
+  // Movers come from the nation's pool by the same choice households make to
+  // leave (after the month's market, `draw`): they land looking for work and
+  // search beside the town's own jobless in next month's matching. Before
+  // this an opening still open a month on was offered to a quota of movers
+  // (MOVE_M x min(1, pull) of the town's households), above the nation's rate
+  // of openings only, to the outsiders' share of applicants (a formula on
+  // relative unemployment, [K]), and only where a home stood free: a stack of
+  // gates that shrank a town at parity (REALISM_FIX_PLAN, A2).
+  const open = Float64Array.from(V, (v, i) => Math.max(0, Math.min(v, r.vacLeft?.[i] ?? v)));
+  // ...AND A MONTH-OLD OPENING GOES TO THE TOWN'S JOBLESS STILL LOOKING (PROOF.md
   // #4). An opening a month old that this month's movers did not fill is
   // still posted, and the town's jobless still looking apply for it: the
   // ones step 3b passed over take the openings left, an industry's in
@@ -3450,7 +3305,7 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
   // the other ~600). A real labour market never empties: search takes time
   // even with jobs to spare (US unemployment has not gone under 3.4% since
   // 1969, with JOLTS layoffs ~1.1% and quits ~2.3% of jobs a month).
-  const left = Float64Array.from(open, (o, ind) => Math.min(V[ind], o - (V4[ind] - V[ind])));
+  const left = Float64Array.from(open, (o, ind) => Math.min(V[ind], o));
   const pickLeft = (w: number) => {
     let t = 0;
     for (let ind = 0; ind < N_IND; ind++) if (left[ind] >= w / 2 && room(ind, w)) t += left[ind];
@@ -3474,7 +3329,6 @@ function matchJobs(s: GameState, R: Rand, r: HouseholdRegister, D: Demand, e: Ec
     place(i, k, job); left[job.ind] -= w; budget -= w;
     WAGE()[k][i] *= Math.exp(-0.03 + 0.08 * R.n());
   }
-  r.arriveAcc = Math.max(0, Math.min(wR, r.arriveAcc));
   r.vacLeft = Array.from(V, (v) => +Math.max(0, v).toFixed(2));
   // 5. THE GOING RATE. An industry's pay bill is its going rate (BEA pay at
   // what its firms posted, D.pay) times its earners; who gets which share of
@@ -4162,9 +4016,12 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   // month) lands as households renting across the water, looking for work —
   // it does not wait for a vacancy or a flat (step 2: the register is the
   // town's people, so this is where the wave lands).
-  // A TOWN WHOSE PAY BUYS MORE THAN ELSEWHERE draws movers the same way, at
-  // the excess of its pull over the movers' rate (MOVE_ELAST), carried month
-  // to month until it makes a whole household of the region's weight.
+  // THE NATION'S MOVERS CHOOSE THIS TOWN (FORMULA_LEDGER #33, 2026-11-26): the
+  // movers' rate of its households (MOVE_M), times its odds against the
+  // nation (MOVE_ELAST) — at parity as many come as leave (step 0) —
+  // carried month to month until it makes a whole household of the region's
+  // weight. (This was only the excess over parity, beside a quota of movers
+  // who came for a month-old opening; one flow now.)
   // ...AT THE ODDS OF FINDING THE WORK (2026-11-03). These movers come with
   // no job, so what the town's pay is worth to them is that pay times their
   // odds of being paid it: the share of the town's labour force in work
@@ -4174,13 +4031,15 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
   // Read on pay alone, the draw ignored the town's jobless rate: after an
   // arrivals wave left a quarter of its labour force out of work (shock test
   // demand-arrivals-30) it drew job seekers on its pay as before.
-  const draw = D ? MOVE_M * Math.max(0, Math.pow(Math.max(0.01, hereRel(e) * workOdds(e)), MOVE_ELAST) - 1) : 0;
+  const draw = D && !SETTLING ? MOVE_M * Math.pow(Math.max(0.01, hereRel(e) * workOdds(e)), MOVE_ELAST) : 0;
   const wave = e.bsMigPull ?? 0;
   const bsIsland = wave > 0 && e.bsArrivals ? e.bsArrivals.island * Math.min(1, e.bsArrivals.monthly / wave) : 0;
   if ((wave > 0 || draw > 0) && D) {
     let ppl = 0;
     for (let i = 0; i < r.n; i++) ppl += r.a!.wt[i] * (r.a!.adults[i] + r.a!.kids[i]);
-    r.drawAcc = (r.drawAcc ?? 0) + (ppl * draw) / HH_SIZE / Math.max(0.01, r.wRegion);
+    let hh = 0;
+    for (let i = 0; i < r.n; i++) hh += r.a!.wt[i];
+    r.drawAcc = (r.drawAcc ?? 0) + (hh * draw) / Math.max(0.01, r.wRegion);
     const drawn = Math.floor(r.drawAcc);
     r.drawAcc -= drawn;
     if ((e.fiscalRel ?? 1) > 1) whyFiscal(s, e, drawn * r.wRegion, "came");
@@ -4205,6 +4064,20 @@ export function tickHouseholdRegister(s: GameState, parcels: ParcelTable): void 
       fillMoney(R, b, i, income, false, e);
       b.wt[i] = r.wRegion; rentOrDouble(r, b, i);
       r.flow.arrived = (r.flow.arrived ?? 0) + r.wRegion;
+      // A MOVER MAY HAVE OWNED WHERE IT CAME FROM (households stage 2): at the
+      // nation's ownership for its age (OWN_BY_AGE), it sold and brings the
+      // equity, and decides here as any renter does (`buyCheck`, the taste
+      // for owning). Without it a growing region's ownership fell for ever
+      // (measured, 65.6% -> 54% in fifteen years). The arrivals swan's
+      // newcomers (the wave, the first agents) come from abroad and own nothing here.
+      if (k >= agents - drawn && R.u() < OWN_BY_AGE[ageBand(b.age[i])]) {
+        b.sav[i] += EQUITY_PAY * income;
+        if (r.ownMu !== undefined) {
+          const Hm = homeMarket(e);
+          const c = buyCheck(b, i, Hm, b.ten[i] === TEN_MAINLAND ? b.rent[i] : mainRentFor(r, b, i));
+          if (c !== null && r.ownMu + OWN_SIGMA * R.n() >= c) { buyHome(r, b, i, Hm, s.month); r.flow.bought = (r.flow.bought ?? 0) + r.wRegion; }
+        }
+      }
       // THE ARRIVALS SWAN'S NEWCOMERS GO WHERE THEIR COMMUNITY IS (blackswans.ts
       // ARRIVALS_CORE): that share of the swan's part of the wave arrives with
       // a taste for the island that wants a flat there at the going rent, net

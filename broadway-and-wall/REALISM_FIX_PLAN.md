@@ -9,8 +9,8 @@ Measured by `pnpm mechanism` and the ledger:
 |---|---|---|
 | coins (decisions by dice) | 25 | 0 |
 | draws inside the city | 242 | 0, or moved to outside shocks |
-| unsourced constants | 259 | 0 (sourced or derived) |
-| FORMULA_LEDGER rows open | 5 (#28 #29 #30 #31 #33) | 0 |
+| unsourced constants | 259 (2026-11-26: 250) | 0 (sourced or derived) |
+| FORMULA_LEDGER rows open | 5 (#28 #29 #30 #31 #33); 2026-11-26: 4 (#33 closed) | 0 |
 | load-bearing rails | ~25 (last counted 2026-08) | 0 |
 
 Outputs are not targets (`tools/econprobe/realism-score.mjs` is a smoke alarm).
@@ -27,13 +27,13 @@ Outputs are not targets (`tools/econprobe/realism-score.mjs` is a smoke alarm).
 
 | # | piece | depends on | state |
 |---|---|---|---|
-| A0 | **One-month identity harness** (done: #867, first catch fixed #868) (`tools/econprobe/identities.mjs`, seconds): per industry, hires = filled − separations − quits − retirements − deaths; households = homes occupied + doubled-up; arrivals − departures = net migration; vacancies posted vs staffing gap; money in = money out. Run on any town at any month. | — | **next** |
+| A0 | **One-month identity harness** (done: #867, first catch fixed #868) (`tools/econprobe/identities.mjs`, seconds): per industry, hires = filled − separations − quits − retirements − deaths; households = homes occupied + doubled-up; arrivals − departures = net migration; vacancies posted vs staffing gap; money in = money out. Run on any town at any month. | — | **done** |
 | A1 | **Labour market: search and matching** (Phase D step 2) | A0 | **landed (v2)** — see Phase D, step 2, second build |
-| A2 | Migration two-sided (Phase D finding 1) | A1, **A4** | re-applied on A1 and reverted again: free homes go first to the region's own doubled-up queue, so departures are replaced locally and the town shrinks (town 0: employment 40.5k → 34k) until housing answers |
+| A2 | Migration two-sided, as a national pool of movers (#33) | A1 | **built 2026-11-26** (fifth attempt): one flow, every household leaves at the movers' rate and the nation's movers choose the town on (real pay × odds of work)^3; they land jobless and search here. The gate stack (quota, openings above the nation's rate, outsiders' share, room check) is gone. 4 towns × 30 yr: jobs −6% (−7% before); the 30-year job decline is not migration's |
 | A3 | National orders won on staffed capacity (#28; finding 10) | A1 | **landed** (#871); #28 stays open (a fully staffed town still drifts to its opening share) |
 | A4 | **Rents that price scarcity**, then supply by builder agents | A1 | **diagnosed** (below) |
 | A5 | New-house price from closed sales (#29) | A4 | to plan |
-| A6 | Online share per spending category, sourced reach (#31) | A0 | built, measuring |
+| A6 | Online share per spending category, sourced reach (#31) | A0 | **landed** (#880); #31 stays open for a per-household channel choice |
 | A7 | Re-count load-bearing rails (`tools/rail-audit.mjs`, ~15 min), then remove what A1–A6 leave | A1–A6 | to do |
 
 ### A4 diagnosis (2026-11-26)

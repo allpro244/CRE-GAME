@@ -2152,21 +2152,28 @@ function mainWill(r: HouseholdRegister, a: HouseholdArrays, i: number): number |
   // Ortalo-Magné 2011, RED: a constant expenditure share; the ACS median the
   // opening's incomes are solved to, HH_RENT_SHARE0) [S]. The screen stays
   // the landlord's limit where a lease is signed.
-  // ...AND WHAT IT WOULD PAY RATHER THAN DOUBLE UP IS ITS OWN (2026-11-26).
-  // Every household bid the same three tenths, so the only spread in the bids
-  // was the spread of incomes, and a household doubled up the moment the rent
-  // passed three tenths of its pay. Measured (town 0, 20 years), the
-  // doubled-up queue grew 790 -> 4,240 while real rent FELL: a shortage the
-  // price never saw. Living with family answers rent only weakly: +12
-  // points of probability per log point of metro rent for adults, +20 for
-  // 18-30s (Paciorek, FEDS 2013-26, Tables 2-3; Real Estate Economics 2016)
-  // [S]. So each household has its own taste for a home of its own (a logit
-  // term, drawn once), and rents rather than doubles up while
-  // HOME_MFX-scaled log rent-to-income is under that taste: its bid is the
-  // rent at which the two are equal. Level and slope are solved once at the
-  // opening (`calibrateHomeTaste`): the slope gives Paciorek's response at
-  // the opening's doubled-up share, the level reproduces that share.
-  if (r.homeB === undefined || r.homeA === undefined) return (HH_RENT_SHARE0 * inc) / 12;
+  void r;
+  return (HH_RENT_SHARE0 * inc) / 12;
+}
+/**
+ * WHAT IT WOULD PAY RATHER THAN DOUBLE UP (2026-11-26): its own, not a share.
+ * Which home a household can afford is income at what renters spend
+ * (`mainWill`, the tiers' prices); WHETHER it rents at all, against doubling
+ * up, is its own taste for a home of its own (a logit term, drawn once).
+ * Every household doubled up the moment the rent passed three tenths of its
+ * pay, so a shortage never moved the price: measured (town 0, 20 years) the
+ * doubled-up queue grew 790 -> 4,240 while real rent FELL. Living with
+ * family answers rent only weakly: +12 points of probability per log point of
+ * metro rent for adults, +20 for 18-30s (Paciorek, FEDS 2013-26, Tables 2-3;
+ * Real Estate Economics 2016) [S]. Level and slope solved once at the opening
+ * (`calibrateHomeTaste`). The cheapest homes clear at what the marginal
+ * household would pay to keep a home of its own (`tickMainland`).
+ * (Used as every bid, it priced the best homes off the top of that taste:
+ * the standard rent +67% in a year and 13,000 homes started.)
+ */
+function mainKeep(r: HouseholdRegister, a: HouseholdArrays, i: number): number | undefined {
+  const inc = verifiedPay(a, i);
+  if (!(inc > 0) || r.homeB === undefined || r.homeA === undefined) return undefined;
   if (Number.isNaN(a.homeTaste[i])) a.homeTaste[i] = gumbel(hash01(`home:${a.id[i]}:a`)) - gumbel(hash01(`home:${a.id[i]}:b`));
   return (inc / 12) * Math.exp((r.homeA + a.homeTaste[i]) / r.homeB);
 }
@@ -2508,6 +2515,24 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
   for (let tr = 0; tr < OLDER_TIERS; tr++) {
     const floorT = MAIN_OPEX * aB0[tr] * (cost / mk.cost0);
     aB[tr] = Math.min(tr === 0 ? r.mainRent : aB[tr - 1], Math.max(floorT, pT[tr] >= 0 ? pT[tr] : last));
+  }
+  // THE CHEAPEST HOMES CLEAR WHERE THE LAST HOUSEHOLD KEEPING A HOME WOULD
+  // RATHER DOUBLE UP (`mainKeep`): with more households wanting a home than
+  // there are homes, the rent at the bottom rises to the keep-price of the
+  // household at the margin, and every tier above is at least as dear.
+  if (r.homeB !== undefined) {
+    const keep: { k: number; w: number }[] = [];
+    for (const b of bid) { if (b.i < 0) { keep.push({ k: b.w, w: b.wt }); continue; } const k = mainKeep(r, a, b.i); if (k !== undefined) keep.push({ k, w: b.wt }); }
+    keep.sort((p, q) => q.k - p.k);
+    const homesAll = priceA + priceT.reduce((t, x) => t + x, 0);
+    let c = 0, clear = -1;
+    for (const x of keep) { c += x.w; if (c >= homesAll) { clear = x.k; break; } }
+    if (clear > 0) {
+      const lastT = OLDER_TIERS - 1;
+      aB[lastT] = Math.max(aB[lastT], clear);
+      for (let tr = lastT - 1; tr >= 0; tr--) aB[tr] = Math.max(aB[tr], aB[tr + 1]);
+      r.mainRent = Math.max(r.mainRent, aB[0]);
+    }
   }
   mk.askB = aB[Math.floor(OLDER_TIERS / 2)];
   if (opening) for (let i = 0; i < r.n; i++) if (a.ten[i] === TEN_MAINLAND) a.rent[i] = mainRentFor(r, a, i);

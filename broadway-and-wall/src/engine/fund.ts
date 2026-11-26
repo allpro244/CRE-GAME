@@ -48,7 +48,7 @@ export const FUND_INVEST_M = 60;
 /** Fund life (months). [S~: closed-end real estate funds usually run about ten years (Altus Group, "How are real estate funds structured"); IREI sponsor report 2026 puts wind-down at 5-12 years.] */
 export const FUND_LIFE_M = 120;
 
-/** GP co-invest as share of commitments. Shape: 2–5% practice; mid. */
+/** GP co-invest as share of commitments: 3.5% average across 1,503 private-equity funds (UNC Institute for Private Capital, "Do GP Commitments Matter?") [S~: private equity, no real-estate-specific figure found; 2-5% practice]. */
 export const FUND_GP_COINVEST = 0.03;
 
 export interface PlayerFund {

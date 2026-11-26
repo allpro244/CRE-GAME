@@ -154,6 +154,15 @@ point on the curve is not known. Options:
 The owner's call. The category split itself (removing ONLINE_GOODS [K]) is
 ready.
 
+### Constants that disagree with their sources (found 2026-11-26; each needs its own measured change)
+
+| constant | ours | source says | note |
+|---|---|---|---|
+| `SF_PER_JOB` industrial / retail (market.ts) | 550 / 420 sf | warehouse ~2,400, retail (non-mall) ~1,600, malls ~690–990 sf per worker (EIA CBECS 2018, Table B2) | CBECS counts gross building area per worker, but 3–5× is far beyond that. Sets demand per job and the opening's jobs (`jobs0` = stock / sf per job), so a change re-sizes every town. |
+| `SPEC_COST_PSF` office (leasing.ts) | $31.5 | spec suite $80–110/sf CBD (Cushman & Wakefield, 2023); US average fit-out $162/sf (C&W Fit Out Cost Guide 2026) | $31.5 is shell-space level. The TI-allowance comment beside it ($15–40) is dated too. |
+| `NORMAL_NIM` bank (lenders.ts) | 4.1 | industry 3.39%, community banks 3.77% (FDIC Quarterly Banking Profile, Q4 2025) | The "Cordage sheet" it cites could not be checked. |
+| `CAP_PREMIUM_PCT` | 1.25% | 0.2–0.4% (2022) to 1–2.3% (2023) | Should be priced as an option on rates. |
+
 ### Track B: the audit grind (parallel, small PRs, does not touch Track A's files)
 
 Lists: `node tools/mechanism-audit.mjs --list coin|draw|unsourced`. For each site:

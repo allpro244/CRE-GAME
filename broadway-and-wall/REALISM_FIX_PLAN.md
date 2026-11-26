@@ -68,6 +68,27 @@ What A4 needs:
    found and is NOT used.
 3. Then builder agents (the remaining formula in #30). Then re-land A2.
 
+### A6 sources (verified 2026-11-26, from the documents)
+
+The online share today is a logistic toward ONLINE_MAX 0.4. That ceiling was
+chosen because 0.5 "saturated by year 60 in a playthrough", which makes it a
+rail. Around it sit three [K] constants. What to build instead is each
+spending category's channel choice (logit) on price, toward that category's
+own long-run reach.
+
+| item | value | source |
+|---|---|---|
+| total online share of US retail | 0.9% (Q3 2000), 5.3% (Q4 2010), 16.6% (2024), 17.9% SA (Q3 2026) | Census Quarterly E-Commerce Report; tsnotadjustedsales.xlsx |
+| online share by category, 2022 (2015) | electronics 48.8% (24.3); furniture 48.7% (22.4); clothing 35.9% (19.1); sporting/toys/books 47.0% (30.5); grocery 6.5% (1.4); health ≥12.4% (6.8) | Census ARTS 2022 benchmarked, ecommerce.xlsx + ecommerce4541.xlsx (calculated; general-merchandise stores sit outside the denominators, so these run high) |
+| price elasticity of buying online | −1.2 to −1.4 (Amazon, all); −3.9 big-ticket | Baugh, Ben-David & Park, NBER w20052 |
+| | ≈ −2 (eBay) | Einav, Knoepfle, Levin & Sundaresan 2014 AER |
+| | 2.3–3.5 (1997, early adopters: an upper bound) | Goolsbee 2000, working-paper §IV |
+| rent ÷ sales, retail | all 1.42%; furniture 4.0%; hobby/books 4.2%; electronics 2.0%; health 1.8%; building materials 1.3%; general merchandise 0.65% | Census ARTS 2022 bes.xlsx (paid rent only) |
+
+So a shop's rent premium moves its price little (rent is 1–5% of sales), and
+online's reach is a property of the category. The national adoption path is
+an outside input (technology), and the town's deviation from it is price.
+
 ### Track B: the audit grind (parallel, small PRs, does not touch Track A's files)
 
 Lists: `node tools/mechanism-audit.mjs --list coin|draw|unsourced`. For each site:

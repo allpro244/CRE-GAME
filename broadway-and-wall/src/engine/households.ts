@@ -77,8 +77,6 @@ import { HH_SIZE, INCOME_SIGMA, TAX_INS, DTI, COMMUTE, REF_HOME, medianIncome, m
 import { why, whyOnce, whyAt } from "./why";
 import { RE_ALLOC, SAVERS } from "./investors";
 import { whyIndustry, whyFirmLoss, firmNamesOf, whyTown, NAT_OPEN_RATE } from "./economy";
-import { gumbel } from "./tenantMarket";
-import { hash01 } from "./competitorTraits";
 import { INDUSTRIES, INDUSTRY_IDS, N_IND, COMP_PER_WORKER_2023, PAY_SPLIT, type SpendCategory } from "./industries";
 
 // STAGE 1b (2026-10-28): THE REGISTER'S EARNERS ARE THE FIRMS' PAYROLL.
@@ -859,13 +857,11 @@ const FIELDS = {
   bufM: Float32Array,
   // 1: it lost its home across the water for want of a home, not of money (the ladder's last rung), and takes the next one free (`readyToRent`)
   disp: Uint8Array,
-  // its taste for a home of its own over doubling up, logit units (`mainWill`; NaN until drawn)
-  homeTaste: Float32Array,
 } as const;
 /** A child's age the register has not drawn yet (a save from before stage 4). [M: a sentinel code — the largest Uint8.] */
 const KID_UNKNOWN = 255;
 /** Columns a save from before them does not carry, and what they hold then. [M: the sentinel codes above, not quantities.] */
-const FIELD_DEFAULT: Partial<Record<keyof typeof FIELDS, number>> = { ind1: IND_NONE, ind2: IND_NONE, emp3: EMP_NONE, ind3: IND_NONE, taste: NaN, kOld: 255, kYoung: 255, partner: 255, oAge: 255, bufM: NaN, disp: 0, homeTaste: NaN };
+const FIELD_DEFAULT: Partial<Record<keyof typeof FIELDS, number>> = { ind1: IND_NONE, ind2: IND_NONE, emp3: EMP_NONE, ind3: IND_NONE, taste: NaN, kOld: 255, kYoung: 255, partner: 255, oAge: 255, bufM: NaN, disp: 0 };
 type FieldName = keyof typeof FIELDS;
 export type HouseholdArrays = { [K in FieldName]: InstanceType<(typeof FIELDS)[K]> };
 const FIELD_NAMES = Object.keys(FIELDS) as FieldName[];
@@ -976,8 +972,6 @@ export interface HouseholdRegister {
   firmHc?: Record<number, number>; layoffWhy?: Record<number, number>;
   /** Each industry's openings still unfilled at the end of last month's matching: what a household may move to the region for. */
   vacLeft?: number[];
-  /** the own-home choice's level and slope, solved once at the opening (`calibrateHomeTaste`) */
-  homeA?: number; homeB?: number;
   /** the vacancies the town's firms posted this month (search and matching, matchJobs) */
   vacPosted?: number;
   /** The town's normal labour-market tightness (last month's month-end openings per jobless at the month's matching), learned over twenty years (MATCH_ETA). */
@@ -1294,7 +1288,7 @@ function addAgent(r: HouseholdRegister): number {
   for (const k of FIELD_NAMES) (a[k] as Uint8Array)[i] = 0;
   a.id[i] = r.nextId++;
   a.blk[i] = -1; a.emp1[i] = EMP_NONE; a.emp2[i] = EMP_NONE; a.emp3[i] = EMP_NONE;
-  a.ind1[i] = IND_NONE; a.ind2[i] = IND_NONE; a.ind3[i] = IND_NONE; a.taste[i] = NaN; a.bufM[i] = NaN; a.homeTaste[i] = NaN;
+  a.ind1[i] = IND_NONE; a.ind2[i] = IND_NONE; a.ind3[i] = IND_NONE; a.taste[i] = NaN; a.bufM[i] = NaN;
   return i;
 }
 
@@ -2152,56 +2146,8 @@ function mainWill(r: HouseholdRegister, a: HouseholdArrays, i: number): number |
   // Ortalo-Magné 2011, RED: a constant expenditure share; the ACS median the
   // opening's incomes are solved to, HH_RENT_SHARE0) [S]. The screen stays
   // the landlord's limit where a lease is signed.
-  // ...AND WHAT IT WOULD PAY RATHER THAN DOUBLE UP IS ITS OWN (2026-11-26).
-  // Every household bid the same three tenths, so the only spread in the bids
-  // was the spread of incomes, and a household doubled up the moment the rent
-  // passed three tenths of its pay. Measured (town 0, 20 years), the
-  // doubled-up queue grew 790 -> 4,240 while real rent FELL: a shortage the
-  // price never saw. Living with family answers rent only weakly: +12
-  // points of probability per log point of metro rent for adults, +20 for
-  // 18-30s (Paciorek, FEDS 2013-26, Tables 2-3; Real Estate Economics 2016)
-  // [S]. So each household has its own taste for a home of its own (a logit
-  // term, drawn once), and rents rather than doubles up while
-  // HOME_MFX-scaled log rent-to-income is under that taste: its bid is the
-  // rent at which the two are equal. Level and slope are solved once at the
-  // opening (`calibrateHomeTaste`): the slope gives Paciorek's response at
-  // the opening's doubled-up share, the level reproduces that share.
-  if (r.homeB === undefined || r.homeA === undefined) return (HH_RENT_SHARE0 * inc) / 12;
-  if (Number.isNaN(a.homeTaste[i])) a.homeTaste[i] = gumbel(hash01(`home:${a.id[i]}:a`)) - gumbel(hash01(`home:${a.id[i]}:b`));
-  return (inc / 12) * Math.exp((r.homeA + a.homeTaste[i]) / r.homeB);
-}
-/**
- * HOW HARD LIVING WITH FAMILY ANSWERS RENT: the marginal effect of log metro
- * rent on the probability an adult lives with family, long run, Census 1980
- * and 2000 — 0.121 (Paciorek, FEDS 2013-26, Table 2) [S].
- */
-const HOME_MFX = 0.121;
-/**
- * THE OWN-HOME CHOICE, SOLVED ONCE (`mainWill`). P(double up) = F(b·ln(R/y) - a),
- * F logistic. b = HOME_MFX / (P0(1 - P0)) gives Paciorek's response at the
- * opening's doubled-up share P0 (of the households renting or doubled up
- * across the water); a is the level that reproduces P0 at the rents and pay
- * the opening has. [M: both solved from the opening; nothing tuned.]
- */
-function calibrateHomeTaste(r: HouseholdRegister): void {
-  const a = r.a!;
-  let wD = 0, wR = 0;
-  const pts: { y: number; R: number; w: number }[] = [];
-  for (let i = 0; i < r.n; i++) {
-    const t = a.ten[i];
-    if (t !== TEN_DOUBLED && t !== TEN_MAINLAND) continue;
-    if (t === TEN_DOUBLED) wD += a.wt[i]; else wR += a.wt[i];
-    const y = verifiedPay(a, i);
-    if (!(y > 0)) continue;
-    pts.push({ y: y / 12, R: t === TEN_MAINLAND && a.rent[i] > 0 ? a.rent[i] : mainRentFor(r, a, i), w: a.wt[i] });
-  }
-  const P0 = wD / Math.max(1e-9, wD + wR);
-  if (!(P0 >= 0.01) || pts.length < 50) return;      // nothing to read a share off yet: wait a month
-  const b = HOME_MFX / (P0 * (1 - P0));
-  const share = (aa: number) => { let n = 0, d = 0; for (const p of pts) { n += p.w / (1 + Math.exp(-(b * Math.log(p.R / p.y) - aa))); d += p.w; } return n / d; };
-  let lo = -50, hi = 50;
-  for (let k = 0; k < 60; k++) { const mid = (lo + hi) / 2; if (share(mid) > P0) lo = mid; else hi = mid; }
-  r.homeB = b; r.homeA = (lo + hi) / 2;
+  void r;
+  return (HH_RENT_SHARE0 * inc) / 12;
 }
 /** The rent a household signs or renews a mainland flat at: the standard's going rent if it is among those the standard homes go to, else the older stock's, at what its pay carries. */
 function mainRentFor(r: HouseholdRegister, a: HouseholdArrays, i: number): number {
@@ -2455,7 +2401,6 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
   // Who doubles up still reads the homes standing (roomA, roomB).
   const priceA = Math.max(0, mk.homes - onMarket * mk.homes / Math.max(1, all));
   const priceT = hB.map((h) => Math.max(0, h - onMarket * h / Math.max(1, all)));
-  if (r.homeB === undefined) calibrateHomeTaste(r);
   // the ladder: renters and looking households by what they would pay
   const bid: { i: number; w: number; wt: number; renter: boolean }[] = [];
   for (let i = 0; i < r.n; i++) {

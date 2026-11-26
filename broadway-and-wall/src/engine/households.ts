@@ -2434,10 +2434,7 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
   for (const b of bid) {
     acc += b.wt;
     if (b.renter) accR += b.wt;
-    // (a mover with an offer, turned away last month, competes for a home on
-    // the same terms as a household already here: landlords let to the
-    // applicant, not the address)
-    accIn += b.wt;
+    if (b.i >= 0) accIn += b.wt;
     if (b.w > 0) lastPos = b.w;
     if (pA < 0 && acc >= priceA) pA = b.w > 0 ? b.w : lastPos;
     for (let tr = 0; tr < OLDER_TIERS; tr++) if (pT[tr] < 0 && acc >= cumT[tr]) pT[tr] = b.w > 0 ? b.w : lastPos;

@@ -3088,12 +3088,20 @@ export function exclusiveFeeRate(h: Holding | undefined): number | undefined {
 // and rent it turnkey. It leases faster, it leases at a premium, and it
 // carries the risk that you have just spent eighty dollars a foot on space
 // nobody wants.
-// Priced against TI_ASK, not against nothing. A tenant's allowance runs
-// $15-40/sf on an office suite; pre-building the same space costs rather more
-// per foot, because you are doing the whole job to a generic spec rather than
-// contributing to theirs — and because you are doing it before anyone has
-// signed. The premium over the allowance is what you pay for speed.
-export const SPEC_COST_PSF: Record<string, number> = { office: 31.5, retail: 17, industrial: 5.9, multifamily: 0 };
+// What pre-building costs, in today's national dollars (the cost index's
+// base; 2026-11-26, it was office 31.5 and retail 17, a shell-space level):
+//   office  $95: an owner's spec suite $80-110/sf against $30-50 for shell,
+//           Class A CBD (Cushman & Wakefield, "The Rise of Spec Suites in
+//           Music City", 2023) [S]; a full tenant fit-out runs $162 hard cost
+//           nationally (C&W Office Fit Out Cost Guide Americas 2026) [S],
+//           and a generic suite does less of the job;
+//   retail  $80: a landlord's vanilla shell in an existing building $70-90/sf
+//           (ICSC, March 2023, one broker's estimate) [S~];
+//   industrial $5.9: no benchmark found for a speculative shed build-out
+//           [K: judgement, no source found].
+// The premium over the allowance a tenant would get (TI_ASK) is what you pay
+// for speed.
+export const SPEC_COST_PSF: Record<string, number> = { office: 95, retail: 80, industrial: 5.9, multifamily: 0 };
 export const SPEC_MONTHS = 4;
 
 export function specSuiteQuote(s: GameState, rec: ParcelRecord, h: Holding, use: BuiltClass, sf: number) {

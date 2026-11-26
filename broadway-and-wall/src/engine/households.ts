@@ -2428,10 +2428,11 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
   // homes' rent was a household bidding $0 and the rent sat on the
   // running-cost floor (seed 31337, every month from the third). The rent is
   // the lowest bid of a household that is bidding.
-  let lastPos = 0, accR = 0;
+  let lastPos = 0, accR = 0, accIn = 0;
   for (const b of bid) {
     acc += b.wt;
     if (b.renter) accR += b.wt;
+    if (b.i >= 0) accIn += b.wt;
     if (b.w > 0) lastPos = b.w;
     if (pA < 0 && acc >= priceA) pA = b.w > 0 ? b.w : lastPos;
     for (let tr = 0; tr < OLDER_TIERS; tr++) if (pT[tr] < 0 && acc >= cumT[tr]) pT[tr] = b.w > 0 ? b.w : lastPos;
@@ -2444,8 +2445,21 @@ function tickMainland(r: HouseholdRegister, e: Econ, m: number): void {
     // households ready (pensions, the bumped: `readyToRent`), measured over
     // four towns, 50 years, the mainland's homes went 6-10% empty to 15-31%
     // while the doubled-up fell only 2-5 points.
-    if (accR > roomA + roomB && b.renter) { a.ten[b.i] = TEN_DOUBLED; a.rent[b.i] = 0; a.blk[b.i] = -1; a.disp[b.i] = 1; occ -= b.wt; }
+    // ...AND A HOME GOES TO WHOEVER BIDS FOR IT WHEN ITS LEASE COMES UP
+    // (2026-11-26). Counting only sitting renters, a household already in the
+    // region with work and a deposit could set the price but never take a home
+    // from one paying less: measured (town 0, year 16) 1,831 doubled-up
+    // households ready to rent, median pay $61k, waited while the cheapest
+    // homes let at $518 a month (10% of their pay). The renters ranked past
+    // the homes among everyone here ready to rent (`accIn`: not the movers
+    // still elsewhere, the queue) give way at renewal; the ready doubled-up
+    // take the homes they leave (step 2, `readyToRent`), which the room count
+    // now sees (HELD is re-read after the ladder: counted before it, the homes
+    // it freed read as held and stood empty — the 15-31% the note above
+    // records).
+    if (accIn > roomA + roomB && b.renter) { a.ten[b.i] = TEN_DOUBLED; a.rent[b.i] = 0; a.blk[b.i] = -1; a.disp[b.i] = 1; occ -= b.wt; }
   }
+  HELD.delete(r.flow);
   // fewer bidders than homes: the last bid sets the rent, down to the running-cost floor
   const last = lastPos;
   r.mainRent = Math.max(floorA, pA >= 0 ? pA : last);

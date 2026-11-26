@@ -304,7 +304,21 @@ const CREDIT_MEMORY_M = 120;
 const ONLINE_0 = 0.02;      // share of store-type sales online at the opening (US 2000)
 const ONLINE_MAX = 0.4;     // the most of it that can ship (2026-10-17: 0.5 saturated by year 60 in a playthrough)
 const ONLINE_TECH = 10;     // logit points per log point of technology: ~11% at year 20 (US 2019), ~24% at 30, ~37% at 50
-const ONLINE_COST = 1.5;    // logit points per log point of a shop's rent over a shed's [K: judgement, no source found]
+/**
+ * HOW HARD A SHOP'S RENT PUSHES BUYING ONLINE, logit points per log point of a
+ * shop's real rent over a shed's (2026-11-26; it was 1.5 [K]). Rent is a small
+ * part of what a shop charges: lease and rental payments are 1.42% of US
+ * retail sales (Census ARTS 2022, Detailed Operating Expenses / sales) [S],
+ * so a log point of shop rent moves its prices about 0.014 log points. Buying
+ * online answers the store's price with an elasticity of about 1.5 (Amazon
+ * purchases -1.2 to -1.4 to sales tax, Baugh, Ben-David & Park, NBER w20052;
+ * eBay about -2, Einav, Knoepfle, Levin & Sundaresan 2014 AER) [S]. In the
+ * logit below that is 1.5 / (1 - s) per log point of price — s the online
+ * share, under a fifth for most of a century, so about 1.6 [D] — times 0.0142.
+ * At 1.5 a shop's rent drove the online shift some 65 times harder than the
+ * evidence: the high street's rent could empty it on its own.
+ */
+const ONLINE_COST = 1.6 * 0.0142;
 const ONLINE_GOODS = 0.4;   // share of retail floor selling shippable goods [K: judgement, no source found]
 const ONLINE_SHED = 0.8;    // shed floor gained per unit of online share [K: judgement, no source found]
 const MANUF_FX = 0.1;       // share of factory floor sent abroad a year per unit of log dear dollar [K: judgement, no source found]

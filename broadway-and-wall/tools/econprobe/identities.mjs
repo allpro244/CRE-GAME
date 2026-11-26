@@ -65,14 +65,15 @@ for (let m = 0; m < HZ; m++) {
   for (let i = 0; i < N; i++) { sumE += earners[i]; if (!fin(earners[i]) || earners[i] < 0) breach(m + 1, `earners[${IDS[i]}] = ${earners[i]}`); }
   if (Math.abs(sumE - L.employed) > Math.max(r.wRegion ?? 1, 0.01 * L.employed)) breach(m + 1, `industries' earners ${sumE.toFixed(0)} vs register employed ${L.employed.toFixed(0)}`);
   const mk = r.mk;
+  let mainRenters = 0;
+  for (let i = 0; i < r.n; i++) if (r.a.ten[i] === E.TEN_MAINLAND) mainRenters += r.a.wt[i];
   if (mk) {
     // a home being made ready between tenants (`idle`) holds nobody; the
     // households counted are the register's actual renters across the water
     // (the market's own tally, occ + signed, adds signings during the month
     // but not departures, so it runs a little high by construction)
     const homes = mk.homes + (mk.homesB ?? 0) - (mk.idle ?? 0);
-    let used = 0;
-    for (let i = 0; i < r.n; i++) if (r.a.ten[i] === E.TEN_MAINLAND) used += r.a.wt[i];
+    const used = mainRenters;
     if (!fin(homes) || homes < 0) breach(m + 1, `mainland homes = ${homes}`);
     if (used > homes + (r.wRegion ?? 1)) { overfullM++; worstOver = Math.max(worstOver, used - homes); }
   }
@@ -94,7 +95,7 @@ for (let m = 0; m < HZ; m++) {
     acc.layoffs = (acc.layoffs ?? 0) + (f.layoffs ?? 0);
     if (process.env.TRACE) {
       const dE = earners.reduce((t, x) => t + x, 0) - prevEarners.reduce((t, x) => t + x, 0);
-      console.log(`  m${String(m + 1).padStart(3)} hires ${(f.filled ?? 0).toFixed(0).padStart(5)} left ${((f.filled ?? 0) - dE).toFixed(0).padStart(5)} employed ${L.employed.toFixed(0).padStart(6)} unemployed ${L.unemployed.toFixed(0).padStart(5)} (${(100 * e.unemployment).toFixed(1)}%) openings ${(100 * (e.jobVac ?? 0)).toFixed(1)}% wanted ${Ec.emp.reduce((t, x) => t + x, 0).toFixed(0)} arrived ${(f.arrived ?? 0).toFixed(0)} left-town ${(f.left ?? 0).toFixed(0)} | nat u ${(100 * (e.nat?.unemp ?? NaN)).toFixed(1)}% pay/nat ${((e.wageIdx ?? 1) / (e.natWageIdx ?? e.wageIdx ?? 1)).toFixed(3)} cpi/nat ${((e.cpi ?? 1) / (e.natCpi ?? e.cpi ?? 1)).toFixed(3)}`);
+      console.log(`  m${String(m + 1).padStart(3)} hires ${(f.filled ?? 0).toFixed(0).padStart(5)} left ${((f.filled ?? 0) - dE).toFixed(0).padStart(5)} employed ${L.employed.toFixed(0).padStart(6)} unemployed ${L.unemployed.toFixed(0).padStart(5)} (${(100 * e.unemployment).toFixed(1)}%) openings ${(100 * (e.jobVac ?? 0)).toFixed(1)}% wanted ${Ec.emp.reduce((t, x) => t + x, 0).toFixed(0)} arrived ${(f.arrived ?? 0).toFixed(0)} left-town ${(f.left ?? 0).toFixed(0)} | nat u ${(100 * (e.nat?.unemp ?? NaN)).toFixed(1)}% pay/nat ${((e.wageIdx ?? 1) / (e.natWageIdx ?? e.wageIdx ?? 1)).toFixed(3)} cpi/nat ${((e.cpi ?? 1) / (e.natCpi ?? e.cpi ?? 1)).toFixed(3)} | main free ${mk ? (mk.homes + (mk.homesB ?? 0) - (mk.idle ?? 0) - mainRenters).toFixed(0) : "-"} queue ${mk?.queue ? mk.queue.reduce((t, q) => t + q.w, 0).toFixed(0) : 0} island vac ${(100 * (e.cityVac?.multifamily ?? NaN)).toFixed(1)}% dbl ${L.doubled?.toFixed?.(0) ?? "-"}`);
     }
   }
   prevEarners = Float64Array.from(earners); prevPersons = L.persons;

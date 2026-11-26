@@ -299,7 +299,11 @@ const BOOK_SPREAD: Record<LenderKind, number> = { bank: 1.9, life: 1.4, conduit:
 // it). Funded off the long index it read a 0.7-point margin on a 3-point
 // business whenever the curve was steep. Its ordinary margin is the sheet
 // less that: 3.0.
-const NORMAL_NIM: Record<LenderKind, number> = { bank: 4.1, life: 1.7, conduit: 1.6, fund: 3.0 };
+// A BANK'S ORDINARY MARGIN is a community bank's: 3.77% in Q4 2025, the
+// industry's 3.39% (FDIC Quarterly Banking Profile, Q4 2025) [S]. It was 4.1
+// with no source (2026-11-26). For a bank it is the "normal" the bank profile
+// reads its margin against; it does not price a loan.
+const NORMAL_NIM: Record<LenderKind, number> = { bank: 3.77, life: 1.7, conduit: 1.6, fund: 3.0 };
 /**
  * WHAT IT COSTS TO RUN THE DESK, % of book a year, and what the government
  * takes (2026-10-13). Net income was interest less funding less charge-offs,
@@ -365,7 +369,7 @@ export function lenderConstitution(l: Lender): {
   return {
     target: k.capitalRatio, wholesale: k.wholesale, brittle: k.brittle, adc: k.adc ?? 0,
     opexPct: OPEX_PCT[l.kind] ?? 0, taxRate: TAX_RATE[l.kind] ?? 0,
-    bookSpread: BOOK_SPREAD[l.kind] ?? 1.9, normalNim: NORMAL_NIM[l.kind] ?? 4.1,
+    bookSpread: BOOK_SPREAD[l.kind] ?? 1.9, normalNim: NORMAL_NIM[l.kind] ?? NORMAL_NIM.bank,
   };
 }
 
@@ -1379,7 +1383,7 @@ export function tickLenders(s: GameState) {
     // freely while it earns that, and rations in proportion as the margin
     // falls short of it [shape stated: proportional, floored at a quarter,
     // the old curve's floor]. It was the margin over a "normal" margin for
-    // the kind (NORMAL_NIM: bank 4.1, life 1.7 …) through a fitted line.
+    // the kind (NORMAL_NIM: bank 3.77, life 1.7 …) through a fitted line.
     const coe = ((e.indexRate ?? 5) + (EQUITY_BETA[l.kind] ?? 0.5) * EQUITY_PREMIUM_PTS) / 100;
     const eqCharge = l.kind === "fund" ? 0 : 100 * coe * k.capitalRatio / Math.max(0.5, 1 - (TAX_RATE[l.kind] ?? 0));
     const breakEven = (OPEX_PCT[l.kind] ?? 0) + expectedLoss(l, "income") + eqCharge;

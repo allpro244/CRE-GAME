@@ -27,8 +27,8 @@ Outputs are not targets (`tools/econprobe/realism-score.mjs` is a smoke alarm).
 
 | # | piece | depends on | state |
 |---|---|---|---|
-| A0 | **One-month identity harness** (`tools/econprobe/identities.mjs`, seconds): per industry, hires = filled − separations − quits − retirements − deaths; households = homes occupied + doubled-up; arrivals − departures = net migration; vacancies posted vs staffing gap; money in = money out. Run on any town at any month. | — | **next** |
-| A1 | **Labour market: search and matching** (Phase D step 2) | A0 | planned; first attempt reverted (#865) |
+| A0 | **One-month identity harness** (done: #867, first catch fixed #868) (`tools/econprobe/identities.mjs`, seconds): per industry, hires = filled − separations − quits − retirements − deaths; households = homes occupied + doubled-up; arrivals − departures = net migration; vacancies posted vs staffing gap; money in = money out. Run on any town at any month. | — | **next** |
+| A1 | **Labour market: search and matching** (Phase D step 2) | A0 | **landed (v2)** — see Phase D, step 2, second build |
 | A2 | Migration two-sided (Phase D finding 1) | A1 | built, reverted until A1 |
 | A3 | National orders won on staffed capacity (#28; finding 10) | A1 | built, reverted until A1 |
 | A4 | Housing supply by builder agents (#30's remaining formula) | A2 | to plan |
@@ -396,6 +396,45 @@ Lessons for the next attempt:
 4. **Develop with a one-month, one-town harness**: hires vs separations by
    industry, vacancies vs gap, the filling rate. Use 30-year runs only to
    confirm.
+
+*Second build (v2, 2026-11-26, landed).* Developed against the harness's
+monthly trace (`TRACE=1`), not 30-year endpoints. Three faults found that way,
+each in under ten minutes:
+1. **Job value in dollars grew with inflation**, so pay ran away (pay/nat
+   1.02 → 2.49 by year 20).
+2. **In real terms, AVERAGE EBITDA per head fell** with fixed costs over fewer
+   heads, so pay sank (0.71×) while a fifth of jobs went unfilled.
+3. **Bargaining on the firms' theoretical tightness** left pay flat while the
+   measured tightness ran 4× the nation's.
+
+What landed:
+- vacancies by free entry, θ* = θ_nat·jr^(1/(1−η)), with jr = a hire's
+  MARGINAL surplus per $ of output (P(1−tax) − inputs − comp·W) over the
+  industry's operating-surplus share (BEA);
+- vacancies allocated by staffing gap, at month-START units (× (1 + q));
+- the elastic filling rate;
+- Nash pay on the town's MEASURED tightness (month-end openings over the
+  jobless), β = 1 − MATCH_ETA, c/w from COST_PER_HIRE_M (Manning);
+- `V_SLOPE` deleted; openings published as the month-end stock; the movers'
+  slot list guarded.
+
+Town 0, 20 years: employment 42–44.5k, unemployment 4.4–7.6%, openings
+3.5–7%, pay up to 1.26× the nation's in the tight years and back to 1.11×.
+
+4 towns × 30 years against main `dce542a`:
+
+| | main | A1 |
+|---|---|---|
+| openings at year 30 | 10–17% | 4.5–7.1% |
+| jobs vs opening | −11% to +9% | −12% to −5% |
+| local unemployment, mean | ~5.5% | 6.5% (one town 9.3% at year 30) |
+| population | −5% to +14% | −7% to +5% |
+
+Openings are realistic and population no longer grows without jobs. Fewer
+orders get staffed: firms no longer count hires they could never make. Both
+openings and unemployment sit a little above normal, which suggests mismatch
+(which industries post vs who is looking). Look at that next, by industry, in
+the harness.
 
 *Risks.* The model is known to be volatile when z is near productivity (HM).
 J here comes from the engine's own margins, so check its level before trusting

@@ -87,7 +87,7 @@ import {
   WAGE_CURVE, WAGE_GAP_HALF_M, U_UP_SPEED, U_DOWN_SPEED,
 } from "./market";
 import { HARD_COST_PSF, SOFT_COST, CONTINGENCY, constructionTypeMult } from "./value";
-import { householdMoney, registerPayroll, registerLabour, unpackHouseholds, whyHouseholdSpend } from "./households";
+import { householdMoney, registerPayroll, registerLabour, unpackHouseholds, whyHouseholdSpend, MATCH_ETA, Q_FILL, thetaNat } from "./households";
 import { why, whyOnce, whyNation, whyTenantBooks } from "./why";
 import { tenantHeads } from "./tenantMarket";
 
@@ -1751,8 +1751,8 @@ export function migrateEconomy(s: GameState): void {
  *   - the town's slack: the register's unemployment against the nation's, at
  *     the wage curve's elasticity, -0.10 (Blanchflower & Oswald 1994) [S];
  *   - its industry's openings: the heads its industry staffs to that the
- *     register has not filled, V_SLOPE [K: a point of unfilled jobs adds half
- *     a point to the posted premium — firms short of hands outbid each other];
+ *     register has not filled: the bargained premium on the market's
+ *     tightness (COST_PER_HIRE_M; the Nash wage, below);
  *   - its own ability to pay: rent sharing, RENT_SHARE of its margin over its
  *     industry's (Card, Cardoso, Heining & Kline 2018: an elasticity of pay to
  *     a firm's surplus of 0.05-0.15) [S~];
@@ -1780,7 +1780,16 @@ export function migrateEconomy(s: GameState): void {
  * household-spending-weighted average of its industries'; market.ts reads
  * them into the CPI at the share of the household basket bought in town.
  */
-const RENT_SHARE = 0.06, V_SLOPE = 0.5, PRICE_DUR_M = 9, PRICE_DEMAND = 0.1;
+const RENT_SHARE = 0.06, PRICE_DUR_M = 9, PRICE_DEMAND = 0.1;
+/**
+ * WHAT A HIRE COSTS, in months of the new hire's pay: recruiting and training,
+ * 0.5-1 month in the surveys (Manning 2011, Handbook of Labor Economics 4B,
+ * Table 2: Oi, Brown et al. 55-118% of monthly pay, Dube et al. 72%) [S]; the
+ * middle is taken. With the filling rate (Q_FILL) it is the vacancy's monthly
+ * cost over pay, c/w = COST_PER_HIRE_M x Q_FILL, the Nash wage's tightness
+ * term (`postPayAndPrices`).
+ */
+const COST_PER_HIRE_M = 0.75;
 /**
  * THE NATION'S OPENINGS RATE: JOLTS total nonfarm job openings over openings
  * plus employment, 2001-2019 mean 3.13% (FRED JTSJOR, monthly) [S]. The pay
@@ -1789,11 +1798,13 @@ const RENT_SHARE = 0.06, V_SLOPE = 0.5, PRICE_DUR_M = 9, PRICE_DEMAND = 0.1;
  * employment, so it already carries the nation's openings, and the nation's
  * pay is set at the nation's openings. With openings counted as JOLTS counts
  * them (households.ts Q_FILL), reading them against zero paid every industry a
- * permanent premium of V_SLOPE x 3.1% over the nation and cut every local
+ * permanent premium of half a point per point x 3.1% over the nation and cut every local
  * trade's capacity by its openings — custom the nation's firms never lose.
  */
 export const NAT_OPEN_RATE = 0.0313;
-export interface Posted { m: number; wage: number; payIdx: number[]; priceRel: number; localShare: number; openings: number; unemp: number; natW: number; wage12?: number }
+export interface Posted { m: number; wage: number; payIdx: number[];
+  /** each industry's surplus per head over the opening's: J/J0, the job value free entry posts vacancies on (households.ts matchJobs) */
+  jr?: number[]; priceRel: number; localShare: number; openings: number; unemp: number; natW: number; wage12?: number }
 function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Array; earners: Float64Array } | null, spend: Float64Array): void {
   const e = s.econ, F = E.f, nF = E.L.slot.n, m = s.month;
   const natW = Math.max(1e-6, e.natWageIdx ?? e.wageIdx ?? 1);
@@ -1809,6 +1820,33 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
     open[i] = want > 0 ? Math.max(0, want - have) / want : 0;
     openings += Math.max(0, want - have); jobs += want;
   }
+  // EACH INDUSTRY'S JOB VALUE, MARGINAL AND REAL (2026-11-26). What a firm
+  // weighs when it posts a vacancy is what one more hire adds: the margin on
+  // the output a head makes, at the firm's price against the nation's, less
+  // the inputs it takes (bought at national prices) and its pay against the
+  // nation's — per $ of output, P(1 - tax) - (1 - comp - gos - tax) - comp·W,
+  // which at the nation's price and pay is the industry's own operating
+  // surplus share (BEA, industries.ts `comp`, `gos`, `prodTax`) [S]. Its ratio to that is J/J_nat.
+  // (Read off the books' average EBITDA per head instead, in dollars, it grew
+  // with the price level and pay ran away to 2.5x the nation's; in real terms,
+  // the average fell with fixed costs over fewer heads and pay sank to 0.71x
+  // while a fifth of the jobs the orders called for went unfilled — measured,
+  // town 0, harness TRACE. A hire is worth its margin, not the average.)
+  const thN = thetaNat(e);
+  // THE TOWN'S TIGHTNESS, MEASURED: the openings left at last month's end over
+  // the town's jobless (households.ts vacLeft; the register's labour). A
+  // worker's side of the bargain is the market it can walk into, not the one
+  // its firm's margins would justify (Pissarides 2000: w rises with θ).
+  const vLeft = s.households?.vacLeft;
+  const thLoc = vLeft?.length && lab && lab.unemployed > 0 ? vLeft.reduce((t, v) => t + v, 0) / lab.unemployed : thN;
+  const pS = new Float64Array(N_IND), wS = new Float64Array(N_IND), hS = new Float64Array(N_IND);
+  for (let n = 0; n < nF; n++) { const i = F.ind[n], h = Math.max(0, F.hc[n]); pS[i] += h * (F.price[n] > 0 ? F.price[n] : 1); wS[i] += h * F.pay[n] / natW; hS[i] += h; }
+  const jrI = Array.from(pS, (_, i) => {
+    const I = INDUSTRIES[INDUSTRY_IDS[i]];
+    if (!(hS[i] > 0) || !(I.gos > 0)) return 1;
+    const P = pS[i] / hS[i], W = wS[i] / hS[i];
+    return Math.max(0, P * (1 - I.prodTax) - (1 - I.comp - I.gos - I.prodTax) - I.comp * W) / I.gos;
+  });
   const close = 1 - Math.exp(-Math.LN2 / WAGE_GAP_HALF_M);
   const slack = WAGE_CURVE * Math.log(Math.max(0.01, uLoc) / Math.max(0.01, uNat));
   const prevNat = E.posted?.natW ?? natW;
@@ -1820,7 +1858,14 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
     // ---- pay
     const rel = Math.log(Math.max(1e-6, F.pay[n]) / prevNat);
     const margin = F.rev[n] > 0 ? F.ebitda[n] / F.rev[n] : I.gos;
-    const target = slack + V_SLOPE * (open[i] - NAT_OPEN_RATE) + RENT_SHARE * (margin - I.gos);
+    // THE BARGAINED PREMIUM (2026-11-25; it replaced V_SLOPE [K], half a
+    // point of pay per point of the staffing gap). The Nash wage rises with
+    // the market's tightness, w = (1-β)z + β(p + cθ) (Pissarides 2000): the
+    // town's premium over the nation's is β·(c/w)·(θ - θ_nat), at the
+    // tightness its firms post at (θ* = θ_nat·(J/J0)^(1/(1-η)), households.ts
+    // matchJobs), with β = 1 - MATCH_ETA (the Hosios condition; Shimer 2005
+    // calibrates 0.72) [S] and c/w from the cost of a hire (COST_PER_HIRE_M).
+    const target = slack + (1 - MATCH_ETA) * COST_PER_HIRE_M * Q_FILL * (thLoc - thN) + RENT_SHARE * (margin - I.gos);
     let next = natW * Math.exp(rel + (target - rel) * close);
     if (next < F.pay[n]) { F.owe[n] += Math.log(F.pay[n] / next); next = F.pay[n]; }
     else if (F.owe[n] > 0) {
@@ -1853,6 +1898,7 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
   E.posted = {
     m, wage, payIdx, priceRel: ws > 0 ? wp / ws : 1, localShare: all > 0 ? ws / all : 0,
     openings, unemp: uLoc, natW, wage12: hist.length === 13 ? wage / hist[0] - 1 : undefined,
+    jr: jrI,
   };
 }
 /**

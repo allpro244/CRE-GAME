@@ -112,6 +112,7 @@ const DEBT_ADJ_M = 36;
 const IND_GOV = INDUSTRY_INDEX[IND_ID_GOV], IND_CON = INDUSTRY_INDEX[IND_ID_CON], IND_INS = INDUSTRY_INDEX[IND_ID_INS];
 const IND_ONLINE = INDUSTRY_INDEX[IND_ID_ONLINE];
 const IND_RETAIL = RETAIL_IDS.map((k) => INDUSTRY_INDEX[k]);
+const IS_RETAIL = (() => { const a = new Uint8Array(N_IND); for (const r of IND_RETAIL) a[r] = 1; return a; })();
 /** The care industries and each one's share of a health dollar (industries.ts HEALTH_SPLIT). */
 const IND_HEALTH = (Object.entries(HEALTH_SPLIT) as [IndustryId, number][]).map(([k, w]) => [INDUSTRY_INDEX[k], w] as const);
 /** Industries with no firm in the metro (industries.ts `where`): always bought from out of town. */
@@ -397,23 +398,28 @@ function perHead(w: number) {
  * Removed.) With `cat` null, a dollar of the national basket (the
  * multiplier's marginal dollar when the register has not spent yet).
  */
-function spendVector(online: number, cat: Record<SpendCategory, number> | null): { v: Float64Array; total: number } {
+function spendVector(online: OnlineShares, cat: Record<SpendCategory, number> | null): { v: Float64Array; total: number } {
   const v = new Float64Array(N_IND);
   const w = cat ?? SPEND_SHARE;
   let total = 0;
   for (const c of Object.keys(SPEND_BRIDGE) as SpendCategory[]) {
     const sh = w[c] ?? 0;
     total += sh;
+    // the online share of a shop's margin is earned by a seller shipping from
+    // a shed: groceries' share for the grocery dollar, goods' for the goods one
+    const o = c === "groceries" ? online.groceries : c === "goods" ? online.goods : 0;
     for (const [k, x] of Object.entries(SPEND_BRIDGE[c])) {
       if (k === "primary") continue;
-      v[INDUSTRY_INDEX[k as IndustryId]] += sh * (x ?? 0);
+      const i = INDUSTRY_INDEX[k as IndustryId], d = sh * (x ?? 0);
+      if (o > 0 && IS_RETAIL[i]) { v[i] += d * (1 - o); v[IND_ONLINE] += d * o; } else v[i] += d;
     }
   }
-  // the online share of a shop's margin is earned by a seller shipping from a shed
-  const o = Math.max(0, Math.min(1, online));
-  for (const r of IND_RETAIL) { const moved = v[r] * o; v[r] -= moved; v[IND_ONLINE] += moved; }
   return { v, total };
 }
+type OnlineShares = { goods: number; groceries: number };
+/** The shares the market keeps (market.ts ONLINE); before it has, one share for both. */
+const onlineOf = (e: { online?: number; onlineCat?: OnlineShares }): OnlineShares =>
+  e.onlineCat ?? { goods: Math.max(0, Math.min(1, e.online ?? 0)), groceries: Math.max(0, Math.min(1, e.online ?? 0)) };
 
 /** Each industry's own purchases per $ of its output: bought locally, and leaking out (imports and primary goods). */
 function inputSplit(rpc: readonly number[]) {
@@ -1320,7 +1326,7 @@ export function tickEconomy(s: GameState): void {
 
   // ---- 3. final demand
   const C = hm.spend;
-  const sv = spendVector(e.online ?? 0, hm.spendCat);
+  const sv = spendVector(onlineOf(e), hm.spendCat);
   const G = heads[IND_GOV] * opw[IND_GOV];
   let firmRent = 0, comp = 0;
   for (let n = 0; n < nF; n++) { firmRent += rentOf(n); comp += wagesOf(n); }
@@ -2190,7 +2196,7 @@ export function economyMultipliers(s: GameState): { outputI: number; outputII: n
   const mpc = net > 0 ? hm.spend / net : 0;
   const taxR = gross > 0 ? hm.tax / gross : 0;
   // the marginal dollar is spent in the mix the town's households spent this month
-  const svc = spendVector(s.econ.online ?? 0, hm.spend > 0 ? hm.spendCat : null);
+  const svc = spendVector(onlineOf(s.econ), hm.spend > 0 ? hm.spendCat : null);
   const sv = svc.v.map((x) => x / Math.max(1e-12, svc.total));
   const X = Float64Array.from(E.last.buy.map((b) => b[4]));
   const xs = X.reduce((a, v) => a + v, 0);

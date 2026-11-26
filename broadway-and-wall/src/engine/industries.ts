@@ -286,6 +286,8 @@ export const SPEND_SHARE: Record<SpendCategory, number> = (() => {
   const tot = Object.values(CE_2023).reduce((a, x) => a + x, 0);
   return Object.fromEntries(Object.entries(CE_2023).map(([k, v]) => [k, v / tot])) as Record<SpendCategory, number>;
 })();
+/** Groceries' share of what households spend in shops (CE 2023, groceries over groceries and goods) [D]: weighs the two online shares into one (market.ts ONLINE). */
+export const ONLINE_GROCERY_W = CE_2023.groceries / (CE_2023.groceries + CE_2023.goods);
 type Bridge = Partial<Record<IndustryId | "primary", number>>;
 const GROCERY: readonly IndustryId[] = ["food", "farms", "forestry"];
 const GOODS: readonly IndustryId[] = [
@@ -380,7 +382,7 @@ export function floorOf(i: IndustryId): Floor {
  * and its mix must not. An industry on another class's floor (a wholesaler's
  * office), or one with no figure, takes the class's mean.
  */
-const FLOOR_MEAN: Record<Floor, number> = (() => {
+export const FLOOR_MEAN: Record<Floor, number> = (() => {
   const acc: Record<Floor, [number, number]> = { office: [0, 0], retail: [0, 0], industrial: [0, 0] };
   for (const k of INDUSTRY_IDS) {
     const I = INDUSTRIES[k];

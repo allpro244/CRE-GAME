@@ -56,7 +56,7 @@ import type { BuiltClass, Econ, GameState } from "./types";
 import { liveDemand, useOccupancy, resolveRec } from "./value";
 import { START_YEAR } from "./types";
 import { mixOf, type UseMix } from "./mix";
-import { SECTORS, INDUSTRY_LABEL } from "./market";
+import { SECTORS, INDUSTRY_LABEL, SF_PER_JOB } from "./market";
 import { BUILT_CLASSES, type Sector } from "./types";
 import { voidContract } from "./acquire";
 import { tableVersion } from "./tableVersion";
@@ -356,9 +356,9 @@ const M_PER_DEG_LAT = 111_320;
  */
 function contribution(cls: BuiltClass, sf: number): { j: number; r: number; a: number } {
   switch (cls) {
-    case "office":      return { j: sf / 230, r: 0, a: 0 };
-    case "industrial":  return { j: sf / 550, r: 0, a: 0 };
-    case "retail":      return { j: sf / 420, r: 0, a: sf };
+    case "office":      return { j: sf / SF_PER_JOB.office, r: 0, a: 0 };
+    case "industrial":  return { j: sf / SF_PER_JOB.industrial, r: 0, a: 0 };
+    case "retail":      return { j: sf / SF_PER_JOB.retail, r: 0, a: sf };
     case "multifamily": return { j: 0, r: sf / 900, a: 0 };
   }
 }
@@ -1164,9 +1164,9 @@ export function tickDemand(s: GameState, parcels: ParcelTable) {
         for (let e = flat.start[q], end = flat.start[q + 1]; e < end; e++) {
           const sf = flat.vals[e] * w;
           switch (flat.codes[e]) {
-            case 0: j += sf / 230; break;
-            case 1: j += sf / 550; break;
-            case 2: j += sf / 420; a += sf; break;
+            case 0: j += sf / SF_PER_JOB.office; break;
+            case 1: j += sf / SF_PER_JOB.industrial; break;
+            case 2: j += sf / SF_PER_JOB.retail; a += sf; break;
             default: r += sf / 900; break;
           }
         }

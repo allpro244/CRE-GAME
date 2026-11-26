@@ -1833,6 +1833,12 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
   // while a fifth of the jobs the orders called for went unfilled — measured,
   // town 0, harness TRACE. A hire is worth its margin, not the average.)
   const thN = thetaNat(e);
+  // THE TOWN'S TIGHTNESS, MEASURED: the openings left at last month's end over
+  // the town's jobless (households.ts vacLeft; the register's labour). A
+  // worker's side of the bargain is the market it can walk into, not the one
+  // its firm's margins would justify (Pissarides 2000: w rises with θ).
+  const vLeft = s.households?.vacLeft;
+  const thLoc = vLeft?.length && lab && lab.unemployed > 0 ? vLeft.reduce((t, v) => t + v, 0) / lab.unemployed : thN;
   const pS = new Float64Array(N_IND), wS = new Float64Array(N_IND), hS = new Float64Array(N_IND);
   for (let n = 0; n < nF; n++) { const i = F.ind[n], h = Math.max(0, F.hc[n]); pS[i] += h * (F.price[n] > 0 ? F.price[n] : 1); wS[i] += h * F.pay[n] / natW; hS[i] += h; }
   const jrI = Array.from(pS, (_, i) => {
@@ -1859,8 +1865,7 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
     // tightness its firms post at (θ* = θ_nat·(J/J0)^(1/(1-η)), households.ts
     // matchJobs), with β = 1 - MATCH_ETA (the Hosios condition; Shimer 2005
     // calibrates 0.72) [S] and c/w from the cost of a hire (COST_PER_HIRE_M).
-    const th = thN * Math.pow(Math.max(0, jrI[i]), 1 / (1 - MATCH_ETA));
-    const target = slack + (1 - MATCH_ETA) * COST_PER_HIRE_M * Q_FILL * (th - thN) + RENT_SHARE * (margin - I.gos);
+    const target = slack + (1 - MATCH_ETA) * COST_PER_HIRE_M * Q_FILL * (thLoc - thN) + RENT_SHARE * (margin - I.gos);
     let next = natW * Math.exp(rel + (target - rel) * close);
     if (next < F.pay[n]) { F.owe[n] += Math.log(F.pay[n] / next); next = F.pay[n]; }
     else if (F.owe[n] > 0) {

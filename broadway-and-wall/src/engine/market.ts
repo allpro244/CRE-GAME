@@ -6,7 +6,7 @@ import { leaseUpMonthsOf } from "./proforma";
 import { tickBands } from "./bands";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, EconHistoryPoint, FirmBook, GameState, MarketPhase, NewsItem, Sector } from "./types";
-import { OFF_FLOOR_SHARE_NAT, INDUSTRY_IDS } from "./industries";
+import { OFF_FLOOR_SHARE_NAT, INDUSTRY_IDS, FLOOR_MEAN } from "./industries";
 import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert } from "./types";
 import { tickStreetTenants } from "./tenantBooks";
 import { SHED_MOVE } from "./streetRolls";
@@ -1161,7 +1161,14 @@ export const CONSTRUCTION_CLOSE_M = 2;
  * March 2012), so office's 230 sits at the 2010 figure; shops and sheds
  * still have no occupier-count source.
  */
-export const SF_PER_JOB: Record<BuiltClass, number> = { office: 230, industrial: 550, retail: 420, multifamily: 0 };
+// ONE QUANTITY, ONE ANSWER (2026-11-26). The class's feet a worker are the
+// industries' own (industries.ts `sfPerWorker`, CBRE / BOMA occupier surveys
+// and the industry sources in its header), on-floor and worker-weighted
+// (`FLOOR_MEAN`) [D]. They were set here by hand — 230 / 550 / 420 — while
+// the industry table said 203 / 1,070 / 481: two answers to how many feet a
+// worker takes, the shed's by half. `sfMix` scales each industry against
+// this mean, so an industry's feet a head are now exactly its own figure.
+export const SF_PER_JOB: Record<BuiltClass, number> = { office: FLOOR_MEAN.office, industrial: FLOOR_MEAN.industrial, retail: FLOOR_MEAN.retail, multifamily: 0 };
 /** Share of the population in the labour force. See the note at the unemployment term.
  *  BLS CPS labour force 163.5M over Census resident population 330.5M = 49.5%
  *  in 2019; 50.5% in 2000 (FRED CLF16OV / POPTHM) [S]. It read 0.58, which no

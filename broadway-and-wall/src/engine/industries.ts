@@ -380,7 +380,7 @@ export function floorOf(i: IndustryId): Floor {
  * and its mix must not. An industry on another class's floor (a wholesaler's
  * office), or one with no figure, takes the class's mean.
  */
-const FLOOR_MEAN: Record<Floor, number> = (() => {
+export const FLOOR_MEAN: Record<Floor, number> = (() => {
   const acc: Record<Floor, [number, number]> = { office: [0, 0], retail: [0, 0], industrial: [0, 0] };
   for (const k of INDUSTRY_IDS) {
     const I = INDUSTRIES[k];

@@ -31,7 +31,7 @@ import type { ParcelTable } from "@/data/types";
 import type { GameState } from "./types";
 import { monthLabel } from "./types";
 import { regionRoadPlan, type RegionRoadPlan } from "@/citygen/index.mjs";
-import { rng } from "./market";
+import { rng, SF_PER_JOB } from "./market";
 import { resolveRec, assetValue, initialCondition, farmUsePsf, taxRate } from "./value";
 import { COMMUTE, NEW_BUYER_MULT, medianIncome, HH_SIZE } from "./homeprice";
 
@@ -82,7 +82,7 @@ const QRFM: Record<"industrial" | "retail" | "office", { van: number; truck: num
 };
 const TRUCK_EXTERNAL = 0.5;
 /** Square feet a worker takes, by class (market.ts SF_PER_JOB). */
-const SF_PER_JOB = { office: 230, retail: 420, industrial: 550 } as const;
+// (SF_PER_JOB: the engine's own, not a copy — market.ts)
 /**
  * THE DESIGN YEAR. A road is designed for the traffic it will carry twenty
  * years after it opens (AASHTO, A Policy on Geometric Design of Highways and

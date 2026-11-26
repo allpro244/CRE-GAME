@@ -127,6 +127,33 @@ So a shop's rent premium moves its price little (rent is 1–5% of sales), and
 online's reach is a property of the category. The national adoption path is
 an outside input (technology), and the town's deviation from it is price.
 
+### A6 design, ready but waiting on one question (2026-11-26)
+
+Online share per spending category, from the engine's own spend bridge:
+goods are 69.8% of the retail margin and groceries 30.2%. Today ONE share
+moves both.
+
+**Calibration [D]:**
+- the goods–groceries logit gap is 1.088, from Census 2022: total 13.9%,
+  groceries 6.5%, so goods (0.139 − 0.302 × 0.065) / 0.698 = 17.1%;
+- the intercepts reproduce ONLINE_0 = 2% at the opening;
+- the technology slope (9.19) reproduces the existing anchor of ~11% at year
+  20.
+
+**Path without a ceiling:** aggregate 11% at year 20, ~16% at year 24 (Census
+2024: 16.6%), 24% at 30, 64% at 50, 91% at 70.
+
+**The question:** what limits online's reach in the long run? Today
+ONLINE_MAX = 0.4 caps it, a rail chosen from a playthrough. Removing it
+empties the high street in century games on a guess. No country has passed
+roughly 30–40% online yet (UK, Korea, China); whether that is a plateau or a
+point on the curve is not known. Options:
+(a) source a per-category saturation from international data;
+(b) keep a ceiling, stated as a judgement;
+(c) leave it unbounded.
+The owner's call. The category split itself (removing ONLINE_GOODS [K]) is
+ready.
+
 ### Track B: the audit grind (parallel, small PRs, does not touch Track A's files)
 
 Lists: `node tools/mechanism-audit.mjs --list coin|draw|unsourced`. For each site:

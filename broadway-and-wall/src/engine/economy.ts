@@ -252,8 +252,6 @@ export interface EconomyState {
   linkDz?: Record<string, number>;
   /** What the town's firms posted this month (`postPayAndPrices`), and the last 13 months of the town's posted pay. */
   posted?: Posted; wageHist?: number[];
-  /** each industry's surplus per head when its books first posted: J0 (search and matching) */
-  jobVal0?: number[];
   /** Each industry's heads in town when its unit cost was first read: what agglomeration is measured against (`unitCoster`). */
   aggH0?: number[];
 }
@@ -1822,24 +1820,26 @@ function postPayAndPrices(s: GameState, E: EconomyState, pr: { wages: Float64Arr
     open[i] = want > 0 ? Math.max(0, want - have) / want : 0;
     openings += Math.max(0, want - have); jobs += want;
   }
-  // each industry's job value against the opening's: its surplus per head
-  // (the books' EBITDA over heads; only its proportional moves are read, the
-  // level being the cost of a hire, REALISM_FIX_PLAN step 2 route b)
+  // EACH INDUSTRY'S JOB VALUE, MARGINAL AND REAL (2026-11-26). What a firm
+  // weighs when it posts a vacancy is what one more hire adds: the margin on
+  // the output a head makes, at the firm's price against the nation's, less
+  // the inputs it takes (bought at national prices) and its pay against the
+  // nation's — per $ of output, P(1 - tax) - (1 - comp - gos - tax) - comp·W,
+  // which at the nation's price and pay is the industry's own operating
+  // surplus share (BEA, industries.ts `comp`, `gos`, `prodTax`) [S]. Its ratio to that is J/J_nat.
+  // (Read off the books' average EBITDA per head instead, in dollars, it grew
+  // with the price level and pay ran away to 2.5x the nation's; in real terms,
+  // the average fell with fixed costs over fewer heads and pay sank to 0.71x
+  // while a fifth of the jobs the orders called for went unfilled — measured,
+  // town 0, harness TRACE. A hire is worth its margin, not the average.)
   const thN = thetaNat(e);
-  const sur = new Float64Array(N_IND), hcI = new Float64Array(N_IND);
-  for (let n = 0; n < nF; n++) { sur[F.ind[n]] += F.ebitda[n]; hcI[F.ind[n]] += F.hc[n]; }
-  // ...IN REAL TERMS: surplus per head over national pay (2026-11-26). Read
-  // in dollars, the price level alone grew it year on year, so the firms'
-  // job value rose with inflation, the bargained premium with it, and pay ran
-  // away from the nation's: measured (town 0, harness TRACE) 1.02x at year 11,
-  // 2.49x at year 20, the town priced out of its orders and its jobs gone.
-  // Against national pay, a raise here lowers what a filled job is worth to
-  // the firm, and the premium closes on itself.
-  const j0 = (E.jobVal0 ??= Array.from(sur, (v, i) => (hcI[i] > 0 && v > 0 ? v / hcI[i] / natW : NaN)));
-  const jrI = Array.from(sur, (v, i) => {
-    if (!(hcI[i] > 0) || !(j0[i] > 0)) return 1;
-    if (!Number.isFinite(j0[i])) { j0[i] = v > 0 ? v / hcI[i] / natW : NaN; return 1; }
-    return Math.max(0, v / hcI[i] / natW) / j0[i];
+  const pS = new Float64Array(N_IND), wS = new Float64Array(N_IND), hS = new Float64Array(N_IND);
+  for (let n = 0; n < nF; n++) { const i = F.ind[n], h = Math.max(0, F.hc[n]); pS[i] += h * (F.price[n] > 0 ? F.price[n] : 1); wS[i] += h * F.pay[n] / natW; hS[i] += h; }
+  const jrI = Array.from(pS, (_, i) => {
+    const I = INDUSTRIES[INDUSTRY_IDS[i]];
+    if (!(hS[i] > 0) || !(I.gos > 0)) return 1;
+    const P = pS[i] / hS[i], W = wS[i] / hS[i];
+    return Math.max(0, P * (1 - I.prodTax) - (1 - I.comp - I.gos - I.prodTax) - I.comp * W) / I.gos;
   });
   const close = 1 - Math.exp(-Math.LN2 / WAGE_GAP_HALF_M);
   const slack = WAGE_CURVE * Math.log(Math.max(0.01, uLoc) / Math.max(0.01, uNat));

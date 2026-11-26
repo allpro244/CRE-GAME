@@ -85,6 +85,27 @@ solved at the opening.
 The lever for the queue is cheap homes (filtering, the older tiers' supply),
 not the rent at the margin.
 
+### A2, fourth attempt (2026-11-26, reverted again)
+
+On top of A1, the room fix (#870) and the renewal auction (#874), two-sided
+migration still shrinks town 0 (employment 41k → 31–33.5k in 20 years), even
+when movers with offers compete for homes at renewal. Departures run 36–120
+households a month and arrivals 0–99, while 1,500–2,800 movers with offers
+wait in the queue and the region's free homes stay at turnover level.
+
+The arrivals pass through a stack of gates:
+- a monthly quota, `arriveAcc` = MOVE_M × min(1, pull) × households;
+- the openings above the nation's rate;
+- the local applicants' share (`outsiders`);
+- the room check;
+- the month's order: doubled-up locals take freed homes before the month's
+  arrivals are processed.
+
+That stack IS FORMULA_LEDGER #33. Fixing it means arrivals as a national pool
+of movers choosing among places, matched to openings and homes in one market
+with the town's own households. A redesign, not a patch. Until then the
+one-sided outflow (households leave only when the town pays worse) stays.
+
 ### A6 sources (verified 2026-11-26, from the documents)
 
 The online share today is a logistic toward ONLINE_MAX 0.4. That ceiling was

@@ -616,7 +616,7 @@ function maybeRaiseInsurance(s: GameState, failing: Lender) {
 // player turns it off — keeping everything at the bank earns the deposit rate
 // and puts all of it on the bank's balance sheet.
 
-/** Commercial operating balances price ~100-200bp under fed funds (earnings-credit and MMDA rates); 150bp, floored at zero. */
+/** Commercial operating balances price ~100-200bp under fed funds: commercial MMDA 4.01% against a 5.25-5.50% target in May 2024 (Curinos, "Commercial: How To Deal With Declining NIB Deposits", 2024) [S~: MMDA; operating checking and earnings-credit accounts sit 2-4.5pp under]; 150bp, floored at zero. */
 export const DEPOSIT_SPREAD_PCT = 1.5;
 export const OPERATING_DISCOUNT_PCT = 0.5;
 export function depositApy(econ: { nat?: { policy?: number } } | undefined, bank?: Lender): number {

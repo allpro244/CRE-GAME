@@ -286,6 +286,8 @@ export const SPEND_SHARE: Record<SpendCategory, number> = (() => {
   const tot = Object.values(CE_2023).reduce((a, x) => a + x, 0);
   return Object.fromEntries(Object.entries(CE_2023).map(([k, v]) => [k, v / tot])) as Record<SpendCategory, number>;
 })();
+/** Groceries' share of what households spend in shops (CE 2023, groceries over groceries and goods) [D]: weighs the two online shares into one (market.ts ONLINE). */
+export const ONLINE_GROCERY_W = CE_2023.groceries / (CE_2023.groceries + CE_2023.goods);
 type Bridge = Partial<Record<IndustryId | "primary", number>>;
 const GROCERY: readonly IndustryId[] = ["food", "farms", "forestry"];
 const GOODS: readonly IndustryId[] = [

@@ -33,7 +33,7 @@ Outputs are not targets (`tools/econprobe/realism-score.mjs` is a smoke alarm).
 | A3 | National orders won on staffed capacity (#28; finding 10) | A1 | **landed** (#871); #28 stays open (a fully staffed town still drifts to its opening share) |
 | A4 | **Rents that price scarcity**, then supply by builder agents | A1 | **diagnosed** (below) |
 | A5 | New-house price from closed sales (#29) | A4 | to plan |
-| A6 | Online share from household channel choice (#31) | A0 | to plan |
+| A6 | Online share per spending category, sourced reach (#31) | A0 | built, measuring |
 | A7 | Re-count load-bearing rails (`tools/rail-audit.mjs`, ~15 min), then remove what A1–A6 leave | A1–A6 | to do |
 
 ### A4 diagnosis (2026-11-26)
@@ -127,32 +127,28 @@ So a shop's rent premium moves its price little (rent is 1–5% of sales), and
 online's reach is a property of the category. The national adoption path is
 an outside input (technology), and the town's deviation from it is price.
 
-### A6 design, ready but waiting on one question (2026-11-26)
+### A6 built (2026-11-26): option (a), a sourced reach per category
 
-Online share per spending category, from the engine's own spend bridge:
-goods are 69.8% of the retail margin and groceries 30.2%. Today ONE share
-moves both.
+Where online buying has run longest it has stopped rising: UK online share of
+all retail 27–29% 2022–26 after a 37.8% lockdown peak (ONS J4MC); China
+physical goods online 26–28% 2022–25 (NBS). Food sells online at ~0.4 of the
+non-food rate (UK food stores ~9–10.5% vs non-food ~25%, ONS KQ77/KQ78). So:
 
-**Calibration [D]:**
-- the goods–groceries logit gap is 1.088, from Census 2022: total 13.9%,
-  groceries 6.5%, so goods (0.139 − 0.302 × 0.065) / 0.698 = 17.1%;
-- the intercepts reproduce ONLINE_0 = 2% at the opening;
-- the technology slope (9.19) reproduces the existing anchor of ~11% at year
-  20.
+- reach 0.28 overall [S]; goods 34.2%, groceries 13.7% (from 0.4 and the
+  households' own basket, groceries 30.2% of shop spending, CE 2023);
+- both run on one adoption curve (technology plus the shop–shed rent gap),
+  slope 10.785 [D] for 11% at year 20;
+- check, not fitted: at Census 2022's 13.9% total the curve gives groceries
+  6.8%; Census measured 6.5%;
+- each household's grocery dollar and goods dollar go online at their own
+  share (`spendVector`), so a poorer town, which spends more of its shop
+  money on food, loses less of its high street;
+- ONLINE_MAX (a playthrough rail) and ONLINE_GOODS [K] are gone. The latter
+  fed only a retail index nothing read.
 
-**Path without a ceiling:** aggregate 11% at year 20, ~16% at year 24 (Census
-2024: 16.6%), 24% at 30, 64% at 50, 91% at 70.
-
-**The question:** what limits online's reach in the long run? Today
-ONLINE_MAX = 0.4 caps it, a rail chosen from a playthrough. Removing it
-empties the high street in century games on a guess. No country has passed
-roughly 30–40% online yet (UK, Korea, China); whether that is a plateau or a
-point on the curve is not known. Options:
-(a) source a per-category saturation from international data;
-(b) keep a ceiling, stated as a judgement;
-(c) leave it unbounded.
-The owner's call. The category split itself (removing ONLINE_GOODS [K]) is
-ready.
+Open: autodealers sit in "goods" at the goods reach, but the UK and China
+figures exclude vehicle sales, where online share is far lower. A vehicle
+reach needs its own source.
 
 ### Constants that disagree with their sources (found 2026-11-26; each needs its own measured change)
 

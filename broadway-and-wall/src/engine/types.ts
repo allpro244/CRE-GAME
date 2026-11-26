@@ -2532,6 +2532,8 @@ export interface Econ {
   jobsLogRef?: number;
   /** share of store-type sales made online; the factory floor kept against the opening (market.ts ONLINE) */
   online?: number; manufIdx?: number;
+  /** each kind of shopping's online share (market.ts ONLINE): `online` is the two weighted by spending */
+  onlineCat?: { goods: number; groceries: number };
   /** net migration this month, a share of the population (market.ts); the town's jobs a year ago (streetRolls) */
   migRate?: number; jobsPrevYr?: number;
   /** the share of let space handed back in a year, measured on the street, by class */

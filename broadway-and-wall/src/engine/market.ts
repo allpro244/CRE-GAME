@@ -6,7 +6,7 @@ import { leaseUpMonthsOf } from "./proforma";
 import { tickBands } from "./bands";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Econ, EconHistoryPoint, FirmBook, GameState, MarketPhase, NewsItem, Sector } from "./types";
-import { OFF_FLOOR_SHARE_NAT, INDUSTRY_IDS, FLOOR_MEAN } from "./industries";
+import { OFF_FLOOR_SHARE_NAT, INDUSTRY_IDS, FLOOR_MEAN, ONLINE_GROCERY_W } from "./industries";
 import { BUILT_CLASSES, SECTOR_CLASSES, raiseAlert } from "./types";
 import { tickStreetTenants } from "./tenantBooks";
 import { SHED_MOVE } from "./streetRolls";
@@ -302,8 +302,26 @@ export const HH_RENT_SHARE0 = 0.30;
 /** A lender's memory of an ordinary year: a decade [K: the SLOOS asks relative to recent experience; ten years is a judgement of how long a loan officer remembers]. */
 const CREDIT_MEMORY_M = 120;
 const ONLINE_0 = 0.02;      // share of store-type sales online at the opening (US 2000)
-const ONLINE_MAX = 0.4;     // the most of it that can ship (2026-10-17: 0.5 saturated by year 60 in a playthrough)
-const ONLINE_TECH = 10;     // logit points per log point of technology: ~11% at year 20 (US 2019), ~24% at 30, ~37% at 50
+/**
+ * HOW MUCH OF A SHOP'S SALES CAN GO ONLINE AT ALL (2026-11-26; it was 0.4,
+ * set by a playthrough). Where online buying has run longest it has stopped
+ * rising: the UK's online share of all retail sales held at 27-29% from 2022
+ * to 2026 after a lockdown peak of 37.8% (ONS J4MC) and China's share of
+ * physical goods at 26-28% 2022-25 (NBS) [S]. So the share runs toward 0.28.
+ * Food sells online at about 0.4 of the rate other goods do: UK food stores
+ * ~9-10.5% against non-food ~25% (ONS KQ77/KQ78, 2023-26) [S]. The two
+ * reaches follow from those and the households' own basket (groceries' share
+ * of shop spending, industries.ts ONLINE_GROCERY_W): ~34% for goods, ~14% for
+ * groceries.
+ */
+const ONLINE_REACH = 0.28;
+const ONLINE_FOOD_REL = 0.4;
+export const ONLINE_REACH_BY = (() => {
+  const goods = ONLINE_REACH / (1 - ONLINE_GROCERY_W + ONLINE_GROCERY_W * ONLINE_FOOD_REL);
+  return { goods, groceries: goods * ONLINE_FOOD_REL };
+})();
+/** Logit points per log point of technology: 11% of shop sales online at year 20 of central technology growth (techLn 0.1975), as the US in 2019 (Census quarterly e-commerce) [D: solved against that anchor and ONLINE_REACH]. */
+const ONLINE_TECH = 10.785;
 /**
  * HOW HARD A SHOP'S RENT PUSHES BUYING ONLINE, logit points per log point of a
  * shop's real rent over a shed's (2026-11-26; it was 1.5 [K]). Rent is a small
@@ -319,7 +337,6 @@ const ONLINE_TECH = 10;     // logit points per log point of technology: ~11% at
  * evidence: the high street's rent could empty it on its own.
  */
 const ONLINE_COST = 1.6 * 0.0142;
-const ONLINE_GOODS = 0.4;   // share of retail floor selling shippable goods [K: judgement, no source found]
 const ONLINE_SHED = 0.8;    // shed floor gained per unit of online share [K: judgement, no source found]
 const MANUF_FX = 0.1;       // share of factory floor sent abroad a year per unit of log dear dollar [K: judgement, no source found]
 /** Flats per adult: the national headship trend, a year. Households over the
@@ -4299,13 +4316,16 @@ export function tickEcon(s: GameState) {
     // (both real, against the opening). Measured US anchors: about 2% of
     // store-type sales online in 2000 and 15% by 2020 (Census e-commerce
     // series), which ONLINE_TECH reproduces at this economy's central
-    // technology growth; at most about two fifths of what a high street sells
-    // can ship at all (groceries, services, food and drink, the clinic), so the
-    // share runs toward ONLINE_MAX, and only goods leave the shop: about
-    // ONLINE_GOODS of retail floor sells shippable goods. Households move
-    // their buying over about five years. A sale online needs about three
-    // times the warehouse floor a sale in a shop does (Prologis 2020), so
-    // the sheds gain ONLINE_SHED of their floor per unit of share.
+    // technology growth. Each kind of shopping has its own reach (groceries
+    // ship far less than other goods, ONLINE_REACH_BY) and runs along the
+    // same adoption curve toward it; the town's share is the two weighted by
+    // what its households spend on each. The shops lose what goes online
+    // through the households' own spending (economy.ts `spendVector`), not
+    // through an index. Households move their buying over about five years.
+    // A sale online needs about three times the warehouse floor a sale in a
+    // shop does (Prologis 2020), so the sheds gain ONLINE_SHED of their floor
+    // per unit of share (the developers' fallback before the firms' floor
+    // exists, below).
     {
       const nn = e.nat;
       const techLn = nn?.techLn ?? 0;
@@ -4313,11 +4333,13 @@ export function tickEcon(s: GameState) {
         Math.log(Math.max(1e-6, ((e.effRentIdx?.[k] ?? e.rentIdx[k]) / Math.max(1e-6, e.cpi ?? 1))
           / Math.max(1e-6, (e.effAnchor?.[k] ?? e.rentAnchor?.[k] ?? e.rentIdx[k]))));
       const adv = ONLINE_TECH * techLn + ONLINE_COST * (realOf("retail") - realOf("industrial"));
-      const z0 = Math.log(ONLINE_0 / (ONLINE_MAX - ONLINE_0));
-      const target = ONLINE_MAX / (1 + Math.exp(-(z0 + adv)));
-      e.online = (e.online ?? ONLINE_0) + (target - (e.online ?? ONLINE_0)) / 60;
-      const lost = ONLINE_GOODS * (e.online - ONLINE_0) / (1 - ONLINE_0);
-      e.secular.retail.idx = Math.max(0.3, 1 - lost);
+      const z0 = Math.log(ONLINE_0 / (ONLINE_REACH - ONLINE_0));
+      const up = 1 / (1 + Math.exp(-(z0 + adv)));
+      const at0 = ONLINE_0 / ONLINE_REACH;
+      const oc = (e.onlineCat ??= { goods: ONLINE_REACH_BY.goods * at0, groceries: ONLINE_REACH_BY.groceries * at0 });
+      oc.goods += (ONLINE_REACH_BY.goods * up - oc.goods) / 60;
+      oc.groceries += (ONLINE_REACH_BY.groceries * up - oc.groceries) / 60;
+      e.online = (1 - ONLINE_GROCERY_W) * oc.goods + ONLINE_GROCERY_W * oc.groceries;
       // Factories follow the exchange rate: a 10% dear dollar sends about 1%
       // of manufacturing floor a year abroad (the 1980s and 2000s episodes).
       const q = nn?.dem?.q ?? 0;

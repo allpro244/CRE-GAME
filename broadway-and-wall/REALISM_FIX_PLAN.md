@@ -29,12 +29,44 @@ Outputs are not targets (`tools/econprobe/realism-score.mjs` is a smoke alarm).
 |---|---|---|---|
 | A0 | **One-month identity harness** (done: #867, first catch fixed #868) (`tools/econprobe/identities.mjs`, seconds): per industry, hires = filled − separations − quits − retirements − deaths; households = homes occupied + doubled-up; arrivals − departures = net migration; vacancies posted vs staffing gap; money in = money out. Run on any town at any month. | — | **next** |
 | A1 | **Labour market: search and matching** (Phase D step 2) | A0 | **landed (v2)** — see Phase D, step 2, second build |
-| A2 | Migration two-sided (Phase D finding 1) | A1 | built, reverted until A1 |
-| A3 | National orders won on staffed capacity (#28; finding 10) | A1 | built, reverted until A1 |
-| A4 | Housing supply by builder agents (#30's remaining formula) | A2 | to plan |
+| A2 | Migration two-sided (Phase D finding 1) | A1, **A4** | re-applied on A1 and reverted again: free homes go first to the region's own doubled-up queue, so departures are replaced locally and the town shrinks (town 0: employment 40.5k → 34k) until housing answers |
+| A3 | National orders won on staffed capacity (#28; finding 10) | A1 | **landed** (#871); #28 stays open (a fully staffed town still drifts to its opening share) |
+| A4 | **Rents that price scarcity**, then supply by builder agents | A1 | **diagnosed** (below) |
 | A5 | New-house price from closed sales (#29) | A4 | to plan |
 | A6 | Online share from household channel choice (#31) | A0 | to plan |
 | A7 | Re-count load-bearing rails (`tools/rail-audit.mjs`, ~15 min), then remove what A1–A6 leave | A1–A6 | to do |
+
+### A4 diagnosis (2026-11-26)
+
+Town 0, main `126dbed`, 20 years (`pencil.mjs` probe):
+- the region's housing stock grows 10.1k → 14.3k (+41%): the supply curve
+  answers;
+- the doubled-up queue grows 790 → **4,240** households;
+- the standard rent rises 1,429 → 1,827 (+28%) while CPI rises 72%, so REAL
+  RENT FALLS through a shortage;
+- the builders' pencil stays near its opening level (0.42–0.71 against
+  0.56).
+
+The market does not price scarcity. Every household bids a fixed 30% of
+income on the ladder (`mainWill`, HH_RENT_SHARE0: Davis & Ortalo-Magné's
+long-run cross-metro share). A doubled-up household bids only with verified
+pay and three months' rent saved (`readyToRent`). So a growing queue moves the
+rent only through which incomes sit at the margin, never through what people
+will pay to avoid doubling up.
+
+What A4 needs:
+1. **A willingness to pay against the fallback.** A household bids up to the
+   rent at which renting and doubling up leave it equally well off, not a
+   fixed share. Cobb-Douglas with half the space doubled up gives only ~26% of
+   income (α 0.3), which is below 30%. So the disutility of doubling up
+   (privacy, conflict, commute) is the parameter that matters, and it has no
+   source yet.
+2. **Calibrate it to the household-formation response to rent.** Candidate
+   sources to READ before using: Paciorek 2016 (J. Urban Econ. 93); Bitler &
+   Hoynes 2016 on doubling up in the Great Recession. A Canadian figure (UBC,
+   authors unnamed: −23% young-adult headship per $1,000 of median rent) was
+   found and is NOT used.
+3. Then builder agents (the remaining formula in #30). Then re-land A2.
 
 ### Track B: the audit grind (parallel, small PRs, does not touch Track A's files)
 

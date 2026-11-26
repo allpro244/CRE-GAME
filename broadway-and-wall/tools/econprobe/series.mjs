@@ -20,7 +20,7 @@ for (let i = OFF; i < OFF + N; i++) {
     const e = g.econ;
     const r = { m, phase: e.phase, idx: e.indexRate, policy: e.nat?.policy, nInfl: e.nat?.infl, nUnemp: e.nat?.unemp, inflExp: e.inflExp,
       cpi: e.cpi, wage: e.wageIdx, cost: e.costIdx, land: e.landIdx, pop: e.population, jobs: e.jobs, unemp: e.unemployment,
-      part: e.participation, credit: e.creditIdx, cyc: e.cycIdx, crew: e.crewUtil, jobVac: e.jobVac };
+      part: e.participation, credit: e.creditIdx, cyc: e.cycIdx, crew: e.crewUtil, jobVac: e.jobVac, online: e.online, onGoods: e.onlineCat?.goods, onGroc: e.onlineCat?.groceries };
     for (const k of K) {
       r[k] = { rent: e.rentIdx[k], eff: e.effRentIdx?.[k], vac: e.cityVac[k], cap: e.capRate[k], stock: e.stock[k], occ: e.occupied[k],
         starts: e.starts[k], pipe: e.pipeline[k], abs: e.absorb12[k], comp12: e.completions12?.[k], pool: e.pool?.[k], dark: e.darkSf?.[k] };

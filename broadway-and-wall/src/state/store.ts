@@ -45,7 +45,7 @@ import { newGoal, goalVerdict, type GoalId } from "@/engine/goals";
 import type { GameSetup } from "@/engine/setup";
 import { loadGame, saveGame, listSaves, deleteSave, clearAllSaves, prepareSaveForResume, type SaveMeta } from "@/engine/save";
 import { currentCity, currentSeed, setSeed, rerollCity, setCity, currentSize, setSize, currentDev, setDev, currentCash0, setCash0 } from "@/state/city";
-import { cityList, CITY_PLAN, platTractLots, platTractDesign, platDesignLL, designSummary, type GeneratedCity } from "@/citygen/index.mjs";
+import { cityList, CITY_PLAN, REGION, platTractLots, platTractDesign, platDesignLL, designSummary, type GeneratedCity } from "@/citygen/index.mjs";
 import { designRecipe, designAt, tractYield, fileDesignedRezoning as fileDesignedRezoningE, startDesignedPlat } from "@/engine/platdesign";
 import type { PlatDesign } from "@/engine/types";
 import { lotBbl, fileEntitlement, startPlat, isIndustrialLot } from "@/engine/landdev";
@@ -2801,6 +2801,8 @@ export const useStore = create<AppState>(holdWhileTicking((set, get) => ({
    * one leaves the pair (island, seed) pointing at a town nobody asked for.
    */
   startRun: async (island, size, dev, cash0, setupIn, seedIn) => {
+    // the region map is not playable (state/city.ts)
+    if (island === REGION) { toast("The region map is not playable.", "err"); return; }
     // EVERY NEW GAME STARTS WITH THE CARDS ON (owner, Oct 2026): a switch
     // turned off in a past campaign, or a kind muted there, does not follow
     // the player into the next town.

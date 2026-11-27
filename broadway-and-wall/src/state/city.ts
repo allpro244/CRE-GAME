@@ -27,31 +27,24 @@ const SEED_KEY = "bw:seed:";
 const DEFAULT_CITY = PROCEDURAL;
 
 /**
- * THE REGION MAP IS HIDDEN (owner, 2026-10-31: "completely hide the (6km)
- * region, I just want it to be the island"). A new game is cut on the island;
- * the region stays in the generator, its saves still load, and a developer
- * reaches it with `?maps=all` on the URL (tools/playtest.mjs does, for the land
- * flows that only exist there).
+ * THE REGION MAP IS NOT PLAYABLE (owner, 2026-10-31: "completely hide the
+ * (6km) region, I just want it to be the island"; 2026-11-27: "You should
+ * never be able to play on the region map"). No new game is cut on it, its
+ * saves do not open (engine/save.ts prepareSaveForResume), and there is no
+ * developer switch. It stays in the generator only.
  */
-export function regionShown(): boolean {
-  try {
-    return new URLSearchParams(location.search).get("maps") === "all";
-  } catch {
-    return false;
-  }
-}
-
 /** The island a NEW game's setup opens on: the last one this browser started, else the island — never the region while it is hidden. */
 export function setupCity(): string {
   let last: string | null = null;
   try { last = localStorage.getItem(KEY); } catch { /* private mode */ }
-  if (!last || (last === REGION && !regionShown())) return DEFAULT_CITY;
+  if (!last || last === REGION) return DEFAULT_CITY;
   return last;
 }
 
 export function currentCity(): string {
   try {
-    return localStorage.getItem(KEY) ?? DEFAULT_CITY;
+    const c = localStorage.getItem(KEY);
+    return !c || c === REGION ? DEFAULT_CITY : c;
   } catch {
     return DEFAULT_CITY;
   }

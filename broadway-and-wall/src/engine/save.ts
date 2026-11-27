@@ -366,6 +366,11 @@ export function prepareSaveForResume(state: GameState):
       reason: "this campaign was on a hand-drawn island that is no longer in the game — start a new run on a generated town",
     };
   }
+  // THE REGION MAP IS NOT PLAYABLE (owner, 2026-11-27: "You should never be
+  // able to play on the region map"). Its saves do not open.
+  if (migrated.cityIsland === "region") {
+    return { ok: false, reason: "this campaign was on the region map, which is no longer playable — start a new run on the island" };
+  }
   if (migrated.v !== SAVE_VERSION) {
     // Say WHICH kind of stale it is. "Older build" sends somebody looking for
     // a bug in the save format; the truth is that the island itself is cut

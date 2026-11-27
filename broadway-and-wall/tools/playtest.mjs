@@ -266,7 +266,7 @@ function report() {
 
 // ---------------------------------------------------------------- the game
 const st = (expr) => js(`const s = window.__store.getState(), g = s.game; return (${expr});`);
-// `maps=all`: the region map is hidden from players (state/city.ts regionShown); its land flows are played here
+// `maps=all`: the region map is no longer playable (owner, 2026-11-27; state/city.ts), so the region and land flows here no longer run — use `--only island`
 async function load(q = "?ui=next&maps=all") {
   pageErrors = [];
   await send("Page.navigate", { url: url + q });

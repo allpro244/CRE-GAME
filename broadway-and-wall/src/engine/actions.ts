@@ -14,7 +14,7 @@ import { mergedTouched, ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, rivalCanClose, rivalsWhoCanClose, gradeOf, tie, firmSells, firmMaxPrice } from "./rivals";
-import { VALUATION_SD, BUY_CLOSING, bidRound, listingReserve, noteRoundFailed, noteRoundClosed, impliedCap, landBidRound, noteLandRoundFailed, dealView, bidderOf, maxPrice, affordable, landMaxPrice } from "./propmarket";
+import { VALUATION_SD, BUY_CLOSING, bidRound, listingReserve, loneBid, shadedBid, noteRoundFailed, noteRoundClosed, impliedCap, landBidRound, noteLandRoundFailed, dealView, bidderOf, maxPrice, affordable, landMaxPrice } from "./propmarket";
 import { PREMARKET_M, beliefSignals } from "./beliefs";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
@@ -553,6 +553,21 @@ export function executePurchase(
  * firm that can close (`bidRound`, `landBidRound`). Under the floor it is a
  * no; under a better bid it is a no with the reason. The appetite index is
  * gone from this path because the appetite is the bids themselves.
+ *
+ * BEST AND FINAL (owner, 2026-11-27, playtest F13). An offer at or over the
+ * seller's floor that a firm's bid beats is not simply refused: the seller
+ * calls best and final, and you have one more number this month, which must
+ * beat your first (`listing.final`). In a best and final every firm in the
+ * room puts in its walk-away — the lower of its own number and what it can
+ * fund, the same rule as the seller's best and final on your own sale
+ * (bestAndFinal) — so that is the number to beat, and it is not shown to
+ * you, as it is not in life. Measured before (seed 12007, month 1): four
+ * listings refused an offer at the ask because a firm bid 1.07-1.19x it,
+ * and 1.1x and 1.25x the same month got "the seller has your offer". Your
+ * offer arrives outside the month's sealed round, which is why the seller
+ * calls a final for it; the firms' own round has none (a runner-up firm
+ * cannot top on the tape), which is the one asymmetry left, deferred
+ * because a firm-side final would reprice every tape trade.
  */
 export function buyListing(
   s: GameState, parcels: ParcelTable, bbl: string, product: BuyProduct, lev = 1, bid?: number,
@@ -561,6 +576,10 @@ export function buyListing(
   if (!listing) return { s, err: "That property is no longer on the market." };
   const cold = coldOnDeed(s, parcels, bbl);
   if (cold) return { s, err: coldRefuseMsg(cold) };
+  // A TYPO IS NOT AN OFFER (playtest F3). A bid of zero, a negative or a
+  // non-number fell through every test below to the insult branch, and the
+  // seller pulled the listing. negotiate() asks for a real number; so does this.
+  if (bid !== undefined && (!Number.isFinite(bid) || bid <= 0)) return { s, err: "Name a real number." };
   const price = Math.round(bid ?? listing.ask);
   // THE FULL ASK IS AN OFFER LIKE ANY OTHER. It used to skip the round and
   // close at the ask whatever the street was bidding, so the player bought at
@@ -575,23 +594,43 @@ export function buyListing(
   if (fundableNow(s, parcels) < q.equity) return { s, err: `That bid needs ${money(q.equity)} of equity; you are short.` };
   // A SELLER READS OFFERS ONCE A MONTH, as the round below runs once a month
   // for every firm on the street. A second number the same month is not a new
-  // bid, it is a probe of the first answer.
-  if (listing.offeredM === s.month) return { s, err: "The seller has your offer for this month. Try again next month." };
+  // bid, it is a probe of the first answer — unless the seller asked for it
+  // (best and final, above): then one more, and it must beat the first.
+  const finalCall = listing.final?.m === s.month ? listing.final : undefined;
+  if (listing.offeredM === s.month && !finalCall) return { s, err: "The seller has your offer for this month. Try again next month." };
+  if (finalCall && price <= finalCall.first) return { s, err: `Best and final has to beat your ${money(finalCall.first)}.` };
 
   const next = clone(s);
   const rec = resolveRec(parcels, next, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
   const floor = listingReserve(listing);
   const building = rec.class !== "land" && rec.bldgArea > 0;
-  const rival = building ? bidRound(next, parcels, rec, listing).bids[0]
-    : !listing.halfBuilt ? landBidRound(next, parcels, rec, listing).bids[0] : undefined;
-  if (price >= floor && !(rival && rival.bid >= price)) {
+  const round = building ? bidRound(next, parcels, rec, listing)
+    : !listing.halfBuilt ? landBidRound(next, parcels, rec, listing) : undefined;
+  const rival = round?.bids[0];
+  // the number to beat: the best sealed bid, or in a best and final the best
+  // walk-away in the room (the lower of a firm's own number and its purse)
+  const beat = finalCall
+    ? Math.max(0, ...(round?.bids ?? []).map((b) => Math.round(Math.min(b.max, b.afford ?? b.max) / 1000) * 1000))
+    : rival?.bid ?? 0;
+  const outbid = beat > 0 && beat >= price;
+  if (price >= floor && !outbid) {
     const done = executePurchase(next, parcels, bbl, price, product, false, lev);
     if (done.err) return { s, err: done.err };
     return { s: done.s, msg: `They took ${money(price)}.` };
   }
   const li = next.listings.find((l) => l.bbl === bbl);
-  if (li) li.offeredM = next.month;
+  if (li) { li.offeredM = next.month; delete li.final; }
+  // OUTBID AT THE SELLER'S FLOOR: the seller calls best and final (see above).
+  // It does not say by how much; one more number this month.
+  if (li && !finalCall && price >= floor && outbid) {
+    li.final = { m: next.month, first: price };
+    next.news.unshift({
+      q: next.month, kind: "info",
+      text: `Best and final · ${parcels[bbl]?.address} · your ${money(price)} is not the high bid. One more number this month.`,
+    });
+    return { s: next, msg: "Refused. A firm on the street bid more. The seller calls best and final: one more number this month.", refused: true };
+  }
   // Refusal is not a purchase. Callers (and the toast path) used to treat a
   // missing `err` as "deed recorded," so a lowball that the seller waved off
   // still printed as a closing. `refused` carries the news / listing pull
@@ -601,7 +640,7 @@ export function buyListing(
   // seller's own floor. Anything closer is a plain no.
   const lenderSale = !!listing.distress && (listing.reason === "receiver" || !!listing.receiverFor || !!listing.loanBasis);
   if (price >= floor || price >= listing.ask * insultShareOfAsk(!!listing.distress, lenderSale)) {
-    const why = price >= floor && rival ? ` A firm on the street bid more.` : ``;
+    const why = price >= floor && outbid ? finalCall ? ` Best and final went to a firm on the street.` : ` A firm on the street bid more.` : ``;
     next.news.unshift({ q: next.month, kind: "info", text: `Offer refused · ${parcels[bbl]?.address} · ${money(price)}.${why} Ask unchanged.` });
     return { s: next, msg: `Refused.${why} The ask stands.`, refused: true };
   }
@@ -2323,6 +2362,7 @@ export function buyOffMarket(
   }
   if (!a.ask) return { s, err: "No asking price. Approach the owner first." };
   if (s.month > a.q + 6) return { s, err: "That price has expired." };
+  if (bid !== undefined && (!Number.isFinite(bid) || bid <= 0)) return { s, err: "Name a real number." };
   const price = Math.round(bid ?? a.ask);
   if (price >= a.ask) return executePurchase(s, parcels, bbl, a.ask, product, true, lev);
 
@@ -2398,6 +2438,7 @@ export function counterOffMarket(
   if (!a || a.refused || !a.ask || !rec) return { s, err: "No asking price to counter." };
   if (a.countered) return { s, err: "You already countered. The current price is final." };
   if (s.month > a.q + 6) return { s, err: "That price has expired." };
+  if (offerPx !== undefined && (!Number.isFinite(offerPx) || offerPx <= 0)) return { s, err: "Name a real number." };
   const next = clone(s);
   const na = next.approaches[bbl];
   na.countered = true;
@@ -2597,10 +2638,16 @@ export function saleFeeRate(h: Holding, s?: GameState): number {
  * on the deed (PARITY_PLAN.md).
  *
  * Now the player's listing goes to that round. Each bid is the firm's own
- * number (maxPrice, shaded by how many are in the room), capped by what it
- * can fund; a firm counts only if it could close at it (rivalCanClose, the
- * test acceptSaleOffer applies at the table). `walk` is its walk-away — the
- * lower of its value and its purse — which a counter is read against.
+ * number (maxPrice, shaded by how many are in the room); a firm that cannot
+ * fund that bids what it can fund only if that clears the seller's floor,
+ * and otherwise does not bid at all — never its bank balance (bidRound,
+ * owner 2026-11-27: the seller of 673 State St at $5.66M was offered $123K,
+ * "next best $47K"). The floor is your standing instruction's "decline
+ * below" when you gave one (it is your reserve, said out loud), else the
+ * tape's (listingReserve). A firm counts only if it could close at its bid
+ * (rivalCanClose, the test acceptSaleOffer applies at the table). `walk` is
+ * its walk-away — the lower of its value and its purse — which a counter is
+ * read against.
  * `campaign`: a broker campaign reaches every buyer in town; a quiet listing
  * is heard first by the listing broker's own clients (beliefs.ts
  * hearsOfListing), as a tape listing is.
@@ -2613,7 +2660,7 @@ function roomForYourSale(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
   const sale = h.sale;
   if (!sale || h.groundLeased) return null;
   const building = rec.class !== "land" && rec.bldgArea > 0;
-  const li = { bbl: h.bbl, ask: sale.ask, listedM: campaign ? undefined : sale.listedM, cond: h.condition, condIdx: h.condIdx };
+  const li = { bbl: h.bbl, ask: sale.ask, reserve: sale.instructions?.declineBelow, listedM: campaign ? undefined : sale.listedM, cond: h.condition, condIdx: h.condIdx };
   const round = building ? bidRound(s, parcels, rec, li) : landBidRound(s, parcels, rec, li);
   const out: StreetBid[] = [];
   for (const b of round.bids) {
@@ -2785,12 +2832,27 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
     // tenth; the max of a handful of draws around the mark, plus best and
     // final, is where that few per cent comes from. In a crunch the draw sits
     // under the mark, which is what "the whisper was a work of fiction" means.
-    const price = Math.round(value * (0.88 + 0.16 * enthusiasm * Math.max(0.55, Math.min(1.15, phase))));
+    //
+    // NO DRAW ON HOW MUCH (owner, 2026-11-27, playtest F7). The price was
+    // value x (0.88 + 0.16 x enthusiasm x phase), `enthusiasm` a draw: dice
+    // deciding the number. A leased fee has no bidder underwriting of its own
+    // yet, so each firm that turned up holds the appraisal as its number (the
+    // leased fee: coupon plus reversion at the market's ground yield), less
+    // the closing it carries (BUY_CLOSING, as maxPrice nets it), and bids it
+    // shaded for the room it is in (shadedBid: the Vickrey shade from the
+    // valuation dispersion). The old calibration was centred on the mark to
+    // stop the over-appraisal round trip measured above; a shaded bid at or
+    // under the mark keeps that without dice. Which firm turns up is still
+    // drawn (WHO), and `enthusiasm` still reads into how sure it is (the
+    // credibility below), so the stream does not move. `max` is its own
+    // number: best and final takes it there and no further.
+    const own = value / (1 + BUY_CLOSING);
+    const price = Math.round(shadedBid(own, Math.min(n, live.length)) / 1000) * 1000;
     // A buyer stretching past the pack is the one most likely to find a reason
     // to come back to you about it later.
     const credibility = Math.max(0.2, Math.min(0.97, 1.0 - 0.55 * enthusiasm + (rng(s, "sales") - 0.5) * 0.3));
     bids.push({
-      name, firmId: firm.id, price, credibility,
+      name, firmId: firm.id, price, credibility, max: Math.round(own / 1000) * 1000,
       note: credibility > 0.75 ? "Cash to close, no financing condition."
         : credibility > 0.5 ? "Financed, but the lender is known."
         : "Aggressive number. Read the covenant before you count on it.",
@@ -2859,16 +2921,29 @@ export function bestAndFinal(s: GameState, parcels: ParcelTable, bbl: string): {
   // underwriting on today's market (walkAwayToday): one already at its
   // walk-away was at its best the first time and walks, and so does one that
   // could no longer close at its own bid; the rest sharpen, never past the
-  // walk-away. A bid with no walk-away on record (a leased fee, an older
-  // save) stands and sharpens.
+  // walk-away. A bid with no walk-away on record (an older save) stands.
+  //
+  // A FINALIST THAT STAYS PUTS IN ITS WALK-AWAY (owner, 2026-11-27: no draw
+  // on HOW MUCH). How far it sharpened was a draw, 0.5-3.5% x its
+  // credibility, never past the walk-away. "Best and final" means exactly
+  // that: the last number it would pay, which is the walk-away it re-ran
+  // above (the lower of its own value and what it can fund). In a deep room
+  // the walk-away already bound almost every time — a room of six or more
+  // shades its sealed bid by under 1.7% (shadedBid), inside the old draw —
+  // so prices barely move. In a thin one (one to three firms, a 3.5-10%
+  // shade) a finalist now goes to its own number where the draw stopped
+  // short of it: the seller who calls a final in a thin market takes the
+  // buyers' surplus, and pays for it in the bidders at their purse, who
+  // walk. The leased fee's finalists go to their own number. The old draw is
+  // kept so the stream does not re-roll.
   for (const b of live) {
     const today = walkAwayToday(next, parcels, bbl, b.firmId, b.price);
     const walk = today ? (today.canClose ? today.walk : 0) : b.max;
     if (walk !== undefined && walk <= b.price) { b.dropped = true; walked++; continue; }
     if (walk !== undefined) b.max = walk;
-    const bump = 1 + rrange(next, 0.005, 0.035) * b.credibility;
+    void rrange(next, 0.005, 0.035);
     const before = b.price;
-    b.price = Math.round(Math.min(b.price * bump, walk ?? Infinity));
+    if (walk !== undefined) b.price = Math.round(walk);
     if (b.price > before) lifted++;
   }
   ns.round = 1;
@@ -3809,6 +3884,7 @@ export function counterSale(
   if (h0.sale.offer.countered) return { s, err: "You already countered this offer." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
+  if (!Number.isFinite(price) || price <= 0) return { s, err: "Name a real number." };
   const px = Math.round(price);
   const next = clone(s);
   const h = next.holdings[bbl]!;
@@ -4134,7 +4210,15 @@ export function tickSales(s: GameState, parcels: ParcelTable, adjacency: Adjacen
     sale.arriveAcc = (sale.arriveAcc ?? 0) + p;
     if (sale.arriveAcc >= 1) {
       sale.arriveAcc -= 1;
-      const bid = Math.round(Math.min(sale.ask, value * (0.9 + rng(s, "sales") * 0.13)));
+      // NO DRAW ON HOW MUCH (owner, 2026-11-27, playtest F7). The number was
+      // value x (0.90 + 0.13 x a draw). The caller is one firm with nobody
+      // else in the room, holding the leased fee's appraisal as its number
+      // (less its closing, as maxPrice nets it): it bids the lone first-price
+      // bid on that (loneBid, the Vickrey shade), never over the ask. Which
+      // firm rings is still drawn below (WHO). The old draw is kept so the
+      // stream does not re-roll.
+      void rng(s, "sales");
+      const bid = Math.round(Math.min(sale.ask, loneBid(value / (1 + BUY_CLOSING))));
       // THE CALLER IS A FIRM ON THE STREET, one that could close at the
       // number. A quiet listing with nobody in town able to pay for it gets
       // no call, however good the ask.
@@ -4466,6 +4550,7 @@ export function counterBid(
   if (b0.countered) return { s, err: "You already went back to that bidder once." };
   const rec = resolveRec(parcels, s, bbl);
   if (!rec) return { s, err: "Unknown parcel." };
+  if (!Number.isFinite(price) || price <= 0) return { s, err: "Name a real number." };
   const px = Math.round(price);
   if (px <= b0.price) return { s, err: "A counter must be above the offer. Accept it instead." };
 

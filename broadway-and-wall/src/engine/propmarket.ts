@@ -122,8 +122,10 @@ const GROWTH_DECAY = -Math.log(0.6);
  * derivation lands at 0.104 from a sourced dispersion.
  */
 const SHADE = Math.sqrt(3) * VALUATION_SD;
+/** A firm's sealed bid in a room of `n`: its own number shaded for the competition (the derivation above). */
+export const shadedBid = (max: number, n: number) => max * (1 - SHADE / Math.max(1, n));
 /** A bid with nobody else in the room: a private approach to an owner who has not listed. */
-export const loneBid = (max: number) => max * (1 - SHADE);
+export const loneBid = (max: number) => shadedBid(max, 1);
 
 /**
  * RE-LETTING CAPITAL. A commercial lease costs an allowance and a commission
@@ -531,10 +533,16 @@ function onTape(s: GameState, bbl: string): boolean {
  * (the player's own deed — the holding's grade, which the tape cannot know).
  * `opening`: the round is struck before the first month has run, so the
  * desks' room is the opening's (rivalDebt.ts deskWithRoom).
+ * `floor`: the least this seller takes, which a firm that cannot fund its own
+ * number must still be able to fund to bid at all (see the bid below). It is
+ * the listing's own reserve (listingReserve) unless the sale has another:
+ * the credit bid on the courthouse steps, a note buyer's face, a seller under
+ * duress who takes anything.
  */
-export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress"> & { listedM?: number; open?: boolean; cond?: Condition; condIdx?: number; opening?: boolean; raw?: boolean }): { bids: Bid[]; n: number; view: DealView | null } {
+export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress" | "reserve" | "reason" | "receiverFor" | "loanBasis"> & { listedM?: number; open?: boolean; cond?: Condition; condIdx?: number; opening?: boolean; raw?: boolean; floor?: number }): { bids: Bid[]; n: number; view: DealView | null } {
   const view = dealView(s, rec, li.bbl, li.ask, li.cond, li.condIdx, !!li.open);
   if (!view) return { bids: [], n: 0, view };
+  const floor = li.floor ?? listingReserve(li);
   const seller = ownerOf(s, rec.bbl);
   // A MOTIVATED SELLER IS NOT A TROUBLED BUILDING (2026-11-18). `distress` on a
   // listing is the seller's position — an estate, a split partnership, an
@@ -583,7 +591,28 @@ export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, 
     // a deed not on the tape: only if it would go on this firm's list (`pursuits`)
     if (chase && !listed && r.sheet && !wouldChase(chase.get(r.id), max - li.ask)) continue;
     const afford = affordable(s, r, view, b);
-    let bid = Math.min(li.open ? max : max * (1 - SHADE / Math.max(1, n)), afford);
+    // A FIRM BIDS ITS OWN NUMBER, OR WHAT IT CAN FUND AT A PRICE THE SELLER
+    // TAKES — NEVER ITS BANK BALANCE (owner, 2026-11-27, playtest F7). The bid
+    // was min(its shaded number, what it can fund), so a firm whose purse was
+    // below its number bid its purse however small. Measured, seed 12007:
+    // five firms valuing 673 State St (the player's listing, ask $5.66M) at
+    // $3.7-5.0M bid $46K-1.05M, and the seller was told "offer $123K; next
+    // best $47K from Garrison Mutual Life"; on the town's own tape, 62 of 283
+    // bids in a year were such purses under the seller's reserve, 18 of them
+    // the top bid (seed 4242: 23 of 86, 6 top), feeding the failed-round cap
+    // prints, the asks' cuts and the foreclosure price. A buyer who cannot
+    // fund a deal at a price the seller would take does not bid. So: its
+    // number if it can fund it; else what it can fund, if that clears the
+    // seller's floor (a closable bid that only its cash holds down); else no
+    // bid. A firm that values the deed UNDER the floor still bids its own
+    // number: that bid is evidence of what the street pays (noteRoundFailed)
+    // and closes if the seller comes down to it; a purse under the floor can
+    // never close and says nothing about the building. packageBids and
+    // forcedSaleAsk already worked to this rule; this round and
+    // landBidRound never did. No new constant: the floor is the seller's own
+    // (listingReserve), and "near the reserve" is read as "at or above it".
+    const want = li.open ? max : shadedBid(max, n);
+    let bid = afford >= want ? want : afford >= floor ? afford : 0;
     bid = Math.round(bid / 1000) * 1000;
     if (!(bid > 0)) continue;
     // A firm already at its covenant, or with no desk that will take more of
@@ -646,9 +675,11 @@ export function forcedSalePrice(s: GameState, parcels: ParcelTable, rec: ParcelR
 export function forcedSaleAsk(s: GameState, parcels: ParcelTable, rec: ParcelRecord, bbl: string, mark: number): number {
   if (!(mark > 0)) return 0;
   if (rec.class === "land" || !(rec.bldgArea > 0)) return forcedSalePrice(s, parcels, rec, bbl, mark);
-  const round = bidRound(s, parcels, rec, { bbl, ask: mark, distress: true });
+  // floor 0: this reads each firm's worth (`max`), not what it can fund, for a
+  // seller under duress (reserve 0) — every firm that values it is heard
+  const round = bidRound(s, parcels, rec, { bbl, ask: mark, distress: true, floor: 0 });
   let best = 0;
-  for (const b of round.bids) best = Math.max(best, b.max * (1 - SHADE / Math.max(1, round.n)));
+  for (const b of round.bids) best = Math.max(best, shadedBid(b.max, round.n));
   return Math.min(mark, best);
 }
 
@@ -743,7 +774,7 @@ export function anchoredAsk(s: GameState, rec: ParcelRecord, value: number): num
 }
 
 /** The least the seller of a listing takes: a named firm's own reservation, else the tape's 92% of ask (a lender's 88%). */
-export function listingReserve(li: Listing): number {
+export function listingReserve(li: Pick<Listing, "ask" | "reserve" | "distress" | "reason" | "receiverFor" | "loanBasis">): number {
   if (li.reserve !== undefined) return li.reserve;
   const lenderSale = !!li.distress && (li.reason === "receiver" || !!li.receiverFor || !!li.loanBasis);
   return li.ask * (lenderSale ? 0.88 : 0.92);
@@ -1505,7 +1536,6 @@ export function packageBids(s: GameState, parcels: ParcelTable, bbls: string[], 
     && recs.every((rec) => !paramsOf(r).classes || paramsOf(r).classes!.includes(rec.class))
     && (!r.sheet || recs.every((rec) => fitOf(s, parcels, r, rec, distress) > 0)));
   const n = firms.length;
-  const shade = 1 - SHADE / Math.max(1, n);
   const out: PackageBid[] = [];
   for (const r of firms) {
     // its own number, deed by deed, and the desks' loan on each at its own leverage
@@ -1519,7 +1549,7 @@ export function packageBids(s: GameState, parcels: ParcelTable, bbls: string[], 
       if (v && b) debtShare += Math.min(v.debtA, b.ltvCap) * m;
     }
     if (!ok || !(max > 0)) continue;
-    const bid = Math.round(max * shade / 1000) * 1000;
+    const bid = Math.round(shadedBid(max, n) / 1000) * 1000;
     const debt = bid * (debtShare / max);
     const reserve = Math.max(1_000_000 * dollarLevel(s.econ), Math.max(0, r.cash) * 0.05);
     const room = Math.max(0, lineRoom(s, r, r.aum ?? 0, r.markNoi ?? 0, r.markLand ?? 0));
@@ -1763,8 +1793,12 @@ export function holdValueFor(s: GameState, bv: BankerView, rec: ParcelRecord, wa
   return best;
 }
 
-/** A land bid round: builders and land bankers, each on its own number, shaded by the room and capped by its cash. */
-export function landBidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress">, raw = false): { bids: Bid[]; n: number } {
+/**
+ * A land bid round: builders and land bankers, each on its own number, shaded
+ * by the room — or, short of that, what it can fund if that clears the
+ * seller's floor; never its bank balance (bidRound, owner 2026-11-27).
+ */
+export function landBidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress" | "reserve" | "reason" | "receiverFor" | "loanBasis"> & { floor?: number }, raw = false): { bids: Bid[]; n: number } {
   const seller = ownerOf(s, rec.bbl);
   const room: Rival[] = [];
   const chase = !raw ? pursuits(s, parcels) : null;
@@ -1781,6 +1815,7 @@ export function landBidRound(s: GameState, parcels: ParcelTable, rec: ParcelReco
   }
   const n = room.length;
   const bids: Bid[] = [];
+  const floor = li.floor ?? listingReserve(li);
   // a lot is bought with equity and the land desk's half-advance (debt.ts "land")
   const land = streetRefiProceeds(s, li.ask, 0, 0.95);
   const a = li.ask > 0 ? land.principal / li.ask : 0;
@@ -1792,9 +1827,10 @@ export function landBidRound(s: GameState, parcels: ParcelTable, rec: ParcelReco
     const room$ = Math.max(0, lineRoom(s, r, r.aum ?? 0, r.markNoi ?? 0, r.markLand ?? 0));
     const avail = r.cash - contractedEquity(s, r) + room$ - reserve;
     if (!(avail > 0)) continue;
-    const bid = Math.round(Math.min(max * (1 - SHADE / Math.max(1, n)), avail / Math.max(0.05, 1 + BUY_CLOSING - a)) / 1000) * 1000;
+    const want = shadedBid(max, n), aff = avail / Math.max(0.05, 1 + BUY_CLOSING - a);
+    const bid = Math.round((aff >= want ? want : aff >= floor ? aff : 0) / 1000) * 1000;
     if (!(bid > 0)) continue;
-    bids.push({ r, max, bid, uw: { V: max, r: 0, rE: 0, rd: land.ratePct / 100, w: a, g: 0 }, afford: avail / Math.max(0.05, 1 + BUY_CLOSING - a) });
+    bids.push({ r, max, bid, uw: { V: max, r: 0, rE: 0, rd: land.ratePct / 100, w: a, g: 0 }, afford: aff });
   }
   bids.sort((x, y) => y.bid - x.bid);
   return { bids, n };

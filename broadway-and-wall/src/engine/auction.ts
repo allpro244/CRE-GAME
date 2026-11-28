@@ -397,11 +397,6 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     // (propmarket bidRound, open outcry: each stays in up to what it can pay).
     // This replaced a room of 0-5 phantom heads drawn off the cycle, each at
     // distressPrice x 84-102%, and a x1.03-1.14 "fever" when four showed up.
-    const round = bidRound(s, parcels, rec, { bbl: lot.bbl, ask: lot.est, distress: true, open: true });
-    const roomFirm = round.bids[0]?.r;
-    const topV = round.bids[0]?.bid ?? 0;
-    const secondV = round.bids[1]?.bid ?? 0;
-    let heads = round.bids.length;
     // an impaired holder does not protect its whole debt — cash beats REO
     const holderL = lot.kind === "yours" || lot.kind === "bank" ? lenderByName(s, lot.holder) : undefined;
     const protect = lot.kind === "note" ? lot.debt
@@ -411,6 +406,14 @@ function resolveAuction(s: GameState, parcels: ParcelTable) {
     // or the floor (the credit bid) is met, whichever is higher — and it will
     // go on against you up to its own limit, so you take it only at `topV`.
     const floor = lot.kind === "note" ? Math.round(lot.debt * 1.01) : protect;
+    // The credit bid is the seller's floor on the steps: a firm that cannot
+    // fund its own number stays in only if it can fund the credit bid
+    // (propmarket.ts bidRound, owner 2026-11-27) — never at its bank balance.
+    const round = bidRound(s, parcels, rec, { bbl: lot.bbl, ask: lot.est, distress: true, open: true, floor });
+    const roomFirm = round.bids[0]?.r;
+    const topV = round.bids[0]?.bid ?? 0;
+    const secondV = round.bids[1]?.bid ?? 0;
+    let heads = round.bids.length;
     let room = topV >= floor ? Math.max(secondV, floor) : topV;
     if (!roomFirm) { room = 0; heads = 0; }
     // your bid only counts if you can actually close the balance — and on

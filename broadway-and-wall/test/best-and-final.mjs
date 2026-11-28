@@ -86,7 +86,7 @@ for (const b of [-1e6, 0, NaN, Infinity, -Infinity]) {
 
 // ---- F13: best and final -----------------------------------------------------
 console.log("F13 — the seller calls best and final");
-let found = 0;
+let found = 0, tapeChecked = false;
 for (const li of g.listings) {
   if (!isBuilding(li.bbl) || li.halfBuilt) continue;
   const rec = E.resolveRec(parcels, g, li.bbl);
@@ -102,16 +102,32 @@ for (const li of g.listings) {
   const bar = Math.max(...round.bids.map((b) => Math.round(Math.min(b.max, b.afford ?? b.max) / 1000) * 1000));
   ok(`${at}: the bar (${money(bar)}) is at or over the best sealed bid (${money(round.bids[0].bid)}) and the ask`,
     bar >= round.bids[0].bid && bar >= li.ask);
+  // the seller that refused your number for a firm's does not sell under it at the month's round
+  {
+    const after = E.advanceQuarter(s1, parcels, C.bbls, C.adjacency);
+    const trade = (after.comps ?? []).find((c) => c.bbl === li.bbl && c.m === after.month);
+    ok(`${at}: at the month's round it does not go under your refused ${money(li.ask)}${trade ? ` (traded ${money(trade.price)})` : " (did not trade)"}`,
+      !trade || trade.price >= li.ask);
+  }
   // a final that does not beat the first is not a final
   const same = E.buyListing(s1, parcels, li.bbl, "cash", 1, li.ask);
   ok(`${at}: a final at the first offer is an error, nothing changes`, /has to beat/.test(same.err ?? "") && same.s === s1);
   // a final at the bar loses (a tie goes to the firm), and then the month is closed
   const lose = E.buyListing(s1, parcels, li.bbl, "cash", 1, bar);
-  ok(`${at}: a final at the bar is refused, the ask stands`,
+  ok(`${at}: a final at the bar is refused, the ask stands, the losing number is on record`,
     lose.refused && /Best and final went to a firm/.test(lose.msg) && !lose.s.holdings[li.bbl]
-    && lose.s.listings.find((l) => l.bbl === li.bbl)?.final === undefined);
+    && lose.s.listings.find((l) => l.bbl === li.bbl)?.final?.lost === bar);
   const third = E.buyListing(lose.s, parcels, li.bbl, "cash", 1, bar * 2);
   ok(`${at}: a third number the same month gets the old guard`, /has your offer for this month/.test(third.err ?? ""));
+  // the firm that beat your final does not take it at a sealed bid under it
+  if (!tapeChecked) {
+    const after = E.advanceQuarter(lose.s, parcels, C.bbls, C.adjacency);
+    const trade = (after.comps ?? []).find((c) => c.bbl === li.bbl && c.m === after.month);
+    if (trade) {
+      tapeChecked = true;
+      ok(`${at}: at the month's round the firm that beat your final pays at least it (${money(trade.price)} >= ${money(bar)})`, trade.price >= bar);
+    } else console.log(`  ..   ${at}: did not trade at the month's round (state moved); tape check tried on the next one`);
+  }
   // a final over the bar takes it
   const win = E.buyListing(s1, parcels, li.bbl, "cash", 1, bar + 1000);
   ok(`${at}: a final over the bar (${money(bar + 1000)}) takes it`, !win.err && !win.refused && !!win.s.holdings[li.bbl]
@@ -127,4 +143,34 @@ for (const li of g.listings) {
   if (++found >= 3) break;
 }
 ok(`found listings outbid at the ask to test (${found})`, found >= 1);
+ok("a lost final was followed to the month's round at least once", tapeChecked);
+
+// ---- the seller's best and final on your own sale: the competition sets the lift
+console.log("Best and final on your own sale — each finalist goes as far as the room forces, no further");
+{
+  const mine = g.listings.find((l) => isBuilding(l.bbl) && !l.halfBuilt);
+  const bought = E.executePurchase(structuredClone(g), parcels, mine.bbl, mine.ask, "cash", false, 1);
+  const base = bought.s;
+  // bids with no firm on record keep the walk-away they carry (walkAwayToday: null)
+  const run = (bids) => {
+    const s = structuredClone(base);
+    s.holdings[mine.bbl].sale = { ask: mine.ask, listedM: s.month, mode: "marketed", bids: structuredClone(bids) };
+    const r = E.bestAndFinal(s, parcels, mine.bbl);
+    if (r.err) throw new Error(r.err);
+    return { bids: r.s.holdings[mine.bbl].sale.bids, rng: rngOf(r.s) };
+  };
+  const B = (name, price, max) => ({ name, price, max, credibility: 0.8, note: "" });
+  const lone = run([B("A", 900_000, 1_000_000)]);
+  ok("a lone bidder has nobody to beat and stands at its bid", lone.bids[0].price === 900_000 && !lone.bids[0].dropped);
+  const two = run([B("A", 900_000, 1_000_000), B("B", 880_000, 950_000)]);
+  ok("two finalists: the leader goes to the runner-up's walk-away and leads; the runner-up to its own",
+    two.bids[0].name === "A" && two.bids[0].price === 950_000 && two.bids[1].name === "B" && two.bids[1].price === 950_000);
+  const four = run([B("A", 900_000, 1_000_000), B("D", 890_000, 890_000), B("B", 880_000, 950_000), B("C", 850_000, 870_000)]);
+  const by = Object.fromEntries(four.bids.map((b) => [b.name, b]));
+  ok("a finalist already at its walk-away walks; the rest go to what the room forces",
+    by.D.dropped && by.A.price === 950_000 && by.B.price === 950_000 && four.bids[0].name === "A" && !by.C.dropped);
+  ok("a non-finalist's standing bid stays as it was", by.C.price === 850_000);
+  const shut = run([B("A", 900_000, 1_000_000), B("B", 880_000, 880_000)]);
+  ok("the runner-up walks: the leader has nobody left to beat and stands", shut.bids[0].name === "A" && shut.bids[0].price === 900_000);
+}
 console.log("best-and-final: OK");

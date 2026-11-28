@@ -14,7 +14,7 @@ import { mergedTouched, ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, rivalCanClose, rivalsWhoCanClose, gradeOf, tie, firmSells, firmMaxPrice } from "./rivals";
-import { VALUATION_SD, BUY_CLOSING, bidRound, listingReserve, loneBid, shadedBid, noteRoundFailed, noteRoundClosed, impliedCap, landBidRound, noteLandRoundFailed, dealView, bidderOf, maxPrice, affordable, landMaxPrice } from "./propmarket";
+import { VALUATION_SD, BUY_CLOSING, bidRound, listingReserve, loneBid, shadedBid, walkOf, noteRoundFailed, noteRoundClosed, impliedCap, landBidRound, noteLandRoundFailed, dealView, bidderOf, maxPrice, affordable, landMaxPrice } from "./propmarket";
 import { PREMARKET_M, beliefSignals } from "./beliefs";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
@@ -557,11 +557,14 @@ export function executePurchase(
  * BEST AND FINAL (owner, 2026-11-27, playtest F13). An offer at or over the
  * seller's floor that a firm's bid beats is not simply refused: the seller
  * calls best and final, and you have one more number this month, which must
- * beat your first (`listing.final`). In a best and final every firm in the
- * room puts in its walk-away — the lower of its own number and what it can
- * fund, the same rule as the seller's best and final on your own sale
- * (bestAndFinal) — so that is the number to beat, and it is not shown to
- * you, as it is not in life. Measured before (seed 12007, month 1): four
+ * beat your first (`listing.final`). In a best and final the room competes
+ * openly: each firm will go as far as its walk-away — the lower of its own
+ * number and what it can fund — so you win only over the best walk-away in
+ * the room, which is not shown to you, as it is not in life. If you lose,
+ * the firm that beat you pays what the competition forced: its sealed bid,
+ * your final, or the next firm's walk-away, whichever is highest, never past
+ * its own (tickListingAbsorption) — the same law as the seller's best and
+ * final on your own sale (bestAndFinal). Measured before (seed 12007, month 1): four
  * listings refused an offer at the ask because a firm bid 1.07-1.19x it,
  * and 1.1x and 1.25x the same month got "the seller has your offer". Your
  * offer arrives outside the month's sealed round, which is why the seller
@@ -596,7 +599,7 @@ export function buyListing(
   // for every firm on the street. A second number the same month is not a new
   // bid, it is a probe of the first answer — unless the seller asked for it
   // (best and final, above): then one more, and it must beat the first.
-  const finalCall = listing.final?.m === s.month ? listing.final : undefined;
+  const finalCall = listing.final?.m === s.month && listing.final.lost === undefined ? listing.final : undefined;
   if (listing.offeredM === s.month && !finalCall) return { s, err: "The seller has your offer for this month. Try again next month." };
   if (finalCall && price <= finalCall.first) return { s, err: `Best and final has to beat your ${money(finalCall.first)}.` };
 
@@ -611,7 +614,7 @@ export function buyListing(
   // the number to beat: the best sealed bid, or in a best and final the best
   // walk-away in the room (the lower of a firm's own number and its purse)
   const beat = finalCall
-    ? Math.max(0, ...(round?.bids ?? []).map((b) => Math.round(Math.min(b.max, b.afford ?? b.max) / 1000) * 1000))
+    ? Math.max(0, ...(round?.bids ?? []).map(walkOf))
     : rival?.bid ?? 0;
   const outbid = beat > 0 && beat >= price;
   if (price >= floor && !outbid) {
@@ -621,6 +624,10 @@ export function buyListing(
   }
   const li = next.listings.find((l) => l.bbl === bbl);
   if (li) { li.offeredM = next.month; delete li.final; }
+  // A FINAL THAT LOST binds the firm that beat it: at the month's round it
+  // pays at least your number (tickListingAbsorption), as a firm that beat a
+  // number in an open room does.
+  if (li && finalCall && price >= floor && outbid) li.final = { ...finalCall, lost: price };
   // OUTBID AT THE SELLER'S FLOOR: the seller calls best and final (see above).
   // It does not say by how much; one more number this month.
   if (li && !finalCall && price >= floor && outbid) {
@@ -2894,7 +2901,8 @@ function runCallForOffers(s: GameState, parcels: ParcelTable, h: Holding) {
  * while "Take best" signed the old leader at their first number.
  */
 export function rankBids(bids: Bid[]): Bid[] {
-  return bids.sort((a, b) => (a.dropped ? 1 : 0) - (b.dropped ? 1 : 0) || b.price - a.price);
+  // at one price, the bidder who would have gone further leads (best and final's cover)
+  return bids.sort((a, b) => (a.dropped ? 1 : 0) - (b.dropped ? 1 : 0) || b.price - a.price || (b.max ?? 0) - (a.max ?? 0));
 }
 
 /**
@@ -2923,27 +2931,34 @@ export function bestAndFinal(s: GameState, parcels: ParcelTable, bbl: string): {
   // could no longer close at its own bid; the rest sharpen, never past the
   // walk-away. A bid with no walk-away on record (an older save) stands.
   //
-  // A FINALIST THAT STAYS PUTS IN ITS WALK-AWAY (owner, 2026-11-27: no draw
-  // on HOW MUCH). How far it sharpened was a draw, 0.5-3.5% x its
-  // credibility, never past the walk-away. "Best and final" means exactly
-  // that: the last number it would pay, which is the walk-away it re-ran
-  // above (the lower of its own value and what it can fund). In a deep room
-  // the walk-away already bound almost every time — a room of six or more
-  // shades its sealed bid by under 1.7% (shadedBid), inside the old draw —
-  // so prices barely move. In a thin one (one to three firms, a 3.5-10%
-  // shade) a finalist now goes to its own number where the draw stopped
-  // short of it: the seller who calls a final in a thin market takes the
-  // buyers' surplus, and pays for it in the bidders at their purse, who
-  // walk. The leased fee's finalists go to their own number. The old draw is
+  // HOW FAR A FINALIST SHARPENS IS WHAT THE COMPETITION FORCES (owner,
+  // 2026-11-27: no draw on HOW MUCH). It was a draw, 0.5-3.5% x its
+  // credibility, never past the walk-away. Told there is a number to beat,
+  // the finalists are playing each other: each goes as far as it must to
+  // stay ahead and no further, and none past its walk-away. So a finalist
+  // the room outbids goes to its walk-away and loses; the one with the
+  // highest walk-away goes to the most any other bidder in the room would
+  // pay (a finalist's walk-away, a standing bid's price) — the second-best
+  // number, as on the tape and in a quiet offer's cover (quietOffer), never
+  // under its own sealed bid. A lone bidder told "best and final" has nobody
+  // to beat and stands. (Each finalist putting in its full walk-away, with
+  // or without a rival, handed a seller with one bid the buyer's whole
+  // surplus — up to the 10% Vickrey shade — on a bluff.) The old draw is
   // kept so the stream does not re-roll.
+  const stays: { b: Bid; walk: number }[] = [];
   for (const b of live) {
     const today = walkAwayToday(next, parcels, bbl, b.firmId, b.price);
     const walk = today ? (today.canClose ? today.walk : 0) : b.max;
     if (walk !== undefined && walk <= b.price) { b.dropped = true; walked++; continue; }
     if (walk !== undefined) b.max = walk;
     void rrange(next, 0.005, 0.035);
+    if (walk !== undefined) stays.push({ b, walk });
+  }
+  const standing = (ns.bids ?? []).filter((b) => !b.dropped);
+  for (const { b, walk } of stays) {
+    const cover = Math.max(0, ...standing.filter((o) => o !== b).map((o) => stays.find((x) => x.b === o)?.walk ?? o.price));
     const before = b.price;
-    if (walk !== undefined) b.price = Math.round(walk);
+    b.price = Math.round(Math.max(b.price, Math.min(walk, cover)));
     if (b.price > before) lifted++;
   }
   ns.round = 1;
@@ -4309,39 +4324,60 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
       let winner: Rival | undefined;
       const building = rec.class !== "land" && rec.bldgArea > 0;
       let round: ReturnType<typeof bidRound> | null = null;
+      // YOUR NUMBER STANDS AT THE MONTH'S ROUND (buyListing, playtest F13). A
+      // seller that refused your offer because a firm bid more does not then
+      // sell for less than you offered: the round runs again on the month's
+      // new books, and a firm that has since spent its money or moved on is
+      // no longer in it. Measured (seed 12007, month 1): an at-ask $373K was
+      // refused for a $418K bid, a $422K final lost to that firm's walk-away,
+      // and the round sold the building to a third firm for $349K. So your
+      // best number that month is the seller's floor (a tie goes to the firm,
+      // as when it refused you), as your number in talks is (`talk`), and a
+      // seller holding it does not cut its ask on a round under it. And if
+      // your best and final lost, the firm whose walk-away beat it takes the
+      // building and pays what the competition forced — its sealed bid, your
+      // final or the next firm's walk-away, whichever is highest, never past
+      // its own walk-away (bestAndFinal's law).
+      const fin = li.final?.m === s.month - 1 ? li.final : undefined;
+      const reserve = Math.max(listingReserve(li), talk ? talk.yourPrice + 1 : 0, fin ? fin.lost ?? fin.first : 0);
+      const closeAt = (bids: ReturnType<typeof bidRound>["bids"]) => {
+        if (fin?.lost !== undefined && bids.length) {
+          const walks = bids.map((b) => ({ b, w: walkOf(b) })).sort((x, y) => y.w - x.w);
+          if (walks[0].w >= fin.lost) return { top: walks[0].b, at: Math.min(walks[0].w, Math.max(bids[0].bid, fin.lost, walks[1]?.w ?? 0)) };
+        }
+        return { top: bids[0], at: bids[0]?.bid ?? 0 };
+      };
       if (building) {
         round = bidRound(s, parcels, rec, li);
-        const reserve = Math.max(listingReserve(li), talk ? talk.yourPrice + 1 : 0);
-        const top = round.bids[0];
-        if (!top || top.bid < reserve) {
+        const { top, at } = closeAt(round.bids);
+        if (!top || at < reserve) {
           // A building still being shown to its broker's own clients
           // (beliefs.ts PREMARKET_M) has not been to market: a thin first
           // look is not evidence of what the street pays, and the seller
           // does not cut its ask on it.
           if (li.listedM !== undefined && s.month - li.listedM < PREMARKET_M) { survivors.push(li); continue; }
           noteRoundFailed(s, rec, li, round);
-          survivors.push(top && !talk
+          survivors.push(top && !talk && !fin
             ? { ...li, ask: Math.round(Math.max(listingReserve(li), li.ask * 0.95, top.bid * 1.04) / 1000) * 1000 }
             : li);
           continue;
         }
-        px = top.bid;
+        px = at;
         winner = top.r;
       } else if (!li.halfBuilt) {
         // DIRT IS BID TOO (FORMULA_LEDGER #24): builders on their own residuals,
         // land bankers on the option (propmarket.ts landBidRound). A lot used to
         // close at its ask whenever a builder's residual covered it.
         const lr = landBidRound(s, parcels, rec, li);
-        const reserve = Math.max(listingReserve(li), talk ? talk.yourPrice + 1 : 0);
-        const top = lr.bids[0];
-        if (!top || top.bid < reserve) {
+        const { top, at } = closeAt(lr.bids);
+        if (!top || at < reserve) {
           noteLandRoundFailed(s, rec, li, lr);
-          survivors.push(top && !talk
+          survivors.push(top && !talk && !fin
             ? { ...li, ask: Math.round(Math.max(listingReserve(li), li.ask * 0.95, top.bid * 1.04) / 1000) * 1000 }
             : li);
           continue;
         }
-        px = top.bid;
+        px = at;
         winner = top.r;
       }
       // Somebody takes it, and somebody has a name. Losing the same corner to
@@ -4350,8 +4386,9 @@ export function tickListingAbsorption(s: GameState, parcels: ParcelTable) {
       let buyer = rivalBuys(s, parcels, rec, px, winner);
       // The winner could not fund the close after all: the next bid that clears takes it.
       if (!buyer && round) {
-        for (const b of round.bids.slice(1)) {
-          if (b.bid < Math.max(listingReserve(li), talk ? talk.yourPrice + 1 : 0)) break;
+        for (const b of round.bids) {
+          if (b.r === winner) continue;
+          if (b.bid < reserve) break;
           buyer = rivalBuys(s, parcels, rec, b.bid, b.r);
           if (buyer) { px = b.bid; break; }
         }

@@ -438,6 +438,8 @@ export function affordable(s: GameState, r: Rival, v: DealView, b: Bidder): numb
 
 /** `afford`: the most the firm can fund at the table (affordable) — with `max`, its walk-away is the lower of the two. */
 export interface Bid { r: Rival; max: number; bid: number; uw: Underwriting; afford?: number }
+/** A bidder's walk-away: the lower of its own number and what it can fund — as far as it goes in a best and final (actions.ts buyListing, tickListingAbsorption). */
+export const walkOf = (b: Bid): number => Math.round(Math.min(b.max, b.afford ?? b.max) / 1000) * 1000;
 
 /**
  * WHAT A FIRM IS CHASING THIS MONTH (2026-11-20). A firm closes so many deals
@@ -533,16 +535,17 @@ function onTape(s: GameState, bbl: string): boolean {
  * (the player's own deed — the holding's grade, which the tape cannot know).
  * `opening`: the round is struck before the first month has run, so the
  * desks' room is the opening's (rivalDebt.ts deskWithRoom).
- * `floor`: the least this seller takes, which a firm that cannot fund its own
- * number must still be able to fund to bid at all (see the bid below). It is
- * the listing's own reserve (listingReserve) unless the sale has another:
- * the credit bid on the courthouse steps, a note buyer's face, a seller under
- * duress who takes anything.
+ * `floor`: the least a firm that cannot fund its own number must still be
+ * able to fund to bid at all (see the bid below). It is the listing's own
+ * reserve, or the tape's floor when the seller names none or takes any bid
+ * (purseFloor), unless the sale has another: the credit bid on the
+ * courthouse steps, a note buyer's face; forcedSaleAsk passes 0 because it
+ * reads what firms think a deed is worth, not what they would bid.
  */
 export function bidRound(s: GameState, parcels: ParcelTable, rec: ParcelRecord, li: Pick<Listing, "bbl" | "ask" | "distress" | "reserve" | "reason" | "receiverFor" | "loanBasis"> & { listedM?: number; open?: boolean; cond?: Condition; condIdx?: number; opening?: boolean; raw?: boolean; floor?: number }): { bids: Bid[]; n: number; view: DealView | null } {
   const view = dealView(s, rec, li.bbl, li.ask, li.cond, li.condIdx, !!li.open);
   if (!view) return { bids: [], n: 0, view };
-  const floor = li.floor ?? listingReserve(li);
+  const floor = li.floor ?? purseFloor(li);
   const seller = ownerOf(s, rec.bbl);
   // A MOTIVATED SELLER IS NOT A TROUBLED BUILDING (2026-11-18). `distress` on a
   // listing is the seller's position — an estate, a split partnership, an
@@ -771,6 +774,22 @@ export function anchoredAsk(s: GameState, rec: ParcelRecord, value: number): num
   if (rec.class === "land" || !(rec.bldgArea > 0)) return value;
   const basis = sellerBasis(s, rec.bbl);
   return basis !== undefined && basis > value ? value + LOSS_AVERSION * (basis - value) : value;
+}
+
+/**
+ * THE LEAST A FIRM SHORT OF ITS OWN NUMBER MAY BID (bidRound, landBidRound;
+ * owner 2026-11-27, playtest F7: "no bid may be its bank balance"): the
+ * seller's own reserve — or, when the seller names none or takes any bid
+ * (reserve 0: a firm under duress, propmarket.ts sellerTerms, rivals.ts
+ * listUnderDuress), the tape's floor on the ask (listingReserve's default).
+ * A duress seller still takes a firm's OWN number however low, since that
+ * is what the building is worth to the room; what it is never offered is a
+ * purse. With the zero reserve read literally, a firm with $47K could still
+ * bid $47K on a $5M building whose seller was under duress — the one place
+ * the bank-balance bid survived. No new constant: the floor is the tape's own.
+ */
+export function purseFloor(li: Pick<Listing, "ask" | "reserve" | "distress" | "reason" | "receiverFor" | "loanBasis">): number {
+  return li.reserve ? listingReserve(li) : listingReserve({ ...li, reserve: undefined });
 }
 
 /** The least the seller of a listing takes: a named firm's own reservation, else the tape's 92% of ask (a lender's 88%). */
@@ -1815,7 +1834,7 @@ export function landBidRound(s: GameState, parcels: ParcelTable, rec: ParcelReco
   }
   const n = room.length;
   const bids: Bid[] = [];
-  const floor = li.floor ?? listingReserve(li);
+  const floor = li.floor ?? purseFloor(li);
   // a lot is bought with equity and the land desk's half-advance (debt.ts "land")
   const land = streetRefiProceeds(s, li.ask, 0, 0.95);
   const a = li.ask > 0 ? land.principal / li.ask : 0;

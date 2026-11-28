@@ -9,7 +9,7 @@
 // the seller would take does not bid (propmarket.ts bidRound, landBidRound).
 //
 // Asserted on every round the tape holds, every other month for eight months:
-// no bid is under the seller's floor (listingReserve) while the firm could not
+// no bid is under the seller's floor (purseFloor) while the firm could not
 // fund its own shaded number. A firm that values the deed under the floor and
 // can fund that still bids it (evidence the round prints); that is allowed.
 import { assertFreshBundle } from "./fresh.mjs";
@@ -39,7 +39,7 @@ for (let m = 0; m < MONTHS; m++) {
       if (!rec || li.halfBuilt || g.holdings[li.bbl]) continue;
       const building = rec.class !== "land" && rec.bldgArea > 0;
       const rd = building ? E.bidRound(g, parcels, rec, li) : E.landBidRound(g, parcels, rec, li);
-      const floor = E.listingReserve(li);
+      const floor = E.purseFloor(li);   // the seller's reserve, or the tape's floor from one that takes any bid
       rounds++;
       for (const b of rd.bids) {
         bids++;

@@ -436,11 +436,13 @@ function leanMult(s: GameState, lean: number, use: DevUse, months: number, who: 
   return Math.max(0.7, Math.min(1.4, m));
 }
 /** The firm's own hurdle on a plan: its margin, its idle hunger, and (unless asked not to) its read of rent. */
-export function firmHurdle(s: GameState, r: Rival, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, withOutlook = true): number {
+export function firmHurdle(s: GameState, r: Rival, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, withOutlook = true,
+  /** The market's equity stretch, when the caller has read it already (a screen reads it with dev.ts equityStretchPeek). */
+  stretchIn?: number): number {
   // A firm that builds on the desk's money needs its margin on more equity when
   // the desks write less (dev.ts equityStretch); a firm that builds on its own
   // money does not.
-  const stretch = buildsWithoutBank(r.style) ? 1 : equityStretch(s);
+  const stretch = buildsWithoutBank(r.style) ? 1 : stretchIn ?? equityStretch(s);
   return hurdleAt(plan, firmMargin(r, s.month, plan.exitCap) * stretch) * (withOutlook ? outlookMult(s, r, use, plan.months) : 1);
 }
 /** Whether this firm would break ground on the plan — financed its own way. */
@@ -464,11 +466,11 @@ export function firmWouldBuild(s: GameState, r: Rival, plan: { yieldOnCost: numb
 // Kreps 1978). How MUCH gets built is still the order book's, not theirs.
 const ANON_LEANS = [-0.6, -0.2, 0.2, 0.6];
 /** The anonymous merchants' best read on a plan; they need the desk. */
-export function anonHurdle(s: GameState, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, financeable: boolean, withOutlook = true): number {
+export function anonHurdle(s: GameState, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, financeable: boolean, withOutlook = true, stretch?: number): number {
   if (!financeable) return -Infinity;
   // They build on the desk's money: the trade margin pays more equity when the
   // desks write less than the street is used to (dev.ts equityStretch).
-  const base = hurdleAt(plan, DEV_MARGIN * equityStretch(s));
+  const base = hurdleAt(plan, DEV_MARGIN * (stretch ?? equityStretch(s)));
   if (!withOutlook) return base;
   let best = -Infinity;
   for (const lean of ANON_LEANS) best = Math.max(best, base * leanMult(s, lean, use, plan.months, null));
@@ -489,7 +491,21 @@ export function anonHurdle(s: GameState, plan: { yieldOnCost: number; exitCap: n
  * site clears this month and who builds it; demand decides the quantity.
  */
 export function streetHurdle(s: GameState, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, financeable: boolean, withOutlook = true): number {
-  let best = anonHurdle(s, plan, use, financeable, withOutlook);
+  return streetRead(s, plan, use, financeable, withOutlook).h;
+}
+/**
+ * `streetHurdle`, and WHO reads it best: a named firm, or null for the
+ * anonymous merchants. One loop, so the city's start test and the Build desk's
+ * "would anyone in town build this" (dev.ts townBuilderRead) are one number.
+ * `stretch` is the market's equity stretch when the caller has read it
+ * already; a screen must pass dev.ts equityStretchPeek, which writes nothing.
+ */
+export function streetRead(
+  s: GameState, plan: { yieldOnCost: number; exitCap: number; months: number }, use: DevUse, financeable: boolean,
+  withOutlook = true, stretch?: number,
+): { h: number; who: string | null } {
+  let best = anonHurdle(s, plan, use, financeable, withOutlook, stretch);
+  let who: string | null = null;
   for (const r of livingRivals(s)) {
     if (!(buildAppetite(r) > 0)) continue;
     if (!financeable && !buildsWithoutBank(r.style)) continue;
@@ -501,9 +517,11 @@ export function streetHurdle(s: GameState, plan: { yieldOnCost: number; exitCap:
     // still runs every other test (size fit, cash for the cheque, appetite).
     if (r.stressMs || !(r.cash > 0)) continue;
     if (!canCarryAnother(s, r)) continue;
-    best = Math.max(best, firmHurdle(s, r, plan, use, withOutlook));
+    const h = firmHurdle(s, r, plan, use, withOutlook, stretch);
+    if (h > best) who = r.name;
+    best = Math.max(best, h);
   }
-  return best;
+  return { h: best, who };
 }
 /** Whether any living firm can build without the construction desk. */
 export function streetHasOwnMoney(s: GameState): boolean {

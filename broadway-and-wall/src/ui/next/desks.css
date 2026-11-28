@@ -21,6 +21,7 @@
 .bd-big.pos { color: var(--bd-good); }
 .bd-big.neg { color: var(--bd-bad); }
 .bd-note { grid-column: 1 / -1; background: var(--bd-card, #fbf8f0); padding: 4px 9px; font-size: 12px; color: var(--bd-bad); }
+.bd-note.say { color: inherit; }
 .bd-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 14px; align-items: start; }
 .bd-model { position: sticky; top: 0; }
 @media (max-width: 760px) { .bd-grid { grid-template-columns: minmax(0, 1fr); } .bd-model { position: static; } }

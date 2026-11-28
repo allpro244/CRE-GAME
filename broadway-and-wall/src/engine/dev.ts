@@ -29,7 +29,7 @@ export { blockDatumFloors, heightCapFloors, townMaturity, type DatumMemo } from 
 // so it is still `physicalMaxFloors` from "@/engine/dev" everywhere else.
 export { physicalMaxFloors, plateEfficiency } from "./value";
 import { depositFor, depositsOn, genAnchorTenant, leasableUses, minLettableSf, pickName, pickSector, useVacantSf } from "./leasing";
-import { claimJob, jobDelivered, ownerOf, gradeOf, firmMargin, capForSpread, streetHurdle, streetHasOwnMoney, anonHurdle, hurdleAt, freeCash, transferDeed } from "./rivals";
+import { claimJob, jobDelivered, ownerOf, gradeOf, firmMargin, capForSpread, streetHurdle, streetRead, streetHasOwnMoney, anonHurdle, hurdleAt, freeCash, transferDeed } from "./rivals";
 import { logFirm } from "./firmLog";
 import { spendable, fundableNow, fundAndBook } from "./credit";
 import { mixOf, districtLabel } from "./mix";
@@ -580,6 +580,19 @@ export interface DevPlan {
   stabNoi: number;
   /** The tax-loaded exit yield the mark uses (the hurdle's own), %. Value on completion = stabNoi ÷ this. */
   exitYield: number;
+  /**
+   * THE EXIT YIELD'S TWO PARTS (proforma.ts developmentProForma), so a screen
+   * can say what it is made of: `exitYield == marketCap + taxLoadPct` exactly.
+   * `marketCap` is the market's cap for this finished building, net of tax,
+   * on the through-cycle read every builder and the land residual exit at
+   * (capExp), %; `capToday` the same building on today's tape, %, shown and
+   * never priced; `taxLoadPct` the property tax the owner bears, as a share
+   * of value, after any abatement, %. So worth = stabNoi ÷ exitYield =
+   * (stabNoi − tax) ÷ marketCap when nothing is abated.
+   */
+  marketCap: number;
+  capToday: number;
+  taxLoadPct: number;
   /** The first stabilised year's tax after any abatement, and the abatement priced (citygov.ts). */
   taxYr1?: number;
   taxAbate?: { pct: number; years: number } | null;
@@ -1012,7 +1025,7 @@ export function planDevelopment(
     ? "No construction lender funds spec commercial in a recession. Pre-lease it or fund it all with equity."
     : hurdleRatio < 1
       ? `Yield on cost is ${yieldOnCost.toFixed(2)}% against a ${requiredYield.toFixed(2)}% required yield `
-        + `(${exitCap.toFixed(2)}% exit, tax-loaded to ${exitYieldPct.toFixed(2)}%, plus the developer margin). `
+        + `(${exitCap.toFixed(2)}% exit cap plus ${(exitYieldPct - exitCap).toFixed(2)}% property tax = ${exitYieldPct.toFixed(2)}%, plus the developer margin). `
         // WHAT A SHORT HURDLE ACTUALLY SAYS. The required yield carries the
         // developer's margin, so the finished building is worth
         // hurdle × (1 + DEV_MARGIN) of everything in the basis — the same
@@ -1034,6 +1047,7 @@ export function planDevelopment(
     far: +(pf.gsf / rec.lotArea).toFixed(1), farMax,
     hardCost, softCost, contingency, demo, leaseUp, leaseUpForgone, costTotal, landBasis, landCarry, basisTotal,
     stabNoi, exitYield: exitYieldPct, taxYr1: pf.taxYr1, taxAbate: pf.abate,
+    marketCap: exitCap, capToday: pf.capToday, taxLoadPct: exitYieldPct - exitCap,
     ltc, ltcMax, ltcSizedBy: pf.ltcSizedBy, commitment, interestReserve, ratePct,
     lender: pf.lender, points: pf.points, pointsCost,
     equity: projectCost - commitment,
@@ -5334,11 +5348,12 @@ function developerLook(
         // through their rent outlook and how they read the market's direction.
         // ...but only on a scheme that already clears its spread on today's
         // rent, whatever it believes about tomorrow's.
-        if (!kids.length) nearV = Math.max(nearV, hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) / (1 + (spreadFloor(dev) - 1) * stretch));
-        if (hurdleAt(u.plan, DEV_MARGIN) * (1 + DEV_MARGIN) < 1 + (spreadFloor(dev) - 1) * stretch) continue;
+        const v = developerVerdict(s, u.plan, lead, dev, firm, stretch);
+        if (!kids.length) nearV = Math.max(nearV, v.vc / (1 + (spreadFloor(dev) - 1) * stretch));
+        if (!v.floorOk) continue;
         // ...and only what its own money can carry its share of.
         const coInvest = builderCoInvest(u.plan.basisTotal, ltcHere);
-        const h = hurdleAt(u.plan, DEV_MARGIN) * dev.outlook * momentumRead(s, lead, dev.momentum, firm) * exitRead(s, firm, lead);
+        const h = v.h;
         if (coInvest > purse) {
           if (u.financeable && !kids.length && (!unfunded || h > unfunded.h)) unfunded = { bbl, h, basis: u.plan.basisTotal, ltc: ltcHere };
           continue;
@@ -5440,7 +5455,7 @@ function developerLook(
  * as such; the pro forma — rent, vacancy now and at delivery, land at the
  * owner's ask, debt, cost — decides every deal.
  */
-type DeveloperProfile = {
+export type DeveloperProfile = {
   bar: number; minDemand: number; spec: number; maxFloors: number; ltc: number; uses: DevUse[];
   /** The value/cost this shop needs on TODAY's numbers, before any outlook — see spreadFloor. */
   floor?: number;
@@ -5554,6 +5569,28 @@ function exitRead(s: GameState, who: { id: string } | null | undefined, k: Built
   return used && used > 0 && b > 0 ? used / b : 1;
 }
 
+/**
+ * A TOWN DEVELOPER'S TWO TESTS ON A PLAN (`developerLook`), in one place so
+ * the Build desk can ask them of the player's own plan (`townBuilderRead`).
+ * `vc` is what the finished building is worth over everything in its basis,
+ * on today's rent (the plan's yield on cost over its exit yield);
+ * `floorOk` whether that clears the shop's value/cost floor, stretched when
+ * the desks lend less than it is used to (equityStretch); and `h` — read only
+ * on a plan that clears the floor, as the look reads it — the shop's hurdle
+ * through its rent outlook, its momentum read and its broker's exit cap,
+ * which it builds on at or over its own `bar`.
+ */
+export function developerVerdict(
+  s: GameState, plan: { yieldOnCost: number; exitCap: number }, lead: BuiltClass,
+  dev: DeveloperProfile, who: { id: string } | null | undefined, stretch: number,
+): { vc: number; floorOk: boolean; h: number } {
+  const base = hurdleAt(plan, DEV_MARGIN);
+  const vc = base * (1 + DEV_MARGIN);
+  const floorOk = !(vc < 1 + (spreadFloor(dev) - 1) * stretch);
+  const h = floorOk ? base * dev.outlook * momentumRead(s, lead, dev.momentum, who) * exitRead(s, who, lead) : NaN;
+  return { vc, floorOk, h };
+}
+
 /** Developers SITES_PER_LOOK examines in one look — a broker's shortlist. */
 const SITES_PER_LOOK = 24;
 /** At or below this loan-to-cost a developer funds the job without the construction desk. */
@@ -5658,9 +5695,88 @@ export function equityStretch(s: GameState): number {
     }
     e.ltcUsualM = s.month;
   }
-  const now = e.ltcNow, usual = e.ltcUsual;
+  return stretchOf(e.ltcNow, e.ltcUsual);
+}
+function stretchOf(now: number | undefined, usual: number | undefined): number {
   if (!(now !== undefined && usual !== undefined && usual < 0.98)) return 1;
   return Math.max(0.5, Math.min(2.5, (1 - now) / (1 - usual)));
+}
+/**
+ * `equityStretch` WITHOUT TOUCHING THE MEMORY — for a screen. The monthly
+ * memory lives on the econ and is written the first time a builder asks each
+ * month, so a desk that asked first would move it (at month 0 it would start
+ * the memory a month early) and every later start in town would depend on
+ * whether the player had opened a desk. This returns the same number and
+ * writes nothing.
+ */
+export function equityStretchPeek(s: GameState): number {
+  const e = s.econ;
+  if (e.ltcUsualM === s.month) return stretchOf(e.ltcNow, e.ltcUsual);
+  const now = marketConstructionQuote(e, STRETCH_MIX).ltcMax;
+  if (!Number.isFinite(now)) return stretchOf(e.ltcNow, e.ltcUsual);
+  return stretchOf(now, e.ltcUsual === undefined ? now : e.ltcUsual + (now - e.ltcUsual) / LTC_MEMORY_M);
+}
+
+/**
+ * WOULD ANYBODY IN THIS TOWN BUILD THIS PLAN? (F9, 2026-11-28; PARITY_PLAN:
+ * one rulebook.) The Build desk's verdict is the merchant's 17% margin
+ * (`developmentHurdle`, DEV_MARGIN) — but no city builder decides on that
+ * margin alone. Each reads the same `planDevelopment` numbers at its OWN
+ * margin: the anonymous merchants at the trade margin through four leans on
+ * rent (rivals.ts anonHurdle), each named firm at its style's (firmHurdle —
+ * an owner-user 0-5%, a REIT a 100-200bp spread, a vulture 25-35%), each town
+ * developer at its value/cost floor and then its bar (`developerVerdict`).
+ * Measured on seed 12007 (months 1-18), six of seven city starts planned at
+ * a desk hurdle of 0.85-0.98: buildings the desk called "Does not pencil"
+ * that a builder in town broke ground on.
+ *
+ * So this asks the city's own tests of the player's plan, with nothing new:
+ *  - the street: `streetRead`, the test `breakCityGround` starts on
+ *    (rivals.ts streetHurdle), beliefs included;
+ *  - the town's developers: every developer shop's own filters from
+ *    `developerLook` — the ground it works, the uses it builds, its height
+ *    and size limits, whether it needs the desk, its cheque against its
+ *    free cash — and then its floor and its bar, normalised so 1 is "builds".
+ * `h` is the best read (>= 1: somebody builds it), `who` that builder (null
+ * for the anonymous merchants), `vc` the plan's value over its basis.
+ *
+ * Pass the plan at the desk's full advance — what a builder on the desk's
+ * money underwrites. It judges the player's massing, spec and land; a shop
+ * would plan its own (risk stated, F9 design: the basis ran within 4%).
+ * It writes nothing (equityStretchPeek; no rng; no cache on the state), so
+ * a screen may call it; it is a dozen hurdles, not a pro forma, but it is
+ * still one call per scheme on screen, never inside a sweep.
+ */
+export function townBuilderRead(
+  s: GameState, parcels: ParcelTable, bbl: string, plan: DevPlan, use: DevUse,
+): { h: number; who: string | null; vc: number } {
+  const stretch = equityStretchPeek(s);
+  const financeable = plan.ltcMax > 0 && plan.commitment > 0;
+  const vc = hurdleAt(plan, DEV_MARGIN) * (1 + DEV_MARGIN);
+  let best = streetRead(s, plan, use, financeable, true, stretch);
+  const rec = resolveRec(parcels, s, bbl);
+  // A town developer walks vacant lots of a building's size, off the plats (developerLook).
+  if (!rec || rec.class !== "land" || rec.lotArea < 1500 || rec.homeLot) return { ...best, vc };
+  const lead = dominantOf(plan.mix);
+  const ownMoney = streetHasOwnMoney(s);
+  const ownSf = plan.sf * (plan.mix?.[lead] ?? 1);
+  // Its rent and exit read through its own beliefs when it is a firm (`firm`), the trade's survey when it is an old register's shop.
+  const shops: { prof: DeveloperProfile; name: string; firm: Rival | null; purse: number }[] = s.builderFirms
+    ? livingBuilderFirms(s).map((r) => ({ prof: r.builderProf!, name: r.name, firm: r, purse: Math.max(0, freeCash(s, r)) }))
+    : livingBuilders(s).map((b) => ({ prof: b.prof, name: b.name, firm: null, purse: Math.max(0, b.capital - b.committed) }));
+  for (const { prof, name, firm, purse } of shops) {
+    if (!financeable && !ownMoney && prof.ltc > CASH_BUILDER_LTC) continue;
+    if (demandIdx(rec.demandScore) < prof.minDemand) continue;
+    if (!prof.uses.some((b) => (b === "retail" && retailWantsMixed(rec) ? "mixed" : b) === use)) continue;
+    if (plan.floors > prof.maxFloors) continue;
+    if (ownSf > prof.maxShare * Math.max(1, s.econ.stock?.[lead] ?? 0) && plan.floors > 1) continue;
+    // its cheque at the advance it would take (its own leverage, at most the desk's)
+    if (builderCoInvest(plan.basisTotal, Math.min(prof.ltc, plan.ltcMax)) > purse) continue;
+    // Its outlook as it stands: the look's small per-visit jitter is a draw, and a screen draws nothing.
+    const v = developerVerdict(s, plan, lead, prof, firm, stretch);
+    if (v.floorOk && v.h / prof.bar > best.h) best = { h: v.h / prof.bar, who: name };
+  }
+  return { ...best, vc };
 }
 
 /** A shop's untrended value/cost floor; old saves derive it from leverage. */

@@ -23,7 +23,7 @@ for (const [bbl, h] of Object.entries(s.holdings)) {
   const v = E.dealView(s, rec, bbl, A, h.condition, h.condIdx); if (!v) continue;
   const Vs = rivals.map((r) => E.valueTo(e, v, E.bidderOf(s, r, rec)).V);
   const contract = E.holdingNOIYr(rec, e, h, Number.POSITIVE_INFINITY);
-  const cap = E.capRateFor(rec, e, h.condition, h.condIdx), qs = E.rollQualitySpread(rec, h, s.month, e);
+  const cap = E.capRateFor(rec, e, h.condition, h.condIdx), qs = 0;   // the roll spread was retired 2026-11-28
   const classA = E.assetValue(rec, e, h.condition, h.condIdx);
   console.log(`${rec.class.padEnd(11)} A ${(A / 1e6).toFixed(2)}M classModel/A ${f(classA / A)} | top bid/A ${f(Math.max(...Vs) / A)} median ${f(med(Vs) / A)} | appraiser: contractNOI/A ${f(100 * contract / A)} cap ${f(cap)} + rollQ ${f(qs)} · bidder: inPlace(noiPre-tau·A)/A ${f(100 * (v.noiPre - v.tau * A) / A)} stab/A ${f(100 * v.stabPre / A)} relet ${f(100 * v.leaseCap / A)} tau ${f(100 * v.tau)} cx ${f(100 * v.cx)} catchUp/A ${f(100 * v.catchUp / A)} occ ${f(100*(h.tenants?.reduce((a,t)=>a+(t.sf||0),0)||0)/Math.max(1,rec.bldgArea),0)}%`);
 }

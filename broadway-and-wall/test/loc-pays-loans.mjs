@@ -17,6 +17,14 @@ const check = (ok, msg) => { console.log(`  ${ok ? "OK  " : "FAIL"}  ${msg}`); i
 console.log("\nLOANS ARE PAID FROM CASH OR THE LINE\n");
 const { parcels, bbls, adjacency } = loadCity(0, E.normalizeParcels);
 
+// LIGHT LEVERAGE (2026-11-28). The line now obeys its total-leverage covenant —
+// every mortgage and the line within 60% of gross assets (credit.ts LOC_LTV).
+// At 65% of the desk's maximum this building, emptied, carried more debt than
+// that on its own, so the line had no room and the first arm measured an empty
+// line (avail 0); at 30% the room ran out inside the year as the empty
+// building's value fell ($293K → $202K by month two against $25K a month of
+// carry). At 15% the emptied building leaves the line room to carry
+// the payment, which is the claim under test.
 function setup(seed) {
   for (let s = seed; s < seed + 400; s++) {
     const g = E.firstListings(E.newGame(s, parcels, 80_000_000), parcels, bbls);
@@ -25,7 +33,7 @@ function setup(seed) {
       return r && r.class !== "land" && r.bldgArea > 0 && l.ask > 5_000_000 && l.ask < 25_000_000;
     });
     if (!li) continue;
-    const b = E.executePurchase(g, parcels, li.bbl, li.ask, "savings", false, 0.65);
+    const b = E.executePurchase(g, parcels, li.bbl, li.ask, "savings", false, 0.15);
     if (b.err || !b.s.holdings[li.bbl]?.loan) continue;
     return { g: b.s, bbl: li.bbl };
   }

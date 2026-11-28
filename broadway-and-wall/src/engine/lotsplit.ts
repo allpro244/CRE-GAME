@@ -51,7 +51,7 @@
 // regenerates the lots from it alone on every load, like the plats.
 import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { GameState, Holding, Loan, SplitRecord } from "./types";
-import { cloneState, logBooks } from "./types";
+import { cloneState, logBooks, logPrincipal } from "./types";
 import { resolveRec, ownedHoldingValue, initialCondition } from "./value";
 import { SPLIT_RULES, splitRule, MINOR_FIXED, MINOR_PER_LOT, CORNER_K, DEMAND_GAMMA, coverageMax, type SplitZoneRule } from "./lotcode";
 export { SPLIT_RULES, splitRule, MINOR_FIXED, MINOR_PER_LOT, coverageMax, type SplitZoneRule };
@@ -285,7 +285,9 @@ function recordSplit(s: GameState, parcels: ParcelTable, bbls: string[], sp: Spl
       // could not pay: the caller puts the deed back as it was and the split lapses
       if (Math.floor(s.cash) < due) throw new SplitShort(due);
       if (fundCashNeed(s, parcels, due, { allowLoc: false }) < due) throw new SplitShort(due);
-      logBooks(s, "debtSvc", due, sp.parent);
+      // the release paydown is principal; only the prepayment is a cost
+      logPrincipal(s, -paydown, sp.parent);
+      if (due - paydown > 0) logBooks(s, "debtSvc", due - paydown, sp.parent);
       L.balance = Math.max(0, L.balance - paydown);
     }
     if (mode === "allocate" && L.balance > 0) {

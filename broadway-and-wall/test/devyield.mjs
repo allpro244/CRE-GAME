@@ -88,7 +88,6 @@ function run(use, site) {
             noi: E.holdingNOIYr(rec, g.econ, h, g.month),
             occ: os.leasedSf / Math.max(1, rec.bldgArea),
             cap: E.capRateFor(rec, g.econ, h.condition),
-            spread: E.rollQualitySpread(rec, h, g.month),
             rent: os.baseRent / Math.max(1, os.leasedSf),
             mkt: E.marketRentPsfYr(rec, g.econ, h.condition),
             debt: h.loan?.balance ?? 0,
@@ -121,9 +120,9 @@ for (const use of USES) {
     for (const y of [0, 3, 5, 10, HOLD_Y]) {
       const k = r.marks[y];
       if (!k) continue;
-      console.log(`       +${String(y).padStart(2)}y  value ${M(k.value).padStart(8)} (${(k.value / r.atDeliver.basis).toFixed(2)}x basis) · NOI ${M(k.noi).padStart(7)} · occ ${(k.occ * 100).toFixed(0)}% · rent ${k.rent.toFixed(0)} vs mkt ${k.mkt.toFixed(0)} · cap ${k.cap.toFixed(2)}+${k.spread.toFixed(2)} · debt ${M(k.debt)}`);
+      console.log(`       +${String(y).padStart(2)}y  value ${M(k.value).padStart(8)} (${(k.value / r.atDeliver.basis).toFixed(2)}x basis) · NOI ${M(k.noi).padStart(7)} · occ ${(k.occ * 100).toFixed(0)}% · rent ${k.rent.toFixed(0)} vs mkt ${k.mkt.toFixed(0)} · cap ${k.cap.toFixed(2)} · debt ${M(k.debt)}`);
       if (process.env.DEEP) {
-        const c = Math.max(0.028, Math.min(0.13, (k.cap + k.spread) / 100));
+        const c = Math.max(0.028, Math.min(0.13, k.cap / 100));
         console.log(`             inPlaceNOI ${(k.noi / 1e6).toFixed(2)}M/${(c * 100).toFixed(2)}% = ${(k.noi / c / 1e6).toFixed(2)}M · stabNOI ${(k.noiYr / 1e6).toFixed(2)}M → ${(k.noiYr / (c + 0.011) / 1e6).toFixed(2)}M · land*.92 ${(k.land * 0.92 / 1e6).toFixed(2)}M`);
         console.log(`             opex ${(k.os.opex / 1e6).toFixed(2)}M tax ${(k.os.tax / 1e6).toFixed(2)}M mgmt ${(k.os.mgmt / 1e6).toFixed(2)}M · base ${(k.os.baseRent / 1e6).toFixed(2)}M rec ${((k.os.recoveredOpex + k.os.recoveredTax) / 1e6).toFixed(2)}M · opexPsf ${k.os.opexPsf.toFixed(2)} taxPsf ${k.os.taxPsf.toFixed(2)}`);
       }

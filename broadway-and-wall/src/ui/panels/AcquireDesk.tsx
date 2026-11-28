@@ -1,7 +1,7 @@
 import { FirmLink } from "@/ui/FirmLink";
 // Buy, sell, list, ground lease, disclosed roll, vacant possession.
 // Extracted from ParcelDesk so the property shell stays readable.
-import { consentFor } from "@/engine/vehicles";
+import { consentFor, exchangeMinPrice, partnerShare } from "@/engine/vehicles";
 import { useState } from "react";
 import Slider, { widePriceBounds, counterPriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
@@ -9,8 +9,9 @@ import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import type { Approach, BuiltClass, GroundReview, SaleInstructions } from "@/engine/types";
 import {
-  assetValue, marketAppraisal, initialCondition, holdingNOIYr, resolveRec, useRentPsfYr, operatingStatement,
-  recoveryOf, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, isLeasedFee, ownedContractNoiYr, useRentableSf } from "@/engine/value";
+  assetValue, marketAppraisal, initialCondition, resolveRec, useRentPsfYr, operatingStatement,
+  recoveryOf, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, isLeasedFee, ownedContractNoiYr, useRentableSf,
+  contractNoiYr, capRateFor, valueBridge, marketValueBridge } from "@/engine/value";
 import { demolitionCost } from "@/engine/dev";
 import {
   buyQuote, quietFeeRate, saleFeeRate, sellerCashAtClose, saleProceedsToSeller, groundLeaseQuote,
@@ -19,7 +20,7 @@ import {
 import { sellerOf, sellerProfile, closingBand, phaseShift, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { ownerAt } from "@/engine/ownership";
 import { unitStatus, buyoutQuote, BUYOUT_PREMIUM } from "@/engine/leasing";
-import { PRODUCTS, deskAdvice, onIncome } from "@/engine/debt";
+import { PRODUCTS, deskAdvice, onIncome, STAB_LTV } from "@/engine/debt";
 import { stayingPower, lenderByName } from "@/engine/lenders";
 import { WhyButton } from "@/ui/WhyChain";
 import { loanWhy, loanLead } from "@/ui/whyLinks";
@@ -33,8 +34,9 @@ import { lookingFor } from "@/engine/streetRolls";
 import { useVacantSf } from "@/engine/leasing";
 import { usd, sf, termLeft, pctSigned } from "@/ui/format";
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
-import { useLabel, physicalOcc, band, apMid, annualPayment, Row, LocSplitHint, Verdict } from "@/ui/panels/shared";
+import { useLabel, physicalOcc, band, apMid, annualPayment, ltvCeilingWord, Row, LocSplitHint, Verdict } from "@/ui/panels/shared";
 import { BizLink } from "@/ui/BizSheet";
+import { ValueBridgeFold, priceVerdict } from "@/ui/panels/ValueBridge";
 
 /**
  * EMPTYING A BUILDING. Lifted out of the leasing desk so the three moves sit
@@ -463,19 +465,30 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
               // your roll, re-assessed at THEIR price, because a sale
               // reassesses. Struck against your old basis this quoted a
               // different number from the one on the other side of the table.
-              const noi = holdingNOIYr(orec, game.econ,
-                asIfOwned(game, bbl, sale.offer!.price, { roll: holding.tenants, occ: holding.occ, cond: holding.condition }, orec),
+              // On the CONTRACT (value.ts contractNoiYr): a tenant in a free
+              // month still has a lease, and the appraisal credits the free
+              // rent off the price instead (2026-11-28).
+              const noi = contractNoiYr(orec, game.econ,
+                asIfOwned(game, bbl, sale.offer!.price, { roll: holding.tenants, occ: holding.occ, cond: holding.condition, condIdx: holding.condIdx, resRentPsf: holding.resRentPsf }, orec),
                 game.month);
               const cap = sale.offer!.price > 0 ? (noi / sale.offer!.price) * 100 : 0;
-              const mkt = game.econ.capRate[orec.class as BuiltClass] ?? cap;
+              // THE MARKET'S CAP FOR THIS BUILDING, ON THE INCOME IT IS QUOTED
+              // ON. The class index is a cap on a stabilised roll for the
+              // reference building, so "market 7.54%" beside an in-place yield
+              // compared two bases (F20). The verdict reads the price against
+              // the appraisal, the slider's own rule, so the two cannot disagree.
+              const mktCap = capRateFor(orec, game.econ, holding.condition, holding.condIdx);
+              const br = valueBridge(game, orec, holding);
+              const verdict = priceVerdict(sale.offer!.price, apMid(bbl, value));
               const occ = physicalOcc(orec as never, holding);
               const u = unitStatus(orec, holding, game.month);
               return (
                 <div className="grid">
-                  <Row k="Buyer cap rate" v={`${cap.toFixed(2)}%`} strong bad={cap > mkt + 0.4} />
+                  <Row k="Buyer cap rate" v={`${cap.toFixed(2)}%`} strong bad={verdict === "below market"} />
                   <Row
                     k="Market cap rate"
-                    v={`${mkt.toFixed(2)}% ${useLabel(orec)} · ${cap < mkt - 0.25 ? "premium" : cap > mkt + 0.25 ? "discount" : "at market"}`}
+                    v={`${mktCap.toFixed(2)}% ${useLabel(orec)}${br ? ` on ${usd(br.info.stabNoi)} stabilised NOI` : ""} · ${verdict === "above market" ? "premium" : verdict === "below market" ? "discount" : "at market"}`}
+                    title="This building's cap rate (the class cap for its location, condition and spec) on its stabilised NOI. The verdict is the price against the appraisal."
                   />
                   <Row k="Underwritten NOI" v={usd(noi)} />
                   <Row k="Occupancy" v={`${(occ * 100).toFixed(0)}% · ${u.leased} of ${u.total} spaces`} bad={occ < 0.75} />
@@ -490,7 +503,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
               {tq.tax > 0 && !exchangeBusy && !consentFor(game, holding, "exchange") && (
                 <button
                   className="btn btn-buy"
-                  title={`Defer ${usd(tq.tax)} tax. Must buy ≥ 80% of price within 6 mo.`}
+                  title={`Defer ${usd(tq.tax)} tax. Buy at least ${usd(exchangeMinPrice(game, holding, sale.offer.price))} of replacement within 6 mo${partnerShare(game, holding) > 0 ? " (your share of the sale price)" : ""}; any shortfall is taxed.`}
                   onClick={() => setAcceptConfirm({ exchange: true })}
                 >
                   1031 · defer {usd(tq.tax)}
@@ -599,26 +612,33 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   const saleH = game.holdings[bbl];
   // A leased fee is a coupon bond — yield off ground rent, not vacant-shell NOI.
   const fee = !!saleH && isLeasedFee(saleH);
-  const saleClass = (fee
-    ? "office"
-    : (saleRec && saleRec.class !== "land" ? saleRec.class : "office")) as BuiltClass;
   // YOUR OWN ROLL, RE-ASSESSED AT YOUR ASK. This quoted the class model, so a
   // principal pricing their own half-empty building was shown the yield a full
   // one would offer — and every buyer in town was reading the real roll. The
   // number a seller needs is what a buyer will compute: in-place income off
   // the leases actually in place, against a tax bill struck at the new price.
+  // On the contract, not this month's cheque (value.ts contractNoiYr): a free
+  // month is credited off the price, not capitalised (2026-11-28).
+  const saleBuilt = !fee && !!saleRec && saleRec.class !== "land" && saleRec.bldgArea > 0 && !!saleH;
   const saleNoi = fee && saleH
     ? ownedContractNoiYr(game, parcels, saleH)
-    : saleRec && saleRec.class !== "land" && saleRec.bldgArea > 0 && saleH
-      ? holdingNOIYr(saleRec, game.econ,
-          asIfOwned(game, bbl, price, { roll: saleH.tenants, occ: saleH.occ, cond: saleH.condition }, saleRec),
+    : saleBuilt
+      ? contractNoiYr(saleRec!, game.econ,
+          asIfOwned(game, bbl, price, { roll: saleH!.tenants, occ: saleH!.occ, cond: saleH!.condition, condIdx: saleH!.condIdx, resRentPsf: saleH!.resRentPsf }, saleRec!),
           game.month)
       : 0;
   const askCap = saleNoi > 0 && price > 0 ? (saleNoi / price) * 100 : null;
+  // WHICH ADJUSTMENT SEPARATES THE APPRAISAL FROM NOI OVER THE MARKET'S CAP
+  // (owner, 2026-11-27), and the market's cap for THIS building on the NOI it
+  // is struck on — the class index beside an in-place yield compared two
+  // bases and called a 9.76% ask "at market" in a 7.54% market (F20).
+  const saleBridge = saleBuilt ? valueBridge(game, saleRec!, saleH!) : null;
+  const saleMktCap = saleBuilt ? capRateFor(saleRec!, game.econ, saleH!.condition, saleH!.condIdx) : null;
+  const saleVerdict = priceVerdict(price, mid);
   return (
     <div className="deal">
       <div className="deal-head">Sell</div>
-      <div className="hint">Appraisal: {band(bbl, value)}.</div>
+      <ValueBridgeFold br={saleBridge} summary={<>Appraisal: {band(bbl, value)}.</>} />
       <Slider
         label="Your ask"
         value={price}
@@ -641,9 +661,9 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
           answer the phone, and it is the one that says whether the ask is
           serious. */}
       {askCap !== null && (
-        <div className="hint" title={fee ? "Leased fee, priced as bond + reversion." : askCap < game.econ.capRate[saleClass] - 0.4 ? "Premium to market." : askCap > game.econ.capRate[saleClass] + 0.4 ? "Discount to market." : "At market."}>
+        <div className="hint" title={fee ? "Leased fee, priced as bond + reversion." : "Market: this building's cap rate (the class cap for its location, condition and spec) on its stabilised NOI. The verdict is the ask against the appraisal, the slider's own rule."}>
           Ask cap <b className="mono">{askCap.toFixed(2)}%</b> on {usd(saleNoi)} {fee ? "ground rent" : "NOI"}
-          {!fee && <> · market <span className="mono">{game.econ.capRate[saleClass].toFixed(2)}%</span></>}
+          {!fee && saleMktCap !== null && <> · market <span className="mono">{saleMktCap.toFixed(2)}%</span>{saleBridge ? <> on {usd(saleBridge.info.stabNoi)} stabilised NOI</> : null} · {saleVerdict}</>}
         </div>
       )}
       {/* TWO WAYS TO SELL, and they are genuinely different trades. A sign on
@@ -940,6 +960,10 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
         <div className="grid">
           <Row k={ip?.disclosed ? "In-place NOI / yr, after taxes" : "NOI / yr (mkt est.)"} v={usd(noi)} />
           <Row k={<><Gloss term="going-in cap">Going-in cap</Gloss></>} v={`${goingInPct.toFixed(2)}%`} strong />
+          {rec && rec.class !== "land" && (() => {
+            const br = marketValueBridge(game, rec, bbl, gradeOf(game, rec));
+            return br ? <ValueBridgeFold br={br} summary={<>Appraisal {usd(br.band.lo)} – {usd(br.band.hi)}</>} /> : null;
+          })()}
           {/* Stabilised beside it and never instead of it. If this line is far
               above the one at the top, you are buying a leasing job. */}
           <Row k={<Gloss term="stabilised pro-forma">Stabilised pro-forma</Gloss>} v={`${usd(stab)} · ${offerPrice > 0 ? ((stab / offerPrice) * 100).toFixed(2) : "—"}%`} />
@@ -947,12 +971,18 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
           {/* IS THE PRICE A PRICE — the buy side of the line the sell desk has
               always printed. The market's cap for the class is the econ's own
               index, the same one every appraisal reads. */}
-          {rec && rec.class !== "land" && (() => {
-            const mkt = game.econ.capRate[rec.class as keyof typeof game.econ.capRate];
-            if (!(mkt > 0)) return null;
-            const d = goingInPct - mkt;
+          {rec && rec.class !== "land" && rec.bldgArea > 0 && (() => {
+            // This building's cap on its stabilised NOI, and the price against
+            // the appraisal — not the class index against an in-place yield,
+            // which are two bases (F20).
+            const grade = gradeOf(game, rec);
+            const h = ip?.h;
+            const mktCap = capRateFor(rec, game.econ, h?.condition ?? grade, h?.condIdx);
+            const br = marketValueBridge(game, rec, bbl, grade);
+            const v = priceVerdict(offerPriceRounded, apMid(bbl, marketAppraisal(game, rec, bbl, grade)));
             return (
-              <Row k="Market cap rate" v={`${mkt.toFixed(2)}% ${rec.class} · ${d > 0.4 ? "below market price" : d < -0.4 ? "above market price" : "at market"}`} />
+              <Row k="Market cap rate" v={`${mktCap.toFixed(2)}% ${rec.class}${br ? ` on ${usd(br.info.stabNoi)} stabilised NOI` : ""} · ${v === "below market" ? "below market price" : v === "above market" ? "above market price" : "at market"}`}
+                title="This building's cap rate (the class cap for its location, condition and spec) on its stabilised NOI. The verdict is your offer against the appraisal." />
             );
           })()}
           {/* CAN YOU CLOSE IT. Earnest money goes hard when the price is
@@ -1200,6 +1230,31 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
       : annualPayment(principal, max.ratePct, prodDef?.amortYears ?? 30))
     : 0;
   const dscrNow = annualDs > 0 ? noi / annualDs : null;
+  // COVERAGE, SAID ON THE PAYMENT IT DIVIDES BY (playtest F17, 2026-11-27).
+  // `dscrNow` is year one, which is the coupon alone during an IO period; the
+  // desk's own figure (uwDscr) is the same in-place NOI over the AMORTIZING
+  // constant (debt.ts sizeRest kUw — the coupon only when the paper is IO to
+  // its balloon). The card printed the first as plain "DSCR 3.73" beside the
+  // second at "2.72x" and said neither. Now both are named, the refi desk's
+  // way ("DSCR x amortizing (y IO)"). `dscrNow` still sets the verdict's tone,
+  // so no judgement moves.
+  const ioToBalloon = !!prodDef && prodDef.termM <= prodDef.ioM;
+  const annualDsAm = principal > 0
+    ? (ioToBalloon ? principal * (max.ratePct / 100) : annualPayment(principal, max.ratePct, prodDef?.amortYears ?? 30))
+    : 0;
+  const dscrAm = annualDsAm > 0 ? noi / annualDsAm : null;
+  const dscrIo = prodDef && prodDef.ioM > 0 && !ioToBalloon && principal > 0 ? noi / (principal * (max.ratePct / 100)) : null;
+  const coverWord = dscrAm === null ? ""
+    : ioToBalloon ? `DSCR ${dscrAm.toFixed(2)} interest-only`
+    : `DSCR ${dscrAm.toFixed(2)} amortizing${dscrIo !== null ? ` (${dscrIo.toFixed(2)} IO)` : ""}`;
+  // The words the binding-test line uses: the desk's ADVANCE today (its sheet,
+  // buyQuote.ltvCap — never "max", which is the covenant), the payment its
+  // uwDscr divides by, and the rate it was struck at (a floater is sized at
+  // the stressed rate, sizeRest uwRate, which is not the coupon on the card).
+  const lendPct = Math.round(100 * max.principal / Math.max(1, offerPrice));
+  const advPct = Math.round(max.ltvCap * 100);
+  const payWord = ioToBalloon ? "interest-only payment" : "amortizing payment";
+  const atRate = prodDef?.floating ? " at the stressed rate" : ` at ${max.ratePct.toFixed(2)}%`;
   const goingInPct = offerPrice > 0 ? (noi / offerPrice) * 100 : 0;
   const dy = principal > 0 ? (noi / principal) * 100 : 0;
   const cf = noi - annualDs;
@@ -1267,10 +1322,10 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                   style={pq.principal <= 0 ? { opacity: 0.42, cursor: "not-allowed" } : undefined}
                   title={pq.principal <= 0
                     ? `${p.label}: no quote. ${p.blurb}`
-                    : `${p.blurb}\n${(p.maxLTV * 100).toFixed(0)}% max LTV · ${p.amortYears}-yr amort · ${Math.round(p.termM / 12)}-yr term${sp ? `\nStaying power: ${sp.word}. ${sp.why}` : ""}`}
+                    : `${p.blurb}\n${ltvCeilingWord(p)} · ${p.amortYears}-yr amort · ${Math.round(p.termM / 12)}-yr term${sp ? `\nStaying power: ${sp.word}. ${sp.why}` : ""}`}
                   onClick={() => setProduct(p.id)}
                 >
-                  {p.label}{pq.principal > 0 ? ` · ${pq.ratePct.toFixed(2)}% (${pq.allInPct.toFixed(2)}% all in) · lends ${Math.round(100 * pq.principal / Math.max(1, offerPrice))}% LTV (max ${(pq.ltvCap * 100).toFixed(0)}%)` : " · won't quote"}
+                  {p.label}{pq.principal > 0 ? ` · ${pq.ratePct.toFixed(2)}% (${pq.allInPct.toFixed(2)}% all in) · lends ${Math.round(100 * pq.principal / Math.max(1, offerPrice))}% LTV (advance ${(pq.ltvCap * 100).toFixed(0)}% today)` : " · won't quote"}
                   {sp && sp.word !== "solid" && pq.principal > 0 ? <span style={{ marginLeft: 6, color: sp.word === "at risk" ? "#c0563e" : "#b8962e" }}>· {sp.word}</span> : null}
                 </button>
               );
@@ -1295,7 +1350,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
               onChange={setLev}
               format={() => (principal > 0 ? `${usd(principal)} · ${((principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% LTV` : "all cash")}
               marks={[{ at: 0, label: "cash" }, { at: 0.5, label: "half" }, { at: 1, label: "max" }]}
-              hint={`${max.ratePct}% coupon${dscrNow ? ` · DSCR ${dscrNow.toFixed(2)}` : ""}`}
+              hint={`${max.ratePct}% coupon${coverWord ? ` · ${coverWord}` : ""}`}
             />
           ) : null}
           {max.principal > 0 && (
@@ -1306,13 +1361,37 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                 ? `Lender appraisal ${usd(max.appraised ?? 0)}; sized on ${usd(max.uwBasis ?? 0)} (lesser of appraisal and ${usd(offerPrice)}). `
                   + `${usd(max.overpay ?? 0)} above appraisal is all equity.`
                 : max.bind === "ltv"
-                ? `LTV-constrained: ${(max.ltvCap * 100).toFixed(0)}% max (${max.sheetWhy ?? "lender terms"}).`
+                ? `Advance-constrained: at their ${advPct}% advance today (${max.sheetWhy ?? "lender terms"}).`
+                : max.bind === "stab"
+                  // BRIDGE PAPER SIZED ON THE PLAN (sizeRest's stabilised leg):
+                  // this branch was missing, and the line fell through to
+                  // "reduced by credit conditions and track record".
+                  ? (Math.abs(max.principal - STAB_LTV * max.stabValue) < 1
+                    ? `Sized on the business plan: ${Math.round(STAB_LTV * 100)}% of the ${usd(max.stabValue)} stabilised value (pro-forma NOI ${usd(max.stabNoi)}). `
+                    // held under the plan by the as-is leg (byLtv), which is
+                    // the sheet after any standing or single-name cut — so say
+                    // the LTV it wrote, and the cut when there is one
+                    : `Sized on the business plan, held by the as-is limit to ${lendPct}% LTV (their ${advPct}% advance today${max.advanceWhy ? `; ${max.advanceWhy}` : ""}); ${Math.round(STAB_LTV * 100)}% of the ${usd(max.stabValue)} stabilised value (pro-forma NOI ${usd(max.stabNoi)}) would be more. `)
+                    // the in-place leg lost to the plan (sizeRest onPlan): its
+                    // tests on today's income sized less — which can be the
+                    // same NOI as the pro forma on a building that is let but
+                    // bought cheap, so the line names the tests, not the NOI
+                    + `Their in-place tests on today's NOI (${usd(max.uwNoi)}) size less.`
+                : max.bind === "dscr" && max.modelBound
+                  // THE DESK'S LOSS MODEL, NOT THE COVERAGE TEST (sizeRest
+                  // modelConstrained): the loan closes above the DSCR minimum,
+                  // so "DSCR-constrained" sent the borrower off to fix income
+                  // that was not the problem.
+                  ? `Risk-model constrained: ${lendPct}% LTV against their ${advPct}% advance today. `
+                    + `${prodDef?.lender ?? "The desk"}'s loss model on this building's in-place NOI (${usd(max.uwNoi)}) lends no more; `
+                    + `at that loan the NOI covers the ${payWord} ${max.uwDscr.toFixed(2)}x${atRate}`
+                    + (prodDef?.bridge ? "." : `, above their ${max.reqDscr.toFixed(2)}x test.`)
                 : max.bind === "dscr"
-                  ? `DSCR-constrained: ${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% LTV vs ${(max.ltvCap * 100).toFixed(0)}% max. `
-                    + `${max.ratePct}% coupon, closing at ${max.uwDscr.toFixed(2)}x coverage on the lender's own risk model.`
+                  ? `Coverage-constrained: ${lendPct}% LTV against their ${advPct}% advance today. `
+                    + `In-place NOI ${usd(max.uwNoi)} covers the ${payWord} ${max.uwDscr.toFixed(2)}x${atRate}, their ${max.reqDscr.toFixed(2)}x minimum.`
                   : max.bind === "dy"
-                    ? `Debt-yield constrained: ${(max.ltvCap * 100).toFixed(0)}% max LTV not reached.`
-                    : `${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% LTV vs ${(max.ltvCap * 100).toFixed(0)}% max (${max.sheetWhy ?? "lender terms"}) · ${max.advanceWhy ?? "reduced by credit conditions and track record"}.`}
+                    ? `Debt-yield constrained: their ${advPct}% advance today not reached.`
+                    : `${lendPct}% LTV vs their ${advPct}% advance today (${max.sheetWhy ?? "lender terms"}) · ${max.advanceWhy ?? "reduced by credit conditions and track record"}.`}
             </div>
           )}
           {max.principal <= 0 && (
@@ -1334,7 +1413,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
               note={(negLev
                 ? `Negative leverage vs ${goingInPct.toFixed(2)}% going-in cap.`
                 : `Positive leverage vs ${goingInPct.toFixed(2)}% going-in cap.`)
-                + (dscrNow !== null ? ` DSCR ${dscrNow.toFixed(2)}x` : "")
+                + (coverWord ? ` ${coverWord}` : "")
                 + ` · yr-1 cash-on-cash ${coc.toFixed(1)}% on ${usd(equity)} equity.`}
             />
           )}
@@ -1361,7 +1440,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                   <Row
                     k="Terms"
                     v={`${prodDef.ioM ? `${Math.round(prodDef.ioM / 12)}-yr IO, ` : ""}${prodDef.amortYears}-yr amort, `
-                      + `${Math.round(prodDef.termM / 12)}-yr term, ${(prodDef.maxLTV * 100).toFixed(0)}% max LTV`}
+                      + `${Math.round(prodDef.termM / 12)}-yr term · ${max.ltvCap > 0 ? `${advPct}% advance today · ` : ""}${ltvCeilingWord(prodDef)}`}
                   />
                 )}
                 <Row k="Year-1 cash flow" v={usd(cf)} bad={cf < 0} />

@@ -830,6 +830,13 @@ export function checkInvariants(s: GameState, parcels: ParcelTable, prev?: GameS
       if (!fin(gap) || Math.abs(gap) > 1_000) {
         bad("vehicle", "fund", `cash ${Math.round(f.cash)} against its own ledger ${Math.round(sum)} — ${Math.round(gap)} moved without a kind`);
       }
+      // A VEHICLE CANNOT OVERDRAW. Every bill it pays takes its cash, then a
+      // call, then a GP advance (types.ts vehiclePay / vehicleReimburse); a
+      // negative balance is a payment nobody funded — an interest-free loan
+      // from nowhere (F19).
+      if (!f.settled && f.cash < -1) {
+        bad("vehicle", "fund", `cash ${Math.round(f.cash)} below zero — an overdraft nobody funded (uncalled ${Math.round(f.uncalled)}, advance ${Math.round(f.gpAdvance ?? 0)})`);
+      }
       if (!f.settled && f.deedTagged !== undefined) {
         const purse = (f.deedTagged ?? 0) - (f.deedSettled ?? 0);
         const tol = Math.max(1_000, 1e-6 * Math.abs(f.deedTagged ?? 0));

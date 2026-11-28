@@ -7,7 +7,7 @@
  */
 import type { ParcelTable } from "@/data/types";
 import type { BalanceSnapshot, BooksMonth, BooksYear, GameState, Holding, PnlYear } from "./types";
-import { logBooks, deedCfProbe, deedIrr, fundDepositsHeld, pnlAdd, pnlYear, START_YEAR } from "./types";
+import { logBooks, deedCfProbe, deedIrr, fundDepositsHeld, pnlAdd, pnlYear, START_YEAR, moveDeposit, vehiclePay } from "./types";
 import { depositsHeld } from "./leasing";
 import { locLimit, locRate } from "./credit";
 import { purseOf, partnerShare, taxShare } from "./vehicles";
@@ -19,6 +19,8 @@ import { gpInterestInFund } from "./fund";
 export { logBooks };
 /** The per-deed equity ledger's test hook and IRR solver — see test/deedledger.mjs. */
 export { deedCfProbe, deedIrr };
+/** The vehicle's purse doors and the income statement's year, for test/fund.mjs. */
+export { moveDeposit, vehiclePay, pnlYear };
 
 export interface BalanceSheetView {
   m: number;

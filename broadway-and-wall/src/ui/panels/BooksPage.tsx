@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { derive, nwOf } from "@/ui/derive";
 import { useStore } from "@/state/store";
 import Fold from "@/ui/Fold";
-import { monthLabel, START_YEAR, sweepApy } from "@/engine/types";
+import { monthLabel, START_YEAR, sweepApy, MMF_EXPENSE_PCT } from "@/engine/types";
 import type { BooksYear } from "@/engine/types";
 import { MILESTONES } from "@/engine/sim";
 import { depositsHeld } from "@/engine/leasing";
@@ -484,9 +484,9 @@ function IncomeStatementTab() {
                       {usd(b.noi)}
                       {(b.interest || b.borrowed) ? (
                         <div className="dim" style={{ fontSize: 11 }}>
-                          {b.interest ? `int ${usd(b.interest)}` : ""}
+                          {b.interest ? <span title="Interest on cash: the operating account plus the Treasury-bill money fund (Banks page)">{`int ${usd(b.interest)}`}</span> : ""}
                           {b.interest && b.borrowed ? " · " : ""}
-                          {b.borrowed ? `drew ${usd(b.borrowed)}` : ""}
+                          {b.borrowed ? (b.borrowed > 0 ? `drew ${usd(b.borrowed)}` : `repaid ${usd(-b.borrowed)}`) : ""}
                         </div>
                       ) : null}
                     </td>
@@ -605,7 +605,7 @@ export function IncomeStatement() {
             "Net operating income": prior.noi, "Leasing costs": -prior.leasing,
             "Capital expenditure": -prior.capex, "Firm overhead": -prior.ga,
             "Property cash flow": opCf(prior), "Debt service": -prior.debtSvc,
-            "Interest on cash": prior.interest ?? 0, "Debt drawn": prior.borrowed ?? 0, "Cash flow after debt": afterDebt(prior),
+            "Interest on cash": prior.interest ?? 0, "Principal drawn / repaid": prior.borrowed ?? 0, "Cash flow after debt": afterDebt(prior),
             "Development": -prior.dev, "Acquisitions": -prior.bought,
             "Disposition proceeds": prior.sold, "Taxes": -prior.taxes,
             "Change in cash": bottom(prior),
@@ -696,9 +696,9 @@ export function IncomeStatement() {
               <L k="Capital expenditure" v={-cur.capex} sub note="roofs, systems, make-ready" />
               <L k="Firm overhead" v={-cur.ga} sub note="asset management, accounting, legal" />
               <L k="Property cash flow" v={opCf(cur)} strong rule />
-              <L k="Debt service" v={-cur.debtSvc} sub note="interest, amortization, fees, paydowns" />
-              <L k="Interest on cash" v={cur.interest ?? 0} sub note={`sweep ${(sweepApy(game.econ) * 100).toFixed(1)}% (policy − 0.4pt) · ordinary income`} />
-              <L k="Debt drawn" v={cur.borrowed ?? 0} sub note="cash-out refi and facility draws" />
+              <L k="Debt service" v={-cur.debtSvc} sub note="interest, scheduled amortization, fees" />
+              <L k="Interest on cash" v={cur.interest ?? 0} sub note={`Treasury bills ${(sweepApy(game.econ) * 100).toFixed(2)}% after the money fund's ${MMF_EXPENSE_PCT}% fee · ordinary income`} />
+              <L k="Principal drawn / repaid" v={cur.borrowed ?? 0} sub note="new mortgage/facility principal less prepayments (cures, paydowns, payoffs)" />
               <L k="Cash flow after debt" v={afterDebt(cur)} strong rule />
               <L k="Development" v={-cur.dev} sub note="equity, construction carry, overruns" />
               <L k="Acquisitions" v={-cur.bought} sub note="equity at closing" />
@@ -781,7 +781,7 @@ function ProfitAndLoss() {
         </thead>
         <tbody>
           {line("Rental revenue", "rev", { sub: true, note: "rent, recoveries, other income" })}
-          {line("Interest on cash", "intInc", { sub: true })}
+          {line("Interest income", "intInc", { sub: true, note: "interest on cash, plus the LPs' share of the interest the fund pays on your GP advances, when it repays them (inside the firm, so not on the cash-flow line)" })}
           {years.some((y) => y.fees) && line("Syndicate fees", "fees", { sub: true, note: "development and asset management" })}
           {line("Total revenue", "totalRev", { strong: true, rule: true })}
           {line("Property operating costs", "propOpex", { sign: -1, sub: true, note: "opex, management, property tax, ground rent" })}

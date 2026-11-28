@@ -14,6 +14,7 @@ import { developmentProForma, marketConstructionQuote, farMaxFor, underwritingEc
 import { productOf, PRODUCT_TYPES, PRODUCT_KEYS, layoutProduct, type ProductKey } from "./products";
 import { homeLotBidPsf } from "./homeprice";
 import { GROCER_SALES } from "./grocerHook";
+import { flatRollStep } from "./citygov";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 
@@ -1736,6 +1737,20 @@ export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
   const read = readLand(rec, econ, true, LAND_CTX, m);
   m.read = read;
   return read;
+}
+
+/**
+ * THE LAND READ FOR A RECORD THAT IS NOT THE LOT'S OWN — a hypothetical
+ * envelope (zoning.ts varianceUse asks "what would a builder pay here at the
+ * FAR I am applying for?"). landRead's arithmetic without the lot memo: the
+ * memo is keyed by bbl, so feeding it a what-if record would evict the lot's
+ * real read and recompute it on the next map paint. LAND_CTX caches only
+ * market-level underwriting and construction quotes, so the numbers are the
+ * ones landRead would give the same record.
+ */
+export function landReadAsIf(rec: ParcelRecord, econ: Econ): LandRead {
+  syncLandMemos(econ);
+  return readLand(rec, econ, true, LAND_CTX);
 }
 
 /**
@@ -4004,8 +4019,9 @@ export interface Disclosure {
  * shop with one short tenant, and under it on a full block of flats.
  *
  * A lender's appraiser, a buyer's underwriter and the seller's broker all
- * read the same thing: the rent roll in hand, capitalised at the cap rate
- * the roll's quality earns, taxed at the standing assessment. That is
+ * read the same thing: the rent roll in hand, its gap to market held for as
+ * long as its leases run, capitalised at the building's cap rate, taxed at
+ * the standing assessment. That is
  * `holdingValue` on the disclosed roll, which is the same function the deed
  * will be marked with after the closing — so the only thing that changes at
  * the closing table is the tax reassessment at the price, and the card says
@@ -4601,9 +4617,6 @@ export function industryConcentration(h: Holding, econ?: Econ): { share: number;
   return { share: topV / total, sector: top, stressed: stressed / total };
 }
 
-/** The trade of space assumed re-let (`rollQualitySpread` relet): its own, and not in trouble (no industry reads it). */
-const RELET_TRADE = "\u0000relet" as unknown as Sector;
-
 /** The largest tenant's share of the rent roll. */
 export function concentration(h: Holding): number {
   let top = 0, total = 0;
@@ -4613,114 +4626,6 @@ export function concentration(h: Holding): number {
     if (annual > top) top = annual;
   }
   return total > 0 ? top / total : 0;
-}
-
-/**
- * Residential does not have a rent roll to grade — it has an occupancy, and
- * every lease on it is a twelve-month lease to an unrated household. Grading
- * it through the commercial machinery gave the same answer every time: no
- * named tenants, therefore "an empty building is a project", therefore a flat
- * 55bp penalty on the cap, forever, on a building running at 96% full. Price
- * it on the only thing that actually varies.
- */
-function residentialSpread(h: Holding): number {
-  const occ = h.occ ?? 0.95;
-  return clamp((0.94 - occ) * 2.2, -0.12, 0.85);
-}
-
-/**
- * `relet`: grade the roll AS IF `relet.sf` more feet were let today on one
- * fresh lease at `relet.rentPsf` — what an appraiser assumes of space still
- * to let (`leaseUpMark`). The new lease is the class's ordinary term
- * (market.ts LEASE_TERM_M), the street's average covenant (1.05 on the 0-2
- * scale [D: tenantBooks.ts STREET_GRADE_SF, 0.30 x 2 + 0.45 x 1]), on the
- * class's lease basis (shops and sheds net), and is a name and a trade of
- * its own that is not in trouble: a one-tenant building re-let is still a
- * one-tenant building.
- */
-export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number, econ?: Econ, relet?: { sf: number; rentPsf: number }): number {
-  if (relet && relet.sf > 0 && rec.class !== "land" && rec.bldgArea) {
-    const cls = rec.class as BuiltClass;
-    const net = cls === "retail" || cls === "industrial";
-    const phantom = {
-      ...(h.tenants[0] ?? {}), name: "\u0000relet", fid: undefined, sf: relet.sf, rentPsf: relet.rentPsf, credit: 1.05,
-      startM: month, endM: month + LEASE_TERM_M[cls], recovery: net ? "nnn" : "gross", net, use: cls, sector: RELET_TRADE,
-    } as unknown as Tenant;
-    return rollQualitySpread(rec, { ...h, tenants: [...h.tenants, phantom] }, month, econ);
-  }
-  if (rec.class === "land" || !rec.bldgArea) return 0.55;
-  // The commercial part is what the tenants lease. Measuring a rent roll
-  // against the WHOLE building marked a full block of flats with shops at
-  // grade as 12% occupied and priced it as a shell.
-  const commSf = rec.bldgArea * clamp(commercialShare(rec), 0, 1);
-  const resShare = clamp(1 - commSf / rec.bldgArea, 0, 1);
-  if (!h.tenants.length) {
-    return resShare > 0.5 ? residentialSpread(h) : 0.55;   // an empty commercial building really is a project
-  }
-  let sfTot = 0, wCredit = 0, wYears = 0, nnnSf = 0, wRev = 0;
-  for (const t of h.tenants) {
-    sfTot += t.sf;
-    wCredit += t.credit * t.sf;
-    wYears += Math.max(0, (t.endM - month) / 12) * t.sf;
-    if (recoveryOf(t) === "nnn") nnnSf += t.sf;
-    // THE REVERSION MARK.
-    //
-    // A rent roll is not only how long and how good — it is where the contract
-    // sits against the market, and for how long you are stuck with the answer.
-    // Paper twenty per cent UNDER market with nine years to run is a building
-    // whose income cannot grow: the reversion a buyer is paying for is a decade
-    // away, so they cap it wider. Paper twenty per cent OVER market is worse,
-    // and asymmetrically so — the income is going to FALL on a date everybody
-    // underwriting it can read. Only paper near market, or short paper
-    // anywhere, earns the tight number.
-    //
-    // Without this the spread was blind to rent level, so a seven-year lease at
-    // three quarters of market graded as good covenant. Measured over 945
-    // arriving letters: 94.4% of them, if signed, IMPROVED the building's grade
-    // (median 31bps tighter) and only 4.1% worsened it. Signing was a free
-    // upgrade on every axis the engine priced, which is most of why "Accept"
-    // was the right answer to 52% of the decisions in the game.
-    if (econ) {
-      const mkt = managedRentPsfYr(rec, econ, h, t.use);
-      if (mkt > 0.5) {
-        const off = Math.abs(1 - t.rentPsf / mkt);       // how far from market, either way
-        const yrs = Math.max(0, (t.endM - month) / 12);  // how long you are stuck with it
-        const over = t.rentPsf > mkt ? 1.4 : 1;          // over-rented is the harder problem
-        wRev += clamp((off - 0.05) * 3.0 * Math.min(1, yrs / 6) * over, -0.25, 0.70) * t.sf;
-      }
-    }
-  }
-  if (!sfTot) return resShare > 0.5 ? residentialSpread(h) : 0.55;
-  const occ = sfTot / Math.max(1, commSf);
-  const walt = wYears / sfTot;
-  const credit = wCredit / sfTot;                       // 0..2
-  // long paper and good covenants compress the cap; short paper widens it
-  // Term premium saturates: the tenth year of a lease adds less certainty than
-  // the second. Smooth in WALT, same 11bp/yr slope at zero, -0.30 asymptote.
-  const waltSpread = 0.45 - 0.75 * (1 - Math.exp(-walt * 0.11 / 0.75));
-  const creditSpread = 0.18 - 0.20 * credit;            // +0.18 unrated, −0.22 investment grade
-  const occSpread = clamp((0.9 - occ) * 1.4, -0.10, 0.75);
-  const structSpread = -0.10 * (nnnSf / sfTot);         // net paper is easier to finance
-  // CONCENTRATION. A building where one name is most of the income is not an
-  // income stream, it is a bet on that name, and the market prices it as one.
-  // Single-tenant assets trade wide unless the covenant is bond-grade and the
-  // term is long — which is exactly the combination that makes them trade
-  // tight. Both halves of that live in `concSpread`.
-  const conc = concentration(h);
-  const covenantRelief = credit >= 1.6 && walt >= 8 ? 0.55 : credit >= 1.6 ? 0.25 : 0;
-  const concSpread = clamp((Math.max(0, conc - 0.35) / 0.65) * 0.75 * (1 - covenantRelief), 0, 0.75);
-  // INDUSTRY CONCENTRATION, which the single-name measure above cannot see.
-  // Five law firms is five names and one cycle, and a building whose one trade
-  // is currently in a bust is a leasing project wearing a rent roll — the
-  // market prices both, and it prices the second one harder.
-  const ind = industryConcentration(h, econ);
-  const indSpread = clamp((Math.max(0, ind.share - 0.45) / 0.55) * 0.40 + ind.stressed * 0.55, 0, 0.85);
-  // The roll's distance from market (wRev) is no longer a spread: holdingValue
-  // prices it in dollars, term and reversion. Kept as a reading only.
-  void wRev;
-  const comm = waltSpread + creditSpread + occSpread + structSpread + concSpread + indSpread;
-  // A mixed building is graded as what it is: part rent roll, part occupancy.
-  return resShare > 0.02 ? comm * (1 - resShare) + residentialSpread(h) * resShare : comm;
 }
 
 /**
@@ -4757,7 +4662,7 @@ export function remainingAbatement(h: Holding, month: number): number {
  * dirt. It carried at $23.0M. Every single job in `pnpm devyield` marked
  * between 0.07x and 0.26x of cost the day the scaffolding came down.
  *
- * That is not a valuation. Net worth sets the revolver (locLimit), the revolver
+ * That is not a valuation. The mark sets the revolver (locLimit: gross asset value less debt), the revolver
  * funds the carry through lease-up, and the mark sets every LTV test the loan
  * has to pass — so finishing a building on time and on budget triggered a
  * margin call on the sponsor, in the exact month their costs peaked and their
@@ -4806,22 +4711,112 @@ export const GAP_CLOSE_YR = 0.25;
 export function gapDuration(r: number, kappa = GAP_CLOSE_YR): number {
   return 1 / Math.max(0.05, 1 - (1 - kappa) / (1 + r));
 }
+
+/**
+ * HOW LONG THE ROLL IN PLACE HOLDS ITS GAP (2026-11-28). GAP_CLOSE_YR is the
+ * speed at which a MARKET's rent gap closes. A rent roll's gap closes when
+ * its own contracts do: a lease pays its differential to market until it
+ * ends, and a block of flats turns its roll the way leasing.ts turns it. The
+ * appraiser and the street's bidders both held every gap for ~3.1 years
+ * whatever the leases said — a fully let shed on a 9.2-year lease at market
+ * was paid its occupancy and face-rent surplus for a third of its term
+ * (F20), and a block of flats above its market was paid the surplus for
+ * twice as long as its twelve-month leases let it last (F8). Plain data, so
+ * the street's view of a deal (propmarket.ts dealView) can carry it.
+ *
+ * - `leases`: each live commercial lease's annual rent (the weight) and the
+ *   years it has left.
+ * - `flatGap`: the let flats' rent against their own market, on the owner's
+ *   statement (management fee and the flats' reserve off, as holdingNOIYr
+ *   charges them). Only the rent differential: an occupancy gap stays in the
+ *   other legs, so nothing is counted twice.
+ * - `flatK`: the share of the flats' gap the roll closes in a year — twelve
+ *   months of flatRollStep, the engine's own monthly turn of the roll, rent
+ *   stabilisation included [D: leasing.ts tickLeasing / citygov.ts
+ *   flatRollStep].
+ */
+export interface RollTerms { leases: { w: number; yrs: number }[]; flatGap: number; flatK: number }
+export function rollTerms(rec: ParcelRecord, econ: Econ, h: Holding, month: number): RollTerms {
+  const leases: { w: number; yrs: number }[] = [];
+  for (const t of h.tenants ?? []) {
+    if (t.defaulted) continue;
+    leases.push({ w: t.rentPsf * t.sf, yrs: Math.max(0, (t.endM - month) / 12) });
+  }
+  const resSf = useRentableSf(rec, "multifamily");
+  if (!(resSf > 0)) return { leases, flatGap: 0, flatK: 0 };
+  const mk = flatsMarkPsf(rec, econ, h), ip = flatsRollPsf(rec, econ, h);
+  const occ = h.occ ?? occupancy(rec, econ);   // the occupancy holdingNOIYr bills the flats at
+  const flatGap = resSf * occ * (ip - mk) * (1 - MGMT_FEE - APT_RESERVE);
+  // the month's step as a share of the gap; at no gap, the step a gap would take
+  const km = Math.abs(mk - ip) > 1e-9
+    ? (flatRollStep(econ, rec.yearBuilt, ip, mk) - ip) / (mk - ip)
+    : (flatRollStep(econ, rec.yearBuilt, ip, ip + 1) - ip);
+  return { leases, flatGap, flatK: 1 - Math.pow(1 - km, 12) };
+}
+
+/**
+ * The years of each leg's gap a buyer pays for, discounted at `r`:
+ * - flats: the roll's own turn (gapDuration at flatK);
+ * - leases: each lease's differential over its remaining term, an annuity
+ *   (1 − (1 + r)^−yrs) / r, weighted by rent — null with no live lease
+ *   [S: Appraisal Institute, The Appraisal of Real Estate, 14th ed., ch. 22:
+ *   an above- or below-market lease is worth its rent differential over the
+ *   remaining term; the method incomeValueAsIs already uses; REAL_ECONOMY_PLAN
+ *   2.3].
+ */
+export function rollDurations(t: RollTerms, r: number): { flats: number; leases: number | null } {
+  let w = 0, wd = 0;
+  for (const l of t.leases) {
+    w += l.w;
+    wd += l.w * (l.yrs > 0 ? (r > 1e-9 ? (1 - Math.pow(1 + r, -l.yrs)) / r : l.yrs) : 0);
+  }
+  return { flats: gapDuration(r, t.flatK), leases: w > 0 ? wd / w : null };
+}
 /**
  * TERM AND REVERSION: the stabilised value plus what the roll in place pays
  * over or under it while the gap lasts. `noiAfterTax` is the owner's NOI
  * after its tax bill; at stabilised that is `cap × stabilised`, so the gap is
- * the difference. The same arithmetic the street's bidders use (valueTo:
- * `V += (noiPre − stabPre) × dur`), discounted at the appraiser's yield plus
- * the growth it capitalises.
+ * the difference. The same arithmetic the street's bidders use (valueTo),
+ * discounted at the appraiser's yield plus the growth it capitalises.
+ *
+ * EACH PART OF THE GAP FOR AS LONG AS IT LASTS (2026-11-28). The whole gap
+ * was held for gapDuration at the market's speed (~3.1 years): a shed let
+ * whole on a 9.2-year lease at market marked 23% under its NOI over the cap
+ * index (F20), and a block of flats whose market fell under its roll was
+ * paid the surplus for twice as long as its twelve-month leases keep it
+ * (F8). The gap is now split the way valueTo splits it:
+ *   gapF  the let flats' rent against their market, for the roll's own turn
+ *         (rollTerms flatK: a twelfth of the leases a month);
+ *   vacN  empty space, what letting it adds (leaseUpGapNoiYr), on the
+ *         market's clock as before — capped at the shortfall left once the
+ *         flats' rent is set aside, so a rent surplus does not hide a vacancy;
+ *   gapC  the rest — rent over or under market, occupancy above or below the
+ *         stabilised level, face over effective rent — paid until the leases
+ *         that carry it end (rollDurations), or on the market's clock where
+ *         there is no lease (a block of flats' occupancy, an empty building).
+ * Without a month there is no roll to read: the one-line form stands.
  */
-function termAndReversion(econ: Econ, stabilised: number, noiAfterTax: number, cap: number, yAll: number): number {
+function termAndReversionParts(
+  econ: Econ, rec: ParcelRecord, h: Holding, month: number | undefined,
+  stabilised: number, noiAfterTax: number, cap: number, yAll: number,
+) {
   const r = yAll + underwrittenGrowthPct(econ) / 100;
-  return stabilised + (noiAfterTax - cap * stabilised) * gapDuration(r);
+  const gapT = noiAfterTax - cap * stabilised;
+  const Dm = gapDuration(r);
+  if (month === undefined) return { value: stabilised + gapT * Dm, gapF: 0, gapC: gapT, vacN: 0, Df: 0, Dc: Dm, Dm };
+  const terms = rollTerms(rec, econ, h, month);
+  const D = rollDurations(terms, r);
+  const gapF = terms.flatGap;
+  const vacSf = Math.max(0, stabilisedOccupancy(rec, econ) - physicalOcc(rec, h)) * rentableSf(rec);
+  const vacN = vacSf > 0 ? Math.min(leaseUpGapNoiYr(rec, econ, h, vacSf), Math.max(0, gapF - gapT)) : 0;
+  const gapC = gapT - gapF + vacN;
+  const Df = D.flats, Dc = D.leases ?? Dm;
+  return { value: stabilised + gapF * Df + gapC * Dc - vacN * Dm, gapF, gapC, vacN, Df, Dc, Dm };
 }
 
 function leaseUpMark(
   rec: ParcelRecord, econ: Econ, h: Holding, month: number,
-  capNoRoll: number, cap: number, contractNoi: number, stabNoi: number,
+  cap: number, contractNoi: number, stabNoi: number,
   /** Any vacancy, not only a first lease-up: see VACANCY IS A LEASE-UP TOO. */
   anyVacancy = false,
 ): { mark: number; weight: number } | null {
@@ -4836,34 +4831,42 @@ function leaseUpMark(
   if (!(gap > 0)) return null;
   // THE SAME BUILDING, WITH THE GAP LET AT MARKET, marked the ordinary way —
   // both legs of holdingValue's blend, on the owner's own operating statement
-  // (its own tax bill, its own opex, the leases it has actually signed).
-  // The roll spread on the cap belongs to the part of the stabilised roll that
-  // exists; the part that does not exist yet is priced by the deductions in
-  // leaseUpMarkAt (its risk line is the "empty building is a project" spread
-  // in dollars), so charging both would price the same vacancy twice. At a
-  // full gap it is the plain cap, at no gap it is exactly the blend's cap.
+  // (its own tax bill, its own opex, the leases it has actually signed), at
+  // the building's own cap.
   //
-  // ...AND THE GAP, ONCE LET, IS A LEASE LIKE ANY OTHER (2026-11-19). The cap
-  // here shed the roll's whole spread in proportion to the gap, so a building
-  // that lost its only tenant was valued "filled" at the cap of a building
-  // with no roll to grade — tighter than the cap it carried the day before.
-  // Measured on 32 held buildings (seed 31337, month 300), each emptied on a
-  // clone: the one-tenant commercial rolls carried +1.4 to +2.1 points, the
-  // "filled" value came out 16-37% over the let building's own mark, and the
-  // deductions below (15-34% of stabilised) all but cancelled it — sheds
-  // marked 0.96 of let when empty, shops 0.87, while the street's bidders
-  // paid 0.57-0.66 of that. A one-tenant building re-let is a one-tenant
-  // building: the roll is graded with the gap let on a fresh market lease
-  // (`rollQualitySpread` relet). Flats have no roll to grade and are as they were.
+  // ONE CAP, LET OR FILLED (2026-11-28). This read a cap with the roll-quality
+  // spread on it, shed in proportion to the gap (and from 2026-11-19 re-graded
+  // with the gap let on a fresh lease), because the let building carried the
+  // spread and the filled one had to match it or an emptied one-tenant shed
+  // marked 0.96 of let. The spread is gone from valuation (see
+  // holdingValueParts), from the let building and the filled one alike, so
+  // the mismatch it patched cannot recur: what the 2026-11-19 fix measured —
+  // a one-tenant building re-let is still a one-tenant building — is now read
+  // by term and reversion on the filled roll below, a lease of the class's
+  // ordinary term, not by a spread.
   const gapSf = gap * rentableSf(rec);
   const flats = clamp(1 - commercialShare(rec), 0, 1) > 0.5;
-  const capFilled = flats
-    ? capNoRoll + (cap - capNoRoll) * clamp(letShare / Math.max(0.01, stabOcc), 0, 1)
-    : capNoRoll + rollQualitySpread(rec, h, month, econ, { sf: gapSf, rentPsf: marketRentPsfYr(rec, econ, h.condition, h.condIdx) }) / 100;
+  const capFilled = cap;
   const gapNoi = leaseUpGapNoiYr(rec, econ, h, gapSf);
   const filledNoi = contractNoi + gapNoi;
   const yFilled = capFilled + taxRate(econ) * taxBorneShare(rec);
-  const filled = termAndReversion(econ, stabNoi / yFilled, filledNoi, capFilled, yFilled);
+  // ...ON THE FILLED ROLL (2026-11-28). Term and reversion reads the roll's
+  // own leases and vacancy, so the building it marks here is the one with
+  // the gap let: the flats at the higher occupancy, or the commercial space
+  // on one fresh lease at market for the class's ordinary term (market.ts
+  // LEASE_TERM_M). Read off the roll as it stands, the empty feet would be
+  // charged a second time inside the "filled" value (measured: the
+  // empty-flats fixture in test/leaseup-mark rose 1185K -> 1479K), and as
+  // the gap closes the filled roll becomes the roll, so the mark still lands
+  // exactly on the blend.
+  const resSf = useRentableSf(rec, "multifamily");
+  const hFilled: Holding = flats && resSf > 0
+    ? { ...h, occ: Math.min(1, (h.occ ?? 0) + gapSf / resSf) }
+    : { ...h, tenants: [...h.tenants, {
+      sf: gapSf, rentPsf: managedRentPsfYr(rec, econ, h, rec.class as BuiltClass),
+      startM: month, endM: month + LEASE_TERM_M[rec.class as BuiltClass],
+    } as Tenant] };
+  const filled = termAndReversionParts(econ, rec, hFilled, month, stabNoi / yFilled, filledNoi, capFilled, yFilled).value;
   // THE INCOME GIVEN UP IS WHAT THE GAP WOULD EARN, FOR AS LONG AS THIS MARKET
   // TAKES TO LET IT (2026-11-19): the months to let of the building's own
   // tier today (proforma.ts leaseUpMonthsOf on value.ts scoreVacOf — the clock
@@ -4878,7 +4881,7 @@ function leaseUpMark(
   const cls = rec.class as BuiltClass;
   const toLetM = leaseUpMonthsOf(econ, cls, 0, 0, scoreVacOf(econ, cls, overallScore(rec, econ, cls, h.condIdx)), false);
   const forgone = gapNoi * toLetM / 12;
-  const mark = leaseUpMarkAt(rec, econ, h.condition, sinceM, letShare, capNoRoll, filled, h.condIdx, forgone);
+  const mark = leaseUpMarkAt(rec, econ, h.condition, sinceM, letShare, cap, filled, h.condIdx, forgone);
   return mark === null ? null : { mark, weight };
 }
 
@@ -5027,39 +5030,254 @@ export function bareLandRec(
 }
 
 /**
- * THE LEASED FEE — a bond with a deed attached.
- *
- * Cap the coupon at a ground-lease yield (tighter than a building cap), then
- * add the discounted reversion of the dirt (and, near term, a haircut on the
- * improvements that come back with it). This is what trades when you sell a
- * ground-leased lot, and what net worth must read while you hold one — not
- * landValue (which ignores the coupon) and not an empty-building appraisal
- * (which pretends the lessee's tower is yours to let).
- */
-/**
  * THE GROUND-LEASE YIELD — what a ground rent is capitalised at, as a cap rate
- * on the rent in force. A ground rent is the most senior claim on a building
- * (it is paid before the mortgage, and the fee owner takes the improvements if
- * it is not), so it prices like a long bond with a small spread: about half
- * the policy rate plus two points, never under 3.2%. One number for the leased
- * fee you own (`leasedFeeValue`) and the fee you sold (`leaseholdGroundPv`).
+ * on the rent in force, for a rent that grows at the rate a buyer underwrites
+ * (market.ts `underwrittenGrowthPct`). A ground rent is the most senior claim
+ * on a building (it is paid before the mortgage, and the fee owner takes the
+ * improvements if it is not), so it prices like a long bond with a small
+ * spread: about half the policy rate plus two points, never under 3.2%. One
+ * number for every ground lease in the game: the leased fee you own
+ * (`leasedFeeValue`), the fee you sold (`leaseholdGroundPv`), and the rent a
+ * new lease opens at (`groundRentRate`).
  */
 export function groundYieldPct(econ: Econ): number {
   return Math.max(3.2, econ.indexRate * 0.55 + 2.1);
 }
 
 /**
- * WHAT THE GROUND RENT UNDER A LEASEHOLD IS WORTH — to the fee owner, and so
- * what comes off the building's value. Struck at the same yield the fee sold
- * at, so selling the dirt is value-neutral before costs: the owner swaps land
- * value for cash and takes on a senior, rising rent. Any gain from the deal is
- * liquidity and the absence of a lender, not an arbitrage in the mark.
+ * THE GROUND YIELD'S DISCOUNT RATE, AND THE LAND'S GROWTH. A cap rate quoted
+ * on a growing income is the discount rate less the growth — the identity the
+ * building appraisal already uses (termAndReversion: r = yAll +
+ * underwrittenGrowthPct) — so the ground yield implies r = y + g. The dirt is
+ * expected to grow at that same g: land here is the residual of rents a buyer
+ * underwrites at g, and what a buyer expects the rent to do has one answer.
  */
-export function leaseholdGroundPv(h: Holding, econ: Econ): number {
-  const g = h.groundRentOut;
-  return g ? Math.round(g.rentYr / (groundYieldPct(econ) / 100)) : 0;
+function groundRates(econ: Econ): { r: number; g: number } {
+  const g = underwrittenGrowthPct(econ) / 100;
+  return { r: groundYieldPct(econ) / 100 + g, g };
 }
 
+/**
+ * A CPI GROUND LEASE'S ANNUAL STEP: expected inflation inside the 2% floor and
+ * 4% cap the contract carries (the terms the desk quotes, "Annual CPI (2%
+ * floor, 4% cap)"). One reading for the step the rent takes (stepGroundRent)
+ * and the step the leased fee is valued on (groundLeasePv).
+ */
+export function cpiGroundStep(econ: Econ): number {
+  return Math.max(0.02, Math.min(0.04, econ.inflExp ?? econ.nat?.inflExp ?? 0.025));
+}
+
+/**
+ * HOW OFTEN A LONG GROUND LEASE RESETS TO MARKET: every twenty years, upward
+ * only. Fair-market ground-rent reappraisals come "generally after 10-20
+ * years" (UNC School of Government CED, "On Borrowed Ground: A Ground Lease
+ * Primer, Part 2", 2018); a clause resetting every 25 years to 6% of the
+ * land's fair market value is in Paul Weiss, NYLJ 30 Dec 2009 [S~]. Twenty is
+ * the middle of that range and was already this engine's FMV review interval.
+ * The reset never cuts the rent — the standard no-decrease clause in
+ * value-based resets (Morrison Cohen, "Value Based Rent Resets") — and the
+ * land is valued as if vacant and unencumbered, the basis the NYLJ (2019,
+ * "Considerations for ground rent reset provisions") calls the main point of
+ * dispute. One interval for the city's FMV paper and the sale-leaseback's own
+ * lease.
+ */
+export const GROUND_FMV_RESET_M = 240;
+
+/** What a ground lease's valuation needs to know, read off whichever record carries it. */
+export interface GroundTerms {
+  /** The rent in force. */
+  rentYr: number;
+  /** Fractional step each step period (0.02 = 2%). */
+  stepFrac: number;
+  stepEveryYrs: number;
+  /** Years to the next step, from now. */
+  yrsToStep: number;
+  /** Years to the end of the term. */
+  yrsLeft: number;
+  /** Years between market resets; null when the rent never resets. */
+  resetEveryYrs: number | null;
+  /** Years to the next market reset, from now. */
+  yrsToReset: number;
+  /** The contract's ceiling on a reset rent, `t` years from now (the city's capped FMV paper). */
+  capRentAt?: (t: number) => number;
+  /** The lessee's building, which reverts with the land. */
+  improvementSf?: number;
+}
+
+/** An annual income of 1 for `p` years, paid in arrears, at `r`. */
+function annuityYrs(p: number, r: number): number {
+  return p > 0 ? (1 - Math.pow(1 + r, -p)) / r : 0;
+}
+
+/**
+ * A stepped rent from now to `H` years, discounted at `r`: the rent `R` until
+ * the first step, then `R × (1 + step)` every `every` years. The exact steps,
+ * not a smoothed growth rate — smoothing a 12%-every-ten-years lease to
+ * 1.14% a year overstates it by about 5%. Returns the rent in force after
+ * the segment, including a step due on its last day (the tick steps the rent
+ * before it resets it, tickLeaseholds).
+ */
+function steppedRentPv(R: number, step: number, every: number, toStep: number, H: number, r: number): { pv: number; rentAtEnd: number } {
+  const per = Math.max(1 / 12, every);
+  let pv = 0, t = 0, next = Math.max(0, toStep);
+  while (next < H - 1e-6) {
+    pv += R * annuityYrs(next - t, r) * Math.pow(1 + r, -t);
+    t = next; R *= 1 + step; next += per;
+  }
+  pv += R * annuityYrs(H - t, r) * Math.pow(1 + r, -t);
+  if (Math.abs(next - H) < 1e-6) R *= 1 + step;
+  return { pv, rentAtEnd: R };
+}
+
+/**
+ * THE OPENING GROUND RENT, AS A FRACTION OF THE LAND, THAT MAKES A NEW LEASE
+ * WORTH EXACTLY THE LAND: the stepped rent to the horizon `N` (the term, or
+ * the next market reset) plus the land at that horizon, grown at g and
+ * discounted at r, equals the land today. Signing a ground lease, or selling
+ * the fee and leasing it back, then moves value only by its costs.
+ *
+ * Exact while the contract steps no faster than g, which holds for every lease
+ * this engine writes: the sale-leaseback's 2% (= g at target inflation, when
+ * this reduces to the ground yield itself), the city's fixed +12-16% a decade,
+ * CPI inside its 2-4% collar (g follows inflation above 2%), and FMV paper
+ * with no step. A lease that stepped faster would outrun the land, the
+ * upward-only reset would bind in expectation, and the opening rent would be
+ * slightly rich. A reset the contract caps (the city's FMV paper) is the
+ * other exception: see neutralGroundRent.
+ */
+export function groundRentRate(econ: Econ, stepFrac: number, stepEveryYrs: number, horizonYrs: number): number {
+  const { r, g } = groundRates(econ);
+  const N = Math.max(1 / 12, horizonYrs);
+  return (1 - Math.pow((1 + g) / (1 + r), N)) / steppedRentPv(1, stepFrac, stepEveryYrs, stepEveryYrs, N, r).pv;
+}
+
+/**
+ * THE LEASED FEE — a bond with a deed attached, and ONE function for it.
+ *
+ * What a ground lease is worth to whoever owns the fee: the stepped rent to
+ * the next market reset; at each reset the rent goes to the land then
+ * standing (grown at g) times the opening rate for the stretch ahead, never
+ * down and never above the contract's cap; and at the end of the term the
+ * dirt, plus — near reversion — the lessee's building that comes back with
+ * it. Discounted at the ground yield plus g. No floor: the old 0.55 × land
+ * clamp bound whenever the land outran a stepped rent, and the growth and
+ * resets now carry what it was standing in for.
+ *
+ * It is what trades when you sell a ground-leased lot, what net worth reads
+ * while you hold one, what comes off a leasehold's value, and what the fee
+ * costs to buy back — the city's leased fees and the player's sale-leaseback
+ * on the same arithmetic. It used to be two: the leasehold's liability was the
+ * rent over today's yield, a flat perpetuity with no land in it, so once the
+ * rent was fixed the buyback never saw the land again — measured on seed
+ * 12007, $6.26M of land bought back for $1.24M after fifteen years.
+ */
+export function groundLeasePv(t: GroundTerms, land: number, econ: Econ): number {
+  const { r, g } = groundRates(econ);
+  const T = Math.max(0, t.yrsLeft);
+  const every = t.resetEveryYrs && t.resetEveryYrs > 0 ? t.resetEveryYrs : null;
+  let pv = 0, at = 0, R = t.rentYr, toStep = t.yrsToStep;
+  let nextReset = every ? Math.max(0, t.yrsToReset) : Infinity;
+  for (;;) {
+    const end = Math.min(nextReset, T);
+    const seg = steppedRentPv(R, t.stepFrac, t.stepEveryYrs, toStep, end - at, r);
+    pv += seg.pv * Math.pow(1 + r, -at);
+    if (end >= T - 1e-6 || !every) break;
+    at = end;
+    const market = land * Math.pow(1 + g, at) * groundRentRate(econ, t.stepFrac, t.stepEveryYrs, Math.min(every, T - at));
+    R = Math.max(seg.rentAtEnd, t.capRentAt ? Math.min(market, t.capRentAt(at)) : market);
+    toStep = t.stepEveryYrs;
+    nextReset = at + every;
+  }
+  // Near reversion the bones start to matter; far out they are a rounding
+  // error. The 0.35-over-30-years share is the convention the leased fee has
+  // always carried, unchanged here and still to be sourced.
+  const bldgFrac = (t.improvementSf ?? 0) > 0 && T < 30 ? ((30 - T) / 30) * 0.35 : 0;
+  return pv + land * Math.pow(1 + g, T) * (1 + bldgFrac) * Math.pow(1 + r, -T);
+}
+
+/**
+ * THE NEUTRAL OPENING RENT WHEN THE CONTRACT CAPS ITS OWN RESETS. FMV paper
+ * resets to market but never above the opening rent compounded at its cap
+ * (3.5% a year). groundRentRate's closed form assumes the reset reaches the
+ * market; once the growth a buyer underwrites outruns the cap (expected
+ * inflation above about 3.5%, the Great-Inflation regime the economy can
+ * reach), the cap binds in expectation and a lease opened at that rate is
+ * worth less than the land — measured 0.87 × land on 99-year FMV paper at 5%
+ * expected inflation. Then the rent is solved on groundLeasePv itself, which
+ * rises with the opening rent (the rent, and the cap struck on it), so the
+ * lease signs at the land's value on the one function. `guess` is the closed
+ * form, which is exact whenever the cap does not bind.
+ */
+export function neutralGroundRent(
+  land: number, econ: Econ, termsFor: (rentYr: number) => GroundTerms, guess: number,
+): number {
+  const pv = (R: number) => groundLeasePv(termsFor(R), land, econ);
+  if (!(land > 0) || !(guess > 0) || pv(guess) >= land) return guess;
+  let lo = guess, hi = guess * 2;
+  for (let i = 0; i < 40 && pv(hi) < land; i++) { lo = hi; hi *= 2; }
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (pv(mid) < land) lo = mid; else hi = mid;
+  }
+  return hi;
+}
+
+/** A city / player ground lease's terms, as `groundLeasePv` reads them. */
+export function groundLeaseTerms(
+  gl: import("./types").GroundLease, econ: Econ, month: number, improvementSf = 0,
+): GroundTerms {
+  const review = gl.review ?? "fixed";
+  const yrsLeft = Math.max(0, (gl.endM - month) / 12);
+  const everyYrs = gl.stepEveryM / 12;
+  const toNext = Math.max(0, (gl.lastStepM + gl.stepEveryM - month) / 12);
+  if (review === "fmv") {
+    const open = gl.openRentYr ?? gl.rentYr;
+    const capPct = gl.fmvCapPct ?? 3.5;
+    const sinceStart = (month - gl.startM) / 12;
+    return {
+      rentYr: gl.rentYr, stepFrac: 0, stepEveryYrs: 1, yrsToStep: 1, yrsLeft,
+      resetEveryYrs: everyYrs, yrsToReset: toNext,
+      capRentAt: (t) => open * Math.pow(1 + capPct / 100, sinceStart + t),
+      improvementSf,
+    };
+  }
+  return {
+    rentYr: gl.rentYr,
+    stepFrac: review === "cpi" ? cpiGroundStep(econ) : gl.stepPct / 100,
+    stepEveryYrs: everyYrs, yrsToStep: Math.min(everyYrs, toNext), yrsLeft,
+    resetEveryYrs: null, yrsToReset: 0, improvementSf,
+  };
+}
+
+/** The sale-leaseback's own ground lease (Holding.groundRentOut), as `groundLeasePv` reads it. */
+export function leaseholdTerms(
+  g: NonNullable<Holding["groundRentOut"]>, month: number, improvementSf = 0,
+): GroundTerms {
+  const resetM = g.resetEveryM ?? GROUND_FMV_RESET_M;
+  return {
+    rentYr: g.rentYr, stepFrac: g.stepPct, stepEveryYrs: 1,
+    yrsToStep: Math.min(1, Math.max(0, (g.lastStepM + 12 - month) / 12)),
+    yrsLeft: Math.max(0, (g.endM - month) / 12),
+    resetEveryYrs: resetM / 12,
+    yrsToReset: Math.max(0, ((g.lastResetM ?? g.startM) + resetM - month) / 12),
+    improvementSf,
+  };
+}
+
+/**
+ * WHAT THE GROUND RENT UNDER A LEASEHOLD IS WORTH — to the fee owner, and so
+ * what comes off the building's value and what buying the fee back costs. The
+ * leased fee (groundLeasePv) on the land as if vacant, so selling the dirt is
+ * value-neutral before costs (the opening rent is solved for it,
+ * groundRentRate) and from then the liability carries the land: the lessee is
+ * short the dirt until the next reset hands its growth to the fee owner.
+ */
+export function leaseholdGroundPv(h: Holding, econ: Econ, land: number, month: number, improvementSf = 0): number {
+  const g = h.groundRentOut;
+  return g ? Math.round(groundLeasePv(leaseholdTerms(g, month, improvementSf), land, econ)) : 0;
+}
+
+/** The leased fee of a city / player ground lease — `groundLeasePv` on the bare lot. */
 export function leasedFeeValue(
   gl: import("./types").GroundLease,
   bare: ParcelRecord,
@@ -5067,18 +5285,7 @@ export function leasedFeeValue(
   month: number,
   improvementSf = 0,
 ): number {
-  const yld = groundYieldPct(econ);
-  const yearsLeft = Math.max(0.25, (gl.endM - month) / 12);
-  const disc = Math.pow(1 + yld / 100, yearsLeft);
-  const annuity = 1 - 1 / disc;
-  const income = (gl.rentYr / (yld / 100)) * annuity;
-  const land = landValue(bare, econ);
-  // Near reversion the bones start to matter; far out they are a rounding error.
-  const bldgShare = improvementSf > 0 && yearsLeft < 30
-    ? Math.max(0, (30 - yearsLeft) / 30) * 0.35 * land
-    : 0;
-  const reversion = (land + bldgShare) / disc;
-  return Math.max(Math.round(land * 0.55), Math.round(income + reversion));
+  return Math.round(groundLeasePv(groundLeaseTerms(gl, econ, month, improvementSf), landValue(bare, econ), econ));
 }
 
 /**
@@ -5161,12 +5368,26 @@ export function isVacantLandLoanCollateral(
 export function ownedHoldingValueFromRec(
   s: GameState, rec: ParcelRecord, h: Holding,
 ): number {
+  return ownedValueParts(s, rec, h).value;
+}
+
+/**
+ * The deed's mark with its terms: the building's own (HoldingValueParts;
+ * null for a leased fee, a job in the ground or a plat going in, each carried
+ * on a basis of its own), what tenants who served notice take off it, and the
+ * re-letting reserve on leases about to roll. `value` is ownedHoldingValue.
+ */
+export interface OwnedValueParts { value: number; parts: HoldingValueParts | null; leavingAdj: number; rollAdj: number }
+export function ownedValueParts(
+  s: GameState, rec: ParcelRecord, h: Holding,
+): OwnedValueParts {
+  const only = (value: number): OwnedValueParts => ({ value, parts: null, leavingAdj: 0, rollAdj: 0 });
   const gl = s.groundLeases?.[h.bbl];
   if (h.groundLeased && gl) {
     const bare = {
       ...rec, class: "land" as const, bldgArea: 0, floors: 0, unitsRes: 0, mix: undefined,
     };
-    return leasedFeeValue(gl, bare, s.econ, s.month, gl.sf ?? s.built?.[h.bbl]?.bldgArea ?? 0);
+    return only(leasedFeeValue(gl, bare, s.econ, s.month, gl.sf ?? s.built?.[h.bbl]?.bldgArea ?? 0));
   }
   // A SITE UNDER CONSTRUCTION IS CARRIED AT COST, LAND INCLUDED (2026-10-14).
   // The works are carried at money sunk (portfolioMark), and the dirt under
@@ -5186,7 +5407,7 @@ export function ownedHoldingValueFromRec(
   // of the cost carry) without a step at either end. Older jobs, recorded
   // before `landMark` existed, keep the cost carry.
   const dev = s.developments?.[h.bbl];
-  if (dev && (rec.class === "land" || !rec.bldgArea) && h.costBasis > 0) return dev.landMark ?? h.costBasis;
+  if (dev && (rec.class === "land" || !rec.bldgArea) && h.costBasis > 0) return only(dev.landMark ?? h.costBasis);
   // STREETS GOING IN ARE CONSTRUCTION IN PROGRESS TOO (2026-10-22). The whole
   // horizontal — streets, pipes, impact fees, amenities — is paid the day the
   // plat starts (landdev.ts startPlat, platdesign.ts startDesignedPlat), and the
@@ -5197,8 +5418,10 @@ export function ownedHoldingValueFromRec(
   // as a building job is (portfolioMark); the lots' own marks take over at
   // completion, so the step there is the plat's real gain or loss.
   const plat = s.plats?.[h.bbl];
-  if (plat && !plat.done) return holdingValue(rec, s.econ, h, s.month) + plat.cost;
-  let v = holdingValue(rec, s.econ, h, s.month);
+  if (plat && !plat.done) return only(holdingValue(rec, s.econ, h, s.month) + plat.cost);
+  const parts = holdingValueParts(rec, s.econ, h, s.month);
+  let v = parts.value;
+  const v0 = v;
   // A TENANT WHO HAS SAID THEY ARE GOING IS GONE (2026-10-15). The notice
   // lands six months out, and from then the space is known to go dark; the
   // mark carried the ordinary renewal odds (66-96%) to the last day and then
@@ -5215,6 +5438,7 @@ export function ownedHoldingValueFromRec(
     const owed = h.tenants.filter(leaving).reduce((a, t) => a + t.rentPsf * t.sf * (t.endM - s.month) / 12, 0);
     v = Math.min(v, dark + owed);
   }
+  const v1 = v;
   // The roll that is about to roll — see leasing.ts rolloverReserve. Registered
   // rather than imported because leasing.ts imports this file.
   // Capped at a quarter of the mark: a re-tenanting bill bigger than that is
@@ -5224,8 +5448,10 @@ export function ownedHoldingValueFromRec(
   // three months later when the tenant renewed.)
   const roll = rolloverReader && rec.class !== "land" && rec.bldgArea > 0 ? Math.min(rolloverReader(s, rec, h), v * 0.25) : 0;
   // A leasehold owns no dirt, so there is no land floor under its mark.
-  if (h.groundRentOut) return roll > 0 ? Math.max(0, v - roll) : v;
-  return roll > 0 ? Math.max(landAppraisalFloor(rec, s.econ, true), v - roll) : v;
+  const out = h.groundRentOut
+    ? (roll > 0 ? Math.max(0, v - roll) : v)
+    : (roll > 0 ? Math.max(landAppraisalFloor(rec, s.econ, true), v - roll) : v);
+  return { value: out, parts, leavingAdj: v1 - v0, rollAdj: out - v1 };
 }
 
 /**
@@ -5251,6 +5477,146 @@ export function registerRolloverReader(fn: (s: GameState, rec: ParcelRecord, h: 
 }
 
 /**
+ * THE VALUE BRIDGE: from in-place NOI over the market's cap to the appraisal,
+ * one named adjustment at a time (owner, 2026-11-27: a stabilised, fully let
+ * building appraises at in-place NOI ÷ the market's own cap unless a named,
+ * sourced adjustment explains the gap, and the screen says which). Every
+ * step is a difference of two terms of the mark itself (HoldingValueParts,
+ * OwnedValueParts), so the steps sum to the appraisal's centre exactly —
+ * nothing here is computed a second way.
+ *
+ *   anchor        noi / capIdx — the class's cap index (the street's survey)
+ *   buildingCap   noi / cap − anchor — this building's own cap (capRateFor)
+ *   flatsRoll     the let flats' rent against their market, for as long as
+ *                 the roll takes to turn (gapF × Df), less its share of noi/cap
+ *   leaseRoll     the leases' gap to a stabilised roll, until they end
+ *   vacancy       the empty space's shortfall, on the market's clock
+ *     (the three sum to stab − noi / cap: the term-and-reversion adjustment)
+ *   firstLeaseUp · vacancyFloor · freeRent · landFloor · taxAbatement ·
+ *   groundRent · leaving · rollover — the later terms of the mark, in order
+ *   appraiser     appraise()'s fixed per-parcel read around the mark
+ *
+ * With no positive in-place NOI there is nothing to divide: the bridge starts
+ * at the stabilised value and adds the gap legs whole. A step smaller than
+ * the larger of $1,000 and half a per cent of the mark is folded into
+ * "other" so a screen shows what matters and the sum stays exact — except
+ * the anchor, this building's cap and the appraiser's read, which always
+ * show. [M: a display threshold, not a quantity.]
+ */
+export type BridgeKey = "anchor" | "stabilised" | "buildingCap" | "flatsRoll" | "leaseRoll" | "vacancy"
+  | "firstLeaseUp" | "vacancyFloor" | "freeRent" | "landFloor" | "taxAbatement" | "groundRent"
+  | "leaving" | "rollover" | "appraiser" | "other";
+export interface ValueBridge {
+  steps: { key: BridgeKey; v: number }[];
+  /** the engine's mark (ownedHoldingValue, or marketAppraisal for a building you do not own) */
+  mark: number;
+  /** what the steps sum to: the centre of the appraisal band the screen shows */
+  total: number;
+  band: { lo: number; mid: number; hi: number };
+  parts: HoldingValueParts;
+  /** the facts the lines quote */
+  info: {
+    cls: string; occ: number; stabOcc: number; walt: number;
+    /** live commercial leases: with none, the roll's gap rides the market's clock (no lease to hold it) */
+    leases: number;
+    /** the stabilised NOI after tax the building's cap is struck on (cap × stab) */
+    stabNoi: number;
+    /** the flats' roll against their market (a share), and the months the roll takes to turn; null without flats */
+    flatsVsMkt: number | null; flatsMonths: number | null;
+  };
+}
+
+function buildBridge(
+  rec: ParcelRecord, econ: Econ, h: Holding, month: number, bbl: string,
+  p: HoldingValueParts, leavingAdj: number, rollAdj: number, mark: number,
+): ValueBridge | null {
+  if (!p.building) return null;
+  const raw: { key: BridgeKey; v: number }[] = [];
+  if (p.noi > 0) {
+    raw.push({ key: "anchor", v: p.noi / p.capIdx });
+    raw.push({ key: "buildingCap", v: p.noi / p.cap - p.noi / p.capIdx });
+    raw.push({ key: "flatsRoll", v: p.gapF * p.Df - p.gapF / p.cap });
+    raw.push({ key: "leaseRoll", v: p.gapC * p.Dc - p.gapC / p.cap });
+    raw.push({ key: "vacancy", v: p.vacN / p.cap - p.vacN * p.Dm });
+  } else {
+    raw.push({ key: "stabilised", v: p.stab });
+    raw.push({ key: "flatsRoll", v: p.gapF * p.Df });
+    raw.push({ key: "leaseRoll", v: p.gapC * p.Dc });
+    raw.push({ key: "vacancy", v: -p.vacN * p.Dm });
+  }
+  const net = p.marked - p.abate;
+  const freehold = Math.max(p.floor, net) + p.tAbPv;
+  raw.push({ key: "firstLeaseUp", v: p.firstUp - p.blended });
+  raw.push({ key: "vacancyFloor", v: p.marked - p.firstUp });
+  raw.push({ key: "freeRent", v: -p.abate });
+  raw.push({ key: "landFloor", v: Math.max(p.floor, net) - net });
+  raw.push({ key: "taxAbatement", v: p.tAbPv });
+  raw.push({ key: "groundRent", v: p.value - freehold });
+  raw.push({ key: "leaving", v: leavingAdj });
+  raw.push({ key: "rollover", v: rollAdj });
+  const band = appraise(bbl, mark);
+  raw.push({ key: "appraiser", v: band.mid - mark });
+  const small = Math.max(1000, Math.abs(mark) * 0.005);
+  const steps: { key: BridgeKey; v: number }[] = [];
+  let other = 0;
+  for (const st of raw) {
+    // the anchor, this building's cap against the index, and the appraiser's
+    // own read always show (the first two are the cap the screen quotes)
+    const start = st.key === "anchor" || st.key === "stabilised";
+    const named = st.key === "buildingCap" || st.key === "appraiser";
+    if (start || (named && st.v !== 0) || Math.abs(st.v) >= small) steps.push(st);
+    else other += st.v;
+  }
+  if (Math.abs(other) >= 0.5) steps.push({ key: "other", v: other });
+  else if (other !== 0) steps[0] = { ...steps[0], v: steps[0].v + other };   // keep the sum exact
+  const resSf = useRentableSf(rec, "multifamily");
+  let flatsVsMkt: number | null = null, flatsMonths: number | null = null;
+  if (resSf > 0) {
+    const mk = flatsMarkPsf(rec, econ, h);
+    flatsVsMkt = mk > 0 ? flatsRollPsf(rec, econ, h) / mk - 1 : 0;
+    const km = 1 - Math.pow(1 - rollTerms(rec, econ, h, month).flatK, 1 / 12);
+    flatsMonths = km > 0 ? 1 / km : null;
+  }
+  const sfTot = h.tenants.reduce((a, t) => a + t.sf, 0);
+  return {
+    steps, mark, total: steps.reduce((a, st) => a + st.v, 0), band, parts: p,
+    info: {
+      cls: rec.class, occ: physicalOcc(rec, h), stabOcc: stabilisedOccupancy(rec, econ),
+      leases: h.tenants.filter((t) => !t.defaulted).length,
+      walt: sfTot > 0 ? h.tenants.reduce((a, t) => a + ((t.endM - month) / 12) * t.sf, 0) / sfTot : 0,
+      stabNoi: p.cap * p.stab, flatsVsMkt, flatsMonths,
+    },
+  };
+}
+
+/** The bridge for a deed you own, to its mark (ownedHoldingValue). Null for dirt, a leased fee, a job in the ground or a plat. */
+export function valueBridge(s: GameState, rec: ParcelRecord, h: Holding): ValueBridge | null {
+  const o = ownedValueParts(s, rec, h);
+  if (!o.parts) return null;
+  return buildBridge(rec, s.econ, h, s.month, h.bbl, o.parts, o.leavingAdj, o.rollAdj, o.value);
+}
+
+/**
+ * The bridge for any building, to the appraisal every desk quotes
+ * (marketAppraisal): yours through valueBridge, a disclosed one on the same
+ * vessel marketAppraisal marks. Null where the appraisal is the class model
+ * (nothing disclosed, so no roll to bridge) or not a building.
+ */
+export function marketValueBridge(s: GameState, rec: ParcelRecord, bbl: string, grade?: Condition): ValueBridge | null {
+  const own = s.holdings?.[bbl];
+  if (own) return valueBridge(s, rec, own);
+  if (rec.class === "land" || !(rec.bldgArea > 0)) return null;
+  const d = disclosureFor(s, bbl);
+  if (!d) return null;
+  // the same vessel marketAppraisal marks, grade fallback included
+  const cond = d.cond ?? grade ?? initialCondition(rec);
+  const idx = d.condIdx ?? initialCondIdx(rec, s.month, grade);
+  const vessel = { ...asIfOwned(s, bbl, 0, d, rec), costBasis: 0, assessed: assetValue(rec, s.econ, cond, idx) } as Holding;
+  const p = holdingValueParts(rec, s.econ, vessel, s.month);
+  return buildBridge(rec, s.econ, vessel, s.month, bbl, p, 0, 0, p.value);
+}
+
+/**
  * ONE VALUE FOR ONE BUILDING, WHOEVER OWNS IT (2026-11-17). Your deeds used
  * to add the land a building does not need, priced as a lot of its own
  * (excessLand), because only you could split it off — a value no buyer on the
@@ -5258,20 +5624,81 @@ export function registerRolloverReader(fn: (s: GameState, rec: ParcelRecord, h: 
  * gone (owner, 2026-11-17), and with it the only way to realise that land.
  */
 export function holdingValue(rec: ParcelRecord, econ: Econ, h: Holding, month?: number): number {
-  return holdingValueOn(rec, econ, h, month);
+  return holdingValueParts(rec, econ, h, month).value;
 }
 
-function holdingValueOn(rec: ParcelRecord, econ: Econ, h: Holding, month?: number): number {
+/**
+ * EVERY TERM OF ONE BUILDING'S MARK, so a screen can say which adjustment
+ * separates the appraisal from in-place NOI over the market's cap (owner,
+ * 2026-11-27: "the screen must say which adjustment"). `holdingValue` is this
+ * function's `value`; nothing here is a second opinion. `building` is false
+ * for dirt and a leased fee, where `value` is the land and nothing else is
+ * read. All incomes are after the owner's property tax, the basis the class
+ * cap index is quoted on (propmarket.ts impliedCap).
+ */
+export interface HoldingValueParts {
+  value: number;
+  building: boolean;
+  /** contract NOI after tax, before any ground rent paid, abatement saving taken out ($/yr) */
+  noi: number;
+  /** the class's cap index (econ.capRate, blended by use), and this building's own (capRateFor) — shares */
+  capIdx: number; cap: number;
+  /** the all-in yield the stabilised income is capitalised at (cap + the owner's tax), share */
+  yAll: number;
+  /** the building at a stabilised roll: stabilised NOI / yAll */
+  stab: number;
+  /**
+   * The in-place gap to stabilised (noi − cap × stab), split by what it is
+   * made of: the let flats' rent against their market (gapF), the leases'
+   * gap (gapC: rent, occupancy above or below stabilised, face over
+   * effective), and the empty space's share (vacN, carried as a positive
+   * shortfall) — each with the years a buyer pays it for (Df, Dc, Dm).
+   */
+  gapF: number; gapC: number; vacN: number; Df: number; Dc: number; Dm: number;
+  /** stabilised plus term and reversion */
+  blended: number;
+  /** after the first lease-up's as-is mark, and after the vacancy lease-up floor */
+  firstUp: number; marked: number;
+  /** free rent still owed, the land floor, the abatement's PV, the ground rent's PV (a leasehold) */
+  abate: number; floor: number; tAbPv: number; groundPv: number;
+}
+
+function holdingValueParts(rec: ParcelRecord, econ: Econ, h: Holding, month?: number): HoldingValueParts {
+  const dirt = (value: number): HoldingValueParts => ({
+    value, building: false, noi: 0, capIdx: 0, cap: 0, yAll: 0, stab: 0, gapF: 0, gapC: 0, vacN: 0, Df: 0, Dc: 0, Dm: 0,
+    blended: value, firstUp: value, marked: value, abate: 0, floor: value, tAbPv: 0, groundPv: 0,
+  });
   // Ground-leased fee: callers with the lease record should use leasedFeeValue.
   // Without it, never appraise the lessee's building as if it were yours.
   if (h.groundLeased) {
     const bare = { ...rec, class: "land" as const, bldgArea: 0, floors: 0, unitsRes: 0, mix: undefined };
-    return landValue(bare, econ);
+    return dirt(landValue(bare, econ));
   }
-  if (rec.class === "land" || !rec.bldgArea) return landValue(rec, econ);
-  const quality = month === undefined ? 0 : rollQualitySpread(rec, h, month, econ);
-  const capNoRoll = capRateFor(rec, econ, h.condition, h.condIdx) / 100;
-  const cap = (capRateFor(rec, econ, h.condition, h.condIdx) + quality) / 100;
+  if (rec.class === "land" || !rec.bldgArea) return dirt(landValue(rec, econ));
+  // THE BUILDING'S OWN CAP, AND NOTHING ADDED (2026-11-28). A roll-quality
+  // spread (rollQualitySpread: single name +0.75 pt, one trade +0.40, short
+  // WALT up to +0.45, unrated credit +0.18, occupancy, a flats-occupancy
+  // term) was added to this cap. It is retired from valuation:
+  //   - the street's bidders, whose closed trades set the cap index
+  //     (propmarket.ts valueTo and the survey), never priced it, so the
+  //     appraiser alone discounted what no buyer did — measured on let
+  //     listings (seed 12007, months 1, 6, 12), the second-best street bid ran
+  //     1.24x the appraisal on one-tenant buildings, 1.20x on multi-tenant,
+  //     1.16x on flats;
+  //   - none of its constants carried a source;
+  //   - it counted risks twice: the industry term re-charged a one-tenant
+  //     building's single-name charge (+1.15 points on every such building),
+  //     and its occupancy terms charged vacancy the term-and-reversion gap and
+  //     the vacancy floor already price — on gross feet, so a full building
+  //     read 89% (F18);
+  //   - term is now priced in dollars, lease by lease (termAndReversionParts).
+  // Measured on the F20 shed (one tenant, credit B, 9.2 years at market): the
+  // mark was 23% under NOI over the cap index, 12 points of it this spread.
+  // Concentration still matters to a LENDER: debt.ts collateralHaircut keeps
+  // reading concentration and industryConcentration. If credit quality
+  // should move value, the right term is a sourced credit-loss line in both
+  // valueTo and here, not a spread on one side.
+  const cap = capRateFor(rec, econ, h.condition, h.condIdx) / 100;
   // CONTRACT rent, not the rent that happens to be arriving this month.
   //
   // This line used to read `h.renovatingUntilM ?? -1`, and month −1 is inside
@@ -5332,14 +5759,15 @@ function holdingValueOn(rec: ParcelRecord, econ: Econ, h: Holding, month?: numbe
   // office let 40% over market marked ~15% above what the street would bid,
   // because the appraisal capitalised rent the leases' expiry takes away.
   void inPlace;
-  const blended = termAndReversion(econ, stabilized, contractNoi, cap, yAll);
+  const tr = termAndReversionParts(econ, rec, h, month, stabilized, contractNoi, cap, yAll);
+  const blended = tr.value;
   const abate = month === undefined ? 0 : remainingAbatement(h, month);
   // A BUILDING IN ITS FIRST LEASE-UP IS NOT A BUILDING WITH A VACANCY PROBLEM.
   // Until it stabilises the as-is-on-completion mark governs, and it retires
   // on its own as the space lets — see leaseUpMark. It never marks BELOW the
   // ordinary blend, so a job that fills fast keeps the upside the roll has
   // earned it. And it never marks below the clear site: landAppraisalFloor.
-  const asIs = month === undefined ? null : leaseUpMark(rec, econ, h, month, capNoRoll, cap, contractNoi, stabNoi);
+  const asIs = month === undefined ? null : leaseUpMark(rec, econ, h, month, cap, contractNoi, stabNoi);
   // The dirt floor follows the age of the fabric, not the roll: a new tower
   // that let fast is no more a demolition candidate than one still filling.
   const floor = landAppraisalFloor(rec, econ,
@@ -5355,11 +5783,22 @@ function holdingValueOn(rec: ParcelRecord, econ: Econ, h: Holding, month?: numbe
   // that it does not (leaseUpMarkAt). That is a floor under the blend, not a
   // replacement for it: a roll above market still marks above it.
   const vac = month === undefined || inGut ? null
-    : leaseUpMark(rec, econ, h, month, capNoRoll, cap, contractNoi, stabNoi, true);
+    : leaseUpMark(rec, econ, h, month, cap, contractNoi, stabNoi, true);
   const firstUp = asIs !== null ? blended + asIs.weight * Math.max(0, asIs.mark - blended) : blended;
   const marked = vac !== null ? Math.max(firstUp, vac.mark) : firstUp;
   const freehold = Math.max(floor, marked - abate) + (tAb?.pv ?? 0);
-  return h.groundRentOut ? Math.max(0, freehold - leaseholdGroundPv(h, econ)) : freehold;
+  // The fee under it is the leased fee on the lot as if vacant — the same
+  // bare record the sale was priced on (bareLandRec), so the sale is neutral.
+  const bareLot = { ...rec, class: "land" as const, bldgArea: 0, floors: 0, unitsRes: 0, mix: undefined };
+  const groundPv = h.groundRentOut
+    ? leaseholdGroundPv(h, econ, landValue(bareLot, econ), month ?? h.groundRentOut.lastStepM, rec.bldgArea)
+    : 0;
+  return {
+    value: h.groundRentOut ? Math.max(0, freehold - groundPv) : freehold,
+    building: true, noi: contractNoi, capIdx: (blend(rec, econ.capRate) || 6) / 100, cap, yAll, stab: stabilized,
+    gapF: tr.gapF, gapC: tr.gapC, vacN: tr.vacN, Df: tr.Df, Dc: tr.Dc, Dm: tr.Dm,
+    blended, firstUp, marked, abate, floor, tAbPv: tAb?.pv ?? 0, groundPv,
+  };
 }
 
 /** What an abatement still saves the owner a year, and its present value at the building's all-in yield. */
@@ -5499,6 +5938,20 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
   // claims booked as an asset count — an old save's claims were expensed whole
   // and come back as income, and counting them here too would count them twice.
   for (const r of s.receivership ?? []) if (r.seizedM !== undefined) nw += r.amount;
+  // EARNEST MONEY IS A CLAIM, NOT A LOSS (2026-11-28). The deposit on a signed
+  // contract (acquire.ts strikeDeal) and the courthouse registration deposit
+  // (auction.ts registerAuctionBids, ten per cent of each bid) leave the bank
+  // the day they are posted, and they are hard — but they are credited
+  // against the price at the table (closeAgreed; the hammer's settlement) or
+  // handed back (voidContract, a lot pulled or lost). Until the money is
+  // forfeited (walkAway, an unfunded close, a winner who cannot pay — each
+  // books it to `ga`) it is an asset the firm owns. Net worth used to drop by
+  // the deposit at signing and rise again at closing with nothing about the
+  // firm changed: measured on a $6.50M ask, net worth fell exactly $97K the
+  // month the contract was signed. Not real estate, so not in `gav` (the LTV
+  // covenants read that); no money moves here, so no ledger line.
+  for (const t of Object.values(s.talks ?? {})) if (t.agreed) nw += t.deposit ?? 0;
+  nw += s.auction?.deposit ?? 0;
   // CONSTRUCTION IN PROGRESS CARRIES AT MONEY SUNK, NOT AT THE BUDGET.
   //
   // This booked `costTotal` — the WHOLE build budget — the instant a shovel
@@ -5506,7 +5959,7 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
   // groundbreaking: a $16.78M cheque lifted reported net worth $62.25M and the
   // line of credit $41.16M. Over a run that develops continuously the worst
   // overstatement was $1.35 BILLION, forty-five per cent of reported net
-  // worth — and because locLimit sizes the revolver off net worth and
+  // worth — and because locLimit sized the revolver off it (now off gross asset value less debt) and
   // startDevelopment counts locAvailable toward its funding test, the phantom
   // equity partly authorised the NEXT job.
   //

@@ -12,7 +12,7 @@
 // Design contract: PRIVATE_CREDIT.md. Not a bank charter. Not multiplayer.
 import type { ParcelTable } from "@/data/types";
 import type { GameState, Loan, Note, PrivateBorrowQuote, PrivateCreditAsk, Rival } from "./types";
-import { cloneState, logBooks, monthLabel } from "./types";
+import { cloneState, logBooks, logPrincipal, monthLabel } from "./types";
 import { dollarLevel, rng, rrange } from "./market";
 import { assetValue, collateralAsIs, netWorth, resolveRec } from "./value";
 import { assetGrade } from "./rivals";
@@ -653,8 +653,7 @@ export function acceptPrivateBorrowQuote(
   next.cash += netDraw - fee;
   coverCashShortfall(next, parcels);
   if (fee > 0) logBooks(next, "debtSvc", fee, quote.bbl);
-  if (netDraw > 0) logBooks(next, "borrowed", netDraw, quote.bbl);
-  else if (netDraw < 0) logBooks(next, "debtSvc", -netDraw, quote.bbl);
+  logPrincipal(next, netDraw, quote.bbl);   // signed: cash-out +, paydown −
 
   holding.loan = buildPrivateLoan(next, quote);
   holding.lastPrivateBridgeM = next.month;

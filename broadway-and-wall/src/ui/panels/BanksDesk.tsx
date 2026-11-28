@@ -7,7 +7,8 @@ import { lenderHealth, capitalRatio, lenderBlurb, targetCapital, cashSplit, depo
 import { bankRatePct } from "@/engine/pricing";
 import { shortIndexOf } from "@/engine/market";
 import { relCurve, lenderRelOf, productSpread, onIncome } from "@/engine/debt";
-import { sweepApy } from "@/engine/types";
+import { sweepApy, MMF_EXPENSE_PCT } from "@/engine/types";
+import { INCOME_TAX_RATE } from "@/engine/tax";
 import { PRODUCTS, statedLtv, underwritingStandards, standardsWord } from "@/engine/debt";
 import { LineChart } from "@/ui/Chart";
 import { usd } from "@/ui/format";
@@ -310,13 +311,19 @@ function YourCash() {
   const game = useStore((s) => s.game)!;
   const cs = cashSplit(game);
   const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
+  const bills = sweepApy(game.econ);
   return (
     <div className="deal" style={{ marginBottom: 12 }}>
       <div className="deal-head">Cash</div>
       <div className="grid">
         <Row2 k="Cash" v={`${usd(Math.max(0, game.cash))} · not exposed to bank failure`} />
         <Row2 k="Operating account" v={`${usd(cs.atBank)} · insured to ${usd(insuredLimit(game))} · ${pct(depositApy(game.econ, cs.bank))} at ${cs.bank?.name ?? "bank"}`} />
-        <Row2 k="Treasury bills" v={`${usd(cs.inBills)} · ${pct(sweepApy(game.econ))}`} />
+        {/* One hint per screen (ui-revamp/CLEANUP_PLAN.md): the explanation is on hover. */}
+        <Row2 k="Treasury bills (money fund)" v={
+          <span title="Cash above the insured operating account is swept into Treasury bills automatically. Interest is ordinary income, and firm overhead runs whether or not you own buildings.">
+            {`${usd(cs.inBills)} · ${pct(bills)} after the fund's ${MMF_EXPENSE_PCT}% fee · ${pct(bills * (1 - INCOME_TAX_RATE))} after tax`}
+          </span>
+        } />
       </div>
       <div className="hint">A failed lender stops funding its loans and construction commitments.</div>
     </div>
@@ -368,7 +375,7 @@ export function LenderCards() {
             <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 10, rowGap: 2, fontSize: 12 }}>
               <span className="hint">Price</span>
               <span>{open && rate !== null ? `${priceWord(rate)} · ${rate.toFixed(2)}%` : "not quoting"}</span>
-              <span className="hint">Max LTV</span>
+              <span className="hint">Advance today</span>
               <span>{open && reach !== null ? `${Math.round(reach * 100)}%` : "—"}</span>
               <span className="hint">Stability</span>
               <span title={sp.why} style={{ color: spColor[sp.word], fontWeight: 600 }}>{sp.word}</span>

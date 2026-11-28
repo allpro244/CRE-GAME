@@ -454,8 +454,9 @@ export default function FirmTimeline() {
     for (const b of game.booksMonthly ?? []) {
       if (b.m < start || b.m > m) continue;
       haveBooks = true;
-      cashIn += b.noi + b.sold + b.interest;
-      cashOut += b.debtSvc + b.leasing + b.capex + b.dev + b.taxes + b.bought + b.ga;
+      // principal is signed (types.ts logPrincipal): draws in, prepayments out
+      cashIn += b.noi + b.sold + b.interest + Math.max(0, b.borrowed ?? 0);
+      cashOut += b.debtSvc + b.leasing + b.capex + b.dev + b.taxes + b.bought + b.ga + Math.max(0, -(b.borrowed ?? 0));
     }
     const exits = game.exits ?? [];
     const soldExits = exits.filter((e) => e.soldM >= start && e.soldM <= m);

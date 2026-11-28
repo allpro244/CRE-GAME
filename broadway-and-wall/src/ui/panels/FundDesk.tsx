@@ -1,6 +1,7 @@
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { fundRaiseQuote, fundCanBuy, FUND_PREF, FUND_PROMOTE, FUND_MGMT_FEE, gpInterestInFund, waterfall, fundReserve } from "@/engine/fund";
+import { fundRaiseQuote, fundCanBuy, FUND_PREF, FUND_PROMOTE, FUND_MGMT_FEE, FUND_LP_REVIEW_M, gpInterestInFund, waterfall, fundReserve, fundDeployment, lpWouldEndPeriod } from "@/engine/fund";
+import { locRate } from "@/engine/credit";
 import { ownedHoldingValue, resolveRec } from "@/engine/value";
 import { usd } from "@/ui/format";
 import { Big, Row } from "@/ui/panels/shared";
@@ -108,7 +109,23 @@ export function FundDesk() {
           })()}
           <div className="grid">
             <Row k="Vintage" v={`${monthLabel(f.raisedM)} · $${(f.size / 1e6).toFixed(0)}M`} />
-            <Row k="Investment period" v={`ends ${monthLabel(f.investEndM)}${fundCanBuy(game) ? "" : " · closed"}`} />
+            {f.lpEndedM !== undefined ? (
+              <Row k="Investment period" v={`ended ${monthLabel(f.lpEndedM)} by LP vote: the fund was not investing`} bad
+                title="A majority of the LPs ended the investment period early (ILPA's no-fault right). The fund makes no new deals; the fee runs on the capital still invested, and spare cash goes back each quarter." />
+            ) : (() => {
+              const d = fundDeployment(f, game.month);
+              // A fund from an old save whose draws were never recorded (fund.ts deployUnmeasured): no figure, no review.
+              const reviewing = !f.deployUnmeasured && game.month < f.investEndM && d.nextReviewM < f.investEndM;
+              return (
+                <Row k="Investment period"
+                  v={`ends ${monthLabel(f.investEndM)}${fundCanBuy(game) ? "" : " · closed"} · `
+                    + (f.deployUnmeasured ? "invested to date not on record (saved before the fund kept it) · no LP pace review" : `${usd(d.deployed)} of ${usd(f.size)} invested`)
+                    + (reviewing ? ` · LPs review ${monthLabel(d.nextReviewM)}` : "")
+                    + (reviewing && d.behindM > 0 ? ` · ${Math.round(d.behindM)} months behind an even pace` : "")}
+                  bad={reviewing && lpWouldEndPeriod(f, d.nextReviewM)}
+                  title={`Each year the LPs check the fund is putting its money to work. ${FUND_LP_REVIEW_M} months or more behind an even pace through the investment period at a review, and a majority ends the period (ILPA's no-fault right).`} />
+              );
+            })()}
             <Row k="Fund life" v={`ends ${monthLabel(f.lifeEndM)}`} />
             <Row k="Waterfall" v={`${(FUND_PREF * 100).toFixed(0)}% pref · ${(FUND_PROMOTE * 100).toFixed(0)}% promote`} />
             {f.mgmtFee ? <Row k="Management fee" v={`${(f.mgmtFee * 100).toFixed(2)}% a year · ${usd(f.feesPaid ?? 0)} paid to you so far`} title="On commitments through the investment period, then on the capital still invested. Your income; the LPs pay it." /> : null}
@@ -117,7 +134,9 @@ export function FundDesk() {
               ? `quarterly, cash over a ${usd(fundReserve(game))} reserve${f.lastDistM !== undefined ? ` · last ${monthLabel(f.lastDistM)}` : ""}`
               : `recycled until ${monthLabel(f.investEndM)}, then quarterly`} />
             {(f.gpAdvance ?? 0) > 0 && (
-              <Row k="Your advances to the vehicle" v={`${usd(f.gpAdvance ?? 0)} · repaid before any distribution`} bad />
+              <Row k="Your advances to the vehicle"
+                v={`${usd(f.gpAdvance ?? 0)} at ${locRate(game).toFixed(2)}% (your line rate) · ${usd(f.advInterest ?? 0)} of it interest unpaid · repaid before any distribution`} bad
+                title="The vehicle had no cash and nothing left to call, so you paid its bills. It owes you back, with interest at your own cost of money, ahead of any distribution." />
             )}
           </div>
           <div className="btn-row">

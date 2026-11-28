@@ -6,7 +6,7 @@ import type { ParcelRecord, ParcelTable } from "@/data/types";
 import { resolveRec, concentration, industryConcentration, netWorth, buildTier } from "./value";
 import { commercialShare } from "./mix";
 import type { Condition, Econ, GameState, Holding, Loan } from "./types";
-import { logBooks, monthLabel, cloneState} from "./types";
+import { logBooks, logPrincipal, monthLabel, cloneState } from "./types";
 import { openWorkout } from "./workout";
 import { lenderAppetite, PRIOR_EL, deskPxOf } from "./lenders";
 import {
@@ -55,6 +55,16 @@ export interface LoanProduct {
   kicker?: number;     // participating paper: the lender's share of the gain
   minDSCR: number;     // the covenant
   maxLTV: number;
+  /**
+   * WHETHER THE LENDER TESTS LOAN-TO-VALUE DURING THE TERM. Banks and
+   * transitional lenders re-appraise and test it; permanent life-company,
+   * conduit (CMBS) and agency paper tests LTV at origination only and polices
+   * the term with coverage / debt-yield cash-management triggers. Without it
+   * every perm loan carried a bank's LTV maintenance test against the lender's
+   * annual appraisal (playtest 2026-11-27, F1: an agency loan swept on "LTV
+   * 95%" with coverage at 1.49x). Required, so a new desk has to say which.
+   */
+  ltvMaintenance: boolean;
   minLoan?: number;    // below this they do not underwrite anything
   maxLoan?: number;    // above this is past the desk's hold size
   minCondition?: "good" | "standard";  // the life company does not finance tired buildings
@@ -116,6 +126,8 @@ export const PRODUCTS: LoanProduct[] = [
     // not re-appraise you every quarter, they watch the payment arrive. The
     // sizing tests above are unchanged — this is the leash, not the cheque.
     minDSCR: 1.15, maxLTV: 0.82, maxLoan: 6_000_000,
+    // bank balance-sheet paper: periodic collateral re-evaluation and an LTV test (OCC Comptroller's Handbook, Commercial Real Estate Lending) [S~]
+    ltvMaintenance: true,
   },
   /**
    * WHY THE REGIONAL NO LONGER STRICTLY DOMINATES THE HOMETOWN BANK.
@@ -155,6 +167,8 @@ export const PRODUCTS: LoanProduct[] = [
     floating: false, ioM: 24, amortYears: 30, termM: 84,
     debtYield: 0.085, points: 0.008, recourse: true, prepay: "stepdown", prepayM: 48,
     minDSCR: 1.30, maxLTV: 0.85, minLoan: 2_500_000, maxLoan: 25_000_000,
+    // bank balance-sheet paper: periodic collateral re-evaluation and an LTV test (OCC Comptroller's Handbook, Commercial Real Estate Lending) [S~]
+    ltvMaintenance: true,
   },
   {
     // the 25-year sheet: same desk, sharper rate, faster paydown
@@ -163,6 +177,8 @@ export const PRODUCTS: LoanProduct[] = [
     floating: false, ioM: 36, amortYears: 25, termM: 84,
     debtYield: 0.085, points: 0.008, recourse: true, prepay: "stepdown", prepayM: 48,
     minDSCR: 1.30, maxLTV: 0.85, minLoan: 2_500_000, maxLoan: 25_000_000,
+    // bank balance-sheet paper: periodic collateral re-evaluation and an LTV test (OCC Comptroller's Handbook, Commercial Real Estate Lending) [S~]
+    ltvMaintenance: true,
   },
   {
     id: "pelican", label: "Pelican Life Insurance · 15 yr, 30-yr am", lender: "Pelican Life Insurance",
@@ -180,6 +196,8 @@ export const PRODUCTS: LoanProduct[] = [
     // range), with program maximums of 65-70% on the best paper [S~]. The
     // ceiling the desk writes to is this less three points: 65%.
     minDSCR: 1.30, maxLTV: 0.68, minLoan: 4_000_000, minCondition: "standard",
+    // life-company mortgages carry no ongoing financial maintenance covenant; LTV is an underwriting test (ACLI commercial mortgage practice) [S~]
+    ltvMaintenance: false,
   },
   {
     id: "conduit", label: "Meridian Street conduit · 10 yr, 5 yr IO", lender: "Meridian Street Capital",
@@ -187,6 +205,8 @@ export const PRODUCTS: LoanProduct[] = [
     floating: false, ioM: 60, amortYears: 30, termM: 120,
     debtYield: 0.08, points: 0.010, recourse: false, prepay: "yieldmaint", prepayM: 108,
     minDSCR: 1.15, maxLTV: 0.85, minLoan: 10_000_000, window: true,
+    // CMBS loan agreements test DSCR / debt yield as cash-management triggers, not an LTV maintenance covenant (Moody's / Trepp CMBS primers) [S~]
+    ltvMaintenance: false,
   },
   /**
    * FLOATING PAPER ON STABILISED BUILDINGS — the bank floater and the agency
@@ -208,6 +228,8 @@ export const PRODUCTS: LoanProduct[] = [
     floating: true, ioM: 12, amortYears: 25, termM: 60,
     debtYield: 0.09, points: 0.006, recourse: true, prepay: "open", prepayM: 0,
     minDSCR: 1.15, maxLTV: 0.82, maxLoan: 6_000_000,
+    // bank balance-sheet paper: periodic collateral re-evaluation and an LTV test (OCC Comptroller's Handbook, Commercial Real Estate Lending) [S~]
+    ltvMaintenance: true,
   },
   {
     id: "savingsFloat", label: "Alden Savings & Trust · 5 yr floating, 30-yr am", lender: "Alden Savings & Trust",
@@ -215,6 +237,8 @@ export const PRODUCTS: LoanProduct[] = [
     floating: true, ioM: 24, amortYears: 30, termM: 60,
     debtYield: 0.085, points: 0.008, recourse: true, prepay: "open", prepayM: 0,
     minDSCR: 1.30, maxLTV: 0.85, minLoan: 2_500_000, maxLoan: 25_000_000,
+    // bank balance-sheet paper: periodic collateral re-evaluation and an LTV test (OCC Comptroller's Handbook, Commercial Real Estate Lending) [S~]
+    ltvMaintenance: true,
   },
   {
     // Written through Meridian's licensed agency desk (a DUS/Optigo seller-
@@ -227,6 +251,8 @@ export const PRODUCTS: LoanProduct[] = [
     floating: true, ioM: 12, amortYears: 30, termM: 120,
     debtYield: 0.075, points: 0.010, recourse: false, prepay: "stepdown", prepayM: 12,
     minDSCR: 1.15, maxLTV: 0.85, minLoan: 1_000_000, classes: ["multifamily"],
+    // Fannie Mae DUS / Freddie Optigo: LTV is an origination and supplemental-loan test (Fannie Mae Multifamily Selling & Servicing Guide) [S~]
+    ltvMaintenance: false,
   },
   {
     // The agency's fixed program — the 10-year DUS/Optigo loan, the most
@@ -237,6 +263,8 @@ export const PRODUCTS: LoanProduct[] = [
     floating: false, ioM: 24, amortYears: 30, termM: 120,
     debtYield: 0.07, points: 0.010, recourse: false, prepay: "yieldmaint", prepayM: 114,
     minDSCR: 1.15, maxLTV: 0.85, minLoan: 1_000_000, classes: ["multifamily"],
+    // Fannie Mae DUS / Freddie Optigo: LTV is an origination and supplemental-loan test (Fannie Mae Multifamily Selling & Servicing Guide) [S~]
+    ltvMaintenance: false,
   },
   {
     // The second insurer: a little more leverage than Pelican, a shorter
@@ -248,6 +276,8 @@ export const PRODUCTS: LoanProduct[] = [
     // A shade more leverage than Pelican, still an insurer's: a 70% ceiling,
     // the top of the life companies' program range (see Pelican) [S~].
     minDSCR: 1.25, maxLTV: 0.73, minLoan: 3_000_000, minCondition: "standard",
+    // life-company mortgages carry no ongoing financial maintenance covenant; LTV is an underwriting test (ACLI commercial mortgage practice) [S~]
+    ltvMaintenance: false,
   },
   {
     // The money-centre bank's balance-sheet loan: big tickets, non-recourse
@@ -257,6 +287,8 @@ export const PRODUCTS: LoanProduct[] = [
     floating: false, ioM: 24, amortYears: 30, termM: 60,
     debtYield: 0.085, points: 0.0075, recourse: false, prepay: "stepdown", prepayM: 36,
     minDSCR: 1.20, maxLTV: 0.80, minLoan: 8_000_000, maxLoan: 120_000_000,
+    // bank balance-sheet paper: periodic collateral re-evaluation and an LTV test (OCC Comptroller's Handbook, Commercial Real Estate Lending) [S~]
+    ltvMaintenance: true,
   },
   {
     id: "cordage", label: "Cordage Debt Partners · 3 yr, floating IO", lender: "Cordage Debt Partners",
@@ -264,12 +296,16 @@ export const PRODUCTS: LoanProduct[] = [
     floating: true, ioM: 36, amortYears: 30, termM: 36,
     debtYield: 0.055, points: 0.020, recourse: false, prepay: "open", prepayM: 0,
     minDSCR: 0.90, maxLTV: 0.92, bridge: true,
+    // transitional lender: re-margins against value during the term — the loan is sized on a business plan it watches (debt-fund bridge practice) [S~]
+    ltvMaintenance: true,
   },
   {
     id: "mezz", label: "Cordage mezzanine · behind the senior", lender: "Cordage Debt Partners",
     blurb: "Stacks to 85%. The coupon is why nobody does this twice.",
     floating: false, ioM: 120, amortYears: 30, termM: 84,
     debtYield: 0.055, points: 0.025, recourse: false, prepay: "stepdown", prepayM: 48,
+    // stated for completeness — no h.loan covenant test runs on a junior note (serviceMezz) [M]
+    ltvMaintenance: true,
     mezz: true, minDSCR: 1.00, maxLTV: 0.95,
   },
   {
@@ -280,6 +316,8 @@ export const PRODUCTS: LoanProduct[] = [
     floating: true, ioM: 36, amortYears: 30, termM: 36,
     debtYield: 0, points: 0.015, recourse: true, prepay: "open", prepayM: 0,
     minDSCR: 0, maxLTV: 0.70,
+    // dirt's only covenant: no income to cover, so value is the test (see the land-loan note in tickLoan) [S~]
+    ltvMaintenance: true,
   },
   {
     // The community bank that grew on construction: further on dirt than the
@@ -289,6 +327,8 @@ export const PRODUCTS: LoanProduct[] = [
     floating: true, ioM: 24, amortYears: 30, termM: 24,
     debtYield: 0, points: 0.012, recourse: true, prepay: "open", prepayM: 0,
     minDSCR: 0, maxLTV: 0.75,
+    // dirt's only covenant: no income to cover, so value is the test (see the land-loan note in tickLoan) [S~]
+    ltvMaintenance: true,
   },
 ];
 
@@ -593,6 +633,8 @@ export const INTERNAL_PRODUCTS: LoanProduct[] = [
     floating: true, ioM: 24, amortYears: 30, termM: 60,
     debtYield: 0.07, points: 0, recourse: false, prepay: "open", prepayM: 0,
     minDSCR: 1.05, maxLTV: 0.9,
+    // the construction bank rolling its own facility: bank paper, re-appraised and tested (OCC Comptroller's Handbook, Commercial Real Estate Lending) [S~]
+    ltvMaintenance: true,
   },
   {
     id: "private", label: "Private paper · a firm on the street", lender: "Cordage Debt Partners",
@@ -600,6 +642,8 @@ export const INTERNAL_PRODUCTS: LoanProduct[] = [
     floating: true, ioM: 18, amortYears: 30, termM: 18,
     debtYield: 0.05, points: 0.02, recourse: false, prepay: "open", prepayM: 0,
     minDSCR: 0.9, maxLTV: 0.92, bridge: true,
+    // transitional lender: re-margins against value during the term — the loan is sized on a business plan it watches (debt-fund bridge practice) [S~]
+    ltvMaintenance: true,
   },
 ];
 /** Paper underwritten on a building's income — everything but the land loans, which lend on the dirt. */
@@ -621,6 +665,20 @@ export function isPrivatePaper(l: { product: string; holder?: string }): boolean
  * desk that never lent.
  */
 export const loanLender = (l: { holder?: string; product: string }): string => l.holder ?? productById(l.product).lender;
+
+/**
+ * DOES THIS NOTE CARRY AN LTV TEST DURING ITS TERM — the paper's own terms
+ * (LoanProduct.ltvMaintenance), read through productById so an old save needs
+ * no migration; an unknown id falls back to the bank sheet, which tests.
+ */
+export const ltvTested = (loan: { product: string }): boolean => productById(loan.product).ltvMaintenance;
+
+/**
+ * THE BALLOON NOTICE WINDOW — the last year before maturity, the window the
+ * attention list already calls "balloon due" (sim.ts, cycleDigest.ts, nextDue.ts).
+ * Inside it a desk renews its own paper as a matter of course.
+ */
+export const BALLOON_NOTICE_M = 12;
 
 /**
  * The cost of closing a refinancing, as a share of the balance, charged on
@@ -1287,7 +1345,9 @@ export function payOffLoan(
   if (paid < due) {
     return { s, err: `Could not raise the $${due.toLocaleString()} payoff.` };
   }
-  logBooks(next, "debtSvc", due, bbl);
+  // The balance is principal repaid (logPrincipal); the break fee is the cost.
+  logPrincipal(next, -balance, bbl);
+  if (penalty > 0) logBooks(next, "debtSvc", penalty, bbl);
   h.loan = null;
   if (h.mezz) h.mezz = null;
   if (next.workouts?.[bbl]) delete next.workouts[bbl];
@@ -1357,7 +1417,10 @@ export function paydownLoan(
   }
   const paid = fundCashNeed(next, parcels, due);
   if (paid < due) return { s, err: `Could not raise the $${due.toLocaleString()} from cash and the line.` };
-  logBooks(next, "debtSvc", due, bbl);
+  // PRINCIPAL IS NOT AN EXPENSE: the prepaid dollars come off the balance sheet
+  // (logPrincipal); only the prepayment penalty is a cost of the debt.
+  logPrincipal(next, -amt, bbl);
+  if (penalty > 0) logBooks(next, "debtSvc", penalty, bbl);
   loan.balance = Math.max(0, loan.balance - amt);
   recastPayment(loan, next.month);
   const lender = loan.holder ?? loanLender(loan);
@@ -1810,7 +1873,7 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
  * Arbor at 75%; 65-75% of as-is is the common quote (rets.ai, 2026). 0.65 is
  * the conservative end of that range.
  */
-const STAB_LTV = 0.65;
+export const STAB_LTV = 0.65;
 
 
 // `lev` scales the loan down from the lender's maximum — the player's dial.
@@ -1898,6 +1961,17 @@ export function lenderValue(s: GameState, rec: ParcelRecord, h: Holding): number
   return h.apprV ?? ownedHoldingValueFromRec(s, rec, h);
 }
 function reappraise(s: GameState, rec: ParcelRecord, h: Holding): void {
+  // A LENDER ORDERS AN APPRAISAL AT EVERY CLOSING. The appraisal was only ever
+  // re-struck on its own annual clock, never at a refinance, a renewal or a
+  // delivery, so a new loan's covenant could read a year-old appraisal of a
+  // different loan's collateral — a land loan's dirt behind the mini-perm that
+  // replaced it. The note's own closing value is its first appraisal (the mark
+  // when the paper recorded none), and the annual clock runs from the closing.
+  if (h.loan && (h.apprM === undefined || h.apprM < h.loan.originM)) {
+    h.apprV = Math.round(h.loan.origValue ?? ownedHoldingValueFromRec(s, rec, h));
+    h.apprM = h.loan.originM;
+    return;
+  }
   if (h.apprM !== undefined && s.month - h.apprM < 12) return;
   const mark = ownedHoldingValueFromRec(s, rec, h);
   h.apprV = Math.round(h.apprV === undefined ? mark : APPRAISAL_ALPHA * mark + (1 - APPRAISAL_ALPHA) * h.apprV);
@@ -1921,8 +1995,14 @@ export function equityCureNeed(rec: ParcelRecord, s: GameState, h: Holding): num
   if (!loan) return 0;
   // No coverage covenant, no coverage cure (see the covenant test in tickLoan).
   const d = loan.minDSCR > 0 ? dscr(rec, s, h) : null;
-  const l = ltv(rec, s, h);
-  const value = ownedHoldingValueFromRec(s, rec, h);
+  // No LTV covenant during the term, no LTV cure (LoanProduct.ltvMaintenance).
+  const l = ltvTested(loan) ? ltv(rec, s, h) : null;
+  // THE CURE IS SIZED AGAINST THE VALUE THE TEST READS — the lender's
+  // appraisal (lenderValue), not this month's mark. One quantity, one answer:
+  // sized on the mark while the covenant read the appraisal, a $121K cure on a
+  // Harbor loan left LTV at 0.844 against 0.82 and the sweep running (debt/
+  // ltv.mjs, 2026-11-27); in a rising market the same split overpaid.
+  const value = lenderValue(s, rec, h);
   let target = loan.balance;
   if (d !== null && d < loan.minDSCR && d > 0) {
     target = Math.min(target, loan.balance * (d / loan.minDSCR));
@@ -2010,7 +2090,11 @@ export function tickLoan(
   // sat at 11% LTV. Measured on one 26-month build: $4.3M of cash forced into
   // the land loan before delivery. The LTV covenant (70%) still applies.
   const d = loan.minDSCR > 0 ? dscr(rec, s, h) : null;
-  const l = ltv(rec, s, h);
+  // AND A NOTE WITH NO LTV MAINTENANCE TEST HAS NO LTV TEST. Life-company,
+  // conduit and agency paper test loan-to-value at the closing table and
+  // police the term on coverage (LoanProduct.ltvMaintenance); bank and bridge
+  // paper re-appraise and test it.
+  const l = ltvTested(loan) ? ltv(rec, s, h) : null;
   let breached = !holiday && ((d !== null && d < loan.minDSCR) || (l !== null && l > loan.maxLTV));
 
   /**
@@ -2052,38 +2136,68 @@ export function tickLoan(
   // told the firm not to cure by itself (`noAutoCure`, the Debt page) keeps
   // the cash; the breach stands, the sweep and the two-year clock run, and
   // the cheque is the owner's to write by hand (paydownLoan) or not at all.
-  if (breached && !s.noAutoCure && fundableNow(s, parcels, { allowLoc: false }) > 0) {
+  //
+  // ONLY WHAT A CHEQUE CAN CURE (2026-11-28). With no income (DSCR at or under
+  // zero) there is no balance at which the building covers its payment, so no
+  // paydown ends a coverage breach (the NO INCOME note in equityCureNeed). The
+  // cure used to pay the LTV gap anyway — sponsor cash into a default that
+  // stood regardless: a playtest's emptied building took $746K of principal
+  // from the firm in one month on a $1.52M Pelican note and stayed in breach.
+  // The breach, the sweep and the two-year clock run exactly as before; the
+  // owner can still pay down by hand.
+  const uncurable = d !== null && d < loan.minDSCR && d <= 0;
+  let announced = false;
+  if (breached && !uncurable && !s.noAutoCure && fundableNow(s, parcels, { allowLoc: false }) > 0) {
     const need = equityCureNeed(rec, s, h);
     // Cash only — sponsor cheque, not a line draw. Taken immediately so two
     // breached buildings in the same month cannot both spend the same dollar.
     const pay = fundCashNeed(s, parcels, need, { allowLoc: false });
     if (pay > 0) {
       loan.balance = Math.max(0, loan.balance - pay);
-      logBooks(s, "debtSvc", pay, h.bbl);
+      // PRINCIPAL, NOT DEBT SERVICE: the cheque is a prepayment (logPrincipal).
+      logPrincipal(s, -pay, h.bbl);
+      loan.curedPaid = (loan.curedPaid ?? 0) + pay;
       recastPayment(loan, q);
       // Re-test against the loan as it now stands. A cure that covered the
       // whole gap ends the breach this month; a partial one does not, and the
       // sweep and the clock go on exactly as they did.
       const d2 = loan.minDSCR > 0 ? dscr(rec, s, h) : null;
-      const l2 = ltv(rec, s, h);
+      const l2 = ltvTested(loan) ? ltv(rec, s, h) : null;
       const still = (d2 !== null && d2 < loan.minDSCR) || (l2 !== null && l2 > loan.maxLTV);
+      // EVERY CURE IS ANNOUNCED WITH ITS AMOUNT (owner, 2026-11-27). The line
+      // used to be written only when the loan was already swept, so a breach
+      // cured in the month it happened took the cash in silence — $115K,
+      // $248K and $284K of one Harbor loan's principal in a year with nothing
+      // on the news but the cash balance (playtest F1).
+      const amt = pay >= 1e6 ? money(pay) : `$${Math.round(pay / 1000)}K`;
+      const legs: string[] = [], tests: string[] = [];
+      if (d !== null && d < loan.minDSCR) { legs.push(`DSCR ${d.toFixed(2)}`); tests.push(`${loan.minDSCR.toFixed(2)}x`); }
+      if (l !== null && l > loan.maxLTV) { legs.push(`LTV ${Math.round(100 * l)}%`); tests.push(`${Math.round(100 * loan.maxLTV)}%`); }
+      const leg = legs.join(" and "), test = tests.join(" and ");
       if (!still) {
-        if (loan.sweep || (loan.breachMs ?? 0) > 0) {
-          s.news.unshift({
-            q, kind: "info",
-            text: `Covenant cured at ${rec.address} — ${pay >= 1e6 ? `${money(pay)}` : `$${Math.round(pay / 1000)}K`} equity paydown; test passes.`,
-          });
-        }
+        s.news.unshift({
+          q, kind: "warn",
+          text: `Covenant cure · ${rec.address}: paid ${amt} of principal to ${loanLender(loan)} from cash — `
+            + `${leg} against the ${test} test${tests.length > 1 ? "s" : ""}. Balance ${money(loan.balance)}, payment now `
+            + `$${loan.monthlyPmt.toLocaleString()}/mo. (Cures are automatic; turn them off on the Debt page.)`,
+        });
         loan.sweep = false;
         loan.breachMs = 0;
         loan.cleanQs = 0;
         breached = false;
+      } else {
+        s.news.unshift({
+          q, kind: "warn",
+          text: `Covenant breach · ${rec.address} (${leg}): paid ${amt} of principal from cash toward a `
+            + `${money(need)} cure — not enough; cash flow trapped.`,
+        });
       }
+      announced = true;
     }
   }
 
   if (breached) {
-    if (!loan.sweep) {
+    if (!loan.sweep && !announced) {
       s.news.unshift({
         q, kind: "warn",
         text: `Covenant breach at ${rec.address} (${d !== null && d < loan.minDSCR ? `DSCR ${d.toFixed(2)}` : `LTV ${(100 * (l ?? 0)).toFixed(0)}%`}) — cash flow trapped.`,
@@ -2258,7 +2372,10 @@ export function tickLoan(
       const mezzDue = h.mezz?.balance ?? 0;
       if (fundableNow(s, parcels) >= payoff + mezzDue) {
         const paid = fundCashNeed(s, parcels, payoff + mezzDue);
-        logBooks(s, "debtSvc", paid, h.bbl);
+        // The fee is the cost; the senior and the mezz are principal repaid.
+        const feePaid = Math.min(fee, paid);
+        if (feePaid > 0) logBooks(s, "debtSvc", feePaid, h.bbl);
+        logPrincipal(s, -(paid - feePaid), h.bbl);
         h.loan = null;
         if (h.mezz) h.mezz = null;
         s.news.unshift({
@@ -2276,7 +2393,11 @@ export function tickLoan(
         // ledger month by month over fifty years: three of the four
         // unexplained movements in the sample were this line, matching the
         // news item to the penny, and it cost one seed $1.17M of silence.
-        logBooks(s, "debtSvc", paid, h.bbl);
+        // The fee is the cost; the rest is principal the smaller takeout did
+        // not refinance — repaid, not spent (logPrincipal).
+        const feePaid = Math.min(fee, paid);
+        if (feePaid > 0) logBooks(s, "debtSvc", feePaid, h.bbl);
+        logPrincipal(s, -(paid - feePaid), h.bbl);
         // Size at the haircut quote the shortfall maths used — originating at
         // lev=1 with no hair (and the wrong class on land) used to write a
         // bigger loan than "today's market only refinances $X" claimed.
@@ -2361,7 +2482,7 @@ function serviceMezz(
   if (s.month >= m.maturityM && !s.workouts?.[h.bbl]) {
     if (fundableNow(s, parcels) >= m.balance) {
       const paid = fundCashNeed(s, parcels, m.balance);
-      logBooks(s, "debtSvc", paid, h.bbl);
+      logPrincipal(s, -paid, h.bbl);
       h.mezz = null;
       s.news.unshift({
         q: s.month, kind: "deal",
@@ -2561,6 +2682,8 @@ export interface RefiQuote {
    * `binding: "stabilised plan"` without rewriting this NOI.
    */
   maxLTV: number;
+  /** Whether `maxLTV` is tested during the term, or only at the closing (LoanProduct.ltvMaintenance). */
+  ltvMaintenance: boolean;
   advanceLtv: number;
   noiUw: number;
   /** The coverage covenant this paper carries — what the ratio has to stay above. */
@@ -2847,6 +2970,70 @@ export function refiFacilityRelease(s: GameState, parcels: ParcelTable, bbl: str
   return { price: unwind ? Math.max(0, f.balance) : releaseCost(s, parcels, bbl), unwind };
 }
 
+/**
+ * WHAT A REFINANCE COSTS AT THE TABLE — one sum for the card and the closing.
+ * The closing fee runs on the larger of the new loan and the stack it retires;
+ * points and the rate cap on the new principal; prepayment on the old paper.
+ */
+export function refiCost(s: GameState, h: Holding, product: LoanProduct, principal: number): { fee: number; points: number; penalty: number; capPremium: number } {
+  const oldBal = (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0);
+  const penalty = (h.loan ? prepayPenalty(h.loan, s.month, s.econ) : 0)
+    + (h.mezz ? prepayPenalty(h.mezz, s.month, s.econ) : 0);
+  const points = Math.round(principal * product.points);
+  const capPremium = product.floating ? capPremiumOn(principal) : 0;
+  const fee = Math.round(Math.max(principal, oldBal) * REFI_FEE) + points + penalty + capPremium;
+  return { fee, points, penalty, capPremium };
+}
+
+/**
+ * A REFINANCE THAT CHANGES NOTHING IS REFUSED (playtest 2026-11-27, F2).
+ * Refinancing a building into the desk that already holds its note, for the
+ * same money at no better price, closed again and again in one month — $67K
+ * of points, closing costs and a step-down penalty on a note written that
+ * month, every time — and each closing restarted the covenant holiday. No
+ * lender closes the same loan twice; this is the desk saying so. It binds
+ * anyone who asks (rivals never re-originate their own paper).
+ *
+ * It refuses only when every one of these holds: the same desk holds the note
+ * and nothing junior or pledged rides on it; the balloon is outside the
+ * notice window (inside it the desk renews as a matter of course); the new
+ * paper adds less than that window of term; the principal moves by less than
+ * the closing costs; and the price saves less than the closing costs over the
+ * term left (the coupon on fixed paper, the spread on floating). A real rate
+ * refinance, a cash-out, a paydown that moves more than it costs, a term
+ * extension or any other desk still closes.
+ * [M: every test is a quantity the closing already computes; the window is
+ * the balloon notice the attention list uses.]
+ */
+export function noOpRefi(s: GameState, parcels: ParcelTable, h: Holding, product: LoanProduct, principal: number, ratePct: number): string | null {
+  const loan = h.loan;
+  if (!loan || loan.product !== product.id) return null;
+  if (loan.holder && loan.holder !== product.lender) return null;
+  if ((h.mezz?.balance ?? 0) > 0) return null;
+  if (refiFacilityRelease(s, parcels, h.bbl)) return null;
+  if (loan.maturityM - s.month <= BALLOON_NOTICE_M) return null;
+  if (s.month + product.termM - loan.maturityM >= BALLOON_NOTICE_M) return null;
+  const { fee, penalty } = refiCost(s, h, product, principal);
+  if (Math.abs(principal - loan.balance) > fee) return null;
+  // A BETTER PRICE IS ONE THAT PAYS FOR THE CLOSING: the coupon (on floating
+  // paper, the spread) saved on the new principal over the term the note has
+  // left must beat the cost of closing again — the recoupment test of a
+  // refinance (the "net tangible benefit" rule lenders apply against loan
+  // flipping). A sheet two basis points sharper only because the last closing
+  // warmed the relationship is still the same loan.
+  const cutPts = product.floating && loan.bench !== "long"
+    ? loan.spread - +(ratePct - shortIndexOf(s.econ)).toFixed(2)
+    : loan.ratePct - ratePct;
+  const saving = (cutPts / 100) * principal * (Math.max(0, loan.maturityM - s.month) / 12);
+  if (saving > fee) return null;
+  const age = s.month - loan.originM;
+  const ago = age <= 0 ? "this month" : `${age} month${age === 1 ? "" : "s"} ago`;
+  return `Nothing to refinance: ${product.lender} wrote this note ${ago} on the same sheet, and today's quote is the same loan — `
+    + `${money(principal)} against ${money(loan.balance)}, ${ratePct.toFixed(2)}% against ${loan.ratePct.toFixed(2)}%. `
+    + `Closing it again would only cost ${money(fee)}${penalty > 0 ? ` (${money(penalty)} of it to prepay the note you have)` : ""}. `
+    + `Pay down, borrow more on another desk, or wait for a better rate; the desk renews in the last ${BALLOON_NOTICE_M} months before the balloon.`;
+}
+
 export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { quotes: RefiQuote[]; value: number; payoff: number } {
   const h = s.holdings[bbl];
   const rec = resolveRec(parcels, s, bbl);
@@ -2858,6 +3045,8 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
   const quotes = PRODUCTS.map((p) => {
     const raw = quote(s, p, collateralFor(p, coll), noi, quoteClass, false, stab, h.condition, guarantor, coll.value);
     const q = { ...raw, principal: Math.round(raw.principal * hair.mult) };
+    // The same loan from the desk that holds it is no quote at all (noOpRefi).
+    const noop = q.principal > 0 ? noOpRefi(s, parcels, h, p, q.principal, q.ratePct) : null;
     // COVERAGE ON THE PAYMENT THE DESK SIZED TO. The card printed coverage on
     // the interest-only year's payment (1.71x) beside "binds coverage" from a
     // desk that had sized to 1.40x on the amortising payment — the screen
@@ -2888,6 +3077,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       debtYieldAtMax: q.principal > 0 ? noi / q.principal : 0,
       // Covenant max LTV (breach test), not the advance rate used to size.
       maxLTV: p.maxLTV,
+      ltvMaintenance: p.ltvMaintenance,
       // The sheet TODAY — standards, class, condition and your file — not the brochure.
       advanceLtv: raw.statedLtv ?? statedLtv(s, p).ltv,
       sheetWhy: raw.sheetWhy,
@@ -2934,6 +3124,7 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
       available: !productOpen(s, p) || !windowOpen(s, p) ? false
         : !conditionOk(p, h.condition, rec.buildSpec) ? false
         : p.mezz ? false
+        : noop ? false
         : !onIncome(p) ? vacantDirt
         : !vacantDirt && q.principal > 0,
       why: !productOpen(s, p)
@@ -2944,6 +3135,8 @@ export function refiQuotes(s: GameState, parcels: ParcelTable, bbl: string): { q
         ? (buildTier(rec.buildSpec).key === "value" ? "Life-company money does not lend on value-engineered buildings, however new." : "Life-company money wants a well-kept building. Renovate first.")
         : p.mezz
         ? "Mezzanine sits behind a senior — use Place mezz on the refinance desk, do not replace the first lien."
+        : noop
+        ? noop
         : p.minLoan && q.principal === 0 && !vacantDirt
         ? `Below their minimum check — ${p.lender} doesn't underwrite anything under $${(loanMin(s, p) / 1e6).toFixed(loanMin(s, p) >= 1e6 ? 1 : 2)}M in this town.`
         /* THE WALL THAT USED TO BE INVISIBLE. A desk's hold size is the most
@@ -3005,12 +3198,9 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   const seniorBal = h.loan?.balance ?? 0;
   const mezzBal = h.mezz?.balance ?? 0;
   const oldBal = seniorBal + mezzBal;
-  const penalty = (h.loan ? prepayPenalty(h.loan, next.month, next.econ) : 0)
-    + (h.mezz ? prepayPenalty(h.mezz, next.month, next.econ) : 0);
-  const points = Math.round(qd.principal * product.points);
-  const capPremium = product.floating ? capPremiumOn(qd.principal) : 0;
-  const fee = Math.round(Math.max(qd.principal, oldBal) * REFI_FEE) + points + penalty + capPremium;
+  const { fee, penalty, capPremium } = refiCost(next, h, product, qd.principal);
   if (qd.principal < 100_000) return { s, err: "No lender will size a loan against this income." };
+  { const noop = noOpRefi(next, parcels, h, product, qd.principal, qd.ratePct); if (noop) return { s, err: noop }; }
   // Cash-in (and fees) can draw the line the same way a balloon gap does — a
   // firm with an undrawn revolver is not underwater on a takeout it can fund.
   const releasePrice = release?.price ?? 0;
@@ -3029,10 +3219,10 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   }
   const newLoan = originate(next, product, value, noi, lev * hair.mult, h.condition, quoteClass, stab, { nw: netWorth(next, parcels) }, rec.buildSpec, coll.value);
   if (!newLoan) return { s, err: "No lender will size a loan against this income." };
-  // PRINCIPAL INTO CASH IS A LEDGER EVENT. Fees stay in debtSvc; net new
-  // principal that lands in the operating account is `borrowed` — the bucket
-  // conserve needs to see cash-out refinances. Paying the old balance down
-  // with cash (negative net draw) is principal repayment and goes to debtSvc.
+  // PRINCIPAL INTO CASH IS A LEDGER EVENT. Fees stay in debtSvc; net
+  // principal through the account is `borrowed`, signed (logPrincipal): a
+  // cash-out is + and paying the old balance down with cash is −. Neither is
+  // income or expense.
   const netDraw = qd.principal - oldBal;
   next.cash += netDraw - fee;
   // A JV partner shares the refinance both ways: its share of a cash-out is
@@ -3046,7 +3236,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   // The facility is paid its release at the same closing.
   if (release && next.facility) {
     next.cash -= releasePrice;
-    logBooks(next, "debtSvc", releasePrice, bbl);
+    logPrincipal(next, -releasePrice, bbl);   // facility principal, repaid at the table
     if (release.unwind) delete next.facility;
     else {
       next.facility.balance = Math.max(0, next.facility.balance - releasePrice);
@@ -3056,8 +3246,7 @@ export function refinance(s: GameState, parcels: ParcelTable, bbl: string, produ
   }
   coverCashShortfall(next, parcels);
   logBooks(next, "debtSvc", fee, bbl);
-  if (netDraw > 0) logBooks(next, "borrowed", netDraw, bbl);
-  else if (netDraw < 0) logBooks(next, "debtSvc", -netDraw, bbl);
+  logPrincipal(next, netDraw, bbl);
   h.loan = newLoan;
   // A takeout retires the stack — mezz does not survive a senior refinance.
   if (h.mezz) h.mezz = null;

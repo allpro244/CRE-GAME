@@ -1,6 +1,6 @@
 import { FirmLink } from "@/ui/FirmLink";
 import { Fragment, useEffect, useState } from "react";
-import { consentFor } from "@/engine/vehicles";
+import { consentFor, exchangeMinPrice, partnerShare } from "@/engine/vehicles";
 import Slider, { counterPriceBounds } from "@/ui/Slider";
 import { useStore, rewindPrefix } from "@/state/store";
 import { listSaves, type SaveMeta } from "@/engine/save";
@@ -1088,7 +1088,7 @@ function DecisionBody({
             Accept · net {usd(cashAtClose)}
           </button>
           {proceeds.tax > 0 && !game.exchange && !onFund && !consentFor(game, h, "exchange") && (
-            <button className="btn btn-buy" title="Defer the gain · buy within 6 months" onClick={() => setSaleAcceptConfirm({ exchange: true })}>
+            <button className="btn btn-buy" title={`Defer the gain · buy at least ${usd(exchangeMinPrice(game, h, offer.price))} of replacement within 6 months${partnerShare(game, h) > 0 ? " (your share of the sale price)" : ""}; any shortfall is taxed`} onClick={() => setSaleAcceptConfirm({ exchange: true })}>
               1031 · defer {usd(proceeds.tax)}
             </button>
           )}

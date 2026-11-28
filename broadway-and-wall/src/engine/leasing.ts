@@ -1911,7 +1911,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // of technology boom never improved a roll and a five-year bust never
         // degraded one — measured at zero credit changes across 163 tenancies.
         // It already drives default odds, deposit size, the renewal discount
-        // and the quality spread a buyer pays. This is the only wire missing.
+        // and the lender's haircut. This is the only wire missing.
         // ...on the tenant's own numbers, rated the way an agency rates: the
         // lower of what its size earns (creditOfSize, the street's covenant
         // rule, on the feet its headcount needs today) and what its interest
@@ -5136,8 +5136,11 @@ export function signLoi(s: GameState, rec: ParcelRecord, h: Holding, l: LOI, fee
   // Say what the roll looks like NOW. "Lease signed" with a free-rent period
   // and unchanged NOI was reading as a no-op — the tenant is on the roll and
   // the building is more full, even when the cheque has not started.
-  const leasedSf = h.tenants.reduce((a, t) => a + t.sf, 0);
-  const occPct = rec.bldgArea > 0 ? Math.min(100, (100 * leasedSf) / rec.bldgArea) : 0;
+  // Leased over lettable, flats included: the number the header and Leasing
+  // print (portfolioOccupancy, occupancyRead). This divided tenant feet by
+  // GROSS area and left the flats out, so a fully let office read 80% here
+  // and 100% at the top of the screen (playtest F18, 2026-11-27).
+  const occPct = 100 * occupancyRead(rec, h).lettableOcc;
   const freeNote = l.freeM
     ? ` Free rent through ${monthLabel(s.month + l.freeM)}; not yet in NOI.`
     : "";
@@ -5276,8 +5279,9 @@ export function respondLOI(
     sweepTour(loi);
     next.lois = next.lois.filter((l) => l.id !== id);
     const roll = next.holdings[loi.bbl] ?? h;
-    const leasedSf = roll.tenants.reduce((a, t) => a + t.sf, 0);
-    const occPct = rec.bldgArea > 0 ? Math.min(100, (100 * leasedSf) / rec.bldgArea) : 0;
+    // leased over lettable, flats included: the number the header and Leasing
+    // print (portfolioOccupancy, occupancyRead) — see signLoi
+    const occPct = 100 * occupancyRead(rec, roll).lettableOcc;
     const freeBit = loi.freeM
       ? ` Free rent for ${loi.freeM} month${loi.freeM === 1 ? "" : "s"} — occupancy is up; cash flow waits.`
       : "";

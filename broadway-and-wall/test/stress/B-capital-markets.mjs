@@ -464,7 +464,7 @@ if (ONLY.includes("2")) {
     console.log(`                bought at the ${kind === "top" ? "TOP   " : "BOTTOM"}  n=${adv.length}  mean ${p2(mean(adv))}x  [${adv.map((x) => x.toFixed(2)).join(", ")}]`);
   }
   console.log(`\n   NOTE ON THE DENOMINATOR: unspent equity earns the sweep rate — the policy`);
-  console.log(`   rate less 0.4pt, floored at zero (sweepApy, src/engine/types.ts), taxable`);
+  console.log(`   rate less 0.32pt (bills 0.10 under, fund fee 0.22), floored at zero (sweepApy, src/engine/types.ts), taxable`);
   console.log(`   as ordinary income. The old thumb here (a flat 1.0%/yr in every rate`);
   console.log(`   environment) is gone; what remains is the true after-tax real carry of a`);
   console.log(`   reserve, which is the comparison a levered and an unlevered arm deserve.\n`);

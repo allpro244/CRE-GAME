@@ -50,9 +50,12 @@ const TOL = 1000;
 // SETUP_JSON='{"inherit":3}' runs the same bot on a setup-page world (engine/setup.ts).
 const SETUP = process.env.SETUP_JSON ? JSON.parse(process.env.SETUP_JSON) : undefined;
 
-// `borrowed` is net new mortgage/facility principal drawn into cash — the
-// bucket that closes conserve's old blind spot on cash-out refinance and
-// facility draws. See BooksYear.borrowed and engine/debt.ts / facility.ts.
+// `borrowed` is NET principal through cash, signed — new mortgage/facility
+// principal drawn (+) less principal prepaid (−: cures, paydowns, payoffs,
+// refinance paydowns, releases). It closed conserve's old blind spot on
+// cash-out refinance and facility draws, and since 2026-11-28 it carries the
+// prepayments that used to be booked as debt service (types.ts logPrincipal).
+// It stays on the IN side: a negative entry is an outflow.
 // `lpCalled` / `lpDistributed` are fund equity in/out against the vehicle's
 // second cash account — conserve reconciles Δ(cash + fund.cash).
 const IN = ["noi", "sold", "interest", "borrowed", "lpCalled", "fees"];
@@ -156,10 +159,12 @@ console.log(`\n${"=".repeat(64)}`);
 // somewhere, check that dollars went anywhere: an identity nothing exercises
 // reports a pass it did not earn. `sold` is exempt — the bot only lists when it
 // is short, so a run where it never had to is a healthy run, not a dead one.
-// `borrowed` is on the income side of the identity — net new mortgage and
-// facility principal drawn into cash. A silent exemption here is the same
-// fault as the dead bot: both sides zero, the run prints a pass it did not
-// earn. `sold` stays exempt — the bot only lists when it is short.
+// `borrowed` is on the income side of the identity — net principal through
+// cash, signed. A silent exemption here is the same fault as the dead bot:
+// both sides zero, the run prints a pass it did not earn. Coverage reads the
+// run total's magnitude, so repayments alone can exercise it — still a real
+// principal movement through the identity. `sold` stays exempt — the bot only
+// lists when it is short.
 const REQUIRED = ["noi", "interest", "borrowed", "debtSvc", "leasing", "capex", "taxes", "bought", "dev", "ga", "lpCalled", "lpDistributed"];
 const dead = REQUIRED.filter((k) => coverage[k] === 0);
 console.log(`ledger exercised: ${[...IN, ...OUT].map((k) => `${k} ${coverage[k] ? "yes" : "NO"}`).join("  ")}`);

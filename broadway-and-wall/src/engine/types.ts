@@ -515,6 +515,8 @@ export interface Loan {
    * previously had no way to reach.
    */
   breachMs?: number;
+  /** Principal the automatic equity cure has paid into this note from cash, lifetime (debt.ts tickLoan) — the Debt page names it. */
+  curedPaid?: number;
   /**
    * MONTHS THE PAYMENT DID NOT ACTUALLY GET MADE.
    *
@@ -667,14 +669,19 @@ export interface Holding {
   // Somebody else's building stands on this dirt. It earns ground rent instead
   // of costing carry, and it is not yours to build on until the term is up.
   groundLeased?: boolean;
-  /**
-   * YOU SOLD THE LAND AND KEPT THE BUILDING. A ground rent the owner pays out,
-   * senior to everything, stepping every year; see leasehold.ts. `rentYr` is
-   * the rent in force; `price` is what the fee sold for; `holder` the buyer.
-   */
   /** A minority partner in this one deed — see jv.ts. `share` of the equity is theirs. */
   jv?: { partner: string; share: number; sinceM: number; price: number };
-  groundRentOut?: { holder: string; rentYr: number; stepPct: number; startM: number; endM: number; lastStepM: number; price: number };
+  /**
+   * YOU SOLD THE LAND AND KEPT THE BUILDING. A ground rent the owner pays out,
+   * senior to everything, stepping every year and reset to market every
+   * `resetEveryM` months, never down; see leasehold.ts. `rentYr` is the rent
+   * in force; `price` is what the fee sold for; `holder` the buyer. A lease
+   * written before resets existed reads GROUND_FMV_RESET_M from `startM`.
+   */
+  groundRentOut?: {
+    holder: string; rentYr: number; stepPct: number; startM: number; endM: number; lastStepM: number; price: number;
+    resetEveryM?: number; lastResetM?: number;
+  };
   // The lot is on OFFER for a ground lease — a listing, not a deal. Ground
   // lessees are scarce, so a counterparty arrives stochastically through
   // tickGroundLeases, at odds set by the corner's live demand and the same
@@ -1223,6 +1230,14 @@ export interface Listing {
   halfBuilt?: { use: string; sf: number; floors: number; progress: number; costToComplete: number };
   /** The month the player last put a number to this seller (actions.ts buyListing): one offer a month, as the round. */
   offeredM?: number;
+  /**
+   * The seller called best and final on the player's outbid offer in month
+   * `m` (actions.ts buyListing): one more number that month, which must beat
+   * `first`, the offer it called on. `lost`: the player's final, which a
+   * firm's walk-away beat — the least that firm pays at the month's round
+   * (actions.ts tickListingAbsorption).
+   */
+  final?: { m: number; first: number; lost?: number };
   /**
    * THE RENT ROLL, DISCLOSED BEFORE YOU BID — which is what due diligence IS.
    *
@@ -3138,7 +3153,7 @@ export interface Econ {
 export interface BooksYear {
   yr: number;       // 0-based game year
   noi: number;      // property NOI collected (pre-debt)
-  debtSvc: number;  // debt service + refi fees + cap premiums + voluntary principal paydowns
+  debtSvc: number;  // interest, scheduled amortisation, fees, prepayment penalties, cap premiums — never a prepayment of principal (that is `borrowed`, signed)
   leasing: number;  // TI and leasing commissions, including the 6% an exclusive takes
   capex: number;    // programs, renovations, make-ready turns
   dev: number;      // development equity, construction interest, overruns
@@ -3148,11 +3163,15 @@ export interface BooksYear {
   ga: number;       // firm overhead — asset management, accounting, legal
   interest: number; // what the bank paid you on idle cash — never property income
   /**
-   * Net new mortgage / facility principal drawn into cash (cash-out refinance,
-   * facility proceeds above the mortgages they repay). The conservation
-   * identity used to be blind to these — they raised cash with no books entry.
-   * Monthly amortisation still travels through `debtSvc`; this bucket is only
-   * the balance-sheet draws that land in the operating account.
+   * NET principal through cash, SIGNED: + new mortgage / facility principal
+   * drawn into the account (cash-out refinance, facility proceeds above the
+   * mortgages they repay, construction and reserve draws), − principal repaid
+   * from it ahead of schedule (covenant cures, paydowns, payoffs, refinance
+   * paydowns, facility releases). A balance-sheet move, not income or expense:
+   * the Books page showed a $746K covenant cure as "Debt service" on a $1.52M
+   * loan before prepayments came here (playtest 2026-11-27, F1). Scheduled
+   * amortisation inside the monthly payment stays in `debtSvc`, the P&I
+   * presentation. Write it through `logPrincipal`.
    */
   borrowed?: number;
   /**
@@ -3198,7 +3217,7 @@ export interface PnlYear {
   leasing: number;
   capex: number;
   ga: number;
-  /** Interest earned on idle cash. */
+  /** Interest earned on idle cash, and the interest the fund pays on the sponsor's advances to it (types.ts repayAdvance). */
   intInc: number;
   /** Interest accrued on mortgages, mezzanine, the facility and the line. */
   intExp: number;
@@ -4062,7 +4081,7 @@ export interface GameState {
    * put into its deals in total. Sized at first use; see syndicate.ts.
    */
   ffNetwork?: { cap: number };
-  /** The sponsor's fee income from its syndicates this tax year (sim.ts taxes it, then resets it). */
+  /** The sponsor's ordinary income from its vehicles this tax year — syndicate and fund fees, and the interest the fund pays on GP advances (sim.ts taxes it, then resets it). */
   feeIncomeYr?: number;
   /**
    * THE YEAR'S INVESTOR MONEY in this city (investors.ts): what each investor
@@ -4660,8 +4679,11 @@ export interface GameState {
   lenderRel: Record<string, number>;         // lender name -> relationship 0-100; a trusted name is worth basis points
   totalLots: number;
   builtAtStart: number;
-  // a 1031 exchange in flight: sale gain rolled, tax deferred until the clock runs out
-  exchange: { deferredTax: number; rolledGain: number; minPrice: number; deadlineM: number } | null;
+  // a 1031 exchange in flight: sale gain rolled, tax deferred until the clock runs out.
+  // `minPrice` is the owner's relinquished price (its share, on a JV deed);
+  // `replaced` the replacement bought so far and `rolled` the gain deferred
+  // into it (actions.ts applyExchangeReplacement). Missing on older saves: 0.
+  exchange: { deferredTax: number; rolledGain: number; minPrice: number; deadlineM: number; replaced?: number; rolled?: number } | null;
   taxesPaid: number;
   /**
    * THE LOSS THAT SHELTERS NEXT YEAR. Depreciation exists to make a paper loss
@@ -4843,8 +4865,13 @@ export interface GameState {
      * it, not one per month — see sim.ts.
      */
     payingNotes?: boolean;
-    /** Net worth at the bank's last annual review, and when (credit.ts locLimit). */
-    reviewNw?: number; reviewM?: number;
+    /**
+     * Each deed's value at the bank's last annual review, and when (credit.ts
+     * locLimit): the line's covenant tests total debt against these, not this
+     * month's marks. `reviewNw` is the retired net-worth review, kept so old
+     * saves load; nothing reads it.
+     */
+    reviewVals?: Record<string, number>; reviewNw?: number; reviewM?: number;
   };
   books: BooksYear[];                        // the ledger, one entry per year
   /** Monthly flow buckets for the income statement's month view. Optional for old saves. */
@@ -4934,6 +4961,20 @@ export interface GameState {
 // Write a cash flow into the current year's ledger bucket — and the month's.
 // Name the deed (`bbl`) when the cheque belongs to one building, and the same
 // dollars also land on that deed's equity ledger (see GameState.deedCf).
+/**
+ * PRINCIPAL IS NOT AN EXPENSE. Signed: + new principal drawn into cash, −
+ * principal repaid from cash ahead of schedule (cures, paydowns, payoffs,
+ * refinance paydowns, releases). Scheduled amortisation inside the monthly
+ * payment stays in `debtSvc`, the P&I presentation. It books to `borrowed`, so
+ * the conserve identity, the deed ledger (DEED_SIGN.borrowed = +1 is the same
+ * owner-side flow as debtSvc's −1 on a repayment), the fund purse and a
+ * syndicate's netting all see exactly the dollars they saw when a prepayment
+ * was booked as debt service.
+ */
+export function logPrincipal(s: GameState, delta: number, bbl?: string, vehicleDirect = false) {
+  if (delta && Number.isFinite(delta)) logBooks(s, "borrowed", delta, bbl, vehicleDirect);
+}
+
 export function logBooks(
   s: GameState, key: keyof Omit<BooksYear, "yr">, amt: number, bbl?: string,
   /** The caller already moved this dollar through `s.fund.cash` — do not settle it again. */
@@ -5067,7 +5108,13 @@ function settleVehicleDeedFlow(s: GameState, key: keyof Omit<BooksYear, "yr">, a
   if (!s.holdings[bbl]?.fundOwned) return;
   const signed = sign * amt; // + into the owner's account, − out of it
   if (signed > 0) vehicleCollect(s, signed);
-  else vehicleReimburse(s, -signed);
+  else {
+    vehicleReimburse(s, -signed);
+    // Equity into the building — a construction draw, or consideration the
+    // sponsor's account paid — is the vehicle's money at work (fund.ts
+    // fundDeployment), however it was funded.
+    if (key === "dev" || key === "bought") f.deedInvested = (f.deedInvested ?? 0) - signed;
+  }
 }
 
 /**
@@ -5082,17 +5129,22 @@ function settleVehicleDeedFlow(s: GameState, key: keyof Omit<BooksYear, "yr">, a
  */
 export function moveDeposit(s: GameState, h: Holding | undefined, amt: number) {
   if (!amt) return;
-  if (h?.fundOwned && s.fund && !s.fund.settled) moveFundCash(s.fund, amt, "deposit");
-  else s.cash += amt;
+  // A deposit handed back from a vehicle with no cash is a bill like any
+  // other: called, or advanced by the sponsor (vehiclePay) — never an overdraft.
+  if (h?.fundOwned && s.fund && !s.fund.settled) {
+    if (amt > 0) moveFundCash(s.fund, amt, "deposit");
+    else vehiclePay(s, -amt, "deposit");
+  } else s.cash += amt;
 }
 
 /**
  * Why a dollar moved through the fund vehicle's `cash`. One kind per real
  * movement: capital called, distributed, a GP advance repaid, a deed's own
  * flow settled, a purchase, sale or construction closing the caller moved directly, a tenant
- * deposit, the sponsor's buy-in at the wind-down.
+ * deposit, the sponsor's buy-in at the wind-down, a GP advance paid into the
+ * purse (only an old save's overdraft, converted on load — save.ts).
  */
-export type FundFlowKind = "call" | "dist" | "advRepay" | "deed" | "purchase" | "sale" | "build" | "deposit" | "buyIn" | "fee";
+export type FundFlowKind = "call" | "dist" | "advRepay" | "deed" | "purchase" | "sale" | "build" | "deposit" | "buyIn" | "fee" | "advance";
 
 /**
  * THE ONE WRITE TO A VEHICLE'S CASH. Moves `amt` (signed) and records it on
@@ -5120,7 +5172,7 @@ export function vehicleCollect(s: GameState, amt: number) {
   const f = s.fund;
   if (!f || f.settled || !(amt > 0)) return;
   const repay = Math.min(amt, Math.max(0, f.gpAdvance ?? 0));
-  if (repay > 0) f.gpAdvance = (f.gpAdvance ?? 0) - repay; // the sponsor keeps it: its loan back
+  repayAdvance(s, f, repay); // the sponsor keeps it: its loan back, interest first
   const rest = amt - repay;
   s.cash -= rest;
   moveFundCash(f, rest, "deed");
@@ -5152,6 +5204,70 @@ export function vehicleReimburse(s: GameState, amt: number): number {
   // The whole cost is settled: `pay` from the purse, `adv` as a GP advance.
   f.deedSettled = (f.deedSettled ?? 0) - amt;
   return adv;
+}
+
+/**
+ * THE VEHICLE PAYS A BILL THAT LEAVES THE FIRM — a tenant's deposit handed
+ * back, a builder's closing cheque. From its cash; short, from a call on
+ * uncalled commitments (LPAs allow calls for existing investments' expenses);
+ * still short, the sponsor writes the cheque as a GP protective advance
+ * (`fund.gpAdvance`: interest at the sponsor's line rate, repaid before any
+ * distribution — fund.ts). The same order `vehicleReimburse` settles a cost
+ * the sponsor's account already paid, for a cost nobody has paid yet. So
+ * `fund.cash` never goes below zero. It used to, for years, on deposits handed
+ * back from a vehicle that held no cash (−$46K on seed 12007's levered fund:
+ * an interest-free overdraft nothing funded). The sponsor's own shortfall
+ * then meets its line at the month's close and, past that, the insolvency
+ * clock — the failure path every firm in town walks. Mutates `s`. Returns
+ * the advance created. The caller books the bill (for a deposit, the
+ * liability falls with it); a call books its own `lpCalled`.
+ */
+export function vehiclePay(s: GameState, amt: number, kind: FundFlowKind): number {
+  const f = s.fund;
+  if (!f || f.settled || !(amt > 0)) return 0;
+  const short = amt - Math.max(0, f.cash);
+  if (short > 0 && f.uncalled > 0) {
+    const call = Math.min(short, f.uncalled);
+    f.uncalled -= call;
+    f.called += call;
+    moveFundCash(f, call, "call");
+    logBooks(s, "lpCalled", call); // LP equity in for the vehicle's own bill — not income
+  }
+  const pay = Math.min(amt, Math.max(0, f.cash));
+  moveFundCash(f, -pay, kind);
+  const adv = amt - pay;
+  if (adv > 0) {
+    s.cash -= adv; // the sponsor writes the rest of the cheque
+    f.gpAdvance = (f.gpAdvance ?? 0) + adv;
+    // A closing the vehicle settles directly is settled in full: `pay` from the
+    // purse (moveFundCash counted it), `adv` by the sponsor on its behalf.
+    if (kind === "purchase" || kind === "sale" || kind === "build") f.deedSettled = (f.deedSettled ?? 0) - adv;
+  }
+  return adv;
+}
+
+/**
+ * THE VEHICLE PAYS ITS GP BACK, interest before principal (the order every
+ * loan is repaid in). `amt` has already reached the sponsor's account (or its
+ * note on the liquidating trust); this writes the advance down and recognises
+ * the interest as the sponsor's income: the LPs' share of it, since the
+ * co-invest bears its own share of the vehicle's cost — the same treatment as
+ * the management fee (fund.ts tickFund). Recognised when paid, so an advance
+ * written off never booked income nobody collected. Inside the firm, so
+ * nothing on the cash books. The co-invest share is `gpCapitalShare`
+ * (fund.ts), inlined because fund.ts imports this module. Mutates `s`, `f`.
+ */
+export function repayAdvance(s: GameState, f: import("./fund").PlayerFund, amt: number): void {
+  if (!(amt > 0)) return;
+  f.gpAdvance = (f.gpAdvance ?? 0) - amt;
+  const ip = Math.min(amt, Math.max(0, f.advInterest ?? 0));
+  if (ip > 0) {
+    f.advInterest = (f.advInterest ?? 0) - ip;
+    const gpShare = f.called > 0 ? Math.min(1, f.gpCommit / f.called) : 0;
+    const lp = ip * (1 - gpShare);
+    pnlAdd(s, "intInc", lp);
+    s.feeIncomeYr = (s.feeIncomeYr ?? 0) + lp;
+  }
 }
 
 /**
@@ -5188,7 +5304,9 @@ function probeUntagged(s: GameState, key: string, amt: number) {
     // "at Module.refinance (" / "at Object.foo (" / "at tickLoc (" -> the bare name
     const m = /at ([\w$.]+) /.exec(f);
     const name = (m?.[1] ?? "?").split(".").pop()!;
-    if (name === "logBooks" || name === "probeUntagged" || name === "fundAndBook") continue;
+    // logPrincipal is booking plumbing too (a signed `borrowed` wrapper):
+    // the call site is whoever called it.
+    if (name === "logBooks" || name === "logPrincipal" || name === "probeUntagged" || name === "fundAndBook") continue;
     who = name;
     break;
   }
@@ -5541,23 +5659,73 @@ export const START_YEAR = 2000;
  * runs double digits while deposits paid one per cent; in its ZIRP eras one
  * per cent was a gift. Neither is a market.
  *
- * The spread under the policy rate is a measured fact about the business:
- * institutional sweep / government MMF yields run ~25–50bp under the fed funds
- * rate (expense ratios plus the sweep bank's cut). 40bp, floored at zero —
+ * The spread under the policy rate is two measured facts, kept apart because
+ * they are two different things: what a Treasury bill yields under fed funds
+ * (BILL_FUNDS_GAP_PCT — the same number a bank's own liquid assets earn in
+ * lenders.ts bankFunding), and what the money fund holding the bills charges
+ * for doing it (MMF_EXPENSE_PCT). Bills less the fee, floored at zero —
  * nobody pays you to hold your cash outside a deflation regime this engine
- * does not model at the deposit desk.
+ * does not model at the deposit desk. This used to be one uncited 40bp that
+ * mixed the two, while bankFunding priced the same bills at policy less 10bp:
+ * one quantity, two answers.
+ *
+ * WHAT IT IS NOT KEYED TO: the engine's short index (regime.ts shortIndexFor).
+ * That is a bank-credit benchmark — SOFR/LIBOR plus a credit term that blows
+ * out when the banks are frightened — and bills do the opposite in a panic:
+ * they trade UNDER fed funds as money runs to them (TB3SMFFM averaged -0.39pp
+ * over Sep-Dec 2008). A money fund keyed to the short index would pay more the
+ * more frightened the banks were. The gap is a constant here, a sourced
+ * average; the flight-to-quality widening is a mechanism not yet modelled.
  *
  * If T-bills at 8% then read "too strong", that is 1981 being 1981 — and the
  * honest counterweights already exist: the CPI eating the real value, the
- * deals not done, and (with this change) the taxman — deposit interest is
- * ordinary income and joins January's taxable base in sim.ts, which a flat
- * shelter-free 1% never did.
+ * deals not done, the office (firm overhead runs whether or not the firm owns
+ * a building, sim.ts), and the taxman — deposit interest is ordinary income
+ * and joins January's taxable base in sim.ts, which a flat shelter-free 1%
+ * never did. A cash-only firm at a 2.5M start nets about 1.3% a year after
+ * both (seed 12007, 2026-11-27 playtest F6): that is the cost of carrying an
+ * idle balance sheet, not a missing product.
  */
-export const SWEEP_SPREAD_PCT = 0.40;
+/** 3-month Treasury bill less effective fed funds: FRED TB3SMFFM monthly mean -0.11pp over 2000-2026 (median -0.14pp over 1954-2026; the 1954-2026 mean, -0.38pp, carries the Volcker-era gaps), computed 2026-11-27 [S]. */
+export const BILL_FUNDS_GAP_PCT = 0.10;
+/** Money-market fund expense ratio: 0.22%, the asset-weighted average for 2023 (ICI Research Perspective vol. 30 no. 2, "Trends in the Expenses and Fees of Funds, 2023", March 2024; 10th-90th percentile 0.12-0.70%) [S]. */
+export const MMF_EXPENSE_PCT = 0.22;
+/** What a 3-month Treasury bill yields, % a year, given the policy rate (floored at zero: no negative bill yields in this engine). */
+export function billYield(policyPct: number): number {
+  return Math.max(0, policyPct - BILL_FUNDS_GAP_PCT);
+}
+/** What swept cash earns, as a fraction a year: the bill yield less the money fund's fee. */
 export function sweepApy(econ: { nat?: { policy?: number } } | undefined): number {
   const pol = econ?.nat?.policy;
   if (!Number.isFinite(pol)) return 0.01; // no national block yet (turn 0 / old save mid-load)
-  return Math.max(0, ((pol as number) - SWEEP_SPREAD_PCT) / 100);
+  // Floored at zero: near the zero bound funds waive their fees rather than
+  // pay a negative yield (97% of money funds were waiving at year-end 2021,
+  // ICI Research Perspective 30-2) — the waiver is the floor.
+  return Math.max(0, (billYield(pol as number) - MMF_EXPENSE_PCT) / 100);
+}
+
+/**
+ * THE OFFICE, BY THE YEAR: a fixed base plus ~28bps of gross asset value. One
+ * formula for every firm — the player's tick charges it as G&A (sim.ts
+ * firmOverheadMonthly, which the top bar also subtracts) and every
+ * competitor's tick charges it out of the account (rivals.ts). It used to be
+ * the same two literals typed in both places.
+ *
+ * Charged against what a firm is RESPONSIBLE for, not how many doors it has:
+ * a firm running fifty million needs one analyst, a firm running five billion
+ * needs a department, and the second is cheaper per dollar. A per-asset charge
+ * looked reasonable and was not — it billed a small operator more overhead
+ * than their building earned in NOI.
+ *
+ * THE WHOLE OFFICE IS IN THIS NUMBER: asset and property management, leasing
+ * coordination, accounting, legal, insurance, the rent on the office. There
+ * is no payroll to hire into, so nothing comes out of it — buildings are
+ * professionally run at the market standard and this is what that costs.
+ * And the fixed base is charged whether or not the firm owns anything: an
+ * office with no buildings in it is a cost, not a strategy.
+ */
+export function firmOverheadAnnual(costIdx: number, gav: number): number {
+  return 60_000 * costIdx + 0.0028 * gav;
 }
 
 /**

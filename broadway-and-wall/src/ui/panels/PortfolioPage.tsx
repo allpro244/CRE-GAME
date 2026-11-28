@@ -995,7 +995,7 @@ export function PortfolioBidActions({
           title={book.toFund
             ? "Fund gain · not eligible for your 1031"
             : exchangeLive ? "A 1031 is already open"
-            : "Defer the gain · redeploy within 6 months or tax is due"}>
+            : "Defer the gain · redeploy the sale price within 6 months; any shortfall is taxed"}>
           Close into a 1031{book.tax > 0 ? ` · defer ${usd(book.tax)}` : ""}
         </button>
         {!bid.countered && (

@@ -7,7 +7,7 @@ import { distressTally } from "./history";
 import { stampBands } from "./bands";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Exit, GameState, Listing, Rival } from "./types";
-import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit, moveFundCash } from "./types";
+import { DEFAULT_START_CASH, CENTURY_MONTHS, firmOverheadAnnual, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit, moveFundCash, vehiclePay } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels, cycleDown } from "./market";
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, resolveRecBare, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
@@ -22,12 +22,12 @@ import { materializeNeighbourhoods, materializeNeighbourhood } from "./unpack";
 import { useRentableSf, overallScore, N_BANDS, isRevaluation } from "./value";
 import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls";
 import { settleLeasingPayables, tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCash, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
-import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
+import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook, exchangeTaxAtRisk } from "./actions";
 import { tickLeaseholds } from "./leasehold";
 import { stampYearMark, recordMarks } from "./standing";
 import { splitMonthCf } from "./jv";
 import { tickTalks, reconcileContracts } from "./acquire";
-import { tickLoan, productById, loanLender, stackPayoff, balloonLadder, drawLeaseUpReserve, leaseUpRoom } from "./debt";
+import { tickLoan, productById, loanLender, stackPayoff, balloonLadder, drawLeaseUpReserve, leaseUpRoom, BALLOON_NOTICE_M } from "./debt";
 import { markSponsor } from "./sponsor";
 import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow, fundCashNeed, parkedOnLine, monthlyDebtService } from "./credit";
 import { releaseCost, tickFacility, FACILITY_CURE_M } from "./facility";
@@ -35,7 +35,7 @@ import { tickHolders, holderOf } from "./owners";
 import { holderBidder } from "./ownership";
 import { reoAsk } from "./lenders";
 import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit, seedOpeningPipeline } from "./dev";
-import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind, tickTrustNote, TRUST_NOTE_M, fundReserve } from "./fund";
+import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind, tickTrustNote, TRUST_NOTE_M, fundReserve, fundDeployment, lpWouldEndPeriod } from "./fund";
 import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
@@ -44,7 +44,7 @@ import { tickCorporate } from "./corporate";
 import { markRival, initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose, landFundBid, streetSaleCost } from "./rivals";
 import { loanBookTouched, syncDebt } from "./rivalDebt";
 import { openingCapSurvey, openingLandSurvey, tickBrokerSurvey, tickLandSurvey, noteListed, anchoredAsk, forcedSaleAsk, foreclosureSale, BUY_CLOSING, bidRound, valueTo } from "./propmarket";
-import { initLenders, publishOpeningPrices, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
+import { initLenders, publishOpeningPrices, tickLenders, chargeLenderLoss, cashInterestMonthly } from "./lenders";
 import { tickStreetLoans, retireFoldedLoans } from "./streetLoans";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
@@ -908,7 +908,7 @@ function tickMonth(
   tickLeasing(s, parcels);
   applyReliefRule(s, parcels);
   tickGroundLeases(s, parcels);
-  tickLeaseholds(s);
+  tickLeaseholds(s, parcels);
   tickBuildToSuit(s, parcels);
   tickSales(s, parcels, adjacency);
   // The dirt reprices off what the dirt has been fetching — after the month's
@@ -922,14 +922,24 @@ function tickMonth(
   tickTakePrivateApproach(s, parcels); // and a board that wants out rings the buyers who could close
   tickTalks(s, parcels);             // a negotiation left open goes stale
 
-  // the 1031 clock: redeploy in time or the deferred tax comes due
+  // The 1031 clock: at the close of the window, whatever gain the replacement
+  // bought did not cover is boot, and its share of the deferred tax is due —
+  // all of it when nothing was bought (actions.ts applyExchangeReplacement).
   if (s.exchange && s.month > s.exchange.deadlineM) {
-    s.cash -= s.exchange.deferredTax;
-    s.taxesPaid = (s.taxesPaid ?? 0) + s.exchange.deferredTax;
-    logBooks(s, "taxes", s.exchange.deferredTax);
+    const ex = s.exchange;
+    const recognised = Math.max(0, ex.rolledGain - (ex.rolled ?? 0));
+    const tax = exchangeTaxAtRisk(ex);
+    if (tax > 0) {
+      s.cash -= tax;
+      s.taxesPaid = (s.taxesPaid ?? 0) + tax;
+      logBooks(s, "taxes", tax);
+    }
     s.news.unshift({
       q: s.month, kind: "warn",
-      text: `1031 window expired · ${money(s.exchange.deferredTax)} deferred capital-gains tax now due.`,
+      text: (ex.replaced ?? 0) > 0
+        ? `1031 window closed · ${money(ex.replaced ?? 0)} replaced of ${money(ex.minPrice)} · `
+          + `${money(recognised)} of gain recognised as boot · ${money(tax)} tax due.`
+        : `1031 window expired · ${money(tax)} deferred capital-gains tax now due.`,
     });
     s.exchange = null;
   }
@@ -1132,7 +1142,9 @@ function tickMonth(
   // interest is not property income — and it joins January's taxable base
   // below, because money-fund interest is ordinary income in life too.
   // THE OPERATING ACCOUNT EARNS THE DEPOSIT RATE, the swept balance the bill
-  // rate (cashSplit in lenders.ts) — and only the first is the bank's risk.
+  // rate less the money fund's fee (cashInterestMonthly in lenders.ts, the one
+  // rule every competitor's idle cash also earns by) — and only the first is
+  // the bank's risk.
   // AN OVERDRAWN BALANCE IS BORROWED MONEY (2026-10-14). Negative cash paid
   // nothing, so a firm could run underwater for months on what was in effect
   // a free unsecured loan from its creditors. Whoever is carrying that hole
@@ -1143,8 +1155,7 @@ function tickMonth(
     if (od > 0) { s.cash -= od; logBooks(s, "debtSvc", od); }
   }
   if (s.cash > 0) {
-    const split = cashSplit(s);
-    const interest = Math.round((split.inBills * sweepApy(s.econ) + split.atBank * depositApy(s.econ, split.bank)) / 12);
+    const interest = Math.round(cashInterestMonthly(s, s.cash));
     if (interest > 0) {
       s.cash += interest; logBooks(s, "interest", interest);
       s.depositInterestYr = (s.depositInterestYr ?? 0) + interest;
@@ -1990,6 +2001,26 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
       }
     }
   }
+  // THE LPs WILL VOTE AT THEIR NEXT REVIEW (fund.ts FUND_LP_REVIEW_M). If the
+  // fund would still be a full review cycle behind an even pace when the LPs
+  // meet, buying nothing more, they end its investment period. On the docket
+  // from three months out; it stops the clock in the last month a deal can
+  // still change the vote.
+  {
+    const f = s.fund;
+    if (f && !f.settled) {
+      const d = fundDeployment(f, s.month);
+      const left = d.nextReviewM - s.month;
+      if (left > 0 && left <= 3 && lpWouldEndPeriod(f, d.nextReviewM)) {
+        out.push({
+          key: `fund-review:${f.raisedM}:${d.nextReviewM}`,
+          label: `Your LPs review the fund in ${monthLabel(d.nextReviewM)}: ${money(d.deployed)} of ${money(f.size)} invested, `
+            + `${Math.round(fundDeployment(f, d.nextReviewM).behindM)} months behind an even pace by then — they will end its investment period unless it buys`,
+          lastM: d.nextReviewM - 1,
+        });
+      }
+    }
+  }
   // A BANK HAS PUT A BUILDING OUT. The month a desk lists what it took back,
   // the docket says so — on the docket, never a stop (an opportunity), so a
   // player with every card off still sees it in Next due and on Marketplace.
@@ -2151,7 +2182,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     // nothing costs a cheque or a workout. The forecast is in the key, so a
     // loan that stops clearing between notice and maturity stops the clock
     // the month it flips.
-    if (h.loan && h.loan.maturityM - s.month <= 12 && h.loan.maturityM > s.month) {
+    if (h.loan && h.loan.maturityM - s.month <= BALLOON_NOTICE_M && h.loan.maturityM > s.month) {
       const mo = h.loan.maturityM - s.month;
       const rec = parcels ? resolveRec(parcels, s, h.bbl) : null;
       const roll = rec && parcels && !s.workouts?.[h.bbl]
@@ -2592,10 +2623,12 @@ export function windDownFund(s: GameState, parcels: ParcelTable) {
     if (price > 0 && paid >= price) {
       moveFundCash(f, paid, "buyIn");
       // The tenants' deposits come across with the deed: the vehicle held
-      // them, the sponsor owes them from here on.
+      // them, the sponsor owes them from here on. What the vehicle cannot hand
+      // over from its cash it owes the sponsor (vehiclePay: a call, then a GP
+      // advance repaid ahead of the waterfall below) — never an overdraft.
       const dep = depositsOn(h);
-      moveFundCash(f, -dep, "deposit");
       s.cash += dep;
+      vehiclePay(s, dep, "deposit");
       paidTotal += paid;
       delete h.fundOwned;
       // The vehicle's cash and the sponsor's now share one deed: its equity
@@ -2821,16 +2854,10 @@ export function firmOverheadMonthly(s: GameState, parcels: ParcelTable): number 
   // Last month's GAV (stamped at the portfolioMark in the tick). Month-one /
   // old saves with no stamp fall back to a single mark.
   const gav = s.prevGav ?? portfolioMark(s, parcels).gav;
-  // ~30bps of gross asset value a year at scale, over a small fixed base.
-  //
-  // THE WHOLE OFFICE IS IN THIS NUMBER: asset and property management, leasing
-  // coordination, accounting, legal, insurance, the rent on the office. There
-  // is no payroll to hire into, so nothing comes out of it — buildings are
-  // professionally run at the market standard and this is what that costs.
-  // Competitors are charged the same rate in their own tick (rivals.ts), so the
-  // league table measures both sides one way.
-  const annual = 60_000 * s.econ.costIdx + 0.0028 * gav;
-  return Math.round(annual / 12);
+  // ~28bps of gross asset value a year at scale, over a small fixed base —
+  // the one formula (types.ts firmOverheadAnnual) competitors are charged in
+  // their own tick (rivals.ts), so the league table measures both sides one way.
+  return Math.round(firmOverheadAnnual(s.econ.costIdx, gav) / 12);
 }
 
 export function portfolioMonthlyCF(s: GameState, parcels: ParcelTable): number {

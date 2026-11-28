@@ -1,6 +1,7 @@
 // IndexedDB saves: named snapshots plus one debounced `auto` crash-protection
 // slot. A save is just GameState — parcels/adjacency are deterministic city data.
 import type { Credit, GameState, PlanRow } from "./types";
+import { moveFundCash } from "./types";
 import { ensureLeasingPlan, starterPlan } from "./leasing";
 import { describeSetup } from "./setup";
 import { shortIndexOf } from "./market";
@@ -301,6 +302,48 @@ function migrateDropVacancyNorm(state: GameState): void {
   delete e.vacOverM;
 }
 
+/**
+ * A VEHICLE OVERDRAWN ON AN OLD SAVE (F19, 2026-11-27). Before `vehiclePay`
+ * a fund handed back deposits it did not hold and its cash went below zero.
+ * The sponsor is what stood behind that hole, so it becomes what it would
+ * have been: a GP advance, paid into the purse from the sponsor's account —
+ * a move inside the firm, nothing on the books. Interest runs from here.
+ */
+function migrateVehicleOverdraft(state: GameState): void {
+  const f = state.fund;
+  if (!f || f.settled || !(f.cash < 0)) return;
+  const x = -f.cash;
+  state.cash -= x;
+  // A fund saved before its own ledger (`flows`) stays without one: starting
+  // a ledger here would hold only this advance, against a balance it never saw.
+  if (f.flows) moveFundCash(f, x, "advance");
+  else f.cash += x;
+  f.gpAdvance = (f.gpAdvance ?? 0) + x;
+}
+
+/**
+ * A FUND WHOSE DEPLOYMENT THE SAVE CANNOT MEASURE (fund.ts deployUnmeasured).
+ * Before `deedInvested` a job's construction draws after its day-one cheque
+ * were not counted anywhere the LPs' review reads, and before `flows` nothing
+ * was. A live fund from such a save that had put money out (a purchase or a
+ * build cheque on its ledger, or no ledger at all) is marked, and the review
+ * leaves it alone; one that had deployed nothing reads zero, correctly, and is
+ * still reviewed. Every fund raised since starts `deedInvested` at zero, so an
+ * unset field means an old save.
+ */
+function migrateFundDeployment(state: GameState): void {
+  const f = state.fund;
+  if (!f || f.settled || f.deedInvested !== undefined || f.deployUnmeasured) return;
+  const fl = f.flows;
+  // A deed the vehicle holds is deployment too, even one whose consideration
+  // settled through the sponsor's account and so never reached flows.purchase.
+  const holdsDeed = Object.values(state.holdings ?? {}).some((h) => h.fundOwned);
+  if (!fl || holdsDeed || (fl.purchase ?? 0) < 0 || (fl.build ?? 0) < 0) f.deployUnmeasured = true;
+  // Measurable: it had deployed nothing, so the draws it missed are zero.
+  // Stamp it, so a later load knows this is no longer an old save's fund.
+  else f.deedInvested = 0;
+}
+
 /** Did this save predate the plat its own island now stands on? */
 function groundMovedUnder(state: { v?: unknown; cityIsland?: string }): boolean {
   const mark = GROUND_MOVED_AT[state.cityIsland ?? PROCEDURAL_ISLAND];
@@ -330,6 +373,8 @@ export function migrateSaveState(state: GameState): GameState {
   migrateFloatingBench(state);
   migrateDropJev(state);
   migrateDropVacancyNorm(state);
+  migrateFundDeployment(state);   // before the overdraft move, which reads `flows` as the save left it
+  migrateVehicleOverdraft(state);
   if ((state.agent || state.renewalMgmt) && !state.leasingPlan) {
     ensureLeasingPlan(state);
   }

@@ -23,7 +23,7 @@ import SchemeViewer from "@/ui/panels/SchemeViewer";
 import { dominantOf } from "@/engine/proforma";
 import { planDevelopment, takeoutHedgeCost, takeoutHedgeRequired, takeoutRead, maxRetailShare, BTS_TERM_MIN_Y, BTS_TERM_MAX_Y, btsTermY, MIN_COVERAGE } from "@/engine/dev";
 import { committedTotal } from "@/engine/investors";
-import { BUILD_TIERS, buildTier } from "@/engine/value";
+import { BUILD_TIERS, buildTier, COMMERCIAL_EFFECTIVE, RECOVERY_RATE } from "@/engine/value";
 import { START_YEAR, type DevDraft, type DevUse } from "@/engine/types";
 import { KITS, KIT_GROUPS } from "@/engine/renderView";
 import { FACADE_STYLES, FACADE_GROUPS, TRIM_PAINTS, ROOF_CHOICES, CROWN_CHOICES, CROWN_MIN_FLOORS, type FacadeGroup } from "@/map/real/RealCity";
@@ -32,7 +32,7 @@ import type { BuildingDesign } from "@/engine/types";
 import { UNREAL_HOST, formsForLot } from "@/state/unrealHost";
 import { usd, sf } from "@/ui/format";
 import { devUseLabel } from "@/ui/panels/shared";
-import { deskScheme, bestStarts, coverFor, productName, type DeskScheme } from "./scheme";
+import { deskScheme, bestStarts, coverFor, productName, verdictTone, type DeskScheme } from "./scheme";
 import "./desks.css";
 import { WhyButton } from "@/ui/WhyChain";
 import { costWhy, landWhy } from "@/ui/whyLinks";
@@ -443,7 +443,8 @@ function Programme({ d, set }: { d: DeskScheme; set: (p: Partial<DevDraft>) => v
 function Verdict({ d }: { d: DeskScheme }) {
   const p = d.plan;
   if (!p) return <div className="bd-verdict bad"><div className="bd-big">—</div><div className="bd-note">{d.bar ?? "No scheme prices here"}</div></div>;
-  const tone = p.hurdleRatio >= 1.08 ? "good" : p.hurdleRatio >= 1 ? "warn" : "bad";
+  // amber when the town would build what the merchant's margin would not (scheme.ts verdictNote)
+  const tone = verdictTone(p.hurdleRatio, d.street);
   const all = p.equity + p.pointsCost + d.siteDebt;
   return (
     <div className={"bd-verdict " + tone}>
@@ -451,6 +452,7 @@ function Verdict({ d }: { d: DeskScheme }) {
       <div className="bd-cell"><div className="bd-lab">Yield · hurdle</div><div className="bd-mid mono">{pct2(p.yieldOnCost)} · {pct2(p.requiredYield)}</div></div>
       <div className="bd-cell"><div className="bd-lab">Equity</div><div className="bd-mid mono">{usd(all)}</div></div>
       <div className="bd-cell"><div className="bd-lab">Build</div><div className="bd-mid mono">{p.months} mo</div></div>
+      {d.verdictNote && <div className="bd-note say">{d.verdictNote}</div>}
       {d.short > 0 && <div className="bd-note">Short {usd(d.short)}</div>}
     </div>
   );
@@ -511,14 +513,28 @@ function Details({ d }: { d: DeskScheme }) {
     Cost: <WhyButton id={costWhy(game)} lead={`Cost ${usd(p.costTotal)} at the town's construction index ${(game.econ.costIdx ?? 1).toFixed(2)}`} />,
     Land: <WhyButton id={landWhy(game)} />,
   };
-  const rows: [string, string][] = [
+  // WHAT THE EXIT YIELD IS MADE OF (F9): the market's cap for this building
+  // plus the property tax the owner pays, so "worth" reads against the
+  // Markets screen's cap (which is net of tax) and not as a harsher number.
+  const ab = p.taxAbate && p.taxAbate.pct > 0 ? p.taxAbate : null;
+  const levy = game.econ.taxMult ?? 1;
+  const officeShare = Math.round((1 - RECOVERY_RATE.office) * 100);
+  const worthWhy = `Cap: the market's for this building — ${pct2(p.capToday)} on today's tape, ${pct2(p.marketCap)} read through the cycle, `
+    + `as every builder in town underwrites its exit. Tax: the town's ${pct2(COMMERCIAL_EFFECTIVE * 100)} effective rate × this year's levy (${levy.toFixed(2)}) `
+    + `× the share the owner pays (flats all of it, offices ${officeShare}%, triple-net shops and sheds none)`
+    + (ab ? `, less the abatement (${Math.round(ab.pct * 100)}% off for ${ab.years} years, priced into the yield)` : "")
+    + `. Worth = NOI before tax ÷ (cap + tax) = NOI after tax ÷ cap.`;
+  const rows: [string, string, string?][] = [
     ["Building", `${sf(p.sf)} · ${p.floors} fl · FAR ${p.far} of ${p.farMax.toFixed(1)}`],
     ["Cost", `${usd(p.costTotal)} · $${Math.round(p.costTotal / Math.max(1, p.sf))}/sf`],
     ["Land", usd(p.landBasis)],
     ["All in", usd(p.basisTotal)],
     ...((p.leaseUpForgone ?? 0) > 0 ? [["Rent lost letting", usd(p.leaseUpForgone ?? 0)] as [string, string]] : []),
-    ["Worth", `${usd(d.worth)} · ${pct2(p.exitYield)} exit`],
-    ["NOI", usd(p.stabNoi)],
+    ["Worth", `${usd(d.worth)} · ${pct2(p.marketCap)} cap + ${pct2(p.taxLoadPct)} tax = ${pct2(p.exitYield)}`, worthWhy],
+    ["NOI before tax", usd(p.stabNoi)],
+    ["Property tax", ab
+      ? `${usd(p.taxYr1 ?? 0)} yr 1, abated · ${pct2(p.taxLoadPct)} in the yield`
+      : `${usd(p.taxYr1 ?? 0)} yr 1 · ${pct2(p.taxLoadPct)} of value`],
     ["At close", usd(d.need.dayOne)],
     ["Cushion", usd(d.need.margin)],
     ...(d.siteDebt > 0 ? [["Land loan", usd(d.siteDebt)] as [string, string]] : []),
@@ -528,7 +544,7 @@ function Details({ d }: { d: DeskScheme }) {
     <details className="bd-details" open>
       <summary>Numbers</summary>
       <table className="bd-kv"><tbody>
-        {rows.map(([k, v]) => <tr key={k}><td>{k}{why[k] && <> {why[k]}</>}</td><td className="mono">{v}</td></tr>)}
+        {rows.map(([k, v, t]) => <tr key={k} title={t}><td>{k}{why[k] && <> {why[k]}</>}</td><td className="mono">{v}</td></tr>)}
       </tbody></table>
     </details>
   );

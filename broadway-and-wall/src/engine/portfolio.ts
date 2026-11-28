@@ -25,7 +25,7 @@
 // months after everybody has worked that out.
 import type { ParcelTable } from "@/data/types";
 import type { Exit, GameState, Holding, Rival } from "./types";
-import { logBooks, moveDeposit, moveFundCash, monthLabel, raiseAlert, cloneState, closeDeedLedger } from "./types";
+import { logBooks, moveDeposit, moveFundCash, vehiclePay, monthLabel, raiseAlert, cloneState, closeDeedLedger } from "./types";
 import { firmShort } from "./firm";
 import { rrange } from "./market";
 import { sweepLocIdleCash } from "./credit";
@@ -670,6 +670,16 @@ export function acceptPortfolioBid(
   // them out of sold — conserve saw money appear — and skipped release + child
   // deposits entirely.
   let cashToYou = 0, taxTotal = 0, gainTotal = 0, toFund = 0;
+  // The vehicle's proceeds land before its deeds' deposits leave — at a
+  // closing the deposits are credited against the price at the table — so the
+  // vehicle never calls or borrows to hand over money the sale itself pays.
+  // A book that nets below its payoffs is a cheque the vehicle writes: its
+  // cash, a call, then a GP advance (vehiclePay), never an overdraft.
+  if (intoFund && next.fund) {
+    const net = book.legs.reduce((a, l) => a + l.toSeller, 0);
+    if (net >= 0) moveFundCash(next.fund, net, "sale");
+    else vehiclePay(next, -net, "sale");
+  }
   book.legs.forEach((leg) => {
     const bbl = leg.bbl;
     const h = next.holdings[bbl];
@@ -734,13 +744,14 @@ export function acceptPortfolioBid(
   }
   while (next.exits.length > 200) next.exits.shift();
   next.cash += cashToYou;
-  if (intoFund && next.fund) moveFundCash(next.fund, toFund, "sale");
   // `sold` and the fees were booked leg by leg above, and the pool payoff
   // against `sold` with them.
   if (exchange && taxTotal > 0) {
+    // The whole price is the owner's: a deed with a JV partner cannot ride in
+    // a book (listPortfolio refuses it), so nothing here is a partner's share.
     next.exchange = {
       deferredTax: taxTotal, rolledGain: gainTotal, minPrice: bid.price,
-      deadlineM: next.month + EXCHANGE_WINDOW_M,
+      deadlineM: next.month + EXCHANGE_WINDOW_M, replaced: 0, rolled: 0,
     };
   } else if (taxTotal > 0) {
     // The sponsor's own tax: on the fund's deeds, its co-invest share of the
@@ -775,7 +786,7 @@ export function acceptPortfolioBid(
           + (cashToYou < 0 ? `${money(-cashToYou)} of your own went to the facility. ` : "")
         : `${money(cashToYou)} to you after payoffs. `)
       + (exchange
-        ? `1031 open: redeploy ${money(bid.price * 0.8)} by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} or ${money(taxTotal)} tax is due.`
+        ? `1031 open: redeploy ${money(bid.price)} by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} to defer all of it; any shortfall is taxed (up to ${money(taxTotal)}).`
         : taxTotal > 0 ? `${money(taxTotal)} of tax withheld.` : "No gain, no tax."),
   });
   sweepLocIdleCash(next, { announce: true });

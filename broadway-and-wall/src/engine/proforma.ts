@@ -1002,6 +1002,12 @@ export interface ProForma {
   stabNoi: number;
   /** Bare exit cap, % — and the tax-loaded yield the mark and the hurdle use. */
   exitCap: number;
+  /**
+   * The same building's cap on TODAY's index, %, beside `exitCap`, which reads
+   * the market's through-cycle expectation (`underwritingEcon`: capExp). Shown,
+   * never priced: every builder and the land residual exit at `exitCap`.
+   */
+  capToday: number;
   exitYieldPct: number;
   /** The landlord's tax in the first stabilised year after any abatement, and the abatement priced (citygov.ts). */
   taxYr1: number;
@@ -1353,7 +1359,22 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
     const inlineShare = Math.max(0, 1 - anchorSf / Math.max(1, rentable));
     stabNoi = marketStabNoi * inlineShare + aNoi;
   }
+  // THE EXIT YIELD IS THE MARKET'S CAP PLUS THE PROPERTY TAX, and nothing is
+  // counted twice. `stabNoi` is NOI BEFORE property tax (value.ts noiYr: the
+  // operating stack carries no tax line), and the cap index is defined NET of
+  // tax (propmarket.ts impliedCap backs the tax out of every trade). So the
+  // value is pre-tax NOI over cap + the owner's effective tax rate — the
+  // appraiser's tax-loaded capitalisation rate (Appraisal Institute, The
+  // Appraisal of Real Estate) — which is exactly after-tax NOI over the cap.
+  // The tax is the bill's own rate (taxRate: COMMERCIAL_EFFECTIVE [S] times
+  // the council's levy) times the share the owner bears (taxBorneShare: flats
+  // all of it, offices less their recoveries, triple-net shops and sheds
+  // none). The cap is this building's on the market's through-cycle read
+  // (`uw`: capExp) — the exit every builder in town and the land residual
+  // underwrite; `capToday` is the same building on today's tape, for the desk
+  // to show beside it.
   const exitCap = capRateFor(asBuilt, uw, "good");
+  const capToday = capRateFor(asBuilt, econ, "good");
   const taxLoad = taxRate(uw) * taxBorneShare(asBuilt);
   const fullYieldPct = exitCap + taxLoad * 100;
   // AN ABATEMENT IS WORTH WHAT IT FORGIVES (citygov.ts: 421-a / ICAP). The
@@ -1612,7 +1633,7 @@ export function developmentProForma(rec: ParcelRecord, econ: Econ, o: ProFormaIn
     ltc, ltcMax, ltcSizedBy, ratePct, lender: cq.lender, points: cq.points, commitment, interestReserve, pointsCost,
     leaseUpForgone,
     nonLandBasis: costTotal + interestReserve + pointsCost,
-    stabNoi, exitCap, exitYieldPct, taxYr1, abate,
+    stabNoi, exitCap, capToday, exitYieldPct, taxYr1, abate,
     landCarryRate: landCarryFactor(months, econ),
     bts, btsShare,
     ...(prod && site ? { product: { key: prod.key, site, anchors, ...(draw !== undefined ? { draw } : {}) } } : {}),

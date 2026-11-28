@@ -19,7 +19,7 @@ console.log("\nLOC DEFENDS THE DEED\n");
 
 const { parcels, bbls } = loadCity(0, E.normalizeParcels);
 
-function buyLevered(seed) {
+function buyLevered(seed, lev = 0.65) {
   for (let s = seed; s < seed + 400; s++) {
     let g = E.firstListings(E.newGame(s, parcels, 80_000_000), parcels, bbls);
     const listing = (g.listings ?? []).find((l) => {
@@ -28,7 +28,7 @@ function buyLevered(seed) {
         && l.ask > 5_000_000 && l.ask < 25_000_000;
     });
     if (!listing) continue;
-    const bought = E.executePurchase(g, parcels, listing.bbl, listing.ask, "savings", false, 0.65);
+    const bought = E.executePurchase(g, parcels, listing.bbl, listing.ask, "savings", false, lev);
     if (bought.err || !bought.s.holdings[listing.bbl]?.loan) continue;
     return { g: bought.s, bbl: listing.bbl };
   }
@@ -36,8 +36,14 @@ function buyLevered(seed) {
 }
 
 // --- 1. Covenant cure may draw the line -----------------------------------
+// LIGHTER LEVERAGE (2026-11-28). The line now obeys its total-leverage covenant
+// — every mortgage and the line within 60% of gross assets (credit.ts LOC_LTV)
+// — and with the account at zero a building levered to 65% of the desk's
+// maximum left the line about $86K of room: the cure was unfundable because
+// the covenant said so, which is the new rule working, not the line failing.
+// Bought at 40% of the maximum, the line has the room this section is about.
 {
-  let { g, bbl } = buyLevered(71);
+  let { g, bbl } = buyLevered(71, 0.4);
   const h = g.holdings[bbl];
   const lender = h.loan.holder ?? "Savings Bank";
   g.workouts = {

@@ -3,18 +3,18 @@ import { useEffect, useState } from "react";
 import Slider, { counterPriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
-import type { BuiltClass } from "@/engine/types";
-import { holdingNOIYr, resolveRec, asIfOwned, recoveryOf } from "@/engine/value";
+import { contractNoiYr, resolveRec, asIfOwned, recoveryOf, capRateFor, ownedHoldingValue } from "@/engine/value";
 import { MAX_TALKS } from "@/engine/acquire";
 import { APPROACH_LIFE_M } from "@/engine/sim";
 import { bumpOf, loiSigningCash, exclusiveFeeRate, netEffectivePsf, loiNeedsPrincipal, deskHoldsPen, deskMonthNow, previewTray } from "@/engine/leasing";
-import { sellerCashAtClose } from "@/engine/actions";
+import { exchangeTaxAtRisk, sellerCashAtClose } from "@/engine/actions";
 import { usd, sf, pctSigned } from "@/ui/format";
 import { PortfolioSaleDesk } from "@/ui/panels/PortfolioPage";
 import { liveBrokerCalls } from "@/ui/panels/broker";
 import { Row, apMid, devUseLabel } from "@/ui/panels/shared";
 import { LoiCounterDraft, LoiHero, loiMarketPsf, openingNe } from "@/ui/panels/LoiNegotiate";
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
+import { priceVerdict } from "@/ui/panels/ValueBridge";
 import { Gloss } from "@/ui/Glossary";
 import { leasingDeskName, loiRead, saleOfferRead } from "@/ui/advisor";
 
@@ -283,15 +283,19 @@ export function SaleOfferCard({ bbl, ask, go }: { bbl: string; ask: number; go: 
           const rec = st.parcels ? resolveRec(st.parcels, game, bbl) : null;
           if (!rec || !h || rec.class === "land" || !rec.bldgArea || ask <= 0) return null;
           // Re-assessed at the ask, because that is what a buyer's going-in cap
-          // is struck on — see the offer card, which quotes the same way.
-          const noi = holdingNOIYr(rec, game.econ,
-            asIfOwned(game, bbl, ask, { roll: h.tenants, occ: h.occ, cond: h.condition }, rec), game.month);
+          // is struck on — see the offer card, which quotes the same way. On the
+          // contract, not this month's cheque (value.ts contractNoiYr).
+          const noi = contractNoiYr(rec, game.econ,
+            asIfOwned(game, bbl, ask, { roll: h.tenants, occ: h.occ, cond: h.condition, condIdx: h.condIdx, resRentPsf: h.resRentPsf }, rec), game.month);
           if (noi <= 0) return null;
           const cap = (noi / ask) * 100;
-          const mkt = game.econ.capRate[(rec.class as BuiltClass)] ?? cap;
+          // This building's cap, and the ask against the appraisal (the Sell
+          // slider's rule) — not the class index against an in-place yield (F20).
+          const mkt = capRateFor(rec, game.econ, h.condition, h.condIdx);
+          const v = priceVerdict(ask, apMid(bbl, ownedHoldingValue(game, st.parcels!, h)));
           return (
             <> · <b>{cap.toFixed(2)}%</b> cap at ask
-              <span className={cap < mkt - 0.4 ? " neg" : ""}> (market {mkt.toFixed(2)}%)</span>
+              <span className={v === "above market" ? " neg" : ""} title="This building's cap rate; the verdict is the ask against the appraisal."> (market {mkt.toFixed(2)}% · {v})</span>
             </>
           );
         })()}
@@ -432,7 +436,8 @@ export function DealsPage() {
     <div>
       {game.exchange && (
         <div className="hint exchange-clock">
-          ⏱ 1031: buy ≥ {usd(game.exchange.minPrice * 0.8)} by {monthLabel(game.exchange.deadlineM)} · else {usd(game.exchange.deferredTax)} tax due
+          ⏱ 1031: buy {usd(Math.max(0, game.exchange.minPrice - (game.exchange.replaced ?? 0)))} more by {monthLabel(game.exchange.deadlineM)} to defer all
+          {" "}· a shortfall is taxed (up to {usd(exchangeTaxAtRisk(game.exchange))})
         </div>
       )}
       <div className="btn-row" style={{ marginBottom: 10 }} role="tablist" aria-label="Deals desk">

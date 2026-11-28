@@ -5139,7 +5139,8 @@ function steppedRentPv(R: number, step: number, every: number, toStep: number, H
  * CPI inside its 2-4% collar (g follows inflation above 2%), and FMV paper
  * with no step. A lease that stepped faster would outrun the land, the
  * upward-only reset would bind in expectation, and the opening rent would be
- * slightly rich.
+ * slightly rich. A reset the contract caps (the city's FMV paper) is the
+ * other exception: see neutralGroundRent.
  */
 export function groundRentRate(econ: Econ, stepFrac: number, stepEveryYrs: number, horizonYrs: number): number {
   const { r, g } = groundRates(econ);
@@ -5189,6 +5190,33 @@ export function groundLeasePv(t: GroundTerms, land: number, econ: Econ): number 
   // always carried, unchanged here and still to be sourced.
   const bldgFrac = (t.improvementSf ?? 0) > 0 && T < 30 ? ((30 - T) / 30) * 0.35 : 0;
   return pv + land * Math.pow(1 + g, T) * (1 + bldgFrac) * Math.pow(1 + r, -T);
+}
+
+/**
+ * THE NEUTRAL OPENING RENT WHEN THE CONTRACT CAPS ITS OWN RESETS. FMV paper
+ * resets to market but never above the opening rent compounded at its cap
+ * (3.5% a year). groundRentRate's closed form assumes the reset reaches the
+ * market; once the growth a buyer underwrites outruns the cap (expected
+ * inflation above about 3.5%, the Great-Inflation regime the economy can
+ * reach), the cap binds in expectation and a lease opened at that rate is
+ * worth less than the land — measured 0.87 × land on 99-year FMV paper at 5%
+ * expected inflation. Then the rent is solved on groundLeasePv itself, which
+ * rises with the opening rent (the rent, and the cap struck on it), so the
+ * lease signs at the land's value on the one function. `guess` is the closed
+ * form, which is exact whenever the cap does not bind.
+ */
+export function neutralGroundRent(
+  land: number, econ: Econ, termsFor: (rentYr: number) => GroundTerms, guess: number,
+): number {
+  const pv = (R: number) => groundLeasePv(termsFor(R), land, econ);
+  if (!(land > 0) || !(guess > 0) || pv(guess) >= land) return guess;
+  let lo = guess, hi = guess * 2;
+  for (let i = 0; i < 40 && pv(hi) < land; i++) { lo = hi; hi *= 2; }
+  for (let i = 0; i < 60; i++) {
+    const mid = (lo + hi) / 2;
+    if (pv(mid) < land) lo = mid; else hi = mid;
+  }
+  return hi;
 }
 
 /** A city / player ground lease's terms, as `groundLeasePv` reads them. */

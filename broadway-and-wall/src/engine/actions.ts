@@ -10,7 +10,7 @@ import { recentLowballs, sellerOf, strikeDeal, insultShareOfAsk } from "./acquir
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
 import { dollarLevel, rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown, labourSlack, type RngChannel } from "./market";
-import { mergedTouched, ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec, cpiGroundStep, groundRentRate, GROUND_FMV_RESET_M } from "./value";
+import { mergedTouched, ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec, cpiGroundStep, groundRentRate, groundLeaseTerms, neutralGroundRent, GROUND_FMV_RESET_M } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, rivalCanClose, rivalsWhoCanClose, gradeOf, tie, firmSells, firmMaxPrice } from "./rivals";
@@ -1079,13 +1079,25 @@ export function groundLeaseQuote(
   // residual multipliers that cited nothing, on a yield no other reader used,
   // so a lease marked 0.85-1.04 × land the day it was signed.
   const stepFrac = review === "fixed" ? stepPct / 100 : review === "cpi" ? cpiGroundStep(s.econ) : 0;
-  const capPct = 100 * groundRentRate(s.econ, stepFrac, stepEveryM / 12,
+  let capPct = 100 * groundRentRate(s.econ, stepFrac, stepEveryM / 12,
     review === "fmv" ? Math.min(stepEveryM / 12, years) : years);
+  // FMV paper caps its resets at fmvCapPct a year from the opening rent; when
+  // the growth a buyer underwrites outruns that cap the closed form above
+  // opens below the land, so solve the rent on the leased fee itself
+  // (value.ts neutralGroundRent; unchanged whenever the cap does not bind).
+  const fmvCapPct = 3.5;
+  if (review === "fmv" && land > 0) {
+    const termsFor = (R: number) => groundLeaseTerms({
+      bbl, startM: s.month, endM: s.month + years * 12, rentYr: R, openRentYr: R,
+      stepPct: 0, stepEveryM, lastStepM: s.month, tenant: "", review, fmvCapPct,
+    } as GroundLease, s.econ, s.month);
+    capPct = 100 * neutralGroundRent(land, s.econ, termsFor, land * capPct / 100) / land;
+  }
   const rentYr = Math.round(land * (capPct / 100));
   const padOnly = years < GROUND_TOWER_TERM_MIN;
   return {
     land, rentYr, capPct: +capPct.toFixed(2), years, review,
-    stepPct, stepEveryM, takeMult, fmvCapPct: 3.5,
+    stepPct, stepEveryM, takeMult, fmvCapPct,
     /** Shorter than tower term: only pad uses will take. */
     padOnly,
     cashFlow: groundLeaseExpenseBreakdown(rentYr),

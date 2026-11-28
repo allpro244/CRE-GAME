@@ -19,7 +19,7 @@ import {
 import { sellerOf, sellerProfile, closingBand, phaseShift, MAX_TALKS, DEPOSIT_PCT } from "@/engine/acquire";
 import { ownerAt } from "@/engine/ownership";
 import { unitStatus, buyoutQuote, BUYOUT_PREMIUM } from "@/engine/leasing";
-import { PRODUCTS, deskAdvice, onIncome } from "@/engine/debt";
+import { PRODUCTS, deskAdvice, onIncome, STAB_LTV } from "@/engine/debt";
 import { stayingPower, lenderByName } from "@/engine/lenders";
 import { WhyButton } from "@/ui/WhyChain";
 import { loanWhy, loanLead } from "@/ui/whyLinks";
@@ -33,7 +33,7 @@ import { lookingFor } from "@/engine/streetRolls";
 import { useVacantSf } from "@/engine/leasing";
 import { usd, sf, termLeft, pctSigned } from "@/ui/format";
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
-import { useLabel, physicalOcc, band, apMid, annualPayment, Row, LocSplitHint, Verdict } from "@/ui/panels/shared";
+import { useLabel, physicalOcc, band, apMid, annualPayment, ltvCeilingWord, Row, LocSplitHint, Verdict } from "@/ui/panels/shared";
 import { BizLink } from "@/ui/BizSheet";
 
 /**
@@ -1200,6 +1200,31 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
       : annualPayment(principal, max.ratePct, prodDef?.amortYears ?? 30))
     : 0;
   const dscrNow = annualDs > 0 ? noi / annualDs : null;
+  // COVERAGE, SAID ON THE PAYMENT IT DIVIDES BY (playtest F17, 2026-11-27).
+  // `dscrNow` is year one, which is the coupon alone during an IO period; the
+  // desk's own figure (uwDscr) is the same in-place NOI over the AMORTIZING
+  // constant (debt.ts sizeRest kUw — the coupon only when the paper is IO to
+  // its balloon). The card printed the first as plain "DSCR 3.73" beside the
+  // second at "2.72x" and said neither. Now both are named, the refi desk's
+  // way ("DSCR x amortizing (y IO)"). `dscrNow` still sets the verdict's tone,
+  // so no judgement moves.
+  const ioToBalloon = !!prodDef && prodDef.termM <= prodDef.ioM;
+  const annualDsAm = principal > 0
+    ? (ioToBalloon ? principal * (max.ratePct / 100) : annualPayment(principal, max.ratePct, prodDef?.amortYears ?? 30))
+    : 0;
+  const dscrAm = annualDsAm > 0 ? noi / annualDsAm : null;
+  const dscrIo = prodDef && prodDef.ioM > 0 && !ioToBalloon && principal > 0 ? noi / (principal * (max.ratePct / 100)) : null;
+  const coverWord = dscrAm === null ? ""
+    : ioToBalloon ? `DSCR ${dscrAm.toFixed(2)} interest-only`
+    : `DSCR ${dscrAm.toFixed(2)} amortizing${dscrIo !== null ? ` (${dscrIo.toFixed(2)} IO)` : ""}`;
+  // The words the binding-test line uses: the desk's ADVANCE today (its sheet,
+  // buyQuote.ltvCap — never "max", which is the covenant), the payment its
+  // uwDscr divides by, and the rate it was struck at (a floater is sized at
+  // the stressed rate, sizeRest uwRate, which is not the coupon on the card).
+  const lendPct = Math.round(100 * max.principal / Math.max(1, offerPrice));
+  const advPct = Math.round(max.ltvCap * 100);
+  const payWord = ioToBalloon ? "interest-only payment" : "amortizing payment";
+  const atRate = prodDef?.floating ? " at the stressed rate" : ` at ${max.ratePct.toFixed(2)}%`;
   const goingInPct = offerPrice > 0 ? (noi / offerPrice) * 100 : 0;
   const dy = principal > 0 ? (noi / principal) * 100 : 0;
   const cf = noi - annualDs;
@@ -1267,10 +1292,10 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                   style={pq.principal <= 0 ? { opacity: 0.42, cursor: "not-allowed" } : undefined}
                   title={pq.principal <= 0
                     ? `${p.label}: no quote. ${p.blurb}`
-                    : `${p.blurb}\n${(p.maxLTV * 100).toFixed(0)}% max LTV · ${p.amortYears}-yr amort · ${Math.round(p.termM / 12)}-yr term${sp ? `\nStaying power: ${sp.word}. ${sp.why}` : ""}`}
+                    : `${p.blurb}\n${ltvCeilingWord(p)} · ${p.amortYears}-yr amort · ${Math.round(p.termM / 12)}-yr term${sp ? `\nStaying power: ${sp.word}. ${sp.why}` : ""}`}
                   onClick={() => setProduct(p.id)}
                 >
-                  {p.label}{pq.principal > 0 ? ` · ${pq.ratePct.toFixed(2)}% (${pq.allInPct.toFixed(2)}% all in) · lends ${Math.round(100 * pq.principal / Math.max(1, offerPrice))}% LTV (max ${(pq.ltvCap * 100).toFixed(0)}%)` : " · won't quote"}
+                  {p.label}{pq.principal > 0 ? ` · ${pq.ratePct.toFixed(2)}% (${pq.allInPct.toFixed(2)}% all in) · lends ${Math.round(100 * pq.principal / Math.max(1, offerPrice))}% LTV (advance ${(pq.ltvCap * 100).toFixed(0)}% today)` : " · won't quote"}
                   {sp && sp.word !== "solid" && pq.principal > 0 ? <span style={{ marginLeft: 6, color: sp.word === "at risk" ? "#c0563e" : "#b8962e" }}>· {sp.word}</span> : null}
                 </button>
               );
@@ -1295,7 +1320,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
               onChange={setLev}
               format={() => (principal > 0 ? `${usd(principal)} · ${((principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% LTV` : "all cash")}
               marks={[{ at: 0, label: "cash" }, { at: 0.5, label: "half" }, { at: 1, label: "max" }]}
-              hint={`${max.ratePct}% coupon${dscrNow ? ` · DSCR ${dscrNow.toFixed(2)}` : ""}`}
+              hint={`${max.ratePct}% coupon${coverWord ? ` · ${coverWord}` : ""}`}
             />
           ) : null}
           {max.principal > 0 && (
@@ -1306,13 +1331,30 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                 ? `Lender appraisal ${usd(max.appraised ?? 0)}; sized on ${usd(max.uwBasis ?? 0)} (lesser of appraisal and ${usd(offerPrice)}). `
                   + `${usd(max.overpay ?? 0)} above appraisal is all equity.`
                 : max.bind === "ltv"
-                ? `LTV-constrained: ${(max.ltvCap * 100).toFixed(0)}% max (${max.sheetWhy ?? "lender terms"}).`
+                ? `Advance-constrained: at their ${advPct}% advance today (${max.sheetWhy ?? "lender terms"}).`
+                : max.bind === "stab"
+                  // BRIDGE PAPER SIZED ON THE PLAN (sizeRest's stabilised leg):
+                  // this branch was missing, and the line fell through to
+                  // "reduced by credit conditions and track record".
+                  ? (Math.abs(max.principal - STAB_LTV * max.stabValue) < 1
+                    ? `Sized on the business plan: ${Math.round(STAB_LTV * 100)}% of the ${usd(max.stabValue)} stabilised value (pro-forma NOI ${usd(max.stabNoi)}). `
+                    : `Sized on the business plan, held to their ${advPct}% advance today on the as-is basis (${Math.round(STAB_LTV * 100)}% of the ${usd(max.stabValue)} stabilised value, pro-forma NOI ${usd(max.stabNoi)}, would be more). `)
+                    + `The in-place NOI (${usd(max.uwNoi)}) supports less.`
+                : max.bind === "dscr" && max.modelBound
+                  // THE DESK'S LOSS MODEL, NOT THE COVERAGE TEST (sizeRest
+                  // modelConstrained): the loan closes above the DSCR minimum,
+                  // so "DSCR-constrained" sent the borrower off to fix income
+                  // that was not the problem.
+                  ? `Risk-model constrained: ${lendPct}% LTV against their ${advPct}% advance today. `
+                    + `${prodDef?.lender ?? "The desk"}'s loss model on this building's in-place NOI (${usd(max.uwNoi)}) lends no more; `
+                    + `at that loan the NOI covers the ${payWord} ${max.uwDscr.toFixed(2)}x${atRate}`
+                    + (prodDef?.bridge ? "." : `, above their ${max.reqDscr.toFixed(2)}x test.`)
                 : max.bind === "dscr"
-                  ? `DSCR-constrained: ${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% LTV vs ${(max.ltvCap * 100).toFixed(0)}% max. `
-                    + `${max.ratePct}% coupon, closing at ${max.uwDscr.toFixed(2)}x coverage on the lender's own risk model.`
+                  ? `Coverage-constrained: ${lendPct}% LTV against their ${advPct}% advance today. `
+                    + `In-place NOI ${usd(max.uwNoi)} covers the ${payWord} ${max.uwDscr.toFixed(2)}x${atRate}, their ${max.reqDscr.toFixed(2)}x minimum.`
                   : max.bind === "dy"
-                    ? `Debt-yield constrained: ${(max.ltvCap * 100).toFixed(0)}% max LTV not reached.`
-                    : `${((max.principal / Math.max(1, offerPrice)) * 100).toFixed(0)}% LTV vs ${(max.ltvCap * 100).toFixed(0)}% max (${max.sheetWhy ?? "lender terms"}) · ${max.advanceWhy ?? "reduced by credit conditions and track record"}.`}
+                    ? `Debt-yield constrained: their ${advPct}% advance today not reached.`
+                    : `${lendPct}% LTV vs their ${advPct}% advance today (${max.sheetWhy ?? "lender terms"}) · ${max.advanceWhy ?? "reduced by credit conditions and track record"}.`}
             </div>
           )}
           {max.principal <= 0 && (
@@ -1334,7 +1376,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
               note={(negLev
                 ? `Negative leverage vs ${goingInPct.toFixed(2)}% going-in cap.`
                 : `Positive leverage vs ${goingInPct.toFixed(2)}% going-in cap.`)
-                + (dscrNow !== null ? ` DSCR ${dscrNow.toFixed(2)}x` : "")
+                + (coverWord ? ` ${coverWord}` : "")
                 + ` · yr-1 cash-on-cash ${coc.toFixed(1)}% on ${usd(equity)} equity.`}
             />
           )}
@@ -1361,7 +1403,7 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                   <Row
                     k="Terms"
                     v={`${prodDef.ioM ? `${Math.round(prodDef.ioM / 12)}-yr IO, ` : ""}${prodDef.amortYears}-yr amort, `
-                      + `${Math.round(prodDef.termM / 12)}-yr term, ${(prodDef.maxLTV * 100).toFixed(0)}% max LTV`}
+                      + `${Math.round(prodDef.termM / 12)}-yr term · ${max.ltvCap > 0 ? `${advPct}% advance today · ` : ""}${ltvCeilingWord(prodDef)}`}
                   />
                 )}
                 <Row k="Year-1 cash flow" v={usd(cf)} bad={cf < 0} />

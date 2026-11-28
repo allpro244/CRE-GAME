@@ -14,6 +14,7 @@ import { blockReport } from "@/engine/demand";
 import { isMixedUse, uses as usesOf } from "@/engine/mix";
 import { usd, sf } from "@/ui/format";
 import { locDrawFor } from "@/engine/credit";
+import type { LoanProduct } from "@/engine/debt";
 
 /** What to call a building: its dominant use, or "Mixed-Use" when it has none. */
 export function useLabel(rec: { class: string; bbl: string; floors: number; unitsRes: number; bldgArea: number; mix?: Record<string, number> }): string {
@@ -151,6 +152,18 @@ export function annualPayment(principal: number, ratePct: number, years: number)
   const n = years * 12;
   if (r <= 0) return principal / years;
   return (principal * r) / (1 - Math.pow(1 + r, -n)) * 12;
+}
+
+/**
+ * ONE LOAN, TWO LTV NUMBERS, TWO NAMES (playtest F17, 2026-11-27). A desk's
+ * ADVANCE is what its sheet lends today (statedLtv: buyQuote.ltvCap,
+ * RefiQuote.advanceLtv); its COVENANT is the product's maxLTV, the ceiling the
+ * quarterly test breaches on (debt.ts tickLoan, `l > loan.maxLTV`). The
+ * acquisition card called both "max LTV" — 64% on one step, 68% on the next,
+ * for the same loan. Every desk names the ceiling through this one helper.
+ */
+export function ltvCeilingWord(p: Pick<LoanProduct, "maxLTV">): string {
+  return `${Math.round(p.maxLTV * 100)}% LTV covenant`;
 }
 
 // Counter an off-market ask at YOUR number. One shot; the deeper the cut,

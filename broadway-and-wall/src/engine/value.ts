@@ -1739,6 +1739,20 @@ export function landRead(rec: ParcelRecord, econ: Econ): LandRead {
 }
 
 /**
+ * THE LAND READ FOR A RECORD THAT IS NOT THE LOT'S OWN — a hypothetical
+ * envelope (zoning.ts varianceUse asks "what would a builder pay here at the
+ * FAR I am applying for?"). landRead's arithmetic without the lot memo: the
+ * memo is keyed by bbl, so feeding it a what-if record would evict the lot's
+ * real read and recompute it on the next map paint. LAND_CTX caches only
+ * market-level underwriting and construction quotes, so the numbers are the
+ * ones landRead would give the same record.
+ */
+export function landReadAsIf(rec: ParcelRecord, econ: Econ): LandRead {
+  syncLandMemos(econ);
+  return readLand(rec, econ, true, LAND_CTX);
+}
+
+/**
  * HOW MUCH EVIDENCE THE INCOME APPROACH IS WORTH, in land prints: three.
  * An appraiser reconciling a residual against comparable sales gives the
  * comps the governing weight once there is a market of them, and the

@@ -18,7 +18,7 @@ import { usd } from "./format";
 /**
  * THE GAME SETUP PAGE — which world you play in (revamped 2026-10-22).
  *
- * One dense screen: the map first (the region leads, one line on each), its
+ * One dense screen: the map first (the island leads, one line on each), its
  * size and build-out, then the firm, the competition, the goal, the clock and
  * the seed, each a row of choices with the chosen one's note under it; the
  * rest (parks, the market's rules, interruptions, the firm's name) folds under
@@ -48,7 +48,6 @@ const CASH_NOTE: Record<number, string> = {
 
 /** One line per map, for the picker. The long taglines stay in citygen for the places that quote them. */
 const MAP_LINE: Record<string, { line: string; tag?: string }> = {
-  [REGION]: { line: "A river city and 6 km of country: towns, farms, highway. Buy land, plat lots, build.", tag: "New" },
   procedural: { line: "A generated island. Coast, districts and streets come from your seed." },
   manhattan: { line: "The real island, lot for lot, from the city's own records." },
 };
@@ -91,7 +90,7 @@ export default function GameSetup({ onBack }: { onBack?: () => void }) {
   const [d, setD] = useState<Draft>(fresh);
   const up = (p: Partial<Draft>) => setD((x) => ({ ...x, ...p }));
   const isWritten = !!cities.find((c) => c.id === d.island)?.extents;
-  // the region map is one fixed 6 km window: no size to choose, no park amount (its greens are its own)
+  // a fixed-window map (citygen fixedSize — only the region, filtered out above) has no size to choose and no park amount
   const isFixed = !!cities.find((c) => c.id === d.island)?.fixedSize;
   const fixedOf = (id: string) => !!cities.find((c) => c.id === id)?.fixedSize;
   const pickIsland = (id: string) => up({ island: id, size: fixedOf(id) ? id : currentSize(id), dev: currentDev(id) });

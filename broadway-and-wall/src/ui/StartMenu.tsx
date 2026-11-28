@@ -14,7 +14,7 @@ import GameSetup from "./GameSetup";
  * player wants them: Continue, New game, and the saves. The record of past
  * runs sits under the saves. A first-time player has nothing to continue and
  * nothing saved, and is taken straight to the setup, whose defaults are the
- * standard game on the region.
+ * standard game on the island.
  *
  * Nothing is generated until Break ground is pressed on the setup page.
  */
@@ -70,7 +70,7 @@ export default function StartMenu() {
                   <span className="hm-k">Continue</span>
                   <span className="hm-town">{townName(resume.island, resume.seed)}</span>
                   <span className="hm-meta mono">
-                    {sizes.find((s) => s.id === resume.size)?.name ?? (resume.island === resume.size ? "6 km region" : resume.size)}
+                    {sizes.find((s) => s.id === resume.size)?.name ?? resume.size}
                     {" · "}{devs.find((x) => x.id === resume.dev)?.name ?? resume.dev}
                   </span>
                   <span className="hm-stats">
@@ -83,7 +83,7 @@ export default function StartMenu() {
               )}
               <button type="button" className={"hm-new" + (resume ? "" : " hm-new-primary")} disabled={phase !== "menu"} onClick={() => setSetup(true)}>
                 <span className="hm-k">New game</span>
-                <span className="hm-new-line">Region, island or Manhattan · your firm · your seed</span>
+                <span className="hm-new-line">A generated island or Manhattan · your firm · your seed</span>
                 <span className="hm-go">Set up ▸</span>
               </button>
               {loadError && <div className="start-err">{loadError}</div>}

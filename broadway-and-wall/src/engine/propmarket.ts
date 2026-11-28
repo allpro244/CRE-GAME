@@ -271,18 +271,21 @@ export function dealView(
   }
   const prod = rec.product ? (productOf(rec.product)?.capSpread ?? 0) : 0;
   const loc = locBelief(e, rec, k, q);
-  // THE EMPTY SPACE, AND HOW LONG THIS MARKET TAKES TO LET IT (see valueTo).
+  // HOW LONG THE ROLL HOLDS ITS GAP: the leases' own terms and the flats'
+  // own turn (value.ts rollTerms), the reading the appraiser takes.
+  const roll = !steps && "h" in inP && inP.h && !inP.h.groundLeased ? rollTerms(rec, e, inP.h, s.month) : undefined;
+  // THE EMPTY SPACE, AND HOW LONG THIS MARKET TAKES TO LET IT (see valueTo):
+  // a shortfall once the flats' rent differential is set aside, as the
+  // appraiser reads it (value.ts termAndReversionParts).
+  const gF = roll?.flatGap ?? 0;
   let vacGap: number | undefined, toLetY: number | undefined;
-  if (!steps && "h" in inP && inP.h && noiPre < stabPre) {
+  if (!steps && "h" in inP && inP.h && noiPre - gF < stabPre) {
     const gap = Math.max(0, stabilisedOccupancy(rec, e) - inP.occ);
     if (gap > 0) {
-      vacGap = Math.min(stabPre - noiPre, leaseUpGapNoiYr(rec, e, inP.h, gap * rentableSf(rec)));
+      vacGap = Math.min(stabPre - noiPre + gF, leaseUpGapNoiYr(rec, e, inP.h, gap * rentableSf(rec)));
       toLetY = leaseUpMonthsOf(e, k, 0, 0, scoreVacOf(e, k, overallScore(rec, e, k, q)), false) / 12;
     }
   }
-  // ...AND HOW LONG THE ROLL HOLDS ITS GAP: the leases' own terms and the
-  // flats' own turn (value.ts rollTerms), the reading the appraiser takes.
-  const roll = !steps && "h" in inP && inP.h && !inP.h.groundLeased ? rollTerms(rec, e, inP.h, s.month) : undefined;
   return { rec, bbl, k, cond: c, condIdx: q, noiPre, stabPre, vacGap, toLetY, roll, tau, leaseCap, cx, catchUp, debtA, debtCap, rd: q1.ratePct, rdCurve, prod, land: landValue(rec, e), locPrem: loc.prem, locG: loc.g };
 }
 
@@ -415,7 +418,8 @@ export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<ty
   // that had the sheds letting in 3.5 months and the shops in 14. The part
   // of the shortfall that is empty space is held for the market's years to
   // let (a harder-leasing buyer, CARE.lease, lets it that much sooner); the
-  // rest, the leases' distance from market, for `dur` as before.
+  // rest for as long as the roll that carries it (D above), or `durMkt`
+  // where no roll was read.
   // (The vacancy's share is capped at the shortfall left once the flats' rent
   // differential is set aside, as the appraiser caps it, so a rent surplus
   // does not hide empty space.)

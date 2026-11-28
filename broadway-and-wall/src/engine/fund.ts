@@ -71,7 +71,11 @@ export const FUND_LP_REVIEW_M = 12;
 /**
  * HOW FAR THE FUND HAS PUT ITS MONEY TO WORK, as the LPs read it at a review.
  * `deployed` is the equity the vehicle has written into buildings — purchase
- * and construction cheques, recycled proceeds included — off its own ledger.
+ * and construction cheques, recycled proceeds included — off its own ledger:
+ * the purchase and day-one build flows, plus the construction draws that
+ * settle through the deed ledger (`deedInvested`). Without those a job's
+ * draws after day one — about 45% of its equity (dev.ts equityAtClose) — read
+ * as not invested, and a fund building out its commitments looked idle.
  * `behindM` is how many months the fund trails an even pace through its
  * investment period: the period is, by definition, the window to commit the
  * fund, so an even pace is the least it can ask [M]. Real pacing is faster —
@@ -82,7 +86,7 @@ export const FUND_LP_REVIEW_M = 12;
  */
 export function fundDeployment(f: PlayerFund, month: number): { deployed: number; behindM: number; nextReviewM: number } {
   const fl = f.flows ?? {};
-  const deployed = Math.max(0, -(fl.purchase ?? 0) - (fl.build ?? 0));
+  const deployed = Math.max(0, -(fl.purchase ?? 0) - (fl.build ?? 0) + (f.deedInvested ?? 0));
   const elapsed = month - f.raisedM;
   const period = Math.max(1, f.investEndM - f.raisedM);
   const behindM = elapsed - period * deployed / Math.max(1, f.size);
@@ -173,6 +177,15 @@ export interface PlayerFund {
    * runs its course.
    */
   lpEndedM?: number;
+  /**
+   * Equity the vehicle put into its buildings through the deed ledger rather
+   * than its own purchase and build flows: a job's construction draws after
+   * the day-one cheque, and any purchase consideration settled through the
+   * sponsor's account (types.ts settleVehicleDeedFlow). Those reach `flows`
+   * only as "deed", mixed with rents and repairs, so `fundDeployment` reads
+   * them here. Unset on a save from before it was kept (counted from then on).
+   */
+  deedInvested?: number;
   /** Last month the vehicle made a scheduled distribution. */
   lastDistM?: number;
   /**

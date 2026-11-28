@@ -5067,7 +5067,13 @@ function settleVehicleDeedFlow(s: GameState, key: keyof Omit<BooksYear, "yr">, a
   if (!s.holdings[bbl]?.fundOwned) return;
   const signed = sign * amt; // + into the owner's account, − out of it
   if (signed > 0) vehicleCollect(s, signed);
-  else vehicleReimburse(s, -signed);
+  else {
+    vehicleReimburse(s, -signed);
+    // Equity into the building — a construction draw, or consideration the
+    // sponsor's account paid — is the vehicle's money at work (fund.ts
+    // fundDeployment), however it was funded.
+    if (key === "dev" || key === "bought") f.deedInvested = (f.deedInvested ?? 0) - signed;
+  }
 }
 
 /**

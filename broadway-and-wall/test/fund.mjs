@@ -312,6 +312,20 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   ok("...the LPs end the period; a vehicle with buildings keeps running and buys nothing new",
     k.fund.lpEndedM === k.month && !k.fund.settled && k.fund.investEndM === k.month - 1 && !E.fundCanBuy(k),
     `lpEndedM ${k.fund.lpEndedM}, investEndM ${k.fund.investEndM}, settled ${k.fund.settled}`);
+
+  // A job's construction draws after day one settle through the deed ledger
+  // ("deed" on the vehicle's flows, mixed with rents): they are money at work
+  // all the same, and a fund building out its commitments is not idle.
+  let c = E.newGame(4249, parcels);
+  c.fund = sized({ cash: 2_000_000, flows: { call: 681_250, fee: -81_250, build: -300_000 }, deedInvested: 0 });
+  c.holdings["fake-deed"] = { bbl: "fake-deed", fundOwned: true, tenants: [] };
+  const d0 = E.fundDeployment(c.fund, c.month).deployed;
+  E.logBooks(c, "dev", 400_000, "fake-deed");
+  E.logBooks(c, "noi", 50_000, "fake-deed"); // a rent cheque is not deployment
+  const d1 = E.fundDeployment(c.fund, c.month).deployed;
+  delete c.holdings["fake-deed"];
+  ok("a construction draw on a vehicle deed counts as deployed; rent does not", d0 === 300_000 && d1 === 700_000,
+    `deployed ${d0} -> ${d1}`);
 }
 
 console.log(`\n${fails === 0 ? "fund pass" : `${fails} fund failure(s)`}`);

@@ -1,7 +1,7 @@
 import { FirmLink } from "@/ui/FirmLink";
 // Buy, sell, list, ground lease, disclosed roll, vacant possession.
 // Extracted from ParcelDesk so the property shell stays readable.
-import { consentFor } from "@/engine/vehicles";
+import { consentFor, exchangeMinPrice, partnerShare } from "@/engine/vehicles";
 import { useState } from "react";
 import Slider, { widePriceBounds, counterPriceBounds } from "@/ui/Slider";
 import { useStore } from "@/state/store";
@@ -503,7 +503,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
               {tq.tax > 0 && !exchangeBusy && !consentFor(game, holding, "exchange") && (
                 <button
                   className="btn btn-buy"
-                  title={`Defer ${usd(tq.tax)} tax. Buy at least the sale price within 6 mo; any shortfall is taxed.`}
+                  title={`Defer ${usd(tq.tax)} tax. Buy at least ${usd(exchangeMinPrice(game, holding, sale.offer.price))} of replacement within 6 mo${partnerShare(game, holding) > 0 ? " (your share of the sale price)" : ""}; any shortfall is taxed.`}
                   onClick={() => setAcceptConfirm({ exchange: true })}
                 >
                   1031 · defer {usd(tq.tax)}

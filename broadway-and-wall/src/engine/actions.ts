@@ -27,7 +27,7 @@ import { recordComp } from "./comps";
 import { cancelSupplyProject, queueSupplyProject } from "./supply";
 import { recordPropertyEvent } from "./history";
 import { money } from "./money";
-import { consentFor, purseOf, partnerShare, routeProceeds, taxShare } from "./vehicles";
+import { consentFor, purseOf, partnerShare, routeProceeds, taxShare, exchangeMinPrice } from "./vehicles";
 import { investorsTakeOfExit } from "./waterfall";
 import { heldByRaises } from "./investors";
 
@@ -3469,7 +3469,7 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
     // replacement has to match. A JV partner's share is not the sponsor's to
     // exchange.
     next.exchange = {
-      deferredTax: tax, rolledGain: gain, minPrice: Math.round(offer.price * (1 - partnerShare(s, h))),
+      deferredTax: tax, rolledGain: gain, minPrice: exchangeMinPrice(s, h, offer.price),
       deadlineM: next.month + EXCHANGE_WINDOW_M, replaced: 0, rolled: 0,
     };
   } else if (tax > 0) {

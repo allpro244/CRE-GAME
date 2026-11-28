@@ -38,7 +38,10 @@ export function bridgeLine(key: BridgeKey, br: Bridge): { label: string; tip: st
     }
     case "leaseRoll": {
       const side = p.gapC >= 0 ? "above" : "below";
-      const occ = `${Math.round(100 * i.occ)}% let vs ${Math.round(100 * i.stabOcc)}%`;
+      // Physical occupancy on all rentable feet, the stabilised roll's own basis.
+      // Not "let": that word is the lettable read (occupancyRead.lettableOcc) on
+      // the Parcel desk, toast and news, which leaves out feet no suite can use.
+      const occ = `${Math.round(100 * i.occ)}% of rentable feet occupied vs ${Math.round(100 * i.stabOcc)}% stabilised`;
       return i.leases > 0 ? {
         label: `Leases ${side} a stabilised roll (${occ}), until they end (WALT ${i.walt.toFixed(1)} y)`,
         tip: "The market cap is a cap on a stabilised roll at effective rent. In-place NOI over the cap would keep rent, occupancy and face rent above or below that for good; each lease's difference lasts only for its remaining term (Appraisal Institute, The Appraisal of Real Estate, ch. 22).",

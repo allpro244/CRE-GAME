@@ -85,6 +85,17 @@ export function partnerShare(s: GameState, h: Holding | undefined | null): numbe
   return v?.kind === "jv" ? v.share : 0;
 }
 
+/**
+ * THE REPLACEMENT A 1031 MUST BUY to defer all of the gain: the owner's share
+ * of the relinquished price. A JV partner's share of the sale is the
+ * partner's, not the exchanger's (§1031 runs taxpayer by taxpayer). One
+ * function, so the engine's target (acceptSaleOffer) and the buttons that
+ * quote it give one answer.
+ */
+export function exchangeMinPrice(s: GameState, h: Holding | undefined | null, price: number): number {
+  return Math.round(price * (1 - partnerShare(s, h)));
+}
+
 /** The big decisions a vehicle can veto. */
 export type ConsentAction =
   | "debt"          // new debt, payoff, paydown, mezz

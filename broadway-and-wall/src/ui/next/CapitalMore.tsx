@@ -129,7 +129,7 @@ function LenderTerms({ g, r }: { g: GameState; r: LRow }) {
       dscr: null, dy: onIncome(p) ? p.debtYield : null,
       term: `${Math.round(p.termM / 12)}y · ${Math.round(p.ioM / 12)}y IO · ${p.amortYears}y`,
       min: loanMin(g, p) || null, max: holdMaxOf(g, p) ?? null,
-      cov: `${p.minDSCR > 0 ? `${p.minDSCR.toFixed(2)}× · ` : ""}${Math.round(p.maxLTV * 100)}%`, open: !failed && windowOpen(g, p),
+      cov: `${p.minDSCR > 0 ? `${p.minDSCR.toFixed(2)}× · ` : ""}${Math.round(p.maxLTV * 100)}%${p.ltvMaintenance ? "" : " at origination"}`, open: !failed && windowOpen(g, p),
     };
   });
   const cols: Col<PRow>[] = [

@@ -2,7 +2,8 @@
 // books: the deal moves value only by its costs, the ledger reconciles every
 // month after, NOI falls by exactly the ground rent, the rent steps, the land
 // you no longer own cannot be demolished or leased out, and it can be bought
-// back at the rent's value.
+// back at what the fee is worth — the rent to the next market reset, then the
+// land — which a 20-year review resets upward only.
 //
 //   pnpm engine && node test/leasehold.mjs
 import { assertFreshBundle } from "./fresh.mjs";
@@ -52,7 +53,8 @@ for (let m = 0; m < 3; m++) g = E.advanceMonth(g, parcels, bbls, adjacency);
 const rec = E.resolveRec(parcels, g, bbl);
 const q = E.leaseholdQuote(g, parcels, bbl);
 check(q.ok, `a quote: land ${K(q.price)}, rent ${K(q.rentYr)}/yr at ${q.yieldPct.toFixed(2)}%, costs ${K(q.costs)}, payoff ${K(q.payoff)}, tax ${K(q.tax)}, to you ${K(q.toOwner)}${q.why ? " — " + q.why : ""}`);
-check(Math.abs(q.rentYr - q.price * q.yieldPct / 100) < 2, "the rent is the price at the ground yield");
+check(Math.abs(q.rentYr - q.price * E.groundRentRate(g.econ, 0.02, 1, 20)) < 2,
+  `the rent is the price at the rate that makes the lease worth the land (${(100 * E.groundRentRate(g.econ, 0.02, 1, 20)).toFixed(2)}%; ground yield ${E.groundYieldPct(g.econ).toFixed(2)}%)`);
 
 const nw0 = E.netWorth(g, parcels), cash0 = g.cash, led0 = ledger(g);
 const noi0 = E.contractNoiYr(rec, g.econ, g.holdings[bbl], g.month);
@@ -88,8 +90,43 @@ check(drift < 5, `24 months reconcile to the ledger (worst month $${drift.toFixe
 const gr = g2.holdings[bbl]?.groundRentOut;
 check(!!gr && Math.abs(gr.rentYr - Math.round(Math.round(q.rentYr * 1.02) * 1.02)) <= 2, `the rent stepped twice at 2% (${K(q.rentYr)} → ${K(gr?.rentYr ?? 0)})`);
 
+// THE BUYBACK SEES THE LAND. Whatever the rent, the fee owner gets the land at
+// the next reset (upward-only), so the fee is worth at least that land,
+// discounted to today at the ground yield plus the growth a buyer underwrites.
+const landNow = E.landValue(E.bareLandRec(parcels, g2, bbl), g2.econ);
+const gu = E.underwrittenGrowthPct(g2.econ) / 100, rDisc = E.groundYieldPct(g2.econ) / 100 + gu;
+const yrsToReset = ((gr.lastResetM ?? gr.startM) + (gr.resetEveryM ?? 240) - g2.month) / 12;
+const floorPv = landNow * Math.pow((1 + gu) / (1 + rDisc), yrsToReset);
+const pvNow = E.leaseholdGroundPv(g2.holdings[bbl], g2.econ, landNow, g2.month);
+check(pvNow >= floorPv - 1, `after 24 months the fee is worth ${K(pvNow)}, at least the land at the reset in ${yrsToReset.toFixed(1)} yrs discounted (${K(floorPv)}; land today ${K(landNow)})`);
+
+// THE MARKET RESET, on the tick: a rent below the land's market rent goes up
+// to it; one above it stays (no-decrease clause).
+{
+  const s = structuredClone(g2);
+  const gro = s.holdings[bbl].groundRentOut;
+  const land = E.landValue(E.bareLandRec(parcels, s, bbl), s.econ);
+  const yrsLeft = (gro.endM - s.month) / 12;
+  const market = Math.round(land * E.groundRentRate(s.econ, gro.stepPct, 1, Math.min(20, yrsLeft)));
+  gro.lastResetM = s.month - 240; gro.lastStepM = s.month; gro.rentYr = Math.round(market * 0.5);
+  E.tickLeaseholds(s, parcels);
+  check(s.holdings[bbl].groundRentOut.rentYr === market && s.holdings[bbl].groundRentOut.lastResetM === s.month,
+    `a rent at half the market resets to market at the 20-year review (${K(market * 0.5)} → ${K(s.holdings[bbl].groundRentOut.rentYr)})`);
+  const s2 = structuredClone(g2);
+  const gro2 = s2.holdings[bbl].groundRentOut;
+  gro2.lastResetM = s2.month - 240; gro2.lastStepM = s2.month; gro2.rentYr = Math.round(market * 1.5);
+  E.tickLeaseholds(s2, parcels);
+  check(s2.holdings[bbl].groundRentOut.rentYr === Math.round(market * 1.5) && s2.holdings[bbl].groundRentOut.lastResetM === s2.month,
+    `a rent above market is reviewed and stays (${K(market * 1.5)}; no-decrease clause)`);
+  const s3 = structuredClone(g2);
+  const before = s3.holdings[bbl].groundRentOut.rentYr;
+  E.tickLeaseholds(s3, parcels);
+  check(s3.holdings[bbl].groundRentOut.rentYr === before, "and no reset before the review falls due");
+}
+
 // buy it back
-const cost = E.landBuybackCost(g2, g2.holdings[bbl]);
+const cost = E.landBuybackCost(g2, parcels, g2.holdings[bbl]);
+check(cost >= pvNow, `the buyback is the fee's worth plus transfer and legal (${K(cost)} ≥ ${K(pvNow)})`);
 const rb = E.buyLandBack(g2, parcels, bbl);
 check(!rb.err && !rb.s.holdings[bbl].groundRentOut, `bought back for ${K(cost)}${rb.err ? ": " + rb.err : ""}`);
 const noi3 = E.contractNoiYr(rec, rb.s.econ, rb.s.holdings[bbl], rb.s.month), noi2 = E.contractNoiYr(rec, g2.econ, g2.holdings[bbl], g2.month);

@@ -738,9 +738,11 @@ export function acceptPortfolioBid(
   // `sold` and the fees were booked leg by leg above, and the pool payoff
   // against `sold` with them.
   if (exchange && taxTotal > 0) {
+    // The whole price is the owner's: a deed with a JV partner cannot ride in
+    // a book (listPortfolio refuses it), so nothing here is a partner's share.
     next.exchange = {
       deferredTax: taxTotal, rolledGain: gainTotal, minPrice: bid.price,
-      deadlineM: next.month + EXCHANGE_WINDOW_M,
+      deadlineM: next.month + EXCHANGE_WINDOW_M, replaced: 0, rolled: 0,
     };
   } else if (taxTotal > 0) {
     // The sponsor's own tax: on the fund's deeds, its co-invest share of the
@@ -775,7 +777,7 @@ export function acceptPortfolioBid(
           + (cashToYou < 0 ? `${money(-cashToYou)} of your own went to the facility. ` : "")
         : `${money(cashToYou)} to you after payoffs. `)
       + (exchange
-        ? `1031 open: redeploy ${money(bid.price * 0.8)} by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} or ${money(taxTotal)} tax is due.`
+        ? `1031 open: redeploy ${money(bid.price)} by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} to defer all of it; any shortfall is taxed (up to ${money(taxTotal)}).`
         : taxTotal > 0 ? `${money(taxTotal)} of tax withheld.` : "No gain, no tax."),
   });
   sweepLocIdleCash(next, { announce: true });

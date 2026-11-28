@@ -5027,39 +5027,226 @@ export function bareLandRec(
 }
 
 /**
- * THE LEASED FEE — a bond with a deed attached.
- *
- * Cap the coupon at a ground-lease yield (tighter than a building cap), then
- * add the discounted reversion of the dirt (and, near term, a haircut on the
- * improvements that come back with it). This is what trades when you sell a
- * ground-leased lot, and what net worth must read while you hold one — not
- * landValue (which ignores the coupon) and not an empty-building appraisal
- * (which pretends the lessee's tower is yours to let).
- */
-/**
  * THE GROUND-LEASE YIELD — what a ground rent is capitalised at, as a cap rate
- * on the rent in force. A ground rent is the most senior claim on a building
- * (it is paid before the mortgage, and the fee owner takes the improvements if
- * it is not), so it prices like a long bond with a small spread: about half
- * the policy rate plus two points, never under 3.2%. One number for the leased
- * fee you own (`leasedFeeValue`) and the fee you sold (`leaseholdGroundPv`).
+ * on the rent in force, for a rent that grows at the rate a buyer underwrites
+ * (market.ts `underwrittenGrowthPct`). A ground rent is the most senior claim
+ * on a building (it is paid before the mortgage, and the fee owner takes the
+ * improvements if it is not), so it prices like a long bond with a small
+ * spread: about half the policy rate plus two points, never under 3.2%. One
+ * number for every ground lease in the game: the leased fee you own
+ * (`leasedFeeValue`), the fee you sold (`leaseholdGroundPv`), and the rent a
+ * new lease opens at (`groundRentRate`).
  */
 export function groundYieldPct(econ: Econ): number {
   return Math.max(3.2, econ.indexRate * 0.55 + 2.1);
 }
 
 /**
- * WHAT THE GROUND RENT UNDER A LEASEHOLD IS WORTH — to the fee owner, and so
- * what comes off the building's value. Struck at the same yield the fee sold
- * at, so selling the dirt is value-neutral before costs: the owner swaps land
- * value for cash and takes on a senior, rising rent. Any gain from the deal is
- * liquidity and the absence of a lender, not an arbitrage in the mark.
+ * THE GROUND YIELD'S DISCOUNT RATE, AND THE LAND'S GROWTH. A cap rate quoted
+ * on a growing income is the discount rate less the growth — the identity the
+ * building appraisal already uses (termAndReversion: r = yAll +
+ * underwrittenGrowthPct) — so the ground yield implies r = y + g. The dirt is
+ * expected to grow at that same g: land here is the residual of rents a buyer
+ * underwrites at g, and what a buyer expects the rent to do has one answer.
  */
-export function leaseholdGroundPv(h: Holding, econ: Econ): number {
-  const g = h.groundRentOut;
-  return g ? Math.round(g.rentYr / (groundYieldPct(econ) / 100)) : 0;
+function groundRates(econ: Econ): { r: number; g: number } {
+  const g = underwrittenGrowthPct(econ) / 100;
+  return { r: groundYieldPct(econ) / 100 + g, g };
 }
 
+/**
+ * A CPI GROUND LEASE'S ANNUAL STEP: expected inflation inside the 2% floor and
+ * 4% cap the contract carries (the terms the desk quotes, "Annual CPI (2%
+ * floor, 4% cap)"). One reading for the step the rent takes (stepGroundRent)
+ * and the step the leased fee is valued on (groundLeasePv).
+ */
+export function cpiGroundStep(econ: Econ): number {
+  return Math.max(0.02, Math.min(0.04, econ.inflExp ?? econ.nat?.inflExp ?? 0.025));
+}
+
+/**
+ * HOW OFTEN A LONG GROUND LEASE RESETS TO MARKET: every twenty years, upward
+ * only. Fair-market ground-rent reappraisals come "generally after 10-20
+ * years" (UNC School of Government CED, "On Borrowed Ground: A Ground Lease
+ * Primer, Part 2", 2018); a clause resetting every 25 years to 6% of the
+ * land's fair market value is in Paul Weiss, NYLJ 30 Dec 2009 [S~]. Twenty is
+ * the middle of that range and was already this engine's FMV review interval.
+ * The reset never cuts the rent — the standard no-decrease clause in
+ * value-based resets (Morrison Cohen, "Value Based Rent Resets") — and the
+ * land is valued as if vacant and unencumbered, the basis the NYLJ (2019,
+ * "Considerations for ground rent reset provisions") calls the main point of
+ * dispute. One interval for the city's FMV paper and the sale-leaseback's own
+ * lease.
+ */
+export const GROUND_FMV_RESET_M = 240;
+
+/** What a ground lease's valuation needs to know, read off whichever record carries it. */
+export interface GroundTerms {
+  /** The rent in force. */
+  rentYr: number;
+  /** Fractional step each step period (0.02 = 2%). */
+  stepFrac: number;
+  stepEveryYrs: number;
+  /** Years to the next step, from now. */
+  yrsToStep: number;
+  /** Years to the end of the term. */
+  yrsLeft: number;
+  /** Years between market resets; null when the rent never resets. */
+  resetEveryYrs: number | null;
+  /** Years to the next market reset, from now. */
+  yrsToReset: number;
+  /** The contract's ceiling on a reset rent, `t` years from now (the city's capped FMV paper). */
+  capRentAt?: (t: number) => number;
+  /** The lessee's building, which reverts with the land. */
+  improvementSf?: number;
+}
+
+/** An annual income of 1 for `p` years, paid in arrears, at `r`. */
+function annuityYrs(p: number, r: number): number {
+  return p > 0 ? (1 - Math.pow(1 + r, -p)) / r : 0;
+}
+
+/**
+ * A stepped rent from now to `H` years, discounted at `r`: the rent `R` until
+ * the first step, then `R × (1 + step)` every `every` years. The exact steps,
+ * not a smoothed growth rate — smoothing a 12%-every-ten-years lease to
+ * 1.14% a year overstates it by about 5%. Returns the rent in force after
+ * the segment, including a step due on its last day (the tick steps the rent
+ * before it resets it, tickLeaseholds).
+ */
+function steppedRentPv(R: number, step: number, every: number, toStep: number, H: number, r: number): { pv: number; rentAtEnd: number } {
+  const per = Math.max(1 / 12, every);
+  let pv = 0, t = 0, next = Math.max(0, toStep);
+  while (next < H - 1e-6) {
+    pv += R * annuityYrs(next - t, r) * Math.pow(1 + r, -t);
+    t = next; R *= 1 + step; next += per;
+  }
+  pv += R * annuityYrs(H - t, r) * Math.pow(1 + r, -t);
+  if (Math.abs(next - H) < 1e-6) R *= 1 + step;
+  return { pv, rentAtEnd: R };
+}
+
+/**
+ * THE OPENING GROUND RENT, AS A FRACTION OF THE LAND, THAT MAKES A NEW LEASE
+ * WORTH EXACTLY THE LAND: the stepped rent to the horizon `N` (the term, or
+ * the next market reset) plus the land at that horizon, grown at g and
+ * discounted at r, equals the land today. Signing a ground lease, or selling
+ * the fee and leasing it back, then moves value only by its costs.
+ *
+ * Exact while the contract steps no faster than g, which holds for every lease
+ * this engine writes: the sale-leaseback's 2% (= g at target inflation, when
+ * this reduces to the ground yield itself), the city's fixed +12-16% a decade,
+ * CPI inside its 2-4% collar (g follows inflation above 2%), and FMV paper
+ * with no step. A lease that stepped faster would outrun the land, the
+ * upward-only reset would bind in expectation, and the opening rent would be
+ * slightly rich.
+ */
+export function groundRentRate(econ: Econ, stepFrac: number, stepEveryYrs: number, horizonYrs: number): number {
+  const { r, g } = groundRates(econ);
+  const N = Math.max(1 / 12, horizonYrs);
+  return (1 - Math.pow((1 + g) / (1 + r), N)) / steppedRentPv(1, stepFrac, stepEveryYrs, stepEveryYrs, N, r).pv;
+}
+
+/**
+ * THE LEASED FEE — a bond with a deed attached, and ONE function for it.
+ *
+ * What a ground lease is worth to whoever owns the fee: the stepped rent to
+ * the next market reset; at each reset the rent goes to the land then
+ * standing (grown at g) times the opening rate for the stretch ahead, never
+ * down and never above the contract's cap; and at the end of the term the
+ * dirt, plus — near reversion — the lessee's building that comes back with
+ * it. Discounted at the ground yield plus g. No floor: the old 0.55 × land
+ * clamp bound whenever the land outran a stepped rent, and the growth and
+ * resets now carry what it was standing in for.
+ *
+ * It is what trades when you sell a ground-leased lot, what net worth reads
+ * while you hold one, what comes off a leasehold's value, and what the fee
+ * costs to buy back — the city's leased fees and the player's sale-leaseback
+ * on the same arithmetic. It used to be two: the leasehold's liability was the
+ * rent over today's yield, a flat perpetuity with no land in it, so once the
+ * rent was fixed the buyback never saw the land again — measured on seed
+ * 12007, $6.26M of land bought back for $1.24M after fifteen years.
+ */
+export function groundLeasePv(t: GroundTerms, land: number, econ: Econ): number {
+  const { r, g } = groundRates(econ);
+  const T = Math.max(0, t.yrsLeft);
+  const every = t.resetEveryYrs && t.resetEveryYrs > 0 ? t.resetEveryYrs : null;
+  let pv = 0, at = 0, R = t.rentYr, toStep = t.yrsToStep;
+  let nextReset = every ? Math.max(0, t.yrsToReset) : Infinity;
+  for (;;) {
+    const end = Math.min(nextReset, T);
+    const seg = steppedRentPv(R, t.stepFrac, t.stepEveryYrs, toStep, end - at, r);
+    pv += seg.pv * Math.pow(1 + r, -at);
+    if (end >= T - 1e-6 || !every) break;
+    at = end;
+    const market = land * Math.pow(1 + g, at) * groundRentRate(econ, t.stepFrac, t.stepEveryYrs, Math.min(every, T - at));
+    R = Math.max(seg.rentAtEnd, t.capRentAt ? Math.min(market, t.capRentAt(at)) : market);
+    toStep = t.stepEveryYrs;
+    nextReset = at + every;
+  }
+  // Near reversion the bones start to matter; far out they are a rounding
+  // error. The 0.35-over-30-years share is the convention the leased fee has
+  // always carried, unchanged here and still to be sourced.
+  const bldgFrac = (t.improvementSf ?? 0) > 0 && T < 30 ? ((30 - T) / 30) * 0.35 : 0;
+  return pv + land * Math.pow(1 + g, T) * (1 + bldgFrac) * Math.pow(1 + r, -T);
+}
+
+/** A city / player ground lease's terms, as `groundLeasePv` reads them. */
+export function groundLeaseTerms(
+  gl: import("./types").GroundLease, econ: Econ, month: number, improvementSf = 0,
+): GroundTerms {
+  const review = gl.review ?? "fixed";
+  const yrsLeft = Math.max(0, (gl.endM - month) / 12);
+  const everyYrs = gl.stepEveryM / 12;
+  const toNext = Math.max(0, (gl.lastStepM + gl.stepEveryM - month) / 12);
+  if (review === "fmv") {
+    const open = gl.openRentYr ?? gl.rentYr;
+    const capPct = gl.fmvCapPct ?? 3.5;
+    const sinceStart = (month - gl.startM) / 12;
+    return {
+      rentYr: gl.rentYr, stepFrac: 0, stepEveryYrs: 1, yrsToStep: 1, yrsLeft,
+      resetEveryYrs: everyYrs, yrsToReset: toNext,
+      capRentAt: (t) => open * Math.pow(1 + capPct / 100, sinceStart + t),
+      improvementSf,
+    };
+  }
+  return {
+    rentYr: gl.rentYr,
+    stepFrac: review === "cpi" ? cpiGroundStep(econ) : gl.stepPct / 100,
+    stepEveryYrs: everyYrs, yrsToStep: Math.min(everyYrs, toNext), yrsLeft,
+    resetEveryYrs: null, yrsToReset: 0, improvementSf,
+  };
+}
+
+/** The sale-leaseback's own ground lease (Holding.groundRentOut), as `groundLeasePv` reads it. */
+export function leaseholdTerms(
+  g: NonNullable<Holding["groundRentOut"]>, month: number, improvementSf = 0,
+): GroundTerms {
+  const resetM = g.resetEveryM ?? GROUND_FMV_RESET_M;
+  return {
+    rentYr: g.rentYr, stepFrac: g.stepPct, stepEveryYrs: 1,
+    yrsToStep: Math.min(1, Math.max(0, (g.lastStepM + 12 - month) / 12)),
+    yrsLeft: Math.max(0, (g.endM - month) / 12),
+    resetEveryYrs: resetM / 12,
+    yrsToReset: Math.max(0, ((g.lastResetM ?? g.startM) + resetM - month) / 12),
+    improvementSf,
+  };
+}
+
+/**
+ * WHAT THE GROUND RENT UNDER A LEASEHOLD IS WORTH — to the fee owner, and so
+ * what comes off the building's value and what buying the fee back costs. The
+ * leased fee (groundLeasePv) on the land as if vacant, so selling the dirt is
+ * value-neutral before costs (the opening rent is solved for it,
+ * groundRentRate) and from then the liability carries the land: the lessee is
+ * short the dirt until the next reset hands its growth to the fee owner.
+ */
+export function leaseholdGroundPv(h: Holding, econ: Econ, land: number, month: number, improvementSf = 0): number {
+  const g = h.groundRentOut;
+  return g ? Math.round(groundLeasePv(leaseholdTerms(g, month, improvementSf), land, econ)) : 0;
+}
+
+/** The leased fee of a city / player ground lease — `groundLeasePv` on the bare lot. */
 export function leasedFeeValue(
   gl: import("./types").GroundLease,
   bare: ParcelRecord,
@@ -5067,18 +5254,7 @@ export function leasedFeeValue(
   month: number,
   improvementSf = 0,
 ): number {
-  const yld = groundYieldPct(econ);
-  const yearsLeft = Math.max(0.25, (gl.endM - month) / 12);
-  const disc = Math.pow(1 + yld / 100, yearsLeft);
-  const annuity = 1 - 1 / disc;
-  const income = (gl.rentYr / (yld / 100)) * annuity;
-  const land = landValue(bare, econ);
-  // Near reversion the bones start to matter; far out they are a rounding error.
-  const bldgShare = improvementSf > 0 && yearsLeft < 30
-    ? Math.max(0, (30 - yearsLeft) / 30) * 0.35 * land
-    : 0;
-  const reversion = (land + bldgShare) / disc;
-  return Math.max(Math.round(land * 0.55), Math.round(income + reversion));
+  return Math.round(groundLeasePv(groundLeaseTerms(gl, econ, month, improvementSf), landValue(bare, econ), econ));
 }
 
 /**
@@ -5359,7 +5535,11 @@ function holdingValueOn(rec: ParcelRecord, econ: Econ, h: Holding, month?: numbe
   const firstUp = asIs !== null ? blended + asIs.weight * Math.max(0, asIs.mark - blended) : blended;
   const marked = vac !== null ? Math.max(firstUp, vac.mark) : firstUp;
   const freehold = Math.max(floor, marked - abate) + (tAb?.pv ?? 0);
-  return h.groundRentOut ? Math.max(0, freehold - leaseholdGroundPv(h, econ)) : freehold;
+  if (!h.groundRentOut) return freehold;
+  // The fee under it is the leased fee on the lot as if vacant — the same
+  // bare record the sale was priced on (bareLandRec), so the sale is neutral.
+  const bareLot = { ...rec, class: "land" as const, bldgArea: 0, floors: 0, unitsRes: 0, mix: undefined };
+  return Math.max(0, freehold - leaseholdGroundPv(h, econ, landValue(bareLot, econ), month ?? h.groundRentOut.lastStepM, rec.bldgArea));
 }
 
 /** What an abatement still saves the owner a year, and its present value at the building's all-in yield. */

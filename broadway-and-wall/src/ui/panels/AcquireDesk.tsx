@@ -490,7 +490,7 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
               {tq.tax > 0 && !exchangeBusy && !consentFor(game, holding, "exchange") && (
                 <button
                   className="btn btn-buy"
-                  title={`Defer ${usd(tq.tax)} tax. Must buy ≥ 80% of price within 6 mo.`}
+                  title={`Defer ${usd(tq.tax)} tax. Buy at least the sale price within 6 mo; any shortfall is taxed.`}
                   onClick={() => setAcceptConfirm({ exchange: true })}
                 >
                   1031 · defer {usd(tq.tax)}

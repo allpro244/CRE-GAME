@@ -667,14 +667,19 @@ export interface Holding {
   // Somebody else's building stands on this dirt. It earns ground rent instead
   // of costing carry, and it is not yours to build on until the term is up.
   groundLeased?: boolean;
-  /**
-   * YOU SOLD THE LAND AND KEPT THE BUILDING. A ground rent the owner pays out,
-   * senior to everything, stepping every year; see leasehold.ts. `rentYr` is
-   * the rent in force; `price` is what the fee sold for; `holder` the buyer.
-   */
   /** A minority partner in this one deed — see jv.ts. `share` of the equity is theirs. */
   jv?: { partner: string; share: number; sinceM: number; price: number };
-  groundRentOut?: { holder: string; rentYr: number; stepPct: number; startM: number; endM: number; lastStepM: number; price: number };
+  /**
+   * YOU SOLD THE LAND AND KEPT THE BUILDING. A ground rent the owner pays out,
+   * senior to everything, stepping every year and reset to market every
+   * `resetEveryM` months, never down; see leasehold.ts. `rentYr` is the rent
+   * in force; `price` is what the fee sold for; `holder` the buyer. A lease
+   * written before resets existed reads GROUND_FMV_RESET_M from `startM`.
+   */
+  groundRentOut?: {
+    holder: string; rentYr: number; stepPct: number; startM: number; endM: number; lastStepM: number; price: number;
+    resetEveryM?: number; lastResetM?: number;
+  };
   // The lot is on OFFER for a ground lease — a listing, not a deal. Ground
   // lessees are scarce, so a counterparty arrives stochastically through
   // tickGroundLeases, at odds set by the corner's live demand and the same
@@ -4660,8 +4665,11 @@ export interface GameState {
   lenderRel: Record<string, number>;         // lender name -> relationship 0-100; a trusted name is worth basis points
   totalLots: number;
   builtAtStart: number;
-  // a 1031 exchange in flight: sale gain rolled, tax deferred until the clock runs out
-  exchange: { deferredTax: number; rolledGain: number; minPrice: number; deadlineM: number } | null;
+  // a 1031 exchange in flight: sale gain rolled, tax deferred until the clock runs out.
+  // `minPrice` is the owner's relinquished price (its share, on a JV deed);
+  // `replaced` the replacement bought so far and `rolled` the gain deferred
+  // into it (actions.ts applyExchangeReplacement). Missing on older saves: 0.
+  exchange: { deferredTax: number; rolledGain: number; minPrice: number; deadlineM: number; replaced?: number; rolled?: number } | null;
   taxesPaid: number;
   /**
    * THE LOSS THAT SHELTERS NEXT YEAR. Depreciation exists to make a paper loss

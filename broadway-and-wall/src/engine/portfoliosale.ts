@@ -22,7 +22,7 @@
 // by which bad debt eventually finds a clearing price instead of sitting on the
 // tape at a number nobody will pay.
 import { NEVER_INSULTING_SHARE } from "./acquire";
-import type { GameState, PortfolioListing, Rival } from "./types";
+import type { GameState, Holding, PortfolioListing, Rival } from "./types";
 import type { ParcelRecord, ParcelTable } from "../data/types";
 import { dollarLevel, rrange } from "./market";
 import { assetValue, capRateFor, collateralAsIs, inPlace, resolveRec } from "./value";
@@ -31,7 +31,7 @@ import { packageBids, sellerTerms, forcedSaleAsk, BUY_CLOSING } from "./propmark
 import { lenderByName, lenderPressure, raiseAlert } from "./lenders";
 import { streetRefiProceeds } from "./debt";
 import { financePackage, settleSale } from "./rivalDebt";
-import { acceptSaleOffer, executePurchase } from "./actions";
+import { acceptSaleOffer, applyExchangeReplacement, executePurchase } from "./actions";
 import { cloneState } from "./types";
 import { hash01 } from "./competitorTraits";
 import { sweepLocIdleCash, fundableNow } from "./credit";
@@ -314,9 +314,12 @@ export function buyPortfolio(
   // seller while the listing vanished — a partial close pretending to be one.
   let cur = s;
   const taken: string[] = [];
+  const conveyed: { b: string; price: number }[] = [];
   for (const { b, v } of vals) {
     const share = Math.max(1000, Math.round(struck * (v / tot)));
-    const r = executePurchase(cur, parcels, b, share, "cash", true, 1);
+    // Not deed by deed against a live 1031: the package is applied as one
+    // replacement below, once every deed has conveyed.
+    const r = executePurchase(cur, parcels, b, share, "cash", true, 1, { noExchange: true });
     if (r.err) {
       return {
         s,
@@ -325,22 +328,19 @@ export function buyPortfolio(
     }
     cur = r.s;
     taken.push(b);
+    conveyed.push({ b, price: share });
   }
   if (!taken.length) return { s, err: "Nothing in that package could be conveyed." };
-  // A PACKAGE IS ONE REPLACEMENT PROPERTY FOR A 1031 when the whole price
-  // clears the bar the hint quotes (80% of what was sold); the rolled gain is
-  // spread across the deeds by their share of the price.
-  if (cur.exchange && struck >= cur.exchange.minPrice * 0.8) {
-    const ex = cur.exchange;
-    for (const { b, v } of vals) {
-      const h = cur.holdings[b];
-      if (h) h.costBasis -= Math.round(ex.rolledGain * (v / tot));
-    }
-    cur.news.unshift({
-      q: cur.month, kind: "deal",
-      text: `1031 completed: ${money(ex.rolledGain)} of gain rolled into the ${taken.length}-building package — ${money(ex.deferredTax)} of tax deferred.`,
-    });
-    cur.exchange = null;
+  // A PACKAGE IS REPLACEMENT PROPERTY FOR A 1031, at the prices its deeds
+  // conveyed at: the gain those prices cover rolls into the deeds' basis by
+  // their share, and a shortfall against what was sold is boot
+  // (applyExchangeReplacement). A deed the fund bought is the vehicle's, not
+  // the sponsor's replacement property.
+  if (cur.exchange) {
+    const deeds = conveyed
+      .map(({ b, price }) => ({ h: cur.holdings[b], price }))
+      .filter((d): d is { h: Holding; price: number } => !!d.h && !d.h.fundOwned);
+    if (deeds.length) applyExchangeReplacement(cur, deeds, `the ${taken.length}-building package`);
   }
   cur.portfolios = (cur.portfolios ?? []).filter((x) => x.id !== id);
   cur.news.unshift({

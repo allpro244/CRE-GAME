@@ -8,7 +8,7 @@ import { holdingNOIYr, resolveRec, asIfOwned, recoveryOf } from "@/engine/value"
 import { MAX_TALKS } from "@/engine/acquire";
 import { APPROACH_LIFE_M } from "@/engine/sim";
 import { bumpOf, loiSigningCash, exclusiveFeeRate, netEffectivePsf, loiNeedsPrincipal, deskHoldsPen, deskMonthNow, previewTray } from "@/engine/leasing";
-import { sellerCashAtClose } from "@/engine/actions";
+import { exchangeTaxAtRisk, sellerCashAtClose } from "@/engine/actions";
 import { usd, sf, pctSigned } from "@/ui/format";
 import { PortfolioSaleDesk } from "@/ui/panels/PortfolioPage";
 import { liveBrokerCalls } from "@/ui/panels/broker";
@@ -432,7 +432,8 @@ export function DealsPage() {
     <div>
       {game.exchange && (
         <div className="hint exchange-clock">
-          ⏱ 1031: buy ≥ {usd(game.exchange.minPrice * 0.8)} by {monthLabel(game.exchange.deadlineM)} · else {usd(game.exchange.deferredTax)} tax due
+          ⏱ 1031: buy {usd(Math.max(0, game.exchange.minPrice - (game.exchange.replaced ?? 0)))} more by {monthLabel(game.exchange.deadlineM)} to defer all
+          {" "}· a shortfall is taxed (up to {usd(exchangeTaxAtRisk(game.exchange))})
         </div>
       )}
       <div className="btn-row" style={{ marginBottom: 10 }} role="tablist" aria-label="Deals desk">

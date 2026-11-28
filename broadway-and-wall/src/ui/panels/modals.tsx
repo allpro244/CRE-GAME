@@ -1088,7 +1088,7 @@ function DecisionBody({
             Accept · net {usd(cashAtClose)}
           </button>
           {proceeds.tax > 0 && !game.exchange && !onFund && !consentFor(game, h, "exchange") && (
-            <button className="btn btn-buy" title="Defer the gain · buy within 6 months" onClick={() => setSaleAcceptConfirm({ exchange: true })}>
+            <button className="btn btn-buy" title="Defer the gain · buy at least the sale price within 6 months; any shortfall is taxed" onClick={() => setSaleAcceptConfirm({ exchange: true })}>
               1031 · defer {usd(proceeds.tax)}
             </button>
           )}

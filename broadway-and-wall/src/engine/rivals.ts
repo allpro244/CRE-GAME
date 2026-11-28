@@ -5033,6 +5033,29 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // between schemes through the fifteen years it waits for a site — both are
     // offices with people in them.
     const gaMo = Math.round(firmOverheadAnnual(s.econ.costIdx, aum) / 12);
+    // AN EMPTY OFFICE THAT CANNOT PAY ITS RENT CLOSES; it does not go into
+    // arrears. With the gate gone, a debt-free firm with nothing on the book
+    // and no scheme under way (a builder between sites, mostly) ran its
+    // account below zero on the office alone and was then walked through the
+    // DEBT-arrears calendar below: "fell behind on its debt", a sponsor
+    // failure charge, and a news line about buildings handed back that it
+    // never owned — with no creditor anywhere (reviewer's probe, seed 11, 180
+    // months: 3 such firms, 31 months in "arrears"; HEAD had none). Nobody
+    // lends a shop with no assets and no project the money to keep paying for
+    // a desk: the partners close it, the way the solvent-husk rule at the foot
+    // of this loop closes a firm. A firm with uncalled commitments still has
+    // partners to call and takes the ordinary path.
+    if (!r.bbls.length && (r.debt ?? 0) <= 0 && !(r.stressMs) && !((r.uncalled ?? 0) > 0) && r.cash < gaMo
+      && !(s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned)) {
+      r.failedM = s.month;
+      r.endReason = "woundUp";
+      milestone(s, r, "Closed its office: nothing on the book, no scheme under way, and not enough in the account to keep paying for it");
+      s.news.unshift({
+        q: s.month, kind: "event",
+        text: `${r.name} has wound up. Nothing on the book and no scheme under way; the partners closed the office.`,
+      });
+      continue;
+    }
     r.cash -= gaMo;
 
     // AND THE SAME TAX. Once a year, on income after interest and

@@ -132,6 +132,16 @@ console.log("\nRIVAL ECONOMIC PARITY\n");
     check(busy(g, r) || (want > 0 && Math.abs(paid - want) <= 1),
       `an empty firm's deposit interest is taxed, net of overhead, like the player's ($${paid.toLocaleString()} paid against $${want.toLocaleString()})`);
   }
+  // An empty, debt-free firm that cannot pay next month's office closes it;
+  // the office alone must not walk a firm with no creditor through the debt
+  // arrears calendar (no "fell behind on its debt", no negative balance).
+  {
+    const { g, r } = emptyFirm(98213, 1_000, 5);
+    r.uncalled = 0;
+    E.tickRivals(g, parcels);
+    check(busy(g, r) || (r.failedM === g.month && r.endReason === "woundUp" && !(r.stressMs > 0) && r.cash >= 0),
+      `an empty firm that cannot pay its office winds up instead of falling into arrears (end ${r.endReason ?? "none"}, arrears ${r.stressMs ?? 0}, cash $${Math.round(r.cash).toLocaleString()})`);
+  }
 }
 
 console.log("");

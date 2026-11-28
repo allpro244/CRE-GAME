@@ -45,7 +45,7 @@
 // selling ends it. Nothing here can turn into a monthly rhythm of clicks.
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { GameState, Holding, Note, Rival } from "./types";
-import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, autoLeaseOnClose } from "./types";
+import { logBooks, logPrincipal, moveDeposit, monthLabel, nextJulyAfter, cloneState, autoLeaseOnClose } from "./types";
 import { rng, rrange } from "./market";
 import { assetValue, collateralAsIs, holdingValue, ownedHoldingValue, resolveRec } from "./value";
 import { lenderByName, lenderPressure, chargeLenderLoss } from "./lenders";
@@ -60,7 +60,7 @@ import { markSponsor } from "./sponsor";
 import { firmShort } from "./firm";
 import { productById, loanLender, bumpLenderRel } from "./debt";
 import { clearPrivateOrigination, creditBookRoom, releasePrivateStreetRecord } from "./privateCredit";
-import { spendable, fundAndBook } from "./credit";
+import { spendable, fundAndBook, fundCashNeed } from "./credit";
 import { money } from "./money";
 
 const clone = (s: GameState): GameState => cloneState(s);
@@ -1070,7 +1070,10 @@ export function discountedPayoff(s: GameState, parcels: ParcelTable, bbl: string
   const next = clone(s);
   const lender = loanLender(h.loan);
   const discount = q.bal - q.px;
-  fundAndBook(next, parcels, q.px, "debtSvc", { bbl });
+  // PRINCIPAL RETIRED, NOT DEBT SERVICE: the cheque buys the loan out below
+  // par, so every dollar of it is principal repaid (logPrincipal, `borrowed`),
+  // as on payOff. The discount is the lender's loss and no cash moves for it.
+  logPrincipal(next, -fundCashNeed(next, parcels, q.px), bbl);
   const held = (next.firmHeldLoans ?? []).find((x) => x.bbl === bbl);
   if (held) held.payoff = q.px;
   next.holdings[bbl]!.loan = null;

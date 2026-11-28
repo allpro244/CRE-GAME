@@ -36,16 +36,20 @@ export function bridgeLine(key: BridgeKey, br: Bridge): { label: string; tip: st
         tip: "Twelve-month leases: about a twelfth of the flats re-let each month (fewer under rent stabilisation), so the gap to market lasts as long as the roll takes to turn.",
       };
     }
-    case "leaseRoll": return i.leases > 0 ? {
-      label: `Leases vs a stabilised roll (${Math.round(100 * i.occ)}% let vs ${Math.round(100 * i.stabOcc)}%), until they end (WALT ${i.walt.toFixed(1)} y)`,
-      tip: "The market cap is a cap on a stabilised roll at effective rent. Rent, occupancy and face rent above or below that are worth their difference only for each lease's remaining term (Appraisal Institute, The Appraisal of Real Estate, ch. 22).",
-    } : {
-      label: `Occupancy vs a stabilised roll (${Math.round(100 * i.occ)}% let vs ${Math.round(100 * i.stabOcc)}%), on the market's clock`,
-      tip: "With no commercial lease to hold it, the gap to a stabilised roll closes at the market's pace: about a quarter a year (Wheaton & Torto).",
-    };
+    case "leaseRoll": {
+      const side = p.gapC >= 0 ? "above" : "below";
+      const occ = `${Math.round(100 * i.occ)}% let vs ${Math.round(100 * i.stabOcc)}%`;
+      return i.leases > 0 ? {
+        label: `Leases ${side} a stabilised roll (${occ}), until they end (WALT ${i.walt.toFixed(1)} y)`,
+        tip: "The market cap is a cap on a stabilised roll at effective rent. In-place NOI over the cap would keep rent, occupancy and face rent above or below that for good; each lease's difference lasts only for its remaining term (Appraisal Institute, The Appraisal of Real Estate, ch. 22).",
+      } : {
+        label: `Occupancy ${side} a stabilised roll (${occ}), closing on the market's clock`,
+        tip: "With no commercial lease to hold it, the gap to a stabilised roll closes at the market's pace: about a quarter a year (Wheaton & Torto).",
+      };
+    }
     case "vacancy": return {
-      label: "Vacant space, on the market's lease-up clock",
-      tip: "What letting the empty feet would add, held off for as long as this market takes to let space like it.",
+      label: "Vacant space lets up on the market's clock",
+      tip: "In-place NOI over the cap would hold the empty feet empty for good. They are let over the time this market takes to let space like this, and what letting them adds counts from then.",
     };
     case "firstLeaseUp": return { label: "Still in its first lease-up", tip: "As-is on completion: stabilised, less the fit-out, the income given up while it fills, and the risk it does not." };
     case "vacancyFloor": return { label: "Empty space valued as a lease-up", tip: "A building with an empty floor is valued the way a lease-up is: stabilised, less the cost and time to fill it." };

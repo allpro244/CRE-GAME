@@ -95,7 +95,7 @@ function DrawTerms({ qt, draw }: { qt: FacilityQuote; draw: number }) {
       />
       <Row
         k="LTV"
-        v={`${(t.ltv * 100).toFixed(0)}% · max ${(qt.advance * 100).toFixed(0)}%`}
+        v={`${(t.ltv * 100).toFixed(0)}% · covenant ${(qt.advance * 100).toFixed(0)}%`}
         bad={t.ltv > qt.advance}
       />
     </>
@@ -549,7 +549,7 @@ export function DebtPage() {
             <Row k="Balance" v={`${usd(fac.balance)} of ${usd(fac.drawn)} drawn`} />
             <Row k="Pool" v={`${fac.bbls.length} buildings · ${usd(Math.round(facM.value))} of value`} />
             <Row k="Pool DSCR" v={facM.dscr !== null ? `${facM.dscr.toFixed(2)}x · min ${fac.minDSCR.toFixed(2)}x` : "—"} bad={facM.dscr !== null && facM.dscr < fac.minDSCR} />
-            <Row k="Pool LTV" v={facM.ltv !== null ? `${(facM.ltv * 100).toFixed(0)}% · max ${(fac.maxLTV * 100).toFixed(0)}%` : "—"} bad={facM.ltv !== null && facM.ltv > fac.maxLTV} />
+            <Row k="Pool LTV" v={facM.ltv !== null ? `${(facM.ltv * 100).toFixed(0)}% · covenant ${(fac.maxLTV * 100).toFixed(0)}%` : "—"} bad={facM.ltv !== null && facM.ltv > fac.maxLTV} />
             <Row k="Payment" v={`${usd(fac.monthlyPmt)}/mo · matures ${monthLabel(fac.maturityM)}`} />
             <Row k="Recourse" v={fac.recourse ? "Yes · personal guarantee" : "Non-recourse"} bad={fac.recourse} />
           </div>

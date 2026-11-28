@@ -19,7 +19,7 @@ import { PREMARKET_M, beliefSignals } from "./beliefs";
 import { genRentRoll, isCommercial, depositsOn, stampApproach } from "./leasing";
 import { releaseCost, RELEASE_PREMIUM, FACILITY_MIN_ASSETS } from "./facility";
 import { holderOf, offend, credit, isCold, relOf, relMult, coldOnDeed, coldRefuseMsg, holderSheet } from "./owners";
-import { payOffDue, payOffLoan, loanLender, statedLtv } from "./debt";
+import { payOffDue, payOffLoan, loanLender, statedLtv, requiredDscr } from "./debt";
 import { originate, quote, productById, stabViewFor, recastPayment, capPremiumOn, stackPayoff, conditionOk, allInCostPct, productOpen, windowOpen, loanMin } from "./debt";
 import { takeoverDevelopment, takeoverEquityNeed, buildClimate, farMaxFor, replacementCost, MAX_FLOORS_BY_USE } from "./dev";
 import { demandNow, isCivicLand } from "./demand";
@@ -107,6 +107,9 @@ export function conveyedGrade(s: GameState, rec: ParcelRecord, bbl: string): Con
 /** Minimum cheque any desk writes — the same floor `originate` applies. */
 export const MIN_ACQ_LOAN = 100_000;
 
+/** The sizing pass-throughs of a quote that sized nothing (cash, or a desk that would not lend). */
+const noSizing = { uwNoi: 0, modelBound: false, reqDscr: 0, stabValue: 0, stabNoi: 0 };
+
 export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price: number, product: BuyProduct, lev = 1) {
   // THE RESOLVED RECORD, ALWAYS. The static table is what the lot looked like
   // at generation; `resolveRec` is what is standing on it today, after
@@ -116,7 +119,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   const closing = Math.round(price * BUY_CLOSING);
   const deposits = incomingDeposits(s, bbl);
   if (product === "cash" || !rec) {
-    return { principal: 0, ratePct: 0, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind: "none" as const, ltvCap: 0, uwDscr: 0, appraised: 0, uwBasis: price, overpay: 0, allInPct: 0 };
+    return { principal: 0, ratePct: 0, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind: "none" as const, ltvCap: 0, uwDscr: 0, appraised: 0, uwBasis: price, overpay: 0, allInPct: 0, ...noSizing };
   }
   const prod = productById(product);
   // THE SAME GATES `originate` APPLIES AT THE CLOSING, in the same order, on
@@ -124,7 +127,7 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // refuses there used to leave the buyer paying only the equity on a quoted
   // principal nobody lent — see executePurchase.
   const grade = conveyedGrade(s, rec, bbl);
-  const noLoan = (bind: "condition" | "closed" | "minloan" | "income", ratePct = 0) => ({ principal: 0, ratePct, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind, ltvCap: statedLtv(s, prod).ltv, uwDscr: 0, appraised: 0, uwBasis: price, overpay: 0, allInPct: 0, sheetWhy: undefined as string | undefined, advanceWhy: undefined as string | undefined, guarantorWhy: undefined as string | undefined });
+  const noLoan = (bind: "condition" | "closed" | "minloan" | "income", ratePct = 0) => ({ principal: 0, ratePct, equity: price + closing - deposits, deposits, capPremium: 0, pointsFee: 0, bind, ltvCap: statedLtv(s, prod).ltv, uwDscr: 0, appraised: 0, uwBasis: price, overpay: 0, allInPct: 0, sheetWhy: undefined as string | undefined, advanceWhy: undefined as string | undefined, guarantorWhy: undefined as string | undefined, ...noSizing });
   if (!productOpen(s, prod) || !windowOpen(s, prod)) return noLoan("closed");
   // the life company will not finance a tired building, and the quote screen
   // has to say so before the closing table does
@@ -175,7 +178,8 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   // fund, and even there it only binds when the income in place cannot support
   // more, which is the definition of a lease-up. See sizeRest.
   const stab = stabViewFor(rec, s.econ, grade, uwBasis);
-  const q = quote(s, prod, uwBasis, inPlace(rec, s, bbl, uwBasis).noi, rec.class, false, stab, grade, { nw: netWorth(s, parcels) }, appraised);
+  const uwNoi = inPlace(rec, s, bbl, uwBasis).noi;
+  const q = quote(s, prod, uwBasis, uwNoi, rec.class, false, stab, grade, { nw: netWorth(s, parcels) }, appraised);
   const levered = Math.round(q.principal * Math.max(0, Math.min(1, lev)));
   // Under the minimum cheque the desk writes nothing — `originate` returns no
   // loan below it, so the quote must not promise one.
@@ -221,6 +225,19 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
     guarantorWhy: q.guarantorWhy,
     /** What the lender underwrote, and how far over it you are going. */
     appraised, uwBasis, overpay,
+    // WHAT THE SIZING READ, passed through so the card can name it (playtest
+    // F17, 2026-11-27). The card printed "DSCR-constrained" beside a 3.73
+    // coverage and a 2.72x "risk model" figure and never said which income or
+    // which payment either one was on. None of these is a new opinion: they
+    // are the inputs and flags `quote` already sized with.
+    /** The in-place NOI the desk sized on (inPlace at the underwriting basis). */
+    uwNoi,
+    /** A coverage-bound loan set by the desk's loss model, not the DSCR minimum. Bridge paper's coverage leg IS the loss model (sizeRest: `byDscr = byModel` on a bridge product), so a coverage-bound bridge quote is always this. */
+    modelBound: !!q.modelConstrained || (!!prod.bridge && !!q.dscrConstrained),
+    /** The coverage minimum the desk tested today — requiredDscr on the grade sizeRest was given. */
+    reqDscr: requiredDscr(s, prod, grade),
+    /** The plan a bridge desk sized on when bind is "stab": stabilised value and pro-forma NOI (0 when there is no plan). */
+    stabValue: stab?.value ?? 0, stabNoi: stab?.noiYr ?? 0,
   };
 }
 

@@ -375,7 +375,7 @@ export function LenderCards() {
             <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", columnGap: 10, rowGap: 2, fontSize: 12 }}>
               <span className="hint">Price</span>
               <span>{open && rate !== null ? `${priceWord(rate)} · ${rate.toFixed(2)}%` : "not quoting"}</span>
-              <span className="hint">Max LTV</span>
+              <span className="hint">Advance today</span>
               <span>{open && reach !== null ? `${Math.round(reach * 100)}%` : "—"}</span>
               <span className="hint">Stability</span>
               <span title={sp.why} style={{ color: spColor[sp.word], fontWeight: 600 }}>{sp.word}</span>

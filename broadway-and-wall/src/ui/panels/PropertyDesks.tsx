@@ -19,7 +19,7 @@ import {
   mergeCost, siteDeeds, siteLotArea, contiguousOwnedRoots, hasOwnedSiteNeighbor, assemblyPayoff,
 } from "@/engine/actions";
 import type { GroundReview } from "@/engine/types";
-import { varianceQuote } from "@/engine/zoning";
+import { varianceQuote, varianceUse } from "@/engine/zoning";
 import { bareLandRec, leasedFeeValue } from "@/engine/value";
 import { usd, sf } from "@/ui/format";
 import { useLabel, Row } from "@/ui/panels/shared";
@@ -806,6 +806,22 @@ function LandDeskLive({ bbl }: { bbl: string }) {
   const currentFar = Math.max(rec.farMaxComm, rec.farMaxRes, 2);
   const targetFar = currentFar * farMultiple;
   const vq = landmarked ? null : varianceQuote(game, parcels, bbl, targetFar);
+  // WHETHER THE GRANT WOULD BE USED (playtest F17, 2026-11-27): the desk
+  // offered a variance on every owned lot, built out or not, pencilling or
+  // not. A plain call, not a memo — it sits below this component's early
+  // returns, and one what-if land read is a fraction of a millisecond.
+  const vu = vq ? varianceUse(game, parcels, bbl, vq.targetFar) : null;
+  const unused = vq && vu && !vu.adds
+    ? (vu.usableAt <= vu.usableNow
+      ? `Adds nothing buildable: this plate carries ${vu.usableNow.toFixed(1)} FAR at most, which the envelope you have already allows.`
+      : !vu.dirt && vu.residualNowPsf > vu.standingPsf
+        ? `Adds nothing today: a rebuild already pencils at ${vq.currentFar.toFixed(1)} FAR, and the best scheme bids no more at ${vq.targetFar.toFixed(1)} FAR `
+          + `(builder's residual $${vu.residualNowPsf.toFixed(0)} → $${vu.residualAtPsf.toFixed(0)}/sf of lot).`
+        : !vu.dirt
+          ? `Adds nothing today: the building uses ${Math.round(100 * vu.builtFar / vq.currentFar)}% of its ${vq.currentFar.toFixed(1)} FAR, and a rebuild does not pencil at ${vq.targetFar.toFixed(1)} FAR either `
+            + `(builder's residual $${vu.residualAtPsf.toFixed(0)}/sf of lot against $${vu.standingPsf.toFixed(0)}/sf for what stands).`
+          : `Adds nothing today: the best scheme here bids $${vu.residualAtPsf.toFixed(0)}/sf of lot at ${vq.targetFar.toFixed(1)} FAR, no more than the $${vu.residualNowPsf.toFixed(0)} it bids at ${vq.currentFar.toFixed(1)} FAR.`)
+    : null;
   const app = game.varianceApps?.[bbl]
     ?? (game.varianceApp?.bbl === bbl ? game.varianceApp : null);
 
@@ -849,22 +865,26 @@ function LandDeskLive({ bbl }: { bbl: string }) {
           <Slider
             label="FAR to request"
             value={farMultiple}
-            min={1.1}
-            max={3}
+            min={vq.minFar / vq.currentFar}
+            max={vq.maxFar / vq.currentFar}
             step={0.05}
             onChange={setFarMultiple}
             format={() => `${vq.targetFar.toFixed(1)} FAR · ${farMultiple.toFixed(2)}× current · ${sf(Math.round(rec.lotArea * vq.targetFar))} GFA`}
             marks={[{ at: 1.34, label: "ordinary" }, { at: 2, label: "2×" }, { at: 3, label: "3×" }]}
-            hint="Max 40 FAR. Larger asks: higher cost, longer, lower odds."
+            hint={`Up to ${vq.maxFar.toFixed(1)} FAR here (${(vq.maxFar / vq.currentFar).toFixed(0)}× current). Larger asks: higher cost, longer, lower odds.`}
           />
+          {unused && <div className="hint">{unused}</div>}
           <div className="grid">
             <Row k="District envelope" v={`${Math.max(rec.farMaxComm, rec.farMaxRes).toFixed(1)} FAR${game.zoneAdj?.[rec.district] ? ` · rezoned to ${((game.zoneAdj[rec.district]) * 100).toFixed(0)}%` : ""}`} />
             {(game.variance?.[bbl] ?? 0) > 0 && <Row k="Prior variance" v={`+${game.variance![bbl].toFixed(1)} FAR · lowers odds`} />}
             <Row k="Requested FAR" v={`${vq.targetFar.toFixed(1)} FAR total · +${vq.grant.toFixed(1)}`} strong />
             <Row k="Fees" v={usd(vq.cost)} />
             <Row k="Decision" v={`${vq.months} mo · ${(vq.odds * 100).toFixed(0)}% odds`} bad={vq.odds < 0.3} />
+            {vu?.adds && <Row k="Builder's residual" v={`$${vu.residualNowPsf.toFixed(0)} → $${vu.residualAtPsf.toFixed(0)}/sf of lot`} strong />}
           </div>
-          <button className="btn" style={{ marginTop: 8 }} onClick={() => applyVariance(bbl, vq.targetFar)}>File for {vq.targetFar.toFixed(1)} FAR · {usd(vq.cost)}</button>
+          {unused
+            ? <button className="btn btn-sm" style={{ marginTop: 8 }} onClick={() => applyVariance(bbl, vq.targetFar)}>File anyway · {usd(vq.cost)}</button>
+            : <button className="btn" style={{ marginTop: 8 }} onClick={() => applyVariance(bbl, vq.targetFar)}>File for {vq.targetFar.toFixed(1)} FAR · {usd(vq.cost)}</button>}
           <div className="hint">
             Fees non-refundable. Each prior grant lowers odds.
           </div>

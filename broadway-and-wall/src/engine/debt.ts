@@ -1873,7 +1873,7 @@ function sizeRest(s: GameState, product: LoanProduct, byLtv: number, price: numb
  * Arbor at 75%; 65-75% of as-is is the common quote (rets.ai, 2026). 0.65 is
  * the conservative end of that range.
  */
-const STAB_LTV = 0.65;
+export const STAB_LTV = 0.65;
 
 
 // `lev` scales the loan down from the lender's maximum — the player's dial.

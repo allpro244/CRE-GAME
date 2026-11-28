@@ -6,13 +6,19 @@
 // largest single value event that can happen to a piece of dirt — larger than
 // any building you would put on it — and there was no such thing.
 //
+// USE is free: any lot may host any use (value.ts zonePermits), outside the
+// region's R-1/R-2 plats. DENSITY is zoned: every lot carries an FAR limit
+// (farMaxComm / farMaxRes), and the variance desk below hears applications
+// for more.
+//
 // Three mechanisms, and they are deliberately different in who drives them:
 //
-//   REZONING   — the CITY acts, on districts, over years. Places that have
-//                filled up and got expensive get upzoned; places that have
-//                emptied out or fought hard get held down. You do not control
-//                it, you read it, and if you own the dirt when it lands you
-//                did very well without doing anything.
+//   REZONING   — the CITY acts, on districts, over years: the plan commission
+//                upzones a district whose recent buildings are built out to
+//                the code (towngrowth.ts tickPlanning, PLAN). You do not
+//                control it, you read it, and if you own the dirt when it
+//                lands you did very well without doing anything. The district
+//                walk that used to live in this file is gone.
 //   VARIANCE   — YOU act, on one site. Lawyers, hearings, months of waiting
 //                and a real chance of refusal. This is the natural partner to
 //                assembling a site: you put the lots together, then you go
@@ -27,7 +33,7 @@ import type { GameState, VarianceApplication } from "./types";
 import { monthLabel, cloneState} from "./types";
 import { hash01 } from "./competitorTraits";
 import { rng } from "./market";
-import { resolveRec, landValue, demandLinear } from "./value";
+import { resolveRec, landValue, demandLinear, landRead, landReadAsIf, envelopeRealisation, marketAppraisal, initialCondition } from "./value";
 import { recordPropertyEvent } from "./history";
 import { spendable, fundAndBook } from "./credit";
 import { money } from "./money";
@@ -49,19 +55,16 @@ export const FAR_FLOOR = 0.72;
 // is the same number with three answers; there is one now, and it lives here
 // with the process that enforces it.
 export const FAR_CEIL = 3.8;
-/** No use districts, but a density limit (2026-10-12): the variance desk hears applications for more FAR. */
-const UNZONED = false;
 
 // ------------------------------------------------------------------ rezoning
 
 /**
- * THERE IS NO ZONING TO REVISE (2026-10-10). This town is unzoned, like
- * Houston (see zonePermits in value.ts): every lot may host any use, and its
- * allowance is what its footprint can physically carry (normalizeParcels).
- * The district rezoning walk, the manufacturing map and its reverse had
- * nothing left to act on, and are gone. The function stays because the
- * planning tick calls it, and so that a save carrying `zoneAdj` or `zoneUse`
- * from before still reads (resolveRec applies them; nothing writes them).
+ * NOTHING TO DO HERE. Use is unzoned (value.ts zonePermits); density is not —
+ * every lot carries an FAR limit. District rezoning moved to towngrowth.ts
+ * (tickPlanning, PLAN); the walk, the manufacturing map and its reverse that
+ * lived here are gone. This no-op stays because the planning tick below calls
+ * it. resolveRec still applies `zoneAdj` (written now by towngrowth's plan
+ * commission) and an old save's `zoneUse`.
  */
 export function tickZoning(s: GameState, parcels: ParcelTable, bbls: string[]) {
   void s; void parcels; void bbls;
@@ -78,20 +81,20 @@ function pendingVariances(s: GameState): Record<string, VarianceApplication> {
 export function varianceQuote(
   s: GameState, parcels: ParcelTable, bbl: string, targetFar?: number,
 ) {
-  // No zoning, nothing to vary: every lot already has the envelope its plate
-  // can carry (see tickZoning). The desk below is kept for saves that filed
-  // an application before the town was unzoned; none can be opened now.
-  if (UNZONED) return null;
   const rec = resolveRec(parcels, s, bbl);
   if (!rec || !rec.lotArea) return null;
   if (s.landmarks?.[bbl] !== undefined) return null;
   const land = landValue(rec, s.econ);
   const current = Math.max(rec.farMaxComm, rec.farMaxRes, 2);
+  // ONE APPLICATION ASKS FOR A TENTH MORE AT LEAST AND THREE TIMES THE
+  // CURRENT ENVELOPE AT MOST. Returned with the quote so the panel's slider
+  // reads these bounds instead of restating them.
+  const minTarget = current * 1.10;
   const maxTarget = current * 3;
   if (maxTarget <= current + 0.05) return null;
   const target = clamp(
     Number.isFinite(targetFar as number) ? (targetFar as number) : current * 1.34,
-    current * 1.10,
+    minTarget,
     maxTarget,
   );
   const askShare = target / current - 1;
@@ -104,9 +107,12 @@ export function varianceQuote(
   // before.
   const scale = Math.sqrt(askShare / 0.34);
   // Prior relief is allowed — the board can bend again — but each FAR already
-  // won makes the next hearing harder and more expensive. Absolute stop is the
-  // city ceiling on the resolved envelope (current already includes variance);
-  // without that decay a patient refile loop once walked a parcel past forty.
+  // won makes the next hearing harder and more expensive. There is no absolute
+  // city ceiling on the envelope since 2026-10-12 (value.ts resolveRec, NO
+  // CEILING ON THE ENVELOPE): one application may ask up to three times the
+  // current envelope (maxTarget; current already includes past variances), and
+  // this decay is what stops a patient refile loop — without it one once
+  // walked a parcel past forty.
   const already = s.variance?.[bbl] ?? 0;
   const priorCost = already > 0 ? 1.35 + 0.12 * already : 1;
   const priorOdds = already > 0 ? Math.exp(-0.55 * already) : 1;
@@ -124,7 +130,47 @@ export function varianceQuote(
     ordinaryOdds * Math.exp(-1.1 * Math.max(0, askShare - 0.34)) * priorOdds,
     0.02, 0.82,
   );
-  return { cost, months, grant, targetFar: +target.toFixed(2), currentFar: current, odds };
+  return { cost, months, grant, targetFar: +target.toFixed(2), currentFar: current, odds, minFar: minTarget, maxFar: maxTarget };
+}
+
+/**
+ * WHETHER A GRANT WOULD CHANGE WHAT ANYONE BUILDS HERE (playtest F17,
+ * 2026-11-27). The desk offered a variance on every owned lot, including a
+ * building using 18% of a 31-FAR envelope whose builder's residual was the same
+ * $24/sf of lot at three times that envelope, against $1,012/sf of lot for
+ * what stands (seed 12007, month 0, 1 Concord Ave) — a fee for an entitlement
+ * nobody would use. At month 0 no lot of that seed gains from one at 1.5x or
+ * 3x (0 of 400 built, 0 of 417 vacant): the best schemes are held to a few
+ * storeys by the skyline (value.ts residualCore, heightCapFloors) far under
+ * envelopes of 2-37 FAR. Where the envelope does bind, it says so.
+ * This is a read, not a rule: the player may still file.
+ *
+ * A grant adds something TODAY only if, at the envelope asked for, a builder
+ * would pay more for the site than it is worth now — as dirt (the builder's
+ * residual at the envelope it has) or with what stands on it (the appraisal
+ * per foot of lot, the same comparison the property file's rebuild card makes,
+ * ParcelDesk). No threshold. The builder's residual, not the reconciled land
+ * price: the price also weighs comps and the opening seed per unit of usable
+ * envelope, so it is not a read of what the extra FAR would let someone build.
+ */
+export function varianceUse(s: GameState, parcels: ParcelTable, bbl: string, targetFar?: number) {
+  const q = varianceQuote(s, parcels, bbl, targetFar);
+  const rec = resolveRec(parcels, s, bbl);
+  if (!q || !rec) return null;
+  // the same additive grant resolveRec applies once it is won (s.variance)
+  const recAt = { ...rec, farMaxComm: +(rec.farMaxComm + q.grant).toFixed(2), farMaxRes: +(rec.farMaxRes + q.grant).toFixed(2) };
+  const usable = (r: typeof rec) => envelopeRealisation(r) * Math.max(r.farMaxComm, r.farMaxRes);
+  const dirt = rec.class === "land" || !rec.bldgArea;
+  const residualNowPsf = landRead(rec, s.econ).builder;
+  const residualAtPsf = landReadAsIf(recAt, s.econ).builder;
+  const standingPsf = dirt ? 0
+    : marketAppraisal(s, rec, bbl, s.holdings[bbl]?.condition ?? initialCondition(rec)) / Math.max(1, rec.lotArea);
+  return {
+    builtFar: rec.lotArea > 0 ? rec.bldgArea / rec.lotArea : 0,
+    usableNow: usable(rec), usableAt: usable(recAt),
+    residualNowPsf, residualAtPsf, standingPsf, dirt,
+    adds: residualAtPsf > Math.max(residualNowPsf, standingPsf),
+  };
 }
 
 export function fileVariance(

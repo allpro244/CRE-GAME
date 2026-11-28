@@ -9,7 +9,7 @@ import { monthLabel, type GameState, type Holding } from "@/engine/types";
 import { resolveRec, isVacantLandLoanCollateral, physicalOcc } from "@/engine/value";
 import { refiQuotes, prepayPenalty, mezzQuote, rateCapCost, deskAdvice, capPremiumOn } from "@/engine/debt";
 import { usd, pct } from "@/ui/format";
-import { annualPayment, Row, Verdict } from "@/ui/panels/shared";
+import { annualPayment, ltvCeilingWord, Row, Verdict } from "@/ui/panels/shared";
 import { WhyButton } from "@/ui/WhyChain";
 import { loanWhy, loanLead } from "@/ui/whyLinks";
 
@@ -286,7 +286,7 @@ export function RefiSection({ bbl }: { bbl: string }) {
       <div className="grid" style={{ marginTop: 12 }}>
         <Row k="Lender" v={`${q.label} · ${pct(q.ratePct)}`} strong
           why={<WhyButton id={loanWhy(game, q.lender)} lead={loanLead(game, q.lender, q.ratePct)} />} />
-        <Row k="Max loan" v={`${usd(q.maxProceeds)} · ${(q.ltvAtMax * 100).toFixed(0)}% LTV · ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance · ${q.ltvMaintenance ? `${(q.maxLTV * 100).toFixed(0)}% covenant` : "LTV tested at closing only"}`} />
+        <Row k="Max loan" v={`${usd(q.maxProceeds)} · ${(q.ltvAtMax * 100).toFixed(0)}% LTV · ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance · ${ltvCeilingWord(q)}`} />
         {/* THE THREE NUMBERS THE COVERAGE RATIO IS MADE OF, at the amount the
             dial is actually set to.
             This row printed `dscrAtMax` — the coverage at the LENDER'S maximum
@@ -323,9 +323,9 @@ export function RefiSection({ bbl }: { bbl: string }) {
           k="Structure"
           v={`${q.ioM ? `${Math.round(q.ioM / 12)}-yr IO, ` : ""}${q.amortYears}-yr amort, ${q.termM / 12}-yr term, `
             + (q.maxProceeds > 0 && Math.abs(q.advanceToday - q.advanceLtv) > 0.02
-              ? `sized at ${(q.advanceToday * 100).toFixed(0)}% LTV (their max LTV today ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}%${q.sheetWhy ? `: ${q.sheetWhy}` : ""})`
-              : `${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% max LTV today${q.sheetWhy ? ` (${q.sheetWhy})` : ""}`)
-            + ` / ${q.ltvMaintenance ? `${(q.maxLTV * 100).toFixed(0)}% covenant` : "LTV tested at closing only"}, ${q.floating ? "floating" : "fixed"}`}
+              ? `sized at ${(q.advanceToday * 100).toFixed(0)}% LTV (their advance today ${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}%${q.sheetWhy ? `: ${q.sheetWhy}` : ""})`
+              : `${((q.advanceLtv ?? q.maxLTV) * 100).toFixed(0)}% advance today${q.sheetWhy ? ` (${q.sheetWhy})` : ""}`)
+            + ` / ${ltvCeilingWord(q)}, ${q.floating ? "floating" : "fixed"}`}
         />
         <Row k="Origination" v={`${(q.points * 100).toFixed(1)} pts · ${usd(Math.round(proceeds * q.points))}`} />
         {capPremium > 0 && <Row k="Rate cap at close" v={usd(capPremium)} />}

@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { returnsToDate } from "@/engine/standing";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { initialCondition, marketAppraisal, ownedHoldingNoiYr, resolveRec, operatingStatement, remainingAbatement, inPlace } from "@/engine/value";
+import { initialCondition, initialCondIdx, marketAppraisal, marketValueBridge, ownedHoldingNoiYr, resolveRec, operatingStatement, remainingAbatement, inPlace, assetValue, landValue, DEV_MARGIN } from "@/engine/value";
+import { bridgeTitle } from "@/ui/panels/ValueBridge";
 import { farMaxFor, maxBuildable, replacementCost } from "@/engine/dev";
 import { dscr } from "@/engine/debt";
 import "@/ui/cleanup-building.css";
@@ -90,6 +91,18 @@ export function PropertyPage() {
     ? ownedHoldingNoiYr(game, parcels, h)
     : (built ? ipHdr.noi : 0);
   const dsYr = (h?.loan?.monthlyPmt ?? 0) * 12;
+  // VALUE AGAINST COST NEW, LIKE FOR LIKE (2026-11-28). This put the
+  // appraisal — land, in-place leases and all — over the cost of the
+  // building alone, so a 1996 shed let 40% over market read 1.66x and
+  // "invites new supply" where nothing pencilled (F9). A builder compares
+  // what a building like this is worth at market rents, with no roll of
+  // anyone's, against the land plus the cost of building it new; it clears
+  // when that beats the developer's margin (value.ts DEV_MARGIN, RICS / the
+  // housing-kit 15-20%).
+  const costNew = built ? replacementCost(rec as never, game.econ) + landValue(rec, game.econ) : 0;
+  const atMarket = built ? assetValue(rec, game.econ, cond, h?.condIdx ?? initialCondIdx(rec, game.month, cond)) : 0;
+  const vcn = costNew > 0 ? atMarket / costNew : null;
+  const vcnTitle = `Market value at market rents ${usd(atMarket)} ÷ (land + cost to build it new ${usd(costNew)}). Above ${(1 + DEV_MARGIN).toFixed(2)}× a builder clears the margin the city's builders require.`;
   const dev = game.developments[bbl];
   const taxAppeal = h ? taxAppealQuote(game, parcels, bbl) : null;
   const appealTab: PropTab = built ? "ops" : "summary";
@@ -122,6 +135,7 @@ export function PropertyPage() {
           the same numbers, smaller, each with its tooltip. */}
       <div className="stat-strip">
         <Big label="Appraisal" value={band(bbl, value)}
+          title={built ? bridgeTitle(marketValueBridge(game, rec, bbl, cond)) : undefined}
           why={built ? <WhyButton id={capWhy(game, dominantUse(rec))} lead={valueLead(game, dominantUse(rec), value, noi)} /> : undefined} />
         <Big
           label={leasedFee ? "Ground rent / yr" : "NOI / yr"}
@@ -153,10 +167,9 @@ export function PropertyPage() {
           if (syn) return <Big label="Sponsor equity" value={usd(syn.yours)} title={`Total ${usd(syn.equity)} · LPs ${usd(syn.theirs)}`} />;
           return <Big label={h.jv ? `Equity · yours ${Math.round((1 - h.jv.share) * 100)}%` : "Equity"} value={usd(value * (1 - (h.jv?.share ?? 0)))} />;
         })()}
-        {!h && built && (() => {
-          const rc = replacementCost(rec as never, game.econ);
-          return rc ? <Big label="Value / replacement" title="Appraisal / replacement cost. Above 1× invites new supply." value={`${(value / rc).toFixed(2)}×`} bad={value / rc > 1.25} /> : null;
-        })()}
+        {!h && built && vcn !== null && (
+          <Big label="Value / cost new" title={vcnTitle} value={`${vcn.toFixed(2)}×`} bad={vcn > 1 + DEV_MARGIN} />
+        )}
       </div>
       <div className="prop-head">
         <div className="prop-facts">
@@ -173,8 +186,7 @@ export function PropertyPage() {
               const os = operatingStatement(rec, game.econ, h, game.month);
               f.push({ k: "Leakage", v: `${(os.leakage * 100).toFixed(0)}%`, title: "Opex and tax not recovered from tenants.", bad: os.leakage > 0.45 });
               if (remainingAbatement(h, game.month) > 0) f.push({ k: "Free rent owed", v: usd(-remainingAbatement(h, game.month)), bad: true, title: "Concessions granted and not yet burned off; a buyer credits this off the price." });
-              const rc = replacementCost(rec as never, game.econ);
-              if (rc) f.push({ k: "V / RC", v: `${(value / rc).toFixed(2)}×`, title: "Appraisal / replacement cost. Above 1× invites new supply.", bad: value / rc > 1.25 });
+              if (vcn !== null) f.push({ k: "Value / cost new", v: `${vcn.toFixed(2)}×`, title: vcnTitle, bad: vcn > 1 + DEV_MARGIN });
             }
             if (h && (h.loan || h.mezz)) {
               const syn = syndicateView(game, parcels, bbl);

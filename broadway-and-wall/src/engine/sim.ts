@@ -7,7 +7,7 @@ import { distressTally } from "./history";
 import { stampBands } from "./bands";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Exit, GameState, Listing, Rival } from "./types";
-import { DEFAULT_START_CASH, CENTURY_MONTHS, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit, moveFundCash } from "./types";
+import { DEFAULT_START_CASH, CENTURY_MONTHS, firmOverheadAnnual, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit, moveFundCash } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels, cycleDown } from "./market";
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, resolveRecBare, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
@@ -2822,16 +2822,10 @@ export function firmOverheadMonthly(s: GameState, parcels: ParcelTable): number 
   // Last month's GAV (stamped at the portfolioMark in the tick). Month-one /
   // old saves with no stamp fall back to a single mark.
   const gav = s.prevGav ?? portfolioMark(s, parcels).gav;
-  // ~30bps of gross asset value a year at scale, over a small fixed base.
-  //
-  // THE WHOLE OFFICE IS IN THIS NUMBER: asset and property management, leasing
-  // coordination, accounting, legal, insurance, the rent on the office. There
-  // is no payroll to hire into, so nothing comes out of it — buildings are
-  // professionally run at the market standard and this is what that costs.
-  // Competitors are charged the same rate in their own tick (rivals.ts), so the
-  // league table measures both sides one way.
-  const annual = 60_000 * s.econ.costIdx + 0.0028 * gav;
-  return Math.round(annual / 12);
+  // ~28bps of gross asset value a year at scale, over a small fixed base —
+  // the one formula (types.ts firmOverheadAnnual) competitors are charged in
+  // their own tick (rivals.ts), so the league table measures both sides one way.
+  return Math.round(firmOverheadAnnual(s.econ.costIdx, gav) / 12);
 }
 
 export function portfolioMonthlyCF(s: GameState, parcels: ParcelTable): number {

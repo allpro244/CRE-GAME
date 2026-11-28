@@ -89,5 +89,50 @@ console.log("\nRIVAL ECONOMIC PARITY\n");
     "portfolio stress penalizes a weak rival asset more than a strong one");
 }
 
+// ONE RULEBOOK FOR IDLE CASH (playtest F6). A competitor's cash earns what
+// the player's earns — the operating account at the bank's deposit rate, the
+// rest in bills (lenders.ts cashInterestMonthly) — and it pays the same office
+// whether or not it owns anything (sim.ts firmOverheadMonthly). The street
+// used to earn the bill rate on its whole balance, untaxed, and an empty firm
+// paid no overhead, so its $2.5M compounded at ~3.4% while the player's made
+// 1.3%.
+{
+  const emptyFirm = (seed, cash, month) => {
+    const g = E.newGame(seed, parcels);
+    g.econ.nat.policy = 5;
+    const r = g.rivals.find((x) => x.failedM === undefined && !x.builderProf && !(g.cityJobs ?? []).some((j) => j.firmId === x.id));
+    for (const [b, l] of Object.entries(g.cityLoans ?? {})) if (l.obligorId === r.id) delete g.cityLoans[b];
+    r.bbls = []; r.debt = 0; r.lineBal = 0; r.basis = 0; r.extendedTo = {}; r.stressMs = 0;
+    r.cash = cash; g.month = month;
+    return { g, r };
+  };
+  const busy = (g, r) => r.bbls.length > 0 || (g.cityJobs ?? []).some((j) => j.firmId === r.id);
+  // An ordinary month, under the distribution floor: the change in the account
+  // is the month's interest less the office, to the dollar.
+  {
+    const { g, r } = emptyFirm(98213, 600_000, 5);
+    const c0 = r.cash;
+    const office = E.firmOverheadMonthly({ ...g, prevGav: 0 }, parcels);
+    const want = Math.round(E.cashInterestMonthly(g, c0)) - office;
+    E.tickRivals(g, parcels);
+    const on5m = Math.round(E.cashInterestMonthly(g, 5e6));
+    check(office > 0 && on5m > 0, `the office and the interest are real numbers ($${office}/mo; $${on5m}/mo on $5M)`);
+    check(busy(g, r) || r.cash - c0 === want,
+      `an empty firm's month is the player's rule: interest less the office ($${(r.cash - c0).toLocaleString()} against $${want.toLocaleString()})`);
+  }
+  // A December: the interest is taxed, net of the office, as the player's is
+  // (sim.ts: depositInterestYr is ordinary income, last year's G&A deductible).
+  {
+    const { g, r } = emptyFirm(98213, 3_000_000, 12);
+    const c0 = r.cash, t0 = r.taxPaid ?? 0;
+    const office = E.firmOverheadMonthly({ ...g, prevGav: 0 }, parcels);
+    const want = Math.round((E.cashInterestMonthly(g, c0) * 12 - office * 12) * E.INCOME_TAX_RATE);
+    E.tickRivals(g, parcels);
+    const paid = (r.taxPaid ?? 0) - t0;
+    check(busy(g, r) || (want > 0 && Math.abs(paid - want) <= 1),
+      `an empty firm's deposit interest is taxed, net of overhead, like the player's ($${paid.toLocaleString()} paid against $${want.toLocaleString()})`);
+  }
+}
+
 console.log("");
 process.exit(bad ? 1 : 0);

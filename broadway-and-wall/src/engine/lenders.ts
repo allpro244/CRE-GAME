@@ -655,10 +655,12 @@ export function cashSplit(s: GameState): CashSplit {
 }
 
 /**
- * A MONTH'S INTEREST ON A FIRM'S CASH: the operating account (up to the
- * insured limit) at its bank's deposit rate, the rest in Treasury bills
- * through a money fund at sweepApy — the split cashSplit draws, priced. The
- * player's tick books it (sim.ts, logBooks "interest").
+ * A MONTH'S INTEREST ON A FIRM'S CASH, and it is one rule for every firm: the
+ * operating account (up to the insured limit) at its bank's deposit rate, the
+ * rest in Treasury bills through a money fund at sweepApy — the split
+ * cashSplit draws, priced. The player's tick books it (sim.ts, logBooks
+ * "interest") and every competitor's tick pays it (rivals.ts), so neither side
+ * holds idle cash on better terms than the other.
  *
  * The cash is the firm's, not any bank's funding: a bank's deposits are sized
  * off its own book (tickDeposits), so where this money sits moves no bank's

@@ -5587,6 +5587,30 @@ export function sweepApy(econ: { nat?: { policy?: number } } | undefined): numbe
 }
 
 /**
+ * THE OFFICE, BY THE YEAR: a fixed base plus ~28bps of gross asset value. One
+ * formula for every firm — the player's tick charges it as G&A (sim.ts
+ * firmOverheadMonthly, which the top bar also subtracts) and every
+ * competitor's tick charges it out of the account (rivals.ts). It used to be
+ * the same two literals typed in both places.
+ *
+ * Charged against what a firm is RESPONSIBLE for, not how many doors it has:
+ * a firm running fifty million needs one analyst, a firm running five billion
+ * needs a department, and the second is cheaper per dollar. A per-asset charge
+ * looked reasonable and was not — it billed a small operator more overhead
+ * than their building earned in NOI.
+ *
+ * THE WHOLE OFFICE IS IN THIS NUMBER: asset and property management, leasing
+ * coordination, accounting, legal, insurance, the rent on the office. There
+ * is no payroll to hire into, so nothing comes out of it — buildings are
+ * professionally run at the market standard and this is what that costs.
+ * And the fixed base is charged whether or not the firm owns anything: an
+ * office with no buildings in it is a cost, not a strategy.
+ */
+export function firmOverheadAnnual(costIdx: number, gav: number): number {
+  return 60_000 * costIdx + 0.0028 * gav;
+}
+
+/**
  * THE CAPITAL PLAN, as a share of gross asset value a year.
  *
  * Roofs, lifts, plant, the things that do not appear in an operating statement

@@ -5541,23 +5541,49 @@ export const START_YEAR = 2000;
  * runs double digits while deposits paid one per cent; in its ZIRP eras one
  * per cent was a gift. Neither is a market.
  *
- * The spread under the policy rate is a measured fact about the business:
- * institutional sweep / government MMF yields run ~25–50bp under the fed funds
- * rate (expense ratios plus the sweep bank's cut). 40bp, floored at zero —
+ * The spread under the policy rate is two measured facts, kept apart because
+ * they are two different things: what a Treasury bill yields under fed funds
+ * (BILL_FUNDS_GAP_PCT — the same number a bank's own liquid assets earn in
+ * lenders.ts bankFunding), and what the money fund holding the bills charges
+ * for doing it (MMF_EXPENSE_PCT). Bills less the fee, floored at zero —
  * nobody pays you to hold your cash outside a deflation regime this engine
- * does not model at the deposit desk.
+ * does not model at the deposit desk. This used to be one uncited 40bp that
+ * mixed the two, while bankFunding priced the same bills at policy less 10bp:
+ * one quantity, two answers.
+ *
+ * WHAT IT IS NOT KEYED TO: the engine's short index (regime.ts shortIndexFor).
+ * That is a bank-credit benchmark — SOFR/LIBOR plus a credit term that blows
+ * out when the banks are frightened — and bills do the opposite in a panic:
+ * they trade UNDER fed funds as money runs to them (TB3SMFFM averaged -0.39pp
+ * over Sep-Dec 2008). A money fund keyed to the short index would pay more the
+ * more frightened the banks were. The gap is a constant here, a sourced
+ * average; the flight-to-quality widening is a mechanism not yet modelled.
  *
  * If T-bills at 8% then read "too strong", that is 1981 being 1981 — and the
  * honest counterweights already exist: the CPI eating the real value, the
- * deals not done, and (with this change) the taxman — deposit interest is
- * ordinary income and joins January's taxable base in sim.ts, which a flat
- * shelter-free 1% never did.
+ * deals not done, the office (firm overhead runs whether or not the firm owns
+ * a building, sim.ts), and the taxman — deposit interest is ordinary income
+ * and joins January's taxable base in sim.ts, which a flat shelter-free 1%
+ * never did. A cash-only firm at a 2.5M start nets about 1.3% a year after
+ * both (seed 12007, 2026-11-27 playtest F6): that is the cost of carrying an
+ * idle balance sheet, not a missing product.
  */
-export const SWEEP_SPREAD_PCT = 0.40;
+/** 3-month Treasury bill less effective fed funds: FRED TB3SMFFM monthly mean -0.11pp over 2000-2026 (median -0.14pp over 1954-2026; the 1954-2026 mean, -0.38pp, carries the Volcker-era gaps), computed 2026-11-27 [S]. */
+export const BILL_FUNDS_GAP_PCT = 0.10;
+/** Money-market fund expense ratio: 0.22%, the asset-weighted average for 2023 (ICI Research Perspective vol. 30 no. 2, "Trends in the Expenses and Fees of Funds, 2023", March 2024; 10th-90th percentile 0.12-0.70%) [S]. */
+export const MMF_EXPENSE_PCT = 0.22;
+/** What a 3-month Treasury bill yields, % a year, given the policy rate (floored at zero: no negative bill yields in this engine). */
+export function billYield(policyPct: number): number {
+  return Math.max(0, policyPct - BILL_FUNDS_GAP_PCT);
+}
+/** What swept cash earns, as a fraction a year: the bill yield less the money fund's fee. */
 export function sweepApy(econ: { nat?: { policy?: number } } | undefined): number {
   const pol = econ?.nat?.policy;
   if (!Number.isFinite(pol)) return 0.01; // no national block yet (turn 0 / old save mid-load)
-  return Math.max(0, ((pol as number) - SWEEP_SPREAD_PCT) / 100);
+  // Floored at zero: near the zero bound funds waive their fees rather than
+  // pay a negative yield (97% of money funds were waiving at year-end 2021,
+  // ICI Research Perspective 30-2) — the waiver is the floor.
+  return Math.max(0, (billYield(pol as number) - MMF_EXPENSE_PCT) / 100);
 }
 
 /**

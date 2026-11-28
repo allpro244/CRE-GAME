@@ -7,7 +7,7 @@ import { distressTally } from "./history";
 import { stampBands } from "./bands";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Exit, GameState, Listing, Rival } from "./types";
-import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit, moveFundCash } from "./types";
+import { DEFAULT_START_CASH, CENTURY_MONTHS, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit, moveFundCash } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels, cycleDown } from "./market";
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, resolveRecBare, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
@@ -44,7 +44,7 @@ import { tickCorporate } from "./corporate";
 import { markRival, initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose, landFundBid, streetSaleCost } from "./rivals";
 import { loanBookTouched, syncDebt } from "./rivalDebt";
 import { openingCapSurvey, openingLandSurvey, tickBrokerSurvey, tickLandSurvey, noteListed, anchoredAsk, forcedSaleAsk, foreclosureSale, BUY_CLOSING, bidRound, valueTo } from "./propmarket";
-import { initLenders, publishOpeningPrices, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
+import { initLenders, publishOpeningPrices, tickLenders, chargeLenderLoss, cashInterestMonthly } from "./lenders";
 import { tickStreetLoans, retireFoldedLoans } from "./streetLoans";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
@@ -1132,7 +1132,9 @@ function tickMonth(
   // interest is not property income — and it joins January's taxable base
   // below, because money-fund interest is ordinary income in life too.
   // THE OPERATING ACCOUNT EARNS THE DEPOSIT RATE, the swept balance the bill
-  // rate (cashSplit in lenders.ts) — and only the first is the bank's risk.
+  // rate less the money fund's fee (cashInterestMonthly in lenders.ts, the one
+  // rule every competitor's idle cash also earns by) — and only the first is
+  // the bank's risk.
   // AN OVERDRAWN BALANCE IS BORROWED MONEY (2026-10-14). Negative cash paid
   // nothing, so a firm could run underwater for months on what was in effect
   // a free unsecured loan from its creditors. Whoever is carrying that hole
@@ -1143,8 +1145,7 @@ function tickMonth(
     if (od > 0) { s.cash -= od; logBooks(s, "debtSvc", od); }
   }
   if (s.cash > 0) {
-    const split = cashSplit(s);
-    const interest = Math.round((split.inBills * sweepApy(s.econ) + split.atBank * depositApy(s.econ, split.bank)) / 12);
+    const interest = Math.round(cashInterestMonthly(s, s.cash));
     if (interest > 0) {
       s.cash += interest; logBooks(s, "interest", interest);
       s.depositInterestYr = (s.depositInterestYr ?? 0) + interest;

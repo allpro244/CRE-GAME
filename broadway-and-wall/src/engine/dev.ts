@@ -13,7 +13,7 @@ import { hash01 } from "./competitorTraits";
 import { creditOfSize } from "./tenantMarket";
 import { BUILT_CLASSES, cloneState, raiseAlert } from "./types";
 import { abatementAtStart } from "./citygov";
-import { logBooks, moveDeposit, moveFundCash, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
+import { logBooks, logPrincipal, moveDeposit, moveFundCash, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
 import { rng, rrange, openingVac, forwardVacancy, CITY_STOCK, SECTOR_LABEL, addStock, retireStock, REF_PIPE_SHARE, residenceVac, housableStock, payrollGrowth12 } from "./market";
 import { firmShort } from "./firm";
@@ -31,7 +31,7 @@ export { physicalMaxFloors, plateEfficiency } from "./value";
 import { depositFor, depositsOn, genAnchorTenant, leasableUses, minLettableSf, pickName, pickSector, useVacantSf } from "./leasing";
 import { claimJob, jobDelivered, ownerOf, gradeOf, firmMargin, capForSpread, streetHurdle, streetHasOwnMoney, anonHurdle, hurdleAt, freeCash, transferDeed } from "./rivals";
 import { logFirm } from "./firmLog";
-import { spendable, fundableNow, fundAndBook } from "./credit";
+import { spendable, fundableNow, fundAndBook, fundCashNeed } from "./credit";
 import { mixOf, districtLabel } from "./mix";
 import { lenderAppetite, lenderByName, CONSTRUCTION_LENDER, reoAsk, chargeLenderLoss } from "./lenders";
 import { relCurve, bumpLenderRel, payOffDue, productById } from "./debt";
@@ -2053,10 +2053,15 @@ export function projectedDevIrr(plan: DevPlan): number {
  * so the button cannot offer what the engine refuses.
  */
 /** A closing cheque from the purse that owns the deed — see `groundbreakPurse`. */
-function payFromPurse(next: GameState, parcels: ParcelTable, bbl: string, amt: number, cat: "dev" | "debtSvc", vehicle: boolean): void {
+function payFromPurse(next: GameState, parcels: ParcelTable, bbl: string, amt: number, cat: "dev" | "debtSvc" | "principal", vehicle: boolean): void {
   if (!(amt > 0)) return;
   const f = vehicle ? next.fund : null;
-  if (!f) { fundAndBook(next, parcels, amt, cat, { bbl }); return; }
+  // "principal" is a loan repaid, booked as the negative principal it is (logPrincipal), not an expense.
+  if (!f) {
+    if (cat === "principal") logPrincipal(next, -fundCashNeed(next, parcels, amt), bbl);
+    else fundAndBook(next, parcels, amt, cat, { bbl });
+    return;
+  }
   const call = Math.max(0, Math.min(f.uncalled, amt - Math.max(0, f.cash)));
   if (call > 0) {
     f.uncalled -= call;
@@ -2065,7 +2070,8 @@ function payFromPurse(next: GameState, parcels: ParcelTable, bbl: string, amt: n
     logBooks(next, "lpCalled", call); // LP equity in for this job — not income
   }
   moveFundCash(f, -amt, "build");
-  logBooks(next, cat, amt, bbl, true);
+  if (cat === "principal") logPrincipal(next, -amt, bbl, true);
+  else logBooks(next, cat, amt, bbl, true);
 }
 
 export function groundbreakPurse(s: GameState, parcels: ParcelTable, bbl: string): { total: number; fund: boolean; closed: string | null } {
@@ -2238,7 +2244,7 @@ export function startDevelopment(
   // Every closing cheque comes out of the purse that owns the deed: the
   // sponsor's (cash, then the line), or the vehicle's (cash, then a call on
   // uncalled commitments), booked as the vehicle's own movement.
-  const payAtClose = (amt: number, cat: "dev" | "debtSvc") => payFromPurse(next, parcels, bbl, amt, cat, !!vehicle);
+  const payAtClose = (amt: number, cat: "dev" | "debtSvc" | "principal") => payFromPurse(next, parcels, bbl, amt, cat, !!vehicle);
   // The origination fee is the lender's, paid at close and never part of the
   // job's own budget — folding it into the prefund would hand it back later as
   // free construction money.
@@ -2268,9 +2274,10 @@ export function startDevelopment(
   // the hedge is a financing cost, booked as such, paid at the close
   if (hedgeCost > 0) payAtClose(hedgeCost, "debtSvc");
   if (site.due > 0) {
-    // Retired the way payOffLoan retires a mortgage: principal and any break
-    // fee, booked as debt service, lien released.
-    payAtClose(site.due, "debtSvc");
+    // Retired the way payOffLoan retires a mortgage: the balance as principal
+    // repaid, any break fee as debt service, lien released.
+    payAtClose(site.balance, "principal");
+    payAtClose(site.penalty, "debtSvc");
     const nh = next.holdings[bbl];
     nh.loan = null;
     if (nh.mezz) nh.mezz = null;

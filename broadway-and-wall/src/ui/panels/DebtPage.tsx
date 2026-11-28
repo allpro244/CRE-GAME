@@ -6,7 +6,7 @@ import { useStore } from "@/state/store";
 import { CLASS_LABEL } from "@/data/types";
 import { monthLabel } from "@/engine/types";
 import { ownedHoldingValue, resolveRec, ownedContractNoiYr } from "@/engine/value";
-import { PRODUCTS, productById, payOffDue, rateCapCost, capStrikeFor, loanLender, dscr as loanDscr, ltv as loanLtv, statedLtv } from "@/engine/debt";
+import { PRODUCTS, productById, payOffDue, rateCapCost, capStrikeFor, loanLender, dscr as loanDscr, ltv as loanLtv, statedLtv, ltvTested } from "@/engine/debt";
 import { fundableNow, locRate, spendable } from "@/engine/credit";
 import type { FacilityQuote } from "@/engine/facility";
 import { facilityQuotes, facilityMetrics, facilityStatus, facilityDrawTerms, pledgeable, pledged, releaseCost, allocatedAmount, FACILITY_MIN_ASSETS, RELEASE_PREMIUM } from "@/engine/facility";
@@ -301,16 +301,23 @@ export function DebtPage() {
                     {pledged(game, h.bbl) ? <span className="dim"> · pledged</span> : null}
                   </td>
                   <td className="dim" title={flags}><BankLink name={loanLender(l)} /></td>
-                  <td className="num" title={`Payment ${usd(l.monthlyPmt)}/mo`}>{usd(l.balance)}</td>
+                  <td className="num" title={`Payment ${usd(l.monthlyPmt)}/mo${l.curedPaid ? ` · ${usd(l.curedPaid)} of principal paid by automatic covenant cures` : ""}`}>{usd(l.balance)}</td>
                   <td className="num">{l.ratePct.toFixed(2)}%{(l.floating ?? l.product === "float") ? " fl" : ""}</td>
                   <td className="num">
                     <span className={d !== null && l.minDSCR > 0 && d < l.minDSCR ? "neg" : ""}>{d !== null ? d.toFixed(2) : "—"}</span>
                     <span className="dim"> / {l.minDSCR > 0 ? l.minDSCR.toFixed(2) : "—"}</span>
                   </td>
-                  <td className="num">
-                    <span className={lv !== null && lv > l.maxLTV ? "neg" : ""}>{lv !== null ? (lv * 100).toFixed(0) + "%" : "—"}</span>
-                    <span className="dim"> / {(l.maxLTV * 100).toFixed(0)}%</span>
-                  </td>
+                  {ltvTested(l) ? (
+                    <td className="num">
+                      <span className={lv !== null && lv > l.maxLTV ? "neg" : ""}>{lv !== null ? (lv * 100).toFixed(0) + "%" : "—"}</span>
+                      <span className="dim"> / {(l.maxLTV * 100).toFixed(0)}%</span>
+                    </td>
+                  ) : (
+                    <td className="num" title="No LTV test during the term on this paper — LTV is an origination test">
+                      <span>{lv !== null ? (lv * 100).toFixed(0) + "%" : "—"}</span>
+                      <span className="dim"> / —</span>
+                    </td>
+                  )}
                   <td className={near ? "neg" : ""}>{monthLabel(l.maturityM)}</td>
                   <td className={"num" + (left <= 12 ? " neg" : "")}>{Math.max(0, left)}</td>
                   <td className={l.sweep ? "neg" : "dim"}>{l.sweep ? "swept" : "—"}</td>

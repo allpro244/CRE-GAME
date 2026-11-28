@@ -22,7 +22,7 @@ import { isCommercial, vacantSf, useVacantSf, walt, notReadySf, unitStatus, unit
 import { StackingList } from "@/ui/panels/StackingList";
 import { assignTenantFloors, stacksOf } from "@/engine/plates";
 import { supportableOcc } from "@/engine/absorption";
-import { dscr, ltv, payOffDue, rateCapCost, capStrikeFor, prepayPenalty, equityCureNeed } from "@/engine/debt";
+import { dscr, ltv, payOffDue, rateCapCost, capStrikeFor, prepayPenalty, equityCureNeed, ltvTested } from "@/engine/debt";
 import { fundableNow } from "@/engine/credit";
 import { demandNow } from "@/engine/demand";
 import { leaseholdQuote, landBuybackCost, LEASEHOLD_STEP } from "@/engine/leasehold";
@@ -1205,7 +1205,9 @@ function ParcelPanelInner({
               />
             )}
             {d !== null && <Row k="DSCR" v={d.toFixed(2) + " (min " + holding.loan.minDSCR.toFixed(2) + ")"} bad={d < holding.loan.minDSCR} />}
-            {l !== null && <Row k="LTV" v={(l * 100).toFixed(0) + "% (max " + (holding.loan.maxLTV * 100).toFixed(0) + "%)"} bad={l > holding.loan.maxLTV} />}
+            {l !== null && (ltvTested(holding.loan)
+              ? <Row k="LTV" v={(l * 100).toFixed(0) + "% (max " + (holding.loan.maxLTV * 100).toFixed(0) + "%)"} bad={l > holding.loan.maxLTV} />
+              : <Row k="LTV" v={(l * 100).toFixed(0) + "% (no LTV test)"} />)}
             {holding.loan.cap && <Row k="Rate cap" v={`base rate ≤ ${holding.loan.cap.strike.toFixed(2)}% until ${monthLabel(holding.loan.cap.expiresM)}`} />}
           </div>
           <div className="btn-row">

@@ -4757,7 +4757,7 @@ export function remainingAbatement(h: Holding, month: number): number {
  * dirt. It carried at $23.0M. Every single job in `pnpm devyield` marked
  * between 0.07x and 0.26x of cost the day the scaffolding came down.
  *
- * That is not a valuation. Net worth sets the revolver (locLimit), the revolver
+ * That is not a valuation. The mark sets the revolver (locLimit: gross asset value less debt), the revolver
  * funds the carry through lease-up, and the mark sets every LTV test the loan
  * has to pass — so finishing a building on time and on budget triggered a
  * margin call on the sponsor, in the exact month their costs peaked and their
@@ -5506,7 +5506,7 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
   // groundbreaking: a $16.78M cheque lifted reported net worth $62.25M and the
   // line of credit $41.16M. Over a run that develops continuously the worst
   // overstatement was $1.35 BILLION, forty-five per cent of reported net
-  // worth — and because locLimit sizes the revolver off net worth and
+  // worth — and because locLimit sized the revolver off it (now off gross asset value less debt) and
   // startDevelopment counts locAvailable toward its funding test, the phantom
   // equity partly authorised the NEXT job.
   //

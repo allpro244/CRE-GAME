@@ -456,7 +456,7 @@ export function CapitalBooks() {
           { k: "NOI", v: c((y) => y.noi) },
           { k: "Interest", v: c((y) => y.interest) },
           { k: "Sales", v: c((y) => y.sold) },
-          { k: "Borrowed", v: c((y) => y.borrowed ?? 0) },
+          { k: "Principal, net", v: c((y) => y.borrowed ?? 0) },
           { k: "Debt service", v: c((y) => y.debtSvc), neg: true },
           { k: "Leasing", v: c((y) => y.leasing), neg: true },
           { k: "Capex", v: c((y) => y.capex), neg: true },

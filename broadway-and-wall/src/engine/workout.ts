@@ -27,7 +27,7 @@
 // entire reason engine/lenders.ts exists.
 import type { ParcelTable } from "@/data/types";
 import type { Exit, GameState, Holding, Workout } from "./types";
-import { logBooks, moveDeposit, monthLabel, nextJulyAfter, cloneState, closeDeedLedger } from "./types";
+import { logBooks, logPrincipal, moveDeposit, monthLabel, nextJulyAfter, cloneState, closeDeedLedger } from "./types";
 import { firmShort } from "./firm";
 import { rrange } from "./market";
 import { ownedHoldingValue, resolveRec } from "./value";
@@ -37,7 +37,7 @@ import type { Lender } from "./lenders";
 import { markSponsor } from "./sponsor";
 import { recordComp } from "./comps";
 import { depositsOn } from "./leasing";
-import { fundCashNeed, fundableNow, fundAndBook } from "./credit";
+import { fundCashNeed, fundableNow } from "./credit";
 import { recordPropertyEvent } from "./history";
 import { transferGroundLeaseOffBook } from "./actions";
 import { money } from "./money";
@@ -332,7 +332,17 @@ function applyCurePayment(
   s: GameState, w: Workout, paid: number, recAddress: string,
 ): void {
   const h = s.holdings[w.bbl]!;
-  logBooks(s, "debtSvc", paid, w.bbl);
+  // PRINCIPAL IS NOT AN EXPENSE (logPrincipal). A covenant cure is all
+  // principal — it comes off the balance below. A balloon cure retires the
+  // note: its balance is principal, and what the cure asks above it (the
+  // default interest the meter ran, the fee) is the cost. Arrears and a
+  // junior's coupons are payments, and stay debt service.
+  if (w.cause === "covenant" && h.loan) logPrincipal(s, -paid, w.bbl);
+  else if (w.cause === "balloon" && h.loan) {
+    const principal = Math.min(paid, Math.max(0, h.loan.balance));
+    logPrincipal(s, -principal, w.bbl);
+    if (paid - principal > 0) logBooks(s, "debtSvc", paid - principal, w.bbl);
+  } else logBooks(s, "debtSvc", paid, w.bbl);
   if (w.cause === "balloon") {
     h.loan = null;
   } else if (w.cause === "covenant" && h.loan) {
@@ -563,7 +573,11 @@ export function requestForbearance(
         + `${(mood.paydownPct * 100).toFixed(0)}% paydown, ${money(due)} total. Not enough cash.`,
     };
   }
-  fundAndBook(next, parcels, due, "debtSvc", { bbl });
+  // The fee is the price of the extension; the paydown is principal repaid.
+  const paidX = fundCashNeed(next, parcels, due);
+  const feePaid = Math.min(fee, paidX);
+  if (feePaid > 0) logBooks(next, "debtSvc", feePaid, bbl);
+  logPrincipal(next, -(paidX - feePaid), bbl);
   const nh = next.holdings[bbl]!;
   nh.loan!.balance = Math.max(0, nh.loan!.balance - paydown);
   nh.loan!.ratePct = +(nh.loan!.ratePct + mood.bumpPct).toFixed(2);

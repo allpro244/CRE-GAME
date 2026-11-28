@@ -48,8 +48,9 @@
  * merely replaces the mortgages paid off at the table is a wash. Principal
  * that lands in the operating account (a cash-out draw) is booked to
  * `borrowed`, the same inflow bucket a cash-out refinance uses — so
- * conserve's identity can see it. Voluntary paydowns (release, repay) go to
- * `debtSvc`. Monthly amortisation already did.
+ * conserve's identity can see it. Voluntary paydowns (release, repay, a
+ * smaller refinance) are the same bucket, negative: principal repaid is not an
+ * expense (types.ts logPrincipal). Monthly amortisation stays in `debtSvc`.
  *
  * SO THE DECISION IS A REAL ONE. More proceeds, a lower coupon, one maturity
  * and one payment — against illiquidity, a single point of failure and your
@@ -60,7 +61,7 @@
 import type { ParcelTable } from "@/data/types";
 import type { ParcelRecord } from "@/data/types";
 import type { BuiltClass, Exit, GameState, Holding } from "./types";
-import { logBooks, monthLabel, cloneState, poolDeedLedger, moveDeposit, closeDeedLedger } from "./types";
+import { logBooks, logPrincipal, monthLabel, cloneState, poolDeedLedger, moveDeposit, closeDeedLedger } from "./types";
 import { depositsOn } from "./leasing";
 import { transferGroundLeaseOffBook } from "./actions";
 import { ownedHoldingNoiYr, ownedHoldingValue, ownedMonthlyNoi, resolveRec } from "./value";
@@ -70,7 +71,7 @@ import { sponsorStanding, markSponsor } from "./sponsor";
 import { foreclosureSale } from "./propmarket";
 import { recordComp } from "./comps";
 import { firmShort } from "./firm";
-import { fundCashNeed, fundableNow, spendable, fundAndBook } from "./credit";
+import { fundCashNeed, fundableNow, spendable } from "./credit";
 import { money } from "./money";
 import { monthlyPayment, scheduledPayment } from "./amortize";
 import { consentFor } from "./vehicles";
@@ -447,9 +448,8 @@ export function openFacility(
   // draw and belongs in `borrowed`, the same bucket a cash-out refinance uses.
   // conserve's identity used to be blind to both.
   logBooks(next, "debtSvc", fees + qt.penalties);
-  const cashOut = draw - qt.payoff;
-  if (cashOut > 0) logBooks(next, "borrowed", cashOut);
-  else if (cashOut < 0) logBooks(next, "debtSvc", -cashOut);
+  // Signed: a cash-out is +, a facility smaller than the loans it repays is −.
+  logPrincipal(next, draw - qt.payoff);
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Facility ${replacing ? "refinanced" : "closed"} · ${qt.lender} · $${(draw / 1e6).toFixed(1)}M across ${pool.length} buildings at `
@@ -513,7 +513,10 @@ export function releaseFromFacility(s: GameState, parcels: ParcelTable, bbl: str
   }
   const next: GameState = cloneState(s);
   const nf = next.facility!;
-  const paid = fundAndBook(next, parcels, price, "debtSvc");
+  // Every dollar of the release price comes off the facility's balance:
+  // principal repaid, not a cost of the debt (logPrincipal).
+  const paid = fundCashNeed(next, parcels, price);
+  logPrincipal(next, -paid);
   nf.balance = Math.max(0, nf.balance - paid);
   nf.bbls = nf.bbls.filter((b) => b !== bbl);
   const rec = resolveRec(parcels, next, bbl);
@@ -641,7 +644,10 @@ export function refinanceFacility(
   const terms = facilityDrawTerms(draw, qt.ratePct, qt.ioM, qt.amortYears, qt.quality.noi, qt.quality.value);
   const next: GameState = cloneState(s);
   const r = takeFacilityRoll(next, parcels, qt, draw);
-  logBooks(next, "debtSvc", r.spent);
+  // Fees are the cost; a smaller new base than the old balance is principal repaid.
+  const feePaid = Math.min(fees, r.spent);
+  if (feePaid > 0) logBooks(next, "debtSvc", feePaid);
+  logPrincipal(next, -(r.spent - feePaid));
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Facility refinanced · ${qt.lender} · $${(draw / 1e6).toFixed(1)}M across ${pool.length} buildings at `
@@ -738,7 +744,7 @@ export function repayFacility(
     pay = want;
     next.cash -= pay;
   }
-  logBooks(next, "debtSvc", pay);
+  logPrincipal(next, -pay);   // principal repaid, not debt service
   next.facility!.balance -= pay;
   if (next.facility!.balance <= 0) {
     const wasAccel = next.facility!.accelM !== undefined;

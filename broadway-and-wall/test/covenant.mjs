@@ -46,7 +46,7 @@ const RICH_CASH = 250e6;
 const THIN_CASH = 8e6;
 
 function run(rich) {
-  let files = 0, fclMonths = 0, richFiles = 0;
+  let files = 0, fclMonths = 0, richFiles = 0, forced = 0, dead = 0;
   const causes = {};
   const worst = [];
   for (let seed = 0; seed < N; seed++) {
@@ -99,8 +99,18 @@ function run(rich) {
         if (w.stage === "foreclosure" && cashBefore > 20e6) fclMonths++;
       }
     }
+    // A FIRM CAN ALSO LOSE ITS BUILDINGS WITHOUT A FILE: levied and sold when
+    // its account has been negative for six months (sim.ts insolvency), or
+    // wound up. Since the line obeys its total-leverage covenant (2026-11-28,
+    // credit.ts LOC_LTV) the thin firm — every dollar of its $8M in equity at
+    // 66% loan-to-value, no reserve — has no revolver behind it, and on town 0
+    // it was levied out of eleven buildings inside two years instead of
+    // limping on a line to seven arrears files. Leverage bit harder, and the
+    // file count alone read zero.
+    forced += (g.exits ?? []).filter((e) => e.forced).length;
+    if (g.gameOver) dead++;
   }
-  return { files, causes, richFiles, fclMonths, worst };
+  return { files, causes, richFiles, fclMonths, worst, forced, dead };
 }
 
 const pad = (s, n) => String(s).padEnd(n);
@@ -112,6 +122,7 @@ const thin = run(false);
 console.log(`  ${pad("", 26)}${pad("files opened", 15)}by cause`);
 console.log(`  ${pad("rich firm ($250M)", 26)}${pad(rich.files, 15)}${JSON.stringify(rich.causes)}`);
 console.log(`  ${pad("thin firm ($8M)", 26)}${pad(thin.files, 15)}${JSON.stringify(thin.causes)}`);
+console.log(`  ${pad("", 26)}forced sales: rich ${rich.forced}, thin ${thin.forced} · firms wound up: rich ${rich.dead}, thin ${thin.dead}`);
 console.log(`\n  files opened on a firm holding over $20M:  ${rich.richFiles + thin.richFiles}`);
 for (const w of [...rich.worst, ...thin.worst]) console.log(`    ${w}`);
 
@@ -136,12 +147,12 @@ if (rich.fclMonths > 0) {
 }
 // SIDE TWO — the over-correction, which is the easier mistake to make.
 const thinCauses = Object.keys(thin.causes).length;
-if (thin.files === 0) {
+if (thin.files === 0 && thin.forced === 0 && thin.dead === 0) {
   bad++;
-  console.log("  FAIL  a thinly capitalised, levered firm went 35 years without a single file.");
+  console.log(`  FAIL  a thinly capitalised, levered firm went ${HZ / 12} years without a single file or forced sale.`);
   console.log("        The equity cure has become an exemption. Leverage has to bite somebody.");
 } else {
-  console.log(`  OK    the thin firm still lost files — ${thin.files} across ${thinCauses} cause(s).`);
+  console.log(`  OK    the thin firm still lost buildings — ${thin.files} file(s) across ${thinCauses} cause(s), ${thin.forced} forced sale(s), ${thin.dead} wound up.`);
 }
 console.log("");
 process.exit(bad ? 1 : 0);

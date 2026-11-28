@@ -26,7 +26,7 @@
 // market for good (demand.ts isCivicLand), as the town's neighbourhoods do.
 import type { ParcelTable, ParcelRecord } from "@/data/types";
 import type { GameState, HomeUnit, HomesState, HomeBuilder, PlatPL, LotContract, LotOffer, LotListing, Exit } from "./types";
-import { cloneState, monthLabel, closeDeedLedger, logBooks, START_YEAR } from "./types";
+import { cloneState, monthLabel, closeDeedLedger, logBooks, logPrincipal, START_YEAR } from "./types";
 import { ownerOf } from "./rivals";
 import { rng, HPI_CHASE_M } from "./market";
 import { resolveRec, assetValue, initialCondition, farmUsePsf } from "./value";
@@ -517,7 +517,7 @@ function sellLot(s: GameState, parcels: ParcelTable, parent: string, builder: st
   if (h.loan?.ad && h.loan.balance > 0) {
     const due = Math.round(h.loan.balance);
     s.cash -= due;
-    logBooks(s, "debtSvc", due, bbl);
+    logPrincipal(s, -due, bbl);   // the lot's release: principal repaid at the closing table
     h.loan = null;
   }
   const pl = plOf(homesOf(s), parent);

@@ -21,6 +21,7 @@ let bad = 0;
 const check = (ok, msg) => { console.log(`  ${ok ? "OK  " : "FAIL"}  ${msg}`); if (!ok) bad++; };
 const K = (x) => `$${Math.round(x / 1e3)}K`;
 const debtSvc = (g) => (g.books ?? []).reduce((a, e) => a + (e.debtSvc ?? 0), 0);
+const borrowed = (g) => (g.books ?? []).reduce((a, e) => a + (e.borrowed ?? 0), 0);
 
 console.log("\nPAYDOWN — part of the principal, on the note's own terms\n");
 
@@ -47,7 +48,10 @@ check(!r.err, `pays down ${K(amt)} of ${K(loan0.balance)}${r.err ? ": " + r.err 
 const g1 = r.s, loan1 = g1.holdings[bbl].loan;
 check(Math.abs(loan0.balance - loan1.balance - amt) < 1, `the balance falls by exactly the amount (${K(loan0.balance)} → ${K(loan1.balance)})`);
 check(Math.abs((g.cash - g1.cash) - (amt + pen)) < 1, `cash falls by the amount plus the prepayment charge (${K(g.cash - g1.cash)}, charge ${K(pen)} on "${loan0.prepay ?? "open"}" paper)`);
-check(Math.abs((debtSvc(g1) - debtSvc(g)) - (amt + pen)) < 1, "and every dollar of it is on the ledger as debt service");
+// PRINCIPAL IS NOT AN EXPENSE (playtest 2026-11-27, F1): the prepaid dollars are
+// principal repaid (negative `borrowed`); only the prepayment charge is debt service.
+check(Math.abs((debtSvc(g1) - debtSvc(g)) - pen) < 1, `only the prepayment charge is debt service (${K(debtSvc(g1) - debtSvc(g))})`);
+check(Math.abs((borrowed(g1) - borrowed(g)) + amt) < 1, `the amount is on the ledger as principal repaid (${K(borrowed(g1) - borrowed(g))})`);
 check(loan1.monthlyPmt < loan0.monthlyPmt, `the payment is re-cut lower (${K(loan0.monthlyPmt)} → ${K(loan1.monthlyPmt)} a month)`);
 check(g1.holdings[bbl].loan && g1.holdings[bbl].loan.maturityM === loan0.maturityM, "the note survives with its maturity");
 check(g.holdings[bbl].loan.balance === loan0.balance, "the caller's state is untouched");

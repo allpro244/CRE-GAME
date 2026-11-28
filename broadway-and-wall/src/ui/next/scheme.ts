@@ -20,8 +20,9 @@ import type { ParcelTable } from "@/data/types";
 import {
   planDevelopment, maxFloorsFor, maxCoverageFor, MIN_COVERAGE, maxRetailShare, zoneUseBar, devMix,
   devFundingNeed, groundbreakPurse, siteDebtAtGroundbreak, takeoutHedgeRequired, takeoutHedgeCost, constructionQuotes,
+  townBuilderRead, type DevPlan,
 } from "@/engine/dev";
-import { landRead, resolveRec } from "@/engine/value";
+import { landRead, resolveRec, DEV_MARGIN } from "@/engine/value";
 import { CONSTRUCTION_LENDER } from "@/engine/lenders";
 import { productOf, productsForUse, layoutProduct, type ProductKey, type ProductType } from "@/engine/products";
 import { heldByRaises } from "@/engine/raise";
@@ -68,7 +69,54 @@ export function productsHere(use: DevUse, lotSf: number): ProductType[] {
   return use === "retail" || use === "industrial" ? productsForUse(use).filter((p) => !!layoutProduct(p, lotSf)) : [];
 }
 
-export function deskScheme(game: GameState, parcels: ParcelTable, bbl: string, over?: Draft) {
+/**
+ * THE VERDICT IN ONE SENTENCE, read by the desk and the map card alike. The
+ * desk's own line is the merchant builder's margin (DEV_MARGIN on the plan's
+ * hurdle); the town's is whether any builder here would start the same plan
+ * on its own margin (dev.ts townBuilderRead — the city's own start tests).
+ * A plan that misses the first and clears the second is one the town builds
+ * and the merchant would not, and the sentence says both.
+ */
+export function verdictNote(plan: DevPlan, street: { h: number; who: string | null } | null): string {
+  const m = Math.round(DEV_MARGIN * 100);
+  if (plan.hurdleRatio >= 1) return `Pencils: clears a merchant builder's ${m}% margin.`;
+  const vc = plan.hurdleRatio * (1 + DEV_MARGIN);
+  const pct = Math.round(Math.abs(vc - 1) * 100);
+  // not asked of the town (a conversion): the merchant's line alone
+  if (!street) return vc >= 1 ? `Worth ${pct}% more than it costs, short of a merchant builder's ${m}% margin.` : "It would be worth less than it costs.";
+  if (street.h >= 1) {
+    // The anonymous merchants ask the merchant's own margin (rivals.ts
+    // anonHurdle), so when they are the ones who build, it is their read of
+    // rent (the leans) or easier credit than usual (equityStretch) that
+    // carries it, not a thinner margin. A named firm reads the plan
+    // at its own margin and through its own rent outlook (firmHurdle).
+    if (!street.who) {
+      return vc >= 1
+        ? `Worth ${pct}% more than it costs, under a merchant's ${m}% on today's rent, but the town's merchant builders would build it on where they think rent is going and what the desks lend now.`
+        : `Worth ${pct}% less than it costs on today's rent, but the town's merchant builders would build it on where they think rent is going and what the desks lend now.`;
+    }
+    return vc >= 1
+      ? `Worth ${pct}% more than it costs, under a merchant's ${m}%, but ${street.who} would build it on its own margin and rent outlook.`
+      : `Worth ${pct}% less than it costs on today's rent, but ${street.who} would build it on where it thinks rent is going.`;
+  }
+  // -Infinity: no construction desk lends on it and no builder here builds on its own money (streetRead)
+  if (!Number.isFinite(street.h)) return "No builder in town could start this today: no construction desk lends on it, and nobody here builds on their own money.";
+  return vc >= 1
+    ? `No builder in town would start this today: worth ${pct}% more than it costs, short of every builder's margin.`
+    : "No builder in town would start this today: it would be worth less than it costs.";
+}
+
+/** The verdict's colour: green well clear of the merchant's margin, amber at it — or under it where the town would still build — red otherwise. */
+export function verdictTone(hurdleRatio: number, street: { h: number } | null): "good" | "warn" | "bad" {
+  return hurdleRatio >= 1.08 ? "good" : hurdleRatio >= 1 ? "warn" : street && street.h >= 1 ? "warn" : "bad";
+}
+
+/**
+ * `withStreet` asks the town whether it would build the scheme
+ * (townBuilderRead). Only the scheme on screen asks; the sweep of starting
+ * points (bestStarts) does not.
+ */
+export function deskScheme(game: GameState, parcels: ParcelTable, bbl: string, over?: Draft, withStreet = true) {
   const rec = resolveRec(parcels, game, bbl) ?? parcels[bbl];
   const draft: Draft = { ...(game.holdings[bbl]?.devDraft ?? {}), ...(over ?? {}) };
   const fresh = !game.holdings[bbl]?.devDraft && !over;
@@ -124,9 +172,14 @@ export function deskScheme(game: GameState, parcels: ParcelTable, bbl: string, o
     : short > 0 ? `Short ${Math.round(short / 1000).toLocaleString()}K`
     : null;
   const commitArgs = [use, floors, cov, contract, ltc, { ...custom, design, takeout }, plan?.lender ?? bank, spec] as const;
+  // WOULD THE TOWN BUILD IT: the same scheme at the desk's full advance, which
+  // is what a builder on the desk's money underwrites (planMax).
+  const street = withStreet && planMax ? townBuilderRead(game, parcels, bbl, planMax, use) : null;
+  const note = plan ? verdictNote(plan, street) : null;
   return {
     rec, draft, use, legal, prods, product, floors, top, cov, spec, ltcWant, design, plan, planMax, bar, prospect: bts,
     siteDebt, takeout, hedge, need, have, short, worth, profit, quote, quotes, bank, why, purse, commitArgs, contract, groundRetail,
+    street, verdictNote: note,
   };
 }
 export type DeskScheme = ReturnType<typeof deskScheme>;
@@ -144,11 +197,11 @@ export function bestStarts(game: GameState, parcels: ParcelTable, bbl: string, n
     const top = topFloors(rec, u);
     const steps = [...new Set([2, 4, 6, 8, 12, 16, 20, 25, 30, 40, top].filter((f) => f >= 1 && f <= top))];
     for (const f of steps) {
-      const d = deskScheme(game, parcels, bbl, { use: u, floors: f, cov: coverFor(rec, u, f), product: undefined, spec: 0.5, ltcWant: 1 });
+      const d = deskScheme(game, parcels, bbl, { use: u, floors: f, cov: coverFor(rec, u, f), product: undefined, spec: 0.5, ltcWant: 1 }, false);
       if (d.plan) out.push({ use: u, floors: f, hurdle: d.plan.hurdleRatio, profit: d.profit });
     }
     for (const p of productsHere(u, rec.lotArea)) {
-      const d = deskScheme(game, parcels, bbl, { use: u, product: p.key, spec: 0.5, ltcWant: 1 });
+      const d = deskScheme(game, parcels, bbl, { use: u, product: p.key, spec: 0.5, ltcWant: 1 }, false);
       if (d.plan) out.push({ use: u, floors: 1, product: p.key, hurdle: d.plan.hurdleRatio, profit: d.profit });
     }
   }

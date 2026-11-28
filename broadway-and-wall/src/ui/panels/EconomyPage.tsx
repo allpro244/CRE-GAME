@@ -1136,7 +1136,8 @@ export function EconomyPage() {
           const d = ((e.rentIdx[focus] / RENT_BASE[focus]) - 1) * 100;
           return `$${e.rentIdx[focus].toFixed(2)}/sf · ${d >= 0 ? "+" : "−"}${Math.abs(d).toFixed(0)}% vs long-run base`;
         })()} why={<WhyButton id={rentWhy(game, focus)} />} />
-        <Row k="Cap rate" v={capReadLine(e, focus) ?? `${e.capRate[focus].toFixed(2)}%`} why={<WhyButton id={capWhy(game, focus)} />} />
+        <Row k="Cap rate" v={capReadLine(e, focus) ?? `${e.capRate[focus].toFixed(2)}%`} why={<WhyButton id={capWhy(game, focus)} />}
+          title="Yield on NOI after property tax. The Build desk divides NOI before tax by this cap plus the tax rate: the same value." />
         {/* THE CAP AGAINST THE BASE RATE (owner, 2026-11-12: "people using the
             10 year to price cap rates"): the spread buyers are getting over
             the rate, and what their loans cost. The cap is still the market's

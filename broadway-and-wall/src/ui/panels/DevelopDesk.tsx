@@ -9,20 +9,13 @@ import { useHeldGame } from "@/ui/heldGame";
 import type { GameState } from "@/engine/types";
 import type { ParcelTable } from "@/data/types";
 import LandDesk from "@/ui/panels/LandDesk";
-import { resolveRec, DEV_MARGIN } from "@/engine/value";
+import { resolveRec } from "@/engine/value";
 import { heldByRaises } from "@/engine/raise";
 import { adaptiveReuseEligibility, planAdaptiveReuse, reuseZoneBar, devFundingNeed, groundbreakPurse } from "@/engine/dev";
 import { usd, sf } from "@/ui/format";
 import { useLabel, Row, LocSplitHint, Verdict } from "@/ui/panels/shared";
 import { BuildDesk, schemeName } from "@/ui/next/BuildDesk";
-import { deskScheme } from "@/ui/next/scheme";
-
-// What a plan short of its hurdle is still worth over its cost. The required
-// yield carries the merchant builder's margin, so value / basis is
-// hurdle × (1 + DEV_MARGIN) — the same capitalisation the mark uses.
-const shortNote = (h: number) => h * (1 + DEV_MARGIN) >= 1
-  ? ` Finished, it would still be worth ${((h * (1 + DEV_MARGIN) - 1) * 100).toFixed(0)}% more than it cost — thinner than the ${(DEV_MARGIN * 100).toFixed(0)}% a merchant builder needs.`
-  : " Finished, it would be worth less than it cost.";
+import { deskScheme, verdictNote, verdictTone } from "@/ui/next/scheme";
 
 export function ReuseSection({ bbl }: { bbl: string }) {
   const game = useHeldGame(bbl);
@@ -78,9 +71,11 @@ export function ReuseSection({ bbl }: { bbl: string }) {
             <Row k="Yield / hurdle" v={`${plan.yieldOnCost.toFixed(2)}% / ${plan.requiredYield.toFixed(2)}%`}
               strong bad={plan.hurdleRatio < 1} />
           </div>
+          {/* The merchant's line only: whether to convert below it is the owner's call, as on a new building. */}
+          <div className="hint">{verdictNote(plan, null)}</div>
           <LocSplitHint need={equity} game={game} parcels={parcels} />
           <button className="btn btn-buy"
-            disabled={plan.hurdleRatio < 1 || short > 0}
+            disabled={short > 0}
             onClick={() => useStore.getState().convertUse(bbl, target, mixed)}>
             Convert to {target === "multifamily" ? "apartments" : "mixed use"} · {usd(equity)}
           </button>
@@ -143,10 +138,10 @@ export function DevelopGlance({ bbl }: { bbl: string }) {
         <Verdict
           label={`Yield on cost · ${schemeName(d)} · ${sf(plan.sf)}`}
           value={`${plan.yieldOnCost.toFixed(2)}%`}
-          tone={plan.hurdleRatio >= 1.08 ? "good" : plan.hurdleRatio >= 1 ? "warn" : "bad"}
-          note={plan.hurdleRatio >= 1
-            ? `Pencils against ${plan.requiredYield.toFixed(2)}% required. ${usd(closeCheque)} at groundbreak, ${usd(plan.equity + plan.pointsCost + d.siteDebt)} all in, ${plan.months} months.`
-            : `Does not pencil — ${plan.requiredYield.toFixed(2)}% is required on cost.${shortNote(plan.hurdleRatio)}`}
+          tone={verdictTone(plan.hurdleRatio, d.street)}
+          note={`${d.verdictNote ?? ""} ${plan.hurdleRatio >= 1
+            ? `${usd(closeCheque)} at groundbreak, ${usd(plan.equity + plan.pointsCost + d.siteDebt)} all in, ${plan.months} months.`
+            : `${plan.requiredYield.toFixed(2)}% is required on cost for a merchant's margin.`}`}
         />
       ) : (
         <div className="hint">{d.bar ?? `No scheme prices on this lot — ${sf(d.rec.lotArea)} of land.`}</div>

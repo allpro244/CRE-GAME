@@ -781,7 +781,7 @@ function ProfitAndLoss() {
         </thead>
         <tbody>
           {line("Rental revenue", "rev", { sub: true, note: "rent, recoveries, other income" })}
-          {line("Interest income", "intInc", { sub: true, note: "interest on cash, plus the fund's interest on your GP advances when it repays them (inside the firm, so not on the cash-flow line)" })}
+          {line("Interest income", "intInc", { sub: true, note: "interest on cash, plus the LPs' share of the interest the fund pays on your GP advances, when it repays them (inside the firm, so not on the cash-flow line)" })}
           {years.some((y) => y.fees) && line("Syndicate fees", "fees", { sub: true, note: "development and asset management" })}
           {line("Total revenue", "totalRev", { strong: true, rule: true })}
           {line("Property operating costs", "propOpex", { sign: -1, sub: true, note: "opex, management, property tax, ground rent" })}

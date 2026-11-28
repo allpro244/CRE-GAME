@@ -45,7 +45,7 @@ function needsYou(game: GameState, rec: ParcelRecord, h: Holding): { text: strin
     return { text: `${soon.length} lease${soon.length === 1 ? " ends" : "s end"} by ${monthLabel(soon[soon.length - 1].endM)} · ${sf(feet)}`, tab: "leasing" };
   }
   const r = rec.class !== "land" && rec.bldgArea > 0 ? occRead(rec, h) : null;
-  if (r && r.lettableOcc < 0.6) return { text: `${occLabel(r)} occupied`, tab: "leasing" };
+  if (r && r.lettableOcc < 0.6) return { text: `${occLabel(r)} let`, tab: "leasing" };   // the lettable read is "let"; "occupied" is the physical (appraisal) basis
   return null;
 }
 

@@ -5299,6 +5299,8 @@ export interface ValueBridge {
   /** the facts the lines quote */
   info: {
     cls: string; occ: number; stabOcc: number; walt: number;
+    /** live commercial leases: with none, the roll's gap rides the market's clock (no lease to hold it) */
+    leases: number;
     /** the stabilised NOI after tax the building's cap is struck on (cap × stab) */
     stabNoi: number;
     /** the flats' roll against their market (a share), and the months the roll takes to turn; null without flats */
@@ -5362,6 +5364,7 @@ function buildBridge(
     steps, mark, total: steps.reduce((a, st) => a + st.v, 0), band, parts: p,
     info: {
       cls: rec.class, occ: physicalOcc(rec, h), stabOcc: stabilisedOccupancy(rec, econ),
+      leases: h.tenants.filter((t) => !t.defaulted).length,
       walt: sfTot > 0 ? h.tenants.reduce((a, t) => a + ((t.endM - month) / 12) * t.sf, 0) / sfTot : 0,
       stabNoi: p.cap * p.stab, flatsVsMkt, flatsMonths,
     },

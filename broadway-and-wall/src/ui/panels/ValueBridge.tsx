@@ -36,9 +36,12 @@ export function bridgeLine(key: BridgeKey, br: Bridge): { label: string; tip: st
         tip: "Twelve-month leases: about a twelfth of the flats re-let each month (fewer under rent stabilisation), so the gap to market lasts as long as the roll takes to turn.",
       };
     }
-    case "leaseRoll": return {
-      label: `Leases vs a stabilised roll (${Math.round(100 * i.occ)}% let vs ${Math.round(100 * i.stabOcc)}%), until they end${i.walt > 0 ? ` (WALT ${i.walt.toFixed(1)} y)` : ""}`,
+    case "leaseRoll": return i.leases > 0 ? {
+      label: `Leases vs a stabilised roll (${Math.round(100 * i.occ)}% let vs ${Math.round(100 * i.stabOcc)}%), until they end (WALT ${i.walt.toFixed(1)} y)`,
       tip: "The market cap is a cap on a stabilised roll at effective rent. Rent, occupancy and face rent above or below that are worth their difference only for each lease's remaining term (Appraisal Institute, The Appraisal of Real Estate, ch. 22).",
+    } : {
+      label: `Occupancy vs a stabilised roll (${Math.round(100 * i.occ)}% let vs ${Math.round(100 * i.stabOcc)}%), on the market's clock`,
+      tip: "With no commercial lease to hold it, the gap to a stabilised roll closes at the market's pace: about a quarter a year (Wheaton & Torto).",
     };
     case "vacancy": return {
       label: "Vacant space, on the market's lease-up clock",

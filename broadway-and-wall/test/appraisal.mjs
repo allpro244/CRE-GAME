@@ -107,7 +107,7 @@ const pct = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.mi
       const h = r.s.holdings[li.bbl];
       const mark = E.holdingValue(rec, r.s.econ, h, r.s.month);
       // the closing resets the assessment to the price; that tax delta, capitalised, is the whole allowed gap
-      const capUsed = (E.capRateFor(rec, r.s.econ, h.condition, h.condIdx) + E.rollQualitySpread(rec, h, r.s.month, r.s.econ)) / 100;
+      const capUsed = E.capRateFor(rec, r.s.econ, h.condition, h.condIdx) / 100;   // the building's own cap (the roll spread was retired 2026-11-28)
       // ...in either direction: a building bought under its standing assessment
       // has its tax bill CUT by the closing, and that saving capitalises into
       // the mark just as an increase comes out of it (1659 Old Federal St,

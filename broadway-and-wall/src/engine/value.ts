@@ -4005,8 +4005,9 @@ export interface Disclosure {
  * shop with one short tenant, and under it on a full block of flats.
  *
  * A lender's appraiser, a buyer's underwriter and the seller's broker all
- * read the same thing: the rent roll in hand, capitalised at the cap rate
- * the roll's quality earns, taxed at the standing assessment. That is
+ * read the same thing: the rent roll in hand, its gap to market held for as
+ * long as its leases run, capitalised at the building's cap rate, taxed at
+ * the standing assessment. That is
  * `holdingValue` on the disclosed roll, which is the same function the deed
  * will be marked with after the closing — so the only thing that changes at
  * the closing table is the tax reassessment at the price, and the card says
@@ -4602,9 +4603,6 @@ export function industryConcentration(h: Holding, econ?: Econ): { share: number;
   return { share: topV / total, sector: top, stressed: stressed / total };
 }
 
-/** The trade of space assumed re-let (`rollQualitySpread` relet): its own, and not in trouble (no industry reads it). */
-const RELET_TRADE = "\u0000relet" as unknown as Sector;
-
 /** The largest tenant's share of the rent roll. */
 export function concentration(h: Holding): number {
   let top = 0, total = 0;
@@ -4614,114 +4612,6 @@ export function concentration(h: Holding): number {
     if (annual > top) top = annual;
   }
   return total > 0 ? top / total : 0;
-}
-
-/**
- * Residential does not have a rent roll to grade — it has an occupancy, and
- * every lease on it is a twelve-month lease to an unrated household. Grading
- * it through the commercial machinery gave the same answer every time: no
- * named tenants, therefore "an empty building is a project", therefore a flat
- * 55bp penalty on the cap, forever, on a building running at 96% full. Price
- * it on the only thing that actually varies.
- */
-function residentialSpread(h: Holding): number {
-  const occ = h.occ ?? 0.95;
-  return clamp((0.94 - occ) * 2.2, -0.12, 0.85);
-}
-
-/**
- * `relet`: grade the roll AS IF `relet.sf` more feet were let today on one
- * fresh lease at `relet.rentPsf` — what an appraiser assumes of space still
- * to let (`leaseUpMark`). The new lease is the class's ordinary term
- * (market.ts LEASE_TERM_M), the street's average covenant (1.05 on the 0-2
- * scale [D: tenantBooks.ts STREET_GRADE_SF, 0.30 x 2 + 0.45 x 1]), on the
- * class's lease basis (shops and sheds net), and is a name and a trade of
- * its own that is not in trouble: a one-tenant building re-let is still a
- * one-tenant building.
- */
-export function rollQualitySpread(rec: ParcelRecord, h: Holding, month: number, econ?: Econ, relet?: { sf: number; rentPsf: number }): number {
-  if (relet && relet.sf > 0 && rec.class !== "land" && rec.bldgArea) {
-    const cls = rec.class as BuiltClass;
-    const net = cls === "retail" || cls === "industrial";
-    const phantom = {
-      ...(h.tenants[0] ?? {}), name: "\u0000relet", fid: undefined, sf: relet.sf, rentPsf: relet.rentPsf, credit: 1.05,
-      startM: month, endM: month + LEASE_TERM_M[cls], recovery: net ? "nnn" : "gross", net, use: cls, sector: RELET_TRADE,
-    } as unknown as Tenant;
-    return rollQualitySpread(rec, { ...h, tenants: [...h.tenants, phantom] }, month, econ);
-  }
-  if (rec.class === "land" || !rec.bldgArea) return 0.55;
-  // The commercial part is what the tenants lease. Measuring a rent roll
-  // against the WHOLE building marked a full block of flats with shops at
-  // grade as 12% occupied and priced it as a shell.
-  const commSf = rec.bldgArea * clamp(commercialShare(rec), 0, 1);
-  const resShare = clamp(1 - commSf / rec.bldgArea, 0, 1);
-  if (!h.tenants.length) {
-    return resShare > 0.5 ? residentialSpread(h) : 0.55;   // an empty commercial building really is a project
-  }
-  let sfTot = 0, wCredit = 0, wYears = 0, nnnSf = 0, wRev = 0;
-  for (const t of h.tenants) {
-    sfTot += t.sf;
-    wCredit += t.credit * t.sf;
-    wYears += Math.max(0, (t.endM - month) / 12) * t.sf;
-    if (recoveryOf(t) === "nnn") nnnSf += t.sf;
-    // THE REVERSION MARK.
-    //
-    // A rent roll is not only how long and how good — it is where the contract
-    // sits against the market, and for how long you are stuck with the answer.
-    // Paper twenty per cent UNDER market with nine years to run is a building
-    // whose income cannot grow: the reversion a buyer is paying for is a decade
-    // away, so they cap it wider. Paper twenty per cent OVER market is worse,
-    // and asymmetrically so — the income is going to FALL on a date everybody
-    // underwriting it can read. Only paper near market, or short paper
-    // anywhere, earns the tight number.
-    //
-    // Without this the spread was blind to rent level, so a seven-year lease at
-    // three quarters of market graded as good covenant. Measured over 945
-    // arriving letters: 94.4% of them, if signed, IMPROVED the building's grade
-    // (median 31bps tighter) and only 4.1% worsened it. Signing was a free
-    // upgrade on every axis the engine priced, which is most of why "Accept"
-    // was the right answer to 52% of the decisions in the game.
-    if (econ) {
-      const mkt = managedRentPsfYr(rec, econ, h, t.use);
-      if (mkt > 0.5) {
-        const off = Math.abs(1 - t.rentPsf / mkt);       // how far from market, either way
-        const yrs = Math.max(0, (t.endM - month) / 12);  // how long you are stuck with it
-        const over = t.rentPsf > mkt ? 1.4 : 1;          // over-rented is the harder problem
-        wRev += clamp((off - 0.05) * 3.0 * Math.min(1, yrs / 6) * over, -0.25, 0.70) * t.sf;
-      }
-    }
-  }
-  if (!sfTot) return resShare > 0.5 ? residentialSpread(h) : 0.55;
-  const occ = sfTot / Math.max(1, commSf);
-  const walt = wYears / sfTot;
-  const credit = wCredit / sfTot;                       // 0..2
-  // long paper and good covenants compress the cap; short paper widens it
-  // Term premium saturates: the tenth year of a lease adds less certainty than
-  // the second. Smooth in WALT, same 11bp/yr slope at zero, -0.30 asymptote.
-  const waltSpread = 0.45 - 0.75 * (1 - Math.exp(-walt * 0.11 / 0.75));
-  const creditSpread = 0.18 - 0.20 * credit;            // +0.18 unrated, −0.22 investment grade
-  const occSpread = clamp((0.9 - occ) * 1.4, -0.10, 0.75);
-  const structSpread = -0.10 * (nnnSf / sfTot);         // net paper is easier to finance
-  // CONCENTRATION. A building where one name is most of the income is not an
-  // income stream, it is a bet on that name, and the market prices it as one.
-  // Single-tenant assets trade wide unless the covenant is bond-grade and the
-  // term is long — which is exactly the combination that makes them trade
-  // tight. Both halves of that live in `concSpread`.
-  const conc = concentration(h);
-  const covenantRelief = credit >= 1.6 && walt >= 8 ? 0.55 : credit >= 1.6 ? 0.25 : 0;
-  const concSpread = clamp((Math.max(0, conc - 0.35) / 0.65) * 0.75 * (1 - covenantRelief), 0, 0.75);
-  // INDUSTRY CONCENTRATION, which the single-name measure above cannot see.
-  // Five law firms is five names and one cycle, and a building whose one trade
-  // is currently in a bust is a leasing project wearing a rent roll — the
-  // market prices both, and it prices the second one harder.
-  const ind = industryConcentration(h, econ);
-  const indSpread = clamp((Math.max(0, ind.share - 0.45) / 0.55) * 0.40 + ind.stressed * 0.55, 0, 0.85);
-  // The roll's distance from market (wRev) is no longer a spread: holdingValue
-  // prices it in dollars, term and reversion. Kept as a reading only.
-  void wRev;
-  const comm = waltSpread + creditSpread + occSpread + structSpread + concSpread + indSpread;
-  // A mixed building is graded as what it is: part rent roll, part occupancy.
-  return resShare > 0.02 ? comm * (1 - resShare) + residentialSpread(h) * resShare : comm;
 }
 
 /**
@@ -4912,7 +4802,7 @@ function termAndReversionParts(
 
 function leaseUpMark(
   rec: ParcelRecord, econ: Econ, h: Holding, month: number,
-  capNoRoll: number, cap: number, contractNoi: number, stabNoi: number,
+  cap: number, contractNoi: number, stabNoi: number,
   /** Any vacancy, not only a first lease-up: see VACANCY IS A LEASE-UP TOO. */
   anyVacancy = false,
 ): { mark: number; weight: number } | null {
@@ -4927,30 +4817,22 @@ function leaseUpMark(
   if (!(gap > 0)) return null;
   // THE SAME BUILDING, WITH THE GAP LET AT MARKET, marked the ordinary way —
   // both legs of holdingValue's blend, on the owner's own operating statement
-  // (its own tax bill, its own opex, the leases it has actually signed).
-  // The roll spread on the cap belongs to the part of the stabilised roll that
-  // exists; the part that does not exist yet is priced by the deductions in
-  // leaseUpMarkAt (its risk line is the "empty building is a project" spread
-  // in dollars), so charging both would price the same vacancy twice. At a
-  // full gap it is the plain cap, at no gap it is exactly the blend's cap.
+  // (its own tax bill, its own opex, the leases it has actually signed), at
+  // the building's own cap.
   //
-  // ...AND THE GAP, ONCE LET, IS A LEASE LIKE ANY OTHER (2026-11-19). The cap
-  // here shed the roll's whole spread in proportion to the gap, so a building
-  // that lost its only tenant was valued "filled" at the cap of a building
-  // with no roll to grade — tighter than the cap it carried the day before.
-  // Measured on 32 held buildings (seed 31337, month 300), each emptied on a
-  // clone: the one-tenant commercial rolls carried +1.4 to +2.1 points, the
-  // "filled" value came out 16-37% over the let building's own mark, and the
-  // deductions below (15-34% of stabilised) all but cancelled it — sheds
-  // marked 0.96 of let when empty, shops 0.87, while the street's bidders
-  // paid 0.57-0.66 of that. A one-tenant building re-let is a one-tenant
-  // building: the roll is graded with the gap let on a fresh market lease
-  // (`rollQualitySpread` relet). Flats have no roll to grade and are as they were.
+  // ONE CAP, LET OR FILLED (2026-11-28). This read a cap with the roll-quality
+  // spread on it, shed in proportion to the gap (and from 2026-11-19 re-graded
+  // with the gap let on a fresh lease), because the let building carried the
+  // spread and the filled one had to match it or an emptied one-tenant shed
+  // marked 0.96 of let. The spread is gone from valuation (see
+  // holdingValueParts), from the let building and the filled one alike, so
+  // the mismatch it patched cannot recur: what the 2026-11-19 fix measured —
+  // a one-tenant building re-let is still a one-tenant building — is now read
+  // by term and reversion on the filled roll below, a lease of the class's
+  // ordinary term, not by a spread.
   const gapSf = gap * rentableSf(rec);
   const flats = clamp(1 - commercialShare(rec), 0, 1) > 0.5;
-  const capFilled = flats
-    ? capNoRoll + (cap - capNoRoll) * clamp(letShare / Math.max(0.01, stabOcc), 0, 1)
-    : capNoRoll + rollQualitySpread(rec, h, month, econ, { sf: gapSf, rentPsf: marketRentPsfYr(rec, econ, h.condition, h.condIdx) }) / 100;
+  const capFilled = cap;
   const gapNoi = leaseUpGapNoiYr(rec, econ, h, gapSf);
   const filledNoi = contractNoi + gapNoi;
   const yFilled = capFilled + taxRate(econ) * taxBorneShare(rec);
@@ -4985,7 +4867,7 @@ function leaseUpMark(
   const cls = rec.class as BuiltClass;
   const toLetM = leaseUpMonthsOf(econ, cls, 0, 0, scoreVacOf(econ, cls, overallScore(rec, econ, cls, h.condIdx)), false);
   const forgone = gapNoi * toLetM / 12;
-  const mark = leaseUpMarkAt(rec, econ, h.condition, sinceM, letShare, capNoRoll, filled, h.condIdx, forgone);
+  const mark = leaseUpMarkAt(rec, econ, h.condition, sinceM, letShare, cap, filled, h.condIdx, forgone);
   return mark === null ? null : { mark, weight };
 }
 
@@ -5399,8 +5281,9 @@ export function registerRolloverReader(fn: (s: GameState, rec: ParcelRecord, h: 
  * With no positive in-place NOI there is nothing to divide: the bridge starts
  * at the stabilised value and adds the gap legs whole. A step smaller than
  * the larger of $1,000 and half a per cent of the mark is folded into
- * "other" so a screen shows what matters and the sum stays exact. [M: a
- * display threshold, not a quantity.]
+ * "other" so a screen shows what matters and the sum stays exact — except
+ * the anchor, this building's cap and the appraiser's read, which always
+ * show. [M: a display threshold, not a quantity.]
  */
 export type BridgeKey = "anchor" | "stabilised" | "buildingCap" | "flatsRoll" | "leaseRoll" | "vacancy"
   | "firstLeaseUp" | "vacancyFloor" | "freeRent" | "landFloor" | "taxAbatement" | "groundRent"
@@ -5457,7 +5340,11 @@ function buildBridge(
   const steps: { key: BridgeKey; v: number }[] = [];
   let other = 0;
   for (const st of raw) {
-    if (st.key === "anchor" || st.key === "stabilised" || Math.abs(st.v) >= small) steps.push(st);
+    // the anchor, this building's cap against the index, and the appraiser's
+    // own read always show (the first two are the cap the screen quotes)
+    const start = st.key === "anchor" || st.key === "stabilised";
+    const named = st.key === "buildingCap" || st.key === "appraiser";
+    if (start || (named && st.v !== 0) || Math.abs(st.v) >= small) steps.push(st);
     else other += st.v;
   }
   if (Math.abs(other) >= 0.5) steps.push({ key: "other", v: other });
@@ -5567,9 +5454,30 @@ function holdingValueParts(rec: ParcelRecord, econ: Econ, h: Holding, month?: nu
     return dirt(landValue(bare, econ));
   }
   if (rec.class === "land" || !rec.bldgArea) return dirt(landValue(rec, econ));
-  const quality = month === undefined ? 0 : rollQualitySpread(rec, h, month, econ);
-  const capNoRoll = capRateFor(rec, econ, h.condition, h.condIdx) / 100;
-  const cap = (capRateFor(rec, econ, h.condition, h.condIdx) + quality) / 100;
+  // THE BUILDING'S OWN CAP, AND NOTHING ADDED (2026-11-28). A roll-quality
+  // spread (rollQualitySpread: single name +0.75 pt, one trade +0.40, short
+  // WALT up to +0.45, unrated credit +0.18, occupancy, a flats-occupancy
+  // term) was added to this cap. It is retired from valuation:
+  //   - the street's bidders, whose closed trades set the cap index
+  //     (propmarket.ts valueTo and the survey), never priced it, so the
+  //     appraiser alone discounted what no buyer did — measured on let
+  //     listings (seed 12007, months 1, 6, 12), the second-best street bid ran
+  //     1.24x the appraisal on one-tenant buildings, 1.20x on multi-tenant,
+  //     1.16x on flats;
+  //   - none of its constants carried a source;
+  //   - it counted risks twice: the industry term re-charged a one-tenant
+  //     building's single-name charge (+1.15 points on every such building),
+  //     and its occupancy terms charged vacancy the term-and-reversion gap and
+  //     the vacancy floor already price — on gross feet, so a full building
+  //     read 89% (F18);
+  //   - term is now priced in dollars, lease by lease (termAndReversionParts).
+  // Measured on the F20 shed (one tenant, credit B, 9.2 years at market): the
+  // mark was 23% under NOI over the cap index, 12 points of it this spread.
+  // Concentration still matters to a LENDER: debt.ts collateralHaircut keeps
+  // reading concentration and industryConcentration. If credit quality
+  // should move value, the right term is a sourced credit-loss line in both
+  // valueTo and here, not a spread on one side.
+  const cap = capRateFor(rec, econ, h.condition, h.condIdx) / 100;
   // CONTRACT rent, not the rent that happens to be arriving this month.
   //
   // This line used to read `h.renovatingUntilM ?? -1`, and month −1 is inside
@@ -5638,7 +5546,7 @@ function holdingValueParts(rec: ParcelRecord, econ: Econ, h: Holding, month?: nu
   // on its own as the space lets — see leaseUpMark. It never marks BELOW the
   // ordinary blend, so a job that fills fast keeps the upside the roll has
   // earned it. And it never marks below the clear site: landAppraisalFloor.
-  const asIs = month === undefined ? null : leaseUpMark(rec, econ, h, month, capNoRoll, cap, contractNoi, stabNoi);
+  const asIs = month === undefined ? null : leaseUpMark(rec, econ, h, month, cap, contractNoi, stabNoi);
   // The dirt floor follows the age of the fabric, not the roll: a new tower
   // that let fast is no more a demolition candidate than one still filling.
   const floor = landAppraisalFloor(rec, econ,
@@ -5654,7 +5562,7 @@ function holdingValueParts(rec: ParcelRecord, econ: Econ, h: Holding, month?: nu
   // that it does not (leaseUpMarkAt). That is a floor under the blend, not a
   // replacement for it: a roll above market still marks above it.
   const vac = month === undefined || inGut ? null
-    : leaseUpMark(rec, econ, h, month, capNoRoll, cap, contractNoi, stabNoi, true);
+    : leaseUpMark(rec, econ, h, month, cap, contractNoi, stabNoi, true);
   const firstUp = asIs !== null ? blended + asIs.weight * Math.max(0, asIs.mark - blended) : blended;
   const marked = vac !== null ? Math.max(firstUp, vac.mark) : firstUp;
   const freehold = Math.max(floor, marked - abate) + (tAb?.pv ?? 0);

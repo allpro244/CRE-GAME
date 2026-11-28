@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { returnsToDate } from "@/engine/standing";
 import { useStore } from "@/state/store";
 import { monthLabel } from "@/engine/types";
-import { initialCondition, marketAppraisal, ownedHoldingNoiYr, resolveRec, rollQualitySpread, operatingStatement, remainingAbatement, inPlace } from "@/engine/value";
+import { initialCondition, marketAppraisal, ownedHoldingNoiYr, resolveRec, operatingStatement, remainingAbatement, inPlace } from "@/engine/value";
 import { farMaxFor, maxBuildable, replacementCost } from "@/engine/dev";
 import { dscr } from "@/engine/debt";
 import "@/ui/cleanup-building.css";
@@ -172,8 +172,6 @@ export function PropertyPage() {
               if (h.tenants.length > 0) f.push({ k: "WALT", v: `${walt(h, game.month).toFixed(1)} y`, bad: walt(h, game.month) < 3 });
               const os = operatingStatement(rec, game.econ, h, game.month);
               f.push({ k: "Leakage", v: `${(os.leakage * 100).toFixed(0)}%`, title: "Opex and tax not recovered from tenants.", bad: os.leakage > 0.45 });
-              const rq = rollQualitySpread(rec, h, game.month, game.econ);
-              f.push({ k: "Roll", v: `${rq >= 0 ? "+" : ""}${(rq * 100).toFixed(0)} bps`, title: "Cap rate spread from term, credit and vacancy. Positive = price discount.", bad: rq > 0.15 });
               if (remainingAbatement(h, game.month) > 0) f.push({ k: "Free rent owed", v: usd(-remainingAbatement(h, game.month)), bad: true, title: "Concessions granted and not yet burned off; a buyer credits this off the price." });
               const rc = replacementCost(rec as never, game.econ);
               if (rc) f.push({ k: "V / RC", v: `${(value / rc).toFixed(2)}×`, title: "Appraisal / replacement cost. Above 1× invites new supply.", bad: value / rc > 1.25 });

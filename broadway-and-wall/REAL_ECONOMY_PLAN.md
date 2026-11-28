@@ -590,6 +590,7 @@ Every function that values a building or a lot reads **one** income model. Funct
   - One NOI definition: effective rent at stabilised occupancy, less opex, less a reserve on **both** sides, sourced (NCREIF/Green Street apartment reserves of $250-400 per unit a year).
   - In-place leases enter as the PV of the gap to market over each lease's *remaining term* (`assetValue`'s method, not `holdingValue`'s perpetual 55%).
 - **Done when:** the cap implied by a print, re-applied to the same building, returns its price (±1%).
+- **Status (2026-11-28, branch `fix/value`):** for `holdingValue` and the street's `valueTo`, the first and third Fault bullets are done. The 55/45 blend was already gone. The roll-quality spread is retired from valuation, and in-place leases enter as their gap to a stabilised roll over each lease's remaining term (`value.ts rollTerms` / `rollDurations`), with the flats over the roll's own monthly turn. The reserve asymmetry and the "Done when" re-application test are still open.
 
 ### 2.4 Face rent, effective rent and free rent, once
 - **Fault:**

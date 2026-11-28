@@ -1911,7 +1911,7 @@ export function tickLeasing(s: GameState, parcels: ParcelTable) {
         // of technology boom never improved a roll and a five-year bust never
         // degraded one — measured at zero credit changes across 163 tenancies.
         // It already drives default odds, deposit size, the renewal discount
-        // and the quality spread a buyer pays. This is the only wire missing.
+        // and the lender's haircut. This is the only wire missing.
         // ...on the tenant's own numbers, rated the way an agency rates: the
         // lower of what its size earns (creditOfSize, the street's covenant
         // rule, on the feet its headcount needs today) and what its interest

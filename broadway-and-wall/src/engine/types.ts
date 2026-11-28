@@ -5304,7 +5304,9 @@ function probeUntagged(s: GameState, key: string, amt: number) {
     // "at Module.refinance (" / "at Object.foo (" / "at tickLoc (" -> the bare name
     const m = /at ([\w$.]+) /.exec(f);
     const name = (m?.[1] ?? "?").split(".").pop()!;
-    if (name === "logBooks" || name === "probeUntagged" || name === "fundAndBook") continue;
+    // logPrincipal is booking plumbing too (a signed `borrowed` wrapper):
+    // the call site is whoever called it.
+    if (name === "logBooks" || name === "logPrincipal" || name === "probeUntagged" || name === "fundAndBook") continue;
     who = name;
     break;
   }

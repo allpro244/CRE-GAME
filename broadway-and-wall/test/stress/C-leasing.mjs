@@ -72,6 +72,10 @@ const med = (xs) => { const a = [...xs].sort((x, y) => x - y); return a.length ?
 const qtl = (xs, p) => { const a = [...xs].sort((x, y) => x - y); return a.length ? a[Math.min(a.length - 1, Math.floor(p * a.length))] : NaN; };
 const pct = (x) => (Number.isFinite(x) ? `${(100 * x).toFixed(1)}%` : "  —  ");
 const k = (x) => `${(x / 1000).toFixed(0)}k`;
+// The roll's price on the cap, in points: the appraisal's implied cap (contract NOI / mark) over the
+// building's own cap. It was rollQualitySpread until that spread was retired from valuation
+// (2026-11-28, value.ts holdingValueParts): term is now priced lease by lease in dollars.
+const rollCapGap = (rec, h, g) => 100 * E.contractNoiYr(rec, g.econ, h, g.month) / Math.max(1, E.holdingValue(rec, g.econ, h, g.month)) - E.capRateFor(rec, g.econ, h.condition, h.condIdx);
 
 /** Deep-pocketed on purpose, so the question is the SPACE market and never the
  *  capital one. Every test here is about who walks through the door. */
@@ -600,7 +604,7 @@ function test8() {
         rollShare: rollSf / total, noiReal, occMin, vacMonths, leftSf, renewedSf,
         pMed: med(intents), pP10: qtl(intents, 0.1), pCeil: intents.filter((p) => p >= 0.955).length / Math.max(1, intents.length),
         valueReal: rec && hh ? E.holdingValue(rec, g.econ, hh, g.month) / cpi : NaN,
-        spread: rec && hh ? E.rollQualitySpread(rec, hh, g.month, g.econ) : NaN,
+        spread: rec && hh ? rollCapGap(rec, hh, g) : NaN,
         walt: hh ? E.walt(hh, g.month) : NaN,
       };
     }
@@ -737,7 +741,7 @@ function test9(runs) {
       // No rng has been consumed differently yet, so this is a pure appraisal
       // difference and not a path.
       const t0 = {
-        spread: E.rollQualitySpread(rec0, h, g.month, g.econ),
+        spread: rollCapGap(rec0, h, g),
         value: E.holdingValue(rec0, g.econ, h, g.month),
         cap: E.capRateFor(rec0, g.econ, h.condition),
       };

@@ -9,21 +9,31 @@
 // covenant test — in exchange for a senior rent that rises every year and is
 // paid before anything else.
 //
-// ONE PRICE, TWO READERS. The fee sells for the land's value; the ground rent
-// is that price times the ground-lease yield (value.ts `groundYieldPct`). The
-// building is then marked as its freehold value less that same rent at that
-// same yield (`leaseholdGroundPv`), so the transaction moves value only by its
-// costs. What the owner buys with those costs is liquidity, and what they
-// give up is the land's appreciation and a rent that compounds at 2% whatever
-// the building's own rents do.
+// ONE FUNCTION PRICES THE FEE YOU SELL, THE FEE YOU BUY BACK, AND EVERY CITY
+// LEASED FEE (value.ts `groundLeasePv`). The fee sells for the land's value;
+// the opening ground rent is the rate that makes the lease worth exactly that
+// land (`groundRentRate`), so the transaction moves value only by its costs.
+// The rent steps 2% a year and resets to market (the land as if vacant, times
+// the ground rate) every twenty years, never down (GROUND_FMV_RESET_M). The
+// building is marked as its freehold value less the leased fee, which carries
+// the land: the lessee is short the dirt until the next reset, and buying the
+// fee back costs what the fee is worth — the rent to the reset, then the land.
+// What the owner buys with the costs is liquidity, and what they give up is
+// the land's appreciation and a rent that compounds whatever the building's
+// own rents do.
+//
+// It used to be a flat perpetuity at today's yield with no reset: measured on
+// seed 12007, the land under one building rose to $6.26M in fifteen years and
+// the fee bought back for $1.24M, and net worth with the leaseback passed the
+// owner who never sold (playtest F4, 2026-11-27).
 //
 // The fee buyer is not modelled as an owner on the map: the rent leaves the
 // book, and when the leasehold is sold the next owner takes it on at a price
-// that already carries it. Buying the land back is at the rent's value today.
+// that already carries it.
 import type { ParcelTable } from "@/data/types";
 import type { GameState, Holding } from "./types";
 import { cloneState, logBooks } from "./types";
-import { bareLandRec, groundYieldPct, landValue, leaseholdGroundPv, ownedHoldingValueFromRec, resolveRec } from "./value";
+import { bareLandRec, GROUND_FMV_RESET_M, groundRentRate, landValue, leaseholdGroundPv, ownedHoldingValueFromRec, resolveRec } from "./value";
 import { stackPayoff } from "./debt";
 import { fundCashNeed, fundableNow } from "./credit";
 import { CAP_GAINS_RATE } from "./actions";
@@ -80,8 +90,11 @@ export function leaseholdQuote(s: GameState, parcels: ParcelTable, bbl: string):
   if (why || !h || !rec) return { ok: false, why: why ?? "Unknown parcel.", ...zero };
   const bare = bareLandRec(parcels, s, bbl) ?? rec;
   const price = Math.round(landValue(bare, s.econ));
-  const yieldPct = groundYieldPct(s.econ);
-  const rentYr = Math.round(price * yieldPct / 100);
+  // The opening rent that makes the lease worth the land it sells: the 2%
+  // steps to the first market reset, then the land. At target inflation the
+  // step is the growth a buyer underwrites and this is the ground yield.
+  const rentYr = Math.round(price * groundRentRate(s.econ, LEASEHOLD_STEP, 1, Math.min(GROUND_FMV_RESET_M, LEASEHOLD_TERM_M) / 12));
+  const yieldPct = price > 0 ? 100 * rentYr / price : 0;
   const costs = Math.round(price * (transferTaxRate(s) + LEASEHOLD_DEAL_COST));
   const stack = stackPayoff(h, s.month, s.econ);
   const payoff = stack.balance + stack.penalty;
@@ -91,7 +104,10 @@ export function leaseholdQuote(s: GameState, parcels: ParcelTable, bbl: string):
   const gain = price - costs - landBasis;
   const tax = Math.max(0, Math.round(gain * CAP_GAINS_RATE));
   const toOwner = price - costs - payoff - tax;
-  const after = { ...h, groundRentOut: { holder: "", rentYr, stepPct: LEASEHOLD_STEP, startM: s.month, endM: s.month + LEASEHOLD_TERM_M, lastStepM: s.month, price } } as Holding;
+  const after = { ...h, groundRentOut: {
+    holder: "", rentYr, stepPct: LEASEHOLD_STEP, startM: s.month, endM: s.month + LEASEHOLD_TERM_M, lastStepM: s.month, price,
+    resetEveryM: GROUND_FMV_RESET_M, lastResetM: s.month,
+  } } as Holding;
   const valueAfter = ownedHoldingValueFromRec(s, rec, after);
   if (toOwner < 0) {
     return { ok: false, why: `The land sells for less than the mortgage, its break fee and the tax — $${Math.round(-toOwner).toLocaleString()} short. A fee buyer will not take it subject to your lender.`, price, rentYr, yieldPct, costs, payoff, tax, toOwner, valueBefore, valueAfter };
@@ -128,20 +144,28 @@ export function sellLandLeaseBack(
   h.groundRentOut = {
     holder, rentYr: q.rentYr, stepPct: LEASEHOLD_STEP, startM: next.month,
     endM: next.month + LEASEHOLD_TERM_M, lastStepM: next.month, price: q.price,
+    resetEveryM: GROUND_FMV_RESET_M, lastResetM: next.month,
   };
   const addr = rec.address ?? bbl;
   next.news.unshift({
     q: next.month, kind: "deal",
     text: `Sold the land under ${addr} to ${holder} for $${q.price.toLocaleString()} and leased it back for 99 years `
-      + `at $${q.rentYr.toLocaleString()} a year, rising 2% a year.`
+      + `at $${q.rentYr.toLocaleString()} a year, rising 2% a year and reset to market every ${GROUND_FMV_RESET_M / 12} years (never down).`
       + (q.payoff > 0 ? ` The mortgage was retired from the proceeds.` : ""),
   });
   return { s: next, msg: `Land sold for $${q.price.toLocaleString()} — $${Math.round(q.toOwner).toLocaleString()} to you after costs${q.payoff > 0 ? ", the mortgage" : ""} and tax.` };
 }
 
-/** What the fee costs to buy back today: the ground rent at the ground yield, plus the transfer. */
-export function landBuybackCost(s: GameState, h: Holding): number {
-  const pv = leaseholdGroundPv(h, s.econ);
+/**
+ * What the fee costs to buy back today: what it is worth to its owner — the
+ * rent to the next market reset, then the land at that reset (groundLeasePv,
+ * on the lot as if vacant) — plus the transfer tax and legal.
+ */
+export function landBuybackCost(s: GameState, parcels: ParcelTable, h: Holding): number {
+  if (!h.groundRentOut) return 0;
+  const bare = bareLandRec(parcels, s, h.bbl);
+  const land = bare ? landValue(bare, s.econ) : 0;
+  const pv = leaseholdGroundPv(h, s.econ, land, s.month, resolveRec(parcels, s, h.bbl)?.bldgArea ?? 0);
   return Math.round(pv * (1 + transferTaxRate(s) + LEASEHOLD_DEAL_COST));
 }
 
@@ -151,7 +175,7 @@ export function buyLandBack(
 ): { s: GameState; err?: string; msg?: string } {
   const h0 = s.holdings[bbl];
   if (!h0?.groundRentOut) return { s, err: "You own the land here." };
-  const cost = landBuybackCost(s, h0);
+  const cost = landBuybackCost(s, parcels, h0);
   if (fundableNow(s, parcels) < cost) return { s, err: `Land buyback costs $${cost.toLocaleString()}; not enough cash or line.` };
   const next = cloneState(s);
   const paid = fundCashNeed(next, parcels, cost);
@@ -165,8 +189,14 @@ export function buyLandBack(
   return { s: next, msg: `Bought the land back for $${cost.toLocaleString()}.` };
 }
 
-/** The annual step, on each lease's own anniversary. Mutates `s`. */
-export function tickLeaseholds(s: GameState): void {
+/**
+ * The annual step, on each lease's own anniversary, and the market reset every
+ * `resetEveryM` (GROUND_FMV_RESET_M): the rent goes to the land as if vacant
+ * times the opening rate for the stretch ahead — the same rate the fee sold
+ * at — unless the stepped rent is already above it (no-decrease clause). The
+ * step clock restarts at the reset. Mutates `s`.
+ */
+export function tickLeaseholds(s: GameState, parcels: ParcelTable): void {
   for (const h of Object.values(s.holdings)) {
     const g = h.groundRentOut;
     if (!g) continue;
@@ -174,5 +204,22 @@ export function tickLeaseholds(s: GameState): void {
       g.rentYr = Math.round(g.rentYr * (1 + g.stepPct));
       g.lastStepM += 12;
     }
+    const every = g.resetEveryM ?? GROUND_FMV_RESET_M;
+    if (s.month - (g.lastResetM ?? g.startM) < every || s.month >= g.endM) continue;
+    const bare = bareLandRec(parcels, s, h.bbl);
+    if (!bare) continue;
+    const yrsLeft = (g.endM - s.month) / 12;
+    const market = Math.round(landValue(bare, s.econ) * groundRentRate(s.econ, g.stepPct, 1, Math.min(every / 12, yrsLeft)));
+    const old = g.rentYr;
+    g.rentYr = Math.max(old, market);
+    g.lastResetM = s.month;
+    g.lastStepM = s.month;
+    const addr = resolveRec(parcels, s, h.bbl)?.address ?? h.bbl;
+    s.news.unshift({
+      q: s.month, kind: g.rentYr > old ? "warn" : "info",
+      text: g.rentYr > old
+        ? `Ground rent under ${addr} reset to market by ${g.holder}: $${old.toLocaleString()} → $${g.rentYr.toLocaleString()} a year (${every / 12}-year review).`
+        : `Ground rent under ${addr} reviewed at market by ${g.holder}; stays $${old.toLocaleString()} a year (no-decrease clause).`,
+    });
   }
 }

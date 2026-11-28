@@ -133,6 +133,59 @@ console.log("\nLAND LOAN BLOCKS THE OFFER\n");
   check(!!towerQ && !towerQ.padOnly, "75-year paper allows tower reversion");
 }
 
+console.log("\nONE LEASED-FEE FUNCTION · SIGNING IS VALUE-NEUTRAL\n");
+{
+  // A lease signed off the desk's own quote is worth the land on the day it
+  // signs, on the same arithmetic every leased fee and leasehold is marked
+  // with (value.ts groundLeasePv) — whatever the review and the term.
+  const landBbl = bbls.find((x) =>
+    x !== bbl && parcels[x]?.class === "land" && (parcels[x]?.lotArea ?? 0) > 2_000
+    && !g.holdings[x] && !g.built?.[x]);
+  const bare = E.bareLandRec(parcels, g, landBbl);
+  const land = E.landValue(bare, g.econ);
+  for (const review of ["fixed", "cpi", "fmv"]) {
+    for (const years of [99, 55]) {
+      const q = E.groundLeaseQuote(g, parcels, landBbl, years, review);
+      const gl = {
+        bbl: landBbl, startM: g.month, endM: g.month + years * 12,
+        rentYr: q.rentYr, openRentYr: q.rentYr, stepPct: q.stepPct, stepEveryM: q.stepEveryM,
+        lastStepM: g.month, tenant: "Neutral Test", review, fmvCapPct: q.fmvCapPct,
+        use: "retail", sf: 20_000, floors: 1,
+      };
+      const fee = E.leasedFeeValue(gl, bare, g.econ, g.month, 20_000);
+      check(Math.abs(fee / land - 1) < 0.01,
+        `${review} ${years}y at ${q.capPct.toFixed(2)}%: leased fee ${Math.round(fee).toLocaleString()} vs land ${Math.round(land).toLocaleString()} (${((fee / land - 1) * 100).toFixed(2)}%)`);
+      const one = Math.round(E.groundLeasePv(E.groundLeaseTerms(gl, g.econ, g.month, 20_000), land, g.econ));
+      if (years === 99) check(fee === one, `${review}: leasedFeeValue is groundLeasePv on the lease's terms (one function)`);
+    }
+  }
+  // At 5% expected inflation the growth a buyer underwrites outruns FMV
+  // paper's 3.5% cap, so the reset is capped in expectation; the opening
+  // rent must still sign at the land (value.ts neutralGroundRent). The
+  // closed form alone opened it at 0.87 × land.
+  {
+    const hot = { ...g, econ: { ...g.econ, inflExp: 0.05, nat: { ...(g.econ.nat ?? {}), inflExp: 0.05 } } };
+    for (const years of [99, 55]) {
+      const q = E.groundLeaseQuote(hot, parcels, landBbl, years, "fmv");
+      const gl = {
+        bbl: landBbl, startM: hot.month, endM: hot.month + years * 12,
+        rentYr: q.rentYr, openRentYr: q.rentYr, stepPct: q.stepPct, stepEveryM: q.stepEveryM,
+        lastStepM: hot.month, tenant: "Neutral Test", review: "fmv", fmvCapPct: q.fmvCapPct,
+        use: "retail", sf: 20_000, floors: 1,
+      };
+      const fee = E.leasedFeeValue(gl, bare, hot.econ, hot.month, 20_000);
+      const landHot = E.landValue(bare, hot.econ);
+      check(Math.abs(fee / landHot - 1) < 0.01,
+        `fmv ${years}y at 5% inflation (cap binds) at ${q.capPct.toFixed(2)}%: leased fee ${Math.round(fee).toLocaleString()} vs land ${Math.round(landHot).toLocaleString()}`);
+    }
+  }
+  // The leasehold reads the same function: its liability is the leased fee
+  // of its own terms, on the same bare lot.
+  const gro = { holder: "x", rentYr: Math.round(land * 0.05), stepPct: 0.02, startM: g.month, endM: g.month + 1188, lastStepM: g.month, price: land, resetEveryM: 240, lastResetM: g.month };
+  check(E.leaseholdGroundPv({ groundRentOut: gro }, g.econ, land, g.month) === Math.round(E.groundLeasePv(E.leaseholdTerms(gro, g.month), land, g.econ)),
+    "a leasehold's liability is the same function on its own terms");
+}
+
 console.log("\nLESSEE RESPECTS LEGAL FAR\n");
 {
   const landBbl = bbls.find((x) =>

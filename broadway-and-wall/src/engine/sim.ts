@@ -22,7 +22,7 @@ import { materializeNeighbourhoods, materializeNeighbourhood } from "./unpack";
 import { useRentableSf, overallScore, N_BANDS, isRevaluation } from "./value";
 import { syncStreetRolls, tickStreetRolls, tickStreetFlats } from "./streetRolls";
 import { settleLeasingPayables, tickLeasing, applyReliefRule, sheetReview, depositsOn, stampListing, conveyedValue, loiSigningCash, exclusiveFeeRate, agentCashReserve, lineDeskMayDraw, loiNeedsPrincipal, vacantSf, vehicleSigns, vehiclePurse } from "./leasing";
-import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook } from "./actions";
+import { tickSales, tickListingAbsorption, tickBrokerCalls, tickGroundLeases, saleTaxQuote, transferGroundLeaseOffBook, exchangeTaxAtRisk } from "./actions";
 import { tickLeaseholds } from "./leasehold";
 import { stampYearMark, recordMarks } from "./standing";
 import { splitMonthCf } from "./jv";
@@ -908,7 +908,7 @@ function tickMonth(
   tickLeasing(s, parcels);
   applyReliefRule(s, parcels);
   tickGroundLeases(s, parcels);
-  tickLeaseholds(s);
+  tickLeaseholds(s, parcels);
   tickBuildToSuit(s, parcels);
   tickSales(s, parcels, adjacency);
   // The dirt reprices off what the dirt has been fetching — after the month's
@@ -922,14 +922,24 @@ function tickMonth(
   tickTakePrivateApproach(s, parcels); // and a board that wants out rings the buyers who could close
   tickTalks(s, parcels);             // a negotiation left open goes stale
 
-  // the 1031 clock: redeploy in time or the deferred tax comes due
+  // The 1031 clock: at the close of the window, whatever gain the replacement
+  // bought did not cover is boot, and its share of the deferred tax is due —
+  // all of it when nothing was bought (actions.ts applyExchangeReplacement).
   if (s.exchange && s.month > s.exchange.deadlineM) {
-    s.cash -= s.exchange.deferredTax;
-    s.taxesPaid = (s.taxesPaid ?? 0) + s.exchange.deferredTax;
-    logBooks(s, "taxes", s.exchange.deferredTax);
+    const ex = s.exchange;
+    const recognised = Math.max(0, ex.rolledGain - (ex.rolled ?? 0));
+    const tax = exchangeTaxAtRisk(ex);
+    if (tax > 0) {
+      s.cash -= tax;
+      s.taxesPaid = (s.taxesPaid ?? 0) + tax;
+      logBooks(s, "taxes", tax);
+    }
     s.news.unshift({
       q: s.month, kind: "warn",
-      text: `1031 window expired · ${money(s.exchange.deferredTax)} deferred capital-gains tax now due.`,
+      text: (ex.replaced ?? 0) > 0
+        ? `1031 window closed · ${money(ex.replaced ?? 0)} replaced of ${money(ex.minPrice)} · `
+          + `${money(recognised)} of gain recognised as boot · ${money(tax)} tax due.`
+        : `1031 window expired · ${money(tax)} deferred capital-gains tax now due.`,
     });
     s.exchange = null;
   }

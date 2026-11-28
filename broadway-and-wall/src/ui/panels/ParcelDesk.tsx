@@ -5,7 +5,7 @@
 //   DevelopDesk   ground-up + adaptive reuse (Programme · Design · Financing)
 import { AskNudge } from "./AskNudge";
 import { consentFor } from "@/engine/vehicles";
-import { marketAppraisal } from "@/engine/value";
+import { marketAppraisal, GROUND_FMV_RESET_M } from "@/engine/value";
 import { memo, useEffect, useRef, useState } from "react";
 import { useStore } from "@/state/store";
 import { useHeldGame } from "@/ui/heldGame";
@@ -1813,15 +1813,19 @@ function LeaseholdSection({ bbl }: { bbl: string }) {
   if (!h) return null;
   const g = h.groundRentOut;
   if (g) {
-    const cost = landBuybackCost(game, h);
+    const cost = landBuybackCost(game, parcels, h);
+    const resetM = (g.lastResetM ?? g.startM) + (g.resetEveryM ?? GROUND_FMV_RESET_M);
     return (
       <div className="deal">
         <div className="deal-head">Leasehold · fee owner {g.holder}</div>
         <div className="grid">
           <Row k="Ground rent" v={`${usd(g.rentYr)}/yr · +${(g.stepPct * 100).toFixed(0)}% each ${monthLabel(g.lastStepM + 12).split(" ")[0]}`} />
+          <Row k="Next market reset" v={`${monthLabel(resetM)} · never down`}
+            title="The rent goes to the land's value as if vacant times the ground rate, unless it is already higher." />
           <Row k="Term" v={`to ${monthLabel(g.endM)}`} />
           <Row k="Land sold for" v={usd(g.price)} />
-          <Row k="Buyback cost" v={usd(cost)} title="Ground rent / current yield + transfer and legal." />
+          <Row k="Buyback cost" v={usd(cost)}
+            title="What the fee is worth to its owner: the rent to the next market reset, then the land at that reset, discounted at the ground yield plus expected growth; plus transfer tax and legal." />
         </div>
         <div className="btn-row">
           <button className="btn" disabled={fundableNow(game, parcels) < cost} onClick={() => useStore.getState().buyLandBack(bbl)}>
@@ -1837,12 +1841,13 @@ function LeaseholdSection({ bbl }: { bbl: string }) {
     <div className="deal">
       <div className="deal-head">Land sale-leaseback</div>
       <div className="hint">
-        99-yr ground lease back to you. Ground rent reduces NOI and escalates annually. No maturity or covenants.
+        99-yr ground lease back to you. Ground rent reduces NOI, steps {(LEASEHOLD_STEP * 100).toFixed(0)}% a year and resets to market
+        (land value × the ground rate) every {GROUND_FMV_RESET_M / 12} years, never down. No maturity or covenants. You give up the land's appreciation.
       </div>
       {q.price > 0 && (
         <div className="grid">
           <Row k="Land price" v={usd(q.price)} />
-          <Row k="Ground rent" v={`${usd(q.rentYr)}/yr · ${q.yieldPct.toFixed(2)}% · +${(LEASEHOLD_STEP * 100).toFixed(0)}%/yr`} />
+          <Row k="Ground rent" v={`${usd(q.rentYr)}/yr · ${q.yieldPct.toFixed(2)}% of land · +${(LEASEHOLD_STEP * 100).toFixed(0)}%/yr · market reset every ${GROUND_FMV_RESET_M / 12} yrs`} />
           <Row k="Costs" v={usd(-q.costs)} />
           {q.payoff > 0 && <Row k="Mortgage retired" v={usd(-q.payoff)} />}
           {q.tax > 0 && <Row k="Tax on gain" v={usd(-q.tax)} />}

@@ -10,7 +10,7 @@ import { recentLowballs, sellerOf, strikeDeal, insultShareOfAsk } from "./acquir
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
 import { dollarLevel, rng, rrange, newsChance, BUILD_MONTHS, cycleHot, cycleDown, labourSlack, type RngChannel } from "./market";
-import { mergedTouched, ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec } from "./value";
+import { mergedTouched, ownedHoldingNoiYr, assetValue, marketAppraisal, netWorth, condGrade, initialCondition, initialCondIdx, ownedHoldingValue, landValue, renovationCost, RENO_MONTHS, resolveRec, inPlace, demandLinear, landPsfNow, landRead, worthTheCall, bareLandRec, rentableFromSpec, cpiGroundStep, groundRentRate, groundLeaseTerms, neutralGroundRent, GROUND_FMV_RESET_M } from "./value";
 import { locAvailable, sweepLocIdleCash, spendable, fundableNow, fundCashNeed, fundAndBook } from "./credit";
 import { hash01 } from "./competitorTraits";
 import { clearRivalClaims, marketAppetite, ownerOf, rivalAsk, rivalBuys, qualifiedBuyers, livingRivals, rivalCanClose, rivalsWhoCanClose, gradeOf, tie, firmSells, firmMaxPrice } from "./rivals";
@@ -224,6 +224,71 @@ export function buyQuote(s: GameState, parcels: ParcelTable, bbl: string, price:
   };
 }
 
+/**
+ * THE TAX A LIVE 1031 STILL OWES IF THE WINDOW CLOSED TODAY: the deferred tax
+ * on the gain not yet rolled into replacement property. Proportional to the
+ * gain, so the boot pays the sale's own blended rate — it does not order the
+ * §1250 recapture first, a refinement this engine does not draw.
+ */
+export function exchangeTaxAtRisk(ex: NonNullable<GameState["exchange"]>): number {
+  const G = ex.rolledGain;
+  return G > 0 ? Math.round(ex.deferredTax * Math.max(0, G - (ex.rolled ?? 0)) / G) : 0;
+}
+
+/**
+ * A REPLACEMENT PURCHASE AGAINST A LIVE 1031, and the boot when it falls short.
+ *
+ * Under IRC §1031(b) gain is recognised to the extent of boot, and a
+ * replacement worth less than what was relinquished leaves the shortfall as
+ * boot: deferred gain = realised gain − min(realised gain, relinquished price
+ * − replacement price). Several replacement properties bought inside the
+ * 180-day window count together (Treas. Reg. §1.1031(k)-1(c)(4), the
+ * three-property identification rule) [S~]. So this applies each purchase to
+ * the running total: the gain the new price covers rolls into the new deeds'
+ * basis (spread by price), and the rest stays at risk until the window
+ * closes, when it is taxed as boot (sim.ts). The deferral never exceeds the
+ * price bought, so a basis cannot go below its closing costs. Purchases made
+ * one at a time each take the deferral their own price added (the regulations
+ * spread the total over the properties by value; the total is the same, and
+ * an earlier deed's basis is not reopened).
+ *
+ * This replaced "a purchase of 80% of the sale price completes the exchange
+ * and defers all of it": a 20% trade-down sheltered the whole gain, and a
+ * fully depreciated sale rolled into a smaller deed left a negative basis
+ * (playtest F5, 2026-11-27). Cash and mortgage boot are not modelled: there is
+ * no qualified intermediary and the seller keeps the proceeds.
+ */
+export function applyExchangeReplacement(next: GameState, deeds: { h: Holding; price: number }[], what: string): void {
+  const ex = next.exchange;
+  if (!ex) return;
+  const P = ex.minPrice, G = Math.max(0, ex.rolledGain), Q0 = ex.replaced ?? 0;
+  const q = deeds.reduce((a, d) => a + Math.max(0, d.price), 0);
+  if (q <= 0) return;
+  const deferredAt = (Q: number) => Math.max(0, G - Math.max(0, P - Q));
+  const d = Math.round(deferredAt(Q0 + q) - deferredAt(Q0));
+  let left = d;
+  deeds.forEach((x, i) => {
+    const share = i === deeds.length - 1 ? left : Math.round(d * Math.max(0, x.price) / q);
+    x.h.costBasis = Math.max(0, x.h.costBasis - share);
+    left -= share;
+  });
+  ex.replaced = Q0 + q;
+  ex.rolled = (ex.rolled ?? 0) + d;
+  if (ex.replaced >= P) {
+    next.news.unshift({
+      q: next.month, kind: "deal",
+      text: `1031 completed · ${what} · ${money(ex.rolled)} gain rolled · ${money(ex.deferredTax)} tax deferred.`,
+    });
+    next.exchange = null;
+    return;
+  }
+  next.news.unshift({
+    q: next.month, kind: "deal",
+    text: `1031 · ${what}: ${money(q)} of replacement applied, ${money(d)} of gain rolled. Buy ${money(P - ex.replaced)} more by `
+      + `${monthLabel(ex.deadlineM)} or ${money(exchangeTaxAtRisk(ex))} of tax falls due on the shortfall (boot).`,
+  });
+}
+
 export function executePurchase(
   s: GameState, parcels: ParcelTable, bbl: string, price: number, product: BuyProduct, offMarket: boolean, lev = 1,
   // ONE DEED OF AN ENTITY DEAL (takeprivate.ts). The deed, the roll, the loan
@@ -234,7 +299,9 @@ export function executePurchase(
   // for the tape, and a partnership interest is not like-kind property, so it
   // cannot complete a 1031. The vehicle's cash is not a source for it either —
   // buying a competitor is the sponsor's balance sheet, not the LPs' deal.
-  opts?: { entity?: boolean },
+  // `noExchange`: one deed of a package the caller applies to a live 1031 as
+  // a whole once every deed has conveyed (portfoliosale.ts).
+  opts?: { entity?: boolean; noExchange?: boolean },
 ): { s: GameState; err?: string } {
   const entity = !!opts?.entity;
   if (s.cityGroundLeases?.[bbl]) {
@@ -407,16 +474,13 @@ export function executePurchase(
       recastPayment(holding.loan, next.month);
     }
   }
-  // a live 1031: this purchase completes the exchange if it's big enough
-  // Not on a fund deed: the vehicle's purchase cannot complete the sponsor's
-  // own exchange (its basis is the LPs' too).
-  if (!entity && !fromFund && next.exchange && price >= next.exchange.minPrice * 0.8) {
-    holding.costBasis -= next.exchange.rolledGain; // deferred gain carries into the new basis
-    next.news.unshift({
-      q: next.month, kind: "deal",
-      text: `1031 completed · ${rec.address} · ${money(next.exchange.rolledGain)} gain rolled · ${money(next.exchange.deferredTax)} tax deferred.`,
-    });
-    next.exchange = null;
+  // A live 1031: this purchase is replacement property, and the gain it can
+  // carry is the part its price covers (applyExchangeReplacement). Not on a
+  // fund deed: the vehicle's purchase cannot complete the sponsor's own
+  // exchange (its basis is the LPs' too). A package applies its deeds as one
+  // replacement, after all of them have conveyed (portfoliosale.ts).
+  if (!entity && !fromFund && !opts?.noExchange && next.exchange) {
+    applyExchangeReplacement(next, [{ h: holding, price }], rec.address);
   }
   // A DISTRESSED DEED ARRIVES DISTRESSED. The seller's urgency was priced in
   // the ask; what the buyer takes over is the reason for it — empty floors and
@@ -1042,38 +1106,48 @@ export function groundLeaseQuote(
   const bare = bareLandRec(parcels, s, bbl);
   if (!bare || !bare.lotArea) return null;
   const land = landValue(bare, s.econ);
-  // Base land yield: risk-free-ish plus a property spread. Longer terms pay
-  // less starting rent (more optionality for the lessee). Review structure
-  // moves the opening coupon the way the market does: FMV is cheapest to the
-  // lessee up front (and hardest to place), fixed is dearest.
-  //
-  // RESIDUAL IN THE COUPON. Paper short of tower term leaves a valuable
-  // reversion cliff the old quote never priced — a few land-yield points for
-  // thirty years, then a free building. Compress that cliff into a higher
-  // opening coupon and a harder place rate so short pad leases still clear
-  // and mispriced short tower paper mostly does not.
-  const termMult = years >= GROUND_TOWER_TERM_MIN ? 0.9
-    : years >= 60 ? 1.02
-    : 1.12;
-  const residualPremium = years >= GROUND_TOWER_TERM_MIN ? 1
-    : 1 + 0.55 * ((GROUND_TOWER_TERM_MIN - years) / (GROUND_TOWER_TERM_MIN - GROUND_TERM_MIN));
-  const reviewMult = review === "fmv" ? 0.88 : review === "cpi" ? 0.95 : 1.0;
+  // How hard the structure is to place: FMV paper is the hardest for a lessee
+  // to finance, fixed the easiest, and short pad paper has fewer takers. This
+  // sets the arrival odds (tickGroundLeases), not the price.
   let takeMult = review === "fmv" ? 0.55 : review === "cpi" ? 0.85 : 1.0;
   if (years < GROUND_TOWER_TERM_MIN) {
     takeMult *= 0.45 + 0.55 * ((years - GROUND_TERM_MIN) / (GROUND_TOWER_TERM_MIN - GROUND_TERM_MIN));
   }
-  const capPct = Math.max(3.2, s.econ.indexRate * 0.62 + 2.5) * termMult * reviewMult * residualPremium;
-  const rentYr = Math.round(land * (capPct / 100));
   // Short fixed paper steps harder — two polite +10%s over a pad life never
   // tracked the residual the fee owner was giving up.
   const stepPct = review === "fixed"
     ? (years >= GROUND_TOWER_TERM_MIN ? 12 : years >= 60 ? 14 : 16)
     : 0;
-  const stepEveryM = review === "fixed" ? 120 : review === "cpi" ? 12 : 240;
+  const stepEveryM = review === "fixed" ? 120 : review === "cpi" ? 12 : GROUND_FMV_RESET_M;
+  // THE OPENING COUPON IS THE ONE THAT MAKES THE LEASE WORTH THE LAND (value.ts
+  // groundRentRate): the stepped rent to the term's end (or, on FMV paper, to
+  // the first reset) plus the land then, on the one leased-fee arithmetic
+  // every ground lease is marked with. The structure moves the coupon because
+  // it moves what the fee owner gets later — a slow fixed step or no step
+  // leaves more of the land's growth to the reversion or the reset, so it
+  // opens dearer. It was the index × 0.62 + 2.5 with term, review and
+  // residual multipliers that cited nothing, on a yield no other reader used,
+  // so a lease marked 0.85-1.04 × land the day it was signed.
+  const stepFrac = review === "fixed" ? stepPct / 100 : review === "cpi" ? cpiGroundStep(s.econ) : 0;
+  let capPct = 100 * groundRentRate(s.econ, stepFrac, stepEveryM / 12,
+    review === "fmv" ? Math.min(stepEveryM / 12, years) : years);
+  // FMV paper caps its resets at fmvCapPct a year from the opening rent; when
+  // the growth a buyer underwrites outruns that cap the closed form above
+  // opens below the land, so solve the rent on the leased fee itself
+  // (value.ts neutralGroundRent; unchanged whenever the cap does not bind).
+  const fmvCapPct = 3.5;
+  if (review === "fmv" && land > 0) {
+    const termsFor = (R: number) => groundLeaseTerms({
+      bbl, startM: s.month, endM: s.month + years * 12, rentYr: R, openRentYr: R,
+      stepPct: 0, stepEveryM, lastStepM: s.month, tenant: "", review, fmvCapPct,
+    } as GroundLease, s.econ, s.month);
+    capPct = 100 * neutralGroundRent(land, s.econ, termsFor, land * capPct / 100) / land;
+  }
+  const rentYr = Math.round(land * (capPct / 100));
   const padOnly = years < GROUND_TOWER_TERM_MIN;
   return {
     land, rentYr, capPct: +capPct.toFixed(2), years, review,
-    stepPct, stepEveryM, takeMult, fmvCapPct: 3.5,
+    stepPct, stepEveryM, takeMult, fmvCapPct,
     /** Shorter than tower term: only pad uses will take. */
     padOnly,
     cashFlow: groundLeaseExpenseBreakdown(rentYr),
@@ -1475,13 +1549,14 @@ function stepGroundRent(s: GameState, parcels: ParcelTable, bbl: string, gl: Gro
   if (s.month - gl.lastStepM < gl.stepEveryM) return;
   const prev = gl.rentYr;
   if (review === "cpi") {
-    const infl = Math.max(0.02, Math.min(0.04, s.econ.inflExp ?? s.econ.nat?.inflExp ?? 0.025));
-    gl.rentYr = Math.round(gl.rentYr * (1 + infl));
+    gl.rentYr = Math.round(gl.rentYr * (1 + cpiGroundStep(s.econ)));
   } else if (review === "fmv") {
+    // The market rent at the reset: the land as if vacant times the rate that
+    // makes the next stretch worth the land — what a new lease would open at,
+    // and what the leased fee is valued as reaching (groundLeasePv).
     const bare = bareLandRec(parcels, s, bbl);
     const land = bare ? landValue(bare, s.econ) : 0;
-    const yld = Math.max(3.2, s.econ.indexRate * 0.62 + 2.5) * 0.88;
-    const uncapped = Math.round(land * (yld / 100));
+    const uncapped = Math.round(land * groundRentRate(s.econ, 0, 1, Math.min(gl.stepEveryM / 12, (gl.endM - s.month) / 12)));
     const yrs = (s.month - gl.startM) / 12;
     const cap = Math.round((gl.openRentYr ?? gl.rentYr) * Math.pow(1 + (gl.fmvCapPct ?? 3.5) / 100, yrs));
     // Ratchet: FMV can lift the coupon, never cut a performing lease.
@@ -3372,7 +3447,14 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
     if (next.facility.balance <= 0) delete next.facility;
   }
   if (exchange) {
-    next.exchange = { deferredTax: tax, rolledGain: gain, minPrice: offer.price, deadlineM: next.month + EXCHANGE_WINDOW_M };
+    // What the owner relinquished is its own share of the deed: the gain
+    // rolled is the owner's (saleGains().owner), and so is the price the
+    // replacement has to match. A JV partner's share is not the sponsor's to
+    // exchange.
+    next.exchange = {
+      deferredTax: tax, rolledGain: gain, minPrice: Math.round(offer.price * (1 - partnerShare(s, h))),
+      deadlineM: next.month + EXCHANGE_WINDOW_M, replaced: 0, rolled: 0,
+    };
   } else if (tax > 0) {
     // The sponsor's own tax — on a fund deed, its co-invest share of the
     // vehicle's gain, from its own account (sponsorsSaleTax).
@@ -3449,7 +3531,8 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
     text: `Closed: ${rec.address} at ${money(offer.price)}${offer.from ? ` to ${offer.from}` : ""} — ${gain >= 0 ? "a gain" : "a loss"} of ${money(Math.abs(gain))} against basis`
       + (kick > 0 ? `. Lender participation ${money(kick)}` : "")
       + (breakFee > 0 ? `, prepayment ${money(breakFee)}` : "")
-      + (exchange ? `. 1031 open: buy ≥ $${(offer.price * 0.8 / 1e6).toFixed(1)}M by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} or ${money(tax)} tax is due.`
+      + (exchange ? `. 1031 open: buy ${money(next.exchange?.minPrice ?? offer.price)} of replacement by ${monthLabel(next.month + EXCHANGE_WINDOW_M)} to defer all of it; `
+          + `any shortfall is taxed (up to ${money(tax)}).`
         : tax > 0 ? ` (${money(tax)} capital-gains tax withheld).` : "."),
   });
   // Sale proceeds pay the revolver now — not on the next Advance.

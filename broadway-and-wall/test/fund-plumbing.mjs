@@ -184,8 +184,11 @@ function setup(seed, nFund, nOwn, product = "cash", lev = 1) {
     const f1 = g1.fund;
     const dDep = fundDeps(g1) - fundDeps(g);
     if (Math.abs(dDep) > 0) depMonths++;
+    // A GP advance is money the vehicle did NOT have to find (−Δ); the
+    // interest that accrues on it is the vehicle's cost but no deed's flow (+Δ).
     const vehicle = (f1.cash - f0.cash) + (f1.distributed - f0.distributed) + (f1.promotePaid - f0.promotePaid)
-      - (f1.called - f0.called) + ((f1.gpAdvance ?? 0) - (f0.gpAdvance ?? 0)) - dDep;
+      - (f1.called - f0.called) - ((f1.gpAdvance ?? 0) - (f0.gpAdvance ?? 0))
+      + ((f1.advInterestTotal ?? 0) - (f0.advInterestTotal ?? 0)) - dDep;
     let ledger = 0;
     for (const b of fund) {
       const cf = g1.deedCf?.[b]?.cf ?? [];

@@ -97,9 +97,16 @@ function setup(seed, nFund) {
     nw1 >= nw0 - Math.max(50_000, 0.02 * gpClaim),
     `NW ${M(nw0)} → ${M(nw1)}; the GP's claim on the vehicle was ${M(gpClaim)}`);
   const note = n.trustNote?.balance ?? 0;
+  // The tenants' deposits go to the trust with the deeds, and a vehicle with no
+  // cash and nothing to call cannot hand them over: the sponsor advances them
+  // (types.ts vehiclePay — it used to leave the settled vehicle overdrawn by
+  // exactly that much, F19), and the trust repays that advance senior too.
+  const deps = fund.reduce((a, b) => a + E.depositsOn(g.holdings[b]), 0);
+  const claimAtTrust = E.gpInterestInFund({ ...f, gpAdvance: f.gpAdvance + deps }, eq);
   ok("the GP's share of the trust is a note on it: advance senior + co-invest pro rata",
-    inKind === fund.length ? Math.abs(note - gpClaim) <= Math.max(1000, 0.01 * gpClaim) : note > 0,
-    `note ${M(note)} vs claim ${M(gpClaim)}`);
+    inKind === fund.length ? Math.abs(note - claimAtTrust) <= Math.max(1000, 0.01 * claimAtTrust) : note > 0,
+    `note ${M(note)} vs claim ${M(claimAtTrust)} (advance incl. ${M(deps)} of deposits handed to the trust)`);
+  ok("the wound-down vehicle is not left overdrawn", n.fund.cash >= -1, `fund cash ${M(n.fund.cash)}`);
   const dpi = n.fund.distributed / n.fund.called;
   ok("the LPs are not credited with the GP's money", dpi < 1, `DPI ${dpi.toFixed(3)}x`);
   const miles = E.checkMilestones ? null : null;

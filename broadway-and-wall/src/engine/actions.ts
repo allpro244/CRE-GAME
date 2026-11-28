@@ -5,7 +5,7 @@ import { settleReoSale, chargeLenderLoss } from "./lenders";
 import { FILE_COST } from "./notes";
 import type { Adjacency, ParcelRecord, ParcelTable } from "@/data/types";
 import type { Bid, BuiltClass, Condition, DevUse, Econ, Exit, GameState, GroundLease, GroundReview, Holding, Rival, RivalStyle, SaleInstructions } from "./types";
-import { logBooks, moveDeposit, moveFundCash, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger, autoLeaseOnClose, nextJulyAfter } from "./types";
+import { logBooks, moveDeposit, moveFundCash, vehiclePay, monthLabel, raiseAlert, SVC_START, START_YEAR, cloneState, closeDeedLedger, mergeDeedLedger, autoLeaseOnClose, nextJulyAfter } from "./types";
 import { recentLowballs, sellerOf, strikeDeal, insultShareOfAsk } from "./acquire";
 import { creditBrokerFee, tickEarlyLooks } from "./broker";
 import { firmShort, describeFirm } from "./firm";
@@ -480,8 +480,12 @@ export function executePurchase(
     // buyQuote already netted the disclosed roll out of the cheque — only the
     // remainder (a preview that grew, or a quote that missed the paper) moves.
     const extra = depositsOn(holding) - (bq.deposits ?? 0);
-    if (fromFund && next.fund) moveFundCash(next.fund, extra, "deposit");
-    else next.cash += extra;
+    // A roll that shrank owes the seller the difference: from the vehicle's
+    // cash, a call, or a GP advance (vehiclePay) — never an overdraft.
+    if (fromFund && next.fund) {
+      if (extra >= 0) moveFundCash(next.fund, extra, "deposit");
+      else vehiclePay(next, -extra, "deposit");
+    } else next.cash += extra;
   } else {
     // genRentRoll settles the deposits through moveDeposit, which already puts
     // a vehicle deed's into fund.cash.
@@ -3329,9 +3333,13 @@ export function acceptSaleOffer(s: GameState, parcels: ParcelTable, bbl: string,
   // Vehicle deed: the proceeds sit on fund.cash so the promote has a
   // counterparty. The vehicle pays no tax on them — the sponsor's share of
   // the gain is taxed on the sponsor, below.
+  // A sale that nets below its payoffs is a cheque the vehicle writes at the
+  // table: its cash, a call, then a GP advance (vehiclePay) — never an overdraft.
   const intoFund = purseOf(next, h) === "fund";
-  if (intoFund && next.fund) moveFundCash(next.fund, toSeller, "sale");
-  else next.cash += toSeller;
+  if (intoFund && next.fund) {
+    if (toSeller >= 0) moveFundCash(next.fund, toSeller, "sale");
+    else vehiclePay(next, -toSeller, "sale");
+  } else next.cash += toSeller;
   // THE FEE COMES OUT OF THE PROCEEDS ONCE, NOT TWICE.
   //
   // The kicker and the break fee are already deducted from `toSeller` — they
@@ -3511,6 +3519,17 @@ function adoptState(s: GameState, n: GameState) {
 }
 
 /**
+ * DID THE CLOSE NEED THE SPONSOR'S MONEY FOR A VEHICLE DEED? A vehicle that
+ * cannot pay its side of a closing no longer overdraws: the sponsor advances
+ * (types.ts vehiclePay). Either way the broker does not sign for the owner.
+ */
+function vehicleShortAtClose(before: GameState, after: GameState): boolean {
+  const f0 = before.fund, f1 = after.fund;
+  if (!f0 || !f1) return false;
+  return (f1.gpAdvance ?? 0) > (f0.gpAdvance ?? 0) + 1 || (f1.cash < 0 && f1.cash < f0.cash);
+}
+
+/**
  * THE BROKER ACTS ON STANDING INSTRUCTIONS.
  *
  * Runs after the month's offers have landed. An offer at or over the owner's
@@ -3537,7 +3556,7 @@ export function applySaleInstructions(s: GameState, parcels: ParcelTable) {
     if (sale && offer?.contract && !offer.held && s.month === offer.expiresM) {
       const address = resolveRec(parcels, s, bbl)?.address ?? bbl;
       const r = acceptSaleOffer(s, parcels, bbl, false);
-      const fundShort = !!(r.s.fund && s.fund && r.s.fund.cash < 0 && r.s.fund.cash < s.fund.cash);
+      const fundShort = vehicleShortAtClose(s, r.s);
       const cashShort = r.s.cash < 0 && r.s.cash < s.cash;
       if (r.err || fundShort || cashShort) {
         offer.held = true;
@@ -3568,7 +3587,7 @@ export function applySaleInstructions(s: GameState, parcels: ParcelTable) {
       // A SHORT SALE NEEDS THE OWNER. If closing leaves the account (or the
       // fund, for a vehicle deed) below zero after the payoff and the tax, the
       // broker does not sign it — the owner has to find the money first.
-      const fundShort = !!(r.s.fund && s.fund && r.s.fund.cash < 0 && r.s.fund.cash < s.fund.cash);
+      const fundShort = vehicleShortAtClose(s, r.s);
       const cashShort = r.s.cash < 0 && r.s.cash < s.cash;
       if (r.err || fundShort || cashShort) {
         offer.held = true;

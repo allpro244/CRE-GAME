@@ -34,7 +34,7 @@ export function routeAttention(key: string, game: GameState | null): AttentionRo
     const bbl = key.split(":")[1];
     return { page: "market", bbl };
   }
-  if (head === "fund-idle") return { page: "investors" };
+  if (head === "fund-idle" || head === "fund-review") return { page: "investors" };
   // A delivered building is leased up from its own desk; a bank failure and
   // the fund's TI book are read where those live.
   if (head === "delivered") { const bbl = key.split(":")[1]; return { page: "leasing", bbl }; }

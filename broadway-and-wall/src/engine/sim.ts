@@ -7,7 +7,7 @@ import { distressTally } from "./history";
 import { stampBands } from "./bands";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Exit, GameState, Listing, Rival } from "./types";
-import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit, moveFundCash, vehiclePay } from "./types";
+import { DEFAULT_START_CASH, CENTURY_MONTHS, firmOverheadAnnual, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit, moveFundCash, vehiclePay } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels, cycleDown } from "./market";
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, resolveRecBare, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
@@ -44,7 +44,7 @@ import { tickCorporate } from "./corporate";
 import { markRival, initRivals, tickRivals, tickRivalAssembly, setRivalAdjacency, fundJobs, gradeOf, ownerOf, settleOpeningLeverage, tickRivalConversions, tickRivalRetirements, rivalBuys, rivalsWhoCanClose, landFundBid, streetSaleCost } from "./rivals";
 import { loanBookTouched, syncDebt } from "./rivalDebt";
 import { openingCapSurvey, openingLandSurvey, tickBrokerSurvey, tickLandSurvey, noteListed, anchoredAsk, forcedSaleAsk, foreclosureSale, BUY_CLOSING, bidRound, valueTo } from "./propmarket";
-import { initLenders, publishOpeningPrices, tickLenders, chargeLenderLoss, cashSplit, depositApy } from "./lenders";
+import { initLenders, publishOpeningPrices, tickLenders, chargeLenderLoss, cashInterestMonthly } from "./lenders";
 import { tickStreetLoans, retireFoldedLoans } from "./streetLoans";
 import { generateFirmName, tickFirm, firmShort } from "./firm";
 import { reconcileDemand } from "./demand";
@@ -1142,7 +1142,9 @@ function tickMonth(
   // interest is not property income — and it joins January's taxable base
   // below, because money-fund interest is ordinary income in life too.
   // THE OPERATING ACCOUNT EARNS THE DEPOSIT RATE, the swept balance the bill
-  // rate (cashSplit in lenders.ts) — and only the first is the bank's risk.
+  // rate less the money fund's fee (cashInterestMonthly in lenders.ts, the one
+  // rule every competitor's idle cash also earns by) — and only the first is
+  // the bank's risk.
   // AN OVERDRAWN BALANCE IS BORROWED MONEY (2026-10-14). Negative cash paid
   // nothing, so a firm could run underwater for months on what was in effect
   // a free unsecured loan from its creditors. Whoever is carrying that hole
@@ -1153,8 +1155,7 @@ function tickMonth(
     if (od > 0) { s.cash -= od; logBooks(s, "debtSvc", od); }
   }
   if (s.cash > 0) {
-    const split = cashSplit(s);
-    const interest = Math.round((split.inBills * sweepApy(s.econ) + split.atBank * depositApy(s.econ, split.bank)) / 12);
+    const interest = Math.round(cashInterestMonthly(s, s.cash));
     if (interest > 0) {
       s.cash += interest; logBooks(s, "interest", interest);
       s.depositInterestYr = (s.depositInterestYr ?? 0) + interest;
@@ -2853,16 +2854,10 @@ export function firmOverheadMonthly(s: GameState, parcels: ParcelTable): number 
   // Last month's GAV (stamped at the portfolioMark in the tick). Month-one /
   // old saves with no stamp fall back to a single mark.
   const gav = s.prevGav ?? portfolioMark(s, parcels).gav;
-  // ~30bps of gross asset value a year at scale, over a small fixed base.
-  //
-  // THE WHOLE OFFICE IS IN THIS NUMBER: asset and property management, leasing
-  // coordination, accounting, legal, insurance, the rent on the office. There
-  // is no payroll to hire into, so nothing comes out of it — buildings are
-  // professionally run at the market standard and this is what that costs.
-  // Competitors are charged the same rate in their own tick (rivals.ts), so the
-  // league table measures both sides one way.
-  const annual = 60_000 * s.econ.costIdx + 0.0028 * gav;
-  return Math.round(annual / 12);
+  // ~28bps of gross asset value a year at scale, over a small fixed base —
+  // the one formula (types.ts firmOverheadAnnual) competitors are charged in
+  // their own tick (rivals.ts), so the league table measures both sides one way.
+  return Math.round(firmOverheadAnnual(s.econ.costIdx, gav) / 12);
 }
 
 export function portfolioMonthlyCF(s: GameState, parcels: ParcelTable): number {

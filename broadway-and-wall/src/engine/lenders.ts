@@ -17,7 +17,7 @@
 // Which is the whole point: a credit crunch you can read a quarter early is a
 // decision. One that arrives as a number going down is weather.
 import type { GameState } from "./types";
-import { logBooks, BUILT_CLASSES } from "./types";
+import { logBooks, BUILT_CLASSES, billYield, sweepApy } from "./types";
 import { PRODUCTS, underwritingStandards, windowOpen, BANK_CRE_SHARE } from "./debt";
 import { rng, rrange, RENT_BASE, OPENING_VAC, CAP_BASE, shortIndexOf, windowOfAppetite } from "./market";
 import type { DeskPx, LossClass } from "./pricing";
@@ -616,9 +616,9 @@ function maybeRaiseInsurance(s: GameState, failing: Lender) {
 // answers. A firm's cash is in two places: an operating account at its bank
 // (payroll, payables, the next debt service), which is a deposit and is
 // exposed above the insurance limit; and everything else, swept into Treasury
-// bills, which a bank failure does not touch. The sweep is on unless the
-// player turns it off — keeping everything at the bank earns the deposit rate
-// and puts all of it on the bank's balance sheet.
+// bills, which a bank failure does not touch. The sweep is always on now and
+// the operating account is held inside the insurance limit (cashSplit below);
+// there is no operating-balance setting and no switch.
 
 /** Commercial operating balances price ~100-200bp under fed funds: commercial MMDA 4.01% against a 5.25-5.50% target in May 2024 (Curinos, "Commercial: How To Deal With Declining NIB Deposits", 2024) [S~: MMDA; operating checking and earnings-credit accounts sit 2-4.5pp under]; 150bp, floored at zero. */
 export const DEPOSIT_SPREAD_PCT = 1.5;
@@ -632,10 +632,6 @@ export function depositApy(econ: { nat?: { policy?: number } } | undefined, bank
   const pol = econ?.nat?.policy;
   if (!Number.isFinite(pol)) return 0.005;
   return Math.max(0, ((pol as number) - DEPOSIT_SPREAD_PCT) / 100);
-}
-/** The operating balance a firm keeps at its bank unless it sets one: a float of $1M in year-2000 dollars. */
-export function defaultOperatingBalance(s: GameState): number {
-  return Math.round(1_000_000 * (s.econ.costIdx ?? 1));
 }
 export interface CashSplit { bank?: Lender; sweep: boolean; keep: number; atBank: number; inBills: number; insured: number; exposed: number }
 /** Where the firm's cash is today: at the bank (insured / exposed) and in Treasury bills. */
@@ -656,6 +652,24 @@ export function cashSplit(s: GameState): CashSplit {
   const cash = Math.max(0, s.cash);
   const atBank = Math.min(cash, insuredLimit(s));
   return { bank: bankOf(s), sweep: true, keep: atBank, atBank, inBills: cash - atBank, insured: atBank, exposed: 0 };
+}
+
+/**
+ * A MONTH'S INTEREST ON A FIRM'S CASH, and it is one rule for every firm: the
+ * operating account (up to the insured limit) at its bank's deposit rate, the
+ * rest in Treasury bills through a money fund at sweepApy — the split
+ * cashSplit draws, priced. The player's tick books it (sim.ts, logBooks
+ * "interest") and every competitor's tick pays it (rivals.ts), so neither side
+ * holds idle cash on better terms than the other.
+ *
+ * The cash is the firm's, not any bank's funding: a bank's deposits are sized
+ * off its own book (tickDeposits), so where this money sits moves no bank's
+ * balance sheet and no ledger but the firm's own.
+ */
+export function cashInterestMonthly(s: GameState, cash: number, bank: Lender | undefined = bankOf(s)): number {
+  const c = Math.max(0, cash);
+  const atBank = Math.min(c, insuredLimit(s));
+  return (atBank * depositApy(s.econ, bank) + (c - atBank) * sweepApy(s.econ)) / 12;
 }
 
 /** Which desk the firm banks with, defaulting to its deepest relationship. */
@@ -1051,7 +1065,8 @@ function bankFunding(s: GameState, l: Lender): { cost: number; borrowed: number 
   if (l.kind !== "bank" || !d || d.rate === undefined || !(l.book > 0)) return undefined;
   const e = s.econ;
   const short = shortIndexOf(e);
-  const bills = Math.max(0, (e.nat?.policy ?? short) - 0.1);
+  // The same bill a firm's swept cash holds (types.ts billYield), without the money fund's fee: a bank holds its bills directly.
+  const bills = billYield(e.nat?.policy ?? short);
   const W = d.wholesale ?? 0, L = d.liquid ?? 0;
   const annual = d.total * d.rate + W * (short + wholesaleSpread(e)) - L * bills;
   return { cost: annual / l.book, borrowed: W / l.book };

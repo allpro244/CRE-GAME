@@ -2786,16 +2786,17 @@ their books still close.
 
 Cash management (the treasurer's defence). A firm with $200M does not keep it
 as an uninsured deposit at one bank. `cashSplit` divides cash into an operating
-balance at the bank (default $1M × cost index, set on the Banks page) and the
-rest swept into Treasury bills / a government money-market fund. Bills earn
-`sweepApy` (policy − 0.40%); the bank balance earns `depositApy` (policy −
-1.50%, the spread an operating account pays). A failure seizes only the
-uninsured part of the bank balance; bills are untouched. With the sweep off,
-everything sits at the bank and is exposed, as before. The player picks the
-bank on the Banks page (a free move: the account follows), sees each bank's
-capital multiple, and gets an attention item when their bank falls under 0.4×
-its capital target while they have money exposed there. `test/bank-seizure.mjs`
-runs both settings: with the sweep on, $229M in bills survives, $0.1M is lost.
+account held inside the deposit-insurance limit (ICS/CDARS do this for real
+balances) and the rest swept into Treasury bills through a money fund; there is
+no operating-balance setting and no sweep switch any more (owner's request: the
+cash is safe). `cashInterestMonthly` (lenders.ts) is the one rule for what it
+earns, for the player and every competitor: the operating account earns
+`depositApy` (policy − 1.50%, the spread an operating account pays), the bills
+`sweepApy` = `billYield` (policy − 0.10, FRED TB3SMFFM) less the money fund's
+0.22% expense ratio (ICI 2023), floored at zero. A bank's own liquid assets
+earn the same `billYield` without the fee (bankFunding). A failure seizes
+nothing: the bank balance is insured and the bills are not the bank's.
+`test/bank-seizure.mjs` checks it.
 
 Pool refinancing. A facility could only be refinanced on two fixed bank
 products, because the desk list named a product id that does not exist

@@ -34,7 +34,7 @@ import { fieldRoster, rivalCapitalMult, type RivalCapital } from "./setup";
 import { transferTaxRate } from "./citygov";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Condition, DevUse, FounderBid, GameState, Rival, RivalStyle } from "./types";
-import { sweepApy, monthLabel, START_YEAR } from "./types";
+import { firmOverheadAnnual, monthLabel, START_YEAR } from "./types";
 import { isCivicLand } from "./demand";
 import { dollarLevel, rng, newsChance, rrange, retireStock, CITY_STOCK, underwrittenGrowthPct, cycleDown } from "./market";
 import { mergedTouched, DEV_MARGIN, capRateFor, holdingValue, assetValue, demandLinear, initialCondition, inPlace, landRead, landValue, noiAfterTaxYr, occupancy, resolveRec, worthTheCall, rentableFromSpec, ownerAskPsf } from "./value";
@@ -42,7 +42,7 @@ import type { DevPlan } from "./dev";
 import { lpNetIrr } from "./waterfall";
 import { BAND_TERMS, bandIdx, floorBand, inheritRecord, rivalBand, scoreOf, type Band } from "./reputation";
 import { cityCoverage, cityInfillCap, devMix, dominantOf, farMaxFor, MAX_FLOORS_BY_USE, retailWantsMixed, underwriteDevelopment, useForZone, noteRecordPlan, ownerRedevelopment, openConstructionDesks, planReuseAt, reuseZoneBar, projectedDevIrr, equityStretch } from "./dev";
-import { CONSTRUCTION_LENDER, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
+import { CONSTRUCTION_LENDER, cashInterestMonthly, chargeLenderLoss, lenderByName, lenderPressure, reoAsk } from "./lenders";
 import { streetRefiProceeds, stabViewFor } from "./debt";
 import { stampApproach, conveyedValue, conveyedDeed, renewalIntent } from "./leasing";
 import { deskWillExtend, extensionFeePct, extensionMonths, NOTICE_M, FORECLOSE_M } from "./workout";
@@ -58,7 +58,7 @@ import { developmentProForma, marketConstructionQuote, underwritingEcon, constru
 import { dealView, maxPrice, bidderOf, sellerTerms, bidRound, forcedSalePrice, bankerHoldValue, holdValueFor, entrantBankerView, landBidRound, listingReserve, impliedCap, BUY_CLOSING } from "./propmarket";
 import { why } from "./why";
 import { beliefOf, beliefSignals } from "./beliefs";
-import { LAND_SHARE_TYPICAL } from "./tax";
+import { LAND_SHARE_TYPICAL, INCOME_TAX_RATE } from "./tax";
 const CLASS_NOUN: Record<string, string> = { office: "office", multifamily: "apartments", retail: "retail", industrial: "industrial", land: "a site" };
 import { assembledBlock, reviewThesis, thesisFit, thesisLabel } from "./strategy";
 import { SURNAMES as OWNER_SURNAMES } from "./owners";
@@ -5022,10 +5022,14 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     const svc = monthlyService(s, r, AMORT_SHARE[r.style]);
     const interest = svc.interest;
     const amort = svc.amort;
-    // Their dry powder sits in the same bank yours does, at the same sweep
-    // rate off the same policy rate — one deposit desk for the whole street,
-    // so a rate era the player can ride is an era the street rides too.
-    const onDeposit = r.cash > 0 ? (r.cash * sweepApy(s.econ)) / 12 : 0;
+    // Their dry powder sits in the same bank yours does, on the same terms:
+    // an operating account inside the insurance limit at the bank's deposit
+    // rate, the rest in Treasury bills through a money fund
+    // (cashInterestMonthly, the function the player's tick books by) — one
+    // deposit desk for the whole street, so a rate era the player can ride is
+    // an era the street rides too. This paid the bill rate on the whole
+    // balance, operating account and all: a better deal than the player got.
+    const onDeposit = r.cash > 0 ? cashInterestMonthly(s, r.cash) : 0;
     r.cash += Math.round(noiYr / 12 - interest - amort + onDeposit);
     amortizeRows(s, r, AMORT_SHARE[r.style]);
 
@@ -5033,17 +5037,54 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
     // audit, legal, somebody to answer the phone. It is not billable to a
     // building and it never goes away, and the street was not paying it —
     // which over a century is most of the reason their books outran yours.
-    // Identical formula to the player's: a small fixed base plus ~28bps of
-    // gross asset value a year, sub-linear because the tenth building is
-    // cheaper to run than the first.
-    if (r.bbls.length > 0) {
-      r.cash -= Math.round((60_000 * s.econ.costIdx + 0.0028 * aum) / 12);
+    // Identical formula to the player's (types.ts firmOverheadAnnual): a small
+    // fixed base plus ~28bps of gross asset value a year, sub-linear because
+    // the tenth building is cheaper to run than the first.
+    // AND WHETHER OR NOT IT OWNS ANYTHING. This was gated on holding a
+    // building, so an empty firm paid no overhead and compounded its cash at
+    // the bill rate. The player's overhead was un-gated for exactly this
+    // reason (sim.ts, where the tick charges it: a firm that sold its book
+    // and sat on the cash paid nothing, measured at $6M to $9.9M over fifty
+    // years); an office with no buildings in it is a cost, not a strategy.
+    // A wound-up firm has already left this loop, so a receiver pays nothing;
+    // an empty live firm pays it through its two-year wind-down, and a builder
+    // between schemes through the fifteen years it waits for a site — both are
+    // offices with people in them.
+    const gaMo = Math.round(firmOverheadAnnual(s.econ.costIdx, aum) / 12);
+    // AN EMPTY OFFICE THAT CANNOT PAY ITS RENT CLOSES; it does not go into
+    // arrears. With the gate gone, a debt-free firm with nothing on the book
+    // and no scheme under way (a builder between sites, mostly) ran its
+    // account below zero on the office alone and was then walked through the
+    // DEBT-arrears calendar below: "fell behind on its debt", a sponsor
+    // failure charge, and a news line about buildings handed back that it
+    // never owned — with no creditor anywhere (reviewer's probe, seed 11, 180
+    // months: 3 such firms, 31 months in "arrears"; HEAD had none). Nobody
+    // lends a shop with no assets and no project the money to keep paying for
+    // a desk: the partners close it, the way the solvent-husk rule at the foot
+    // of this loop closes a firm. A firm with uncalled commitments still has
+    // partners to call and takes the ordinary path.
+    if (!r.bbls.length && (r.debt ?? 0) <= 0 && !(r.stressMs) && !((r.uncalled ?? 0) > 0) && r.cash < gaMo
+      && !(s.cityJobs ?? []).some((j) => j.firmId === r.id && !j.orphaned)) {
+      r.failedM = s.month;
+      r.endReason = "woundUp";
+      milestone(s, r, "Closed its office: nothing on the book, no scheme under way, and not enough in the account to keep paying for it");
+      s.news.unshift({
+        q: s.month, kind: "event",
+        text: `${r.name} has wound up. Nothing on the book and no scheme under way; the partners closed the office.`,
+      });
+      continue;
     }
+    r.cash -= gaMo;
 
     // AND THE SAME TAX. Once a year, on income after interest and
     // depreciation, at the rate the player pays. Depreciation is estimated off
     // the book rather than tracked per building — improvements are roughly
     // seven tenths of value over a blended life.
+    // THE SAME BASE TOO: interest on cash is ordinary income and the office is
+    // deductible, as on the player's return (sim.ts: depositInterestYr joins
+    // the base, last year's G&A comes off). The street's base left both out,
+    // so its idle cash compounded untaxed. Both are this month's figures
+    // annualised, the same snapshot the NOI and interest terms already use.
     if (s.month > 0 && s.month % 12 === 0) {
       // THE RACE CHART'S POINT, and a year of watching them. Display only.
       (r.eqHist ??= []).push([s.month / 12, Math.round(aum - r.debt + r.cash)]);
@@ -5068,9 +5109,9 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
       }
       r.rateYr = s.econ.indexRate;
       const depr = (r.basis ?? aum) * 0.7 / 33;
-      const taxable = noiYr - interest * 12 - depr;
+      const taxable = noiYr - interest * 12 - depr + onDeposit * 12 - gaMo * 12;
       if (taxable > 0) {
-        const tax = Math.round(taxable * 0.25);
+        const tax = Math.round(taxable * INCOME_TAX_RATE);
         r.cash -= tax;
         r.taxPaid = (r.taxPaid ?? 0) + tax;
       }

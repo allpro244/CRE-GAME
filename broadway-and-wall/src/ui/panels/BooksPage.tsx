@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { derive, nwOf } from "@/ui/derive";
 import { useStore } from "@/state/store";
 import Fold from "@/ui/Fold";
-import { monthLabel, START_YEAR, sweepApy } from "@/engine/types";
+import { monthLabel, START_YEAR, sweepApy, MMF_EXPENSE_PCT } from "@/engine/types";
 import type { BooksYear } from "@/engine/types";
 import { MILESTONES } from "@/engine/sim";
 import { depositsHeld } from "@/engine/leasing";
@@ -484,7 +484,7 @@ function IncomeStatementTab() {
                       {usd(b.noi)}
                       {(b.interest || b.borrowed) ? (
                         <div className="dim" style={{ fontSize: 11 }}>
-                          {b.interest ? `int ${usd(b.interest)}` : ""}
+                          {b.interest ? <span title="Interest on cash: the operating account plus the Treasury-bill money fund (Banks page)">{`int ${usd(b.interest)}`}</span> : ""}
                           {b.interest && b.borrowed ? " · " : ""}
                           {b.borrowed ? (b.borrowed > 0 ? `drew ${usd(b.borrowed)}` : `repaid ${usd(-b.borrowed)}`) : ""}
                         </div>
@@ -697,7 +697,7 @@ export function IncomeStatement() {
               <L k="Firm overhead" v={-cur.ga} sub note="asset management, accounting, legal" />
               <L k="Property cash flow" v={opCf(cur)} strong rule />
               <L k="Debt service" v={-cur.debtSvc} sub note="interest, scheduled amortization, fees" />
-              <L k="Interest on cash" v={cur.interest ?? 0} sub note={`sweep ${(sweepApy(game.econ) * 100).toFixed(1)}% (policy − 0.4pt) · ordinary income`} />
+              <L k="Interest on cash" v={cur.interest ?? 0} sub note={`Treasury bills ${(sweepApy(game.econ) * 100).toFixed(2)}% after the money fund's ${MMF_EXPENSE_PCT}% fee · ordinary income`} />
               <L k="Principal drawn / repaid" v={cur.borrowed ?? 0} sub note="new mortgage/facility principal less prepayments (cures, paydowns, payoffs)" />
               <L k="Cash flow after debt" v={afterDebt(cur)} strong rule />
               <L k="Development" v={-cur.dev} sub note="equity, construction carry, overruns" />

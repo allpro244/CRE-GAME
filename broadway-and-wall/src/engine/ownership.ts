@@ -57,7 +57,7 @@
  */
 import type { ParcelTable } from "@/data/types";
 import type { GameState, Rival, RivalStyle, SellerKind } from "./types";
-import { START_YEAR } from "./types";
+import { START_YEAR, firmOverheadAnnual } from "./types";
 import { assetValue, noiAfterTaxYr, resolveRec } from "./value";
 import { gradeOf, markRival, ownerOf, paramsOf } from "./rivals";
 import { isCivicLand } from "./demand";
@@ -510,8 +510,9 @@ export function rivalAccounts(
   // fixed base plus the proportional load, because that is what the player is
   // charged for running the same kind of shop and a league table only works if
   // both sides are measured the same way. It is also what the competitor's own
-  // tick charges (rivals.ts), so the statement and the cash agree.
-  const ga = 60_000 * s.econ.costIdx + 0.0028 * m.aum;
+  // tick charges (rivals.ts, empty book or not), so the statement and the cash
+  // agree — one formula, types.ts firmOverheadAnnual.
+  const ga = firmOverheadAnnual(s.econ.costIdx, m.aum);
   const income = statement(m.aum, m.noiYr, { interest, amort },
     { lease: care.lease, capex: care.capex }, ga, m.landV);
   return {

@@ -335,7 +335,13 @@ function migrateFundDeployment(state: GameState): void {
   const f = state.fund;
   if (!f || f.settled || f.deedInvested !== undefined || f.deployUnmeasured) return;
   const fl = f.flows;
-  if (!fl || (fl.purchase ?? 0) < 0 || (fl.build ?? 0) < 0) f.deployUnmeasured = true;
+  // A deed the vehicle holds is deployment too, even one whose consideration
+  // settled through the sponsor's account and so never reached flows.purchase.
+  const holdsDeed = Object.values(state.holdings ?? {}).some((h) => h.fundOwned);
+  if (!fl || holdsDeed || (fl.purchase ?? 0) < 0 || (fl.build ?? 0) < 0) f.deployUnmeasured = true;
+  // Measurable: it had deployed nothing, so the draws it missed are zero.
+  // Stamp it, so a later load knows this is no longer an old save's fund.
+  else f.deedInvested = 0;
 }
 
 /** Did this save predate the plat its own island now stands on? */

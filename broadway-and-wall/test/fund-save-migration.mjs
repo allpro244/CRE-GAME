@@ -47,6 +47,23 @@ ok(m.fund.deployUnmeasured === true && !E.lpWouldEndPeriod(m.fund, at(m.fund)), 
 // 5. ledgered fund with overdraft: advance on its ledger
 m = mig((f) => { f.cash = -10_000; });
 ok((m.fund.flows.advance ?? 0) === 10_000, `a ledgered fund books the advance on its ledger (${m.fund.flows.advance})`);
+// 5b. an idle old fund, measured at load, that then buys, is still measured on the next load
+{
+  const c = structuredClone(g); delete c.fund.deedInvested;
+  let a = E.migrateSaveState(c);
+  ok(a.fund.deedInvested === 0 && !a.fund.deployUnmeasured, `an idle old fund is stamped measurable at load (deedInvested ${a.fund.deedInvested})`);
+  E.chargeFundEquity(a, 1_000_000);
+  a = E.migrateSaveState(JSON.parse(JSON.stringify(a)));
+  ok(!a.fund.deployUnmeasured, "after it buys and the game is saved and loaded again, it is still measured");
+  ok(E.fundDeployment(a.fund, at(a.fund)).deployed >= 1_000_000, `and its purchase counts (${E.fundDeployment(a.fund, at(a.fund)).deployed})`);
+}
+// 5c. an old fund that holds a deed but whose purchase never reached flows.purchase is unmeasured
+{
+  const c = structuredClone(g); delete c.fund.deedInvested;
+  const b0 = Object.keys(c.holdings)[0] ?? bbls.find((b) => parcels[b].bldgArea > 0);
+  c.holdings[b0] = { ...(c.holdings[b0] ?? { bbl: b0, tenants: [], loan: null }), fundOwned: true };
+  ok(E.migrateSaveState(c).fund.deployUnmeasured === true, "an old fund holding a deed off its purchase ledger is marked unmeasured");
+}
 // 6. migration is idempotent
 const m2 = E.migrateSaveState(structuredClone(m));
 ok(JSON.stringify(m2.fund) === JSON.stringify(m.fund), "running the migration twice changes nothing");

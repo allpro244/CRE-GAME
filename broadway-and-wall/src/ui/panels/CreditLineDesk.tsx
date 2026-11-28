@@ -36,7 +36,7 @@ export function CreditLine() {
       </div>
       <div className="stat-strip">
         <Big
-          label={`Limit · total debt ≤ ${(cov.lev * 100).toFixed(0)}% of assets`}
+          label={`Limit · total debt ≤ ${(cov.lev * 100).toFixed(0)}% of assets${cov.cut < 0.995 ? ` · ${(cov.cut * 100).toFixed(0)}% of the room extended` : ""}`}
           value={usd(limit)}
           bad={limit <= 0}
         />
@@ -82,7 +82,7 @@ export function CreditLine() {
           </div>
         </>
       ) : (
-        <div className="dim" title="Build some net worth and the bank will open a line against it.">None</div>
+        <div className="dim" title={`No room under the covenant: every mortgage, mezz note and the facility already come to ${Number.isFinite(cov.leverage) ? pct(cov.leverage * 100) : "all"} of your assets against a ${(cov.lev * 100).toFixed(0)}% ceiling, or your income after the mortgages carries no more. Pay debt down or add equity and the bank will open the line.`}>None</div>
       )}
     </div>
   );

@@ -1,8 +1,9 @@
 // The revolving line of credit: the facility that keeps a good portfolio from
 // dying of a bad month. Sized so that TOTAL debt — every mortgage, mezz note,
 // construction loan, the facility and the line itself — stays within 60% of
-// gross asset value (LOC_LTV, cut by the credit cycle, your standing and the
-// bank's appetite), and to what income after the mortgages will carry; priced
+// gross asset value (LOC_LTV; the credit cycle, your standing and the bank's
+// appetite cut how much of the room under it the bank extends), and to what
+// income after the mortgages will carry; priced
 // off the short index, drawn and repaid at will — and drawn automatically
 // before cash goes negative, because no real sponsor lets a rent cheque bounce
 // while an undrawn line sits on the desk.
@@ -265,7 +266,7 @@ function lineBase(s: GameState, parcels: ParcelTable): { gav: number; debt: numb
  * without it the whole game had no way to lose.
  */
 function lineSizing(s: GameState, parcels: ParcelTable): {
-  gav: number; debt: number; lev: number; limit: number; binding: "leverage" | "coverage" | "receiver";
+  gav: number; debt: number; lev: number; cut: number; limit: number; binding: "leverage" | "coverage" | "receiver";
 } {
   // THE LINE IS SIZED AT ITS ANNUAL REVIEW (2026-11-11). A bank re-underwrites
   // a corporate revolver's borrowing base once a year off the financials it is
@@ -287,14 +288,22 @@ function lineSizing(s: GameState, parcels: ParcelTable): {
   const bank = lineLender(s);
   const appFac = bank ? appetiteAdvance(bank.appetite) : 1;
   const cut = Math.max(0.35, Math.min(1.15, ci)) * (1 - Math.min(0.6, 1.6 * st.advanceCut)) * appFac;
-  // THE COVENANT IS A CEILING. A loose market, a good name or a flush bank
-  // cannot lift total leverage past what the facility agreement allows; they
-  // only stop cutting under it. The credit cycle, standing and appetite still
-  // take the line down (owner, 2026-11-27: "keeping the existing
-  // credit/appetite/standing factors").
-  const lev = LOC_LTV * Math.min(1, cut);
+  // THE COVENANT IS A CEILING, AND IT IS FIXED. A loose market, a good name
+  // or a flush bank cannot lift total leverage past what the facility
+  // agreement allows; they only stop cutting under it. The credit cycle,
+  // standing and appetite still take the line down (owner, 2026-11-27:
+  // "keeping the existing credit/appetite/standing factors") — and they take
+  // it down the way they always did, as a share of what the bank would
+  // otherwise advance: the commitment it will extend under the covenant, not
+  // the covenant's own ratio. The ratio is written into the agreement for the
+  // life of the facility; what a lender cuts in a crunch is availability.
+  // Cutting the ratio instead (60% × the cut) amplified every move: at a
+  // 0.9 cut a book at 55% leverage lost its whole line in one month, which is
+  // the mid-slump call the annual review above exists to stop.
+  const lev = LOC_LTV;
+  const k = Math.min(1, cut);
   if (bank?.failedM !== undefined) {
-    return { gav: b.gav, debt: b.debt, lev, limit: Math.max(0, Math.round(s.loc?.balance ?? 0)), binding: "receiver" };
+    return { gav: b.gav, debt: b.debt, lev, cut: k, limit: Math.max(0, Math.round(s.loc?.balance ?? 0)), binding: "receiver" };
   }
   // ...AND IT HAS TO BE SERVICED (2026-10-14). The leverage covenant alone let
   // a book of empty buildings and dirt marked up on paper carry a revolver its
@@ -319,9 +328,9 @@ function lineSizing(s: GameState, parcels: ParcelTable): {
   // the moment it was being used.
   const rate = Math.max(1, (s.econ.indexRate ?? 5) + LOC_SPREAD) / 100;
   const serviceable = (Math.max(Math.max(0, b.free) / (1.25 * rate), b.equity / 3) + b.land / 3) * appFac;
-  const room = lev * b.gav - b.debt;
+  const room = k * (lev * b.gav - b.debt);
   const limit = Math.max(0, Math.round(Math.min(room, serviceable)));
-  return { gav: b.gav, debt: b.debt, lev, limit, binding: room <= serviceable ? "leverage" : "coverage" };
+  return { gav: b.gav, debt: b.debt, lev, cut: k, limit, binding: room <= serviceable ? "leverage" : "coverage" };
 }
 
 /** The line's limit — see lineSizing. */
@@ -335,7 +344,7 @@ export function locLimit(s: GameState, parcels: ParcelTable): number {
  * drawn — (debt + line) ÷ assets, the ratio the covenant is written on.
  */
 export function lineCovenant(s: GameState, parcels: ParcelTable): {
-  gav: number; debt: number; lev: number; limit: number; leverage: number; binding: "leverage" | "coverage" | "receiver";
+  gav: number; debt: number; lev: number; cut: number; limit: number; leverage: number; binding: "leverage" | "coverage" | "receiver";
 } {
   const z = lineSizing(s, parcels);
   const total = z.debt + (s.loc?.balance ?? 0);
@@ -551,7 +560,9 @@ export function drawLoc(s: GameState, parcels: ParcelTable, amount: number): { s
     return {
       s,
       err: (cov.binding === "leverage"
-        ? `Total debt is held to ${Math.round(100 * cov.lev)}% of your real estate: ${locMoney(cov.debt)} of mortgages, mezz and facility against ${locMoney(cov.gav)} of assets leave ${locMoney(avail)} on the line.`
+        ? `Total debt is held to ${Math.round(100 * cov.lev)}% of your assets: ${locMoney(cov.debt)} of mortgages, mezz and facility against ${locMoney(cov.gav)} of assets`
+          + (cov.cut < 0.995 ? `, and the bank extends ${Math.round(100 * cov.cut)}% of the room under that today,` : "")
+          + ` leave ${locMoney(avail)} on the line.`
         : `The line only has ${locMoney(avail)} left — the bank sizes it to what your income after the mortgages will carry.`)
         + (st.mark > 0.3 ? ` The bank cut your advance rate — ${st.label}.` : ""),
     };
@@ -606,7 +617,7 @@ export function tickLoc(s: GameState, parcels: ParcelTable) {
       s.news.unshift({
         q: s.month, kind: "info",
         text: `Your bank re-underwrote the line on total leverage: every mortgage, the facility and the line together `
-          + `within ${Math.round(100 * cov.lev)}% of your real estate. Limit ${locMoney(cov.limit)}.`,
+          + `within ${Math.round(100 * cov.lev)}% of your assets. Limit ${locMoney(cov.limit)}.`,
       });
     }
   }

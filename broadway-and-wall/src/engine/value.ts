@@ -4872,20 +4872,42 @@ export function rollDurations(t: RollTerms, r: number): { flats: number; leases:
  * TERM AND REVERSION: the stabilised value plus what the roll in place pays
  * over or under it while the gap lasts. `noiAfterTax` is the owner's NOI
  * after its tax bill; at stabilised that is `cap × stabilised`, so the gap is
- * the difference. The same arithmetic the street's bidders use (valueTo:
- * `V += (noiPre − stabPre) × dur`), discounted at the appraiser's yield plus
- * the growth it capitalises.
+ * the difference. The same arithmetic the street's bidders use (valueTo),
+ * discounted at the appraiser's yield plus the growth it capitalises.
+ *
+ * EACH PART OF THE GAP FOR AS LONG AS IT LASTS (2026-11-28). The whole gap
+ * was held for gapDuration at the market's speed (~3.1 years): a shed let
+ * whole on a 9.2-year lease at market marked 23% under its NOI over the cap
+ * index (F20), and a block of flats whose market fell under its roll was
+ * paid the surplus for twice as long as its twelve-month leases keep it
+ * (F8). The gap is now split the way valueTo splits it:
+ *   gapF  the let flats' rent against their market, for the roll's own turn
+ *         (rollTerms flatK: a twelfth of the leases a month);
+ *   vacN  empty space, what letting it adds (leaseUpGapNoiYr), on the
+ *         market's clock as before — capped at the shortfall left once the
+ *         flats' rent is set aside, so a rent surplus does not hide a vacancy;
+ *   gapC  the rest — rent over or under market, occupancy above or below the
+ *         stabilised level, face over effective rent — paid until the leases
+ *         that carry it end (rollDurations), or on the market's clock where
+ *         there is no lease (a block of flats' occupancy, an empty building).
+ * Without a month there is no roll to read: the one-line form stands.
  */
-function termAndReversion(econ: Econ, stabilised: number, noiAfterTax: number, cap: number, yAll: number): number {
-  const r = yAll + underwrittenGrowthPct(econ) / 100;
-  return stabilised + (noiAfterTax - cap * stabilised) * gapDuration(r);
-}
-/** termAndReversion with its legs named, for the value bridge (HoldingValueParts). */
-function termAndReversionParts(econ: Econ, stabilised: number, noiAfterTax: number, cap: number, yAll: number) {
+function termAndReversionParts(
+  econ: Econ, rec: ParcelRecord, h: Holding, month: number | undefined,
+  stabilised: number, noiAfterTax: number, cap: number, yAll: number,
+) {
   const r = yAll + underwrittenGrowthPct(econ) / 100;
   const gapT = noiAfterTax - cap * stabilised;
-  const D = gapDuration(r);
-  return { value: stabilised + gapT * D, gapF: 0, gapC: gapT, vacN: 0, Df: 0, Dc: D, Dm: D };
+  const Dm = gapDuration(r);
+  if (month === undefined) return { value: stabilised + gapT * Dm, gapF: 0, gapC: gapT, vacN: 0, Df: 0, Dc: Dm, Dm };
+  const terms = rollTerms(rec, econ, h, month);
+  const D = rollDurations(terms, r);
+  const gapF = terms.flatGap;
+  const vacSf = Math.max(0, stabilisedOccupancy(rec, econ) - physicalOcc(rec, h)) * rentableSf(rec);
+  const vacN = vacSf > 0 ? Math.min(leaseUpGapNoiYr(rec, econ, h, vacSf), Math.max(0, gapF - gapT)) : 0;
+  const gapC = gapT - gapF + vacN;
+  const Df = D.flats, Dc = D.leases ?? Dm;
+  return { value: stabilised + gapF * Df + gapC * Dc - vacN * Dm, gapF, gapC, vacN, Df, Dc, Dm };
 }
 
 function leaseUpMark(
@@ -4932,7 +4954,23 @@ function leaseUpMark(
   const gapNoi = leaseUpGapNoiYr(rec, econ, h, gapSf);
   const filledNoi = contractNoi + gapNoi;
   const yFilled = capFilled + taxRate(econ) * taxBorneShare(rec);
-  const filled = termAndReversion(econ, stabNoi / yFilled, filledNoi, capFilled, yFilled);
+  // ...ON THE FILLED ROLL (2026-11-28). Term and reversion reads the roll's
+  // own leases and vacancy, so the building it marks here is the one with
+  // the gap let: the flats at the higher occupancy, or the commercial space
+  // on one fresh lease at market for the class's ordinary term (market.ts
+  // LEASE_TERM_M). Read off the roll as it stands, the empty feet would be
+  // charged a second time inside the "filled" value (measured: the
+  // empty-flats fixture in test/leaseup-mark rose 1185K -> 1479K), and as
+  // the gap closes the filled roll becomes the roll, so the mark still lands
+  // exactly on the blend.
+  const resSf = useRentableSf(rec, "multifamily");
+  const hFilled: Holding = flats && resSf > 0
+    ? { ...h, occ: Math.min(1, (h.occ ?? 0) + gapSf / resSf) }
+    : { ...h, tenants: [...h.tenants, {
+      sf: gapSf, rentPsf: managedRentPsfYr(rec, econ, h, rec.class as BuiltClass),
+      startM: month, endM: month + LEASE_TERM_M[rec.class as BuiltClass],
+    } as Tenant] };
+  const filled = termAndReversionParts(econ, rec, hFilled, month, stabNoi / yFilled, filledNoi, capFilled, yFilled).value;
   // THE INCOME GIVEN UP IS WHAT THE GAP WOULD EARN, FOR AS LONG AS THIS MARKET
   // TAKES TO LET IT (2026-11-19): the months to let of the building's own
   // tier today (proforma.ts leaseUpMonthsOf on value.ts scoreVacOf — the clock
@@ -5592,7 +5630,7 @@ function holdingValueParts(rec: ParcelRecord, econ: Econ, h: Holding, month?: nu
   // office let 40% over market marked ~15% above what the street would bid,
   // because the appraisal capitalised rent the leases' expiry takes away.
   void inPlace;
-  const tr = termAndReversionParts(econ, stabilized, contractNoi, cap, yAll);
+  const tr = termAndReversionParts(econ, rec, h, month, stabilized, contractNoi, cap, yAll);
   const blended = tr.value;
   const abate = month === undefined ? 0 : remainingAbatement(h, month);
   // A BUILDING IN ITS FIRST LEASE-UP IS NOT A BUILDING WITH A VACANCY PROBLEM.

@@ -44,7 +44,7 @@ import { underwrittenGrowthPct, dollarLevel, RENT_BASE, CAP_BASE } from "./marke
 import {
   assetValue, capRateFor, initialCondIdx, demandLinear, incomeValueAsIs, initialCondition, inPlace, landValue,
   marketAppraisal, noiYr, resolveRec, specWearMult, taxBorneShare, taxRate, interimUsePsfYr, useOccupancy, useRentableSf,
-  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, residualScheme, GAP_CLOSE_YR, gapDuration, COND_BANDS, condGrade, noiAfterTaxYr,
+  useRentPsfYr, COND_DECAY, COND_WEAR_REF, overallScore, N_BANDS, landRead, DEV_MARGIN, residualScheme, GAP_CLOSE_YR, gapDuration, rollTerms, rollDurations, type RollTerms, COND_BANDS, condGrade, noiAfterTaxYr,
   leaseUpGapNoiYr, stabilisedOccupancy, rentableSf, scoreVacOf,
 } from "./value";
 import { leaseUpMonthsOf } from "./proforma";
@@ -155,6 +155,8 @@ export interface DealView {
   vacGap?: number;
   /** the years this market takes to let space of the building's quality (proforma.ts leaseUpMonthsOf on its tier's vacancy) */
   toLetY?: number;
+  /** the disclosed roll's leases and flats, for how long its gap lasts (value.ts rollTerms); absent where no roll is read (the steps, an undisclosed building) */
+  roll?: RollTerms;
   /** the owner-borne property tax, as a share of value a year */
   tau: number;
   /** re-letting capital, $/yr */
@@ -278,7 +280,10 @@ export function dealView(
       toLetY = leaseUpMonthsOf(e, k, 0, 0, scoreVacOf(e, k, overallScore(rec, e, k, q)), false) / 12;
     }
   }
-  return { rec, bbl, k, cond: c, condIdx: q, noiPre, stabPre, vacGap, toLetY, tau, leaseCap, cx, catchUp, debtA, debtCap, rd: q1.ratePct, rdCurve, prod, land: landValue(rec, e), locPrem: loc.prem, locG: loc.g };
+  // ...AND HOW LONG THE ROLL HOLDS ITS GAP: the leases' own terms and the
+  // flats' own turn (value.ts rollTerms), the reading the appraiser takes.
+  const roll = !steps && "h" in inP && inP.h && !inP.h.groundLeased ? rollTerms(rec, e, inP.h, s.month) : undefined;
+  return { rec, bbl, k, cond: c, condIdx: q, noiPre, stabPre, vacGap, toLetY, roll, tau, leaseCap, cx, catchUp, debtA, debtCap, rd: q1.ratePct, rdCurve, prod, land: landValue(rec, e), locPrem: loc.prem, locG: loc.g };
 }
 
 /** One bidder's temperament, as the underwriting reads it. */
@@ -389,7 +394,16 @@ export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<ty
   // the gap closes at the market's pace (value.ts GAP_CLOSE_YR, the appraiser's
   // too); a lease-up buyer with harder leasing (CARE.lease) closes it faster,
   // which is the value-add trade
-  const dur = gapDuration(r, GAP_CLOSE_YR * (v.noiPre < v.stabPre ? b.lease : 1));
+  const durMkt = gapDuration(r, GAP_CLOSE_YR * (v.noiPre < v.stabPre ? b.lease : 1));
+  // ...BUT A CONTRACT CLOSES ITS GAP WHEN IT ENDS (2026-11-28). The part of
+  // the gap the roll carries — the leases' rent and occupancy against a
+  // stabilised roll, the let flats' rent against their market — lasts as long
+  // as the leases do and as the flats' roll takes to turn (value.ts
+  // rollTerms / rollDurations: the appraiser's own reading, one law for both).
+  // No buyer's leasing skill shortens a signed lease, so CARE.lease reads only
+  // the market's clock: the vacancy, and a gap with no lease behind it.
+  const D = v.roll ? rollDurations(v.roll, r) : null;
+  const gF = v.roll?.flatGap ?? 0;
   // ...AND EMPTY SPACE IS A LEASE-UP, ON THE MARKET'S CLOCK (2026-11-20). The
   // whole shortfall was held for `dur`, about 3.3 years, whatever it was made
   // of and whatever the market: a lease under market does last until it
@@ -402,8 +416,12 @@ export function valueTo(e: Econ, v: DealView, b: Bidder, rentSig?: ReturnType<ty
   // of the shortfall that is empty space is held for the market's years to
   // let (a harder-leasing buyer, CARE.lease, lets it that much sooner); the
   // rest, the leases' distance from market, for `dur` as before.
-  const vac = v.vacGap !== undefined && v.toLetY !== undefined ? Math.min(v.vacGap, Math.max(0, v.stabPre - v.noiPre)) : 0;
-  V += (v.noiPre - v.stabPre + vac) * dur - vac * (v.toLetY ?? 0) / Math.max(0.25, b.lease);
+  // (The vacancy's share is capped at the shortfall left once the flats' rent
+  // differential is set aside, as the appraiser caps it, so a rent surplus
+  // does not hide empty space.)
+  const vac = v.vacGap !== undefined && v.toLetY !== undefined ? Math.min(v.vacGap, Math.max(0, v.stabPre - v.noiPre + gF)) : 0;
+  const gC = v.noiPre - v.stabPre + vac - gF;
+  V += gF * (D ? D.flats : durMkt) + gC * (D?.leases ?? durMkt) - vac * (v.toLetY ?? 0) / Math.max(0.25, b.lease);
   V -= v.catchUp;
   // ...and its committee reads the whole of it a little wrong (misreadShare:
   // a share of value, sized from measured valuation dispersion)

@@ -1338,8 +1338,15 @@ export function BuyButtons({ bbl, price, off, closeLabel, bid }: {
                   // "reduced by credit conditions and track record".
                   ? (Math.abs(max.principal - STAB_LTV * max.stabValue) < 1
                     ? `Sized on the business plan: ${Math.round(STAB_LTV * 100)}% of the ${usd(max.stabValue)} stabilised value (pro-forma NOI ${usd(max.stabNoi)}). `
-                    : `Sized on the business plan, held to their ${advPct}% advance today on the as-is basis (${Math.round(STAB_LTV * 100)}% of the ${usd(max.stabValue)} stabilised value, pro-forma NOI ${usd(max.stabNoi)}, would be more). `)
-                    + `The in-place NOI (${usd(max.uwNoi)}) supports less.`
+                    // held under the plan by the as-is leg (byLtv), which is
+                    // the sheet after any standing or single-name cut — so say
+                    // the LTV it wrote, and the cut when there is one
+                    : `Sized on the business plan, held by the as-is limit to ${lendPct}% LTV (their ${advPct}% advance today${max.advanceWhy ? `; ${max.advanceWhy}` : ""}); ${Math.round(STAB_LTV * 100)}% of the ${usd(max.stabValue)} stabilised value (pro-forma NOI ${usd(max.stabNoi)}) would be more. `)
+                    // the in-place leg lost to the plan (sizeRest onPlan): its
+                    // tests on today's income sized less — which can be the
+                    // same NOI as the pro forma on a building that is let but
+                    // bought cheap, so the line names the tests, not the NOI
+                    + `Their in-place tests on today's NOI (${usd(max.uwNoi)}) size less.`
                 : max.bind === "dscr" && max.modelBound
                   // THE DESK'S LOSS MODEL, NOT THE COVERAGE TEST (sizeRest
                   // modelConstrained): the loan closes above the DSCR minimum,

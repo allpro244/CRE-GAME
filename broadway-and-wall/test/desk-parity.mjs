@@ -8,8 +8,8 @@
 //      never move the sim.
 //   3. On the city's own starts, the desk's pro forma on the same lot, the
 //      month before, matches the builder's book, and townBuilderRead says a
-//      builder in town would start it — though the desk's 17% verdict mostly
-//      says "does not pencil".
+//      builder in town would start it (and how many of them the desk's 17%
+//      verdict calls "does not pencil" is printed, not asserted).
 //
 // Run: node test/desk-parity.mjs   (SEED, MONTHS to override; about 40 s)
 import { assertFreshBundle } from "./fresh.mjs";
@@ -148,7 +148,10 @@ const share = (u) => 1 - (u === "multifamily" ? 0 : E.RECOVERY_RATE[u]);
   check(noiOk === n, `the desk's NOI is the builder's within 5% on ${noiOk}/${n}`);
   check(atLeastStreet === n, `the town read is never below the street's own start test (${atLeastStreet}/${n})`);
   check(townOk >= Math.ceil(0.85 * n), `the town would start ${townOk}/${n} of the plans it did start (town read >= 0.95)`);
-  check(under >= Math.ceil(0.5 * n), `the desk's 17% margin calls ${under}/${n} of them short — the town builds under it`);
+  // An observation, not a requirement: how many of the town's own starts the
+  // merchant's 17% would have called short. Pinning it would fail the day the
+  // town's builders happen to start only schemes that clear 17%.
+  console.log(`  (the desk's 17% margin calls ${under}/${n} of them short — the town builds under it)`);
   check(impure === 0, `town reads on ${n} mid-game states write nothing`);
 }
 

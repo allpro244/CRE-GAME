@@ -84,12 +84,23 @@ export function verdictNote(plan: DevPlan, street: { h: number; who: string | nu
   const pct = Math.round(Math.abs(vc - 1) * 100);
   // not asked of the town (a conversion): the merchant's line alone
   if (!street) return vc >= 1 ? `Worth ${pct}% more than it costs, short of a merchant builder's ${m}% margin.` : "It would be worth less than it costs.";
-  const whom = street.who ?? "the town's merchant builders";
   if (street.h >= 1) {
+    // The anonymous merchants ask the merchant's own margin (rivals.ts
+    // anonHurdle), so when they are the ones who build, it is their read of
+    // rent (the leans) or easier credit than usual (equityStretch) that
+    // carries it, not a thinner margin. A named firm reads the plan
+    // at its own margin and through its own rent outlook (firmHurdle).
+    if (!street.who) {
+      return vc >= 1
+        ? `Worth ${pct}% more than it costs, under a merchant's ${m}% on today's rent, but the town's merchant builders would build it on where they think rent is going and what the desks lend now.`
+        : `Worth ${pct}% less than it costs on today's rent, but the town's merchant builders would build it on where they think rent is going and what the desks lend now.`;
+    }
     return vc >= 1
-      ? `Worth ${pct}% more than it costs, under a merchant's ${m}%, but ${whom} would build it at its own margin.`
-      : `Worth ${pct}% less than it costs on today's rent, but ${whom} would build it on where it thinks rent is going.`;
+      ? `Worth ${pct}% more than it costs, under a merchant's ${m}%, but ${street.who} would build it on its own margin and rent outlook.`
+      : `Worth ${pct}% less than it costs on today's rent, but ${street.who} would build it on where it thinks rent is going.`;
   }
+  // -Infinity: no construction desk lends on it and no builder here builds on its own money (streetRead)
+  if (!Number.isFinite(street.h)) return "No builder in town could start this today: no construction desk lends on it, and nobody here builds on their own money.";
   return vc >= 1
     ? `No builder in town would start this today: worth ${pct}% more than it costs, short of every builder's margin.`
     : "No builder in town would start this today: it would be worth less than it costs.";

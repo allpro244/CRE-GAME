@@ -1214,7 +1214,12 @@ export function startAdaptiveReuse(
   if (barred) return { s, err: barred };
   const plan = planAdaptiveReuse(s, parcels, bbl, target, customMix);
   if (!plan) return { s, err: "That conversion cannot be planned." };
-  if (plan.hurdleRatio < 1) return { s, err: plan.lenderNote ?? "The conversion does not clear its economic hurdle." };
+  // NO MARGIN GATE ON THE OWNER'S OWN CONVERSION (PARITY_PLAN: an action does
+  // not judge the deal; the firm does). This refused any conversion under the
+  // merchant's 17% (hurdleRatio < 1) — a rule a ground-up start never had,
+  // asked of nobody but the player. The rival converter (rivals.ts
+  // tickRivalConversions) keeps its own bar as its own decision; the money
+  // tests below still apply to everyone.
   // THE PURSE THAT OWNS THE DEED pays for its conversion, the same rule as a
   // ground-up start: a fund deed draws on the vehicle (and only while it is
   // investing); the sponsor's own money net of cash held for open raises.

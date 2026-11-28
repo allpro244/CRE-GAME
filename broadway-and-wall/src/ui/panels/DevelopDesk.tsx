@@ -15,7 +15,7 @@ import { adaptiveReuseEligibility, planAdaptiveReuse, reuseZoneBar, devFundingNe
 import { usd, sf } from "@/ui/format";
 import { useLabel, Row, LocSplitHint, Verdict } from "@/ui/panels/shared";
 import { BuildDesk, schemeName } from "@/ui/next/BuildDesk";
-import { deskScheme, verdictTone } from "@/ui/next/scheme";
+import { deskScheme, verdictNote, verdictTone } from "@/ui/next/scheme";
 
 export function ReuseSection({ bbl }: { bbl: string }) {
   const game = useHeldGame(bbl);
@@ -71,9 +71,11 @@ export function ReuseSection({ bbl }: { bbl: string }) {
             <Row k="Yield / hurdle" v={`${plan.yieldOnCost.toFixed(2)}% / ${plan.requiredYield.toFixed(2)}%`}
               strong bad={plan.hurdleRatio < 1} />
           </div>
+          {/* The merchant's line only: whether to convert below it is the owner's call, as on a new building. */}
+          <div className="hint">{verdictNote(plan, null)}</div>
           <LocSplitHint need={equity} game={game} parcels={parcels} />
           <button className="btn btn-buy"
-            disabled={plan.hurdleRatio < 1 || short > 0}
+            disabled={short > 0}
             onClick={() => useStore.getState().convertUse(bbl, target, mixed)}>
             Convert to {target === "multifamily" ? "apartments" : "mixed use"} · {usd(equity)}
           </button>

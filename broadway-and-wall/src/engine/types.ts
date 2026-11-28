@@ -1226,6 +1226,14 @@ export interface Listing {
   /** The month the player last put a number to this seller (actions.ts buyListing): one offer a month, as the round. */
   offeredM?: number;
   /**
+   * The seller called best and final on the player's outbid offer in month
+   * `m` (actions.ts buyListing): one more number that month, which must beat
+   * `first`, the offer it called on. `lost`: the player's final, which a
+   * firm's walk-away beat — the least that firm pays at the month's round
+   * (actions.ts tickListingAbsorption).
+   */
+  final?: { m: number; first: number; lost?: number };
+  /**
    * THE RENT ROLL, DISCLOSED BEFORE YOU BID — which is what due diligence IS.
    *
    * This building's actual leases used to be conjured at the CLOSING. The tape

@@ -5289,7 +5289,8 @@ export function tickRivals(s: GameState, parcels: ParcelTable) {
         // costs it nothing — and lists when competition would pay more.
         let quiet: { price: number; top: (ReturnType<typeof bidRound>)["bids"][number] } | null = null;
         if (quietStyle) {
-          const round = bidRound(s, parcels, rec, { bbl: forcedBbl, ask: Math.max(1, v) });
+          // the seller's own reservation is the floor a firm short of its number must fund (bidRound)
+          const round = bidRound(s, parcels, rec, { bbl: forcedBbl, ask: Math.max(1, v), reserve: terms.reserve });
           const [top, second] = [...round.bids].sort((a, b) => b.max - a.max);
           const price = top && top.max >= terms.reserve ? Math.round((terms.reserve + top.max) / 2 / 1000) * 1000 : 0;
           if (price > 0 && price >= Math.max(terms.reserve, second?.max ?? 0)) quiet = { price, top };

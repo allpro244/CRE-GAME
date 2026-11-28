@@ -621,7 +621,8 @@ function takeRivalNotes(s: GameState, parcels: ParcelTable) {
     // the deed, repays the note in full and hands the surplus to the old
     // owner. Only when nobody pays the debt does the note buyer own it.
     {
-      const round = bidRound(s, parcels, rec, { bbl: rn.bbl, ask: rn.face, distress: true, open: true });
+      // the note buyer's credit bid (the face) is the floor a firm short of its own number must fund (bidRound)
+      const round = bidRound(s, parcels, rec, { bbl: rn.bbl, ask: rn.face, distress: true, open: true, floor: rn.face });
       const room = round.bids.filter((b) => b.r.id !== to.id && b.r.id !== from.id && b.r.failedM === undefined);
       const top = room[0];
       if (top && top.bid > rn.face) {

@@ -114,10 +114,12 @@ export function FundDesk() {
                 title="A majority of the LPs ended the investment period early (ILPA's no-fault right). The fund makes no new deals; the fee runs on the capital still invested, and spare cash goes back each quarter." />
             ) : (() => {
               const d = fundDeployment(f, game.month);
-              const reviewing = game.month < f.investEndM && d.nextReviewM < f.investEndM;
+              // A fund from an old save whose draws were never recorded (fund.ts deployUnmeasured): no figure, no review.
+              const reviewing = !f.deployUnmeasured && game.month < f.investEndM && d.nextReviewM < f.investEndM;
               return (
                 <Row k="Investment period"
-                  v={`ends ${monthLabel(f.investEndM)}${fundCanBuy(game) ? "" : " · closed"} · ${usd(d.deployed)} of ${usd(f.size)} invested`
+                  v={`ends ${monthLabel(f.investEndM)}${fundCanBuy(game) ? "" : " · closed"} · `
+                    + (f.deployUnmeasured ? "invested to date not on record (saved before the fund kept it) · no LP pace review" : `${usd(d.deployed)} of ${usd(f.size)} invested`)
                     + (reviewing ? ` · LPs review ${monthLabel(d.nextReviewM)}` : "")
                     + (reviewing && d.behindM > 0 ? ` · ${Math.round(d.behindM)} months behind an even pace` : "")}
                   bad={reviewing && lpWouldEndPeriod(f, d.nextReviewM)}

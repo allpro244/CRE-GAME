@@ -104,7 +104,7 @@ export function fundDeployment(f: PlayerFund, month: number): { deployed: number
  * `flows` cannot say what it deployed), and not already voted.
  */
 export function lpWouldEndPeriod(f: PlayerFund, month: number): boolean {
-  if (!f.flows || f.settled || f.lpEndedM !== undefined || month >= f.investEndM) return false;
+  if (!f.flows || f.deployUnmeasured || f.settled || f.lpEndedM !== undefined || month >= f.investEndM) return false;
   return fundDeployment(f, month).behindM >= FUND_LP_REVIEW_M;
 }
 
@@ -183,9 +183,20 @@ export interface PlayerFund {
    * the day-one cheque, and any purchase consideration settled through the
    * sponsor's account (types.ts settleVehicleDeedFlow). Those reach `flows`
    * only as "deed", mixed with rents and repairs, so `fundDeployment` reads
-   * them here. Unset on a save from before it was kept (counted from then on).
+   * them here. Zero at the raise; unset only on a save from before it was kept.
    */
   deedInvested?: number;
+  /**
+   * THE LEDGER CANNOT SAY WHAT THIS FUND DEPLOYED: a fund saved before
+   * `deedInvested` (or before `flows`) that had already put money out. Its
+   * construction draws after each day-one cheque went unrecorded, and a
+   * finished job leaves no record to rebuild them from, so `fundDeployment`
+   * would read a building fund as idle and the LPs' review would end a period
+   * that was on pace. Set once by save.ts; the review then leaves that fund
+   * alone (an unmeasurable pace is not a slow one). A fund that had deployed
+   * nothing is measurable, zero, and keeps its review.
+   */
+  deployUnmeasured?: boolean;
   /** Last month the vehicle made a scheduled distribution. */
   lastDistM?: number;
   /**
@@ -353,6 +364,7 @@ export function raiseFund(s: GameState): { s: GameState; err?: string } {
     flows: { call: fundCash },
     deedTagged: 0,
     deedSettled: 0,
+    deedInvested: 0,
     called: lpCalled0 + gpCalled0,
     distributed: 0,
     promotePaid: 0,

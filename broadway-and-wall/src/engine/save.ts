@@ -314,8 +314,28 @@ function migrateVehicleOverdraft(state: GameState): void {
   if (!f || f.settled || !(f.cash < 0)) return;
   const x = -f.cash;
   state.cash -= x;
-  moveFundCash(f, x, "advance");
+  // A fund saved before its own ledger (`flows`) stays without one: starting
+  // a ledger here would hold only this advance, against a balance it never saw.
+  if (f.flows) moveFundCash(f, x, "advance");
+  else f.cash += x;
   f.gpAdvance = (f.gpAdvance ?? 0) + x;
+}
+
+/**
+ * A FUND WHOSE DEPLOYMENT THE SAVE CANNOT MEASURE (fund.ts deployUnmeasured).
+ * Before `deedInvested` a job's construction draws after its day-one cheque
+ * were not counted anywhere the LPs' review reads, and before `flows` nothing
+ * was. A live fund from such a save that had put money out (a purchase or a
+ * build cheque on its ledger, or no ledger at all) is marked, and the review
+ * leaves it alone; one that had deployed nothing reads zero, correctly, and is
+ * still reviewed. Every fund raised since starts `deedInvested` at zero, so an
+ * unset field means an old save.
+ */
+function migrateFundDeployment(state: GameState): void {
+  const f = state.fund;
+  if (!f || f.settled || f.deedInvested !== undefined || f.deployUnmeasured) return;
+  const fl = f.flows;
+  if (!fl || (fl.purchase ?? 0) < 0 || (fl.build ?? 0) < 0) f.deployUnmeasured = true;
 }
 
 /** Did this save predate the plat its own island now stands on? */
@@ -347,6 +367,7 @@ export function migrateSaveState(state: GameState): GameState {
   migrateFloatingBench(state);
   migrateDropJev(state);
   migrateDropVacancyNorm(state);
+  migrateFundDeployment(state);   // before the overdraft move, which reads `flows` as the save left it
   migrateVehicleOverdraft(state);
   if ((state.agent || state.renewalMgmt) && !state.leasingPlan) {
     ensureLeasingPlan(state);

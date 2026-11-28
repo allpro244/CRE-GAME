@@ -1,24 +1,24 @@
 import { useState } from "react";
 import Slider from "@/ui/Slider";
 import { useStore } from "@/state/store";
-import { netWorth } from "@/engine/value";
-import { locLimit, locRate, locAvailable, spendable, lineLender } from "@/engine/credit";
+import { lineCovenant, locRate, locAvailable, spendable, lineLender } from "@/engine/credit";
 import { usd, pct } from "@/ui/format";
 import { Big } from "@/ui/panels/shared";
 import { SponsorRecord } from "@/ui/panels/SponsorRecord";
 
-// The revolving line: up to 60% of net worth (LOC_LTV) at the short index +
-// 400bps, written by the firm's bank and moving with that bank's appetite,
-// and the advance rate moves with the credit cycle — the label used to promise
-// a fixed share while the engine was quietly cutting it in a crunch. It draws
-// before a shortfall becomes insolvency, and idle cash sweeps against it.
+// The revolving line: what is left under the total-leverage covenant — every
+// mortgage, the facility and the line within 60% of gross asset value
+// (LOC_LTV) — and what income after the mortgages will carry; written by the
+// firm's bank, priced off the short index and moving with that bank's appetite
+// and the credit cycle (the label states today's ceiling, not a fixed share).
+// It draws before a shortfall becomes insolvency, and idle cash sweeps against it.
 export function CreditLine() {
   const game = useStore((s) => s.game)!;
   const parcels = useStore((s) => s.parcels)!;
   const lineBank = lineLender(game);
   const { drawCredit, repayCredit } = useStore.getState();
-  const limit = locLimit(game, parcels);
-  const nw = netWorth(game, parcels);
+  const cov = lineCovenant(game, parcels);
+  const limit = cov.limit;
   const balance = game.loc?.balance ?? 0;
   // The engine's number, not a second copy of the subtraction: `locAvailable`
   // is what every refusal and every automatic draw is measured against, so a
@@ -35,16 +35,12 @@ export function CreditLine() {
         Line of credit
       </div>
       <div className="stat-strip">
-        {(() => {
-          const adv = nw > 0 ? limit / nw : 0.35;
-          return (
-            <Big
-              label={`Limit · ${(adv * 100).toFixed(0)}% of net worth`}
-              value={usd(limit)}
-              bad={adv < 0.3}
-            />
-          );
-        })()}
+        <Big
+          label={`Limit · total debt ≤ ${(cov.lev * 100).toFixed(0)}% of assets`}
+          value={usd(limit)}
+          bad={limit <= 0}
+        />
+        <Big label="Leverage · all debt ÷ assets" value={Number.isFinite(cov.leverage) ? pct(cov.leverage * 100) : "—"} bad={cov.leverage > cov.lev} />
         <Big label="Drawn" value={usd(balance)} bad={balance > limit * 0.8} />
         <Big label="Available" value={usd(avail)} />
         {/* WHAT THE FIRM CAN ACTUALLY WRITE A CHEQUE FOR. Cash on its own was

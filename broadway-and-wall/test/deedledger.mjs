@@ -71,8 +71,12 @@ const ALLOWED = {
     serviceNotes: "note payoffs and sales", modifyNote: "note paydown", sellNote: "note sale",
     tickReceivership: "the failed bank's receiver paying the deposit claim back — no deed",
   },
+  // Signed principal (types.ts logPrincipal): draws +, prepayments −.
   borrowed: {
     openFacility: "the crossed facility", takeFacilityRoll: "the crossed facility",
+    releaseFromFacility: "the crossed facility's release price, principal repaid",
+    refinanceFacility: "a smaller facility refinance, principal repaid",
+    repayFacility: "the crossed facility, principal repaid",
   },
   debtSvc: {
     tickLoc: "revolver interest and penalties",

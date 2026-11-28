@@ -396,7 +396,7 @@ function BankFile({ l }: { l: Lender }) {
                     <td className="num">{onIncome(p) ? `own model · ${pc(p.debtYield, 1)}` : "land"}</td>
                     <td className="num">{Math.round(p.termM / 12)}y · {Math.round(p.ioM / 12)}y · {p.amortYears}y</td>
                     <td className="num">{min && max ? `${usd(min)} – ${usd(max)}` : min ? `from ${usd(min)}` : max ? `up to ${usd(max)}` : "any size"}</td>
-                    <td className="dim">{p.minDSCR > 0 ? `DSCR ${p.minDSCR.toFixed(2)} · ` : ""}LTV {pc(p.maxLTV, 0)}</td>
+                    <td className="dim">{p.minDSCR > 0 ? `DSCR ${p.minDSCR.toFixed(2)} · ` : ""}LTV {pc(p.maxLTV, 0)}{p.ltvMaintenance ? "" : " at origination"}</td>
                     <td className={open ? "" : "neg"}>{open ? "quoting" : failed ? "closed" : "window shut"}</td>
                   </tr>
                 );

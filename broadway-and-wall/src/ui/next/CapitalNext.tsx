@@ -12,7 +12,7 @@ import { monthLabel, START_YEAR } from "@/engine/types";
 import { dscr, ltv, payOffDue } from "@/engine/debt";
 import { locLimit, locRate } from "@/engine/credit";
 import { resolveRec } from "@/engine/value";
-import { derive, nwOf } from "@/ui/derive";
+import { derive } from "@/ui/derive";
 import { usd } from "@/ui/format";
 import { DataTable, Stat, StatStrip, type Col } from "./DataTable";
 import { Figure } from "./Figure";
@@ -77,7 +77,7 @@ export function CapitalOverview() {
   const parcels = useStore((s) => s.parcels)!;
   const rows = useMemo(() => loanRows(game, parcels), [game, parcels]);
   const book = debtBook(game);
-  const lim = useMemo(() => locLimit(game, parcels, nwOf(game, parcels)), [game, parcels]);
+  const lim = useMemo(() => locLimit(game, parcels), [game, parcels]);
   const bal = rows.reduce((a, r) => a + r.balance, 0);
   const wRate = bal > 0 ? rows.reduce((a, r) => a + r.balance * r.rate, 0) / bal : null;
   const dated = rows.filter((r) => r.monthsLeft !== null);

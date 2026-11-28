@@ -515,6 +515,8 @@ export interface Loan {
    * previously had no way to reach.
    */
   breachMs?: number;
+  /** Principal the automatic equity cure has paid into this note from cash, lifetime (debt.ts tickLoan) — the Debt page names it. */
+  curedPaid?: number;
   /**
    * MONTHS THE PAYMENT DID NOT ACTUALLY GET MADE.
    *
@@ -3138,7 +3140,7 @@ export interface Econ {
 export interface BooksYear {
   yr: number;       // 0-based game year
   noi: number;      // property NOI collected (pre-debt)
-  debtSvc: number;  // debt service + refi fees + cap premiums + voluntary principal paydowns
+  debtSvc: number;  // interest, scheduled amortisation, fees, prepayment penalties, cap premiums — never a prepayment of principal (that is `borrowed`, signed)
   leasing: number;  // TI and leasing commissions, including the 6% an exclusive takes
   capex: number;    // programs, renovations, make-ready turns
   dev: number;      // development equity, construction interest, overruns
@@ -3148,11 +3150,15 @@ export interface BooksYear {
   ga: number;       // firm overhead — asset management, accounting, legal
   interest: number; // what the bank paid you on idle cash — never property income
   /**
-   * Net new mortgage / facility principal drawn into cash (cash-out refinance,
-   * facility proceeds above the mortgages they repay). The conservation
-   * identity used to be blind to these — they raised cash with no books entry.
-   * Monthly amortisation still travels through `debtSvc`; this bucket is only
-   * the balance-sheet draws that land in the operating account.
+   * NET principal through cash, SIGNED: + new mortgage / facility principal
+   * drawn into the account (cash-out refinance, facility proceeds above the
+   * mortgages they repay, construction and reserve draws), − principal repaid
+   * from it ahead of schedule (covenant cures, paydowns, payoffs, refinance
+   * paydowns, facility releases). A balance-sheet move, not income or expense:
+   * the Books page showed a $746K covenant cure as "Debt service" on a $1.52M
+   * loan before prepayments came here (playtest 2026-11-27, F1). Scheduled
+   * amortisation inside the monthly payment stays in `debtSvc`, the P&I
+   * presentation. Write it through `logPrincipal`.
    */
   borrowed?: number;
   /**
@@ -4843,8 +4849,13 @@ export interface GameState {
      * it, not one per month — see sim.ts.
      */
     payingNotes?: boolean;
-    /** Net worth at the bank's last annual review, and when (credit.ts locLimit). */
-    reviewNw?: number; reviewM?: number;
+    /**
+     * Each deed's value at the bank's last annual review, and when (credit.ts
+     * locLimit): the line's covenant tests total debt against these, not this
+     * month's marks. `reviewNw` is the retired net-worth review, kept so old
+     * saves load; nothing reads it.
+     */
+    reviewVals?: Record<string, number>; reviewNw?: number; reviewM?: number;
   };
   books: BooksYear[];                        // the ledger, one entry per year
   /** Monthly flow buckets for the income statement's month view. Optional for old saves. */
@@ -4934,6 +4945,20 @@ export interface GameState {
 // Write a cash flow into the current year's ledger bucket — and the month's.
 // Name the deed (`bbl`) when the cheque belongs to one building, and the same
 // dollars also land on that deed's equity ledger (see GameState.deedCf).
+/**
+ * PRINCIPAL IS NOT AN EXPENSE. Signed: + new principal drawn into cash, −
+ * principal repaid from cash ahead of schedule (cures, paydowns, payoffs,
+ * refinance paydowns, releases). Scheduled amortisation inside the monthly
+ * payment stays in `debtSvc`, the P&I presentation. It books to `borrowed`, so
+ * the conserve identity, the deed ledger (DEED_SIGN.borrowed = +1 is the same
+ * owner-side flow as debtSvc's −1 on a repayment), the fund purse and a
+ * syndicate's netting all see exactly the dollars they saw when a prepayment
+ * was booked as debt service.
+ */
+export function logPrincipal(s: GameState, delta: number, bbl?: string, vehicleDirect = false) {
+  if (delta && Number.isFinite(delta)) logBooks(s, "borrowed", delta, bbl, vehicleDirect);
+}
+
 export function logBooks(
   s: GameState, key: keyof Omit<BooksYear, "yr">, amt: number, bbl?: string,
   /** The caller already moved this dollar through `s.fund.cash` — do not settle it again. */

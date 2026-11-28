@@ -27,7 +27,7 @@ import { tickLeaseholds } from "./leasehold";
 import { stampYearMark, recordMarks } from "./standing";
 import { splitMonthCf } from "./jv";
 import { tickTalks, reconcileContracts } from "./acquire";
-import { tickLoan, productById, loanLender, stackPayoff, balloonLadder, drawLeaseUpReserve, leaseUpRoom } from "./debt";
+import { tickLoan, productById, loanLender, stackPayoff, balloonLadder, drawLeaseUpReserve, leaseUpRoom, BALLOON_NOTICE_M } from "./debt";
 import { markSponsor } from "./sponsor";
 import { tickLoc, coverCashShortfall, locAvailable, locRate, fundableNow, fundCashNeed, parkedOnLine, monthlyDebtService } from "./credit";
 import { releaseCost, tickFacility, FACILITY_CURE_M } from "./facility";
@@ -2151,7 +2151,7 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
     // nothing costs a cheque or a workout. The forecast is in the key, so a
     // loan that stops clearing between notice and maturity stops the clock
     // the month it flips.
-    if (h.loan && h.loan.maturityM - s.month <= 12 && h.loan.maturityM > s.month) {
+    if (h.loan && h.loan.maturityM - s.month <= BALLOON_NOTICE_M && h.loan.maturityM > s.month) {
       const mo = h.loan.maturityM - s.month;
       const rec = parcels ? resolveRec(parcels, s, h.bbl) : null;
       const roll = rec && parcels && !s.workouts?.[h.bbl]

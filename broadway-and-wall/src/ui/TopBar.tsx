@@ -163,7 +163,7 @@ export default function TopBar() {
     const firmCf = (g: typeof deferredGame) =>
       derive(g, "topbar.firmCf", () => portfolioMonthlyCF(g, parcels!) - firmOverheadMonthly(g, parcels!), [parcels]);
     const cf = parcels ? firmCf(deferredGame) : 0;
-    const line = parcels ? locLimit(deferredGame, parcels, nw) : 0;
+    const line = parcels ? locLimit(deferredGame, parcels) : 0;
     // Office availability vs twelve months ago — the tell that predicts real
     // rent falls (~93% in century windows). Direct cityVac sits on its
     // frictional floor for years in a shortage and would print 0.0 forever.

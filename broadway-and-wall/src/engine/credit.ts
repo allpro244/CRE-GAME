@@ -1,12 +1,15 @@
 // The revolving line of credit: the facility that keeps a good portfolio from
-// dying of a bad month. Sized at up to 60% of net worth (LOC_LTV, moved by
-// the credit cycle and your standing), priced at the index plus 400bps, drawn and repaid at will — and drawn automatically before cash goes
-// negative, because no real sponsor lets a rent cheque bounce while an
-// undrawn line sits on the desk.
+// dying of a bad month. Sized so that TOTAL debt — every mortgage, mezz note,
+// construction loan, the facility and the line itself — stays within 60% of
+// gross asset value (LOC_LTV, cut by the credit cycle, your standing and the
+// bank's appetite), and to what income after the mortgages will carry; priced
+// off the short index, drawn and repaid at will — and drawn automatically
+// before cash goes negative, because no real sponsor lets a rent cheque bounce
+// while an undrawn line sits on the desk.
 import type { ParcelTable } from "@/data/types";
 import type { BooksYear, GameState } from "./types";
 import { logBooks, cloneState} from "./types";
-import { netWorth, ownedHoldingNoiYr, ownedHoldingValue, resolveRec } from "./value";
+import { ownedHoldingNoiYr, ownedHoldingValue, resolveRec } from "./value";
 import { sponsorStanding } from "./sponsor";
 import { money } from "./money";
 import { appetiteAdvance, bankRatePct, liveSpread } from "./pricing";
@@ -17,17 +20,21 @@ import { productById } from "./debt";
 import { purseOf } from "./vehicles";
 
 /**
- * THE ADVANCE RATE, against net worth.
+ * THE TOTAL-LEVERAGE COVENANT the line is written under.
  *
- * 35% was conservative to the point of being decorative: the line existed to
- * stop a bad month killing a good book, and at a third of equity it could not
- * do the other thing a revolver is for — bridging an acquisition or a fit-out
- * while a sale closes. Sixty per cent of net worth is a real corporate
- * facility, and it is a genuine two-sided change: it is also sixty per cent of
- * net worth that the bank can call when values fall and your equity with them.
- * The over-advance path below is what makes that a decision rather than a gift.
+ * This read "60% of net worth", citing the REIT total-leverage covenant — but
+ * that covenant is TOTAL debt over TOTAL asset value, and net worth is equity
+ * after the mortgages, so the line stacked on top of every one of them: a book
+ * at 78% leverage still had a line worth 60% of its equity (playtest
+ * 2026-11-27, F14: $7.84M of mortgages on $10.88M of assets and a $0.71M
+ * limit). It now measures what it cites. Mortgages, mezz, construction loans,
+ * the facility and the line together stay within this share of gross asset
+ * value, and the line is what is left under it. Rivals already size their
+ * lines against total debt (rivals.ts lineRoom). The over-advance path in
+ * tickLoc is what makes it a decision rather than a gift: when values fall the
+ * room shrinks and the bank calls the excess.
  */
-export const LOC_LTV = 0.60;      // against net worth: the 60% total-leverage covenant public REITs' credit facilities "overwhelmingly" carry (Goodwin, "Senior Credit Facilities for REIT Borrowers", 2025) [S]
+export const LOC_LTV = 0.60;      // TOTAL debt (every mortgage, mezz, construction loan, the facility and the line) ≤ 60% of gross asset value: the total-leverage covenant public REITs' credit facilities "overwhelmingly" carry (Goodwin, "Senior Credit Facilities for REIT Borrowers", 2025) [S]
 export const LOC_SPREAD = 4.0;    // prime + 400bps
 /** The line's floor over the LOAN index: a commercial bank's five-year fixed mortgage spread (debt.ts product sheet, 1.55). */
 /**
@@ -199,32 +206,74 @@ export function sweepLocIdleCash(
   return sweep;
 }
 
-// The lender re-sizes the line off your net worth — which includes what you've
-// already drawn, so borrowing doesn't inflate your own borrowing base.
 /**
- * The line is not a constant. Banks size a revolver against your equity AND
- * against their own appetite, and their appetite disappears in exactly the
- * quarter you need the money. Cutting the advance rate with the credit cycle
- * is what turns a downturn from an inconvenience into a doom loop: values
- * fall, so equity falls, so the line falls twice over, so the over-advance
- * gets called, so you sell into the bid you least wanted to hit.
+ * ONE WALK OF THE BOOK FOR THE LINE: gross asset value and total debt for the
+ * covenant, and the income, dirt and equity legs of the coverage test.
+ *
+ * Gross asset value is each deed at the bank's annual review (reviewVals) —
+ * a deed bought or delivered since then at today's mark, because the bank
+ * underwrote the closing — plus construction in progress at money sunk, as
+ * net worth carries it, plus the firm's OWN unrestricted cash: total asset
+ * value in a REIT facility counts unrestricted cash. Only own cash — the
+ * account less what is drawn on the line and less tenants' security deposits
+ * (restricted, and owed back) — so a draw never raises its own base, and by
+ * the time the line is carrying the firm (cash under its balance) cash adds
+ * nothing. Total debt is every mortgage and mezz note on those deeds, every
+ * construction loan and the facility. Notes and the fund interest are not in
+ * the base — equity in an unconsolidated vehicle whose own debt is excluded
+ * too. A JV or syndicated deed is consolidated at 100% on both sides, the way
+ * a facility consolidates controlled subsidiaries.
+ */
+function lineBase(s: GameState, parcels: ParcelTable): { gav: number; debt: number; free: number; land: number; equity: number } {
+  const reviewM = s.loc?.reviewM ?? -1;
+  const rv = s.loc?.reviewVals;
+  let gav = 0, debt = 0, free = 0, land = 0, equity = 0, deposits = 0;
+  for (const h of Object.values(s.holdings)) {
+    if (purseOf(s, h) === "fund") continue;
+    for (const t of h.tenants) deposits += t.deposit ?? 0;
+    const v = ownedHoldingValue(s, parcels, h);
+    const fresh = (h.boughtM ?? 0) > reviewM || (h.deliveredM ?? -1) > reviewM;
+    const r = rv?.[h.bbl];
+    gav += r !== undefined && !fresh ? r : v;
+    const owed = (h.loan?.balance ?? 0) + (h.mezz?.balance ?? 0);
+    debt += owed;
+    const rec = resolveRec(parcels, s, h.bbl);
+    if (rec && (rec.class === "land" || !rec.bldgArea) && !h.groundLeased) { land += v; continue; }
+    const ds = (h.loan?.monthlyPmt ?? 0) * 12 + (h.mezz?.monthlyPmt ?? 0) * 12;
+    free += ownedHoldingNoiYr(s, parcels, h) - ds;
+    if (!s.facility?.bbls.includes(h.bbl)) equity += Math.max(0, v - owed);
+  }
+  for (const d of Object.values(s.developments ?? {})) {
+    if (purseOf(s, s.holdings[d.bbl]) === "fund") continue;
+    gav += Math.max(0, (d.equitySpent ?? 0) + (d.drawn ?? 0) - (d.reserveUsed ?? 0));
+    debt += d.loanBalance ?? 0;
+  }
+  debt += s.facility?.balance ?? 0;
+  gav += Math.max(0, s.cash - (s.loc?.balance ?? 0) - deposits);
+  return { gav, debt, free, land, equity };
+}
+
+/**
+ * The line is not a constant. A bank sizes a revolver to its covenant AND to
+ * its own appetite, and its appetite disappears in exactly the quarter you
+ * need the money. Cutting the advance with the credit cycle is what turns a
+ * downturn from an inconvenience into a doom loop: values fall, so the room
+ * under the leverage covenant falls, so the over-advance gets called, so you
+ * sell into the bid you least wanted to hit.
  *
  * This is the single most important thing a levered owner has to survive, and
  * without it the whole game had no way to lose.
  */
-export function locLimit(s: GameState, parcels: ParcelTable, nwPre?: number): number {
-  // Optional precomputed net worth — the top bar used to call netWorth here
-  // and again for the Net-worth readout on every render (including every nav
-  // click and every FPS tick), which is what made ordinary UI clicks feel
-  // heavy once the book grew.
+function lineSizing(s: GameState, parcels: ParcelTable): {
+  gav: number; debt: number; lev: number; limit: number; binding: "leverage" | "coverage" | "receiver";
+} {
   // THE LINE IS SIZED AT ITS ANNUAL REVIEW (2026-11-11). A bank re-underwrites
   // a corporate revolver's borrowing base once a year off the financials it is
   // given, not off this month's marks — so one bad quarter does not call a
   // borrower's line in the middle of a slump (the fire-sale loop: marks fall,
-  // lines shrink, owners sell, marks fall). The review's net worth is set in
+  // lines shrink, owners sell, marks fall). The review's values are set in
   // tickLoc; sponsor standing and the bank's own appetite still cut at once.
-  const nwNow = nwPre ?? netWorth(s, parcels);
-  const nw = s.loc?.reviewNw !== undefined ? s.loc.reviewNw : nwNow;
+  const b = lineBase(s, parcels);
   const ci = s.econ.creditIdx ?? 1;
   // The revolver is the most relationship-dependent money on the balance
   // sheet, so it is the first thing a bank pulls when your name goes bad —
@@ -236,18 +285,26 @@ export function locLimit(s: GameState, parcels: ParcelTable, nwPre?: number): nu
   // (a receiver collects a performing loan, it does not call it), and there
   // is no headroom until the line is repaid and rewritten elsewhere.
   const bank = lineLender(s);
-  if (bank?.failedM !== undefined) return Math.max(0, Math.round(s.loc?.balance ?? 0));
   const appFac = bank ? appetiteAdvance(bank.appetite) : 1;
-  const advance = LOC_LTV * Math.max(0.35, Math.min(1.15, ci)) * (1 - Math.min(0.6, 1.6 * st.advanceCut)) * appFac;
-  // ...AND IT HAS TO BE SERVICED (2026-10-14). Sixty per cent of net worth was
-  // the whole test, so a book of empty buildings and dirt marked up on paper
-  // carried a revolver its income could not pay a month of — and the line was
-  // drawn automatically to cover every shortfall. A street firm's line is the
-  // lesser of its covenant and what its income will carry (rivals.ts
-  // lineRoom); a corporate revolver has the same pair of tests, leverage AND
-  // coverage. Income after the mortgages must cover the line's interest
-  // 1.25 times, and the dirt gets the land desk's borrowing base — a third of
-  // its value — because land carries debt on value, not on income.
+  const cut = Math.max(0.35, Math.min(1.15, ci)) * (1 - Math.min(0.6, 1.6 * st.advanceCut)) * appFac;
+  // THE COVENANT IS A CEILING. A loose market, a good name or a flush bank
+  // cannot lift total leverage past what the facility agreement allows; they
+  // only stop cutting under it. The credit cycle, standing and appetite still
+  // take the line down (owner, 2026-11-27: "keeping the existing
+  // credit/appetite/standing factors").
+  const lev = LOC_LTV * Math.min(1, cut);
+  if (bank?.failedM !== undefined) {
+    return { gav: b.gav, debt: b.debt, lev, limit: Math.max(0, Math.round(s.loc?.balance ?? 0)), binding: "receiver" };
+  }
+  // ...AND IT HAS TO BE SERVICED (2026-10-14). The leverage covenant alone let
+  // a book of empty buildings and dirt marked up on paper carry a revolver its
+  // income could not pay a month of — and the line was drawn automatically to
+  // cover every shortfall. A street firm's line is the lesser of its covenant
+  // and what its income will carry (rivals.ts lineRoom); a corporate revolver
+  // has the same pair of tests, leverage AND coverage. Income after the
+  // mortgages must cover the line's interest 1.25 times, and the dirt gets the
+  // land desk's borrowing base — a third of its value — because land carries
+  // debt on value, not on income.
   //
   // THE BUILDINGS' OWN VALUE IS A FLOOR UNDER THE COVERAGE TEST (owner, Oct
   // 2026: "the line of credit should be giving you more"). A young firm with
@@ -261,17 +318,28 @@ export function locLimit(s: GameState, parcels: ParcelTable, nwPre?: number): nu
   // shortfalls, so a base that fell as cash was spent would call the line at
   // the moment it was being used.
   const rate = Math.max(1, (s.econ.indexRate ?? 5) + LOC_SPREAD) / 100;
-  let free = 0, land = 0, equity = 0;
-  for (const h of Object.values(s.holdings)) {
-    if (purseOf(s, h) === "fund") continue;
-    const rec = resolveRec(parcels, s, h.bbl);
-    if (rec && (rec.class === "land" || !rec.bldgArea) && !h.groundLeased) { land += ownedHoldingValue(s, parcels, h); continue; }
-    const ds = (h.loan?.monthlyPmt ?? 0) * 12 + (h.mezz?.monthlyPmt ?? 0) * 12;
-    free += ownedHoldingNoiYr(s, parcels, h) - ds;
-    if (!s.facility?.bbls.includes(h.bbl)) equity += Math.max(0, ownedHoldingValue(s, parcels, h) - (h.loan?.balance ?? 0) - (h.mezz?.balance ?? 0));
-  }
-  const serviceable = Math.max(Math.max(0, free) / (1.25 * rate), equity / 3) + land / 3;
-  return Math.max(0, Math.round(Math.min(nw * advance, serviceable * appFac)));
+  const serviceable = (Math.max(Math.max(0, b.free) / (1.25 * rate), b.equity / 3) + b.land / 3) * appFac;
+  const room = lev * b.gav - b.debt;
+  const limit = Math.max(0, Math.round(Math.min(room, serviceable)));
+  return { gav: b.gav, debt: b.debt, lev, limit, binding: room <= serviceable ? "leverage" : "coverage" };
+}
+
+/** The line's limit — see lineSizing. */
+export function locLimit(s: GameState, parcels: ParcelTable): number {
+  return lineSizing(s, parcels).limit;
+}
+
+/**
+ * THE COVENANT, FOR THE SCREEN: gross asset value, the debt ahead of the line,
+ * the leverage ceiling today, the limit, and total leverage with the line as
+ * drawn — (debt + line) ÷ assets, the ratio the covenant is written on.
+ */
+export function lineCovenant(s: GameState, parcels: ParcelTable): {
+  gav: number; debt: number; lev: number; limit: number; leverage: number; binding: "leverage" | "coverage" | "receiver";
+} {
+  const z = lineSizing(s, parcels);
+  const total = z.debt + (s.loc?.balance ?? 0);
+  return { ...z, leverage: z.gav > 0 ? total / z.gav : (total > 0 ? Infinity : 0) };
 }
 
 /**
@@ -479,10 +547,13 @@ export function drawLoc(s: GameState, parcels: ParcelTable, amount: number): { s
   if (!Number.isFinite(amt) || amt <= 0) return { s, err: "Name an amount." };
   if (amt > avail) {
     const st = sponsorStanding(next);
+    const cov = lineCovenant(next, parcels);
     return {
       s,
-      err: `The line only has ${locMoney(avail)} left.`
-        + (st.mark > 0.3 ? ` The bank cut your advance rate — ${st.label}.` : " That's the bank's advance rate against your net worth."),
+      err: (cov.binding === "leverage"
+        ? `Total debt is held to ${Math.round(100 * cov.lev)}% of your real estate: ${locMoney(cov.debt)} of mortgages, mezz and facility against ${locMoney(cov.gav)} of assets leave ${locMoney(avail)} on the line.`
+        : `The line only has ${locMoney(avail)} left — the bank sizes it to what your income after the mortgages will carry.`)
+        + (st.mark > 0.3 ? ` The bank cut your advance rate — ${st.label}.` : ""),
     };
   }
   next.loc.balance += amt;
@@ -515,8 +586,30 @@ export function repayLoc(s: GameState, amount: number): { s: GameState; err?: st
 // shortfall automatically rather than letting the run die with credit unused.
 export function tickLoc(s: GameState, parcels: ParcelTable) {
   if (!s.loc) s.loc = { balance: 0, drawnTotal: 0, interestPaid: 0 };
-  // the annual review re-sizes the borrowing base (see locLimit)
-  if (s.loc.reviewM === undefined || s.month - s.loc.reviewM >= 12) { s.loc.reviewNw = netWorth(s, parcels); s.loc.reviewM = s.month; _locAvailCache = null; }
+  // THE ANNUAL REVIEW re-appraises the borrowing base, deed by deed (see
+  // lineBase). A save from before the line obeyed its covenant has no deed
+  // values, so its first month reviews: a line drawn above the new limit goes
+  // through the over-advance path below like any other.
+  if (s.loc.reviewM === undefined || s.month - s.loc.reviewM >= 12 || !s.loc.reviewVals) {
+    const migrated = s.loc.reviewNw !== undefined && !s.loc.reviewVals;
+    const vals: Record<string, number> = {};
+    for (const h of Object.values(s.holdings)) {
+      if (purseOf(s, h) === "fund" || s.developments?.[h.bbl]) continue;
+      vals[h.bbl] = Math.round(ownedHoldingValue(s, parcels, h));
+    }
+    s.loc.reviewVals = vals;
+    s.loc.reviewM = s.month;
+    delete s.loc.reviewNw;
+    _locAvailCache = null;
+    if (migrated) {
+      const cov = lineCovenant(s, parcels);
+      s.news.unshift({
+        q: s.month, kind: "info",
+        text: `Your bank re-underwrote the line on total leverage: every mortgage, the facility and the line together `
+          + `within ${Math.round(100 * cov.lev)}% of your real estate. Limit ${locMoney(cov.limit)}.`,
+      });
+    }
+  }
   // Pin the line to its bank while it is drawn; release it once it is clear.
   if (s.loc.balance > 0 && !s.loc.lender) s.loc.lender = lineLender(s)?.name;
   else if (s.loc.balance <= 0 && s.loc.lender) delete s.loc.lender;

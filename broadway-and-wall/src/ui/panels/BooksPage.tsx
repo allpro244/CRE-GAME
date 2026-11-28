@@ -486,7 +486,7 @@ function IncomeStatementTab() {
                         <div className="dim" style={{ fontSize: 11 }}>
                           {b.interest ? `int ${usd(b.interest)}` : ""}
                           {b.interest && b.borrowed ? " · " : ""}
-                          {b.borrowed ? `drew ${usd(b.borrowed)}` : ""}
+                          {b.borrowed ? (b.borrowed > 0 ? `drew ${usd(b.borrowed)}` : `repaid ${usd(-b.borrowed)}`) : ""}
                         </div>
                       ) : null}
                     </td>
@@ -605,7 +605,7 @@ export function IncomeStatement() {
             "Net operating income": prior.noi, "Leasing costs": -prior.leasing,
             "Capital expenditure": -prior.capex, "Firm overhead": -prior.ga,
             "Property cash flow": opCf(prior), "Debt service": -prior.debtSvc,
-            "Interest on cash": prior.interest ?? 0, "Debt drawn": prior.borrowed ?? 0, "Cash flow after debt": afterDebt(prior),
+            "Interest on cash": prior.interest ?? 0, "Principal drawn / repaid": prior.borrowed ?? 0, "Cash flow after debt": afterDebt(prior),
             "Development": -prior.dev, "Acquisitions": -prior.bought,
             "Disposition proceeds": prior.sold, "Taxes": -prior.taxes,
             "Change in cash": bottom(prior),
@@ -696,9 +696,9 @@ export function IncomeStatement() {
               <L k="Capital expenditure" v={-cur.capex} sub note="roofs, systems, make-ready" />
               <L k="Firm overhead" v={-cur.ga} sub note="asset management, accounting, legal" />
               <L k="Property cash flow" v={opCf(cur)} strong rule />
-              <L k="Debt service" v={-cur.debtSvc} sub note="interest, amortization, fees, paydowns" />
+              <L k="Debt service" v={-cur.debtSvc} sub note="interest, scheduled amortization, fees" />
               <L k="Interest on cash" v={cur.interest ?? 0} sub note={`sweep ${(sweepApy(game.econ) * 100).toFixed(1)}% (policy − 0.4pt) · ordinary income`} />
-              <L k="Debt drawn" v={cur.borrowed ?? 0} sub note="cash-out refi and facility draws" />
+              <L k="Principal drawn / repaid" v={cur.borrowed ?? 0} sub note="new mortgage/facility principal less prepayments (cures, paydowns, payoffs)" />
               <L k="Cash flow after debt" v={afterDebt(cur)} strong rule />
               <L k="Development" v={-cur.dev} sub note="equity, construction carry, overruns" />
               <L k="Acquisitions" v={-cur.bought} sub note="equity at closing" />

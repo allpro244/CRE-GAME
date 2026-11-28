@@ -91,7 +91,13 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   const qt = E.facilityQuotes(g, parcels, pool).find((x) => x.available);
   check(!!qt, "facility desk quotes the pool");
   if (!qt) process.exit(1);
-  const opened = E.openFacility(g, parcels, pool, qt.productId, 1);
+  // HALF THE BASE (2026-11-28). The line now obeys its total-leverage covenant
+  // — every mortgage, the facility and the line within 60% of gross assets
+  // (credit.ts LOC_LTV) — and a facility drawn to its full base on this pool
+  // sat near 70% of the deeds' value, so the line had no room at all and this
+  // section tested nothing (a zero hole, zero draws). Drawn at half the base,
+  // the facility leaves the line room to carry the notes, which is the subject.
+  const opened = E.openFacility(g, parcels, pool, qt.productId, 0.5);
   check(!opened.err && !!opened.s.facility, "facility opens");
   g = opened.s;
 

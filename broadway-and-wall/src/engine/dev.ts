@@ -13,7 +13,7 @@ import { hash01 } from "./competitorTraits";
 import { creditOfSize } from "./tenantMarket";
 import { BUILT_CLASSES, cloneState, raiseAlert } from "./types";
 import { abatementAtStart } from "./citygov";
-import { logBooks, moveDeposit, moveFundCash, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
+import { logBooks, moveDeposit, vehiclePay, monthLabel, serviceSpec, planSpec, START_YEAR } from "./types";
 import { demandNow, demandModel, nudgeBlockDemand, isCivicLand } from "./demand";
 import { rng, rrange, openingVac, forwardVacancy, CITY_STOCK, SECTOR_LABEL, addStock, retireStock, REF_PIPE_SHARE, residenceVac, housableStock, payrollGrowth12 } from "./market";
 import { firmShort } from "./firm";
@@ -2057,14 +2057,10 @@ function payFromPurse(next: GameState, parcels: ParcelTable, bbl: string, amt: n
   if (!(amt > 0)) return;
   const f = vehicle ? next.fund : null;
   if (!f) { fundAndBook(next, parcels, amt, cat, { bbl }); return; }
-  const call = Math.max(0, Math.min(f.uncalled, amt - Math.max(0, f.cash)));
-  if (call > 0) {
-    f.uncalled -= call;
-    f.called += call;
-    moveFundCash(f, call, "call");
-    logBooks(next, "lpCalled", call); // LP equity in for this job — not income
-  }
-  moveFundCash(f, -amt, "build");
+  // The vehicle's cash, then a call on its commitments (LP equity in for this
+  // job — not income), then a GP advance for whatever is left: the same order
+  // as every other vehicle bill (vehiclePay), so the purse never overdraws.
+  vehiclePay(next, amt, "build");
   logBooks(next, cat, amt, bbl, true);
 }
 

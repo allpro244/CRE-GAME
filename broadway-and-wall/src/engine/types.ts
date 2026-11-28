@@ -3198,7 +3198,7 @@ export interface PnlYear {
   leasing: number;
   capex: number;
   ga: number;
-  /** Interest earned on idle cash. */
+  /** Interest earned on idle cash, and the interest the fund pays on the sponsor's advances to it (types.ts repayAdvance). */
   intInc: number;
   /** Interest accrued on mortgages, mezzanine, the facility and the line. */
   intExp: number;
@@ -4062,7 +4062,7 @@ export interface GameState {
    * put into its deals in total. Sized at first use; see syndicate.ts.
    */
   ffNetwork?: { cap: number };
-  /** The sponsor's fee income from its syndicates this tax year (sim.ts taxes it, then resets it). */
+  /** The sponsor's ordinary income from its vehicles this tax year — syndicate and fund fees, and the interest the fund pays on GP advances (sim.ts taxes it, then resets it). */
   feeIncomeYr?: number;
   /**
    * THE YEAR'S INVESTOR MONEY in this city (investors.ts): what each investor
@@ -5082,17 +5082,22 @@ function settleVehicleDeedFlow(s: GameState, key: keyof Omit<BooksYear, "yr">, a
  */
 export function moveDeposit(s: GameState, h: Holding | undefined, amt: number) {
   if (!amt) return;
-  if (h?.fundOwned && s.fund && !s.fund.settled) moveFundCash(s.fund, amt, "deposit");
-  else s.cash += amt;
+  // A deposit handed back from a vehicle with no cash is a bill like any
+  // other: called, or advanced by the sponsor (vehiclePay) — never an overdraft.
+  if (h?.fundOwned && s.fund && !s.fund.settled) {
+    if (amt > 0) moveFundCash(s.fund, amt, "deposit");
+    else vehiclePay(s, -amt, "deposit");
+  } else s.cash += amt;
 }
 
 /**
  * Why a dollar moved through the fund vehicle's `cash`. One kind per real
  * movement: capital called, distributed, a GP advance repaid, a deed's own
  * flow settled, a purchase, sale or construction closing the caller moved directly, a tenant
- * deposit, the sponsor's buy-in at the wind-down.
+ * deposit, the sponsor's buy-in at the wind-down, a GP advance paid into the
+ * purse (only an old save's overdraft, converted on load — save.ts).
  */
-export type FundFlowKind = "call" | "dist" | "advRepay" | "deed" | "purchase" | "sale" | "build" | "deposit" | "buyIn" | "fee";
+export type FundFlowKind = "call" | "dist" | "advRepay" | "deed" | "purchase" | "sale" | "build" | "deposit" | "buyIn" | "fee" | "advance";
 
 /**
  * THE ONE WRITE TO A VEHICLE'S CASH. Moves `amt` (signed) and records it on
@@ -5120,7 +5125,7 @@ export function vehicleCollect(s: GameState, amt: number) {
   const f = s.fund;
   if (!f || f.settled || !(amt > 0)) return;
   const repay = Math.min(amt, Math.max(0, f.gpAdvance ?? 0));
-  if (repay > 0) f.gpAdvance = (f.gpAdvance ?? 0) - repay; // the sponsor keeps it: its loan back
+  repayAdvance(s, f, repay); // the sponsor keeps it: its loan back, interest first
   const rest = amt - repay;
   s.cash -= rest;
   moveFundCash(f, rest, "deed");
@@ -5152,6 +5157,70 @@ export function vehicleReimburse(s: GameState, amt: number): number {
   // The whole cost is settled: `pay` from the purse, `adv` as a GP advance.
   f.deedSettled = (f.deedSettled ?? 0) - amt;
   return adv;
+}
+
+/**
+ * THE VEHICLE PAYS A BILL THAT LEAVES THE FIRM — a tenant's deposit handed
+ * back, a builder's closing cheque. From its cash; short, from a call on
+ * uncalled commitments (LPAs allow calls for existing investments' expenses);
+ * still short, the sponsor writes the cheque as a GP protective advance
+ * (`fund.gpAdvance`: interest at the sponsor's line rate, repaid before any
+ * distribution — fund.ts). The same order `vehicleReimburse` settles a cost
+ * the sponsor's account already paid, for a cost nobody has paid yet. So
+ * `fund.cash` never goes below zero. It used to, for years, on deposits handed
+ * back from a vehicle that held no cash (−$46K on seed 12007's levered fund:
+ * an interest-free overdraft nothing funded). The sponsor's own shortfall
+ * then meets its line at the month's close and, past that, the insolvency
+ * clock — the failure path every firm in town walks. Mutates `s`. Returns
+ * the advance created. The caller books the bill (for a deposit, the
+ * liability falls with it); a call books its own `lpCalled`.
+ */
+export function vehiclePay(s: GameState, amt: number, kind: FundFlowKind): number {
+  const f = s.fund;
+  if (!f || f.settled || !(amt > 0)) return 0;
+  const short = amt - Math.max(0, f.cash);
+  if (short > 0 && f.uncalled > 0) {
+    const call = Math.min(short, f.uncalled);
+    f.uncalled -= call;
+    f.called += call;
+    moveFundCash(f, call, "call");
+    logBooks(s, "lpCalled", call); // LP equity in for the vehicle's own bill — not income
+  }
+  const pay = Math.min(amt, Math.max(0, f.cash));
+  moveFundCash(f, -pay, kind);
+  const adv = amt - pay;
+  if (adv > 0) {
+    s.cash -= adv; // the sponsor writes the rest of the cheque
+    f.gpAdvance = (f.gpAdvance ?? 0) + adv;
+    // A closing the vehicle settles directly is settled in full: `pay` from the
+    // purse (moveFundCash counted it), `adv` by the sponsor on its behalf.
+    if (kind === "purchase" || kind === "sale" || kind === "build") f.deedSettled = (f.deedSettled ?? 0) - adv;
+  }
+  return adv;
+}
+
+/**
+ * THE VEHICLE PAYS ITS GP BACK, interest before principal (the order every
+ * loan is repaid in). `amt` has already reached the sponsor's account (or its
+ * note on the liquidating trust); this writes the advance down and recognises
+ * the interest as the sponsor's income: the LPs' share of it, since the
+ * co-invest bears its own share of the vehicle's cost — the same treatment as
+ * the management fee (fund.ts tickFund). Recognised when paid, so an advance
+ * written off never booked income nobody collected. Inside the firm, so
+ * nothing on the cash books. The co-invest share is `gpCapitalShare`
+ * (fund.ts), inlined because fund.ts imports this module. Mutates `s`, `f`.
+ */
+export function repayAdvance(s: GameState, f: import("./fund").PlayerFund, amt: number): void {
+  if (!(amt > 0)) return;
+  f.gpAdvance = (f.gpAdvance ?? 0) - amt;
+  const ip = Math.min(amt, Math.max(0, f.advInterest ?? 0));
+  if (ip > 0) {
+    f.advInterest = (f.advInterest ?? 0) - ip;
+    const gpShare = f.called > 0 ? Math.min(1, f.gpCommit / f.called) : 0;
+    const lp = ip * (1 - gpShare);
+    pnlAdd(s, "intInc", lp);
+    s.feeIncomeYr = (s.feeIncomeYr ?? 0) + lp;
+  }
 }
 
 /**

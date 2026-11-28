@@ -12,7 +12,9 @@
  *   investment period 5y / life 10y — common closed-end shape
  */
 import type { GameState } from "./types";
-import { cloneState, logBooks, monthLabel, moveFundCash, pnlAdd } from "./types";
+import { cloneState, logBooks, monthLabel, moveFundCash, pnlAdd, repayAdvance } from "./types";
+// Circular (credit -> value -> fund); called only at runtime, after both modules load.
+import { locRate } from "./credit";
 import { markSponsor } from "./sponsor";
 import { money } from "./money";
 import { playerTerms } from "./reputation";
@@ -50,6 +52,57 @@ export const FUND_LIFE_M = 120;
 
 /** GP co-invest as share of commitments: 3.5% average across 1,503 private-equity funds (UNC Institute for Private Capital, "Do GP Commitments Matter?") [S~: private equity, no real-estate-specific figure found; 2-5% practice]. */
 export const FUND_GP_COINVEST = 0.03;
+
+/**
+ * THE LPs' ANNUAL REVIEW (months). A closed-end fund reports to its LPs at an
+ * annual meeting and its advisory committee sits at least once a year, and
+ * ILPA's governance principles give a simple majority in interest of the LPs
+ * the right to suspend or end the investment period without cause
+ * [S: ILPA Principles 3.0 (2019), "Fund governance" — no-fault early
+ * termination or suspension of the investment period by a simple majority in
+ * interest; ILPA Model LPA (2019)]. The review is once a year, so the vote
+ * can come at most once a year. A fund that raised and sat collected five
+ * years of fees on commitments before anything looked at it, and was found
+ * out only at its year-ten settlement (F10, 2026-11-27: $2,604 a month on a
+ * $2.5M fund that bought nothing).
+ */
+export const FUND_LP_REVIEW_M = 12;
+
+/**
+ * HOW FAR THE FUND HAS PUT ITS MONEY TO WORK, as the LPs read it at a review.
+ * `deployed` is the equity the vehicle has written into buildings — purchase
+ * and construction cheques, recycled proceeds included — off its own ledger.
+ * `behindM` is how many months the fund trails an even pace through its
+ * investment period: the period is, by definition, the window to commit the
+ * fund, so an even pace is the least it can ask [M]. Real pacing is faster —
+ * about a quarter of commitments called in year one and half by year two
+ * (Takahashi & Alexander, Yale, 2002) — so this reads lenient. The period is
+ * this fund's own (`investEndM` − `raisedM`), meaningful until a vote moves
+ * `investEndM`. Pure: the desk and the engine read one answer.
+ */
+export function fundDeployment(f: PlayerFund, month: number): { deployed: number; behindM: number; nextReviewM: number } {
+  const fl = f.flows ?? {};
+  const deployed = Math.max(0, -(fl.purchase ?? 0) - (fl.build ?? 0));
+  const elapsed = month - f.raisedM;
+  const period = Math.max(1, f.investEndM - f.raisedM);
+  const behindM = elapsed - period * deployed / Math.max(1, f.size);
+  const nextReviewM = f.raisedM + FUND_LP_REVIEW_M * (Math.floor(Math.max(0, elapsed) / FUND_LP_REVIEW_M) + 1);
+  return { deployed, behindM, nextReviewM };
+}
+
+/**
+ * WOULD THE LPs VOTE THE INVESTMENT PERIOD OFF AT THIS REVIEW? A full review
+ * cycle behind an even pace — the fund has not reached where an even pace
+ * would have put it at the LPs' LAST meeting — so the review threshold is the
+ * review cadence itself, not a tuned margin. In year one that is a fund that
+ * has bought nothing; by year two, under a fifth of a five-year fund. Only a
+ * fund still inside its period, with its own ledger (an old save without
+ * `flows` cannot say what it deployed), and not already voted.
+ */
+export function lpWouldEndPeriod(f: PlayerFund, month: number): boolean {
+  if (!f.flows || f.settled || f.lpEndedM !== undefined || month >= f.investEndM) return false;
+  return fundDeployment(f, month).behindM >= FUND_LP_REVIEW_M;
+}
 
 export interface PlayerFund {
   /** Vintage month. */
@@ -90,14 +143,36 @@ export interface PlayerFund {
    */
   extendedTo?: number;
   /**
-   * GP ADVANCES OUTSTANDING. What the sponsor paid for the vehicle's buildings
-   * when the vehicle had neither cash nor commitments left to call — an LPA
-   * lets the GP advance to protect an investment, and repays it ahead of any
-   * distribution. The sponsor's receivable, the vehicle's liability; carried
-   * at cost (no interest accrues — a simplification, stated). See
-   * settleVehicleDeedFlow in types.ts.
+   * GP ADVANCES OUTSTANDING, interest included. What the sponsor paid for the
+   * vehicle's buildings when the vehicle had neither cash nor commitments left
+   * to call — an LPA lets the GP advance to protect an investment, and repays
+   * it ahead of any distribution. The sponsor's receivable, the vehicle's
+   * liability. It bears interest at the sponsor's own line rate (credit.ts
+   * locRate), accrued monthly into the balance (tickFund): the price of the
+   * money the sponsor puts up, which is its cost of funds. LPAs price a
+   * partner's advance at an arm's-length bank rate or the GP's cost of funds
+   * [S: Wells Real Estate Fund XII/XIII LP, S-11 (1999): partner loans at a
+   * rate no higher than unrelated banks charge for comparable loans; LPA
+   * clause sampled by Law Insider, "Loans to the Partnership": the greater of
+   * the GP's actual cost of funds or WSJ prime + 200 bp, reset monthly]. It
+   * was carried at cost with no interest, which handed the sponsor's money to
+   * the LPs and hid what a levered vehicle cost to run (F19, 2026-11-27: a
+   * $1.45M advance on a $2.5M fund, free). A rival's vehicle covers the same
+   * hole from its own line (rivals.ts), priced by the same arithmetic
+   * (rivalDebt.ts lineRatePct), so one rule. See settleVehicleDeedFlow and
+   * vehiclePay in types.ts.
    */
   gpAdvance?: number;
+  /** The part of `gpAdvance` that is interest accrued and not yet paid — repaid first (types.ts repayAdvance). */
+  advInterest?: number;
+  /** Interest ever accrued on GP advances, paid or not — the vehicle's cost of the sponsor's money. */
+  advInterestTotal?: number;
+  /**
+   * The month the LPs voted to end the investment period because the fund
+   * was not investing (tickFund, FUND_LP_REVIEW_M). Unset while the period
+   * runs its course.
+   */
+  lpEndedM?: number;
   /** Last month the vehicle made a scheduled distribution. */
   lastDistM?: number;
   /**
@@ -375,7 +450,7 @@ export function applyDistribute(s: GameState, amount: number): number {
   // to the vehicle, not capital in it.
   const adv = Math.min(want, Math.max(0, Math.round(f.gpAdvance ?? 0)));
   if (adv > 0) {
-    f.gpAdvance = (f.gpAdvance ?? 0) - adv;
+    repayAdvance(s, f, adv); // interest first, then principal
     moveFundCash(f, -adv, "advRepay");
     s.cash += adv;
     want -= adv;
@@ -420,7 +495,11 @@ export function distributeInKind(s: GameState, nav: number): { advance: number; 
   const owed = Math.max(0, Math.round(f.gpAdvance ?? 0));
   out.advance = Math.min(rest, owed);
   rest -= out.advance;
+  // Repaid (as a note on the trust), interest first; what the trust cannot
+  // cover is written off, interest with it.
+  repayAdvance(s, f, out.advance);
   f.gpAdvance = 0;
+  f.advInterest = 0;
   out.writtenOff = owed - out.advance;
   if (rest > 0) {
     const w = waterfall(f, rest);
@@ -556,7 +635,8 @@ export function creditFundCash(s: GameState, amount: number, kind: import("./typ
 }
 
 /**
- * Monthly pref accrual; at life end, settle remaining cash and record whether
+ * Monthly pref accrual, the GP advance's interest, the management fee and the
+ * LPs' annual review; at life end, settle remaining cash and record whether
  * LPs got their capital back. A failed vehicle is the second death — you
  * survive, and nobody will back you again.
  */
@@ -566,6 +646,34 @@ export function tickFund(s: GameState): void {
   // Pref on net contributed capital still outstanding.
   const netOut = Math.max(0, f.called - f.distributed);
   f.prefAccrued += netOut * (f.pref / 12);
+  // THE GP'S ADVANCE CARRIES ITS PRICE: a month of interest at the sponsor's
+  // line rate on what the vehicle owes it, added to the balance (unpaid
+  // interest compounds, as on any drawn line). See PlayerFund.gpAdvance.
+  const owed = f.gpAdvance ?? 0;
+  if (owed > 0) {
+    const i = Math.round(owed * locRate(s) / 1200);
+    if (i > 0) {
+      f.gpAdvance = owed + i;
+      f.advInterest = (f.advInterest ?? 0) + i;
+      f.advInterestTotal = (f.advInterestTotal ?? 0) + i;
+    }
+  }
+  // ...AND THE VEHICLE'S SPARE CASH REPAYS IT. An LPA repays a partner's
+  // advance out of the partnership's first available cash, ahead of any
+  // distribution: a GP that left its own priced receivable outstanding while
+  // the vehicle sat on cash would be charging its LPs for money they did not
+  // need. Spare is cash over the vehicle's working reserve (fundReserve) —
+  // sale proceeds or a call, since every bill already takes cash first.
+  {
+    const due = Math.round(f.gpAdvance ?? 0);
+    const spare = Math.floor(f.cash - fundReserve(s));
+    if (due > 0 && spare > 0) {
+      const r = Math.min(due, spare);
+      repayAdvance(s, f, r);
+      moveFundCash(f, -r, "advRepay");
+      s.cash += r;
+    }
+  }
   // THE MANAGEMENT FEE, a month of it: on commitments through the investment
   // period, then on the capital still invested. Paid from the vehicle's cash,
   // called from the LPs when the cash is short; the sponsor's income. Within
@@ -597,6 +705,31 @@ export function tickFund(s: GameState): void {
         f.feesPaid = (f.feesPaid ?? 0) + pay;
       }
     }
+  }
+  // THE LPs' REVIEW (FUND_LP_REVIEW_M). Once a year the LPs look at what the
+  // fund has put to work; a full review cycle behind an even pace and a
+  // majority ends the investment period (ILPA's no-fault right). From then on
+  // the vehicle makes no new deals, the fee runs on capital still invested
+  // (the post-period base above), spare cash goes back each quarter
+  // (scheduledDistribution), and uncalled commitments stay callable only for
+  // what it already owns — the ordinary end of a period, a few years early.
+  // A vehicle that owns nothing is wound up on the spot, through the same
+  // settlement that stamps a fund failed when it did not return its capital.
+  const age = s.month - f.raisedM;
+  if (age > 0 && age % FUND_LP_REVIEW_M === 0 && lpWouldEndPeriod(f, s.month)) {
+    const d = fundDeployment(f, s.month);
+    f.lpEndedM = s.month;
+    f.investEndM = s.month - 1; // no new deal from the month of the vote
+    const held = Object.values(s.holdings).some((h) => h.fundOwned);
+    s.news.unshift({
+      q: s.month, kind: "warn",
+      text: `Your LPs voted to end the fund's investment period: ${money(d.deployed)} of a ${money(f.size)} fund invested in ${age} months, `
+        + `${Math.round(d.behindM)} months behind an even pace. No new deals; `
+        + (held
+          ? `the fee now runs on the capital still invested, and spare cash goes back to the partners each quarter.`
+          : `it owns nothing, so it is wound up now.`),
+    });
+    if (!held) { settleFund(s); return; }
   }
   scheduledDistribution(s);
 

@@ -220,5 +220,99 @@ const { parcels, bbls } = loadCity(0, E.normalizeParcels);
   ok("the call is on the ledger as LP equity in", Math.abs((lp1 - lp0) - called) < 1);
 }
 
+// THE VEHICLE NEVER OVERDRAWS (F19). A deposit handed back from a vehicle
+// with no cash took fund.cash below zero for years, an interest-free loan
+// nobody made. Now: its cash, a call on what is uncalled, then a GP advance.
+{
+  let g = E.newGame(4247, parcels);
+  g.fund = {
+    raisedM: 0, size: 10_000_000, uncalled: 0, cash: 0,
+    called: 5_000_000, distributed: 0, promotePaid: 0, prefAccrued: 0,
+    investEndM: 60, lifeEndM: 120, pref: 0.08, promote: 0.20, gpCommit: 300_000, flows: {},
+  };
+  const deed = { fundOwned: true };
+  const cash0 = g.cash;
+  E.moveDeposit(g, deed, -40_000);
+  ok("a deposit the vehicle cannot hand back is a GP advance, not an overdraft",
+    g.fund.cash === 0 && g.fund.gpAdvance === 40_000 && g.cash - cash0 === -40_000,
+    `fund cash ${g.fund.cash}, advance ${g.fund.gpAdvance}, sponsor Δ${g.cash - cash0}`);
+  g.fund.uncalled = 25_000;
+  const lp0 = (g.books ?? []).reduce((a, y) => a + (y.lpCalled ?? 0), 0);
+  E.moveDeposit(g, deed, -40_000);
+  const lp1 = (g.books ?? []).reduce((a, y) => a + (y.lpCalled ?? 0), 0);
+  ok("...uncalled commitments are called first, the advance takes the rest",
+    g.fund.cash === 0 && g.fund.uncalled === 0 && lp1 - lp0 === 25_000 && g.fund.gpAdvance === 55_000,
+    `called ${lp1 - lp0}, advance ${g.fund.gpAdvance}`);
+  const sum = Object.values(g.fund.flows).reduce((a, v) => a + v, 0);
+  ok("...and the vehicle's ledger still sums to its cash", Math.abs(sum - g.fund.cash) < 1, `${sum} vs ${g.fund.cash}`);
+  g.fund.cash = -5_000;
+  ok("the invariant names an overdrawn vehicle", E.checkInvariants(g, parcels).some((v) => /below zero/.test(v.detail ?? v.msg ?? JSON.stringify(v))));
+}
+
+// THE ADVANCE CARRIES THE SPONSOR'S LINE RATE, and is repaid interest first.
+{
+  let g = E.newGame(4248, parcels);
+  g.fund = {
+    raisedM: 0, size: 10_000_000, uncalled: 0, cash: 0,
+    called: 5_000_000, distributed: 0, promotePaid: 0, prefAccrued: 0,
+    investEndM: 60, lifeEndM: 120, pref: 0.08, promote: 0.20, gpCommit: 300_000, flows: {},
+    gpAdvance: 1_000_000,
+  };
+  const rate = E.locRate(g);
+  E.tickFund(g);
+  const i = Math.round(1_000_000 * rate / 1200);
+  ok("a month of interest at the line rate accrues on the advance", rate > 3 && Math.abs(g.fund.gpAdvance - (1_000_000 + i)) <= 1 && g.fund.advInterest === i,
+    `rate ${rate.toFixed(2)}%, advance ${g.fund.gpAdvance}, interest ${g.fund.advInterest}`);
+  g.fund.cash = 2_000_000; g.fund.flows.call = 2_000_000;
+  const inc0 = E.pnlYear(g).intInc, fee0 = g.feeIncomeYr ?? 0;
+  E.applyDistribute(g, 2_000_000);
+  const lpShare = 1 - 300_000 / 5_000_000;
+  ok("a distribution repays the advance first, interest included", Math.abs(g.fund.gpAdvance) < 1 && g.fund.advInterest === 0, `advance ${g.fund.gpAdvance}, interest ${g.fund.advInterest}`);
+  ok("the LPs' share of the interest is the sponsor's income when paid",
+    Math.abs((E.pnlYear(g).intInc - inc0) - i * lpShare) < 1 && Math.abs(((g.feeIncomeYr ?? 0) - fee0) - i * lpShare) < 1,
+    `intInc +${E.pnlYear(g).intInc - inc0} vs ${i * lpShare}`);
+  // A vehicle with spare cash over its reserve pays its GP back without waiting for a distribution.
+  g.fund.gpAdvance = 300_000; g.fund.advInterest = 0; g.fund.cash = 400_000;
+  const c0 = g.cash;
+  E.tickFund(g);
+  ok("spare vehicle cash repays the advance", Math.abs(g.fund.gpAdvance) < 1 && g.cash - c0 > 300_000, `advance ${g.fund.gpAdvance}, sponsor Δ${g.cash - c0}`);
+}
+
+// THE LPs' REVIEW (F10). A fund that raised and bought nothing collected five
+// years of fees on commitments; a majority of LPs ends its investment period
+// at the first annual review, and an empty vehicle winds up on the spot.
+{
+  const sized = (over = {}) => ({
+    raisedM: -12, size: 2_500_000, uncalled: 1_818_750, cash: 600_000,
+    called: 681_250, distributed: 0, promotePaid: 0, prefAccrued: 0,
+    investEndM: 48, lifeEndM: 108, pref: 0.08, promote: 0.20, gpCommit: 75_000,
+    mgmtFee: E.FUND_MGMT_FEE, flows: { call: 681_250, fee: -81_250 }, ...over,
+  });
+  let g = E.newGame(4249, parcels);
+  g.fund = sized();
+  E.tickFund(g);
+  ok("year one, nothing bought: the LPs end the period and the empty vehicle winds up",
+    g.fund.lpEndedM === g.month && g.fund.settled && g.fund.failed && g.fund.uncalled === 0,
+    `lpEndedM ${g.fund.lpEndedM}, settled ${g.fund.settled}, failed ${g.fund.failed}`);
+  ok("...and the street will not back the next one", !E.fundRaiseQuote(g).ok);
+
+  let h = E.newGame(4249, parcels);
+  h.fund = sized({ cash: 0, flows: { call: 681_250, fee: -56_250, purchase: -625_000 } });
+  E.tickFund(h);
+  ok("a quarter invested in year one is ahead of an even pace: no vote", h.fund.lpEndedM === undefined && !h.fund.settled,
+    `behind ${E.fundDeployment(h.fund, h.month).behindM.toFixed(1)} months`);
+
+  // Year two, a sliver invested, buildings held: the period ends, the vehicle runs on.
+  let k = E.newGame(4249, parcels);
+  k.fund = sized({ raisedM: -24, investEndM: 36, lifeEndM: 96, flows: { call: 681_250, fee: -306_250, purchase: -375_000 }, cash: 0 });
+  k.holdings["fake-deed"] = { bbl: "fake-deed", fundOwned: true, tenants: [] };
+  ok("year two at 15% invested is a year behind an even pace", E.lpWouldEndPeriod(k.fund, k.month), `behind ${E.fundDeployment(k.fund, k.month).behindM.toFixed(1)} months`);
+  E.tickFund(k);
+  delete k.holdings["fake-deed"];
+  ok("...the LPs end the period; a vehicle with buildings keeps running and buys nothing new",
+    k.fund.lpEndedM === k.month && !k.fund.settled && k.fund.investEndM === k.month - 1 && !E.fundCanBuy(k),
+    `lpEndedM ${k.fund.lpEndedM}, investEndM ${k.fund.investEndM}, settled ${k.fund.settled}`);
+}
+
 console.log(`\n${fails === 0 ? "fund pass" : `${fails} fund failure(s)`}`);
 process.exit(fails === 0 ? 0 : 1);

@@ -7,7 +7,7 @@ import { distressTally } from "./history";
 import { stampBands } from "./bands";
 import type { ParcelRecord, ParcelTable } from "@/data/types";
 import type { BuiltClass, Exit, GameState, Listing, Rival } from "./types";
-import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit, moveFundCash } from "./types";
+import { DEFAULT_START_CASH, CENTURY_MONTHS, sweepApy, cloneState, logBooks, monthLabel, closeDeedLedger, sweepDeedLedgers, poolDeedLedger, moveDeposit, moveFundCash, vehiclePay } from "./types";
 import { initEcon, initStreams, rng, newsChance, rrange, tickEcon, stockFromParcels, cycleDown } from "./market";
 import { ownedHoldingValue, ownedHoldingNoiYr, ownedMonthlyNoi, portfolioMark, operatingStatement, physicalOcc, resolveRec, resolveRecBare, condCeiling, condGrade, cityLoanScale } from "./value";
 import { recordComp, tickLandComps } from "./comps";
@@ -35,7 +35,7 @@ import { tickHolders, holderOf } from "./owners";
 import { holderBidder } from "./ownership";
 import { reoAsk } from "./lenders";
 import { refreshDevelopmentFeasibility, tickDevelopments, tickPrograms, tickCityGrowth, tickConstructionLeasing, tickBuildToSuit, seedOpeningPipeline } from "./dev";
-import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind, tickTrustNote, TRUST_NOTE_M, fundReserve } from "./fund";
+import { tickFund, settleFund, gpCapitalShare, applyDistribute, distributeInKind, tickTrustNote, TRUST_NOTE_M, fundReserve, fundDeployment, lpWouldEndPeriod } from "./fund";
 import { inBuyBox } from "./buybox";
 import { maybeStampYearEndBalance, stampPnlDeed, stampPnlMonth, closePnlDepreciation } from "./books";
 import { tickDemand, isCivicLand } from "./demand";
@@ -1990,6 +1990,26 @@ export function attentionItems(s: GameState, parcels?: ParcelTable | null): Atte
       }
     }
   }
+  // THE LPs WILL VOTE AT THEIR NEXT REVIEW (fund.ts FUND_LP_REVIEW_M). If the
+  // fund would still be a full review cycle behind an even pace when the LPs
+  // meet, buying nothing more, they end its investment period. On the docket
+  // from three months out; it stops the clock in the last month a deal can
+  // still change the vote.
+  {
+    const f = s.fund;
+    if (f && !f.settled) {
+      const d = fundDeployment(f, s.month);
+      const left = d.nextReviewM - s.month;
+      if (left > 0 && left <= 3 && lpWouldEndPeriod(f, d.nextReviewM)) {
+        out.push({
+          key: `fund-review:${f.raisedM}:${d.nextReviewM}`,
+          label: `Your LPs review the fund in ${monthLabel(d.nextReviewM)}: ${money(d.deployed)} of ${money(f.size)} invested, `
+            + `${Math.round(fundDeployment(f, d.nextReviewM).behindM)} months behind an even pace by then — they will end its investment period unless it buys`,
+          lastM: d.nextReviewM - 1,
+        });
+      }
+    }
+  }
   // A BANK HAS PUT A BUILDING OUT. The month a desk lists what it took back,
   // the docket says so — on the docket, never a stop (an opportunity), so a
   // player with every card off still sees it in Next due and on Marketplace.
@@ -2592,10 +2612,12 @@ export function windDownFund(s: GameState, parcels: ParcelTable) {
     if (price > 0 && paid >= price) {
       moveFundCash(f, paid, "buyIn");
       // The tenants' deposits come across with the deed: the vehicle held
-      // them, the sponsor owes them from here on.
+      // them, the sponsor owes them from here on. What the vehicle cannot hand
+      // over from its cash it owes the sponsor (vehiclePay: a call, then a GP
+      // advance repaid ahead of the waterfall below) — never an overdraft.
       const dep = depositsOn(h);
-      moveFundCash(f, -dep, "deposit");
       s.cash += dep;
+      vehiclePay(s, dep, "deposit");
       paidTotal += paid;
       delete h.fundOwned;
       // The vehicle's cash and the sponsor's now share one deed: its equity

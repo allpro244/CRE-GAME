@@ -1,6 +1,7 @@
 // IndexedDB saves: named snapshots plus one debounced `auto` crash-protection
 // slot. A save is just GameState — parcels/adjacency are deterministic city data.
 import type { Credit, GameState, PlanRow } from "./types";
+import { moveFundCash } from "./types";
 import { ensureLeasingPlan, starterPlan } from "./leasing";
 import { describeSetup } from "./setup";
 import { shortIndexOf } from "./market";
@@ -301,6 +302,22 @@ function migrateDropVacancyNorm(state: GameState): void {
   delete e.vacOverM;
 }
 
+/**
+ * A VEHICLE OVERDRAWN ON AN OLD SAVE (F19, 2026-11-27). Before `vehiclePay`
+ * a fund handed back deposits it did not hold and its cash went below zero.
+ * The sponsor is what stood behind that hole, so it becomes what it would
+ * have been: a GP advance, paid into the purse from the sponsor's account —
+ * a move inside the firm, nothing on the books. Interest runs from here.
+ */
+function migrateVehicleOverdraft(state: GameState): void {
+  const f = state.fund;
+  if (!f || f.settled || !(f.cash < 0)) return;
+  const x = -f.cash;
+  state.cash -= x;
+  moveFundCash(f, x, "advance");
+  f.gpAdvance = (f.gpAdvance ?? 0) + x;
+}
+
 /** Did this save predate the plat its own island now stands on? */
 function groundMovedUnder(state: { v?: unknown; cityIsland?: string }): boolean {
   const mark = GROUND_MOVED_AT[state.cityIsland ?? PROCEDURAL_ISLAND];
@@ -330,6 +347,7 @@ export function migrateSaveState(state: GameState): GameState {
   migrateFloatingBench(state);
   migrateDropJev(state);
   migrateDropVacancyNorm(state);
+  migrateVehicleOverdraft(state);
   if ((state.agent || state.renewalMgmt) && !state.leasingPlan) {
     ensureLeasingPlan(state);
   }

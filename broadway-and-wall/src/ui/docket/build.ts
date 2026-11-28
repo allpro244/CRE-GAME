@@ -65,7 +65,7 @@ function catForKey(key: string): DocketCat {
     // Missed payments, a junior balloon, a renewal and your bank failing are
     // debt business, not deal flow.
     head === "arrears" || head === "mezz-arrears" || head === "mezz-balloon" ||
-    head === "renewed" || head === "bank-seized" || head === "fund-idle" ||
+    head === "renewed" || head === "bank-seized" || head === "fund-idle" || head === "fund-review" ||
     // A construction capital call is the firm's own money being demanded,
     // not a deal being negotiated — it reads as capital or it reads wrong.
     head === "capital-call"

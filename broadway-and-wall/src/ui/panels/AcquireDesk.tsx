@@ -9,8 +9,9 @@ import { useHeldGame } from "@/ui/heldGame";
 import { monthLabel, CREDIT_LABEL } from "@/engine/types";
 import type { Approach, BuiltClass, GroundReview, SaleInstructions } from "@/engine/types";
 import {
-  assetValue, marketAppraisal, initialCondition, holdingNOIYr, resolveRec, useRentPsfYr, operatingStatement,
-  recoveryOf, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, isLeasedFee, ownedContractNoiYr, useRentableSf } from "@/engine/value";
+  assetValue, marketAppraisal, initialCondition, resolveRec, useRentPsfYr, operatingStatement,
+  recoveryOf, inPlace, proFormaNOIYr, disclosureFor, asIfOwned, isLeasedFee, ownedContractNoiYr, useRentableSf,
+  contractNoiYr, capRateFor, valueBridge, marketValueBridge } from "@/engine/value";
 import { demolitionCost } from "@/engine/dev";
 import {
   buyQuote, quietFeeRate, saleFeeRate, sellerCashAtClose, saleProceedsToSeller, groundLeaseQuote,
@@ -35,6 +36,7 @@ import { usd, sf, termLeft, pctSigned } from "@/ui/format";
 import { SaleAcceptConfirm } from "@/ui/panels/SaleConfirm";
 import { useLabel, physicalOcc, band, apMid, annualPayment, Row, LocSplitHint, Verdict } from "@/ui/panels/shared";
 import { BizLink } from "@/ui/BizSheet";
+import { ValueBridgeFold, priceVerdict } from "@/ui/panels/ValueBridge";
 
 /**
  * EMPTYING A BUILDING. Lifted out of the leasing desk so the three moves sit
@@ -463,19 +465,30 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
               // your roll, re-assessed at THEIR price, because a sale
               // reassesses. Struck against your old basis this quoted a
               // different number from the one on the other side of the table.
-              const noi = holdingNOIYr(orec, game.econ,
-                asIfOwned(game, bbl, sale.offer!.price, { roll: holding.tenants, occ: holding.occ, cond: holding.condition }, orec),
+              // On the CONTRACT (value.ts contractNoiYr): a tenant in a free
+              // month still has a lease, and the appraisal credits the free
+              // rent off the price instead (2026-11-28).
+              const noi = contractNoiYr(orec, game.econ,
+                asIfOwned(game, bbl, sale.offer!.price, { roll: holding.tenants, occ: holding.occ, cond: holding.condition, condIdx: holding.condIdx, resRentPsf: holding.resRentPsf }, orec),
                 game.month);
               const cap = sale.offer!.price > 0 ? (noi / sale.offer!.price) * 100 : 0;
-              const mkt = game.econ.capRate[orec.class as BuiltClass] ?? cap;
+              // THE MARKET'S CAP FOR THIS BUILDING, ON THE INCOME IT IS QUOTED
+              // ON. The class index is a cap on a stabilised roll for the
+              // reference building, so "market 7.54%" beside an in-place yield
+              // compared two bases (F20). The verdict reads the price against
+              // the appraisal, the slider's own rule, so the two cannot disagree.
+              const mktCap = capRateFor(orec, game.econ, holding.condition, holding.condIdx);
+              const br = valueBridge(game, orec, holding);
+              const verdict = priceVerdict(sale.offer!.price, apMid(bbl, value));
               const occ = physicalOcc(orec as never, holding);
               const u = unitStatus(orec, holding, game.month);
               return (
                 <div className="grid">
-                  <Row k="Buyer cap rate" v={`${cap.toFixed(2)}%`} strong bad={cap > mkt + 0.4} />
+                  <Row k="Buyer cap rate" v={`${cap.toFixed(2)}%`} strong bad={verdict === "below market"} />
                   <Row
                     k="Market cap rate"
-                    v={`${mkt.toFixed(2)}% ${useLabel(orec)} · ${cap < mkt - 0.25 ? "premium" : cap > mkt + 0.25 ? "discount" : "at market"}`}
+                    v={`${mktCap.toFixed(2)}% ${useLabel(orec)}${br ? ` on ${usd(br.info.stabNoi)} stabilised NOI` : ""} · ${verdict === "above market" ? "premium" : verdict === "below market" ? "discount" : "at market"}`}
+                    title="This building's cap rate (the class cap for its location, condition and spec) on its stabilised NOI. The verdict is the price against the appraisal."
                   />
                   <Row k="Underwritten NOI" v={usd(noi)} />
                   <Row k="Occupancy" v={`${(occ * 100).toFixed(0)}% · ${u.leased} of ${u.total} spaces`} bad={occ < 0.75} />
@@ -599,26 +612,33 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
   const saleH = game.holdings[bbl];
   // A leased fee is a coupon bond — yield off ground rent, not vacant-shell NOI.
   const fee = !!saleH && isLeasedFee(saleH);
-  const saleClass = (fee
-    ? "office"
-    : (saleRec && saleRec.class !== "land" ? saleRec.class : "office")) as BuiltClass;
   // YOUR OWN ROLL, RE-ASSESSED AT YOUR ASK. This quoted the class model, so a
   // principal pricing their own half-empty building was shown the yield a full
   // one would offer — and every buyer in town was reading the real roll. The
   // number a seller needs is what a buyer will compute: in-place income off
   // the leases actually in place, against a tax bill struck at the new price.
+  // On the contract, not this month's cheque (value.ts contractNoiYr): a free
+  // month is credited off the price, not capitalised (2026-11-28).
+  const saleBuilt = !fee && !!saleRec && saleRec.class !== "land" && saleRec.bldgArea > 0 && !!saleH;
   const saleNoi = fee && saleH
     ? ownedContractNoiYr(game, parcels, saleH)
-    : saleRec && saleRec.class !== "land" && saleRec.bldgArea > 0 && saleH
-      ? holdingNOIYr(saleRec, game.econ,
-          asIfOwned(game, bbl, price, { roll: saleH.tenants, occ: saleH.occ, cond: saleH.condition }, saleRec),
+    : saleBuilt
+      ? contractNoiYr(saleRec!, game.econ,
+          asIfOwned(game, bbl, price, { roll: saleH!.tenants, occ: saleH!.occ, cond: saleH!.condition, condIdx: saleH!.condIdx, resRentPsf: saleH!.resRentPsf }, saleRec!),
           game.month)
       : 0;
   const askCap = saleNoi > 0 && price > 0 ? (saleNoi / price) * 100 : null;
+  // WHICH ADJUSTMENT SEPARATES THE APPRAISAL FROM NOI OVER THE MARKET'S CAP
+  // (owner, 2026-11-27), and the market's cap for THIS building on the NOI it
+  // is struck on — the class index beside an in-place yield compared two
+  // bases and called a 9.76% ask "at market" in a 7.54% market (F20).
+  const saleBridge = saleBuilt ? valueBridge(game, saleRec!, saleH!) : null;
+  const saleMktCap = saleBuilt ? capRateFor(saleRec!, game.econ, saleH!.condition, saleH!.condIdx) : null;
+  const saleVerdict = priceVerdict(price, mid);
   return (
     <div className="deal">
       <div className="deal-head">Sell</div>
-      <div className="hint">Appraisal: {band(bbl, value)}.</div>
+      <ValueBridgeFold br={saleBridge} summary={<>Appraisal: {band(bbl, value)}.</>} />
       <Slider
         label="Your ask"
         value={price}
@@ -641,9 +661,9 @@ export function SaleSection({ bbl, value }: { bbl: string; value: number }) {
           answer the phone, and it is the one that says whether the ask is
           serious. */}
       {askCap !== null && (
-        <div className="hint" title={fee ? "Leased fee, priced as bond + reversion." : askCap < game.econ.capRate[saleClass] - 0.4 ? "Premium to market." : askCap > game.econ.capRate[saleClass] + 0.4 ? "Discount to market." : "At market."}>
+        <div className="hint" title={fee ? "Leased fee, priced as bond + reversion." : "Market: this building's cap rate (the class cap for its location, condition and spec) on its stabilised NOI. The verdict is the ask against the appraisal, the slider's own rule."}>
           Ask cap <b className="mono">{askCap.toFixed(2)}%</b> on {usd(saleNoi)} {fee ? "ground rent" : "NOI"}
-          {!fee && <> · market <span className="mono">{game.econ.capRate[saleClass].toFixed(2)}%</span></>}
+          {!fee && saleMktCap !== null && <> · market <span className="mono">{saleMktCap.toFixed(2)}%</span>{saleBridge ? <> on {usd(saleBridge.info.stabNoi)} stabilised NOI</> : null} · {saleVerdict}</>}
         </div>
       )}
       {/* TWO WAYS TO SELL, and they are genuinely different trades. A sign on
@@ -940,6 +960,10 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
         <div className="grid">
           <Row k={ip?.disclosed ? "In-place NOI / yr, after taxes" : "NOI / yr (mkt est.)"} v={usd(noi)} />
           <Row k={<><Gloss term="going-in cap">Going-in cap</Gloss></>} v={`${goingInPct.toFixed(2)}%`} strong />
+          {rec && rec.class !== "land" && (() => {
+            const br = marketValueBridge(game, rec, bbl, gradeOf(game, rec));
+            return br ? <ValueBridgeFold br={br} summary={<>Appraisal {usd(br.band.lo)} – {usd(br.band.hi)}</>} /> : null;
+          })()}
           {/* Stabilised beside it and never instead of it. If this line is far
               above the one at the top, you are buying a leasing job. */}
           <Row k={<Gloss term="stabilised pro-forma">Stabilised pro-forma</Gloss>} v={`${usd(stab)} · ${offerPrice > 0 ? ((stab / offerPrice) * 100).toFixed(2) : "—"}%`} />
@@ -947,12 +971,18 @@ export function OfferDesk({ bbl, price, distress, loanBasis }: { bbl: string; pr
           {/* IS THE PRICE A PRICE — the buy side of the line the sell desk has
               always printed. The market's cap for the class is the econ's own
               index, the same one every appraisal reads. */}
-          {rec && rec.class !== "land" && (() => {
-            const mkt = game.econ.capRate[rec.class as keyof typeof game.econ.capRate];
-            if (!(mkt > 0)) return null;
-            const d = goingInPct - mkt;
+          {rec && rec.class !== "land" && rec.bldgArea > 0 && (() => {
+            // This building's cap on its stabilised NOI, and the price against
+            // the appraisal — not the class index against an in-place yield,
+            // which are two bases (F20).
+            const grade = gradeOf(game, rec);
+            const h = ip?.h;
+            const mktCap = capRateFor(rec, game.econ, h?.condition ?? grade, h?.condIdx);
+            const br = marketValueBridge(game, rec, bbl, grade);
+            const v = priceVerdict(offerPriceRounded, apMid(bbl, marketAppraisal(game, rec, bbl, grade)));
             return (
-              <Row k="Market cap rate" v={`${mkt.toFixed(2)}% ${rec.class} · ${d > 0.4 ? "below market price" : d < -0.4 ? "above market price" : "at market"}`} />
+              <Row k="Market cap rate" v={`${mktCap.toFixed(2)}% ${rec.class}${br ? ` on ${usd(br.info.stabNoi)} stabilised NOI` : ""} · ${v === "below market" ? "below market price" : v === "above market" ? "above market price" : "at market"}`}
+                title="This building's cap rate (the class cap for its location, condition and spec) on its stabilised NOI. The verdict is your offer against the appraisal." />
             );
           })()}
           {/* CAN YOU CLOSE IT. Earnest money goes hard when the price is

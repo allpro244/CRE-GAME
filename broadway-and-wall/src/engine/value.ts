@@ -5499,6 +5499,20 @@ export function portfolioMark(s: GameState, parcels: Record<string, ParcelRecord
   // claims booked as an asset count — an old save's claims were expensed whole
   // and come back as income, and counting them here too would count them twice.
   for (const r of s.receivership ?? []) if (r.seizedM !== undefined) nw += r.amount;
+  // EARNEST MONEY IS A CLAIM, NOT A LOSS (2026-11-28). The deposit on a signed
+  // contract (acquire.ts strikeDeal) and the courthouse registration deposit
+  // (auction.ts registerAuctionBids, ten per cent of each bid) leave the bank
+  // the day they are posted, and they are hard — but they are credited
+  // against the price at the table (closeAgreed; the hammer's settlement) or
+  // handed back (voidContract, a lot pulled or lost). Until the money is
+  // forfeited (walkAway, an unfunded close, a winner who cannot pay — each
+  // books it to `ga`) it is an asset the firm owns. Net worth used to drop by
+  // the deposit at signing and rise again at closing with nothing about the
+  // firm changed: measured on a $6.50M ask, net worth fell exactly $97K the
+  // month the contract was signed. Not real estate, so not in `gav` (the LTV
+  // covenants read that); no money moves here, so no ledger line.
+  for (const t of Object.values(s.talks ?? {})) if (t.agreed) nw += t.deposit ?? 0;
+  nw += s.auction?.deposit ?? 0;
   // CONSTRUCTION IN PROGRESS CARRIES AT MONEY SUNK, NOT AT THE BUDGET.
   //
   // This booked `costTotal` — the WHOLE build budget — the instant a shovel

@@ -11,7 +11,7 @@
 //      builder in town would start it (and how many of them the desk's 17%
 //      verdict calls "does not pencil" is printed, not asserted).
 //
-// Run: node test/desk-parity.mjs   (SEED, MONTHS to override; about 40 s)
+// Run: node test/desk-parity.mjs   (SEED, MONTHS to override; about 40-90 s)
 import { assertFreshBundle } from "./fresh.mjs";
 assertFreshBundle();
 import { dirname, join } from "node:path";
@@ -22,7 +22,12 @@ const E = await import(join(HERE, ".engine.mjs"));
 const { loadCity } = await import(join(HERE, "city.mjs"));
 const { parcels: P0, adjacency, bbls } = loadCity(0, E.normalizeParcels);
 const SEED = Number(process.env.SEED ?? 12007);
-const MONTHS = Number(process.env.MONTHS ?? 18);
+// Section 3 samples the city's own starts until it has ENOUGH (a coverage
+// floor, not a pinned outcome): how many starts a world makes by a given month
+// moves with every change to the market, so a fixed 18-month window can starve
+// the comparison. It stops at the first ENOUGH starts or at MONTHS.
+const MONTHS = Number(process.env.MONTHS ?? 48);
+const ENOUGH = 6;
 
 let bad = 0;
 const check = (ok, msg) => {
@@ -116,7 +121,7 @@ const share = (u) => 1 - (u === "multifamily" ? 0 : E.RECOVERY_RATE[u]);
   const seen = new Set((g.cityJobs ?? []).map((j) => j.bbl + ":" + j.startM));
   const rows = [];
   let impure = 0;
-  for (let m = 1; m <= MONTHS; m++) {
+  for (let m = 1; m <= MONTHS && rows.length < ENOUGH; m++) {
     const prev = structuredClone(g);
     const prevParcels = structuredClone(parcels);
     g = E.advanceQuarter(g, parcels, bbls, adjacency);
@@ -129,17 +134,23 @@ const share = (u) => 1 - (u === "multifamily" ? 0 : E.RECOVERY_RATE[u]);
       if (!rec || rec.class !== "land" || !j.merchant) continue;
       const p = E.planDevelopment({ ...prev, cash: 5e8 }, prevParcels, j.bbl, j.use, j.floors, E.cityCoverage(j.use), "gmp", undefined, undefined, undefined, j.spec ?? 0.5);
       if (!p) continue;
+      // The builder booked its NOI inside this month's tick, on this month's
+      // rents (dev.ts merchantBook at startM). The same desk on the same lot,
+      // read on that month's market (the lot still vacant: prevParcels), is
+      // the like-for-like comparison; last month's market can sit several
+      // per cent away when rents move.
+      const pNow = E.planDevelopment({ ...g, cash: 5e8 }, prevParcels, j.bbl, j.use, j.floors, E.cityCoverage(j.use), "gmp", undefined, undefined, undefined, j.spec ?? 0.5) ?? p;
       const snap = JSON.stringify(prev);
       const t = E.townBuilderRead(prev, prevParcels, j.bbl, p, j.use);
       if (JSON.stringify(prev) !== snap) impure++;
       const st = E.streetHurdle(prev, p, j.use, p.ltcMax > 0 && p.commitment > 0, true);
-      rows.push({ m, j, p, t, st });
-      console.log(`  m${m} ${j.bbl} ${j.use}/${j.floors}fl: book ${(j.merchant.yld * 100).toFixed(2)}% noi ${Math.round(j.merchant.noi)} | desk ${p.exitYield.toFixed(2)}% noi ${Math.round(p.stabNoi)} hurdle ${p.hurdleRatio.toFixed(2)} | street ${st.toFixed(2)} town ${t.h.toFixed(2)} ${t.who ?? "(merchants)"}`);
+      rows.push({ m, j, p, pNow, t, st });
+      console.log(`  m${m} ${j.bbl} ${j.use}/${j.floors}fl: book ${(j.merchant.yld * 100).toFixed(2)}% noi ${Math.round(j.merchant.noi)} | desk ${pNow.exitYield.toFixed(2)}% noi ${Math.round(pNow.stabNoi)} (last month ${Math.round(p.stabNoi)}) hurdle ${p.hurdleRatio.toFixed(2)} | street ${st.toFixed(2)} town ${t.h.toFixed(2)} ${t.who ?? "(merchants)"}`);
     }
   }
   const n = rows.length;
-  const yldOk = rows.filter((r) => Math.abs(r.p.exitYield - 100 * r.j.merchant.yld) <= 0.35).length;
-  const noiOk = rows.filter((r) => Math.abs(r.p.stabNoi / r.j.merchant.noi - 1) <= 0.05).length;
+  const yldOk = rows.filter((r) => Math.abs(r.pNow.exitYield - 100 * r.j.merchant.yld) <= 0.35).length;
+  const noiOk = rows.filter((r) => Math.abs(r.pNow.stabNoi / r.j.merchant.noi - 1) <= 0.05).length;
   const townOk = rows.filter((r) => r.t.h >= 0.95).length;
   const under = rows.filter((r) => r.p.hurdleRatio < 1).length;
   const atLeastStreet = rows.filter((r) => r.t.h >= r.st - 1e-12).length;
